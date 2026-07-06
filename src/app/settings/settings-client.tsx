@@ -1,0 +1,121 @@
+"use client";
+import { useEffect, useState } from "react";
+
+type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string };
+type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; productType: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
+const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
+
+export function SettingsClient({ canEdit, ingestHint }: { canEdit: boolean; ingestHint: string }) {
+  const [ffs, setFfs] = useState<Ff[]>([]);
+  const [maps, setMaps] = useState<Map[]>([]);
+  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string }>>({});
+  const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "" });
+  const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
+  const [msg, setMsg] = useState("");
+
+  const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => { if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings); } });
+  useEffect(() => { load(); }, []);
+
+  async function saveFf(id: string) {
+    const e = edit[id]; if (!e) return;
+    const j = await fetch("/api/fulfillers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
+    setMsg(j.ok ? "Đã lưu " : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "" } }); load(); }
+  }
+  async function addFf(e: React.FormEvent) {
+    e.preventDefault();
+    const j = await fetch("/api/fulfillers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nf) }).then((r) => r.json());
+    setMsg(j.ok ? "Đã thêm fulfiller" : "⚠ " + j.error); if (j.ok) { setNf({ name: "", method: "api", apiEndpoint: "" }); load(); }
+  }
+  async function addMap(e: React.FormEvent) {
+    e.preventDefault();
+    const j = await fetch("/api/mappings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nm) }).then((r) => r.json());
+    setMsg(j.ok ? "Đã thêm mapping" : "⚠ " + j.error); if (j.ok) { setNm({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" }); load(); }
+  }
+
+  return (
+    <>
+      <div className="panel">
+        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Cài đặt hệ thống</h3>
+        <div className="sub">Fulfiller · SKU mapping · Ingest API. Phân quyền & tài khoản ở trang <a href="/admin" style={{ color: "var(--blue)", fontWeight: 700 }}>Quản trị</a>.</div>
+        {msg && <div style={{ marginTop: 8, fontWeight: 700, fontSize: 12.5 }}>{msg}</div>}
+      </div>
+
+      <div className="panel">
+        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Ingest API (Extension / Excel / webhook đơn)</h3>
+        <div className="sub" style={{ marginTop: 6 }}>
+          Endpoint: <b>POST /api/ingest/orders</b> · header <b>x-api-key</b> — key {ingestHint}.
+          Webhook tracking fulfiller: <b>POST /api/webhooks/fulfillment</b> · header <b>x-webhook-secret</b> theo từng hãng bên dưới.
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Fulfillers · {ffs.length}</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10 }}>
+          {ffs.map((f) => (
+            <div key={f.id} style={{ border: "1px solid var(--line)", borderRadius: 14, padding: "13px 15px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <b style={{ fontSize: 13.5 }}>{f.name}</b>
+                <span className="chip">{f.method}</span>
+                {f.credentials ? <span className="badge b-ship">API key {f.credentials}</span> : <span className="badge b-issue">chưa có API key → simulate</span>}
+                {f.hasWebhookSecret ? <span className="badge b-ship">webhook secret ✓</span> : <span className="badge b-mut">chưa có webhook secret</span>}
+              </div>
+              {canEdit && (
+                <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                  <input placeholder={f.apiEndpoint ?? "API endpoint"} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setEdit({ ...edit, [f.id]: { ...(edit[f.id] ?? { apiKey: "", webhookSecret: "" }), apiEndpoint: e.target.value } })} style={{ ...inp, flex: 1, minWidth: 180 }} />
+                  <input placeholder="API key mới" value={edit[f.id]?.apiKey ?? ""} onChange={(e) => setEdit({ ...edit, [f.id]: { ...(edit[f.id] ?? { apiEndpoint: "", webhookSecret: "" }), apiKey: e.target.value } })} style={{ ...inp, width: 160 }} />
+                  <input placeholder="Webhook secret mới" value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setEdit({ ...edit, [f.id]: { ...(edit[f.id] ?? { apiEndpoint: "", apiKey: "" }), webhookSecret: e.target.value } })} style={{ ...inp, width: 170 }} />
+                  <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Lưu</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {canEdit && (
+          <form onSubmit={addFf} style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+            <b style={{ fontSize: 12.5, alignSelf: "center" }}>＋ Thêm fulfiller:</b>
+            <input required placeholder="Tên (Printify, Merchize…)" value={nf.name} onChange={(e) => setNf({ ...nf, name: e.target.value })} style={{ ...inp, minWidth: 170 }} />
+            <select value={nf.method} onChange={(e) => setNf({ ...nf, method: e.target.value })} style={inp}><option value="api">API</option><option value="excel">Excel</option></select>
+            <input placeholder="API endpoint" value={nf.apiEndpoint} onChange={(e) => setNf({ ...nf, apiEndpoint: e.target.value })} style={{ ...inp, flex: 1, minWidth: 160 }} />
+            <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Thêm</button>
+          </form>
+        )}
+      </div>
+
+      <div className="panel">
+        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>SKU Mapping · {maps.length}</h3>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ marginTop: 8 }}>
+            <thead><tr><th>SKU nội bộ</th><th>Fulfiller</th><th>Fulfiller SKU</th><th>Loại / Variant</th><th style={{ textAlign: "right" }}>Base</th><th style={{ textAlign: "right" }}>Ship</th><th style={{ textAlign: "right" }}>Tổng vốn</th></tr></thead>
+            <tbody>
+              {maps.map((m) => (
+                <tr key={m.id}>
+                  <td><b>{m.internalSku}</b></td>
+                  <td>{ffs.find((f) => f.id === m.fulfillerId)?.name ?? "—"}</td>
+                  <td style={{ fontSize: 12 }}>{m.fulfillerSku}</td>
+                  <td style={{ fontSize: 12 }}>{m.productType} {m.variant ? `· ${m.variant}` : ""}</td>
+                  <td style={{ textAlign: "right" }}>${Number(m.baseCost).toFixed(2)}</td>
+                  <td style={{ textAlign: "right" }}>${Number(m.shipCost).toFixed(2)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 800 }}>${(Number(m.baseCost) + Number(m.shipCost)).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {canEdit && (
+          <form onSubmit={addMap} style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+            <b style={{ fontSize: 12.5, alignSelf: "center" }}>＋ Mapping:</b>
+            <input required placeholder="SKU nội bộ" value={nm.internalSku} onChange={(e) => setNm({ ...nm, internalSku: e.target.value })} style={{ ...inp, width: 150 }} />
+            <select required value={nm.fulfillerId} onChange={(e) => setNm({ ...nm, fulfillerId: e.target.value })} style={inp}>
+              <option value="">— fulfiller —</option>
+              {ffs.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+            <input required placeholder="Fulfiller SKU" value={nm.fulfillerSku} onChange={(e) => setNm({ ...nm, fulfillerSku: e.target.value })} style={{ ...inp, width: 160 }} />
+            <input required type="number" step="0.01" placeholder="Base $" value={nm.baseCost} onChange={(e) => setNm({ ...nm, baseCost: e.target.value })} style={{ ...inp, width: 90 }} />
+            <input type="number" step="0.01" placeholder="Ship $" value={nm.shipCost} onChange={(e) => setNm({ ...nm, shipCost: e.target.value })} style={{ ...inp, width: 90 }} />
+            <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Thêm</button>
+          </form>
+        )}
+      </div>
+    </>
+  );
+}

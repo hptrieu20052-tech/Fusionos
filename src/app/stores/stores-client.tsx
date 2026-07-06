@@ -1,0 +1,241 @@
+"use client";
+import { useCallback, useEffect, useState } from "react";
+import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { useLang } from "@/components/lang-provider";
+
+type Store = {
+  id: string; name: string; marketplace: string; connectMethod: string; status: string;
+  sellerName: string | null; sellerId: string | null; note: string | null;
+  orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
+  live: boolean; hasCredentials: boolean; credentialKeys: string[];
+};
+type Opt = { id: string; name: string };
+
+const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["other", "Khác"]];
+const CONNECT: [string, string][] = [["extension", "Chrome Extension"], ["api", "API"], ["excel", "Excel Import"]];
+const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+// Field credentials theo từng sàn
+const CRED_FIELDS: Record<string, [string, string][]> = {
+  tiktok: [["app_key", "App Key"], ["app_secret", "App Secret"], ["access_token", "Access Token"], ["shop_id", "Shop ID"]],
+  amazon: [["seller_id", "Seller ID"], ["mws_token", "MWS Auth Token"], ["access_key", "Access Key"], ["secret_key", "Secret Key"]],
+  etsy: [["api_key", "API Key"], ["shared_secret", "Shared Secret"], ["oauth_token", "OAuth Token"], ["shop_id", "Shop ID"]],
+  other: [["endpoint", "Endpoint"], ["token", "Token"]],
+};
+
+export function StoresClient({ canAdd }: { canAdd: boolean }) {
+  const { t } = useLang();
+  const [stores, setStores] = useState<Store[]>([]);
+  const [sellers, setSellers] = useState<Opt[]>([]);
+  const [fSeller, setFSeller] = useState(""); const [fMk, setFMk] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
+  const [edit, setEdit] = useState<Store | null>(null);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(() => {
+    const p = new URLSearchParams();
+    if (fSeller) p.set("sellerId", fSeller);
+    if (fMk) p.set("marketplace", fMk);
+    fetch(`/api/stores?${p}`).then((r) => r.json()).then((j) => { if (j.ok) { setStores(j.stores); setSellers(j.sellers); } });
+  }, [fSeller, fMk]);
+  useEffect(() => { load(); }, [load]);
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
+
+  const byMk = (mk: string) => stores.filter((s) => s.marketplace === mk);
+  const total30 = stores.reduce((a, s) => a + s.revenue30d, 0);
+
+  return (
+    <>
+      {msg && <div style={{ position: "fixed", top: 16, right: 16, zIndex: 100, background: "#2A303C", color: "#fff", padding: "10px 18px", borderRadius: 12, fontSize: 13.5 }}>{msg}</div>}
+
+      {/* Page head */}
+      <div className="page-head">
+        <div className="page-actions">
+          {canAdd && <button onClick={() => setShowAdd(true)} className="btn btn-primary">{t("s.addStore")}</button>}
+        </div>
+      </div>
+
+      {/* Filter */}
+      <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
+        <div className="filters">
+          <div className="field">
+            <label>{t("c.seller")}</label>
+            <select value={fSeller} onChange={(e) => setFSeller(e.target.value)}>
+              <option value="">Tất cả</option>
+              {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>{t("c.marketplace")}</label>
+            <select value={fMk} onChange={(e) => setFMk(e.target.value)}>
+              <option value="">Tất cả</option>
+              {MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>{t("s.totalRev30")}</label>
+            <div style={{ padding: "9px 0", fontWeight: 800, fontSize: 16, color: "var(--green)" }}>{money(total30)}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Cột theo sàn */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 16 }}>
+        {MKS.map(([mk, label]) => {
+          const list = byMk(mk);
+          return (
+            <div key={mk} className="card" style={{ padding: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <MarketplaceLogo mk={mk} size={26} />
+                <b style={{ fontSize: 15 }}>{label}</b>
+                <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>{list.length}</span>
+              </div>
+              {list.length === 0 && <div style={{ color: "var(--faint)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>{t("s.empty")}</div>}
+              {list.map((s) => (
+                <div key={s.id} onClick={() => canAdd && setEdit(s)} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginBottom: 10, cursor: canAdd ? "pointer" : "default", transition: "border-color .15s" }}
+                  onMouseEnter={(e) => { if (canAdd) e.currentTarget.style.borderColor = "var(--accent)"; }}
+                  onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--line)"}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                    <b style={{ fontSize: 14, flex: 1 }}>{s.name}</b>
+                    {/* Live/Die badge */}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999,
+                      background: s.live ? "var(--green-soft)" : "var(--red-soft)", color: s.live ? "var(--green)" : "var(--red)" }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: s.live ? "var(--green)" : "var(--red)" }} />
+                      {s.live ? t("s.live") : t("s.die")}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 3 }}>
+                    {s.sellerName ?? "—"} · {CONNECT.find(([k]) => k === s.connectMethod)?.[1] ?? s.connectMethod}
+                    {s.connectMethod === "api" && (s.hasCredentials ? " · 🔑 đã cấu hình" : " · ⚠ chưa có API")}
+                  </div>
+                  <div style={{ fontSize: 13 }}>
+                    <b>{s.orders30d}</b> đơn · <b style={{ color: "var(--green)" }}>{money(s.revenue30d)}</b> <span style={{ color: "var(--muted)" }}>/ 30d</span>
+                    {s.orders7d > 0 && <span style={{ color: "var(--muted)", fontSize: 11.5 }}> · {s.orders7d} đơn/7d</span>}
+                  </div>
+                  {s.lastOrderDays != null && s.lastOrderDays > 7 && (
+                    <div style={{ fontSize: 11, color: "var(--red)", marginTop: 3 }}>⚠ {s.lastOrderDays} ngày không có đơn</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+
+      {showAdd && <AddStoreModal sellers={sellers} close={() => setShowAdd(false)} reload={load} flash={flash} />}
+      {edit && <EditStoreModal store={edit} sellers={sellers} close={() => setEdit(null)} reload={load} flash={flash} />}
+    </>
+  );
+}
+
+function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
+  const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "" });
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!f.name.trim()) return;
+    setBusy(true);
+    const j = await fetch("/api/stores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) }).then((r) => r.json());
+    setBusy(false);
+    if (j.ok) { flash("✓ Đã thêm store"); reload(); close(); } else flash("✗ " + (j.error ?? "Lỗi"));
+  };
+  return (
+    <Modal title="Thêm store mới" close={close}>
+      <L label="Tên store"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: gymwear.us" style={inp} /></L>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <L label="Sàn"><select value={f.marketplace} onChange={(e) => setF({ ...f, marketplace: e.target.value })} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label="Kết nối"><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+      </div>
+      <L label="Seller phụ trách"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
+      <L label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
+      <Actions close={close} onOk={submit} busy={busy} okLabel="Thêm store" disabled={!f.name.trim()} />
+    </Modal>
+  );
+}
+
+function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store; sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
+  const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "" });
+  const [cred, setCred] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [health, setHealth] = useState<{ ok: boolean; message: string } | null>(null);
+  const fields = CRED_FIELDS[store.marketplace] ?? CRED_FIELDS.other;
+
+  const save = async () => {
+    setBusy(true);
+    const body: Record<string, unknown> = { ...f };
+    if (Object.keys(cred).length) body.credentials = cred;
+    const j = await fetch(`/api/stores/${store.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+    setBusy(false);
+    if (j.ok) { flash("✓ Đã lưu store"); reload(); close(); } else flash("✗ " + (j.error ?? "Lỗi"));
+  };
+  const check = async () => {
+    setBusy(true);
+    const j = await fetch(`/api/stores/${store.id}`, { method: "POST" }).then((r) => r.json());
+    setBusy(false);
+    if (j.ok) setHealth(j.health);
+  };
+
+  return (
+    <Modal title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk={store.marketplace} size={22} /> {store.name}</span>} close={close}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <L label="Tên store"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={inp} /></L>
+        <L label="Trạng thái"><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}><option value="active">Active</option><option value="warning">Warning</option><option value="suspended">Suspended</option><option value="pending">Pending</option></select></L>
+        <L label="Seller"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
+        <L label="Kết nối"><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+      </div>
+      <L label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
+
+      {/* Setup API */}
+      {f.connectMethod === "api" && (
+        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <b style={{ fontSize: 13.5 }}>Cấu hình API</b>
+            {store.hasCredentials && <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}>🔑 đã có: {store.credentialKeys.join(", ")}</span>}
+            <button onClick={check} disabled={busy} style={{ ...btnGhost, marginLeft: "auto", fontSize: 12 }}>Check kết nối</button>
+          </div>
+          {health && (
+            <div style={{ fontSize: 12.5, padding: "6px 10px", borderRadius: 8, marginBottom: 8, background: health.ok ? "var(--green-soft)" : "var(--red-soft)", color: health.ok ? "var(--green)" : "var(--red)" }}>
+              {health.ok ? "✓" : "✗"} {health.message}
+            </div>
+          )}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {fields.map(([k, label]) => (
+              <L key={k} label={label}>
+                <input type="password" placeholder={store.credentialKeys.includes(k) ? "••• (đã lưu, để trống nếu giữ)" : "nhập giá trị"}
+                  onChange={(e) => setCred({ ...cred, [k]: e.target.value })} style={inp} autoComplete="off" />
+              </L>
+            ))}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Credentials được mã hoá lưu server, không bao giờ hiển thị lại. Để trống field = giữ giá trị cũ.</div>
+        </div>
+      )}
+      <Actions close={close} onOk={save} busy={busy} okLabel="Lưu store" />
+    </Modal>
+  );
+}
+
+function Modal({ title, close, children }: { title: React.ReactNode; close: () => void; children: React.ReactNode }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(42,48,60,.45)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
+      <div style={{ background: "#fff", borderRadius: 16, width: 560, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <b style={{ fontSize: 15 }}>{title}</b>
+          <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+function L({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label style={{ display: "block", marginBottom: 12 }}><span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 5 }}>{label}</span>{children}</label>;
+}
+function Actions({ close, onOk, busy, okLabel, disabled }: { close: () => void; onOk: () => void; busy: boolean; okLabel: string; disabled?: boolean }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
+      <button onClick={close} style={btnGhost}>Huỷ</button>
+      <button onClick={onOk} disabled={busy || disabled} className="btn btn-primary" style={{ opacity: busy || disabled ? 0.6 : 1 }}>{busy ? "Đang lưu…" : okLabel}</button>
+    </div>
+  );
+}
+
+const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 10, fontSize: 13, background: "#fff" };
+const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" };

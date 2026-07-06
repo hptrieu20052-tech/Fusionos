@@ -1,0 +1,81 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db, schema } from "@/lib/db";
+import { desc, eq, and, sql } from "drizzle-orm";
+import { getSession } from "@/lib/auth";
+import { levelOf } from "@/lib/rbac";
+
+export const dynamic = "force-dynamic";
+
+// GET /api/stores?sellerId=&marketplace=
+export async function GET(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
+  if ((await levelOf(session, "stores")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+
+  const sp = req.nextUrl.searchParams;
+  const parts = [];
+  if (sp.get("sellerId")) parts.push(eq(schema.stores.sellerId, sp.get("sellerId")!));
+  if (sp.get("marketplace")) parts.push(eq(schema.stores.marketplace, sp.get("marketplace") as never));
+  const where = parts.length ? and(...parts) : undefined;
+
+  const rows = await db
+    .select({ s: schema.stores, sellerName: schema.users.fullName })
+    .from(schema.stores)
+    .leftJoin(schema.users, eq(schema.stores.sellerId, schema.users.id))
+    .where(where)
+    .orderBy(desc(schema.stores.createdAt));
+
+  // Đơn 30d + 7d để đánh giá "live" (có đơn gần đây)
+  const counts = await db.execute(sql`
+    SELECT store_id,
+      count(*) FILTER (WHERE ordered_at > NOW()-interval '30 days')::int c30,
+      count(*) FILTER (WHERE ordered_at > NOW()-interval '7 days')::int c7,
+      coalesce(sum(total) FILTER (WHERE ordered_at > NOW()-interval '30 days'),0) rev30,
+      max(ordered_at) last_order
+    FROM orders WHERE store_id IS NOT NULL GROUP BY store_id`);
+  const cmap = new Map((counts.rows as { store_id: string; c30: number; c7: number; rev30: string; last_order: string }[]).map((r) => [r.store_id, r]));
+
+  const sellers = await db.select({ id: schema.users.id, name: schema.users.fullName })
+    .from(schema.users).where(eq(schema.users.role, "seller"));
+
+  return NextResponse.json({
+    ok: true,
+    sellers,
+    stores: rows.map((r) => {
+      const c = cmap.get(r.s.id);
+      const lastOrder = c?.last_order ? new Date(c.last_order) : null;
+      const daysSince = lastOrder ? Math.floor((Date.now() - lastOrder.getTime()) / 86400000) : null;
+      // live nếu có đơn trong 7 ngày; die nếu store active nhưng >14 ngày không đơn
+      const live = (c?.c7 ?? 0) > 0;
+      return {
+        ...r.s,
+        apiCredentials: undefined,
+        hasCredentials: !!r.s.apiCredentials,
+        credentialKeys: r.s.apiCredentials ? Object.keys(r.s.apiCredentials as object) : [],
+        sellerName: r.sellerName,
+        orders30d: c?.c30 ?? 0,
+        orders7d: c?.c7 ?? 0,
+        revenue30d: Number(c?.rev30 ?? 0),
+        lastOrderDays: daysSince,
+        live,
+      };
+    }),
+  });
+}
+
+// POST tạo store
+export async function POST(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
+  if ((await levelOf(session, "stores")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+
+  const b = await req.json().catch(() => null);
+  if (!b?.name || !schema.stores.marketplace.enumValues.includes(b.marketplace) || !schema.stores.connectMethod.enumValues.includes(b.connectMethod)) {
+    return NextResponse.json({ ok: false, error: "Thiếu tên / sàn / phương thức kết nối" }, { status: 400 });
+  }
+  const [s] = await db.insert(schema.stores).values({
+    name: String(b.name).trim(), marketplace: b.marketplace, connectMethod: b.connectMethod,
+    sellerId: b.sellerId || null, status: "active", note: b.note,
+  }).returning();
+  return NextResponse.json({ ok: true, store: s });
+}

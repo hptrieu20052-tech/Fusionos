@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "FUSION Order Sync",
+  "version": "0.1.0",
+  "description": "Kéo đơn Amazon/Etsy về FUSION OS",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://sellercentral.amazon.com/*",
+    "https://www.etsy.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    { "matches": ["https://sellercentral.amazon.com/orders-v3*"], "js": ["content-amazon.js"] },
+    { "matches": ["https://www.etsy.com/your/orders/*"], "js": ["content-etsy.js"] }
+  ],
+  "action": { "default_title": "FUSION Order Sync" }
+}
