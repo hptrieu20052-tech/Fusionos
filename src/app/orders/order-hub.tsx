@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
-import { IconCopy, IconPin, IconChevron, IconTruck, IconTrash, IconUpload, IconWarn } from "@/components/icons";
+import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn } from "@/components/icons";
 
 type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
@@ -378,7 +378,6 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
   cloneOrder: (id: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
 }) {
   const { t } = useLang();
-  const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [showIssue, setShowIssue] = useState(false);
   const [ffSel, setFfSel] = useState("");
@@ -390,17 +389,18 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
     orderLabel: o.order_label ?? "",
   });
 
-  const toggle = async () => {
-    if (open) { setOpen(false); return; }
-    setOpen(true);
-    if (!detail) {
-      const j = await fetch(`/api/orders/${o.id}`).then((r) => r.json());
-      if (j.ok) {
+  useEffect(() => {
+    if (!canPushFf) return;
+    let active = true;
+    (async () => {
+      const j = await fetch(`/api/orders/${o.id}`).then((r) => r.json()).catch(() => null);
+      if (active && j?.ok) {
         setDetail(j);
         setShip((s) => ({ ...s, orderLabel: s.orderLabel || [`${(j.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-") }));
       }
-    }
-  };
+    })();
+    return () => { active = false; };
+  }, [o.id, o.external_id, canPushFf]);
 
   const variants: Variant[] = ffSel && detail ? (detail.catalog[ffSel] ?? []) : [];
   const pickFulfiller = (id: string) => {
@@ -443,10 +443,10 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
 
   return (
     <div className="card o2">
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: open ? 14 : 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
         <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: 1, minWidth: 0 }}>
           {canEdit && <input type="checkbox" checked={selected} onChange={onToggleSel} style={{ width: 17, height: 17, marginTop: 3, cursor: "pointer", accentColor: "var(--blue)", flexShrink: 0 }} />}
-          <div className={`o2-top${open && detail ? "" : " solo"}`} style={{ flex: 1, minWidth: 0 }}>
+          <div className={`o2-top${canPushFf && detail ? "" : " solo"}`} style={{ flex: 1, minWidth: 0 }}>
             {/* CỘT 1 — thông tin đơn */}
             <div className="o2-info">
               <div className="o2-l1">
@@ -468,11 +468,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                 <div className="c net"><span className="k">{t("o.afterFee")}</span><span className="v">{money(Number(o.total) - Number(o.platform_fee))}</span></div>
               </div>
               <OrderNote order={o} canEdit={canEdit} onSaved={reload} flash={flash} />
-              {canPushFf && (
-                <button onClick={toggle} className={`o2-toggle${open ? " open" : ""}`}>{t("o.fulfilment")} <IconChevron width={15} height={15} /></button>
-              )}
-              {/* Chi phí supplier (base + ship) + Tracking / Carrier / Link */}
-              {open && detail && (detail.ffOrders ?? []).length > 0 && (
+              {/* Tracking / cost — luôn hiện khi có dữ liệu fulfillment */}
+              {canPushFf && detail && (detail.ffOrders ?? []).length > 0 && (
                 <div className="o2-track">
                   {(detail.ffOrders ?? []).map((f) => (
                     <div key={f.id} style={{ marginBottom: 4 }}>
@@ -504,8 +501,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
               )}
             </div>
 
-            {/* CỘT 2+3 — form giao hàng + nhãn/tạo đơn (chỉ khi mở) */}
-            {open && detail && (
+            {/* CỘT 2+3 — form giao hàng + nhãn/tạo đơn */}
+            {canPushFf && detail && (
               <>
                 <div>
                   <div className="o2-secTitle">

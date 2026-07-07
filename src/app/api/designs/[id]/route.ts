@@ -56,12 +56,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const b = await req.json().catch(() => null);
   if (!b) return NextResponse.json({ ok: false }, { status: 400 });
   const patch: Record<string, unknown> = {};
-  for (const k of ["title", "description", "productLink", "note"] as const) if (typeof b[k] === "string") patch[k] = b[k];
+  if (typeof b.title === "string") patch.title = b.title.slice(0, 140);
+  if (typeof b.description === "string") patch.description = b.description.slice(0, 256);
+  for (const k of ["productLink", "note"] as const) if (typeof b[k] === "string") patch[k] = b[k];
   for (const k of ["sellerId", "designerId", "creatorId", "storeId"] as const) if (k in b) patch[k] = b[k] || null;
   if (Number.isInteger(b.points) && b.points >= 0 && b.points <= 10) patch.points = b.points;
   if (typeof b.listed === "boolean") patch.listed = b.listed;
   if (typeof b.personalize === "boolean") patch.personalize = b.personalize;
-  if (Array.isArray(b.tags)) patch.tags = b.tags.map((t: unknown) => String(t).trim()).filter(Boolean).slice(0, 20);
+  if (Array.isArray(b.tags)) {
+    const seen = new Set<string>();
+    patch.tags = b.tags.map((t: unknown) => String(t).trim().slice(0, 20)).filter((t: string) => t && !seen.has(t) && seen.add(t)).slice(0, 13);
+  }
   if ("platform" in b) patch.platform = b.platform && (schema.designs.platform.enumValues as readonly string[]).includes(b.platform) ? b.platform : null;
   await db.update(schema.designs).set(patch).where(eq(schema.designs.id, params.id));
   return NextResponse.json({ ok: true });

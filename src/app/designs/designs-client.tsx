@@ -287,7 +287,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
           <button onClick={close} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", lineHeight: 1 }}>✕</button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 26, padding: "18px 24px", overflowY: "auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 26, padding: "18px 24px", overflowY: "auto", flex: 1, minHeight: 0 }}>
           {/* CỘT TRÁI */}
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -299,7 +299,8 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                 </button>
               )}
             </div>
-            <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }} />
+            <input value={f.title} maxLength={140} onChange={(e) => setF({ ...f, title: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }} />
+            <div style={{ fontSize: 11, color: f.title.length >= 140 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.title.length}/140</div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
               <label style={rLbl}>{t("d.sku")}
@@ -315,7 +316,8 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               <b style={{ fontSize: 13.5 }}>{t("d.description")}</b>
               <CopyBtn v={f.description} tip={t("d.copy") + " " + t("d.description").toLowerCase()} />
             </div>
-            <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} rows={4} style={{ ...inp, width: "100%", resize: "vertical" }} />
+            <textarea value={f.description} maxLength={256} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} rows={4} style={{ ...inp, width: "100%", resize: "vertical" }} />
+            <div style={{ fontSize: 11, color: f.description.length >= 256 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.description.length}/256</div>
 
             <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0", fontSize: 13, cursor: "pointer" }}>
               <input type="checkbox" checked={f.personalize} disabled={!canEdit} onChange={(e) => setF({ ...f, personalize: e.target.checked })} />
@@ -397,7 +399,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
             </label>
             <div style={{ marginTop: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
-                {t("d.tags")}
+                {t("d.tags")} <span style={{ color: f.tags.length >= 13 ? "var(--red)" : "var(--muted)", fontWeight: 500, fontSize: 11.5 }}>({f.tags.length}/13)</span>
                 <CopyBtn v={f.tags.join(", ")} tip={t("d.copy") + " tags"} />
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "6px 0" }}>
@@ -407,9 +409,17 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   </span>
                 ))}
               </div>
-              {canEdit && <input placeholder={t("d.addTag")} value={tagInput} onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && tagInput.trim()) { setF({ ...f, tags: [...f.tags, tagInput.trim()] }); setTagInput(""); } }}
-                style={{ ...inp, width: "100%" }} />}
+              {canEdit && <input placeholder={f.tags.length >= 13 ? "Đã đủ 13 tag" : t("d.addTag")} value={tagInput} maxLength={20}
+                disabled={f.tags.length >= 13}
+                onChange={(e) => setTagInput(e.target.value.slice(0, 20))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const v = tagInput.trim().slice(0, 20);
+                    if (v && f.tags.length < 13 && !f.tags.includes(v)) { setF({ ...f, tags: [...f.tags, v] }); setTagInput(""); }
+                  }
+                }}
+                style={{ ...inp, width: "100%", opacity: f.tags.length >= 13 ? 0.6 : 1 }} />}
             </div>
             <div style={{ marginTop: 12 }}>{Sel("sellerId", t("c.seller"), detail.sellers)}</div>
             <div style={{ marginTop: 12 }}>{Sel("storeId", t("c.store"), detail.stores)}</div>
