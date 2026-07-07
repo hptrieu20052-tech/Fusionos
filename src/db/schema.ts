@@ -257,3 +257,14 @@ export const designReviews = pgTable("design_reviews", {
   comment: text("comment"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_reviews_design").on(t.designId)]);
+
+// ---------- ĐƠN ĐÁNH GIÁ XẤU / LỖI (report theo supplier) ----------
+export const orderIssues = pgTable("order_issues", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  orderId: uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  fulfillerId: uuid("fulfiller_id").references(() => fulfillers.id),
+  reason: text("reason").notNull(),
+  imageKey: text("image_key"),
+  reporterId: uuid("reporter_id").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("idx_issue_order").on(t.orderId), index("idx_issue_ff").on(t.fulfillerId)]);

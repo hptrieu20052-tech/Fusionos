@@ -33,6 +33,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     // ...(orders ? [{ href: "/stats/orders", label: "nav.statsOrders", icon: "statsOrders", section: "Thống kê" }] : []),
     // ...(designs ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Thống kê" }] : []),
     // ...(finance ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Thống kê" }] : []),
+    ...(orders ? [{ href: "/supplier-report", label: "nav.supplierReport", icon: "statsOrders", section: "Thống kê" }] : []),
     ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "Hệ thống" }] : []),
     ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "Hệ thống" }] : []),
     ...(session.role === "admin" ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "Hệ thống" }] : []),

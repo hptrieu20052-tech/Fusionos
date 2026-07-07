@@ -280,3 +280,27 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent) 
 /* Link tới trang tài khoản trên header */
 .topnav-user-link{display:flex;align-items:center;gap:9px;text-decoration:none;color:inherit;border-radius:11px;padding:3px 6px;transition:background .12s}
 .topnav-user-link:hover{background:var(--blue-soft)}
+
+/* Input group DesignId (nhãn xám gắn liền) — theo mẫu */
+.ig{display:flex;align-items:stretch;max-width:320px}
+.ig-l{display:flex;align-items:center;padding:0 12px;font-size:12.5px;font-weight:600;color:var(--muted);background:#EEF1F6;border:1px solid var(--line);border-right:none;border-radius:10px 0 0 10px;white-space:nowrap}
+.ig-in{flex:1;min-width:0;border:1px solid var(--line);border-right:none;padding:9px 12px;font-size:13.5px;background:#fff;color:var(--ink)}
+.ig-in:focus{outline:none}
+.ig:focus-within{box-shadow:0 0 0 3px var(--sky-soft);border-radius:10px}
+.ig-btn{border:none;background:var(--blue);color:#fff;font-size:12.5px;font-weight:700;padding:0 16px;border-radius:0 10px 10px 0;cursor:pointer;display:flex;align-items:center;gap:5px}
+.ig-btn:disabled{opacity:.5;cursor:default}
+.ig-btn.danger{background:#fff;color:var(--red);border:1px solid var(--line);border-left:none}
+.o2-dpreview{margin-top:10px;width:180px;max-width:100%;aspect-ratio:1/1;border-radius:12px;overflow:hidden;border:1px solid var(--line);cursor:zoom-in;display:flex;align-items:center;justify-content:center}
+.o2-dpreview img{width:100%;height:100%;object-fit:contain}
+.o2-dcap{font-size:12px;color:var(--muted);margin-top:6px;max-width:200px}
+.o2-dcap{font-weight:600}
+
+/* Dashboard — pipeline cards */
+.pipe-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:14px}
+.pipe-card{display:block;text-decoration:none;background:var(--card);border:1px solid var(--line);border-top:3px solid var(--line);border-radius:14px;padding:14px 18px;box-shadow:var(--sh);transition:transform .12s,box-shadow .12s}
+.pipe-card:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(13,76,155,.12)}
+.pipe-l{font-size:13px;color:var(--muted);font-weight:600}
+.pipe-v{font-size:24px;font-weight:800;color:var(--ink);margin-top:6px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.pipe-q{font-size:13px;font-weight:600;color:var(--muted)}
+.pipe-delta{font-size:12.5px;font-weight:700}
+@media(max-width:900px){.pipe-cards{grid-template-columns:repeat(2,1fr)}}

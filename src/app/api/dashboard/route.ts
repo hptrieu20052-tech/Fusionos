@@ -73,11 +73,29 @@ export async function GET(req: NextRequest) {
   // nhãn kỳ so sánh theo range
   const prevLabel = ({ today: "hôm qua", yesterday: "hôm kia", "3d": "3 ngày trước", "7d": "tuần trước", "30d": "30 ngày trước", this_month: "tháng trước", last_month: "tháng trước đó", this_year: "năm trước" } as Record<string, string>)[range] ?? "kỳ trước";
 
+  // Pipeline theo trạng thái trong kỳ: In production / In Transit (shipped) / Delivered (completed)
+  const pipeRows = (await db.execute(sql`
+    SELECT o.status,
+      count(DISTINCT o.id)::int c,
+      coalesce(sum(oi.qty),0)::int q
+    FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id
+    WHERE ${sql.raw(cond)} AND o.status IN ('in_production','shipped','completed')${own}
+    GROUP BY o.status
+  `)).rows as { status: string; c: number; q: number }[];
+  const pick = (s: string) => { const r = pipeRows.find((x) => x.status === s); return { c: r?.c ?? 0, q: r?.q ?? 0 }; };
+  const pipeline = {
+    order: { c: cur.o, q: cur.items, prev: prev ? prev.o : null },
+    in_production: pick("in_production"),
+    in_transit: pick("shipped"),
+    delivered: pick("completed"),
+  };
+
   return NextResponse.json({
     ok: true,
     orders: cur.o, items: cur.items, revenue: Number(cur.r), prevLabel,
     prevOrders: prev ? prev.o : null, prevRevenue: prev ? Number(prev.r) : null,
     pendingNew: misc.pending_new, issues: misc.issues, designs: misc.designs,
+    pipeline,
     profit, profitRevenue: Number(pnl.revenue), profitFee: Number(pnl.fee), profitCost: Number(pnl.cost),
   });
 }

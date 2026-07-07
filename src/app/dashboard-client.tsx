@@ -9,7 +9,9 @@ import DesignerReport from "@/components/designer-report";
 
 const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitCost: number };
+type Pipe = { c: number; q: number };
+type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitCost: number;
+  pipeline: { order: { c: number; q: number; prev: number | null }; in_production: Pipe; in_transit: Pipe; delivered: Pipe } };
 
 export default function DashboardClient({ canDesigns }: { canDesigns: boolean }) {
   const { t: tr } = useLang();
@@ -45,6 +47,34 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
         <DateRangePicker value={dr} onChange={setDr} align="right" />
       </div>
+
+      {/* Pipeline theo trạng thái (mặc định 30 ngày) */}
+      {kpi?.pipeline && (
+        <div className="pipe-cards">
+          <Link href="/orders" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#5A6272" }}>
+            <div className="pipe-l">{tr("db.pipeOrder")}</div>
+            <div className="pipe-v">{kpi.pipeline.order.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.order.q.toLocaleString()})</span>
+              {kpi.pipeline.order.prev != null && kpi.pipeline.order.prev !== kpi.pipeline.order.c && (
+                <span className="pipe-delta" style={{ color: kpi.pipeline.order.c - kpi.pipeline.order.prev >= 0 ? "var(--green)" : "var(--red)" }}>
+                  {kpi.pipeline.order.c - kpi.pipeline.order.prev >= 0 ? "+" : ""}{kpi.pipeline.order.c - kpi.pipeline.order.prev} {kpi.pipeline.order.c - kpi.pipeline.order.prev >= 0 ? "↑" : "↓"}
+                </span>
+              )}
+            </div>
+          </Link>
+          <Link href="/orders?status=in_production" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#4F9E93" }}>
+            <div className="pipe-l">{tr("db.pipeInProduction")}</div>
+            <div className="pipe-v">{kpi.pipeline.in_production.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.in_production.q.toLocaleString()})</span></div>
+          </Link>
+          <Link href="/orders?status=shipped" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#8FAF5C" }}>
+            <div className="pipe-l">{tr("db.pipeInTransit")}</div>
+            <div className="pipe-v">{kpi.pipeline.in_transit.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.in_transit.q.toLocaleString()})</span></div>
+          </Link>
+          <Link href="/orders?status=completed" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#5E86C9" }}>
+            <div className="pipe-l">{tr("db.pipeDelivered")}</div>
+            <div className="pipe-v">{kpi.pipeline.delivered.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.delivered.q.toLocaleString()})</span></div>
+          </Link>
+        </div>
+      )}
 
       {/* KPI theo range */}
       {kpi && (

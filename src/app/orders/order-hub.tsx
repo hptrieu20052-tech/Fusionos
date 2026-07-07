@@ -1,8 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
-import { IconCopy, IconPin, IconChevron, IconTruck, IconTrash } from "@/components/icons";
+import { IconCopy, IconPin, IconChevron, IconTruck, IconTrash, IconUpload } from "@/components/icons";
 
 type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
@@ -20,6 +20,7 @@ type Order = {
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; color: string; size: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
+type Opt = { id: string; name: string };
 type FfOrder = { id: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -162,14 +163,20 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
           </div>
         </div>
 
-        {/* Pills trạng thái kiểu otab */}
+        {/* Pills trạng thái — mỗi status một màu */}
         <div className="otabs">
           <button className={`otab${!status ? " on" : ""}`} onClick={() => { setStatus(""); setPage(1); }}>All ({all})</button>
-          {Object.keys(STATUS_COLORS).filter((st) => st !== "completed").map((st) => (
-            <button key={st} className={`otab${status === st ? " on" : ""}`} onClick={() => { setStatus(st); setPage(1); }}>
-              {st.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} ({data.counts[st] ?? 0})
-            </button>
-          ))}
+          {Object.keys(STATUS_COLORS).filter((st) => st !== "completed").map((st) => {
+            const c = STATUS_COLORS[st];
+            const on = status === st;
+            return (
+              <button key={st} className="otab" onClick={() => { setStatus(st); setPage(1); }}
+                style={{ border: `1.5px solid ${c}`, background: on ? c : "#fff", color: on ? "#fff" : c, display: "inline-flex", alignItems: "center", gap: 7 }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: on ? "#fff" : c, flexShrink: 0 }} />
+                {st.replace(/_/g, " ").replace(/\b\w/g, (ch) => ch.toUpperCase())} ({data.counts[st] ?? 0})
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -210,7 +217,8 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
       {data.orders.map((o) => (
         <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
-          reload={load} flash={flash} cloneOrder={cloneOrder} copyText={copyText} />
+          reload={load} flash={flash} cloneOrder={cloneOrder} copyText={copyText}
+          fulfillers={data.fulfillers} />
       ))}
       {!data.orders.length && <div className="panel empty" style={{ marginTop: 12 }}>{t("o.noMatch")}</div>}
 
@@ -289,14 +297,90 @@ function VariantPicker({ variants, line, setLine, label }: {
   );
 }
 
-function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash, cloneOrder, copyText }: {
+function IssueModal({ order, fulfillers, defaultFulfillerId, close, flash, onSaved }: {
+  order: Order; fulfillers: Opt[]; defaultFulfillerId?: string;
+  close: () => void; flash: (m: string) => void; onSaved: () => void;
+}) {
+  const { t } = useLang();
+  const [fulfillerId, setFulfillerId] = useState(defaultFulfillerId ?? "");
+  const [reason, setReason] = useState("");
+  const [imageKey, setImageKey] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const pickImg = async (file: File) => {
+    setPreview(URL.createObjectURL(file));
+    setUploading(true);
+    try {
+      const tk = await fetch("/api/order-issues/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, contentType: file.type }) }).then((r) => r.json());
+      if (!tk.ok) throw new Error(tk.error ?? "upload-url error");
+      const put = await fetch(tk.url, { method: tk.method ?? "PUT", headers: tk.headers ?? {}, body: file });
+      if (!put.ok) throw new Error(`R2 ${put.status}`);
+      setImageKey(tk.storageKey);
+    } catch (e) { flash("✗ " + (e as Error).message); setPreview(null); }
+    setUploading(false);
+  };
+
+  const submit = async () => {
+    if (!reason.trim()) return flash("✗ " + t("iss.reason"));
+    setBusy(true);
+    const j = await fetch("/api/order-issues", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: order.id, fulfillerId: fulfillerId || null, reason, imageKey }) }).then((r) => r.json());
+    setBusy(false);
+    if (j.ok) { flash(t("iss.saved")); onSaved(); close(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
+      <div style={{ background: "#fff", borderRadius: 18, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <b style={{ fontSize: 15, display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ color: "var(--red)" }}>⚠</span> {t("iss.reportIssue")}</b>
+          {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 16 }}>#{order.external_id}</div>
+
+        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("iss.supplier")}
+          <select value={fulfillerId} onChange={(e) => setFulfillerId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
+            <option value="">—</option>
+            {fulfillers.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        </label>
+
+        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("iss.reason")}
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={3} placeholder={t("iss.reasonPh")} style={{ ...inp, width: "100%", marginTop: 4, resize: "vertical" }} />
+        </label>
+
+        <div style={{ ...rLbl, marginBottom: 6 }}>{t("iss.evidence")}</div>
+        <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) pickImg(f); e.target.value = ""; }} />
+        {preview ? (
+          <div onClick={() => fileRef.current?.click()} className="checker" style={{ width: 140, height: 140, borderRadius: 12, overflow: "hidden", cursor: "pointer", border: "1px solid var(--line)" }}>
+            <img src={preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          </div>
+        ) : (
+          <button onClick={() => fileRef.current?.click()} disabled={uploading} style={{ ...btnGhost, display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <IconUpload width={14} height={14} /> {uploading ? "…" : t("iss.chooseImg")}
+          </button>
+        )}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20 }}>
+          {!busy && <button onClick={close} style={btnGhost}>{t("c.cancel")}</button>}
+          <button onClick={submit} disabled={busy || !reason.trim()} style={{ ...btnRed, opacity: busy || !reason.trim() ? 0.55 : 1 }}>{busy ? "…" : t("iss.submit")}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash, cloneOrder, copyText, fulfillers }: {
   o: Order; canEdit: boolean; canPushFf: boolean; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
-  cloneOrder: (id: string) => void; copyText: (v: string) => void;
+  cloneOrder: (id: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
 }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [showIssue, setShowIssue] = useState(false);
   const [ffSel, setFfSel] = useState("");
   const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number }>>({});
   const [busy, setBusy] = useState(false);
@@ -469,9 +553,12 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
-          {canEdit && <button onClick={() => cloneOrder(o.id)} style={btnGhost}>{t("o.dup")}</button>}
+          {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}>⚠ {t("iss.badReview")}</button>}
+          {canEdit && <button onClick={() => cloneOrder(o.id)} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
       </div>
+      {showIssue && <IssueModal order={o} fulfillers={fulfillers}
+        close={() => setShowIssue(false)} flash={flash} onSaved={reload} />}
 
       {/* Items — chỉ hiển thị sản phẩm + gán design (variant đã dời lên cột phải) */}
       {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} />)}
@@ -532,29 +619,42 @@ function ItemRow({ it, onSaved, flash }: {
           <input type="checkbox" checked={it.special_print} onChange={toggleSpecial} /> {t("o.specialPrint")}
         </label>
       </div>
-      {/* Gán design — cột riêng, ngang hàng với thông tin */}
+      {/* Gán design — nhãn DesignId gắn liền + preview bên dưới (theo mẫu) */}
       <div className="o2-assigncol">
-        {it.design_id ? (
-          <div className="o2-assign">
-            {it.designThumb && <div className="o2-dthumb" onClick={() => setZoom(it.designThumb)} style={{ cursor: "zoom-in" }}><img src={it.designThumb} alt="" /></div>}
-            <div style={{ fontSize: 12.5, minWidth: 0 }}>
-              <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis" }}>#{it.design_sku} — {it.design_title}</div>
-              <button onClick={() => assign(null)} disabled={busy} style={{ ...btnGhost, marginTop: 6, fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}><IconTrash width={12} height={12} /> {t("o.unassign")}</button>
-            </div>
+        <div className="ig">
+          <span className="ig-l">DesignId</span>
+          {it.design_id ? (
+            <input value={String(it.design_sku ?? "")} readOnly className="ig-in" />
+          ) : (
+            <input placeholder="132691" value={skuInput}
+              onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
+              onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} className="ig-in" />
+          )}
+          {it.design_id ? (
+            <button onClick={() => assign(null)} disabled={busy} className="ig-btn danger" title={t("o.unassign")}><IconTrash width={14} height={14} /></button>
+          ) : (
+            <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} className="ig-btn">{t("o.assign")}</button>
+          )}
+        </div>
+
+        {/* Preview design đã gán */}
+        {it.design_id && it.designThumb && (
+          <div className="o2-dpreview checker" onClick={() => setZoom(it.designThumb)} title="Click để xem to">
+            <img src={it.designThumb} alt="" />
           </div>
-        ) : (
-          <div>
-            {it.suggest ? (
-              <div className="o2-assign" style={{ marginBottom: 8 }}>
-                {it.suggest.thumb && <div className="o2-dthumb" onClick={() => setZoom(it.suggest!.thumb)} style={{ cursor: "zoom-in" }}><img src={it.suggest.thumb} alt="" /></div>}
-                <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ background: "var(--green)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{t("o.acceptDesign")} #{it.suggest.skuCode}</button>
+        )}
+        {it.design_id && <div className="o2-dcap">#{it.design_sku} — {it.design_title}</div>}
+
+        {/* Gợi ý khi chưa gán */}
+        {!it.design_id && it.suggest && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 6 }}>{t("o.suggestDesigns")}</div>
+            {it.suggest.thumb && (
+              <div className="o2-dpreview checker" onClick={() => setZoom(it.suggest!.thumb)} title="Click để xem to">
+                <img src={it.suggest.thumb} alt="" />
               </div>
-            ) : null}
-            <div style={{ display: "flex", gap: 6 }}>
-              <input placeholder={t("o.designId")} value={skuInput} onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
-                onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} style={{ ...inp, flex: 1, minWidth: 0 }} />
-              <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} style={btnBlue}>{t("o.assign")}</button>
-            </div>
+            )}
+            <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ marginTop: 6, width: "100%", background: "var(--green)", color: "#fff", border: "none", borderRadius: 9, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{t("o.acceptDesign")} #{it.suggest.skuCode}</button>
           </div>
         )}
       </div>
@@ -735,3 +835,5 @@ function Pager({ page, pages, setPage, show, setShow, total }: { page: number; p
 const inp: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 10, padding: "7px 10px", fontSize: 13, background: "#fff" };
 const btnBlue: React.CSSProperties = { background: "var(--primary-grad)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" };
 const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 13px", fontSize: 13, fontWeight: 600, cursor: "pointer" };
+const btnRed: React.CSSProperties = { background: "var(--red)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" };
+const rLbl: React.CSSProperties = { fontSize: 13, fontWeight: 600 };
