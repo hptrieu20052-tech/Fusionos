@@ -121,6 +121,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "o.addTracking": { vi: "Nhập tracking / chi phí tay", en: "Add tracking / cost manually" },
   "o.editTracking": { vi: "Sửa tracking / chi phí", en: "Edit tracking / cost" },
   "o.trackSaved": { vi: "✓ Đã lưu tracking/chi phí", en: "✓ Tracking/cost saved" },
+  "o.noAddress": { vi: "Chưa có địa chỉ nhận", en: "No shipping address" },
   "o.baseCost": { vi: "Base cost", en: "Base cost" },
   "o.shipFee": { vi: "Ship fee", en: "Ship fee" },
   "a.myAccount": { vi: "Tài khoản của tôi", en: "My account" },

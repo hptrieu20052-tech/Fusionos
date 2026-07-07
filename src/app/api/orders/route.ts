@@ -67,6 +67,22 @@ export async function GET(req: NextRequest) {
     WHERE i.order_id IN (${sql.join(ids.map((x) => sql`${x}::uuid`), sql`, `)})
   `)).rows as Record<string, unknown>[] : [];
 
+  // Tất cả file (các mặt) của design đã gán → hiển thị đầy đủ
+  const dIds = Array.from(new Set(items.map((i) => i.design_id).filter(Boolean))) as string[];
+  const KIND_ORDER: Record<string, number> = { design_front: 0, design_back: 1, mockup: 2, video: 3 };
+  const KIND_LABEL: Record<string, string> = { design_front: "Mặt trước", design_back: "Mặt sau", mockup: "Mockup", video: "Video" };
+  const sidesMap: Record<string, { kind: string; label: string; thumb: string | null; original: string | null }[]> = {};
+  if (dIds.length) {
+    const fr = (await db.execute(sql`
+      SELECT design_id, kind, thumb_key, preview_key, storage_key
+      FROM design_files WHERE design_id IN (${sql.join(dIds.map((x) => sql`${x}::uuid`), sql`, `)})
+    `)).rows as { design_id: string; kind: string; thumb_key: string | null; preview_key: string | null; storage_key: string | null }[];
+    for (const r of fr) {
+      (sidesMap[r.design_id] ??= []).push({ kind: r.kind, label: KIND_LABEL[r.kind] ?? r.kind, thumb: fileUrl(r.thumb_key ?? r.preview_key), original: fileUrl(r.storage_key) });
+    }
+    for (const k of Object.keys(sidesMap)) sidesMap[k].sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9));
+  }
+
   // Gợi ý design cho item chưa gán: khớp từ khoá dài trong tên sản phẩm với title/tags design
   const need = items.filter((i) => !i.design_id);
   const terms = Array.from(new Set(need.flatMap((i) =>
@@ -110,6 +126,7 @@ export async function GET(req: NextRequest) {
     items: items.filter((i) => i.order_id === o.id).map((i) => ({
       ...i,
       designThumb: fileUrl(i.design_thumb as string | null),
+      designSides: i.design_id ? (sidesMap[i.design_id as string] ?? []) : [],
       mockupUrl: fileUrl(i.mockup_key as string | null),
       suggest: i.design_id ? null : suggestFor(String(i.product_title)),
     })),

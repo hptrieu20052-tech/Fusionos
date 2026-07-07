@@ -24,13 +24,13 @@ export async function POST(req: NextRequest) {
   const [row] = await db.insert(schema.designFiles).values(
     dup
       ? {
-          designId: b.designId, kind: b.kind,
+          designId: b.designId, kind: b.kind, filename: b.filename ?? null, uploadedBy: session.sub,
           storageKey: dup.storageKey, thumbKey: dup.thumbKey, previewKey: dup.previewKey,
           sha256: b.sha256, sizeBytes: dup.sizeBytes, width: dup.width, height: dup.height,
           processingStatus: dup.processingStatus,
         }
       : {
-          designId: b.designId, kind: b.kind, storageKey,
+          designId: b.designId, kind: b.kind, filename: b.filename ?? null, uploadedBy: session.sub, storageKey,
           sha256: b.sha256, sizeBytes: Number(b.sizeBytes ?? 0),
           processingStatus: "uploaded",
         }

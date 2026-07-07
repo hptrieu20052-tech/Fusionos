@@ -83,9 +83,16 @@ export async function GET(req: NextRequest) {
 
   const out = rows.map((d) => {
     const f = files.filter((x) => x.designId === d.id);
-    const cover = f.find((x) => x.kind === "mockup") ?? f[0];
-    const main = f.find((x) => x.kind === "design_front") ?? cover;
+    // Cover mặc định = mặt trước; nếu không có thì mockup, rồi file đầu
+    const front = f.find((x) => x.kind === "design_front");
+    const cover = front ?? f.find((x) => x.kind === "mockup") ?? f[0];
+    const main = front ?? cover;
     const m = mmap.get(d.id);
+    // Các mặt/ảnh khác (khác cover) để hiện thumbnail dưới chân card
+    const KIND_LABEL: Record<string, string> = { design_front: "Mặt trước", design_back: "Mặt sau", mockup: "Mockup", video: "Video" };
+    const sides = f
+      .filter((x) => x.id !== cover?.id && x.kind !== "video")
+      .map((x) => ({ id: x.id, kind: x.kind, label: KIND_LABEL[x.kind] ?? x.kind, thumb: fileUrl(x.thumbKey) ?? fileUrl(x.previewKey), original: fileUrl(x.storageKey) }));
     return {
       ...d,
       filesCount: f.length,
@@ -94,9 +101,11 @@ export async function GET(req: NextRequest) {
       dims: main?.width && main?.height ? `${main.width}x${main.height}` : null,
       sizeMB: main ? (Number(main.sizeBytes) / 1048576).toFixed(2) : null,
       downloadUrl: main ? fileUrl(main.storageKey) : null,
+      coverLabel: cover ? (KIND_LABEL[cover.kind] ?? cover.kind) : null,
       cover: cover
         ? { thumb: fileUrl(cover.thumbKey), preview: fileUrl(cover.previewKey), original: fileUrl(cover.storageKey), status: cover.processingStatus }
         : null,
+      sides,
     };
   });
   const sellers = await cachedRoleUsers("seller");

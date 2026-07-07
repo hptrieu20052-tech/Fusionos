@@ -141,6 +141,8 @@ export const designFiles = pgTable("design_files", {
   id: uuid("id").primaryKey().defaultRandom(),
   designId: uuid("design_id").notNull().references(() => designs.id, { onDelete: "cascade" }),
   kind: fileKindEnum("kind").notNull(),
+  filename: text("filename"),
+  uploadedBy: uuid("uploaded_by").references(() => users.id),
   storageKey: text("storage_key").notNull(),
   thumbKey: text("thumb_key"),
   previewKey: text("preview_key"),

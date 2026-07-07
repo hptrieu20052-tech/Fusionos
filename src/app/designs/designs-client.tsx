@@ -4,7 +4,8 @@ import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-ran
 import { useLang } from "@/components/lang-provider";
 import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload } from "@/components/icons";
 
-type FileRow = { id: string; kind: string; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
+const KIND_VI: Record<string, string> = { design_front: "Mặt trước", design_back: "Mặt sau", mockup: "Mockup", video: "Video" };
+type FileRow = { id: string; kind: string; filename?: string | null; uploaderName?: string | null; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
 type Design = {
   id: string; skuCode: number; title: string; description: string | null; points: number;
   tags: string[]; personalize: boolean; personalization: string | null; productLink: string | null; note: string | null;
@@ -13,6 +14,8 @@ type Design = {
   sellerName: string | null; designerName: string | null; creatorName: string | null; storeName?: string | null;
   avgScore: number | null; dims: string | null; sizeMB: string | null; downloadUrl: string | null;
   filesCount: number; cover: { thumb: string | null; preview: string | null; original: string | null; status: string } | null;
+  coverLabel?: string | null;
+  sides?: { id: string; kind: string; label: string; thumb: string | null; original: string | null }[];
 };
 type Opt = { id: string; name: string };
 type Detail = {
@@ -89,7 +92,7 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
     const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf))).map((b) => b.toString(16).padStart(2, "0")).join("");
     const reg = await fetch("/api/designs/register-file", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ designId, kind, storageKey: tk.storageKey, sha256: hash, sizeBytes: file.size, contentType: file.type }),
+      body: JSON.stringify({ designId, kind, storageKey: tk.storageKey, sha256: hash, sizeBytes: file.size, contentType: file.type, filename: file.name }),
     }).then((r) => r.json());
     if (!reg.ok) throw new Error(reg.error ?? "register error");
     if (!reg.deduped) await fetch("/api/designs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileId: reg.file.id }) });
@@ -144,6 +147,7 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
         {designs.map((d) => (
           <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)} style={{ overflow: "hidden", cursor: "pointer" }}>
             <div className="dc-img checker">
+              {d.coverLabel && <span className="dc-side-badge">{d.coverLabel}</span>}
               {(d.cover?.thumb || d.cover?.preview) ? (
                 <img src={(d.cover.thumb ?? d.cover.preview)!} alt="" loading="lazy" decoding="async"
                   onError={(e) => {
@@ -164,6 +168,17 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
                 )}
               </div>
             </div>
+            {/* Các mặt khác (mặt sau, mockup…) — thumbnail nhỏ dưới chân ảnh */}
+            {d.sides && d.sides.length > 0 && (
+              <div className="dc-sides">
+                {d.sides.filter((s) => s.thumb).map((s) => (
+                  <div key={s.id} className="dc-side" title={s.label}>
+                    <div className="dc-side-img checker"><img src={s.thumb!} alt={s.label} loading="lazy" /></div>
+                    <span>{s.label}</span>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="dc-body">
               <div className="dc-top">
                 <span className="dc-id">
@@ -201,6 +216,15 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
   );
 }
 
+function AddTile({ label, onClick, busy }: { label: string; onClick: () => void; busy?: boolean }) {
+  return (
+    <button onClick={onClick} disabled={busy} className="file-cell add-tile" type="button">
+      <span className="add-plus">＋</span>
+      <span className="add-label">{busy ? "…" : label}</span>
+    </button>
+  );
+}
+
 function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }: {
   detail: Detail; canEdit: boolean; close: () => void; reload: () => void;
   reopen: (id: string) => void; flash: (m: string) => void;
@@ -216,9 +240,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     listed: d.listed,
   });
   const [tagInput, setTagInput] = useState("");
-  const [tab, setTab] = useState<"mockup" | "design" | "video">("mockup");
-  const [upFile, setUpFile] = useState<File | null>(null);
-  const [upKind, setUpKind] = useState("mockup");
+  const [tab, setTab] = useState<"mockup" | "design" | "video">("design");
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -247,12 +269,15 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
       flash(j.source === "ai" ? t("d.aiDone") : t("d.aiTemplate") + (j.hint ? " — " + j.hint : ""));
     } else flash("✗ " + (j.error ?? "Error"));
   };
-  const upload = async () => {
-    if (!upFile) return;
-    setBusy(true);
-    try { await doUpload(d.id, upFile, upKind); flash(t("d.uploaded")); setUpFile(null); if (fileRef.current) fileRef.current.value = ""; reopen(d.id); reload(); }
+  const pendingKind = useRef("mockup");
+  const [busyUp, setBusyUp] = useState(false);
+  const pickAndUpload = (kind: string) => { pendingKind.current = kind; fileRef.current?.click(); };
+  const onPicked = async (file: File) => {
+    setBusyUp(true);
+    try { await doUpload(d.id, file, pendingKind.current); flash(t("d.uploaded")); reopen(d.id); reload(); }
     catch (e) { flash("✗ " + (e as Error).message); }
-    setBusy(false);
+    setBusyUp(false);
+    if (fileRef.current) fileRef.current.value = "";
   };
   const delFile = async (fileId: string) => {
     if (!confirm(t("d.confirmDeleteFile"))) return;
@@ -357,43 +382,42 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               )}
             </div>
 
-            {filesOf(tab).length > 0 ? (
-              <div className="file-grid">
-                {filesOf(tab).map((x) => (
-                  <div key={x.id} className="file-cell checker">
+            <div className="file-grid">
+              {filesOf(tab).map((x) => (
+                <div key={x.id} className="file-item">
+                  <div className="file-cell checker">
+                    <span className="file-kind">{KIND_VI[x.kind] ?? x.kind}</span>
                     {x.thumbUrl || x.originalUrl
                       ? <img src={x.thumbUrl ?? x.originalUrl!} alt="" loading="lazy" />
                       : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</div>}
-                    <div className="file-ov">
-                      {x.originalUrl && <button className="dc-act" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, `${d.title}-${x.kind}`)}><IconDownload width={16} height={16} /></button>}
-                      {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="dc-act" title={t("d.viewOriginal")}><IconEyeOpen width={16} height={16} /></a>}
-                      {canEdit && <button onClick={() => delFile(x.id)} className="dc-act" title={t("c.delete")} style={{ color: "var(--red)" }}><IconTrash width={15} height={15} /></button>}
-                    </div>
                     <span className="file-badge">{x.width && x.height ? `${x.width}×${x.height} · ` : ""}{(x.sizeBytes / 1048576).toFixed(1)}MB</span>
                   </div>
-                ))}
-              </div>
-            ) : (
+                  <div className="file-cap">
+                    {x.filename && <div className="fn" title={x.filename}>{x.filename}</div>}
+                    <div className="kw">{KIND_VI[x.kind] ?? x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
+                    <div className="file-actions">
+                      {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
+                      {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
+                      {canEdit && <button className="fa-btn danger" title={t("c.delete")} onClick={() => delFile(x.id)}><IconTrash width={14} height={14} /></button>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {/* Ô ＋ upload theo tab */}
+              {canEdit && tab === "mockup" && <AddTile label="Mockup" busy={busyUp} onClick={() => pickAndUpload("mockup")} />}
+              {canEdit && tab === "video" && <AddTile label="Video" busy={busyUp} onClick={() => pickAndUpload("video")} />}
+              {canEdit && tab === "design" && <>
+                <AddTile label={KIND_VI.design_front} busy={busyUp} onClick={() => pickAndUpload("design_front")} />
+                <AddTile label={KIND_VI.design_back} busy={busyUp} onClick={() => pickAndUpload("design_back")} />
+              </>}
+            </div>
+            {filesOf(tab).length === 0 && !canEdit && (
               <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "6px 0 2px" }}>{t("d.noFiles")}</div>
             )}
-
-            {canEdit && (
-              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
-                <input ref={fileRef} type="file" onChange={(e) => setUpFile(e.target.files?.[0] ?? null)} style={{ display: "none" }} id="detail-file-input" />
-                <button onClick={() => fileRef.current?.click()} style={{ ...btnGhostBtn, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <IconUpload width={14} height={14} /> {t("d.chooseFile")}
-                </button>
-                <span style={{ fontSize: 12, color: upFile ? "var(--ink)" : "var(--muted)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {upFile ? upFile.name : "—"}
-                </span>
-                <select value={upKind} onChange={(e) => setUpKind(e.target.value)} style={{ ...inp, marginLeft: "auto" }}>
-                  {KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                </select>
-                <button onClick={upload} disabled={!upFile || busy} style={{ ...btnGhostGreen, opacity: !upFile || busy ? 0.5 : 1 }}>
-                  {busy ? t("d.uploading") : t("d.upload")}
-                </button>
-              </div>
-            )}
+            <input ref={fileRef} type="file"
+              accept={tab === "video" ? "video/*" : "image/*"}
+              onChange={(e) => { const file = e.target.files?.[0]; if (file) onPicked(file); }}
+              style={{ display: "none" }} />
           </div>
 
           {/* CỘT PHẢI */}
@@ -463,7 +487,6 @@ const btnDark: React.CSSProperties = { background: "#39404E", color: "#fff", bor
 const btnGreen: React.CSSProperties = { background: "var(--green)", color: "#fff", border: "none", borderRadius: 10, padding: "10px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
 const btnRed: React.CSSProperties = { background: "var(--red)", color: "#fff", border: "none", borderRadius: 10, padding: "10px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
 const btnGhostBlue: React.CSSProperties = { background: "#fff", color: "var(--blue)", border: "1px solid var(--blue)", borderRadius: 9, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" };
-const btnGhostGreen: React.CSSProperties = { background: "#fff", color: "var(--green)", border: "1px solid var(--green)", borderRadius: 9, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" };
 const btnGhostBtn: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 9, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" };
 const pgBtn: React.CSSProperties = { border: "1px solid var(--line)", background: "#fff", borderRadius: 9, minWidth: 32, height: 32, fontSize: 13, cursor: "pointer", color: "var(--ink)" };
 

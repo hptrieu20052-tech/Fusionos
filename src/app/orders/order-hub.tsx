@@ -8,6 +8,7 @@ type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
   design_id: string | null; design_sku: number | null; design_title: string | null; personalization: string | null;
   special_print: boolean; designThumb: string | null; mockupUrl: string | null;
+  designSides?: { kind: string; label: string; thumb: string | null; original: string | null }[];
   suggest: { designId: string; skuCode: number; title: string; thumb: string | null } | null;
 };
 type Order = {
@@ -453,18 +454,16 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
     orderLabel: o.order_label ?? "",
   });
 
-  useEffect(() => {
+  const loadDetail = useCallback(async () => {
     if (!canPushFf) return;
-    let active = true;
-    (async () => {
-      const j = await fetch(`/api/orders/${o.id}`).then((r) => r.json()).catch(() => null);
-      if (active && j?.ok) {
-        setDetail(j);
-        setShip((s) => ({ ...s, orderLabel: s.orderLabel || [`${(j.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-") }));
-      }
-    })();
-    return () => { active = false; };
+    const j = await fetch(`/api/orders/${o.id}`).then((r) => r.json()).catch(() => null);
+    if (j?.ok) {
+      setDetail(j);
+      setShip((s) => ({ ...s, orderLabel: s.orderLabel || [`${(j.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-") }));
+    }
   }, [o.id, o.external_id, canPushFf]);
+
+  useEffect(() => { loadDetail(); }, [loadDetail]);
 
   const variants: Variant[] = ffSel && detail ? (detail.catalog[ffSel] ?? []) : [];
   const pickFulfiller = (id: string) => {
@@ -524,14 +523,20 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                 <span className="o2-chip seller">{o.seller_name ?? "—"}</span>
                 {o.store_name && <span className="o2-chip">{o.store_name}</span>}
               </div>
-              <div className="o2-buyer">{[o.buyer_first, o.buyer_last].filter(Boolean).join(" ") || "—"}</div>
-              <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ")}</span></div>
+              {/* Người nhận + địa chỉ */}
+              {([o.buyer_first, o.buyer_last].filter(Boolean).join(" ")) && (
+                <div className="o2-buyer">{[o.buyer_first, o.buyer_last].filter(Boolean).join(" ")}</div>
+              )}
+              <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ") || t("o.noAddress")}</span></div>
+              {/* Tài chính đơn */}
               <div className="o2-fin">
                 <div className="c"><span className="k">{t("o.total")}</span><span className="v">{money(o.total)}</span></div>
                 <div className="c"><span className="k">{t("o.fee")}</span><span className="v">{money(o.platform_fee)}</span></div>
                 <div className="c net"><span className="k">{t("o.afterFee")}</span><span className="v">{money(Number(o.total) - Number(o.platform_fee))}</span></div>
               </div>
-              <OrderNote order={o} canEdit={canEdit} onSaved={reload} flash={flash} />
+              {/* Vùng thao tác: ghi chú + tracking/chi phí */}
+              <div className="o2-actions">
+                <OrderNote order={o} canEdit={canEdit} onSaved={reload} flash={flash} />
               {/* Tracking / chi phí — hiện dữ liệu đã có + cho nhập tay */}
               {canPushFf && detail && (
                 <div className="o2-track">
@@ -561,13 +566,14 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                       )}
                     </div>
                   ))}
-                  <ManualTracking orderId={o.id}
+                  <ManualTracking key={(detail.ffOrders ?? [])[0]?.id ?? "new"} orderId={o.id}
                     ff={(detail.ffOrders ?? [])[0]}
                     fulfillerId={ffSel || (detail.ffOrders ?? [])[0]?.fulfillerId || ""}
                     fulfillers={fulfillers}
-                    flash={flash} onSaved={reload} />
+                    flash={flash} onSaved={() => { loadDetail(); reload(); }} />
                 </div>
               )}
+              </div>
             </div>
 
             {/* CỘT 2+3 — form giao hàng + nhãn/tạo đơn */}
@@ -703,12 +709,23 @@ function ItemRow({ it, onSaved, flash }: {
           )}
         </div>
 
-        {/* Preview design đã gán */}
-        {it.design_id && it.designThumb && (
+        {/* Preview design đã gán — hiện đủ các mặt */}
+        {it.design_id && (it.designSides?.filter((s) => s.thumb).length ?? 0) > 0 ? (
+          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            {it.designSides!.filter((s) => s.thumb).map((s, idx) => (
+              <div key={idx} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                <div className="o2-dpreview checker" style={{ width: 96, marginTop: 0 }} onClick={() => setZoom(s.original ?? s.thumb)} title={s.label + " — click xem to"}>
+                  <img src={s.thumb!} alt={s.label} />
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)" }}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+        ) : it.design_id && it.designThumb ? (
           <div className="o2-dpreview checker" onClick={() => setZoom(it.designThumb)} title="Click để xem to">
             <img src={it.designThumb} alt="" />
           </div>
-        )}
+        ) : null}
         {it.design_id && <div className="o2-dcap">#{it.design_sku} — {it.design_title}</div>}
 
         {/* Gợi ý khi chưa gán */}

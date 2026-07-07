@@ -17,6 +17,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   if (!d) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
   const files = await db.select().from(schema.designFiles).where(eq(schema.designFiles.designId, d.id));
+  const uploaderIds = Array.from(new Set(files.map((f) => f.uploadedBy).filter(Boolean))) as string[];
+  const uploaders = uploaderIds.length
+    ? (await db.execute(sql`SELECT id, full_name FROM users WHERE id IN (${sql.join(uploaderIds.map((x) => sql`${x}::uuid`), sql`, `)})`)).rows as { id: string; full_name: string }[]
+    : [];
+  const uMap = new Map(uploaders.map((u) => [u.id, u.full_name]));
   const names = await db.execute(sql`
     SELECT
       (SELECT full_name FROM users WHERE id = ${d.designerId ?? null}::uuid) AS designer,
@@ -36,7 +41,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   return NextResponse.json({
     ok: true,
     design: { ...d, designerName: n.designer, sellerName: n.seller, creatorName: n.creator, storeName: n.store },
-    files: files.map((f) => ({ ...f, sizeBytes: Number(f.sizeBytes), thumbUrl: fileUrl(f.thumbKey), previewUrl: fileUrl(f.previewKey), originalUrl: fileUrl(f.storageKey) })),
+    files: files.map((f) => ({ ...f, sizeBytes: Number(f.sizeBytes), thumbUrl: fileUrl(f.thumbKey), previewUrl: fileUrl(f.previewKey), originalUrl: fileUrl(f.storageKey), uploaderName: f.uploadedBy ? (uMap.get(f.uploadedBy) ?? null) : null })),
     ordersGenerated: orders.rows[0] as { c: number; items: number },
     avgScore: Number((score.rows[0] as { s: string | null }).s ?? 0),
     reviewCount: (score.rows[0] as { c: number }).c,
