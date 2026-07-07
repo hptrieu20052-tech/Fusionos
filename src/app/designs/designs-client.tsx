@@ -4,7 +4,7 @@ import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-ran
 import { useLang } from "@/components/lang-provider";
 import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload, IconRefresh } from "@/components/icons";
 
-const KIND_VI: Record<string, string> = { design_front: "Mặt trước", design_back: "Mặt sau", mockup: "Mockup", video: "Video" };
+const KIND_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 type FileRow = { id: string; kind: string; filename?: string | null; uploaderName?: string | null; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
 type Design = {
   id: string; skuCode: number; title: string; description: string | null; points: number;
@@ -14,7 +14,7 @@ type Design = {
   sellerName: string | null; designerName: string | null; creatorName: string | null; storeName?: string | null;
   avgScore: number | null; dims: string | null; sizeMB: string | null; downloadUrl: string | null;
   filesCount: number; cover: { thumb: string | null; preview: string | null; original: string | null; status: string } | null;
-  coverLabel?: string | null;
+  coverLabel?: string | null; coverKind?: string | null;
   sides?: { id: string; kind: string; label: string; thumb: string | null; original: string | null }[];
 };
 type Opt = { id: string; name: string };
@@ -147,7 +147,7 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
         {designs.map((d) => (
           <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)} style={{ overflow: "hidden", cursor: "pointer" }}>
             <div className="dc-img checker">
-              {d.coverLabel && <span className="dc-side-badge">{d.coverLabel}</span>}
+              {d.coverLabel && <span className="dc-side-badge">{(d.coverKind ? t(KIND_KEY[d.coverKind]) : "") || d.coverLabel}</span>}
               {(d.cover?.thumb || d.cover?.preview) ? (
                 <img src={(d.cover.thumb ?? d.cover.preview)!} alt="" loading="lazy" decoding="async"
                   onError={(e) => {
@@ -172,9 +172,9 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
             {d.sides && d.sides.length > 0 && (
               <div className="dc-sides">
                 {d.sides.filter((s) => s.thumb).map((s) => (
-                  <div key={s.id} className="dc-side" title={s.label}>
-                    <div className="dc-side-img checker"><img src={s.thumb!} alt={s.label} loading="lazy" /></div>
-                    <span>{s.label}</span>
+                  <div key={s.id} className="dc-side" title={t(KIND_KEY[s.kind]) || s.label}>
+                    <div className="dc-side-img checker"><img src={s.thumb!} alt={t(KIND_KEY[s.kind]) || s.label} loading="lazy" /></div>
+                    <span>{t(KIND_KEY[s.kind]) || s.label}</span>
                   </div>
                 ))}
               </div>
@@ -285,9 +285,9 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     if (j.ok) { flash(t("d.fileDeleted")); reopen(d.id); } else flash("✗ " + (j.error ?? "Error"));
   };
   const retryFile = async (fileId: string) => {
-    flash("Đang xử lý lại…");
+    flash(t("d.retrying"));
     const j = await fetch("/api/designs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileId }) }).then((r) => r.json());
-    if (j.ok) { flash("✓ Đã tạo thumbnail"); reopen(d.id); } else flash("✗ " + (j.error ?? "Lỗi xử lý"));
+    if (j.ok) { flash(t("d.thumbCreated")); reopen(d.id); } else flash("✗ " + (j.error ?? "Error"));
   };
   const downloadAll = (rows: FileRow[]) => rows.forEach((x, i) => x.originalUrl && setTimeout(() => forceDownload(x.originalUrl!, `${d.title}-${x.kind}-${i + 1}`), i * 400));
   const copy = (v: string) => { navigator.clipboard?.writeText(v); flash(t("d.copied")); };
@@ -394,7 +394,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {filesOf(tab).map((x) => (
                 <div key={x.id} className="file-item">
                   <div className="file-cell checker">
-                    <span className="file-kind">{KIND_VI[x.kind] ?? x.kind}</span>
+                    <span className="file-kind">{t(KIND_KEY[x.kind]) || x.kind}</span>
                     {x.thumbUrl || x.originalUrl
                       ? <img src={x.thumbUrl ?? x.originalUrl!} alt="" loading="lazy" />
                       : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</div>}
@@ -402,11 +402,11 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   </div>
                   <div className="file-cap">
                     {x.filename && <div className="fn" title={x.filename}>{x.filename}</div>}
-                    <div className="kw">{KIND_VI[x.kind] ?? x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
+                    <div className="kw">{t(KIND_KEY[x.kind]) || x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
                     <div className="file-actions">
                       {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
                       {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
-                      {x.processingStatus === "failed" && <button className="fa-btn" title="Thử lại tạo thumbnail" style={{ color: "var(--amber)" }} onClick={() => retryFile(x.id)}><IconRefresh width={14} height={14} /></button>}
+                      {x.processingStatus === "failed" && <button className="fa-btn" title={t("d.retryThumb")} style={{ color: "var(--amber)" }} onClick={() => retryFile(x.id)}><IconRefresh width={14} height={14} /></button>}
                       {canEdit && <button className="fa-btn danger" title={t("c.delete")} onClick={() => delFile(x.id)}><IconTrash width={14} height={14} /></button>}
                     </div>
                   </div>
@@ -416,8 +416,8 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {canEdit && tab === "mockup" && <AddTile label="Mockup" busy={busyUp} onClick={() => pickAndUpload("mockup")} />}
               {canEdit && tab === "video" && <AddTile label="Video" busy={busyUp} onClick={() => pickAndUpload("video")} />}
               {canEdit && tab === "design" && <>
-                {!detail.files.some((x) => x.kind === "design_front") && <AddTile label={KIND_VI.design_front} busy={busyUp} onClick={() => pickAndUpload("design_front")} />}
-                {!detail.files.some((x) => x.kind === "design_back") && <AddTile label={KIND_VI.design_back} busy={busyUp} onClick={() => pickAndUpload("design_back")} />}
+                {!detail.files.some((x) => x.kind === "design_front") && <AddTile label={t("d.kindFront")} busy={busyUp} onClick={() => pickAndUpload("design_front")} />}
+                {!detail.files.some((x) => x.kind === "design_back") && <AddTile label={t("d.kindBack")} busy={busyUp} onClick={() => pickAndUpload("design_back")} />}
               </>}
             </div>
             {filesOf(tab).length === 0 && !canEdit && (
@@ -449,7 +449,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   </span>
                 ))}
               </div>
-              {canEdit && <input placeholder={f.tags.length >= 13 ? "Đã đủ 13 tag" : t("d.addTag")} value={tagInput} maxLength={20}
+              {canEdit && <input placeholder={f.tags.length >= 13 ? t("d.tagsFull") : t("d.addTag")} value={tagInput} maxLength={20}
                 disabled={f.tags.length >= 13}
                 onChange={(e) => setTagInput(e.target.value.slice(0, 20))}
                 onKeyDown={(e) => {

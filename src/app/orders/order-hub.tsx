@@ -28,6 +28,7 @@ const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
   completed: "#5E86C9", has_issues: "#C06B82", trash: "#BBA054",
 };
+const SIDE_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 const money = (n: number | string) => "$" + Number(n).toFixed(2);
 // Link tra cứu tracking theo hãng vận chuyển
 function trackingUrl(carrier: string | null, num: string): string {
@@ -425,8 +426,8 @@ function ManualTracking({ orderId, ff, fulfillerId, fulfillers, flash, onSaved }
         <div><label style={lab}>{t("o.carrier")}</label><input value={v.trackingCarrier} onChange={(e) => setV({ ...v, trackingCarrier: e.target.value })} placeholder="USPS / UPS…" style={fld} /></div>
         <div><label style={lab}>{t("o.tracking")}</label><input value={v.trackingNumber} onChange={(e) => setV({ ...v, trackingNumber: e.target.value })} style={fld} /></div>
       </div>
-      <div><label style={lab}>{t("o.trackLink")} (tùy chọn)</label><input value={v.trackingUrl} onChange={(e) => setV({ ...v, trackingUrl: e.target.value })} placeholder="https://…" style={fld} /></div>
-      <div><label style={lab}>{t("o.supplierOrderLink")}</label><input value={v.supplierOrderUrl} onChange={(e) => setV({ ...v, supplierOrderUrl: e.target.value })} placeholder="Link đơn trên trang nhà cung cấp…" style={fld} /></div>
+      <div><label style={lab}>{t("o.trackLink")} ({t("o.optional")})</label><input value={v.trackingUrl} onChange={(e) => setV({ ...v, trackingUrl: e.target.value })} placeholder="https://…" style={fld} /></div>
+      <div><label style={lab}>{t("o.supplierOrderLink")}</label><input value={v.supplierOrderUrl} onChange={(e) => setV({ ...v, supplierOrderUrl: e.target.value })} placeholder={t("o.supplierLinkPh")} style={fld} /></div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div><label style={lab}>{t("o.baseCost")} ($)</label><input type="number" step="0.01" value={v.baseCost} onChange={(e) => setV({ ...v, baseCost: e.target.value })} style={fld} /></div>
         <div><label style={lab}>{t("o.shipFee")} ($)</label><input type="number" step="0.01" value={v.shipCost} onChange={(e) => setV({ ...v, shipCost: e.target.value })} style={fld} /></div>
@@ -461,7 +462,19 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
     const j = await fetch(`/api/orders/${o.id}`).then((r) => r.json()).catch(() => null);
     if (j?.ok) {
       setDetail(j);
-      setShip((s) => ({ ...s, orderLabel: s.orderLabel || [`${(j.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-") }));
+      const od = j.order ?? {};
+      setShip((s) => ({
+        // Tự đổ thông tin người nhận + địa chỉ (gồm Apt/Box ở line 2) từ đơn sang form
+        buyerFirst: s.buyerFirst || (od.buyerFirst ?? ""),
+        buyerLast: s.buyerLast || (od.buyerLast ?? ""),
+        addr1: s.addr1 || (od.addr1 ?? ""),
+        addr2: s.addr2 || (od.addr2 ?? ""),
+        city: s.city || (od.city ?? ""),
+        state: s.state || (od.state ?? ""),
+        zip: s.zip || (od.zip ?? ""),
+        country: s.country || (od.country ?? "United States"),
+        orderLabel: s.orderLabel || [`${(j.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-"),
+      }));
     }
   }, [o.id, o.external_id, canPushFf]);
 
@@ -498,10 +511,10 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
     if (j.ok) { flash(t("o.pushed")); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
 
-  const F = (k: keyof typeof ship, label: string) => (
+  const F = (k: keyof typeof ship, label: string, placeholder?: string) => (
     <div className="o2-field">
       <label>{label}</label>
-      <input value={ship[k]} disabled={!canEdit} onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
+      <input value={ship[k]} disabled={!canEdit} placeholder={placeholder} onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
         style={{ ...inp, opacity: canEdit ? 1 : 0.65 }} />
     </div>
   );
@@ -509,12 +522,11 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
   return (
     <div className="card o2">
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-        <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: 1, minWidth: 0 }}>
-          {canEdit && <input type="checkbox" checked={selected} onChange={onToggleSel} style={{ width: 17, height: 17, marginTop: 3, cursor: "pointer", accentColor: "var(--blue)", flexShrink: 0 }} />}
-          <div className={`o2-top${canPushFf && detail ? "" : " solo"}`} style={{ flex: 1, minWidth: 0 }}>
+        <div className={`o2-top${canPushFf && detail ? "" : " solo"}`} style={{ flex: 1, minWidth: 0 }}>
             {/* CỘT 1 — thông tin đơn */}
             <div className="o2-info">
               <div className="o2-l1">
+                {canEdit && <input type="checkbox" checked={selected} onChange={onToggleSel} style={{ width: 17, height: 17, cursor: "pointer", accentColor: "var(--blue)", flexShrink: 0 }} />}
                 <span className="o2-num">#{o.external_id}</span>
                 <button className="icon-btn" title={t("d.copy") + " ID"} onClick={() => copyText(o.external_id)}><IconCopy width={12} height={12} /></button>
                 <span className="o2-status" style={{ background: STATUS_COLORS[o.status] ?? "#6B7280" }}>{o.status.toUpperCase()}</span>
@@ -614,7 +626,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                     {F("buyerFirst", t("o.firstName"))}
                     {F("buyerLast", t("o.lastName"))}
                     {F("addr1", t("o.addr1"))}
-                    {F("addr2", t("o.addr2"))}
+                    {F("addr2", t("o.addr2"), "Apt / Suite / Box…")}
                     {F("city", t("o.city"))}
                     {F("zip", t("o.zip"))}
                     {F("country", t("o.country"))}
@@ -649,7 +661,6 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
               </>
             )}
           </div>
-        </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
           {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
           {canEdit && <button onClick={() => cloneOrder(o.id)} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
@@ -698,7 +709,7 @@ function ItemRow({ it, onSaved, flash }: {
   return (
     <div className="o2-item">
       {zoom && <Lightbox src={zoom} onClose={() => setZoom(null)} />}
-      <div className="o2-thumb" onClick={() => img && setZoom(img)} style={img ? { cursor: "zoom-in" } : undefined} title={img ? "Click để xem to / Click to enlarge" : undefined}>
+      <div className="o2-thumb" onClick={() => img && setZoom(img)} style={img ? { cursor: "zoom-in" } : undefined} title={img ? t("o.clickEnlarge") : undefined}>
         {img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
@@ -733,15 +744,15 @@ function ItemRow({ it, onSaved, flash }: {
           <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
             {it.designSides!.filter((s) => s.thumb).map((s, idx) => (
               <div key={idx} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                <div className="o2-dpreview checker" style={{ width: 96, marginTop: 0 }} onClick={() => setZoom(s.original ?? s.thumb)} title={s.label + " — click xem to"}>
-                  <img src={s.thumb!} alt={s.label} />
+                <div className="o2-dpreview checker" style={{ width: 96, marginTop: 0 }} onClick={() => setZoom(s.original ?? s.thumb)} title={(t(SIDE_KEY[s.kind]) || s.label) + " · " + t("o.clickEnlarge")}>
+                  <img src={s.thumb!} alt={t(SIDE_KEY[s.kind]) || s.label} />
                 </div>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)" }}>{s.label}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)" }}>{t(SIDE_KEY[s.kind]) || s.label}</span>
               </div>
             ))}
           </div>
         ) : it.design_id && it.designThumb ? (
-          <div className="o2-dpreview checker" onClick={() => setZoom(it.designThumb)} title="Click để xem to">
+          <div className="o2-dpreview checker" onClick={() => setZoom(it.designThumb)} title={t("o.clickEnlarge")}>
             <img src={it.designThumb} alt="" />
           </div>
         ) : null}
@@ -752,7 +763,7 @@ function ItemRow({ it, onSaved, flash }: {
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 6 }}>{t("o.suggestDesigns")}</div>
             {it.suggest.thumb && (
-              <div className="o2-dpreview checker" onClick={() => setZoom(it.suggest!.thumb)} title="Click để xem to">
+              <div className="o2-dpreview checker" onClick={() => setZoom(it.suggest!.thumb)} title={t("o.clickEnlarge")}>
                 <img src={it.suggest.thumb} alt="" />
               </div>
             )}
@@ -768,6 +779,7 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
   close: () => void; reload: () => void; flash: (m: string) => void;
   sellers: { id: string; name: string }[]; stores: { id: string; name: string }[];
 }) {
+  const { t } = useLang();
   const [f, setF] = useState({
     platform: "etsy", externalId: "", storeId: "", sellerId: "",
     buyerFirst: "", buyerLast: "", addr1: "", addr2: "", city: "", state: "", zip: "", country: "United States",
@@ -804,7 +816,7 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
           <select value={f.platform} onChange={(e) => set("platform", e.target.value)} style={inp}>
             <option value="etsy">Etsy</option><option value="amazon">Amazon</option><option value="tiktok">TikTok</option>
           </select>
-          {I("externalId", "Mã đơn (trống = tự sinh)")}
+          {I("externalId", t("co.externalId"))}
           <select value={f.storeId} onChange={(e) => set("storeId", e.target.value)} style={inp}>
             <option value="">— Store —</option>
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -816,21 +828,21 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
             </select>
           )}
           {I("total", "Total ($)")}
-          {I("platformFee", "Fee sàn ($)")}
+          {I("platformFee", t("co.platformFee"))}
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, margin: "14px 0 8px" }}>Người nhận</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-          {I("buyerFirst", "Tên")}{I("buyerLast", "Họ")}{I("addr1", "Địa chỉ 1")}
-          {I("addr2", "Địa chỉ 2")}{I("city", "Thành phố")}{I("state", "Bang")}
-          {I("zip", "ZIP")}{I("country", "Quốc gia")}
+          {I("buyerFirst", t("co.first"))}{I("buyerLast", t("co.last"))}{I("addr1", t("co.addr1"))}
+          {I("addr2", t("co.addr2"))}{I("city", t("co.city"))}{I("state", t("co.state"))}
+          {I("zip", t("co.zip"))}{I("country", t("co.country"))}
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, margin: "14px 0 8px" }}>Sản phẩm</div>
         {items.map((it, i) => (
           <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 70px 90px 34px", gap: 8, marginBottom: 8 }}>
-            <input value={it.productTitle} placeholder="Tên sản phẩm *" onChange={(e) => setIt(i, "productTitle", e.target.value)} style={inp} />
-            <input value={it.internalSku} placeholder="SKU nội bộ" onChange={(e) => setIt(i, "internalSku", e.target.value)} style={inp} />
+            <input value={it.productTitle} placeholder={t("co.productTitle")} onChange={(e) => setIt(i, "productTitle", e.target.value)} style={inp} />
+            <input value={it.internalSku} placeholder={t("co.internalSku")} onChange={(e) => setIt(i, "internalSku", e.target.value)} style={inp} />
             <input type="number" min={1} value={it.qty} onChange={(e) => setIt(i, "qty", Number(e.target.value))} style={inp} />
-            <input value={it.unitPrice} placeholder="Giá" onChange={(e) => setIt(i, "unitPrice", e.target.value)} style={inp} />
+            <input value={it.unitPrice} placeholder={t("co.price")} onChange={(e) => setIt(i, "unitPrice", e.target.value)} style={inp} />
             <button onClick={() => setItems(items.filter((_, j) => j !== i))} disabled={items.length === 1}
               style={{ ...btnGhost, padding: "4px 0", opacity: items.length === 1 ? 0.4 : 1 }}>✕</button>
           </div>
@@ -839,7 +851,7 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
           <button onClick={close} style={btnGhost}>Huỷ</button>
           <button onClick={submit} disabled={busy || !items.some((x) => x.productTitle.trim())}
-            style={{ ...btnBlue, opacity: busy || !items.some((x) => x.productTitle.trim()) ? 0.6 : 1 }}>{busy ? "Đang tạo…" : "Tạo đơn"}</button>
+            style={{ ...btnBlue, opacity: busy || !items.some((x) => x.productTitle.trim()) ? 0.6 : 1 }}>{busy ? t("co.creating") : t("co.createOrder")}</button>
         </div>
       </div>
     </div>

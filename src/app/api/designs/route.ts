@@ -102,6 +102,7 @@ export async function GET(req: NextRequest) {
       sizeMB: main ? (Number(main.sizeBytes) / 1048576).toFixed(2) : null,
       downloadUrl: main ? fileUrl(main.storageKey) : null,
       coverLabel: cover && cover.kind !== "design_front" ? (KIND_LABEL[cover.kind] ?? cover.kind) : null,
+      coverKind: cover && cover.kind !== "design_front" ? cover.kind : null,
       cover: cover
         ? { thumb: fileUrl(cover.thumbKey), preview: fileUrl(cover.previewKey), original: fileUrl(cover.storageKey), status: cover.processingStatus }
         : null,

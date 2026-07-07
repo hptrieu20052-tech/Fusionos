@@ -30,7 +30,7 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
     fetch(`/api/dashboard?${p}`).then((r) => r.json()).then((j) => { if (j.ok) setKpi(j); });
   }, [range, f, t, ready]);
 
-  const delta = (cur: number, prev: number | null, label = "kỳ trước") => {
+  const delta = (cur: number, prev: number | null, label = tr("db.prevPeriod")) => {
     if (prev === null) return <div className="d" style={{ color: "var(--faint)" }}>— chưa có dữ liệu {label}</div>;
     if (prev === 0) return <div className="d" style={{ color: "var(--faint)" }}>mới so với {label}</div>;
     const d = ((cur - prev) / prev) * 100;

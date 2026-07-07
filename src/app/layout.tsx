@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const lang = ((await cookies()).get("fusion_lang")?.value === "en" ? "en" : "vi") as Lang;
   const session = await getSession();
-  const [orders, stores, designs, , , settings] = session
+  const [orders, stores, designs, ff, finance, settings] = session
     ? await Promise.all([
         can(session, "orders"), can(session, "stores"), can(session, "designs"),
         can(session, "fulfillment"), can(session, "finance"), can(session, "settings"),
@@ -28,11 +28,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     ...(orders ? [{ href: "/orders", label: "nav.orders", icon: "orders", section: "Vận hành" }] : []),
     ...(designs ? [{ href: "/designs", label: "nav.designs", icon: "designs", section: "Vận hành" }] : []),
     // Tạm ẩn — bật lại sau khi lên plan:
-    // ...(ff ? [{ href: "/fulfillment", label: "nav.fulfillment", icon: "fulfillment", section: "Vận hành" }] : []),
-    // ...(designs ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Vận hành" }] : []),
-    // ...(orders ? [{ href: "/stats/orders", label: "nav.statsOrders", icon: "statsOrders", section: "Thống kê" }] : []),
-    // ...(designs ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Thống kê" }] : []),
-    // ...(finance ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Thống kê" }] : []),
+    ...(ff ? [{ href: "/fulfillment", label: "nav.fulfillment", icon: "fulfillment", section: "Vận hành" }] : []),
+    ...(designs ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Vận hành" }] : []),
+    ...(orders ? [{ href: "/stats/orders", label: "nav.statsOrders", icon: "statsOrders", section: "Thống kê" }] : []),
+    ...(designs ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Thống kê" }] : []),
+    ...(finance ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Thống kê" }] : []),
     ...(orders ? [{ href: "/supplier-report", label: "nav.supplierReport", icon: "statsOrders", section: "Thống kê" }] : []),
     ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "Hệ thống" }] : []),
     ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "Hệ thống" }] : []),

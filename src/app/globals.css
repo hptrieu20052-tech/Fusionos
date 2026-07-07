@@ -16,7 +16,7 @@ a{color:inherit;text-decoration:none}
 .wrap{max-width:1340px;margin:0 auto;padding:22px 26px 60px}
 h1{font-size:20px;font-weight:800}
 .sub{color:var(--muted);font-size:12.5px;margin-top:2px}
-.panel{background:var(--card);border-radius:var(--r);padding:18px 20px;box-shadow:var(--sh);margin-top:22px;border:1px solid var(--line)}
+.panel{background:var(--card);border-radius:var(--r);padding:18px 20px;box-shadow:var(--sh);margin-top:22px;border:1px solid var(--line);border-top:3px solid var(--blue)}
 .card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);border:1px solid var(--line)}
 .section{margin-top:26px}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:0}

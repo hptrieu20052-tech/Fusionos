@@ -12,7 +12,7 @@ type Store = {
 };
 type Opt = { id: string; name: string };
 
-const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["other", "Khác"]];
+const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["other", "Other"]];
 const CONNECT: [string, string][] = [["extension", "Chrome Extension"], ["api", "API"], ["excel", "Excel Import"]];
 const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 // Field credentials theo từng sàn
@@ -44,7 +44,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
   const delStore = async (s: Store) => {
     if (!confirm(`Xóa store "${s.name}"? Đơn & design của store sẽ được gỡ liên kết (không xóa), thao tác này không hoàn tác.`)) return;
     const j = await fetch(`/api/stores/${s.id}`, { method: "DELETE" }).then((r) => r.json());
-    if (j.ok) { flash("✓ Đã xóa store"); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("st.deletedStore")); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
   };
 
   const byMk = (mk: string) => stores.filter((s) => s.marketplace === mk);
@@ -111,15 +111,15 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
                     </span>
                     {canAdd && (
                       <span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
-                        {s.storeUrl && <a href={s.storeUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="st-iconbtn" title="Mở link shop"><IconLink width={14} height={14} /></a>}
-                        <button onClick={() => setEdit(s)} className="st-iconbtn" title="Cài đặt store"><IconSettings width={15} height={15} /></button>
-                        <button onClick={() => delStore(s)} className="st-iconbtn danger" title="Xóa store"><IconTrash width={14} height={14} /></button>
+                        {s.storeUrl && <a href={s.storeUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="st-iconbtn" title={t("st.openShop")}><IconLink width={14} height={14} /></a>}
+                        <button onClick={() => setEdit(s)} className="st-iconbtn" title={t("st.editStore")}><IconSettings width={15} height={15} /></button>
+                        <button onClick={() => delStore(s)} className="st-iconbtn danger" title={t("st.deleteStore")}><IconTrash width={14} height={14} /></button>
                       </span>
                     )}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 3 }}>
                     {s.sellerName ?? "—"} · {CONNECT.find(([k]) => k === s.connectMethod)?.[1] ?? s.connectMethod}
-                    {s.connectMethod === "api" && (s.hasCredentials ? " · 🔑 đã cấu hình" : " · ⚠ chưa có API")}
+                    {s.connectMethod === "api" && (s.hasCredentials ? ` · 🔑 ${t("st.apiSet")}` : ` · ⚠ ${t("st.noApi")}`)}
                   </div>
                   <div style={{ fontSize: 13 }}>
                     <b>{s.orders30d}</b> đơn · <b style={{ color: "var(--green)" }}>{money(s.revenue30d)}</b> <span style={{ color: "var(--muted)" }}>/ 30d</span>
@@ -142,31 +142,37 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
 }
 
 function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
+  const { t } = useLang();
   const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "", storeUrl: "" });
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     if (!f.name.trim()) return;
     setBusy(true);
-    const j = await fetch("/api/stores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) }).then((r) => r.json());
+    try {
+      const r = await fetch("/api/stores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+      const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
+      if (j.ok) { flash(t("st.addedStore")); reload(); close(); return; }
+      flash("✗ " + (j.error ?? "Error"));
+    } catch (e) { flash("✗ " + (e as Error).message); }
     setBusy(false);
-    if (j.ok) { flash("✓ Đã thêm store"); reload(); close(); } else flash("✗ " + (j.error ?? "Lỗi"));
   };
   return (
-    <Modal title="Thêm store mới" close={close}>
-      <L label="Tên store"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: gymwear.us" style={inp} /></L>
+    <Modal title={t("st.addStoreNew")} close={close}>
+      <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: gymwear.us" style={inp} /></L>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <L label="Sàn"><select value={f.marketplace} onChange={(e) => setF({ ...f, marketplace: e.target.value })} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
-        <L label="Kết nối"><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => setF({ ...f, marketplace: e.target.value })} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={t("st.connect")}><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
-      <L label="Seller phụ trách"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
-      <L label="Link shop"><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
-      <L label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
-      <Actions close={close} onOk={submit} busy={busy} okLabel="Thêm store" disabled={!f.name.trim()} />
+      <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
+      <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
+      <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
+      <Actions close={close} onOk={submit} busy={busy} okLabel={t("st.addStore")} disabled={!f.name.trim()} />
     </Modal>
   );
 }
 
 function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store; sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
+  const { t } = useLang();
   const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "" });
   const [cred, setCred] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -177,9 +183,13 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
     setBusy(true);
     const body: Record<string, unknown> = { ...f };
     if (Object.keys(cred).length) body.credentials = cred;
-    const j = await fetch(`/api/stores/${store.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+    try {
+      const r = await fetch(`/api/stores/${store.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
+      if (j.ok) { flash(t("st.savedStore")); reload(); close(); return; }
+      flash("✗ " + (j.error ?? "Error"));
+    } catch (e) { flash("✗ " + (e as Error).message); }
     setBusy(false);
-    if (j.ok) { flash("✓ Đã lưu store"); reload(); close(); } else flash("✗ " + (j.error ?? "Lỗi"));
   };
   const check = async () => {
     setBusy(true);
@@ -191,20 +201,20 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
   return (
     <Modal title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk={store.marketplace} size={22} /> {store.name}</span>} close={close}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <L label="Tên store"><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={inp} /></L>
-        <L label="Trạng thái"><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}><option value="active">Active</option><option value="warning">Warning</option><option value="suspended">Suspended</option><option value="pending">Pending</option></select></L>
+        <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={inp} /></L>
+        <L label={t("st.status")}><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}><option value="active">Active</option><option value="warning">Warning</option><option value="suspended">Suspended</option><option value="pending">Pending</option></select></L>
         <L label="Seller"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
-        <L label="Kết nối"><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={t("st.connect")}><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
-      <L label="Link shop"><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
-      <L label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
+      <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
+      <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
 
       {/* Setup API */}
       {f.connectMethod === "api" && (
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <b style={{ fontSize: 13.5 }}>Cấu hình API</b>
-            {store.hasCredentials && <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}>🔑 đã có: {store.credentialKeys.join(", ")}</span>}
+            {store.hasCredentials && <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}>`🔑 ${t("st.apiHas")}:` {store.credentialKeys.join(", ")}</span>}
             <button onClick={check} disabled={busy} style={{ ...btnGhost, marginLeft: "auto", fontSize: 12 }}>Check kết nối</button>
           </div>
           {health && (
@@ -215,7 +225,7 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {fields.map(([k, label]) => (
               <L key={k} label={label}>
-                <input type="password" placeholder={store.credentialKeys.includes(k) ? "••• (đã lưu, để trống nếu giữ)" : "nhập giá trị"}
+                <input type="password" placeholder={store.credentialKeys.includes(k) ? t("st.savedKept") : t("st.enterValue")}
                   onChange={(e) => setCred({ ...cred, [k]: e.target.value })} style={inp} autoComplete="off" />
               </L>
             ))}
@@ -223,7 +233,7 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Credentials được mã hoá lưu server, không bao giờ hiển thị lại. Để trống field = giữ giá trị cũ.</div>
         </div>
       )}
-      <Actions close={close} onOk={save} busy={busy} okLabel="Lưu store" />
+      <Actions close={close} onOk={save} busy={busy} okLabel={t("st.saveStore")} />
     </Modal>
   );
 }
@@ -245,10 +255,11 @@ function L({ label, children }: { label: string; children: React.ReactNode }) {
   return <label style={{ display: "block", marginBottom: 12 }}><span style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted)", display: "block", marginBottom: 5 }}>{label}</span>{children}</label>;
 }
 function Actions({ close, onOk, busy, okLabel, disabled }: { close: () => void; onOk: () => void; busy: boolean; okLabel: string; disabled?: boolean }) {
+  const { t } = useLang();
   return (
     <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
-      <button onClick={close} style={btnGhost}>Huỷ</button>
-      <button onClick={onOk} disabled={busy || disabled} className="btn btn-primary" style={{ opacity: busy || disabled ? 0.6 : 1 }}>{busy ? "Đang lưu…" : okLabel}</button>
+      <button onClick={close} style={btnGhost}>{t("c.cancel")}</button>
+      <button onClick={onOk} disabled={busy || disabled} className="btn btn-primary" style={{ opacity: busy || disabled ? 0.6 : 1 }}>{busy ? t("st.saving") : okLabel}</button>
     </div>
   );
 }
