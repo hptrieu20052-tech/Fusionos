@@ -25,6 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     trackingNumber: (b.trackingNumber ?? "").trim() || null,
     trackingCarrier: (b.trackingCarrier ?? "").trim() || null,
     trackingUrl: (b.trackingUrl ?? "").trim() || null,
+    supplierOrderUrl: (b.supplierOrderUrl ?? "").trim() || null,
     baseCost: num(b.baseCost),
     shipCost: num(b.shipCost),
   };

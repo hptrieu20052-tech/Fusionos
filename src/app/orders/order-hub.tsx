@@ -22,7 +22,7 @@ type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unit
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; color: string; size: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
 type Opt = { id: string; name: string };
-type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
+type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -384,6 +384,7 @@ function ManualTracking({ orderId, ff, fulfillerId, fulfillers, flash, onSaved }
     trackingCarrier: ff?.trackingCarrier ?? "",
     trackingNumber: ff?.trackingNumber ?? "",
     trackingUrl: ff?.trackingUrl ?? "",
+    supplierOrderUrl: ff?.supplierOrderUrl ?? "",
     baseCost: ff?.baseCost ?? "",
     shipCost: ff?.shipCost ?? "",
     fulfillerId: fulfillerId ?? "",
@@ -425,6 +426,7 @@ function ManualTracking({ orderId, ff, fulfillerId, fulfillers, flash, onSaved }
         <div><label style={lab}>{t("o.tracking")}</label><input value={v.trackingNumber} onChange={(e) => setV({ ...v, trackingNumber: e.target.value })} style={fld} /></div>
       </div>
       <div><label style={lab}>{t("o.trackLink")} (tùy chọn)</label><input value={v.trackingUrl} onChange={(e) => setV({ ...v, trackingUrl: e.target.value })} placeholder="https://…" style={fld} /></div>
+      <div><label style={lab}>{t("o.supplierOrderLink")}</label><input value={v.supplierOrderUrl} onChange={(e) => setV({ ...v, supplierOrderUrl: e.target.value })} placeholder="Link đơn trên trang nhà cung cấp…" style={fld} /></div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div><label style={lab}>{t("o.baseCost")} ($)</label><input type="number" step="0.01" value={v.baseCost} onChange={(e) => setV({ ...v, baseCost: e.target.value })} style={fld} /></div>
         <div><label style={lab}>{t("o.shipFee")} ($)</label><input type="number" step="0.01" value={v.shipCost} onChange={(e) => setV({ ...v, shipCost: e.target.value })} style={fld} /></div>
@@ -541,8 +543,9 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
               {canPushFf && detail && (
                 <div className="o2-track">
                   {(detail.ffOrders ?? []).map((f) => (
-                    <div key={f.id} style={{ marginBottom: 4 }}>
+                    <div key={f.id} style={{ marginBottom: 6 }}>
                       <div className="o2-track-h">{f.fulfillerName || t("o.fulfilledBy")}</div>
+                      {/* 1) Chi phí supplier */}
                       {(f.baseCost != null || f.shipCost != null) && (
                         <div className="o2-supcost">
                           <span>{t("o.baseCost")}: <b>{money(f.baseCost ?? 0)}</b></span>
@@ -550,8 +553,9 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                           <span className="tot">{t("o.total")}: <b>{money(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0)))}</b></span>
                         </div>
                       )}
+                      {/* 2) Tracking */}
                       {f.trackingNumber ? (
-                        <div className="o2-track-row" style={{ borderTop: "none", paddingTop: 6 }}>
+                        <div className="o2-track-row" style={{ borderTop: "1px dashed var(--line)", paddingTop: 7, marginTop: 5 }}>
                           <div style={{ minWidth: 0, flex: 1 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                               <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.trackingNumber}</span>
@@ -564,8 +568,30 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                       ) : (
                         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>{t("o.noTracking")}</div>
                       )}
+                      {/* 3) Link đơn bên supplier */}
+                      {f.supplierOrderUrl && (
+                        <a href={f.supplierOrderUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "var(--blue)", marginTop: 6, fontWeight: 600, textDecoration: "none" }}>
+                          <IconTruck width={13} height={13} /> {t("o.viewSupplierOrder")} ↗
+                        </a>
+                      )}
                     </div>
                   ))}
+
+                  {/* 4) Lợi nhuận sau chi phí (After fee − tổng chi phí supplier) */}
+                  {(() => {
+                    const ffCost = (detail.ffOrders ?? []).reduce((s, f) => s + Number(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0))), 0);
+                    if (ffCost <= 0) return null;
+                    const afterFee = Number(o.total) - Number(o.platform_fee);
+                    const profit = afterFee - ffCost;
+                    return (
+                      <div className="o2-profit">
+                        <span>{t("o.profitAfterCost")}</span>
+                        <span style={{ fontSize: 11, color: "var(--faint)" }}>{money(afterFee)} − {money(ffCost)}</span>
+                        <b style={{ color: profit >= 0 ? "var(--green)" : "var(--red)", fontSize: 14 }}>{money(profit)}</b>
+                      </div>
+                    );
+                  })()}
+
                   <ManualTracking key={(detail.ffOrders ?? [])[0]?.id ?? "new"} orderId={o.id}
                     ff={(detail.ffOrders ?? [])[0]}
                     fulfillerId={ffSel || (detail.ffOrders ?? [])[0]?.fulfillerId || ""}

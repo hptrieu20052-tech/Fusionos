@@ -201,6 +201,7 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   trackingNumber: text("tracking_number"),
   trackingCarrier: text("tracking_carrier"),
   trackingUrl: text("tracking_url"),
+  supplierOrderUrl: text("supplier_order_url"),
   pushedAt: timestamp("pushed_at", { withTimezone: true }),
   trackingSyncedAt: timestamp("tracking_synced_at", { withTimezone: true }),
   errorMessage: text("error_message"),
