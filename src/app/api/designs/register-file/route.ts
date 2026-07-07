@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 
@@ -20,6 +20,11 @@ export async function POST(req: NextRequest) {
   }
 
   const [dup] = await db.select().from(schema.designFiles).where(eq(schema.designFiles.sha256, b.sha256)).limit(1);
+
+  // Mỗi mặt trước/sau chỉ giữ 1 file — upload mới thay file cũ cùng loại
+  if (b.kind === "design_front" || b.kind === "design_back") {
+    await db.delete(schema.designFiles).where(and(eq(schema.designFiles.designId, b.designId), eq(schema.designFiles.kind, b.kind)));
+  }
 
   const [row] = await db.insert(schema.designFiles).values(
     dup

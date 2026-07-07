@@ -301,7 +301,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
-      <div style={{ background: "#fff", borderRadius: 18, width: 1080, maxWidth: "96vw", maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ background: "#fff", borderRadius: 18, width: 1180, maxWidth: "97vw", maxHeight: "94vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: "1px solid var(--line)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -312,7 +312,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
           <button onClick={close} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", lineHeight: 1 }}>✕</button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 26, padding: "18px 24px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20, padding: "12px 22px 16px", overflowY: "auto", flex: 1, minHeight: 0 }}>
           {/* CỘT TRÁI */}
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -341,7 +341,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               <b style={{ fontSize: 13.5 }}>{t("d.description")}</b>
               <CopyBtn v={f.description} tip={t("d.copy") + " " + t("d.description").toLowerCase()} />
             </div>
-            <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} rows={4} style={{ ...inp, width: "100%", resize: "vertical" }} />
+            <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} rows={3} style={{ ...inp, width: "100%", resize: "vertical" }} />
 
             <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0", fontSize: 13, cursor: "pointer" }}>
               <input type="checkbox" checked={f.personalize} disabled={!canEdit} onChange={(e) => setF({ ...f, personalize: e.target.checked })} />
@@ -351,25 +351,28 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               <div style={{ marginBottom: 6 }}>
                 <b style={{ fontSize: 13, display: "block", marginBottom: 5 }}>{t("d.personalizationText")}</b>
                 <textarea value={f.personalization} maxLength={256} onChange={(e) => setF({ ...f, personalization: e.target.value })} disabled={!canEdit}
-                  rows={3} placeholder={t("d.personalizationPh")} style={{ ...inp, width: "100%", resize: "vertical" }} />
+                  rows={2} placeholder={t("d.personalizationPh")} style={{ ...inp, width: "100%", resize: "vertical" }} />
                 <div style={{ fontSize: 11, color: f.personalization.length >= 256 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.personalization.length}/256</div>
               </div>
             )}
 
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-              <b style={{ fontSize: 13 }}>{t("d.productLink")}</b>
-              {f.productLink && <CopyBtn v={f.productLink} tip={t("d.copy") + " link"} />}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 4 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <b style={{ fontSize: 13 }}>{t("d.productLink")}</b>
+                  {f.productLink && <CopyBtn v={f.productLink} tip={t("d.copy") + " link"} />}
+                </div>
+                <input value={f.productLink} placeholder={t("d.linkPlaceholder")} disabled={!canEdit}
+                  onChange={(e) => setF({ ...f, productLink: e.target.value })} style={{ ...inp, width: "100%" }} />
+              </div>
+              <label style={{ ...rLbl }}>{t("c.note")}
+                <input value={f.note} placeholder={t("c.note")} disabled={!canEdit}
+                  onChange={(e) => setF({ ...f, note: e.target.value })} style={{ ...inp, width: "100%", marginTop: 4 }} />
+              </label>
             </div>
-            <input value={f.productLink} placeholder={t("d.linkPlaceholder")} disabled={!canEdit}
-              onChange={(e) => setF({ ...f, productLink: e.target.value })} style={{ ...inp, width: "100%" }} />
-
-            <label style={{ ...rLbl, display: "block", marginTop: 10 }}>{t("c.note")}
-              <textarea value={f.note} placeholder={t("c.note")} disabled={!canEdit} rows={2}
-                onChange={(e) => setF({ ...f, note: e.target.value })} style={{ ...inp, width: "100%", marginTop: 4, resize: "vertical" }} />
-            </label>
 
             {/* Tabs files */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 10 }}>
               <div className="ftabs">
                 {([["mockup", t("d.mockups")], ["design", t("d.designFiles")], ["video", t("d.videos")]] as const).map(([k, label]) => (
                   <button key={k} onClick={() => setTab(k)} className={`ftab${tab === k ? " on" : ""}`}>{label} ({filesOf(k).length})</button>
@@ -407,8 +410,8 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {canEdit && tab === "mockup" && <AddTile label="Mockup" busy={busyUp} onClick={() => pickAndUpload("mockup")} />}
               {canEdit && tab === "video" && <AddTile label="Video" busy={busyUp} onClick={() => pickAndUpload("video")} />}
               {canEdit && tab === "design" && <>
-                <AddTile label={KIND_VI.design_front} busy={busyUp} onClick={() => pickAndUpload("design_front")} />
-                <AddTile label={KIND_VI.design_back} busy={busyUp} onClick={() => pickAndUpload("design_back")} />
+                {!detail.files.some((x) => x.kind === "design_front") && <AddTile label={KIND_VI.design_front} busy={busyUp} onClick={() => pickAndUpload("design_front")} />}
+                {!detail.files.some((x) => x.kind === "design_back") && <AddTile label={KIND_VI.design_back} busy={busyUp} onClick={() => pickAndUpload("design_back")} />}
               </>}
             </div>
             {filesOf(tab).length === 0 && !canEdit && (
@@ -428,7 +431,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                 <option value="tiktok">TikTok</option><option value="amazon">Amazon</option><option value="etsy">Etsy</option>
               </select>
             </label>
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 10 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
                 {t("d.tags")} <span style={{ color: f.tags.length >= 13 ? "var(--red)" : "var(--muted)", fontWeight: 500, fontSize: 11.5 }}>({f.tags.length}/13)</span>
                 <CopyBtn v={f.tags.join(", ")} tip={t("d.copy") + " tags"} />
@@ -452,12 +455,12 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                 }}
                 style={{ ...inp, width: "100%", opacity: f.tags.length >= 13 ? 0.6 : 1 }} />}
             </div>
-            <div style={{ marginTop: 12 }}>{Sel("sellerId", t("c.seller"), detail.sellers)}</div>
-            <div style={{ marginTop: 12 }}>{Sel("storeId", t("c.store"), detail.stores)}</div>
-            <div style={{ marginTop: 12 }}>{Sel("designerId", t("c.designer"), detail.designers)}</div>
-            <div style={{ marginTop: 12 }}>{Sel("creatorId", t("d.creator"), detail.creators)}</div>
+            <div style={{ marginTop: 9 }}>{Sel("sellerId", t("c.seller"), detail.sellers)}</div>
+            <div style={{ marginTop: 9 }}>{Sel("storeId", t("c.store"), detail.stores)}</div>
+            <div style={{ marginTop: 9 }}>{Sel("designerId", t("c.designer"), detail.designers)}</div>
+            <div style={{ marginTop: 9 }}>{Sel("creatorId", t("d.creator"), detail.creators)}</div>
 
-            <div style={{ marginTop: 14, fontSize: 13, fontWeight: 600 }}>{t("d.statusListing")}</div>
+            <div style={{ marginTop: 10, fontSize: 13, fontWeight: 600 }}>{t("d.statusListing")}</div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>
               <input type="checkbox" checked={f.listed} disabled={!canEdit} onChange={(e) => setF({ ...f, listed: e.target.checked })} />
               {f.listed ? t("d.listed") : t("d.unlisted")}
@@ -468,7 +471,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               <br />{t("d.score")}: <b style={{ color: "var(--ink)" }}>{detail.avgScore ? detail.avgScore.toFixed(1) : "—"}</b> ({detail.reviewCount} {t("d.reviews")})
             </div>
 
-            {canEdit && <button onClick={save} disabled={busy} style={{ ...btnGreen, width: "100%", marginTop: 14 }}>{busy ? t("c.saving") : t("c.save")}</button>}
+            {canEdit && <button onClick={save} disabled={busy} style={{ ...btnGreen, width: "100%", marginTop: 10 }}>{busy ? t("c.saving") : t("c.save")}</button>}
             {canEdit && <button onClick={del} style={{ ...btnRed, width: "100%", marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}><IconTrash width={14} height={14} /> {t("d.deleteDesign")}</button>}
           </div>
         </div>
@@ -610,7 +613,7 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }:
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 14, marginBottom: 14 }}>
           <label style={rLbl}>{t("d.fileType")}
             <select value={kind} onChange={(e) => setKind(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
-              {KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              {KINDS.filter(([k]) => k === "design_front" || k === "design_back").map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </label>
           <label style={rLbl}>{t("c.seller")} <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 11 }}>{t("d.applyAll")}</span>
