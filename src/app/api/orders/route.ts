@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const show = Math.min(Math.max(Number(sp.get("show") ?? 20), 5), 100);
   const page = Math.max(Number(sp.get("page") ?? 1), 1);
-  const own = await hasRestriction(session.sub, "own_orders_only");
+  const own = (await hasRestriction(session.sub, "own_orders_only")) || session.role === "seller";
   const hideCustomer = await hasRestriction(session.sub, "hide_customer_info");
 
   const conds: ReturnType<typeof sql>[] = [];
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
   const platform = (schema.orders.platform.enumValues as readonly string[]).includes(b.platform) ? b.platform : "etsy";
   const externalId = String(b.externalId ?? "").trim() || `MANUAL-${Date.now()}`;
 
-  const own = await hasRestriction(session.sub, "own_orders_only");
+  const own = (await hasRestriction(session.sub, "own_orders_only")) || session.role === "seller";
   const sellerId = own ? session.sub : (b.sellerId || null);
 
   const [order] = await db.insert(schema.orders).values({

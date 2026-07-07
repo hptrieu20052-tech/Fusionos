@@ -54,7 +54,7 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
           <Link href="/orders" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#5A6272" }}>
             <div className="pipe-l">{tr("db.pipeOrder")}</div>
             <div className="pipe-v">{kpi.pipeline.order.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.order.q.toLocaleString()})</span>
-              {kpi.pipeline.order.prev != null && kpi.pipeline.order.prev !== kpi.pipeline.order.c && (
+              {kpi.pipeline.order.prev != null && kpi.pipeline.order.prev > 0 && kpi.pipeline.order.prev !== kpi.pipeline.order.c && (
                 <span className="pipe-delta" style={{ color: kpi.pipeline.order.c - kpi.pipeline.order.prev >= 0 ? "var(--green)" : "var(--red)" }}>
                   {kpi.pipeline.order.c - kpi.pipeline.order.prev >= 0 ? "+" : ""}{kpi.pipeline.order.c - kpi.pipeline.order.prev} {kpi.pipeline.order.c - kpi.pipeline.order.prev >= 0 ? "↑" : "↓"}
                 </span>
@@ -76,14 +76,9 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
         </div>
       )}
 
-      {/* KPI theo range */}
+      {/* KPI theo range — tiền + việc cần làm (số đơn/items đã ở hàng pipeline trên) */}
       {kpi && (
         <div className="kpis">
-          <Link href="/orders" style={kpiLink} className="kpi">
-            <div className="l">{tr("db.kpiOrders")}</div>
-            <div className="v">{kpi.orders.toLocaleString()} <span style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>· {kpi.items.toLocaleString()} items</span></div>
-            {delta(kpi.orders, kpi.prevOrders, kpi.prevLabel)}
-          </Link>
           <Link href="/finance" style={kpiLink} className="kpi">
             <div className="l">{tr("db.kpiRevenue")}</div><div className="v">{money(kpi.revenue)}</div>
             {delta(kpi.revenue, kpi.prevRevenue, kpi.prevLabel)}
