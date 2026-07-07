@@ -33,7 +33,7 @@ export default function AppShell({ user, links, children }: {
         <div className="topnav-inner">
           <a href="/" className="topnav-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/logo-full.png" alt="Fusion" />
+            <img src="/Logo-full.png" alt="Fusion" />
           </a>
           <nav className="topnav-menu">
             {links.map((l) => {

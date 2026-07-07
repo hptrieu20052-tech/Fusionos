@@ -30,7 +30,7 @@ export default function Sidebar({ flags }: { flags: NavFlags }) {
     <aside className="sidebar">
       <a href="/" className="brand">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo-full.png" alt="Fusion — together we grow" className="brand-img" />
+        <img src="/Logo-full.png" alt="Fusion — together we grow" className="brand-img" />
       </a>
       <div className="brand-sub">FUSION OS · v0.6</div>
 
