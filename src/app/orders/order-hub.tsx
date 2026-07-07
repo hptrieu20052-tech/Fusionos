@@ -368,18 +368,10 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
-          {canEdit && o.status !== "completed" && <button onClick={() => patchOrder(o.id, { status: "completed" })} style={btnDark}>{t("o.complete")}</button>}
+          {canEdit && <button onClick={() => cloneOrder(o.id)} style={btnGhost}>{t("o.dup")}</button>}
           {canEdit && <OrderMenu order={o} patchOrder={patchOrder} downloadInfo={downloadInfo} />}
         </div>
       </div>
-
-      {/* Hàng nút phụ */}
-      {canEdit && (
-        <div className="o2-btns">
-          <button onClick={() => cloneOrder(o.id)} style={btnGhost}>{t("o.dup")}</button>
-          <button onClick={() => downloadInfo(o)} style={{ ...btnGhost, color: "var(--green)", borderColor: "var(--green)" }}>{t("o.downloadInfo")}</button>
-        </div>
-      )}
 
       {/* Items — variant/qty bên phải khi đã mở fulfillment + chọn nhà fulfill */}
       {o.items.map((it) => {
@@ -416,7 +408,7 @@ function ItemRow({ it, onSaved, flash, showVariant, variants, line, setLine }: {
   return (
     <div className="o2-item">
       <div className="o2-thumb">{img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}</div>
-      <div style={{ fontSize: 13, minWidth: 0 }}>
+      <div className="o2-detail" style={{ fontSize: 13 }}>
         <b>{it.product_title}</b>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "var(--muted)", marginTop: 5, fontSize: 12.5 }}>
           <span>{t("o.qtyLabel")}: <b style={{ color: "var(--ink)" }}>{it.qty}</b></span>
@@ -454,28 +446,26 @@ function ItemRow({ it, onSaved, flash, showVariant, variants, line, setLine }: {
           )}
         </div>
       </div>
-      {/* Cột variant/qty */}
-      <div className="o2-vary">
-        {showVariant && line && setLine ? (
-          <>
-            <div className="o2-field">
-              <label>{t("o.fulfilledBy")} — variant</label>
-              <select value={line.mappingId} onChange={(e) => setLine({ ...line, mappingId: e.target.value })}
-                style={{ ...inp, width: "100%", ...(line.mappingId ? {} : { borderColor: "#F0A9A0", background: "var(--red-soft)" }) }}>
-                <option value="">{t("o.selectVariant")}</option>
-                {variants!.map((x) => <option key={x.id} value={x.id}>{x.fulfillerSku} — {money(x.unitCost)}</option>)}
-              </select>
+      {/* Cột variant/qty — chỉ hiện khi đã mở fulfillment + chọn nhà fulfill */}
+      {showVariant && line && setLine && (
+        <div className="o2-vary">
+          <div className="o2-field">
+            <label>{t("o.fulfilledBy")} — variant</label>
+            <select value={line.mappingId} onChange={(e) => setLine({ ...line, mappingId: e.target.value })}
+              style={{ ...inp, width: "100%", ...(line.mappingId ? {} : { borderColor: "#F0A9A0", background: "var(--red-soft)" }) }}>
+              <option value="">{t("o.selectVariant")}</option>
+              {variants!.map((x) => <option key={x.id} value={x.id}>{x.fulfillerSku} — {money(x.unitCost)}</option>)}
+            </select>
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+            <div className="o2-field" style={{ width: 90 }}>
+              <label>{t("o.qtyLabel")}</label>
+              <input type="number" min={1} value={line.qty} onChange={(e) => setLine({ ...line, qty: Number(e.target.value) })} style={{ ...inp, width: "100%", textAlign: "center" }} />
             </div>
-            <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
-              <div className="o2-field" style={{ width: 90 }}>
-                <label>{t("o.qtyLabel")}</label>
-                <input type="number" min={1} value={line.qty} onChange={(e) => setLine({ ...line, qty: Number(e.target.value) })} style={{ ...inp, width: "100%", textAlign: "center" }} />
-              </div>
-              <div style={{ flex: 1, textAlign: "right", fontSize: 13, paddingBottom: 8 }}>{v ? <b style={{ color: "var(--green)" }}>{money(v.unitCost * (line.qty || 0))}</b> : <span style={{ color: "var(--faint)" }}>—</span>}</div>
-            </div>
-          </>
-        ) : null}
-      </div>
+            <div style={{ flex: 1, textAlign: "right", fontSize: 13, paddingBottom: 8 }}>{v ? <b style={{ color: "var(--green)" }}>{money(v.unitCost * (line.qty || 0))}</b> : <span style={{ color: "var(--faint)" }}>—</span>}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -683,5 +673,4 @@ function Pager({ page, pages, setPage, show, setShow, total }: { page: number; p
 
 const inp: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 10, padding: "7px 10px", fontSize: 13, background: "#fff" };
 const btnBlue: React.CSSProperties = { background: "var(--primary-grad)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" };
-const btnDark: React.CSSProperties = { background: "#0b2545", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" };
 const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 13px", fontSize: 13, fontWeight: 600, cursor: "pointer" };

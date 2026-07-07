@@ -256,12 +256,13 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent) 
 .o2-toggle{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;padding:0;margin-top:12px}
 .o2-toggle svg{transition:transform .18s}.o2-toggle.open svg{transform:rotate(180deg)}
 
-.o2-item{display:grid;grid-template-columns:96px 1fr 300px;gap:18px;padding:16px 0;border-top:1px solid var(--line);align-items:start}
+.o2-item{display:flex;gap:20px;padding:16px 0;border-top:1px solid var(--line);align-items:flex-start;flex-wrap:wrap}
 .o2-item:first-of-type{margin-top:6px}
 .o2-thumb{width:96px;height:96px;border-radius:12px;overflow:hidden;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:#F1F4F9}
 .o2-thumb img{width:100%;height:100%;object-fit:contain}
 .o2-assign{display:flex;gap:10px;align-items:flex-start;margin-top:9px}
 .o2-dthumb{width:64px;height:64px;border-radius:9px;overflow:hidden;border:1px solid var(--line);flex-shrink:0;background:#F1F4F9;display:flex;align-items:center;justify-content:center}
 .o2-dthumb img{width:100%;height:100%;object-fit:contain}
-.o2-vary{display:flex;flex-direction:column;gap:8px}
+.o2-detail{flex:0 1 440px;min-width:260px}
+.o2-vary{flex:0 0 320px;display:flex;flex-direction:column;gap:8px}
 .o2-vrow{display:grid;grid-template-columns:1fr;gap:8px}
