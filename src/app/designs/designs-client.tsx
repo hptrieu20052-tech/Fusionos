@@ -11,7 +11,7 @@ type Design = {
   sellerId: string | null; designerId: string | null; creatorId: string | null; storeId: string | null;
   sellerName: string | null; designerName: string | null; creatorName: string | null; storeName?: string | null;
   avgScore: number | null; dims: string | null; sizeMB: string | null; downloadUrl: string | null;
-  filesCount: number; cover: { thumb: string | null; preview: string | null; status: string } | null;
+  filesCount: number; cover: { thumb: string | null; preview: string | null; original: string | null; status: string } | null;
 };
 type Opt = { id: string; name: string };
 type Detail = {
@@ -120,13 +120,22 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
       {/* Grid card */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 18, marginTop: 14 }}>
         {designs.map((d) => (
-          <div key={d.id} className="card" style={{ overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)}
+            style={{ overflow: "hidden", display: "flex", flexDirection: "column", cursor: "pointer" }}>
             <div style={{ position: "relative", aspectRatio: "1/1", background: "#EDEFF4" }}>
-              {d.cover?.preview || d.cover?.thumb
-                ? <img src={d.cover.preview ?? d.cover.thumb!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>{d.cover?.status === "processing" ? "Đang xử lý…" : "Chưa có ảnh"}</div>}
+              {d.cover?.preview || d.cover?.thumb || d.cover?.original
+                ? <img src={(d.cover.preview ?? d.cover.thumb ?? d.cover.original)!} alt=""
+                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    onError={(e) => {
+                      const img = e.currentTarget;
+                      // preview/thumb lỗi → thử ảnh gốc; gốc cũng lỗi → ẩn, hiện placeholder
+                      if (d.cover?.original && img.src !== d.cover.original) img.src = d.cover.original;
+                      else { img.style.display = "none"; (img.nextElementSibling as HTMLElement)?.style.setProperty("display", "flex"); }
+                    }} />
+                : null}
+              <div style={{ display: (d.cover?.preview || d.cover?.thumb || d.cover?.original) ? "none" : "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>{d.cover?.status === "processing" ? "Đang xử lý…" : "Chưa có ảnh"}</div>
               {d.downloadUrl && (
-                <a href={d.downloadUrl} download title="Tải file gốc"
+                <a href={d.downloadUrl} download title="Tải file gốc" onClick={(e) => e.stopPropagation()}
                   style={{ position: "absolute", left: 0, bottom: 0, background: "#fff", borderTopRightRadius: 10, padding: "6px 12px", fontSize: 14, color: "var(--ink)", boxShadow: "0 -1px 6px rgba(42,48,60,.1)" }}>⇩</a>
               )}
             </div>
@@ -144,11 +153,10 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
                 <span>{d.avgScore != null && d.avgScore > 0 ? d.avgScore.toFixed(1) : "0"} ★</span>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 14, fontWeight: 600 }}>
-                <button onClick={() => { navigator.clipboard?.writeText(d.title); flash("✓ Đã copy tên"); }} title="Copy tên" style={copyBtn}>⧉</button>
+                <button onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(d.title); flash("✓ Đã copy tên"); }} title="Copy tên" style={copyBtn}>⧉</button>
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.title}</span>
               </div>
             </div>
-            <button onClick={() => openDetail(d.id)} style={{ marginTop: "auto", background: "#5A6272", color: "#fff", border: 0, padding: "10px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>{t("d.more")}</button>
           </div>
         ))}
       </div>

@@ -82,7 +82,7 @@ export async function GET(req: NextRequest) {
       sizeMB: main ? (Number(main.sizeBytes) / 1048576).toFixed(2) : null,
       downloadUrl: main ? fileUrl(main.storageKey) : null,
       cover: cover
-        ? { thumb: fileUrl(cover.thumbKey), preview: fileUrl(cover.previewKey), status: cover.processingStatus }
+        ? { thumb: fileUrl(cover.thumbKey), preview: fileUrl(cover.previewKey), original: fileUrl(cover.storageKey), status: cover.processingStatus }
         : null,
     };
   });
