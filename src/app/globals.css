@@ -135,7 +135,7 @@ input,textarea,select,button{font-family:Inter,system-ui,sans-serif}
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--sky-soft)}
 
 /* ===== Nền trung tính kiểu bàn cờ — nhìn rõ cả design sáng lẫn tối ===== */
-.checker{background:#98A1B0}
+.checker{background:#AEAEB2}
 
 /* ===== Design card ===== */
 .dc-img{position:relative;aspect-ratio:1/1;overflow:hidden}

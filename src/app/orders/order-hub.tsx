@@ -479,6 +479,22 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
   );
 }
 
+/** Xem ảnh to: click nền hoặc ESC để đóng */
+function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", h);
+    return () => document.removeEventListener("keydown", h);
+  }, [onClose]);
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(16,20,28,.82)", display: "flex", alignItems: "center", justifyContent: "center", padding: 28, cursor: "zoom-out" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt="" style={{ maxWidth: "92vw", maxHeight: "90vh", objectFit: "contain", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,.45)", background: "#AEAEB2" }} />
+      <button onClick={onClose} style={{ position: "fixed", top: 18, right: 22, background: "rgba(255,255,255,.14)", color: "#fff", border: "none", borderRadius: 10, width: 38, height: 38, fontSize: 17, cursor: "pointer" }}>✕</button>
+    </div>
+  );
+}
+
 function ItemRow({ it, onSaved, flash }: {
   it: Item; onSaved: () => void; flash: (m: string) => void;
 }) {
@@ -497,9 +513,13 @@ function ItemRow({ it, onSaved, flash }: {
     if (j.ok) onSaved();
   };
   const img = it.mockupUrl ?? it.designThumb;
+  const [zoom, setZoom] = useState<string | null>(null);
   return (
     <div className="o2-item">
-      <div className="o2-thumb">{img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}</div>
+      {zoom && <Lightbox src={zoom} onClose={() => setZoom(null)} />}
+      <div className="o2-thumb" onClick={() => img && setZoom(img)} style={img ? { cursor: "zoom-in" } : undefined} title={img ? "Click để xem to / Click to enlarge" : undefined}>
+        {img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}
+      </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
         <b>{it.product_title}</b>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "var(--muted)", marginTop: 5, fontSize: 12.5 }}>
@@ -516,7 +536,7 @@ function ItemRow({ it, onSaved, flash }: {
       <div className="o2-assigncol">
         {it.design_id ? (
           <div className="o2-assign">
-            {it.designThumb && <div className="o2-dthumb"><img src={it.designThumb} alt="" /></div>}
+            {it.designThumb && <div className="o2-dthumb" onClick={() => setZoom(it.designThumb)} style={{ cursor: "zoom-in" }}><img src={it.designThumb} alt="" /></div>}
             <div style={{ fontSize: 12.5, minWidth: 0 }}>
               <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis" }}>#{it.design_sku} — {it.design_title}</div>
               <button onClick={() => assign(null)} disabled={busy} style={{ ...btnGhost, marginTop: 6, fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}><IconTrash width={12} height={12} /> {t("o.unassign")}</button>
@@ -526,7 +546,7 @@ function ItemRow({ it, onSaved, flash }: {
           <div>
             {it.suggest ? (
               <div className="o2-assign" style={{ marginBottom: 8 }}>
-                {it.suggest.thumb && <div className="o2-dthumb"><img src={it.suggest.thumb} alt="" /></div>}
+                {it.suggest.thumb && <div className="o2-dthumb" onClick={() => setZoom(it.suggest!.thumb)} style={{ cursor: "zoom-in" }}><img src={it.suggest.thumb} alt="" /></div>}
                 <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ background: "var(--green)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{t("o.acceptDesign")} #{it.suggest.skuCode}</button>
               </div>
             ) : null}
