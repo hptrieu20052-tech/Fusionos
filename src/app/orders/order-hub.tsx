@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
-import { IconCopy, IconPin, IconChevron, IconTruck, IconTrash, IconUpload } from "@/components/icons";
+import { IconCopy, IconPin, IconChevron, IconTruck, IconTrash, IconUpload, IconWarn } from "@/components/icons";
 
 type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
@@ -335,7 +335,7 @@ function IssueModal({ order, fulfillers, defaultFulfillerId, close, flash, onSav
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
       <div style={{ background: "#fff", borderRadius: 18, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <b style={{ fontSize: 15, display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ color: "var(--red)" }}>⚠</span> {t("iss.reportIssue")}</b>
+          <b style={{ fontSize: 15, display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ color: "var(--red)", display: "inline-flex" }}><IconWarn width={16} height={16} /></span> {t("iss.reportIssue")}</b>
           {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
         </div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 16 }}>#{order.external_id}</div>
@@ -553,7 +553,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
-          {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}>⚠ {t("iss.badReview")}</button>}
+          {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
           {canEdit && <button onClick={() => cloneOrder(o.id)} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
       </div>

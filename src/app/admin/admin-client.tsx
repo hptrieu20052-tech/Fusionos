@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { IconKey, IconLock, IconLockOpen, IconTrash } from "@/components/icons";
 
 const MODULES = ["dashboard", "orders", "fulfillment", "designs", "finance", "hr", "stores", "settings"] as const;
 const MODULE_VI: Record<string, string> = {
@@ -81,7 +82,7 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
     if (j.ok) { setUsers((us) => us.filter((x) => x.id !== u.id)); setMsg(`✓ Đã xóa ${u.fullName}`); }
     else setMsg("⚠ " + (j.error ?? "Lỗi"));
   }
-  const actBtn: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 9px", fontSize: 12, cursor: "pointer", marginLeft: 6, fontWeight: 600, color: "var(--ink)" };
+  const actBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5, background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer", marginLeft: 6, fontWeight: 600, color: "var(--ink)" };
 
   type Team = { id: string; name: string; members: { id: string; fullName: string; role: string }[] };
   const [teamList, setTeamList] = useState<Team[]>([]);
@@ -154,9 +155,9 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
                 </td>
                 <td style={{ color: u.status === "active" ? "var(--green)" : "var(--faint)", fontWeight: 700 }}>{u.status === "active" ? "active" : "khóa"}</td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                  <button onClick={() => resetPass(u)} style={actBtn} title="Đặt lại mật khẩu">🔑 Reset</button>
-                  <button onClick={() => toggleStatus(u)} style={{ ...actBtn, color: u.status === "active" ? "var(--amber)" : "var(--green)" }}>{u.status === "active" ? "🔒 Khóa" : "🔓 Mở"}</button>
-                  <button onClick={() => deleteUser(u)} style={{ ...actBtn, color: "var(--red)" }}>🗑 Xóa</button>
+                  <button onClick={() => resetPass(u)} style={actBtn} title="Đặt lại mật khẩu"><IconKey width={13} height={13} /> Reset</button>
+                  <button onClick={() => toggleStatus(u)} style={{ ...actBtn, color: u.status === "active" ? "var(--amber)" : "var(--green)" }}>{u.status === "active" ? <><IconLock width={13} height={13} /> Khóa</> : <><IconLockOpen width={13} height={13} /> Mở</>}</button>
+                  <button onClick={() => deleteUser(u)} style={{ ...actBtn, color: "var(--red)" }}><IconTrash width={13} height={13} /> Xóa</button>
                 </td>
               </tr>
             ))}
@@ -187,7 +188,7 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
                       onBlur={(e) => renameTeam(tm.id, e.target.value, tm.name)}
                       onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
                       style={{ ...inp, padding: "5px 8px", fontSize: 13.5, fontWeight: 700, flex: 1, minWidth: 0 }} />
-                    <button onClick={() => deleteTeam(tm)} title="Xóa team" style={{ background: "var(--red-soft)", color: "var(--red)", border: "1px solid #F3C6C0", borderRadius: 8, padding: "5px 8px", cursor: "pointer", fontSize: 12 }}>🗑</button>
+                    <button onClick={() => deleteTeam(tm)} title="Xóa team" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", background: "var(--red-soft)", color: "var(--red)", border: "1px solid #F3C6C0", borderRadius: 8, padding: "6px 8px", cursor: "pointer" }}><IconTrash width={14} height={14} /></button>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
                     {tm.members.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Chưa có thành viên</div>}

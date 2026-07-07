@@ -19,8 +19,8 @@ export function BarChart({ labels, values, highlight = -1, avgLine = true, heigh
           <g key={i}>
             <rect x={x} y={y(v)} width={bw} height={H - bottom - y(v)} rx={7}
               fill={i === highlight || (highlight === -1 && i === n - 1) ? "#1D5FAE" : "#BBD4EE"} />
-            <text x={x + bw / 2} y={y(v) - 7} textAnchor="middle" fontFamily="Inter" fontWeight={800} fontSize={11} fill="#111827">{Math.round(v).toLocaleString()}</text>
-            <text x={x + bw / 2} y={H - 8} textAnchor="middle" fontFamily="Inter" fontSize={10.5} fill="#9CA3AF">{labels[i]}</text>
+            <text x={x + bw / 2} y={y(v) - 7} textAnchor="middle" fontFamily="Plus Jakarta Sans" fontWeight={800} fontSize={11} fill="#111827">{Math.round(v).toLocaleString()}</text>
+            <text x={x + bw / 2} y={H - 8} textAnchor="middle" fontFamily="Plus Jakarta Sans" fontSize={10.5} fill="#9CA3AF">{labels[i]}</text>
           </g>
         );
       })}
