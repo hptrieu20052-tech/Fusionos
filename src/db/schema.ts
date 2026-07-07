@@ -2,6 +2,7 @@ import {
   pgTable, pgEnum, uuid, text, integer, bigint, boolean, numeric,
   timestamp, date, jsonb, serial, uniqueIndex, index,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 // ---------- ENUMS ----------
 export const roleEnum = pgEnum("user_role", ["admin", "seller", "designer", "support", "content", "hiring"]);
@@ -121,6 +122,13 @@ export const designs = pgTable("designs", {
 }, (t) => [
   uniqueIndex("uq_designs_sku").on(t.skuCode),
   index("idx_designs_designer").on(t.designerId, t.createdAt),
+  // Index cho thư viện design lớn: sort mặc định + filter theo seller/platform
+  index("idx_designs_created").on(t.createdAt),
+  index("idx_designs_seller_created").on(t.sellerId, t.createdAt),
+  index("idx_designs_platform_created").on(t.platform, t.createdAt),
+  index("idx_designs_listed").on(t.listed),
+  // Tìm theo tên: trigram để ILIKE nhanh (cần extension pg_trgm)
+  index("idx_designs_title_trgm").using("gin", sql`${t.title} gin_trgm_ops`),
 ]);
 
 export const designFiles = pgTable("design_files", {

@@ -14,8 +14,9 @@ export async function POST(req: NextRequest) {
   if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const b = await req.json().catch(() => null);
-  if (!b?.designId || !b?.key || !b?.sha256 || !schema.designFiles.kind.enumValues.includes(b.kind)) {
-    return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
+  const storageKey = b?.storageKey ?? b?.key;
+  if (!b?.designId || !storageKey || !b?.sha256 || !schema.designFiles.kind.enumValues.includes(b.kind)) {
+    return NextResponse.json({ ok: false, error: "invalid", got: { designId: !!b?.designId, storageKey: !!storageKey, sha256: !!b?.sha256, kind: b?.kind } }, { status: 400 });
   }
 
   const [dup] = await db.select().from(schema.designFiles).where(eq(schema.designFiles.sha256, b.sha256)).limit(1);
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
           processingStatus: dup.processingStatus,
         }
       : {
-          designId: b.designId, kind: b.kind, storageKey: b.key,
+          designId: b.designId, kind: b.kind, storageKey,
           sha256: b.sha256, sizeBytes: Number(b.sizeBytes ?? 0),
           processingStatus: "uploaded",
         }

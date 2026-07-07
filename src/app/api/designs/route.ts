@@ -32,8 +32,21 @@ export async function GET(req: NextRequest) {
   if (sp.get("to")) parts.push(dsql`${schema.designs.createdAt} < (${sp.get("to")}::date + 1)` as never);
   const conds = parts.length ? and(...parts) : undefined;
 
-  const totalR = await db.select({ c: dsql<number>`count(*)::int` }).from(schema.designs).where(conds);
-  const total = totalR[0]?.c ?? 0;
+  // Đếm tổng: khi KHÔNG lọc gì → dùng ước lượng nhanh từ thống kê bảng (tránh count(*) toàn bảng lớn).
+  // Khi CÓ lọc → count chính xác (đã có index nên nhanh).
+  let total: number;
+  if (!parts.length) {
+    const est = await db.execute(dsql`SELECT reltuples::bigint AS c FROM pg_class WHERE relname = 'designs'`);
+    total = Number((est.rows[0] as { c: string })?.c ?? 0);
+    // Nếu bảng còn nhỏ (chưa ANALYZE) thì ước lượng có thể = 0/âm → count thật
+    if (total < 1000) {
+      const r = await db.select({ c: dsql<number>`count(*)::int` }).from(schema.designs);
+      total = r[0]?.c ?? 0;
+    }
+  } else {
+    const r = await db.select({ c: dsql<number>`count(*)::int` }).from(schema.designs).where(conds);
+    total = r[0]?.c ?? 0;
+  }
 
   const rows = await db.select().from(schema.designs).where(conds).orderBy(desc(schema.designs.createdAt)).limit(show).offset((page - 1) * show);
   const ids = rows.map((d) => d.id);

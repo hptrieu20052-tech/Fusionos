@@ -24,5 +24,5 @@ export async function POST(req: NextRequest) {
   const safe = String(b.filename).replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80);
   const key = `designs/${b.designId}/${b.kind}-${Date.now()}-${safe}`;
   const target = await getUploadTarget(key, b.contentType ?? "application/octet-stream");
-  return NextResponse.json({ ok: true, key, ...target });
+  return NextResponse.json({ ok: true, key, storageKey: key, ...target });
 }
