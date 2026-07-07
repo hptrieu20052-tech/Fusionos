@@ -300,7 +300,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   );
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
       <div style={{ background: "#fff", borderRadius: 18, width: 1180, maxWidth: "97vw", maxHeight: "94vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: "1px solid var(--line)" }}>
@@ -571,7 +571,7 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }:
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
       <div style={{ background: "#fff", borderRadius: 18, width: 600, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <b style={{ fontSize: 15 }}>{t("d.bulkTitle")}</b>

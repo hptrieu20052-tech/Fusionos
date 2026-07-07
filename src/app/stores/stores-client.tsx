@@ -230,7 +230,7 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
 
 function Modal({ title, close, children }: { title: React.ReactNode; close: () => void; children: React.ReactNode }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(42,48,60,.45)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(42,48,60,.45)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
       <div style={{ background: "#fff", borderRadius: 16, width: 560, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <b style={{ fontSize: 15 }}>{title}</b>

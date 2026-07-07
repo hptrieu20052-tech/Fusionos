@@ -70,7 +70,7 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
       </div>
 
       {sel && (
-        <div onClick={() => setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 20 }}>
+        <div onClick={() => setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,.45)", zIndex: 95, display: "grid", placeItems: "center", padding: 20 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, width: "min(560px,95vw)", padding: "22px 24px" }}>
             <h3 style={{ fontWeight: 800 }}>Chấm: {sel.title} <span className="chip">×{sel.points}</span></h3>
             <div className="sub" style={{ marginBottom: 14 }}>Designer: {sel.designer ?? "—"} · 30% chất lượng chấm tay bên dưới, 70% còn lại hệ thống tự tính</div>

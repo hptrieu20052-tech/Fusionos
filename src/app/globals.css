@@ -8,7 +8,7 @@
   --sky:#00aaff; --sky-soft:#e5f6ff; --accent:#0095e8;
   --green:#16a34a; --green-soft:#eaf6ef; --amber:#b45309; --amber-soft:#fdf3e3;
   --red:#ef4444; --red-soft:#fdecea;
-  --r:14px; --sh:0 1px 2px rgba(16,24,40,.06);
+  --r:14px; --sh:0 3px 12px rgba(13,76,155,.10),0 1px 3px rgba(13,76,155,.07);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font:13.5px/1.55 'Plus Jakarta Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -227,7 +227,8 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent) 
 .qty-wrap input{border-radius:0 9px 9px 0 !important;width:56px;text-align:center}
 
 /* ===== Order Hub v2 — layout ngang gọn theo ảnh mẫu ===== */
-.o2{padding:18px 20px;margin-top:16px}
+.o2{padding:18px 20px;margin-top:16px;box-shadow:0 4px 16px rgba(13,76,155,.12),0 1px 3px rgba(13,76,155,.10);border-color:#D6E3F5;transition:box-shadow .15s,border-color .15s}
+.o2:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6px rgba(13,76,155,.12);border-color:#B9D2F0}
 .o2-top{display:grid;grid-template-columns:minmax(260px,1fr) minmax(300px,1.25fr) minmax(230px,300px);gap:22px;align-items:start}
 .o2-top.solo{grid-template-columns:1fr}
 .o2-info{min-width:0}
@@ -346,3 +347,7 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent) 
 /* Lợi nhuận sau chi phí trong khối fulfillment */
 .o2-profit{display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:12.5px;font-weight:700;color:var(--ink)}
 .o2-profit b{margin-left:auto}
+
+/* Bóng xanh đồng bộ + hover nhấc cho các card có thể bấm */
+a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6px rgba(13,76,155,.12);border-color:#B9D2F0;transform:translateY(-2px)}
+.card,.panel,.kpi,.pipe-card{border-color:#E2E9F3}
