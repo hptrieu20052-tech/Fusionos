@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
+import { IconCopy, IconPin, IconChevron, IconTruck, IconTrash } from "@/components/icons";
 
 type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
@@ -32,6 +33,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const [sellerId, setSellerId] = useState("");
   const [storeId, setStoreId] = useState("");
   const { t } = useLang();
+  const copyText = (v: string) => { navigator.clipboard?.writeText(v); flash(t("d.copied")); };
   const [q, setQ] = useState("");
   const [platform, setPlatform] = useState("");
   const [fulfillerId, setFulfillerId] = useState("");
@@ -59,7 +61,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   }, [page, show, status, sellerId, storeId, q, platform, fulfillerId, dr]);
   useEffect(() => { load(); }, [load]);
 
-  if (!data) return <div className="panel empty">Đang tải đơn hàng…</div>;
+  if (!data) return <div className="panel empty">{t("o.loadingOrders")}</div>;
   const all = Object.values(data.counts).reduce((a, b) => a + b, 0);
   const pages = Math.max(Math.ceil(data.total / show), 1);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
@@ -205,7 +207,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
               for (const o of data.orders) e.target.checked ? n.add(o.id) : n.delete(o.id);
               setSelIds(n);
             }} />
-          Chọn cả trang ({data.orders.length} đơn)
+          {t("o.selectPage")} ({data.orders.length})
         </label>
       )}
 
@@ -214,38 +216,45 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
 
       {/* Cards */}
       {data.orders.map((o) => (
-        <div key={o.id} className="card" style={{ padding: "16px 20px", marginTop: 18 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-            {canEdit && (
-              <input type="checkbox" checked={selIds.has(o.id)} onChange={() => toggleSel(o.id)}
-                style={{ width: 17, height: 17, marginTop: 4, cursor: "pointer", accentColor: "var(--blue)" }} />
-            )}
-            <div style={{ fontSize: 13.5, lineHeight: 1.75 }}>
-              <div>Ship by: <b>SELLER</b> <span className="chip" style={{ background: "#111827", color: "#fff", borderRadius: 8, padding: "1px 8px", fontSize: 11.5 }}>{o.seller_name ?? "—"}</span> {o.store_name && <b>- {o.store_name}</b>} <span className="chip" style={{ marginLeft: 6 }}>{o.platform}</span></div>
-              <div>{o.buyer_first} {o.buyer_last}</div>
-              <div>
-                <b style={{ color: "var(--blue)" }}>#{o.external_id}</b>
-                <span style={{ background: STATUS_COLORS[o.status] ?? "#6B7280", color: "#fff", borderRadius: 7, padding: "1px 8px", fontSize: 11, fontWeight: 800, margin: "0 8px" }}>{o.status.toUpperCase()}</span>
-                - {new Date(o.ordered_at).toISOString().slice(0, 10)}
-              </div>
-              <div style={{ color: "var(--red, #CE6B6B)" }}>
-                <u>Full Address:</u> <b>{o.buyer_first} {o.buyer_last} | {[o.addr1, o.addr2, o.city, o.state, o.zip].filter(Boolean).join(" ")}</b>
-                <div>{o.country}</div>
-              </div>
-              <div style={{ marginTop: 4 }}>
-                Total: <b>{money(o.total)}</b> · Fee: {money(o.platform_fee)} · <b style={{ color: "var(--green)" }}>after Fee: {money(Number(o.total) - Number(o.platform_fee))}</b>
-              </div>
-              <OrderNote order={o} canEdit={canEdit} onSaved={load} flash={flash} />
-              {canPushFf && (
-                <button onClick={() => toggleFf(o.id)} style={{ background: "none", border: "none", color: "var(--blue)", fontSize: 13.5, fontWeight: 700, cursor: "pointer", padding: 0, marginTop: 4, textDecoration: ffOpen === o.id ? "none" : "underline" }}>
-                  Fulfilment: {ffOpen === o.id ? "▲ đóng" : "▼ mở"}
-                </button>
+        <div key={o.id} className="card ord">
+          <div className="ord-head">
+            <div className="ord-main">
+              {canEdit && (
+                <input type="checkbox" checked={selIds.has(o.id)} onChange={() => toggleSel(o.id)}
+                  style={{ width: 17, height: 17, marginTop: 3, cursor: "pointer", accentColor: "var(--blue)", flexShrink: 0 }} />
               )}
+              <div className="ord-info">
+                <div className="ord-l1">
+                  <span className="ord-num">#{o.external_id}</span>
+                  <button className="icon-btn" title={t("d.copy") + " ID"} onClick={() => copyText(o.external_id)}><IconCopy width={12} height={12} /></button>
+                  <span className="ord-status" style={{ background: STATUS_COLORS[o.status] ?? "#6B7280" }}>{o.status.toUpperCase()}</span>
+                  <span className="ord-date">{new Date(o.ordered_at).toISOString().slice(0, 10)}</span>
+                </div>
+                <div className="ord-l2">
+                  <span className="ord-buyer">{[o.buyer_first, o.buyer_last].filter(Boolean).join(" ") || "—"}</span>
+                  <span className="ord-chip plat">{o.platform}</span>
+                  <span className="ord-chip seller">{o.seller_name ?? "—"}</span>
+                  {o.store_name && <span className="ord-chip">{o.store_name}</span>}
+                </div>
+                <div className="ord-addr">
+                  <IconPin width={15} height={15} />
+                  <span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ")}</span>
+                </div>
+                <div className="ord-fin">
+                  <div className="fin-cell"><span className="k">{t("o.total")}</span><span className="v">{money(o.total)}</span></div>
+                  <div className="fin-cell"><span className="k">{t("o.fee")}</span><span className="v">{money(o.platform_fee)}</span></div>
+                  <div className="fin-cell net"><span className="k">{t("o.afterFee")}</span><span className="v">{money(Number(o.total) - Number(o.platform_fee))}</span></div>
+                </div>
+                <OrderNote order={o} canEdit={canEdit} onSaved={load} flash={flash} />
+                {canPushFf && (
+                  <button onClick={() => toggleFf(o.id)} className={`ord-toggle${ffOpen === o.id ? " open" : ""}`}>
+                    {t("o.fulfilment")} <IconChevron width={15} height={15} />
+                  </button>
+                )}
+              </div>
             </div>
-            </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-              {canEdit && <button onClick={() => cloneOrder(o.id)} style={btnGhost} title="Nhân bản đơn">Dup</button>}
+            <div className="ord-actions">
+              {canEdit && <button onClick={() => cloneOrder(o.id)} style={btnGhost} title={t("o.dup")}>{t("o.dup")}</button>}
               {canEdit && <OrderMenu order={o} patchOrder={patchOrder} downloadInfo={downloadInfo} />}
             </div>
           </div>
@@ -253,14 +262,14 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
           {/* Panel Fulfillment inline — chỉ người có quyền fulfillment */}
           {canPushFf && ffOpen === o.id && (
             detail ? <FulfillPanel detail={detail} canEdit={canEdit} reload={() => { load(); toggleFf(o.id); }} flash={flash} />
-            : <div style={{ borderTop: "1px solid var(--line)", marginTop: 12, paddingTop: 12, color: "var(--muted)", fontSize: 13 }}>Đang tải panel fulfillment…</div>
+            : <div className="ff" style={{ color: "var(--muted)", fontSize: 13 }}>{t("o.loadingPanel")}</div>
           )}
 
           {/* Items */}
           {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={load} flash={flash} />)}
         </div>
       ))}
-      {!data.orders.length && <div className="panel empty" style={{ marginTop: 12 }}>Không có đơn nào khớp bộ lọc.</div>}
+      {!data.orders.length && <div className="panel empty" style={{ marginTop: 12 }}>{t("o.noMatch")}</div>}
 
       <div style={{ marginTop: 12 }}>
         <Pager page={page} pages={pages} setPage={setPage} show={show} setShow={(n) => { setShow(n); setPage(1); }} total={data.total} />
@@ -273,14 +282,15 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
 }
 
 function ItemRow({ it, onSaved, flash }: { it: Item; onSaved: () => void; flash: (m: string) => void }) {
+  const { t } = useLang();
   const [skuInput, setSkuInput] = useState("");
   const [busy, setBusy] = useState(false);
   const assign = async (sku: number | string | null) => {
     setBusy(true);
     const j = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ skuCode: sku }) }).then((r) => r.json());
     setBusy(false);
-    if (j.ok) { flash(sku === null ? "✓ Đã bỏ gán design" : `✓ Đã gán Design #${j.design?.sku_code ?? sku}`); onSaved(); }
-    else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(sku === null ? t("o.unassigned") : `${t("o.assigned")} #${j.design?.sku_code ?? sku}`); onSaved(); }
+    else flash("✗ " + (j.error ?? "Error"));
   };
   const toggleSpecial = async () => {
     const j = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ specialPrint: !it.special_print }) }).then((r) => r.json());
@@ -288,44 +298,45 @@ function ItemRow({ it, onSaved, flash }: { it: Item; onSaved: () => void; flash:
   };
   const img = it.mockupUrl ?? it.designThumb;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 280px", gap: 16, borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: 14, alignItems: "start" }}>
-      <div style={{ width: 90, height: 90, borderRadius: 12, background: "var(--bg, #F0F3FA)", overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        {img ? <img src={img} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>No img</span>}
+    <div className="ord-item">
+      <div className="ord-item-img checker">
+        {img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}
       </div>
-      <div style={{ fontSize: 13.5 }}>
+      <div style={{ fontSize: 13.5, minWidth: 0 }}>
         <b>{it.product_title}</b>
-        <div style={{ color: "var(--muted)", marginTop: 3 }}>
-          Quantity: <b style={{ color: "var(--ink)" }}>{it.qty}</b>
-          {it.internal_sku && <> · SKU: <b style={{ color: "var(--ink)" }}>{it.internal_sku}</b></>}
-          · Giá: <b style={{ color: "var(--ink)" }}>{money(it.unit_price)}</b>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "var(--muted)", marginTop: 5, fontSize: 12.5 }}>
+          <span>{t("o.qtyLabel")}: <b style={{ color: "var(--ink)" }}>{it.qty}</b></span>
+          {it.internal_sku && <span>SKU: <b style={{ color: "var(--ink)" }}>{it.internal_sku}</b></span>}
+          <span>{t("o.price")}: <b style={{ color: "var(--ink)" }}>{money(it.unit_price)}</b></span>
         </div>
         <Personalization it={it} onSaved={onSaved} flash={flash} />
-        <label style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 5, marginTop: 8, cursor: "pointer" }}>
-          <input type="checkbox" checked={it.special_print} onChange={toggleSpecial} /> Special Print
+        <label style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10, cursor: "pointer" }}>
+          <input type="checkbox" checked={it.special_print} onChange={toggleSpecial} /> {t("o.specialPrint")}
         </label>
       </div>
       <div>
         {it.design_id ? (
-          <div style={{ border: "1.5px solid var(--green, #4C9F70)", borderRadius: 12, padding: 10, textAlign: "center" }}>
-            {it.designThumb && <img src={it.designThumb} alt="" style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 8 }} />}
-            <div style={{ fontSize: 12.5, marginTop: 6 }}>Design <b>#{it.design_sku}</b> — {it.design_title}</div>
-            <button onClick={() => assign(null)} disabled={busy} style={{ ...btnGhost, marginTop: 6, fontSize: 11.5 }}>Bỏ gán</button>
+          <div style={{ border: "1.5px solid var(--green)", borderRadius: 12, padding: 10, textAlign: "center", background: "var(--green-soft)" }}>
+            <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".4px", color: "var(--green)", marginBottom: 6 }}>{t("o.assignedDesign")}</div>
+            {it.designThumb && <div className="checker" style={{ width: 84, height: 84, margin: "0 auto", borderRadius: 8, overflow: "hidden" }}><img src={it.designThumb} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /></div>}
+            <div style={{ fontSize: 12.5, marginTop: 6 }}><b>#{it.design_sku}</b> — {it.design_title}</div>
+            <button onClick={() => assign(null)} disabled={busy} style={{ ...btnGhost, marginTop: 8, fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}><IconTrash width={12} height={12} /> {t("o.unassign")}</button>
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 12.5, marginBottom: 6, color: "var(--muted)" }}>Suggest Designs</div>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 7, color: "var(--muted)" }}>{t("o.suggestDesigns")}</div>
             {it.suggest ? (
               <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 8, textAlign: "center", marginBottom: 8 }}>
-                {it.suggest.thumb && <img src={it.suggest.thumb} alt="" style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 8 }} />}
-                <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ display: "block", width: "100%", marginTop: 6, background: "var(--green, #4C9F70)", color: "#fff", border: "none", borderRadius: 8, padding: "7px 10px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                  Accept Design ID: {it.suggest.skuCode}
+                {it.suggest.thumb && <div className="checker" style={{ width: 84, height: 84, margin: "0 auto", borderRadius: 8, overflow: "hidden" }}><img src={it.suggest.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /></div>}
+                <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ display: "block", width: "100%", marginTop: 8, background: "var(--green)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 10px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                  {t("o.acceptDesign")} #{it.suggest.skuCode}
                 </button>
               </div>
-            ) : <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Không có gợi ý khớp tên</div>}
+            ) : <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{t("o.noSuggest")}</div>}
             <div style={{ display: "flex", gap: 6 }}>
-              <input placeholder="DesignId" value={skuInput} onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
-                onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} style={{ ...inp, width: 110 }} />
-              <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} style={btnBlue}>Gán</button>
+              <input placeholder={t("o.designId")} value={skuInput} onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
+                onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} style={{ ...inp, flex: 1 }} />
+              <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} style={btnBlue}>{t("o.assign")}</button>
             </div>
           </>
         )}
@@ -335,13 +346,14 @@ function ItemRow({ it, onSaved, flash }: { it: Item; onSaved: () => void; flash:
 }
 
 function FulfillPanel({ detail, canEdit, reload, flash }: { detail: Detail; canEdit: boolean; reload: () => void; flash: (m: string) => void }) {
+  const { t } = useLang();
   const o = detail.order;
   const [ship, setShip] = useState({
     buyerFirst: (o.buyer_first as string) ?? "", buyerLast: (o.buyer_last as string) ?? "",
     addr1: (o.addr1 as string) ?? "", addr2: (o.addr2 as string) ?? "",
     city: (o.city as string) ?? "", state: (o.state as string) ?? "", zip: (o.zip as string) ?? "",
     country: (o.country as string) ?? "United States",
-    orderLabel: (o.order_label as string) || `${(detail.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}-${o.external_id}`,
+    orderLabel: (o.order_label as string) || [`${(detail.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-"),
   });
   // BƯỚC 1: chọn nhà fulfill (bắt đầu trống)
   const [ffSel, setFfSel] = useState("");
@@ -386,45 +398,48 @@ function FulfillPanel({ detail, canEdit, reload, flash }: { detail: Detail; canE
     };
     const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
     setBusy(false);
-    if (j.ok) { flash("Đã tạo đơn ở nhà fulfill ✓"); reload(); } else flash("✗ " + (j.error ?? "Lỗi đẩy đơn"));
+    if (j.ok) { flash(t("o.pushed")); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
 
-  const F = (k: keyof typeof ship, ph: string, w?: number) => (
-    <input value={ship[k]} placeholder={ph} disabled={!canEdit}
-      onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
-      style={{ ...inp, width: w ?? "100%", opacity: canEdit ? 1 : 0.65 }} />
+  const F = (k: keyof typeof ship, label: string) => (
+    <div className="ff-field">
+      <label>{label}</label>
+      <input value={ship[k]} disabled={!canEdit}
+        onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
+        style={{ ...inp, width: "100%", opacity: canEdit ? 1 : 0.65 }} />
+    </div>
   );
 
   return (
-    <div style={{ borderTop: "2px solid var(--blue)", marginTop: 14, paddingTop: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-        <span style={{ background: "var(--blue)", color: "#fff", borderRadius: 999, padding: "2px 12px", fontSize: 12, fontWeight: 800 }}>Fulfillment</span>
-        <b style={{ fontSize: 13.5 }}>- Shipping Info</b>
-        {!canEdit && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>(chỉ xem — không có quyền sửa đơn)</span>}
+    <div className="ff">
+      <div className="ff-title">
+        <span className="ff-badge"><IconTruck width={14} height={14} /> {t("o.fulfilment")}</span>
+        <b style={{ fontSize: 13.5 }}>{t("o.shippingInfo")}</b>
+        {!canEdit && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{t("o.viewOnly")}</span>}
       </div>
 
-      {/* Địa chỉ */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.3fr", gap: 10, maxWidth: 900 }}>
-        {F("buyerFirst", "Tên")}
-        {F("buyerLast", "Họ")}
-        <div style={{ display: "flex" }}><span style={lbl}>Order label</span>{F("orderLabel", "label nội bộ")}</div>
-        {F("addr1", "Địa chỉ 1")}
-        {F("addr2", "Address 2")}
-        <div style={{ display: "flex", gap: 10 }}>{F("city", "Thành phố")}{F("zip", "ZIP", 110)}</div>
-        {F("country", "Quốc gia")}
-        {F("state", "Bang")}
-        <div />
+      {/* Địa chỉ — mỗi ô có nhãn rõ ràng */}
+      <div className="ff-grid">
+        {F("buyerFirst", t("o.firstName"))}
+        {F("buyerLast", t("o.lastName"))}
+        {F("orderLabel", t("o.orderLabel"))}
+        {F("addr1", t("o.addr1"))}
+        {F("addr2", t("o.addr2"))}
+        {F("city", t("o.city"))}
+        {F("state", t("o.state"))}
+        {F("zip", t("o.zip"))}
+        {F("country", t("o.country"))}
       </div>
 
       {/* BƯỚC 1 — chọn nhà fulfill */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16, maxWidth: 900 }}>
-        <span style={{ fontSize: 12, fontWeight: 800, background: "var(--blue-soft)", color: "var(--blue)", borderRadius: 8, padding: "3px 10px" }}>Bước 1</span>
-        <span style={{ fontSize: 13, fontWeight: 600 }}>Fulfillment By:</span>
-        <select value={ffSel} onChange={(e) => pickFulfiller(e.target.value)} style={{ ...inp, minWidth: 240 }}>
-          <option value="">— Chọn nhà fulfill —</option>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18, maxWidth: 920, flexWrap: "wrap" }}>
+        <span className="ff-step">1</span>
+        <span style={{ fontSize: 13, fontWeight: 700 }}>{t("o.fulfilledBy")}</span>
+        <select value={ffSel} onChange={(e) => pickFulfiller(e.target.value)} style={{ ...inp, minWidth: 260 }}>
+          <option value="">{t("o.chooseFulfiller")}</option>
           {detail.fulfillerOptions.map((f) => (
             <option key={f.fulfillerId} value={f.fulfillerId}>
-              {f.name}{(detail.catalog[f.fulfillerId]?.length ?? 0) === 0 ? " (chưa có SKU mapping)" : ""}
+              {f.name}{(detail.catalog[f.fulfillerId]?.length ?? 0) === 0 ? ` ${t("o.noSkuMapping")}` : ""}
             </option>
           ))}
         </select>
@@ -432,29 +447,29 @@ function FulfillPanel({ detail, canEdit, reload, flash }: { detail: Detail; canE
 
       {/* BƯỚC 2 — variant + qty từng item */}
       {ffSel && (
-        <div style={{ marginTop: 14, maxWidth: 900 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 800, background: "var(--blue-soft)", color: "var(--blue)", borderRadius: 8, padding: "3px 10px" }}>Bước 2</span>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Chọn style / size / color + số lượng cho từng sản phẩm</span>
+        <div style={{ marginTop: 14, maxWidth: 920 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <span className="ff-step">2</span>
+            <span style={{ fontSize: 13, fontWeight: 700 }}>{t("o.chooseVariant")}</span>
           </div>
           {variants.length === 0 && (
-            <div style={{ fontSize: 12.5, color: "var(--red)" }}>Nhà fulfill này chưa có SKU mapping nào — vào Cài đặt thêm mapping trước.</div>
+            <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{t("o.noMapping")}</div>
           )}
           {detail.items.map((it) => {
             const l = lines[it.id] ?? { mappingId: "", qty: it.qty };
             const v = variants.find((x) => x.id === l.mappingId);
             return (
-              <div key={it.id} style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 12, background: l.mappingId ? "#fff" : "var(--red-soft)" }}>
-                <span style={{ fontSize: 12.5, flex: 1, minWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.product_title}>{it.product_title}</span>
-                <select value={l.mappingId} onChange={(e) => setLines({ ...lines, [it.id]: { ...l, mappingId: e.target.value } })} style={{ ...inp, minWidth: 240 }}>
-                  <option value="">— Chọn variant (style/size/color) —</option>
+              <div key={it.id} className={`ff-line${l.mappingId ? "" : " miss"}`}>
+                <span style={{ fontSize: 12.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }} title={it.product_title}>{it.product_title}</span>
+                <select value={l.mappingId} onChange={(e) => setLines({ ...lines, [it.id]: { ...l, mappingId: e.target.value } })} style={{ ...inp, width: "100%" }}>
+                  <option value="">{t("o.selectVariant")}</option>
                   {variants.map((x) => <option key={x.id} value={x.id}>{x.fulfillerSku} — {money(x.unitCost)}</option>)}
                 </select>
-                <span style={{ display: "flex", alignItems: "center" }}>
-                  <span style={lbl}>Qty</span>
-                  <input type="number" min={1} value={l.qty} onChange={(e) => setLines({ ...lines, [it.id]: { ...l, qty: Number(e.target.value) } })} style={{ ...inp, width: 70, borderRadius: "0 10px 10px 0" }} />
+                <span className="qty-wrap">
+                  <span className="qk">{t("o.qty")}</span>
+                  <input type="number" min={1} value={l.qty} onChange={(e) => setLines({ ...lines, [it.id]: { ...l, qty: Number(e.target.value) } })} style={{ ...inp }} />
                 </span>
-                {v && <b style={{ fontSize: 12.5, color: "var(--green)", minWidth: 66, textAlign: "right" }}>{money(v.unitCost * (l.qty || 0))}</b>}
+                <b style={{ fontSize: 13, color: v ? "var(--green)" : "var(--faint)", minWidth: 66, textAlign: "right" }}>{v ? money(v.unitCost * (l.qty || 0)) : "—"}</b>
               </div>
             );
           })}
@@ -463,17 +478,17 @@ function FulfillPanel({ detail, canEdit, reload, flash }: { detail: Detail; canE
 
       {/* BƯỚC 3 — đủ biến mới hiện Create Order */}
       {ffSel && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 16, maxWidth: 900 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 16, maxWidth: 920 }}>
           {complete ? (
             <>
-              <span style={{ fontSize: 13.5 }}>Giá vốn ước tính: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></span>
-              <button onClick={createOrder} disabled={busy} style={{ ...btnBlue, padding: "10px 40px", fontSize: 14, opacity: busy ? 0.6 : 1 }}>
-                {busy ? "Đang tạo…" : "Create Order"}
+              <span style={{ fontSize: 13.5 }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></span>
+              <button onClick={createOrder} disabled={busy} style={{ ...btnBlue, padding: "11px 34px", fontSize: 14, opacity: busy ? 0.6 : 1 }}>
+                {busy ? t("o.creating") : t("o.pushFfOrder")}
               </button>
             </>
           ) : (
             <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
-              Chọn đủ variant + số lượng cho {detail.items.length} sản phẩm để tạo đơn
+              {t("o.needComplete").replace("{n}", String(detail.items.length))}
             </span>
           )}
         </div>
@@ -569,6 +584,7 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
 function OrderMenu({ order, patchOrder, downloadInfo }: {
   order: Order; patchOrder: (id: string, body: Record<string, unknown>) => Promise<{ ok: boolean }>; downloadInfo: (o: Order) => void;
 }) {
+  const { t } = useLang();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -582,14 +598,14 @@ function OrderMenu({ order, patchOrder, downloadInfo }: {
   );
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <button onClick={() => setOpen(!open)} style={{ ...btnGhost, padding: "8px 12px", fontWeight: 700 }} title="Thao tác">⋯</button>
+      <button onClick={() => setOpen(!open)} style={{ ...btnGhost, padding: "8px 12px", fontWeight: 700 }} title={t("o.actions")}>⋯</button>
       {open && (
         <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(16,24,40,.14)", minWidth: 180, padding: "4px 0", overflow: "hidden" }}>
-          {order.status !== "completed" && <Item onClick={() => patchOrder(order.id, { status: "completed" })} color="var(--green)">✓ Complete Order</Item>}
-          {order.status !== "has_issues" && order.status !== "trash" && <Item onClick={() => patchOrder(order.id, { status: "has_issues" })} color="#C06B82">⚠ Has Issues</Item>}
-          {order.status !== "trash" && <Item onClick={() => { if (confirm("Chuyển đơn vào Trash? Giá vốn sẽ hoàn về 0 cho seller.")) patchOrder(order.id, { status: "trash" }); }} color="#BBA054">Trash</Item>}
+          {order.status !== "completed" && <Item onClick={() => patchOrder(order.id, { status: "completed" })} color="var(--green)">✓ {t("o.complete")}</Item>}
+          {order.status !== "has_issues" && order.status !== "trash" && <Item onClick={() => patchOrder(order.id, { status: "has_issues" })} color="#C06B82">⚠ {t("o.hasIssues")}</Item>}
+          {order.status !== "trash" && <Item onClick={() => { if (confirm(t("o.confirmTrash"))) patchOrder(order.id, { status: "trash" }); }} color="#BBA054">{t("o.trash")}</Item>}
           <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
-          <Item onClick={() => downloadInfo(order)}>Download Order Info</Item>
+          <Item onClick={() => downloadInfo(order)}>{t("o.downloadInfo")}</Item>
         </div>
       )}
     </div>
@@ -597,44 +613,46 @@ function OrderMenu({ order, patchOrder, downloadInfo }: {
 }
 
 function OrderNote({ order, canEdit, onSaved, flash }: { order: Order; canEdit: boolean; onSaved: () => void; flash: (m: string) => void }) {
+  const { t } = useLang();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(order.note ?? "");
   const save = async () => {
     const j = await fetch(`/api/orders/${order.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ note: v }) }).then((r) => r.json());
-    if (j.ok) { flash("✓ Đã lưu note"); setEditing(false); onSaved(); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("o.savedNote")); setEditing(false); onSaved(); } else flash("✗ " + (j.error ?? "Error"));
   };
   if (editing) return (
     <div style={{ display: "flex", gap: 8, marginTop: 8, maxWidth: 560 }}>
       <input autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
-        placeholder="Ghi chú cho đơn…" style={{ ...inp, flex: 1 }} />
-      <button onClick={save} style={btnBlue}>Lưu</button>
-      <button onClick={() => setEditing(false)} style={btnGhost}>Huỷ</button>
+        placeholder={t("o.notePlaceholder")} style={{ ...inp, flex: 1 }} />
+      <button onClick={save} style={btnBlue}>{t("c.save")}</button>
+      <button onClick={() => setEditing(false)} style={btnGhost}>{t("c.cancel")}</button>
     </div>
   );
   return order.note ? (
     <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginTop: 8, background: "var(--blue-soft)", borderRadius: 10, padding: "7px 14px", fontSize: 13, maxWidth: 560 }}>
       <span>{order.note}</span>
-      {canEdit && <button onClick={() => { setV(order.note ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: 12, padding: 0 }}>Sửa</button>}
+      {canEdit && <button onClick={() => { setV(order.note ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: 12, padding: 0 }}>{t("c.edit")}</button>}
     </div>
   ) : canEdit ? (
-    <button onClick={() => setEditing(true)} style={{ display: "block", marginTop: 8, background: "none", border: "1px dashed var(--line)", color: "var(--muted)", borderRadius: 8, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>+ Create Note</button>
+    <button onClick={() => setEditing(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 8, background: "none", border: "1px dashed var(--line)", color: "var(--muted)", borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>+ {t("o.addNote")}</button>
   ) : null;
 }
 
 function Personalization({ it, onSaved, flash }: { it: Item; onSaved: () => void; flash: (m: string) => void }) {
+  const { t } = useLang();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(it.personalization ?? "");
   const save = async () => {
     const j = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ personalization: v }) }).then((r) => r.json());
-    if (j.ok) { flash("✓ Đã lưu personalization"); setEditing(false); onSaved(); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("o.savedPerso")); setEditing(false); onSaved(); } else flash("✗ " + (j.error ?? "Error"));
   };
   if (editing) return (
     <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
       <textarea autoFocus value={v} onChange={(e) => setV(e.target.value)} rows={2}
-        placeholder="Yêu cầu cá nhân hoá của khách…" style={{ ...inp, flex: 1, resize: "vertical" }} />
+        placeholder={t("o.persoPlaceholder")} style={{ ...inp, flex: 1, resize: "vertical" }} />
       <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <button onClick={save} style={btnBlue}>Lưu</button>
-        <button onClick={() => setEditing(false)} style={btnGhost}>Huỷ</button>
+        <button onClick={save} style={btnBlue}>{t("c.save")}</button>
+        <button onClick={() => setEditing(false)} style={btnGhost}>{t("c.cancel")}</button>
       </span>
     </div>
   );
@@ -642,10 +660,10 @@ function Personalization({ it, onSaved, flash }: { it: Item; onSaved: () => void
     <div style={{ marginTop: 6, fontSize: 13 }}>
       {it.personalization
         ? <span style={{ background: "var(--amber-soft)", borderRadius: 8, padding: "4px 10px", display: "inline-block" }}>
-            <b>Personalization:</b> {it.personalization}
-            <button onClick={() => { setV(it.personalization ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: 12, marginLeft: 8, padding: 0 }}>Sửa</button>
+            <b>{t("o.personalization")}:</b> {it.personalization}
+            <button onClick={() => { setV(it.personalization ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: 12, marginLeft: 8, padding: 0 }}>{t("c.edit")}</button>
           </span>
-        : <button onClick={() => setEditing(true)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, padding: 0, textDecoration: "underline" }}>+ Personalization</button>}
+        : <button onClick={() => setEditing(true)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, padding: 0, textDecoration: "underline" }}>+ {t("o.addPersonalization")}</button>}
     </div>
   );
 }

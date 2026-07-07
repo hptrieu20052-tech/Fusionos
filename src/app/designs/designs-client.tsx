@@ -1,7 +1,8 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
+import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload } from "@/components/icons";
 
 type FileRow = { id: string; kind: string; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
 type Design = {
@@ -23,6 +24,23 @@ type Detail = {
 const KINDS: [string, string][] = [["mockup", "Mockup"], ["design_front", "Design Front"], ["design_back", "Design Back"], ["video", "Video"]];
 const fmtDate = (s: string) => new Date(s).toISOString().slice(0, 16).replace("T", " ");
 
+// Link R2 là cross-origin → thuộc tính download của <a> bị bỏ qua (trình duyệt sẽ mở ảnh).
+// Tải qua blob để ép tải xuống trực tiếp, đặt đúng tên file.
+async function forceDownload(url: string, filename: string) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const ext = url.split("?")[0].split(".").pop() ?? "";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename.includes(".") ? filename : `${filename}.${ext}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch {
+    window.open(url, "_blank"); // fallback nếu fetch lỗi
+  }
+}
+
 type ListData = { designs: Design[]; total: number; page: number; show: number; sellers: Opt[]; designers: Opt[] };
 export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
   const { t } = useLang();
@@ -34,7 +52,6 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
   const [page, setPage] = useState(1);
   const [sel, setSel] = useState<Detail | null>(null);
   const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const show = 24;
   const designs = data?.designs ?? [];
@@ -49,24 +66,32 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
     const j = await fetch(`/api/designs?${p}`).then((r) => r.json());
     if (j.ok) setData(j);
   }, [page, q, sellerId, designerId, dr]);
-  useEffect(() => { const t = setTimeout(load, q ? 300 : 0); return () => clearTimeout(t); }, [load, q]);
+  useEffect(() => { const tm = setTimeout(load, q ? 300 : 0); return () => clearTimeout(tm); }, [load, q]);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2600); };
+  const copyText = (v: string) => { navigator.clipboard?.writeText(v); flash(t("d.copied")); };
 
   // Flow upload 5 bước có sẵn
   async function doUpload(designId: string, file: File, kind: string) {
-    const t = await fetch("/api/designs/upload-url", {
+    const tk = await fetch("/api/designs/upload-url", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ designId, filename: file.name, contentType: file.type || "application/octet-stream", kind }),
     }).then((r) => r.json());
-    if (!t.ok) throw new Error(t.error ?? "upload-url lỗi");
-    await fetch(t.url, { method: t.method ?? "PUT", headers: t.headers ?? {}, body: file });
+    if (!tk.ok) throw new Error(tk.error ?? "upload-url error");
+    let putRes: Response;
+    try {
+      putRes = await fetch(tk.url, { method: tk.method ?? "PUT", headers: tk.headers ?? {}, body: file });
+    } catch {
+      // fetch ném lỗi network = gần như chắc chắn CORS của bucket R2 chưa cho PUT từ domain này
+      throw new Error("PUT → R2 blocked (CORS). Cloudflare R2 → bucket → Settings → CORS Policy → AllowedMethods PUT.");
+    }
+    if (!putRes.ok) throw new Error(`R2 rejected file (HTTP ${putRes.status}).`);
     const buf = await file.arrayBuffer();
     const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf))).map((b) => b.toString(16).padStart(2, "0")).join("");
     const reg = await fetch("/api/designs/register-file", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ designId, kind, storageKey: t.storageKey, sha256: hash, sizeBytes: file.size, contentType: file.type }),
+      body: JSON.stringify({ designId, kind, storageKey: tk.storageKey, sha256: hash, sizeBytes: file.size, contentType: file.type }),
     }).then((r) => r.json());
-    if (!reg.ok) throw new Error(reg.error ?? "register lỗi");
+    if (!reg.ok) throw new Error(reg.error ?? "register error");
     if (!reg.deduped) await fetch("/api/designs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileId: reg.file.id }) });
   }
 
@@ -75,12 +100,11 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
     if (j.ok) setSel(j);
   };
 
-
   return (
     <>
       {msg && <div style={{ position: "fixed", top: 16, right: 16, zIndex: 100, background: "#2A303C", color: "#fff", padding: "10px 18px", borderRadius: 12, fontSize: 13.5 }}>{msg}</div>}
 
-      {/* Page head: nút tạo design */}
+      {/* Page head */}
       <div className="page-head">
         <div className="page-actions">
           <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => { setDr(v); setPage(1); }} align="right" allowClear onClear={() => { setDr(null); setPage(1); }} />
@@ -88,7 +112,7 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
         </div>
       </div>
 
-      {/* Bộ lọc có label */}
+      {/* Bộ lọc */}
       <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
         <div className="filters">
           <div className="field" style={{ gridColumn: "span 2" }}>
@@ -99,69 +123,77 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
           <div className="field">
             <label>{t("c.seller")}</label>
             <select value={sellerId} onChange={(e) => { setSellerId(e.target.value); setPage(1); }}>
-              <option value="">Tất cả</option>
+              <option value="">{t("c.all")}</option>
               {(data?.sellers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div className="field">
             <label>{t("c.designer")}</label>
             <select value={designerId} onChange={(e) => { setDesignerId(e.target.value); setPage(1); }}>
-              <option value="">Tất cả</option>
+              <option value="">{t("c.all")}</option>
               {(data?.designers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-
         </div>
       </div>
 
-      {/* Phân trang trên */}
-      <DesignPager page={page} total={total} show={show} setPage={setPage} />
+      <DesignPager page={page} total={total} show={show} setPage={setPage} label={t("d.design")} />
 
       {/* Grid card */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 18, marginTop: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(248px,1fr))", gap: 18, marginTop: 14 }}>
         {designs.map((d) => (
-          <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)}
-            style={{ overflow: "hidden", display: "flex", flexDirection: "column", cursor: "pointer" }}>
-            <div style={{ position: "relative", aspectRatio: "1/1", background: "#EDEFF4" }}>
-              {d.cover?.preview || d.cover?.thumb || d.cover?.original
-                ? <img src={(d.cover.preview ?? d.cover.thumb ?? d.cover.original)!} alt=""
-                    style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    onError={(e) => {
-                      const img = e.currentTarget;
-                      // preview/thumb lỗi → thử ảnh gốc; gốc cũng lỗi → ẩn, hiện placeholder
-                      if (d.cover?.original && img.src !== d.cover.original) img.src = d.cover.original;
-                      else { img.style.display = "none"; (img.nextElementSibling as HTMLElement)?.style.setProperty("display", "flex"); }
-                    }} />
-                : null}
-              <div style={{ display: (d.cover?.preview || d.cover?.thumb || d.cover?.original) ? "none" : "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>{d.cover?.status === "processing" ? "Đang xử lý…" : "Chưa có ảnh"}</div>
-              {d.downloadUrl && (
-                <a href={d.downloadUrl} download title="Tải file gốc" onClick={(e) => e.stopPropagation()}
-                  style={{ position: "absolute", left: 0, bottom: 0, background: "#fff", borderTopRightRadius: 10, padding: "6px 12px", fontSize: 14, color: "var(--ink)", boxShadow: "0 -1px 6px rgba(42,48,60,.1)" }}>⇩</a>
-              )}
+          <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)} style={{ overflow: "hidden", cursor: "pointer" }}>
+            <div className="dc-img checker">
+              {(d.cover?.preview || d.cover?.thumb || d.cover?.original) ? (
+                <img src={(d.cover.preview ?? d.cover.thumb ?? d.cover.original)!} alt="" loading="lazy"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    if (d.cover?.original && img.src !== d.cover.original) img.src = d.cover.original;
+                    else { img.style.display = "none"; (img.nextElementSibling as HTMLElement)?.style.setProperty("display", "flex"); }
+                  }} />
+              ) : null}
+              <div style={{ display: (d.cover?.preview || d.cover?.thumb || d.cover?.original) ? "none" : "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>
+                {d.cover?.status === "processing" ? t("d.processing") : t("d.noImage")}
+              </div>
+              <div className="dc-acts">
+                {d.downloadUrl && (
+                  <button className="dc-act" title={t("d.downloadOriginal")}
+                    onClick={(e) => { e.stopPropagation(); forceDownload(d.downloadUrl!, d.title); }}>
+                    <IconDownload width={16} height={16} />
+                  </button>
+                )}
+              </div>
             </div>
-            <div style={{ padding: "10px 14px", fontSize: 12.5, lineHeight: 1.7 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>ID: <b style={{ color: "var(--blue)" }}>{d.skuCode}</b> - Seller: <b>{d.sellerName ?? "—"}</b></span>
-                <span style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtDate(d.createdAt)}</span>
+            <div className="dc-body">
+              <div className="dc-top">
+                <span className="dc-id">
+                  #{d.skuCode}
+                  <button className="icon-btn" style={{ width: 18, height: 18, border: "none", background: "transparent", color: "inherit" }}
+                    title={t("d.copy") + " ID"} onClick={(e) => { e.stopPropagation(); copyText(String(d.skuCode)); }}>
+                    <IconCopy width={11} height={11} />
+                  </button>
+                </span>
+                <span className="dc-date">{fmtDate(d.createdAt)}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>Designer: <b>{d.designerName ?? "—"}</b></span>
-                <span style={{ color: "var(--muted)" }}>{d.dims ?? ""} {d.sizeMB ? d.sizeMB + "MB" : ""}</span>
+              <div className="dc-title">
+                <button className="icon-btn" title={t("d.copy") + " " + t("d.title").toLowerCase()}
+                  onClick={(e) => { e.stopPropagation(); copyText(d.title); }}>
+                  <IconCopy width={12} height={12} />
+                </button>
+                <span title={d.title}>{d.title}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>Creator: <b>{d.creatorName ?? ""}</b></span>
-                <span>{d.avgScore != null && d.avgScore > 0 ? d.avgScore.toFixed(1) : "0"} ★</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: 14, fontWeight: 600 }}>
-                <button onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(d.title); flash("✓ Đã copy tên"); }} title="Copy tên" style={copyBtn}>⧉</button>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.title}</span>
+              <div className="dc-meta"><span>{t("c.seller")}</span><b>{d.sellerName ?? "—"}</b></div>
+              <div className="dc-meta"><span>{t("c.designer")}</span><b>{d.designerName ?? "—"}</b></div>
+              <div className="dc-foot">
+                <span>{d.dims ?? "—"}{d.sizeMB ? ` · ${d.sizeMB}MB` : ""}</span>
+                <span>★ {d.avgScore != null && d.avgScore > 0 ? d.avgScore.toFixed(1) : "0"}</span>
               </div>
             </div>
           </div>
         ))}
       </div>
       {!designs.length && <div className="panel empty">{t("d.noMatch")}</div>}
-      <div style={{ marginTop: 16 }}><DesignPager page={page} total={total} show={show} setPage={setPage} /></div>
+      <div style={{ marginTop: 16 }}><DesignPager page={page} total={total} show={show} setPage={setPage} label={t("d.design")} /></div>
 
       {sel && <DetailModal detail={sel} canEdit={canEdit} close={() => setSel(null)} reload={() => { load(); }} reopen={openDetail} flash={flash} doUpload={doUpload} />}
       {showCreate && <BulkUploadModal close={() => setShowCreate(false)} reload={load} flash={flash} doUpload={doUpload} sellers={data?.sellers ?? []} designers={data?.designers ?? []} />}
@@ -174,6 +206,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   reopen: (id: string) => void; flash: (m: string) => void;
   doUpload: (designId: string, file: File, kind: string) => Promise<void>;
 }) {
+  const { t } = useLang();
   const d = detail.design;
   const [f, setF] = useState({
     title: d.title, description: d.description ?? "", points: d.points,
@@ -188,21 +221,22 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const [upKind, setUpKind] = useState("mockup");
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  const filesOf = (t: string) => t === "design"
+  const filesOf = (k: string) => k === "design"
     ? detail.files.filter((x) => x.kind === "design_front" || x.kind === "design_back")
-    : detail.files.filter((x) => x.kind === (t === "mockup" ? "mockup" : "video"));
+    : detail.files.filter((x) => x.kind === (k === "mockup" ? "mockup" : "video"));
 
   const save = async () => {
     setBusy(true);
     const j = await fetch(`/api/designs/${d.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) }).then((r) => r.json());
     setBusy(false);
-    if (j.ok) { flash("✓ Đã lưu"); reload(); close(); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("d.saved")); reload(); close(); } else flash("✗ " + (j.error ?? "Error"));
   };
   const del = async () => {
-    if (!confirm(`Xoá design #${d.skuCode} "${d.title}"? Toàn bộ files sẽ mất.`)) return;
+    if (!confirm(`#${d.skuCode} "${d.title}" — ${t("d.confirmDeleteDesign")}`)) return;
     const j = await fetch(`/api/designs/${d.id}`, { method: "DELETE" }).then((r) => r.json());
-    if (j.ok) { flash("✓ Đã xoá"); reload(); close(); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("d.deleted")); reload(); close(); } else flash("✗ " + (j.error ?? "Error"));
   };
   const genAI = async () => {
     setAiBusy(true);
@@ -210,169 +244,195 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     setAiBusy(false);
     if (j.ok) {
       setF({ ...f, title: j.title ?? f.title, description: j.description ?? f.description, tags: j.tags ?? f.tags });
-      flash(j.source === "ai" ? "✓ AI đã tạo info" : "✓ Đã tạo theo mẫu" + (j.hint ? " — " + j.hint : ""));
-    } else flash("✗ " + (j.error ?? "Lỗi"));
+      flash(j.source === "ai" ? t("d.aiDone") : t("d.aiTemplate") + (j.hint ? " — " + j.hint : ""));
+    } else flash("✗ " + (j.error ?? "Error"));
   };
   const upload = async () => {
     if (!upFile) return;
     setBusy(true);
-    try { await doUpload(d.id, upFile, upKind); flash("✓ Đã upload"); setUpFile(null); reopen(d.id); reload(); }
+    try { await doUpload(d.id, upFile, upKind); flash(t("d.uploaded")); setUpFile(null); if (fileRef.current) fileRef.current.value = ""; reopen(d.id); reload(); }
     catch (e) { flash("✗ " + (e as Error).message); }
     setBusy(false);
   };
   const delFile = async (fileId: string) => {
-    if (!confirm("Xoá file này?")) return;
+    if (!confirm(t("d.confirmDeleteFile"))) return;
     const j = await fetch(`/api/designs/files/${fileId}`, { method: "DELETE" }).then((r) => r.json());
-    if (j.ok) { flash("✓ Đã xoá file"); reopen(d.id); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("d.fileDeleted")); reopen(d.id); } else flash("✗ " + (j.error ?? "Error"));
   };
-  const downloadAll = (rows: FileRow[]) => rows.forEach((x, i) => x.originalUrl && setTimeout(() => { const a = document.createElement("a"); a.href = x.originalUrl!; a.download = ""; a.click(); }, i * 350));
-  const copy = (t: string) => { navigator.clipboard?.writeText(t); flash("✓ Đã copy"); };
+  const downloadAll = (rows: FileRow[]) => rows.forEach((x, i) => x.originalUrl && setTimeout(() => forceDownload(x.originalUrl!, `${d.title}-${x.kind}-${i + 1}`), i * 400));
+  const copy = (v: string) => { navigator.clipboard?.writeText(v); flash(t("d.copied")); };
 
   const Sel = (k: "sellerId" | "storeId" | "designerId" | "creatorId", label: string, opts: Opt[]) => (
-    <label style={rLbl}>{label}:
+    <label style={rLbl}>{label}
       <select value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }}>
         <option value="">—</option>
         {opts.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
       </select>
     </label>
   );
+  const CopyBtn = ({ v, tip }: { v: string; tip: string }) => (
+    <button className="icon-btn" title={tip} onClick={() => copy(v)}><IconCopy width={12} height={12} /></button>
+  );
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(42,48,60,.45)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
-      <div style={{ background: "#fff", borderRadius: 16, width: 1060, maxWidth: "96vw", maxHeight: "92vh", display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "flex-end", padding: "10px 16px 0" }}>
-          <button onClick={close} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
+      <div style={{ background: "#fff", borderRadius: 18, width: 1080, maxWidth: "96vw", maxHeight: "92vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="dc-id" style={{ fontSize: 13 }}>#{d.skuCode}</span>
+            <CopyBtn v={String(d.skuCode)} tip={t("d.copy") + " ID"} />
+            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{t("c.date")}: {fmtDate(String(d.createdAt))}</span>
+          </div>
+          <button onClick={close} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", lineHeight: 1 }}>✕</button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 26, padding: "0 26px", overflowY: "auto" }}>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 26, padding: "18px 24px", overflowY: "auto" }}>
           {/* CỘT TRÁI */}
           <div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Date: {fmtDate(String(d.createdAt))}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0 4px" }}>
-              <button onClick={() => copy(f.title)} title="Copy title" style={copyBtn}>⧉</button>
-              <b style={{ fontSize: 13.5 }}>Title</b>
-              {canEdit && <button onClick={genAI} disabled={aiBusy} style={btnDark}>{aiBusy ? "Đang tạo…" : "Generate Info By AI"}</button>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <b style={{ fontSize: 13.5 }}>{t("d.title")}</b>
+              <CopyBtn v={f.title} tip={t("d.copy") + " " + t("d.title").toLowerCase()} />
+              {canEdit && (
+                <button onClick={genAI} disabled={aiBusy} style={{ ...btnDark, display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+                  <IconSparkle width={13} height={13} /> {aiBusy ? t("d.generating") : t("d.genAI")}
+                </button>
+              )}
             </div>
             <input value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }} />
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
-              <label style={rLbl}>Sku
+              <label style={rLbl}>{t("d.sku")}
                 <input value={d.skuCode} readOnly style={{ ...inp, width: "100%", marginTop: 4, background: "#EDEFF4", color: "var(--muted)" }} />
               </label>
-              <label style={rLbl}>Points
+              <label style={rLbl}>{t("d.points")}
                 <input type="number" min={0} max={10} value={f.points} disabled={!canEdit}
                   onChange={(e) => setF({ ...f, points: Number(e.target.value) })} style={{ ...inp, width: "100%", marginTop: 4 }} />
               </label>
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0 4px" }}>
-              <button onClick={() => copy(f.description)} title="Copy description" style={copyBtn}>⧉</button>
-              <b style={{ fontSize: 13.5 }}>Description</b>
+              <b style={{ fontSize: 13.5 }}>{t("d.description")}</b>
+              <CopyBtn v={f.description} tip={t("d.copy") + " " + t("d.description").toLowerCase()} />
             </div>
             <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} rows={4} style={{ ...inp, width: "100%", resize: "vertical" }} />
 
             <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0", fontSize: 13, cursor: "pointer" }}>
               <input type="checkbox" checked={f.personalize} disabled={!canEdit} onChange={(e) => setF({ ...f, personalize: e.target.checked })} />
-              Personalize Product
+              {t("d.personalize")}
             </label>
 
-            <label style={rLbl}>Product Link
-              <input value={f.productLink} placeholder="Link Product on Platform" disabled={!canEdit}
-                onChange={(e) => setF({ ...f, productLink: e.target.value })} style={{ ...inp, width: "100%", marginTop: 4 }} />
-            </label>
-            <label style={{ ...rLbl, display: "block", marginTop: 10 }}>Note
-              <textarea value={f.note} placeholder="Note" disabled={!canEdit} rows={2}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <b style={{ fontSize: 13 }}>{t("d.productLink")}</b>
+              {f.productLink && <CopyBtn v={f.productLink} tip={t("d.copy") + " link"} />}
+            </div>
+            <input value={f.productLink} placeholder={t("d.linkPlaceholder")} disabled={!canEdit}
+              onChange={(e) => setF({ ...f, productLink: e.target.value })} style={{ ...inp, width: "100%" }} />
+
+            <label style={{ ...rLbl, display: "block", marginTop: 10 }}>{t("c.note")}
+              <textarea value={f.note} placeholder={t("c.note")} disabled={!canEdit} rows={2}
                 onChange={(e) => setF({ ...f, note: e.target.value })} style={{ ...inp, width: "100%", marginTop: 4, resize: "vertical" }} />
             </label>
 
             {/* Tabs files */}
-            <div style={{ display: "flex", gap: 0, marginTop: 16, borderBottom: "1px solid var(--line)" }}>
-              {([["mockup", "Mockups"], ["design", "Designs"], ["video", "Videos"]] as const).map(([k, label]) => (
-                <button key={k} onClick={() => setTab(k)} style={{
-                  padding: "9px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                  border: "1px solid var(--line)", borderBottom: tab === k ? "2px solid #fff" : "none", marginBottom: -1,
-                  borderRadius: "10px 10px 0 0", background: tab === k ? "#fff" : "#F5F6F9",
-                  color: tab === k ? "var(--ink)" : "var(--blue)",
-                }}>{label} ({filesOf(k).length})</button>
-              ))}
-            </div>
-            <div style={{ padding: "14px 0 20px" }}>
-              {tab === "mockup" && filesOf("mockup").length > 0 && (
-                <button onClick={() => downloadAll(filesOf("mockup"))} style={{ ...btnGhostBlue, marginBottom: 12 }}>⇩ Download All Mockups</button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, marginBottom: 12 }}>
+              <div className="ftabs">
+                {([["mockup", t("d.mockups")], ["design", t("d.designFiles")], ["video", t("d.videos")]] as const).map(([k, label]) => (
+                  <button key={k} onClick={() => setTab(k)} className={`ftab${tab === k ? " on" : ""}`}>{label} ({filesOf(k).length})</button>
+                ))}
+              </div>
+              {filesOf(tab).length > 1 && (
+                <button onClick={() => downloadAll(filesOf(tab))} style={{ ...btnGhostBlue, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <IconDownload width={14} height={14} /> {t("d.downloadAll")}
+                </button>
               )}
-              {filesOf(tab).map((x) => (
-                <div key={x.id} style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 12 }}>
-                  <div style={{ width: 96, height: 96, borderRadius: 10, background: "#EDEFF4", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {x.thumbUrl ? <img src={x.thumbUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</span>}
-                  </div>
-                  <div style={{ fontSize: 13 }}>
-                    <b>{d.title}.{x.kind === "video" ? "MP4" : "PNG"}</b>
-                    <div style={{ fontWeight: 700 }}>{x.kind} - {d.designerName ?? ""}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{x.width && x.height ? `${x.width}x${x.height} · ` : ""}{(x.sizeBytes / 1048576).toFixed(2)}MB · {x.processingStatus}</div>
-                    <div style={{ display: "flex", gap: 12, marginTop: 3 }}>
-                      {x.originalUrl && <a href={x.originalUrl} target="_blank" style={{ color: "var(--blue)", fontSize: 12.5 }}>View Orginal</a>}
-                      {canEdit && <button onClick={() => delFile(x.id)} style={{ background: "none", border: "none", color: "var(--red)", fontSize: 12.5, cursor: "pointer", padding: 0 }}>Delete</button>}
+            </div>
+
+            {filesOf(tab).length > 0 ? (
+              <div className="file-grid">
+                {filesOf(tab).map((x) => (
+                  <div key={x.id} className="file-cell checker">
+                    {x.thumbUrl || x.originalUrl
+                      ? <img src={x.thumbUrl ?? x.originalUrl!} alt="" loading="lazy" />
+                      : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</div>}
+                    <div className="file-ov">
+                      {x.originalUrl && <button className="dc-act" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, `${d.title}-${x.kind}`)}><IconDownload width={16} height={16} /></button>}
+                      {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="dc-act" title={t("d.viewOriginal")}><IconEyeOpen width={16} height={16} /></a>}
+                      {canEdit && <button onClick={() => delFile(x.id)} className="dc-act" title={t("c.delete")} style={{ color: "var(--red)" }}><IconTrash width={15} height={15} /></button>}
                     </div>
+                    <span className="file-badge">{x.width && x.height ? `${x.width}×${x.height} · ` : ""}{(x.sizeBytes / 1048576).toFixed(1)}MB</span>
                   </div>
-                </div>
-              ))}
-              {!filesOf(tab).length && <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>Chưa có file.</div>}
-              {canEdit && (
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
-                  <input type="file" onChange={(e) => setUpFile(e.target.files?.[0] ?? null)} style={{ fontSize: 12.5, flex: 1 }} />
-                  <select value={upKind} onChange={(e) => setUpKind(e.target.value)} style={inp}>
-                    {KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                  </select>
-                  <button onClick={upload} disabled={!upFile || busy} style={{ ...btnGhostGreen, opacity: !upFile || busy ? 0.5 : 1 }}>{busy ? "…" : "Upload"}</button>
-                </div>
-              )}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "6px 0 2px" }}>{t("d.noFiles")}</div>
+            )}
+
+            {canEdit && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+                <input ref={fileRef} type="file" onChange={(e) => setUpFile(e.target.files?.[0] ?? null)} style={{ display: "none" }} id="detail-file-input" />
+                <button onClick={() => fileRef.current?.click()} style={{ ...btnGhostBtn, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <IconUpload width={14} height={14} /> {t("d.chooseFile")}
+                </button>
+                <span style={{ fontSize: 12, color: upFile ? "var(--ink)" : "var(--muted)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {upFile ? upFile.name : "—"}
+                </span>
+                <select value={upKind} onChange={(e) => setUpKind(e.target.value)} style={{ ...inp, marginLeft: "auto" }}>
+                  {KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+                <button onClick={upload} disabled={!upFile || busy} style={{ ...btnGhostGreen, opacity: !upFile || busy ? 0.5 : 1 }}>
+                  {busy ? t("d.uploading") : t("d.upload")}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* CỘT PHẢI */}
-          <div style={{ paddingBottom: 20 }}>
-            <label style={rLbl}>Platform:
+          <div style={{ paddingBottom: 8 }}>
+            <label style={rLbl}>{t("d.platform")}
               <select value={f.platform} onChange={(e) => setF({ ...f, platform: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }}>
-                <option value="">All</option>
+                <option value="">{t("c.all")}</option>
                 <option value="tiktok">TikTok</option><option value="amazon">Amazon</option><option value="etsy">Etsy</option>
               </select>
             </label>
             <div style={{ marginTop: 12 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
-                <button onClick={() => copy(f.tags.join(", "))} title="Copy tags" style={copyBtn}>⧉</button> Tags:
+                {t("d.tags")}
+                <CopyBtn v={f.tags.join(", ")} tip={t("d.copy") + " tags"} />
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "6px 0" }}>
-                {f.tags.map((t, i) => (
+                {f.tags.map((tag, i) => (
                   <span key={i} style={{ background: "var(--blue-soft)", color: "var(--blue)", borderRadius: 8, padding: "2px 9px", fontSize: 11.5, fontWeight: 600 }}>
-                    {t} {canEdit && <button onClick={() => setF({ ...f, tags: f.tags.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", padding: 0, fontSize: 11 }}>✕</button>}
+                    {tag} {canEdit && <button onClick={() => setF({ ...f, tags: f.tags.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", padding: 0, fontSize: 11 }}>✕</button>}
                   </span>
                 ))}
               </div>
-              {canEdit && <input placeholder="Add tag…" value={tagInput} onChange={(e) => setTagInput(e.target.value)}
+              {canEdit && <input placeholder={t("d.addTag")} value={tagInput} onChange={(e) => setTagInput(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && tagInput.trim()) { setF({ ...f, tags: [...f.tags, tagInput.trim()] }); setTagInput(""); } }}
                 style={{ ...inp, width: "100%" }} />}
             </div>
-            <div style={{ marginTop: 12 }}>{Sel("sellerId", "Seller", detail.sellers)}</div>
-            <div style={{ marginTop: 12 }}>{Sel("storeId", "Store", detail.stores)}</div>
-            <div style={{ marginTop: 12 }}>{Sel("designerId", "Designer", detail.designers)}</div>
-            <div style={{ marginTop: 12 }}>{Sel("creatorId", "Creator", detail.creators)}</div>
+            <div style={{ marginTop: 12 }}>{Sel("sellerId", t("c.seller"), detail.sellers)}</div>
+            <div style={{ marginTop: 12 }}>{Sel("storeId", t("c.store"), detail.stores)}</div>
+            <div style={{ marginTop: 12 }}>{Sel("designerId", t("c.designer"), detail.designers)}</div>
+            <div style={{ marginTop: 12 }}>{Sel("creatorId", t("d.creator"), detail.creators)}</div>
 
-            <div style={{ marginTop: 14, fontSize: 13, fontWeight: 600 }}>Status(Listing):</div>
+            <div style={{ marginTop: 14, fontSize: 13, fontWeight: 600 }}>{t("d.statusListing")}</div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>
               <input type="checkbox" checked={f.listed} disabled={!canEdit} onChange={(e) => setF({ ...f, listed: e.target.checked })} />
-              {f.listed ? "listed" : "unlist"}
+              {f.listed ? t("d.listed") : t("d.unlisted")}
             </label>
 
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12 }}>
-              Đơn phát sinh: <b style={{ color: "var(--ink)" }}>{detail.ordersGenerated.c}</b> ({detail.ordersGenerated.items} items)
-              · Điểm: <b style={{ color: "var(--ink)" }}>{detail.avgScore ? detail.avgScore.toFixed(1) : "—"}</b> ({detail.reviewCount} lượt chấm)
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.8 }}>
+              {t("d.ordersGenerated")}: <b style={{ color: "var(--ink)" }}>{detail.ordersGenerated.c}</b> ({detail.ordersGenerated.items} {t("c.items")})
+              <br />{t("d.score")}: <b style={{ color: "var(--ink)" }}>{detail.avgScore ? detail.avgScore.toFixed(1) : "—"}</b> ({detail.reviewCount} {t("d.reviews")})
             </div>
 
-            {canEdit && <button onClick={save} disabled={busy} style={{ ...btnGreen, width: "100%", marginTop: 14 }}>Save</button>}
-            {canEdit && <button onClick={del} style={{ ...btnRed, width: "100%", marginTop: 8 }}>Delete</button>}
+            {canEdit && <button onClick={save} disabled={busy} style={{ ...btnGreen, width: "100%", marginTop: 14 }}>{busy ? t("c.saving") : t("c.save")}</button>}
+            {canEdit && <button onClick={del} style={{ ...btnRed, width: "100%", marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}><IconTrash width={14} height={14} /> {t("d.deleteDesign")}</button>}
           </div>
         </div>
-        <div style={{ borderTop: "1px solid var(--line)", padding: "12px 26px", display: "flex", justifyContent: "flex-end" }}>
-          <button onClick={close} style={btnBlue}>Close</button>
+        <div style={{ borderTop: "1px solid var(--line)", padding: "12px 24px", display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={close} style={btnBlue}>{t("c.close")}</button>
         </div>
       </div>
     </div>
@@ -381,15 +441,16 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
 
 const inp: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 10, padding: "8px 11px", fontSize: 13, background: "#fff" };
 const rLbl: React.CSSProperties = { fontSize: 13, fontWeight: 600, display: "block" };
-const copyBtn: React.CSSProperties = { background: "none", border: "1px solid var(--line)", borderRadius: 6, padding: "1px 6px", fontSize: 12, cursor: "pointer", color: "var(--muted)" };
 const btnBlue: React.CSSProperties = { background: "var(--blue)", color: "#fff", border: "none", borderRadius: 10, padding: "9px 20px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" };
-const btnDark: React.CSSProperties = { background: "#5A6272", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" };
+const btnDark: React.CSSProperties = { background: "#39404E", color: "#fff", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" };
 const btnGreen: React.CSSProperties = { background: "var(--green)", color: "#fff", border: "none", borderRadius: 10, padding: "10px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
 const btnRed: React.CSSProperties = { background: "var(--red)", color: "#fff", border: "none", borderRadius: 10, padding: "10px", fontSize: 14, fontWeight: 700, cursor: "pointer" };
-const btnGhostBlue: React.CSSProperties = { background: "#fff", color: "var(--blue)", border: "1px solid var(--blue)", borderRadius: 8, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" };
-const btnGhostGreen: React.CSSProperties = { background: "#fff", color: "var(--green)", border: "1px solid var(--green)", borderRadius: 8, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" };
+const btnGhostBlue: React.CSSProperties = { background: "#fff", color: "var(--blue)", border: "1px solid var(--blue)", borderRadius: 9, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" };
+const btnGhostGreen: React.CSSProperties = { background: "#fff", color: "var(--green)", border: "1px solid var(--green)", borderRadius: 9, padding: "7px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" };
+const btnGhostBtn: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 9, padding: "7px 14px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" };
+const pgBtn: React.CSSProperties = { border: "1px solid var(--line)", background: "#fff", borderRadius: 9, minWidth: 32, height: 32, fontSize: 13, cursor: "pointer", color: "var(--ink)" };
 
-function DesignPager({ page, total, show, setPage }: { page: number; total: number; show: number; setPage: (n: number) => void }) {
+function DesignPager({ page, total, show, setPage, label }: { page: number; total: number; show: number; setPage: (n: number) => void; label: string }) {
   const pages = Math.max(Math.ceil(total / show), 1);
   const nums: (number | "…")[] = [];
   for (let i = 1; i <= pages; i++) {
@@ -403,7 +464,7 @@ function DesignPager({ page, total, show, setPage }: { page: number; total: numb
         <button key={i} onClick={() => setPage(n)} style={{ ...pgBtn, background: n === page ? "var(--blue)" : "#fff", color: n === page ? "#fff" : "var(--ink)", fontWeight: 700 }}>{n}</button>
       ))}
       <button onClick={() => setPage(Math.min(pages, page + 1))} style={pgBtn}>›</button>
-      <span style={{ fontSize: 12.5, color: "var(--muted)", marginLeft: 6 }}>{total.toLocaleString()} design</span>
+      <span style={{ fontSize: 12.5, color: "var(--muted)", marginLeft: 6 }}>{total.toLocaleString()} {label}</span>
     </div>
   );
 }
@@ -413,70 +474,112 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }:
   doUpload: (designId: string, file: File, kind: string) => Promise<void>;
   sellers: Opt[]; designers: Opt[];
 }) {
+  const { t } = useLang();
   const [files, setFiles] = useState<File[]>([]);
   const [kind, setKind] = useState("design_front");
   const [sellerId, setSellerId] = useState("");
   const [designerId, setDesignerId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [drag, setDrag] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const [errors, setErrors] = useState<string[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Preview object URL — tạo theo files, thu hồi khi đổi/unmount
+  const previews = useMemo(() => files.map((fl) => fl.type.startsWith("image/") ? URL.createObjectURL(fl) : null), [files]);
+  useEffect(() => () => { previews.forEach((u) => u && URL.revokeObjectURL(u)); }, [previews]);
+
+  const addFiles = (list: FileList | null) => {
+    if (!list?.length) return;
+    setFiles((prev) => [...prev, ...Array.from(list)]);
+  };
+  const removeAt = (i: number) => setFiles((prev) => prev.filter((_, j) => j !== i));
 
   const cleanTitle = (name: string) => name.replace(/\.[^.]+$/, "").replace(/[_]+/g, " ").trim();
 
   const run = async () => {
     if (!files.length) return;
     setBusy(true);
+    setErrors([]);
     setProgress({ done: 0, total: files.length });
     let ok = 0;
+    const errs: string[] = [];
     for (let i = 0; i < files.length; i++) {
       try {
         const j = await fetch("/api/designs", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: cleanTitle(files[i].name), sellerId: sellerId || null, designerId: designerId || null }),
         }).then((r) => r.json());
-        if (j.ok) { await doUpload(j.design.id, files[i], kind); ok++; }
-      } catch { /* bỏ qua file lỗi, tiếp tục */ }
+        if (!j.ok) throw new Error(j.error ?? "create error");
+        await doUpload(j.design.id, files[i], kind);
+        ok++;
+      } catch (e) {
+        errs.push(`${files[i].name}: ${e instanceof Error ? e.message : String(e)}`);
+      }
       setProgress({ done: i + 1, total: files.length });
     }
+    setErrors(errs);
     setBusy(false);
-    flash(`✓ Đã tạo ${ok}/${files.length} design`);
+    flash(errs.length
+      ? `⚠ ${ok}/${files.length} ${t("d.bulkPartial")} — ${errs.length} ${t("d.bulkFail")}`
+      : `${t("d.bulkDone")} ${ok}/${files.length} design`);
     reload();
     if (ok === files.length) close();
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(42,48,60,.45)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
-      <div style={{ background: "#fff", borderRadius: 16, width: 560, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 80, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
+      <div style={{ background: "#fff", borderRadius: 18, width: 600, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <b style={{ fontSize: 15 }}>Bulk upload — mỗi file thành 1 design</b>
+          <b style={{ fontSize: 15 }}>{t("d.bulkTitle")}</b>
           {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
         </div>
 
-        <label style={{ fontSize: 13, fontWeight: 600, display: "block", marginBottom: 6 }}>Chọn nhiều file thiết kế</label>
-        <input type="file" multiple disabled={busy} onChange={(e) => setFiles(Array.from(e.target.files ?? []))} style={{ fontSize: 12.5, marginBottom: 6 }} />
-        {files.length > 0 && (
-          <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", marginBottom: 12, fontSize: 12.5 }}>
-            {files.map((f, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", color: "var(--muted)" }}>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>→ <b style={{ color: "var(--ink)" }}>{cleanTitle(f.name)}</b></span>
-                <span>{(f.size / 1048576).toFixed(1)}MB</span>
-              </div>
-            ))}
+        {/* Dropzone */}
+        <input ref={inputRef} type="file" multiple style={{ display: "none" }} onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+        <div className={`dropzone${drag ? " drag" : ""}`}
+          onClick={() => !busy && inputRef.current?.click()}
+          onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+          onDragLeave={() => setDrag(false)}
+          onDrop={(e) => { e.preventDefault(); setDrag(false); if (!busy) addFiles(e.dataTransfer.files); }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--blue)", fontWeight: 700, fontSize: 13.5 }}>
+            <IconUpload width={17} height={17} /> {t("d.chooseMany")}
           </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>{t("d.dragHint")}</div>
+        </div>
+
+        {/* Lưới preview */}
+        {files.length > 0 && (
+          <>
+            <div style={{ fontSize: 12, color: "var(--muted)", margin: "12px 0 8px" }}>{files.length} {t("d.filesSelected")}</div>
+            <div className="bulk-grid">
+              {files.map((fl, i) => (
+                <div key={i} className="bulk-cell checker">
+                  {previews[i]
+                    ? <img src={previews[i]!} alt="" />
+                    : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 10.5, color: "var(--muted)", fontWeight: 700 }}>{fl.name.split(".").pop()?.toUpperCase()}</div>}
+                  {!busy && <button className="bulk-x" title={t("c.delete")} onClick={() => removeAt(i)}>✕</button>}
+                  <span className="bulk-name">{fl.name}</span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 12 }}>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Loại file
+        {/* Tuỳ chọn */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 14, marginBottom: 14 }}>
+          <label style={rLbl}>{t("d.fileType")}
             <select value={kind} onChange={(e) => setKind(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
               {KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </label>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Seller (áp cho tất cả)
+          <label style={rLbl}>{t("c.seller")} <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 11 }}>{t("d.applyAll")}</span>
             <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
               <option value="">—</option>
               {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </label>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Designer
+          <label style={rLbl}>{t("c.designer")}
             <select value={designerId} onChange={(e) => setDesignerId(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
               <option value="">—</option>
               {designers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -493,18 +596,22 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }:
           </div>
         )}
 
-        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 16 }}>Tên design lấy từ tên file (bỏ đuôi, đổi _ thành khoảng trắng). ID cấp tự động theo thứ tự. Mở "More" từng design để bổ sung thông tin sau.</div>
+        {errors.length > 0 && (
+          <div style={{ marginBottom: 12, padding: "10px 12px", background: "#FDECEC", border: "1px solid #F5B5B5", borderRadius: 8, maxHeight: 140, overflowY: "auto" }}>
+            <b style={{ fontSize: 12.5, color: "var(--red)" }}>{t("d.uploadErrors")} ({errors.length}):</b>
+            {errors.map((e, i) => <div key={i} style={{ fontSize: 12, color: "#8A2E2E", marginTop: 4, wordBreak: "break-word" }}>• {e}</div>)}
+          </div>
+        )}
+
+        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 16 }}>{t("d.bulkHint")}</div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          {!busy && <button onClick={close} style={btnGhostBtn}>Huỷ</button>}
+          {!busy && <button onClick={close} style={btnGhostBtn}>{t("c.cancel")}</button>}
           <button onClick={run} disabled={busy || !files.length} style={{ ...btnBlue, opacity: busy || !files.length ? 0.6 : 1 }}>
-            {busy ? "Đang upload…" : `Upload ${files.length || ""} file`}
+            {busy ? t("d.uploading") : `${t("d.upload")} ${files.length || ""}`}
           </button>
         </div>
       </div>
     </div>
   );
 }
-
-const pgBtn: React.CSSProperties = { minWidth: 34, height: 34, border: "1px solid var(--line)", borderRadius: 9, background: "#fff", cursor: "pointer", fontSize: 13, color: "var(--ink)" };
-const btnGhostBtn: React.CSSProperties = { background: "#fff", color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 16px", fontSize: 13.5, fontWeight: 600, cursor: "pointer" };

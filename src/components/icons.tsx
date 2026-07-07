@@ -203,3 +203,36 @@ export const IconSend = (p: P) => (
     <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
   </svg>
 );
+export const IconCopy = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={14} height={14} {...p}>
+    <rect x="9" y="9" width="12" height="12" rx="2.5" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+export const IconEyeOpen = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={15} height={15} {...p}>
+    <path d="M1 12s4-7.5 11-7.5S23 12 23 12s-4 7.5-11 7.5S1 12 1 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+export const IconTrash = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={15} height={15} {...p}>
+    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6" />
+  </svg>
+);
+export const IconSparkle = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={15} height={15} {...p}>
+    <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2zM19 15l.9 2.6L22.5 18.5l-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z" />
+  </svg>
+);
+export const IconPin = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={15} height={15} {...p}>
+    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" />
+    <circle cx="12" cy="10" r="3" />
+  </svg>
+);
+export const IconChevron = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" width={15} height={15} {...p}>
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+);
