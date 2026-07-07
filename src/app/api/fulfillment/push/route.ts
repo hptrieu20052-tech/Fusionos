@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { getAdapter } from "@/lib/fulfillers";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,10 @@ export async function POST(req: NextRequest) {
 
   // Chế độ mới: client gửi lines [{itemId, mappingId, qty}] — variant do người fulfill chọn tay
   let cost = 0;
+  let baseSum = 0;
+  let shipSum = 0;
   let lineNote = "";
+  const pushLines: { fulfillerSku: string; qty: number }[] = [];
   if (Array.isArray(b.lines) && b.lines.length) {
     if (b.lines.length !== items.length) {
       return NextResponse.json({ ok: false, error: "thiếu lựa chọn variant cho một số item" }, { status: 400 });
@@ -55,8 +59,11 @@ export async function POST(req: NextRequest) {
       if (!it) return NextResponse.json({ ok: false, error: "item không thuộc đơn này" }, { status: 400 });
       if (!m) return NextResponse.json({ ok: false, error: "variant không thuộc nhà fulfill đã chọn" }, { status: 400 });
       if (!Number.isInteger(qty) || qty < 1) return NextResponse.json({ ok: false, error: "qty phải ≥ 1" }, { status: 400 });
+      baseSum += Number(m.baseCost) * qty;
+      shipSum += Number(m.shipCost) * qty;
       cost += (Number(m.baseCost) + Number(m.shipCost)) * qty;
       parts.push(`${m.fulfillerSku}×${qty}`);
+      pushLines.push({ fulfillerSku: m.fulfillerSku, qty });
     }
     lineNote = " · " + parts.join(", ");
   } else {
@@ -72,25 +79,32 @@ export async function POST(req: NextRequest) {
         error: `SKU chưa mapping với ${ff.name}: ${missing.map((m) => m.internalSku ?? m.productTitle).join(", ")}`,
       }, { status: 400 });
     }
-    cost = items.reduce((t, i) => {
+    for (const i of items) {
       const m = maps.find((x) => x.internalSku === i.internalSku)!;
-      return t + (Number(m.baseCost) + Number(m.shipCost)) * i.qty;
-    }, 0);
+      baseSum += Number(m.baseCost) * i.qty;
+      shipSum += Number(m.shipCost) * i.qty;
+      pushLines.push({ fulfillerSku: m.fulfillerSku, qty: i.qty });
+    }
+    cost = baseSum + shipSum;
   }
 
-  // --- Gọi API fulfiller (adapter) ---
-  let externalFfId: string;
-  if (ff.credentials && ff.apiEndpoint) {
-    // Production: build request đúng spec từng hãng (Gearment/Printify/Merchize…)
-    // const res = await fetch(ff.apiEndpoint + "orders", {...})
-    externalFfId = `LIVE-${Date.now()}`; // placeholder — thay bằng id từ response thật
-  } else {
-    externalFfId = `SIM-${Date.now()}`;
-  }
+  // --- Gọi API fulfiller qua adapter theo từng nhà ---
+  const adapter = getAdapter(ff.name);
+  const pushRes = await adapter.push({
+    fulfiller: { id: ff.id, name: ff.name, apiEndpoint: ff.apiEndpoint, credentials: ff.credentials },
+    order: {
+      externalId: order.externalId, orderLabel: order.orderLabel,
+      buyerFirst: order.buyerFirst, buyerLast: order.buyerLast,
+      addr1: order.addr1, addr2: order.addr2, city: order.city,
+      state: order.state, zip: order.zip, country: order.country,
+    },
+    lines: pushLines,
+  });
+  const externalFfId = pushRes.externalFfId;
 
   const [ffo] = await db.insert(schema.fulfillmentOrders).values({
     orderId: order.id, fulfillerId: ff.id, externalFfId,
-    status: "pushed", cost: cost.toFixed(2), pushedAt: new Date(),
+    status: "pushed", cost: cost.toFixed(2), baseCost: baseSum.toFixed(2), shipCost: shipSum.toFixed(2), pushedAt: new Date(),
   }).returning();
 
   await db.update(schema.orders).set({ status: "created", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
@@ -103,5 +117,5 @@ export async function POST(req: NextRequest) {
     occurredAt: new Date().toISOString().slice(0, 10),
   });
 
-  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost, simulated: !ff.credentials });
+  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost, simulated: pushRes.simulated });
 }

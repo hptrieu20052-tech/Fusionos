@@ -8,7 +8,8 @@
     "start": "next start",
     "db:push": "drizzle-kit push",
     "db:seed": "node scripts/seed.mjs",
-    "db:seed-all": "node --env-file=.env scripts/seed-all.mjs"
+    "db:seed-all": "node --env-file=.env scripts/seed-all.mjs",
+    "db:seed-fulfillers": "node --env-file=.env scripts/seed-fulfillers.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1079.0",

@@ -39,9 +39,22 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     : [];
   // Catalog đầy đủ mọi variant của từng fulfiller (để chọn style/size/color tay)
   const allMaps = await db.select().from(schema.skuMappings).where(eq(schema.skuMappings.active, true));
-  const catalog: Record<string, { id: string; fulfillerSku: string; internalSku: string; unitCost: number }[]> = {};
+  // Tách color/size từ trường variant tự do (vd "Navy / L", "L - Black", "Đen, XL")
+  const SIZE_RE = /^(one size|os|free|xxs|xs|s|m|l|xl|xxl|2xl|3xl|4xl|5xl|\d{1,2}xl|\d{2,3})$/i;
+  const parseVariant = (variant: string | null, productType: string | null) => {
+    const style = (productType || "").trim() || "—";
+    if (!variant) return { style, color: "—", size: "—" };
+    const parts = variant.split(/[\/,|·–—-]| x /i).map((p) => p.trim()).filter(Boolean);
+    let size = "", color = "";
+    for (const p of parts) { if (!size && SIZE_RE.test(p)) size = p; else color = color ? `${color} ${p}` : p; }
+    if (!size && parts.length) size = parts[parts.length - 1];
+    if (!color) color = parts.length > 1 ? parts.slice(0, -1).join(" ") : "—";
+    return { style, color: color || "—", size: size || "—" };
+  };
+  const catalog: Record<string, { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; color: string; size: string }[]> = {};
   for (const m of allMaps) {
-    (catalog[m.fulfillerId] ??= []).push({ id: m.id, fulfillerSku: m.fulfillerSku, internalSku: m.internalSku, unitCost: Number(m.baseCost) + Number(m.shipCost) });
+    const { style, color, size } = parseVariant(m.variant, m.productType);
+    (catalog[m.fulfillerId] ??= []).push({ id: m.id, fulfillerSku: m.fulfillerSku, internalSku: m.internalSku, unitCost: Number(m.baseCost) + Number(m.shipCost), style, color, size });
   }
   for (const k of Object.keys(catalog)) catalog[k].sort((a, b) => a.fulfillerSku.localeCompare(b.fulfillerSku));
   const options = fulfillers.map((f) => {

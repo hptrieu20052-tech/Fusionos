@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { IconCopy, IconPin, IconChevron, IconTruck, IconTrash } from "@/components/icons";
@@ -18,14 +18,24 @@ type Order = {
   items: Item[];
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
-type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number };
-type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]> };
+type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; color: string; size: string };
+type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
+type FfOrder = { id: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
   completed: "#5E86C9", has_issues: "#C06B82", trash: "#BBA054",
 };
 const money = (n: number | string) => "$" + Number(n).toFixed(2);
+// Link tra cứu tracking theo hãng vận chuyển
+function trackingUrl(carrier: string | null, num: string): string {
+  const c = (carrier ?? "").toLowerCase();
+  if (c.includes("usps")) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${num}`;
+  if (c.includes("ups")) return `https://www.ups.com/track?tracknum=${num}`;
+  if (c.includes("fedex")) return `https://www.fedex.com/fedextrack/?trknbr=${num}`;
+  if (c.includes("dhl")) return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${num}`;
+  return `https://parcelsapp.com/en/tracking/${num}`;
+}
 
 export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean }) {
   const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: { id: string; name: string }[]; fulfillers: { id: string; name: string }[] } | null>(null);
@@ -64,11 +74,6 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const pages = Math.max(Math.ceil(data.total / show), 1);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
-  const patchOrder = async (id: string, body: Record<string, unknown>) => {
-    const j = await fetch(`/api/orders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
-    if (j.ok) { flash("✓ Đã cập nhật"); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
-    return j;
-  };
   const cloneOrder = async (id: string) => {
     const j = await fetch(`/api/orders/${id}/clone`, { method: "POST" }).then((r) => r.json());
     if (j.ok) { flash(`✓ Đã nhân bản → #${j.order.externalId}`); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
@@ -84,11 +89,6 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
     const j = await fetch("/api/orders/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(selIds), status: bulkStatus }) }).then((r) => r.json());
     if (j.ok) { flash(`✓ Đã đổi ${j.updated} đơn → ${bulkStatus.toUpperCase()}${j.refunded ? ` · hoàn giá vốn ${j.refunded} đơn` : ""}${j.skipped ? ` · bỏ qua ${j.skipped}` : ""}`); setSelIds(new Set()); load(); }
     else flash("✗ " + (j.error ?? "Lỗi"));
-  };
-  const downloadInfo = (o: Order) => {
-    const blob = new Blob([JSON.stringify(o, null, 2)], { type: "application/json" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob); a.download = `order-${o.external_id}.json`; a.click();
   };
 
   return (
@@ -210,8 +210,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
       {data.orders.map((o) => (
         <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
-          reload={load} flash={flash} patchOrder={patchOrder} cloneOrder={cloneOrder}
-          downloadInfo={downloadInfo} copyText={copyText} />
+          reload={load} flash={flash} cloneOrder={cloneOrder} copyText={copyText} />
       ))}
       {!data.orders.length && <div className="panel empty" style={{ marginTop: 12 }}>{t("o.noMatch")}</div>}
 
@@ -225,11 +224,75 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   );
 }
 
-function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash, patchOrder, cloneOrder, downloadInfo, copyText }: {
+function VariantPicker({ variants, line, setLine, label }: {
+  variants: Variant[]; line: { mappingId: string; qty: number };
+  setLine: (v: { mappingId: string; qty: number }) => void; label?: string;
+}) {
+  const { t } = useLang();
+  const uniq = (a: string[]) => Array.from(new Set(a));
+  const cur = variants.find((v) => v.id === line.mappingId);
+  const style = cur?.style ?? "";
+  const color = cur?.color ?? "";
+  const size = cur?.size ?? "";
+  const styles = uniq(variants.map((v) => v.style));
+  const colors = uniq(variants.filter((v) => v.style === style).map((v) => v.color));
+  const sizes = uniq(variants.filter((v) => v.style === style && v.color === color).map((v) => v.size));
+
+  const pick = (nextStyle: string, nextColor: string, nextSize: string) => {
+    // tìm variant khớp nhất theo thứ tự style > color > size
+    let cands = variants.filter((v) => v.style === nextStyle);
+    if (nextColor) { const c = cands.filter((v) => v.color === nextColor); if (c.length) cands = c; }
+    if (nextSize) { const s = cands.filter((v) => v.size === nextSize); if (s.length) cands = s; }
+    setLine({ ...line, mappingId: cands[0]?.id ?? "" });
+  };
+  const v = cur;
+  const box = { ...inp, width: "100%" } as React.CSSProperties;
+  const miss = !line.mappingId;
+
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: miss ? "var(--red-soft)" : "#fff", ...(miss ? { borderColor: "#F0A9A0" } : {}) }}>
+      {label && <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={label}>{label}</div>}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        <div className="o2-field">
+          <label>Style</label>
+          <select value={style} onChange={(e) => pick(e.target.value, "", "")} style={box}>
+            <option value="">—</option>
+            {styles.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div className="o2-field">
+          <label>Color</label>
+          <select value={color} disabled={!style} onChange={(e) => pick(style, e.target.value, "")} style={box}>
+            <option value="">—</option>
+            {colors.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="o2-field">
+          <label>Size</label>
+          <select value={size} disabled={!color} onChange={(e) => pick(style, color, e.target.value)} style={box}>
+            <option value="">—</option>
+            {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginTop: 8 }}>
+        <div className="o2-field" style={{ width: 84 }}>
+          <label>{t("o.qtyLabel")}</label>
+          <input type="number" min={1} value={line.qty} onChange={(e) => setLine({ ...line, qty: Number(e.target.value) })} style={{ ...box, textAlign: "center" }} />
+        </div>
+        <div style={{ flex: 1 }} />
+        <div style={{ fontSize: 12.5, paddingBottom: 8 }}>
+          {v ? <b style={{ color: "var(--green)" }}>{money(v.unitCost * (line.qty || 0))}</b> : <span style={{ color: "var(--faint)", fontSize: 11.5 }}>{t("o.selectVariant")}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash, cloneOrder, copyText }: {
   o: Order; canEdit: boolean; canPushFf: boolean; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
-  patchOrder: (id: string, body: Record<string, unknown>) => Promise<{ ok: boolean }>;
-  cloneOrder: (id: string) => void; downloadInfo: (o: Order) => void; copyText: (v: string) => void;
+  cloneOrder: (id: string) => void; copyText: (v: string) => void;
 }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
@@ -324,6 +387,37 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
               {canPushFf && (
                 <button onClick={toggle} className={`o2-toggle${open ? " open" : ""}`}>{t("o.fulfilment")} <IconChevron width={15} height={15} /></button>
               )}
+              {/* Chi phí supplier (base + ship) + Tracking / Carrier / Link */}
+              {open && detail && (detail.ffOrders ?? []).length > 0 && (
+                <div className="o2-track">
+                  {(detail.ffOrders ?? []).map((f) => (
+                    <div key={f.id} style={{ marginBottom: 4 }}>
+                      <div className="o2-track-h">{f.fulfillerName || t("o.fulfilledBy")}</div>
+                      {(f.baseCost != null || f.shipCost != null) && (
+                        <div className="o2-supcost">
+                          <span>{t("o.baseCost")}: <b>{money(f.baseCost ?? 0)}</b></span>
+                          <span>{t("o.shipFee")}: <b>{money(f.shipCost ?? 0)}</b></span>
+                          <span className="tot">{t("o.total")}: <b>{money(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0)))}</b></span>
+                        </div>
+                      )}
+                      {f.trackingNumber ? (
+                        <div className="o2-track-row" style={{ borderTop: "none", paddingTop: 6 }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                              <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.trackingNumber}</span>
+                              <button className="icon-btn" title={t("o.copyTrack")} onClick={() => copyText(f.trackingNumber!)}><IconCopy width={12} height={12} /></button>
+                            </div>
+                            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{f.trackingCarrier || t("o.carrier")}</div>
+                          </div>
+                          <a href={trackingUrl(f.trackingCarrier, f.trackingNumber)} target="_blank" rel="noreferrer" style={{ ...btnGhost, textDecoration: "none", fontSize: 11.5, whiteSpace: "nowrap" }}>{t("o.trackLink")} ↗</a>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>{t("o.noTracking")}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* CỘT 2+3 — form giao hàng + nhãn/tạo đơn (chỉ khi mở) */}
@@ -356,6 +450,13 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                       ))}
                     </select>
                   </div>
+                  {/* Variant từng sản phẩm: Style → Color → Size → Qty */}
+                  {ffSel && detail.items.map((it) => (
+                    <VariantPicker key={it.id} variants={variants}
+                      line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
+                      setLine={(v) => setLines({ ...lines, [it.id]: v })}
+                      label={detail.items.length > 1 ? it.product_title : undefined} />
+                  ))}
                   {complete
                     ? <div style={{ fontSize: 12.5, textAlign: "right" }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></div>
                     : ffSel ? <div style={{ fontSize: 11.5, color: "var(--muted)", textAlign: "right" }}>{t("o.needComplete").replace("{n}", String(detail.items.length))}</div> : null}
@@ -369,25 +470,17 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
           {canEdit && <button onClick={() => cloneOrder(o.id)} style={btnGhost}>{t("o.dup")}</button>}
-          {canEdit && <OrderMenu order={o} patchOrder={patchOrder} downloadInfo={downloadInfo} />}
         </div>
       </div>
 
-      {/* Items — variant/qty bên phải khi đã mở fulfillment + chọn nhà fulfill */}
-      {o.items.map((it) => {
-        const dit = detail?.items.find((x) => x.id === it.id);
-        const l = lines[it.id] ?? { mappingId: "", qty: it.qty };
-        return <ItemRow key={it.id} it={it} onSaved={reload} flash={flash}
-          showVariant={open && !!ffSel && !!dit} variants={variants}
-          line={l} setLine={(v) => setLines({ ...lines, [it.id]: v })} />;
-      })}
+      {/* Items — chỉ hiển thị sản phẩm + gán design (variant đã dời lên cột phải) */}
+      {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} />)}
     </div>
   );
 }
 
-function ItemRow({ it, onSaved, flash, showVariant, variants, line, setLine }: {
+function ItemRow({ it, onSaved, flash }: {
   it: Item; onSaved: () => void; flash: (m: string) => void;
-  showVariant?: boolean; variants?: Variant[]; line?: { mappingId: string; qty: number }; setLine?: (v: { mappingId: string; qty: number }) => void;
 }) {
   const { t } = useLang();
   const [skuInput, setSkuInput] = useState("");
@@ -404,7 +497,6 @@ function ItemRow({ it, onSaved, flash, showVariant, variants, line, setLine }: {
     if (j.ok) onSaved();
   };
   const img = it.mockupUrl ?? it.designThumb;
-  const v = variants?.find((x) => x.id === line?.mappingId);
   return (
     <div className="o2-item">
       <div className="o2-thumb">{img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}</div>
@@ -419,53 +511,33 @@ function ItemRow({ it, onSaved, flash, showVariant, variants, line, setLine }: {
         <label style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={it.special_print} onChange={toggleSpecial} /> {t("o.specialPrint")}
         </label>
-        {/* Gán design */}
-        <div className="o2-assign">
-          {it.design_id ? (
-            <>
-              {it.designThumb && <div className="o2-dthumb"><img src={it.designThumb} alt="" /></div>}
-              <div style={{ fontSize: 12.5 }}>
-                <div style={{ fontWeight: 700 }}>#{it.design_sku} — {it.design_title}</div>
-                <button onClick={() => assign(null)} disabled={busy} style={{ ...btnGhost, marginTop: 6, fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}><IconTrash width={12} height={12} /> {t("o.unassign")}</button>
-              </div>
-            </>
-          ) : (
-            <div style={{ flex: 1 }}>
-              {it.suggest ? (
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  {it.suggest.thumb && <div className="o2-dthumb"><img src={it.suggest.thumb} alt="" /></div>}
-                  <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ background: "var(--green)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{t("o.acceptDesign")} #{it.suggest.skuCode}</button>
-                </div>
-              ) : null}
-              <div style={{ display: "flex", gap: 6, marginTop: it.suggest ? 8 : 0 }}>
-                <input placeholder={t("o.designId")} value={skuInput} onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
-                  onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} style={{ ...inp, width: 130 }} />
-                <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} style={btnBlue}>{t("o.assign")}</button>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
-      {/* Cột variant/qty — chỉ hiện khi đã mở fulfillment + chọn nhà fulfill */}
-      {showVariant && line && setLine && (
-        <div className="o2-vary">
-          <div className="o2-field">
-            <label>{t("o.fulfilledBy")} — variant</label>
-            <select value={line.mappingId} onChange={(e) => setLine({ ...line, mappingId: e.target.value })}
-              style={{ ...inp, width: "100%", ...(line.mappingId ? {} : { borderColor: "#F0A9A0", background: "var(--red-soft)" }) }}>
-              <option value="">{t("o.selectVariant")}</option>
-              {variants!.map((x) => <option key={x.id} value={x.id}>{x.fulfillerSku} — {money(x.unitCost)}</option>)}
-            </select>
-          </div>
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
-            <div className="o2-field" style={{ width: 90 }}>
-              <label>{t("o.qtyLabel")}</label>
-              <input type="number" min={1} value={line.qty} onChange={(e) => setLine({ ...line, qty: Number(e.target.value) })} style={{ ...inp, width: "100%", textAlign: "center" }} />
+      {/* Gán design — cột riêng, ngang hàng với thông tin */}
+      <div className="o2-assigncol">
+        {it.design_id ? (
+          <div className="o2-assign">
+            {it.designThumb && <div className="o2-dthumb"><img src={it.designThumb} alt="" /></div>}
+            <div style={{ fontSize: 12.5, minWidth: 0 }}>
+              <div style={{ fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis" }}>#{it.design_sku} — {it.design_title}</div>
+              <button onClick={() => assign(null)} disabled={busy} style={{ ...btnGhost, marginTop: 6, fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}><IconTrash width={12} height={12} /> {t("o.unassign")}</button>
             </div>
-            <div style={{ flex: 1, textAlign: "right", fontSize: 13, paddingBottom: 8 }}>{v ? <b style={{ color: "var(--green)" }}>{money(v.unitCost * (line.qty || 0))}</b> : <span style={{ color: "var(--faint)" }}>—</span>}</div>
           </div>
-        </div>
-      )}
+        ) : (
+          <div>
+            {it.suggest ? (
+              <div className="o2-assign" style={{ marginBottom: 8 }}>
+                {it.suggest.thumb && <div className="o2-dthumb"><img src={it.suggest.thumb} alt="" /></div>}
+                <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ background: "var(--green)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{t("o.acceptDesign")} #{it.suggest.skuCode}</button>
+              </div>
+            ) : null}
+            <div style={{ display: "flex", gap: 6 }}>
+              <input placeholder={t("o.designId")} value={skuInput} onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
+                onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} style={{ ...inp, flex: 1, minWidth: 0 }} />
+              <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} style={btnBlue}>{t("o.assign")}</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -548,37 +620,6 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
             style={{ ...btnBlue, opacity: busy || !items.some((x) => x.productTitle.trim()) ? 0.6 : 1 }}>{busy ? "Đang tạo…" : "Tạo đơn"}</button>
         </div>
       </div>
-    </div>
-  );
-}
-
-function OrderMenu({ order, patchOrder, downloadInfo }: {
-  order: Order; patchOrder: (id: string, body: Record<string, unknown>) => Promise<{ ok: boolean }>; downloadInfo: (o: Order) => void;
-}) {
-  const { t } = useLang();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    if (open) document.addEventListener("mousedown", h);
-    return () => document.removeEventListener("mousedown", h);
-  }, [open]);
-  const act = (fn: () => void) => { fn(); setOpen(false); };
-  const Item = ({ onClick, color, children }: { onClick: () => void; color?: string; children: React.ReactNode }) => (
-    <button onClick={() => act(onClick)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", border: "none", background: "none", cursor: "pointer", fontSize: 13, color: color ?? "var(--ink)" }}>{children}</button>
-  );
-  return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button onClick={() => setOpen(!open)} style={{ ...btnGhost, padding: "8px 12px", fontWeight: 700 }} title={t("o.actions")}>⋯</button>
-      {open && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(16,24,40,.14)", minWidth: 180, padding: "4px 0", overflow: "hidden" }}>
-          {order.status !== "completed" && <Item onClick={() => patchOrder(order.id, { status: "completed" })} color="var(--green)">✓ {t("o.complete")}</Item>}
-          {order.status !== "has_issues" && order.status !== "trash" && <Item onClick={() => patchOrder(order.id, { status: "has_issues" })} color="#C06B82">⚠ {t("o.hasIssues")}</Item>}
-          {order.status !== "trash" && <Item onClick={() => { if (confirm(t("o.confirmTrash"))) patchOrder(order.id, { status: "trash" }); }} color="#BBA054">{t("o.trash")}</Item>}
-          <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
-          <Item onClick={() => downloadInfo(order)}>{t("o.downloadInfo")}</Item>
-        </div>
-      )}
     </div>
   );
 }

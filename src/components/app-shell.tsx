@@ -53,11 +53,13 @@ export default function AppShell({ user, links, children }: {
             <span>{lang === "vi" ? "VI" : "EN"}</span>
           </button>
           <div className="topnav-user">
-            <div className="user-avatar">{initials}</div>
-            <div className="tb-user-txt">
-              <span className="tb-user-name">{user.name}</span>
-              <span className="tb-role">{user.role}</span>
-            </div>
+            <Link href="/account" className="topnav-user-link" title="My account" prefetch>
+              <div className="user-avatar">{initials}</div>
+              <div className="tb-user-txt">
+                <span className="tb-user-name">{user.name}</span>
+                <span className="tb-role">{user.role}</span>
+              </div>
+            </Link>
             <span className="tb-divider" />
             <LogoutButton />
           </div>
