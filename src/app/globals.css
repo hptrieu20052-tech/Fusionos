@@ -114,3 +114,4 @@ tr:last-child td{border-bottom:none}
 .otab.on{background:#0b2545;color:#fff;border-color:#0b2545}
 .lang-toggle{display:inline-flex;align-items:center;gap:5px;background:#fff;border:1px solid var(--line);border-radius:9px;padding:6px 11px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ink);flex-shrink:0;transition:all .15s}
 .lang-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.lang-flag{width:20px;height:14px;border-radius:2px;object-fit:cover;display:block}

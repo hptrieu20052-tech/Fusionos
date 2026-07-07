@@ -47,7 +47,9 @@ export default function AppShell({ user, links, children }: {
             })}
           </nav>
           <button onClick={toggle} className="lang-toggle" title="Chuyển ngôn ngữ / Switch language">
-            {lang === "vi" ? "🇻🇳 VI" : "🇬🇧 EN"}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={lang === "vi" ? "/flags/vn.png" : "/flags/en.png"} alt={lang === "vi" ? "VN" : "EN"} className="lang-flag" />
+            <span>{lang === "vi" ? "VI" : "EN"}</span>
           </button>
           <div className="topnav-user">
             <div className="user-avatar">{initials}</div>
