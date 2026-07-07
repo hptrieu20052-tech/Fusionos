@@ -1,7 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "regions": ["sin1"],
-  "crons": [
-    { "path": "/api/designs/process-queue?limit=5", "schedule": "* * * * *" }
-  ]
+  "regions": ["sin1"]
 }
