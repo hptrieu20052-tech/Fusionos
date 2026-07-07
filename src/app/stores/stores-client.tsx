@@ -2,10 +2,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useLang } from "@/components/lang-provider";
+import { IconSettings, IconTrash, IconLink } from "@/components/icons";
 
 type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
-  sellerName: string | null; sellerId: string | null; note: string | null;
+  sellerName: string | null; sellerId: string | null; note: string | null; storeUrl: string | null;
   orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
 };
@@ -39,6 +40,12 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
   }, [fSeller, fMk]);
   useEffect(() => { load(); }, [load]);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
+
+  const delStore = async (s: Store) => {
+    if (!confirm(`Xóa store "${s.name}"? Đơn & design của store sẽ được gỡ liên kết (không xóa), thao tác này không hoàn tác.`)) return;
+    const j = await fetch(`/api/stores/${s.id}`, { method: "DELETE" }).then((r) => r.json());
+    if (j.ok) { flash("✓ Đã xóa store"); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
+  };
 
   const byMk = (mk: string) => stores.filter((s) => s.marketplace === mk);
   const total30 = stores.reduce((a, s) => a + s.revenue30d, 0);
@@ -91,17 +98,24 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
               </div>
               {list.length === 0 && <div style={{ color: "var(--faint)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>{t("s.empty")}</div>}
               {list.map((s) => (
-                <div key={s.id} onClick={() => canAdd && setEdit(s)} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginBottom: 10, cursor: canAdd ? "pointer" : "default", transition: "border-color .15s" }}
+                <div key={s.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginBottom: 10, transition: "border-color .15s" }}
                   onMouseEnter={(e) => { if (canAdd) e.currentTarget.style.borderColor = "var(--accent)"; }}
                   onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--line)"}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                    <b style={{ fontSize: 14, flex: 1 }}>{s.name}</b>
+                    <b style={{ fontSize: 14 }}>{s.name}</b>
                     {/* Live/Die badge */}
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999,
                       background: s.live ? "var(--green-soft)" : "var(--red-soft)", color: s.live ? "var(--green)" : "var(--red)" }}>
                       <span style={{ width: 7, height: 7, borderRadius: "50%", background: s.live ? "var(--green)" : "var(--red)" }} />
                       {s.live ? t("s.live") : t("s.die")}
                     </span>
+                    {canAdd && (
+                      <span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
+                        {s.storeUrl && <a href={s.storeUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="st-iconbtn" title="Mở link shop"><IconLink width={14} height={14} /></a>}
+                        <button onClick={() => setEdit(s)} className="st-iconbtn" title="Cài đặt store"><IconSettings width={15} height={15} /></button>
+                        <button onClick={() => delStore(s)} className="st-iconbtn danger" title="Xóa store"><IconTrash width={14} height={14} /></button>
+                      </span>
+                    )}
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 3 }}>
                     {s.sellerName ?? "—"} · {CONNECT.find(([k]) => k === s.connectMethod)?.[1] ?? s.connectMethod}
@@ -128,7 +142,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
 }
 
 function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
-  const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "" });
+  const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "", storeUrl: "" });
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     if (!f.name.trim()) return;
@@ -145,6 +159,7 @@ function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; clos
         <L label="Kết nối"><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       <L label="Seller phụ trách"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
+      <L label="Link shop"><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
       <L label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
       <Actions close={close} onOk={submit} busy={busy} okLabel="Thêm store" disabled={!f.name.trim()} />
     </Modal>
@@ -152,7 +167,7 @@ function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; clos
 }
 
 function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store; sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
-  const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "" });
+  const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "" });
   const [cred, setCred] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<{ ok: boolean; message: string } | null>(null);
@@ -181,6 +196,7 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
         <L label="Seller"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
         <L label="Kết nối"><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
+      <L label="Link shop"><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
       <L label="Ghi chú"><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
 
       {/* Setup API */}

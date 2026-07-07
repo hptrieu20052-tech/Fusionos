@@ -57,7 +57,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!b) return NextResponse.json({ ok: false }, { status: 400 });
   const patch: Record<string, unknown> = {};
   if (typeof b.title === "string") patch.title = b.title.slice(0, 140);
-  if (typeof b.description === "string") patch.description = b.description.slice(0, 256);
+  if (typeof b.description === "string") patch.description = b.description;
+  if (typeof b.personalization === "string") patch.personalization = b.personalization.slice(0, 256) || null;
   for (const k of ["productLink", "note"] as const) if (typeof b[k] === "string") patch[k] = b[k];
   for (const k of ["sellerId", "designerId", "creatorId", "storeId"] as const) if (k in b) patch[k] = b[k] || null;
   if (Number.isInteger(b.points) && b.points >= 0 && b.points <= 10) patch.points = b.points;

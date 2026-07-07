@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
   const [s] = await db.insert(schema.stores).values({
     name: String(b.name).trim(), marketplace: b.marketplace, connectMethod: b.connectMethod,
     sellerId: b.sellerId || null, status: "active", note: b.note,
+    storeUrl: (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null,
   }).returning();
   return NextResponse.json({ ok: true, store: s });
 }

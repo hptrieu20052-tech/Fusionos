@@ -21,7 +21,7 @@ type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unit
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; color: string; size: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
 type Opt = { id: string; name: string };
-type FfOrder = { id: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
+type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -372,6 +372,70 @@ function IssueModal({ order, fulfillers, defaultFulfillerId, close, flash, onSav
   );
 }
 
+function ManualTracking({ orderId, ff, fulfillerId, fulfillers, flash, onSaved }: {
+  orderId: string; ff?: FfOrder; fulfillerId: string; fulfillers: Opt[];
+  flash: (m: string) => void; onSaved: () => void;
+}) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [v, setV] = useState({
+    trackingCarrier: ff?.trackingCarrier ?? "",
+    trackingNumber: ff?.trackingNumber ?? "",
+    trackingUrl: ff?.trackingUrl ?? "",
+    baseCost: ff?.baseCost ?? "",
+    shipCost: ff?.shipCost ?? "",
+    fulfillerId: fulfillerId ?? "",
+  });
+
+  const save = async () => {
+    setBusy(true);
+    const j = await fetch(`/api/orders/${orderId}/tracking`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(v),
+    }).then((r) => r.json());
+    setBusy(false);
+    if (j.ok) { flash(t("o.trackSaved")); setOpen(false); onSaved(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+
+  const fld = { ...inp, width: "100%", fontSize: 12 } as React.CSSProperties;
+  const lab = { fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase" as const, letterSpacing: ".3px", display: "block", marginBottom: 3 };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} style={{ ...btnGhost, fontSize: 11.5, marginTop: 8, width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+        <IconPin width={12} height={12} /> {ff?.trackingNumber ? t("o.editTracking") : t("o.addTracking")}
+      </button>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10, borderTop: "1px dashed var(--line)", paddingTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+      {!ff && (
+        <div>
+          <label style={lab}>{t("o.fulfilledBy")}</label>
+          <select value={v.fulfillerId} onChange={(e) => setV({ ...v, fulfillerId: e.target.value })} style={fld}>
+            <option value="">—</option>
+            {fulfillers.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <div><label style={lab}>{t("o.carrier")}</label><input value={v.trackingCarrier} onChange={(e) => setV({ ...v, trackingCarrier: e.target.value })} placeholder="USPS / UPS…" style={fld} /></div>
+        <div><label style={lab}>{t("o.tracking")}</label><input value={v.trackingNumber} onChange={(e) => setV({ ...v, trackingNumber: e.target.value })} style={fld} /></div>
+      </div>
+      <div><label style={lab}>{t("o.trackLink")} (tùy chọn)</label><input value={v.trackingUrl} onChange={(e) => setV({ ...v, trackingUrl: e.target.value })} placeholder="https://…" style={fld} /></div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        <div><label style={lab}>{t("o.baseCost")} ($)</label><input type="number" step="0.01" value={v.baseCost} onChange={(e) => setV({ ...v, baseCost: e.target.value })} style={fld} /></div>
+        <div><label style={lab}>{t("o.shipFee")} ($)</label><input type="number" step="0.01" value={v.shipCost} onChange={(e) => setV({ ...v, shipCost: e.target.value })} style={fld} /></div>
+      </div>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button onClick={() => setOpen(false)} style={{ ...btnGhost, fontSize: 12 }}>{t("c.cancel")}</button>
+        <button onClick={save} disabled={busy} style={{ ...btnBlue, fontSize: 12, opacity: busy ? 0.6 : 1 }}>{busy ? "…" : t("c.save")}</button>
+      </div>
+    </div>
+  );
+}
+
 function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash, cloneOrder, copyText, fulfillers }: {
   o: Order; canEdit: boolean; canPushFf: boolean; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
@@ -468,8 +532,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                 <div className="c net"><span className="k">{t("o.afterFee")}</span><span className="v">{money(Number(o.total) - Number(o.platform_fee))}</span></div>
               </div>
               <OrderNote order={o} canEdit={canEdit} onSaved={reload} flash={flash} />
-              {/* Tracking / cost — luôn hiện khi có dữ liệu fulfillment */}
-              {canPushFf && detail && (detail.ffOrders ?? []).length > 0 && (
+              {/* Tracking / chi phí — hiện dữ liệu đã có + cho nhập tay */}
+              {canPushFf && detail && (
                 <div className="o2-track">
                   {(detail.ffOrders ?? []).map((f) => (
                     <div key={f.id} style={{ marginBottom: 4 }}>
@@ -490,13 +554,18 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                             </div>
                             <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{f.trackingCarrier || t("o.carrier")}</div>
                           </div>
-                          <a href={trackingUrl(f.trackingCarrier, f.trackingNumber)} target="_blank" rel="noreferrer" style={{ ...btnGhost, textDecoration: "none", fontSize: 11.5, whiteSpace: "nowrap" }}>{t("o.trackLink")} ↗</a>
+                          <a href={f.trackingUrl || trackingUrl(f.trackingCarrier, f.trackingNumber)} target="_blank" rel="noreferrer" style={{ ...btnGhost, textDecoration: "none", fontSize: 11.5, whiteSpace: "nowrap" }}>{t("o.trackLink")} ↗</a>
                         </div>
                       ) : (
                         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>{t("o.noTracking")}</div>
                       )}
                     </div>
                   ))}
+                  <ManualTracking orderId={o.id}
+                    ff={(detail.ffOrders ?? [])[0]}
+                    fulfillerId={ffSel || (detail.ffOrders ?? [])[0]?.fulfillerId || ""}
+                    fulfillers={fulfillers}
+                    flash={flash} onSaved={reload} />
                 </div>
               )}
             </div>

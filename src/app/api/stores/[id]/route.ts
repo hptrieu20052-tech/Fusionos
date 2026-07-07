@@ -32,6 +32,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const patch: Record<string, unknown> = {};
   if (typeof b.name === "string" && b.name.trim()) patch.name = b.name.trim();
+  if ("storeUrl" in b) patch.storeUrl = (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null;
   if ("sellerId" in b) patch.sellerId = b.sellerId || null;
   if ("note" in b) patch.note = b.note || null;
   if (b.status && (schema.stores.status.enumValues as readonly string[]).includes(b.status)) patch.status = b.status;
@@ -49,6 +50,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   await db.update(schema.stores).set(patch).where(eq(schema.stores.id, params.id));
+  return NextResponse.json({ ok: true });
+}
+
+// DELETE — xóa store (gỡ liên kết đơn/design về null để giữ lịch sử)
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
+  if ((await levelOf(session, "stores")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  await db.update(schema.orders).set({ storeId: null }).where(eq(schema.orders.storeId, params.id));
+  await db.update(schema.designs).set({ storeId: null }).where(eq(schema.designs.storeId, params.id));
+  await db.delete(schema.stores).where(eq(schema.stores.id, params.id));
   return NextResponse.json({ ok: true });
 }
 

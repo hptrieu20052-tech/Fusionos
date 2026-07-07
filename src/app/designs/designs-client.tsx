@@ -7,7 +7,7 @@ import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload
 type FileRow = { id: string; kind: string; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
 type Design = {
   id: string; skuCode: number; title: string; description: string | null; points: number;
-  tags: string[]; personalize: boolean; productLink: string | null; note: string | null;
+  tags: string[]; personalize: boolean; personalization: string | null; productLink: string | null; note: string | null;
   platform: string | null; listed: boolean; createdAt: string;
   sellerId: string | null; designerId: string | null; creatorId: string | null; storeId: string | null;
   sellerName: string | null; designerName: string | null; creatorName: string | null; storeName?: string | null;
@@ -210,7 +210,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const d = detail.design;
   const [f, setF] = useState({
     title: d.title, description: d.description ?? "", points: d.points,
-    personalize: d.personalize, productLink: d.productLink ?? "", note: d.note ?? "",
+    personalize: d.personalize, personalization: d.personalization ?? "", productLink: d.productLink ?? "", note: d.note ?? "",
     platform: d.platform ?? "", tags: d.tags ?? [],
     sellerId: d.sellerId ?? "", storeId: d.storeId ?? "", designerId: d.designerId ?? "", creatorId: d.creatorId ?? "",
     listed: d.listed,
@@ -316,13 +316,20 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               <b style={{ fontSize: 13.5 }}>{t("d.description")}</b>
               <CopyBtn v={f.description} tip={t("d.copy") + " " + t("d.description").toLowerCase()} />
             </div>
-            <textarea value={f.description} maxLength={256} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} rows={4} style={{ ...inp, width: "100%", resize: "vertical" }} />
-            <div style={{ fontSize: 11, color: f.description.length >= 256 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.description.length}/256</div>
+            <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} rows={4} style={{ ...inp, width: "100%", resize: "vertical" }} />
 
             <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0", fontSize: 13, cursor: "pointer" }}>
               <input type="checkbox" checked={f.personalize} disabled={!canEdit} onChange={(e) => setF({ ...f, personalize: e.target.checked })} />
               {t("d.personalize")}
             </label>
+            {f.personalize && (
+              <div style={{ marginBottom: 6 }}>
+                <b style={{ fontSize: 13, display: "block", marginBottom: 5 }}>{t("d.personalizationText")}</b>
+                <textarea value={f.personalization} maxLength={256} onChange={(e) => setF({ ...f, personalization: e.target.value })} disabled={!canEdit}
+                  rows={3} placeholder={t("d.personalizationPh")} style={{ ...inp, width: "100%", resize: "vertical" }} />
+                <div style={{ fontSize: 11, color: f.personalization.length >= 256 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.personalization.length}/256</div>
+              </div>
+            )}
 
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <b style={{ fontSize: 13 }}>{t("d.productLink")}</b>
