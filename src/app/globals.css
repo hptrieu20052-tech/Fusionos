@@ -136,12 +136,12 @@ input,textarea,select,button{font-family:'Plus Jakarta Sans',system-ui,-apple-sy
 input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent) !important;box-shadow:0 0 0 3px var(--sky-soft)}
 
 /* ===== Nền trung tính kiểu bàn cờ — nhìn rõ cả design sáng lẫn tối ===== */
-.checker{background:#AEAEB2}
+.checker{background:#C4C4C8}
 
 /* ===== Design card ===== */
 .dc-img{position:relative;aspect-ratio:1/1;overflow:hidden}
 .dc-img img{width:100%;height:100%;object-fit:contain}
-.dc-acts{position:absolute;top:8px;right:8px;display:flex;gap:6px;opacity:0;transform:translateY(-3px);transition:opacity .15s,transform .15s}
+.dc-acts{position:absolute;bottom:8px;left:8px;display:flex;gap:6px;opacity:0;transform:translateY(3px);transition:opacity .15s,transform .15s}
 .design-card:hover .dc-acts{opacity:1;transform:none}
 .dc-act{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:9px;background:rgba(255,255,255,.94);border:1px solid var(--line);color:var(--ink);cursor:pointer;box-shadow:0 2px 8px rgba(42,48,60,.14);transition:background .12s,color .12s}
 .dc-act:hover{background:var(--blue);color:#fff;border-color:var(--blue)}
@@ -351,3 +351,16 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent) 
 /* Bóng xanh đồng bộ + hover nhấc cho các card có thể bấm */
 a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6px rgba(13,76,155,.12);border-color:#B9D2F0;transform:translateY(-2px)}
 .card,.panel,.kpi,.pipe-card{border-color:#E2E9F3}
+
+/* Khối fulfillment gọn hơn */
+.o2-ff{padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid var(--line)}
+.o2-ff:last-of-type{border-bottom:none;margin-bottom:0;padding-bottom:0}
+.o2-ff-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+.o2-ff-link{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--blue);font-weight:700;text-decoration:none;white-space:nowrap}
+.o2-ff-link:hover{text-decoration:underline}
+.o2-track-row{display:flex;align-items:center;gap:10px;margin-top:6px}
+
+/* Dashboard 3 nhóm × 3 thẻ */
+.dash-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:14px}
+.pipe-sub{font-size:11.5px;color:var(--muted);margin-top:6px}
+@media(max-width:900px){.dash-row{grid-template-columns:1fr}}

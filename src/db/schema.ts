@@ -152,6 +152,8 @@ export const designFiles = pgTable("design_files", {
   height: integer("height"),
   tier: fileTierEnum("tier").notNull().default("hot"),
   processingStatus: processingEnum("processing_status").notNull().default("uploaded"),
+  processAttempts: smallint("process_attempts").notNull().default(0),
+  processError: text("process_error"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("idx_files_design").on(t.designId),

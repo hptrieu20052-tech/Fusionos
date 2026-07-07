@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
-import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload } from "@/components/icons";
+import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload, IconRefresh } from "@/components/icons";
 
 const KIND_VI: Record<string, string> = { design_front: "Mặt trước", design_back: "Mặt sau", mockup: "Mockup", video: "Video" };
 type FileRow = { id: string; kind: string; filename?: string | null; uploaderName?: string | null; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
@@ -284,6 +284,11 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     const j = await fetch(`/api/designs/files/${fileId}`, { method: "DELETE" }).then((r) => r.json());
     if (j.ok) { flash(t("d.fileDeleted")); reopen(d.id); } else flash("✗ " + (j.error ?? "Error"));
   };
+  const retryFile = async (fileId: string) => {
+    flash("Đang xử lý lại…");
+    const j = await fetch("/api/designs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileId }) }).then((r) => r.json());
+    if (j.ok) { flash("✓ Đã tạo thumbnail"); reopen(d.id); } else flash("✗ " + (j.error ?? "Lỗi xử lý"));
+  };
   const downloadAll = (rows: FileRow[]) => rows.forEach((x, i) => x.originalUrl && setTimeout(() => forceDownload(x.originalUrl!, `${d.title}-${x.kind}-${i + 1}`), i * 400));
   const copy = (v: string) => { navigator.clipboard?.writeText(v); flash(t("d.copied")); };
 
@@ -401,6 +406,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                     <div className="file-actions">
                       {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
                       {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
+                      {x.processingStatus === "failed" && <button className="fa-btn" title="Thử lại tạo thumbnail" style={{ color: "var(--amber)" }} onClick={() => retryFile(x.id)}><IconRefresh width={14} height={14} /></button>}
                       {canEdit && <button className="fa-btn danger" title={t("c.delete")} onClick={() => delFile(x.id)}><IconTrash width={14} height={14} /></button>}
                     </div>
                   </div>

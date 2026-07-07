@@ -48,11 +48,11 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
         <DateRangePicker value={dr} onChange={setDr} align="right" />
       </div>
 
-      {/* Pipeline theo trạng thái (mặc định 30 ngày) */}
+      {/* Hàng 1 — Số lượng đơn */}
       {kpi?.pipeline && (
-        <div className="pipe-cards">
+        <div className="dash-row">
           <Link href="/orders" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#5A6272" }}>
-            <div className="pipe-l">{tr("db.pipeOrder")}</div>
+            <div className="pipe-l">{tr("db.allOrder")}</div>
             <div className="pipe-v">{kpi.pipeline.order.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.order.q.toLocaleString()})</span>
               {kpi.pipeline.order.prev != null && kpi.pipeline.order.prev > 0 && kpi.pipeline.order.prev !== kpi.pipeline.order.c && (
                 <span className="pipe-delta" style={{ color: kpi.pipeline.order.c - kpi.pipeline.order.prev >= 0 ? "var(--green)" : "var(--red)" }}>
@@ -61,6 +61,22 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
               )}
             </div>
           </Link>
+          <Link href="/orders?status=new" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#3E7BD6" }}>
+            <div className="pipe-l">{tr("db.kpiNew")}</div>
+            <div className="pipe-v">{kpi.pendingNew.toLocaleString()}</div>
+            <div className="pipe-sub">{tr("db.toFulfill")}</div>
+          </Link>
+          <Link href="/orders?status=has_issues" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#DB6B5E" }}>
+            <div className="pipe-l">{tr("db.kpiIssues")}</div>
+            <div className="pipe-v" style={{ color: kpi.issues > 0 ? "var(--red)" : undefined }}>{kpi.issues.toLocaleString()}</div>
+            <div className="pipe-sub">{kpi.issues > 0 ? tr("db.viewIssues") : tr("db.noIssues")}</div>
+          </Link>
+        </div>
+      )}
+
+      {/* Hàng 2 — Pipeline sản xuất/giao */}
+      {kpi?.pipeline && (
+        <div className="dash-row">
           <Link href="/orders?status=in_production" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#4F9E93" }}>
             <div className="pipe-l">{tr("db.pipeInProduction")}</div>
             <div className="pipe-v">{kpi.pipeline.in_production.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.in_production.q.toLocaleString()})</span></div>
@@ -76,26 +92,23 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
         </div>
       )}
 
-      {/* KPI theo range — tiền + việc cần làm (số đơn/items đã ở hàng pipeline trên) */}
+      {/* Hàng 3 — Tài chính */}
       {kpi && (
-        <div className="kpis">
-          <Link href="/finance" style={kpiLink} className="kpi">
-            <div className="l">{tr("db.kpiRevenue")}</div><div className="v">{money(kpi.revenue)}</div>
-            {delta(kpi.revenue, kpi.prevRevenue, kpi.prevLabel)}
+        <div className="dash-row">
+          <Link href="/finance" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#2FA36B" }}>
+            <div className="pipe-l">{tr("db.kpiRevenue")}</div>
+            <div className="pipe-v">{money(kpi.revenue)}</div>
+            <div className="pipe-sub">{delta(kpi.revenue, kpi.prevRevenue, kpi.prevLabel)}</div>
           </Link>
-          <Link href="/finance" style={kpiLink} className="kpi">
-            <div className="l">{tr("db.kpiProfit")}</div>
-            <div className="v" style={{ color: kpi.profit >= 0 ? "var(--green)" : "var(--red)" }}>{money(kpi.profit)}</div>
-            <div className="d">DT {money(kpi.profitRevenue)} − phí {money(kpi.profitFee)} − vốn {money(kpi.profitCost)}</div>
+          <Link href="/finance" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#E0913C" }}>
+            <div className="pipe-l">{tr("db.fulfillCost")}</div>
+            <div className="pipe-v" style={{ color: "#C9760F" }}>{money(kpi.profitCost)}</div>
+            <div className="pipe-sub">{tr("db.fulfillCostSub")}</div>
           </Link>
-          <Link href="/fulfillment" style={kpiLink} className="kpi">
-            <div className="l">{tr("db.kpiNew")}</div><div className="v">{kpi.pendingNew}</div>
-            <div className="d">{tr("db.toFulfill")}</div>
-          </Link>
-          <Link href="/orders?status=has_issues" style={kpiLink} className="kpi">
-            <div className="l">{tr("db.kpiIssues")}</div>
-            <div className="v" style={{ color: kpi.issues > 0 ? "var(--red)" : undefined }}>{kpi.issues}</div>
-            <div className="d">{kpi.issues > 0 ? tr("db.viewIssues") : tr("db.noIssues")}</div>
+          <Link href="/finance" className="pipe-card" style={{ ...kpiLink, borderTopColor: kpi.profit >= 0 ? "#2FA36B" : "#DB6B5E" }}>
+            <div className="pipe-l">{tr("db.kpiProfit")}</div>
+            <div className="pipe-v" style={{ color: kpi.profit >= 0 ? "var(--green)" : "var(--red)" }}>{money(kpi.profit)}</div>
+            <div className="pipe-sub">DT {money(kpi.profitRevenue)} − phí {money(kpi.profitFee)} − vốn {money(kpi.profitCost)}</div>
           </Link>
         </div>
       )}

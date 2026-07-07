@@ -543,9 +543,17 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
               {canPushFf && detail && (
                 <div className="o2-track">
                   {(detail.ffOrders ?? []).map((f) => (
-                    <div key={f.id} style={{ marginBottom: 6 }}>
-                      <div className="o2-track-h">{f.fulfillerName || t("o.fulfilledBy")}</div>
-                      {/* 1) Chi phí supplier */}
+                    <div key={f.id} className="o2-ff">
+                      {/* Header: tên supplier + link đơn supplier cùng hàng */}
+                      <div className="o2-ff-head">
+                        <span className="o2-track-h" style={{ margin: 0 }}>{f.fulfillerName || t("o.fulfilledBy")}</span>
+                        {f.supplierOrderUrl && (
+                          <a href={f.supplierOrderUrl} target="_blank" rel="noreferrer" className="o2-ff-link">
+                            <IconTruck width={12} height={12} /> {t("o.viewSupplierOrder")} ↗
+                          </a>
+                        )}
+                      </div>
+                      {/* Chi phí supplier */}
                       {(f.baseCost != null || f.shipCost != null) && (
                         <div className="o2-supcost">
                           <span>{t("o.baseCost")}: <b>{money(f.baseCost ?? 0)}</b></span>
@@ -553,31 +561,23 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                           <span className="tot">{t("o.total")}: <b>{money(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0)))}</b></span>
                         </div>
                       )}
-                      {/* 2) Tracking */}
+                      {/* Tracking gọn 1 hàng */}
                       {f.trackingNumber ? (
-                        <div className="o2-track-row" style={{ borderTop: "1px dashed var(--line)", paddingTop: 7, marginTop: 5 }}>
-                          <div style={{ minWidth: 0, flex: 1 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                              <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.trackingNumber}</span>
-                              <button className="icon-btn" title={t("o.copyTrack")} onClick={() => copyText(f.trackingNumber!)}><IconCopy width={12} height={12} /></button>
-                            </div>
-                            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{f.trackingCarrier || t("o.carrier")}</div>
+                        <div className="o2-track-row">
+                          <div style={{ minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 7 }}>
+                            <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.trackingNumber}</span>
+                            <button className="icon-btn" title={t("o.copyTrack")} onClick={() => copyText(f.trackingNumber!)}><IconCopy width={12} height={12} /></button>
+                            <span style={{ fontSize: 11, color: "var(--muted)" }}>· {f.trackingCarrier || t("o.carrier")}</span>
                           </div>
-                          <a href={f.trackingUrl || trackingUrl(f.trackingCarrier, f.trackingNumber)} target="_blank" rel="noreferrer" style={{ ...btnGhost, textDecoration: "none", fontSize: 11.5, whiteSpace: "nowrap" }}>{t("o.trackLink")} ↗</a>
+                          <a href={f.trackingUrl || trackingUrl(f.trackingCarrier, f.trackingNumber)} target="_blank" rel="noreferrer" style={{ ...btnGhost, textDecoration: "none", fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}>{t("o.trackLink")} ↗</a>
                         </div>
                       ) : (
                         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>{t("o.noTracking")}</div>
                       )}
-                      {/* 3) Link đơn bên supplier */}
-                      {f.supplierOrderUrl && (
-                        <a href={f.supplierOrderUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "var(--blue)", marginTop: 6, fontWeight: 600, textDecoration: "none" }}>
-                          <IconTruck width={13} height={13} /> {t("o.viewSupplierOrder")} ↗
-                        </a>
-                      )}
                     </div>
                   ))}
 
-                  {/* 4) Lợi nhuận sau chi phí (After fee − tổng chi phí supplier) */}
+                  {/* Lợi nhuận sau chi phí */}
                   {(() => {
                     const ffCost = (detail.ffOrders ?? []).reduce((s, f) => s + Number(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0))), 0);
                     if (ffCost <= 0) return null;
@@ -693,10 +693,6 @@ function ItemRow({ it, onSaved, flash }: {
     if (j.ok) { flash(sku === null ? t("o.unassigned") : `${t("o.assigned")} #${j.design?.sku_code ?? sku}`); onSaved(); }
     else flash("✗ " + (j.error ?? "Error"));
   };
-  const toggleSpecial = async () => {
-    const j = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ specialPrint: !it.special_print }) }).then((r) => r.json());
-    if (j.ok) onSaved();
-  };
   const img = it.mockupUrl ?? it.designThumb;
   const [zoom, setZoom] = useState<string | null>(null);
   return (
@@ -713,9 +709,6 @@ function ItemRow({ it, onSaved, flash }: {
           <span>{t("o.price")}: <b style={{ color: "var(--ink)" }}>{money(it.unit_price)}</b></span>
         </div>
         <Personalization it={it} onSaved={onSaved} flash={flash} />
-        <label style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
-          <input type="checkbox" checked={it.special_print} onChange={toggleSpecial} /> {t("o.specialPrint")}
-        </label>
       </div>
       {/* Gán design — nhãn DesignId gắn liền + preview bên dưới (theo mẫu) */}
       <div className="o2-assigncol">
@@ -752,7 +745,7 @@ function ItemRow({ it, onSaved, flash }: {
             <img src={it.designThumb} alt="" />
           </div>
         ) : null}
-        {it.design_id && <div className="o2-dcap">#{it.design_sku} — {it.design_title}</div>}
+        {/* (đã có DesignId ở ô trên — không lặp lại caption) */}
 
         {/* Gợi ý khi chưa gán */}
         {!it.design_id && it.suggest && (
