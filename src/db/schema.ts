@@ -268,3 +268,10 @@ export const orderIssues = pgTable("order_issues", {
   reporterId: uuid("reporter_id").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_issue_order").on(t.orderId), index("idx_issue_ff").on(t.fulfillerId)]);
+
+// ---------- TEAMS (nhóm nhân viên; membership qua users.team = teams.name) ----------
+export const teams = pgTable("teams", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});

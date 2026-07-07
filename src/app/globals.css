@@ -18,8 +18,8 @@ h1{font-size:20px;font-weight:800}
 .panel{background:var(--card);border-radius:var(--r);padding:18px 20px;box-shadow:var(--sh);margin-top:22px;border:1px solid var(--line)}
 .card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);border:1px solid var(--line)}
 .section{margin-top:26px}
-.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}
-@media(min-width:1100px){.kpis{grid-template-columns:repeat(5,1fr)}}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:0}
+@media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}}
 .kpi{background:var(--card);border-radius:14px;padding:15px 17px;box-shadow:var(--sh);border:1px solid var(--line)}
 .kpi .l{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.6px;font-weight:800;margin-bottom:5px}

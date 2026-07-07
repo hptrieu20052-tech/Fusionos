@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const MODULES = ["dashboard", "orders", "fulfillment", "designs", "finance", "hr", "stores", "settings"] as const;
 const MODULE_VI: Record<string, string> = {
@@ -81,8 +81,35 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
     if (j.ok) { setUsers((us) => us.filter((x) => x.id !== u.id)); setMsg(`✓ Đã xóa ${u.fullName}`); }
     else setMsg("⚠ " + (j.error ?? "Lỗi"));
   }
-  const teams = Array.from(new Set(users.map((u) => u.team).filter(Boolean))) as string[];
   const actBtn: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 9px", fontSize: 12, cursor: "pointer", marginLeft: 6, fontWeight: 600, color: "var(--ink)" };
+
+  type Team = { id: string; name: string; members: { id: string; fullName: string; role: string }[] };
+  const [teamList, setTeamList] = useState<Team[]>([]);
+  const [newTeam, setNewTeam] = useState("");
+  const loadTeams = () => fetch("/api/admin/teams").then((r) => r.json()).then((j) => { if (j.ok) setTeamList(j.teams); });
+  useEffect(() => { loadTeams(); }, []);
+
+  async function addTeam() {
+    const name = newTeam.trim(); if (!name) return;
+    const j = await fetch("/api/admin/teams", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) }).then((r) => r.json());
+    if (j.ok) { setNewTeam(""); loadTeams(); } else setMsg("⚠ " + (j.error ?? "Lỗi"));
+  }
+  async function renameTeam(id: string, name: string, old: string) {
+    if (!name.trim() || name === old) return;
+    const j = await fetch("/api/admin/teams", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, name: name.trim() }) }).then((r) => r.json());
+    if (j.ok) { setUsers((us) => us.map((u) => u.team === old ? { ...u, team: name.trim() } : u)); loadTeams(); }
+    else { setMsg("⚠ " + (j.error ?? "Lỗi")); loadTeams(); }
+  }
+  async function deleteTeam(t: Team) {
+    if (!confirm(`Xóa team "${t.name}"? ${t.members.length} thành viên sẽ bị gỡ khỏi team (không xóa tài khoản).`)) return;
+    const j = await fetch("/api/admin/teams", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: t.id }) }).then((r) => r.json());
+    if (j.ok) { setUsers((us) => us.map((u) => u.team === t.name ? { ...u, team: null } : u)); loadTeams(); }
+    else setMsg("⚠ " + (j.error ?? "Lỗi"));
+  }
+  async function setMemberTeam(userId: string, team: string) {
+    await patchUser(userId, { team });
+    loadTeams();
+  }
 
   return (
     <>
@@ -95,7 +122,10 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inp}>
             {ROLES.map((r) => <option key={r}>{r}</option>)}
           </select>
-          <input placeholder="Team" value={form.team} onChange={(e) => setForm({ ...form, team: e.target.value })} style={{ ...inp, width: 150 }} />
+          <select value={form.team} onChange={(e) => setForm({ ...form, team: e.target.value })} style={{ ...inp, width: 150 }}>
+            <option value="">— team —</option>
+            {teamList.map((tm) => <option key={tm.id} value={tm.name}>{tm.name}</option>)}
+          </select>
           <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 11, padding: "9px 18px", fontWeight: 800, cursor: "pointer" }}>＋ Tạo</button>
         </form>
         {msg && <div style={{ marginTop: 10, fontWeight: 700, fontSize: 12.5 }}>{msg}</div>}
@@ -117,10 +147,10 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
                   </select>
                 </td>
                 <td>
-                  <input list="team-list" defaultValue={u.team ?? ""} placeholder="—"
-                    onBlur={(e) => { const v = e.target.value.trim(); if (v !== (u.team ?? "")) patchUser(u.id, { team: v }); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-                    style={{ ...inp, padding: "5px 8px", fontSize: 12.5, width: 140 }} />
+                  <select value={u.team ?? ""} onChange={(e) => setMemberTeam(u.id, e.target.value)} style={{ ...inp, padding: "5px 8px", fontSize: 12.5, width: 150 }}>
+                    <option value="">— chưa có team —</option>
+                    {teamList.map((tm) => <option key={tm.id} value={tm.name}>{tm.name}</option>)}
+                  </select>
                 </td>
                 <td style={{ color: u.status === "active" ? "var(--green)" : "var(--faint)", fontWeight: 700 }}>{u.status === "active" ? "active" : "khóa"}</td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
@@ -132,26 +162,46 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
             ))}
           </tbody>
         </table>
-        <datalist id="team-list">{teams.map((t) => <option key={t} value={t} />)}</datalist>
       </div>
 
-      {/* Tổng hợp Team */}
+      {/* Quản lý Team */}
       <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Team · {teams.length}</h3>
-        <div className="sub" style={{ marginBottom: 10 }}>Mỗi team gom nhân viên cùng nhóm. Thành viên trong team chỉ thấy design của team mình (admin & seller xem tất cả). Thêm/đổi thành viên bằng cách sửa cột Team ở bảng trên.</div>
-        {teams.length === 0 ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Chưa có team nào — gõ tên team ở bảng nhân viên để tạo.</div> : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 12 }}>
-            {teams.map((tm) => {
-              const members = users.filter((u) => u.team === tm);
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <h3 style={{ fontWeight: 800, fontSize: 15 }}>Team · {teamList.length}</h3>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input placeholder="Tên team mới…" value={newTeam} onChange={(e) => setNewTeam(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addTeam()} style={{ ...inp, padding: "7px 11px", fontSize: 13 }} />
+            <button onClick={addTeam} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "7px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>＋ Thêm team</button>
+          </div>
+        </div>
+        <div className="sub" style={{ margin: "8px 0 12px" }}>Thành viên trong team chỉ thấy design của team mình (admin & seller xem tất cả). Đổi tên bằng cách sửa trực tiếp; gỡ thành viên bằng ✕; thêm thành viên bằng ô chọn cuối mỗi thẻ.</div>
+
+        {teamList.length === 0 ? <div style={{ color: "var(--muted)", fontSize: 13 }}>Chưa có team nào — thêm team ở trên.</div> : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 12 }}>
+            {teamList.map((tm) => {
+              const outside = users.filter((u) => u.team !== tm.name);
               return (
-                <div key={tm} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                    <b style={{ fontSize: 13.5 }}>{tm}</b>
-                    <span className="chip" style={{ fontSize: 11 }}>{members.length} người</span>
+                <div key={tm.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <input defaultValue={tm.name}
+                      onBlur={(e) => renameTeam(tm.id, e.target.value, tm.name)}
+                      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                      style={{ ...inp, padding: "5px 8px", fontSize: 13.5, fontWeight: 700, flex: 1, minWidth: 0 }} />
+                    <button onClick={() => deleteTeam(tm)} title="Xóa team" style={{ background: "var(--red-soft)", color: "var(--red)", border: "1px solid #F3C6C0", borderRadius: 8, padding: "5px 8px", cursor: "pointer", fontSize: 12 }}>🗑</button>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {members.map((m) => <div key={m.id} style={{ fontSize: 12.5, color: "var(--ink)" }}>{m.fullName} <span style={{ color: "var(--muted)" }}>· {m.role}</span></div>)}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 10 }}>
+                    {tm.members.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>Chưa có thành viên</div>}
+                    {tm.members.map((m) => (
+                      <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
+                        <span>{m.fullName} <span style={{ color: "var(--muted)" }}>· {m.role}</span></span>
+                        <button onClick={() => setMemberTeam(m.id, "")} title="Gỡ khỏi team" style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 13, padding: 0 }}>✕</button>
+                      </div>
+                    ))}
                   </div>
+                  <select value="" onChange={(e) => e.target.value && setMemberTeam(e.target.value, tm.name)} style={{ ...inp, padding: "6px 9px", fontSize: 12, width: "100%" }}>
+                    <option value="">＋ Thêm thành viên…</option>
+                    {outside.map((u) => <option key={u.id} value={u.id}>{u.fullName} ({u.role}){u.team ? ` · đang ở ${u.team}` : ""}</option>)}
+                  </select>
                 </div>
               );
             })}
