@@ -59,7 +59,7 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
       body: JSON.stringify({ designId, filename: file.name, contentType: file.type || "application/octet-stream", kind }),
     }).then((r) => r.json());
     if (!t.ok) throw new Error(t.error ?? "upload-url lỗi");
-    await fetch(t.uploadUrl, { method: "PUT", headers: t.headers ?? {}, body: file });
+    await fetch(t.url, { method: t.method ?? "PUT", headers: t.headers ?? {}, body: file });
     const buf = await file.arrayBuffer();
     const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", buf))).map((b) => b.toString(16).padStart(2, "0")).join("");
     const reg = await fetch("/api/designs/register-file", {
