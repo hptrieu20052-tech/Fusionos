@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import DateRangePicker, { RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
@@ -48,29 +49,29 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
       {/* KPI theo range */}
       {kpi && (
         <div className="kpis">
-          <a href="/orders" style={kpiLink} className="kpi">
+          <Link href="/orders" style={kpiLink} className="kpi">
             <div className="l">{tr("db.kpiOrders")}</div>
             <div className="v">{kpi.orders.toLocaleString()} <span style={{ fontSize: 14, fontWeight: 600, color: "var(--muted)" }}>· {kpi.items.toLocaleString()} items</span></div>
             {delta(kpi.orders, kpi.prevOrders, kpi.prevLabel)}
-          </a>
-          <a href="/finance" style={kpiLink} className="kpi">
+          </Link>
+          <Link href="/finance" style={kpiLink} className="kpi">
             <div className="l">{tr("db.kpiRevenue")}</div><div className="v">{money(kpi.revenue)}</div>
             {delta(kpi.revenue, kpi.prevRevenue, kpi.prevLabel)}
-          </a>
-          <a href="/finance" style={kpiLink} className="kpi">
+          </Link>
+          <Link href="/finance" style={kpiLink} className="kpi">
             <div className="l">{tr("db.kpiProfit")}</div>
             <div className="v" style={{ color: kpi.profit >= 0 ? "var(--green)" : "var(--red)" }}>{money(kpi.profit)}</div>
             <div className="d">DT {money(kpi.profitRevenue)} − phí {money(kpi.profitFee)} − vốn {money(kpi.profitCost)}</div>
-          </a>
-          <a href="/fulfillment" style={kpiLink} className="kpi">
+          </Link>
+          <Link href="/fulfillment" style={kpiLink} className="kpi">
             <div className="l">{tr("db.kpiNew")}</div><div className="v">{kpi.pendingNew}</div>
             <div className="d">{tr("db.toFulfill")}</div>
-          </a>
-          <a href="/orders?status=has_issues" style={kpiLink} className="kpi">
+          </Link>
+          <Link href="/orders?status=has_issues" style={kpiLink} className="kpi">
             <div className="l">{tr("db.kpiIssues")}</div>
             <div className="v" style={{ color: kpi.issues > 0 ? "var(--red)" : undefined }}>{kpi.issues}</div>
             <div className="d">{kpi.issues > 0 ? tr("db.viewIssues") : tr("db.noIssues")}</div>
-          </a>
+          </Link>
         </div>
       )}
 

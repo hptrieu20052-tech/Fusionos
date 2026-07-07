@@ -86,9 +86,21 @@ export async function GET(req: NextRequest) {
         : null,
     };
   });
-  const sellers = (await db.execute(dsql`SELECT id, full_name AS name FROM users WHERE role='seller' ORDER BY full_name`)).rows;
-  const designers = (await db.execute(dsql`SELECT id, full_name AS name FROM users WHERE role='designer' ORDER BY full_name`)).rows;
+  const sellers = await cachedRoleUsers("seller");
+  const designers = await cachedRoleUsers("designer");
   return NextResponse.json({ ok: true, designs: out, total, page, show, sellers, designers });
+}
+
+// Cache danh sách seller/designer (đổi rất ít) trong 60s → giảm 2 truy vấn DB mỗi lần load lưới.
+type RoleUser = { id: string; name: string };
+const roleCache: Record<string, { at: number; rows: RoleUser[] }> = {};
+async function cachedRoleUsers(role: "seller" | "designer"): Promise<RoleUser[]> {
+  const c = roleCache[role];
+  if (c && Date.now() - c.at < 60_000) return c.rows;
+  const { sql: s } = await import("drizzle-orm");
+  const rows = (await db.execute(s`SELECT id, full_name AS name FROM users WHERE role=${role} ORDER BY full_name`)).rows as RoleUser[];
+  roleCache[role] = { at: Date.now(), rows };
+  return rows;
 }
 
 // POST /api/designs — tạo design mới

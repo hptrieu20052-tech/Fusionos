@@ -144,15 +144,15 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
         {designs.map((d) => (
           <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)} style={{ overflow: "hidden", cursor: "pointer" }}>
             <div className="dc-img checker">
-              {(d.cover?.preview || d.cover?.thumb || d.cover?.original) ? (
-                <img src={(d.cover.preview ?? d.cover.thumb ?? d.cover.original)!} alt="" loading="lazy"
+              {(d.cover?.thumb || d.cover?.preview) ? (
+                <img src={(d.cover.thumb ?? d.cover.preview)!} alt="" loading="lazy" decoding="async"
                   onError={(e) => {
                     const img = e.currentTarget;
-                    if (d.cover?.original && img.src !== d.cover.original) img.src = d.cover.original;
+                    if (d.cover?.preview && img.src !== d.cover.preview) img.src = d.cover.preview;
                     else { img.style.display = "none"; (img.nextElementSibling as HTMLElement)?.style.setProperty("display", "flex"); }
                   }} />
               ) : null}
-              <div style={{ display: (d.cover?.preview || d.cover?.thumb || d.cover?.original) ? "none" : "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>
+              <div style={{ display: (d.cover?.thumb || d.cover?.preview) ? "none" : "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--muted)", fontSize: 12 }}>
                 {d.cover?.status === "processing" ? t("d.processing") : t("d.noImage")}
               </div>
               <div className="dc-acts">

@@ -39,8 +39,6 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const [fulfillerId, setFulfillerId] = useState("");
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" });
   const [page, setPage] = useState(1); const [show, setShow] = useState(20);
-  const [ffOpen, setFfOpen] = useState<string | null>(null); // order id đang mở panel fulfillment
-  const [detail, setDetail] = useState<Detail | null>(null);
   const [msg, setMsg] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -66,12 +64,6 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const pages = Math.max(Math.ceil(data.total / show), 1);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
-  const toggleFf = async (id: string) => {
-    if (ffOpen === id) { setFfOpen(null); setDetail(null); return; }
-    setFfOpen(id); setDetail(null);
-    const j = await fetch(`/api/orders/${id}`).then((r) => r.json());
-    if (j.ok) setDetail(j);
-  };
   const patchOrder = async (id: string, body: Record<string, unknown>) => {
     const j = await fetch(`/api/orders/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
     if (j.ok) { flash("✓ Đã cập nhật"); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
@@ -216,58 +208,10 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
 
       {/* Cards */}
       {data.orders.map((o) => (
-        <div key={o.id} className="card ord">
-          <div className="ord-head">
-            <div className="ord-main">
-              {canEdit && (
-                <input type="checkbox" checked={selIds.has(o.id)} onChange={() => toggleSel(o.id)}
-                  style={{ width: 17, height: 17, marginTop: 3, cursor: "pointer", accentColor: "var(--blue)", flexShrink: 0 }} />
-              )}
-              <div className="ord-info">
-                <div className="ord-l1">
-                  <span className="ord-num">#{o.external_id}</span>
-                  <button className="icon-btn" title={t("d.copy") + " ID"} onClick={() => copyText(o.external_id)}><IconCopy width={12} height={12} /></button>
-                  <span className="ord-status" style={{ background: STATUS_COLORS[o.status] ?? "#6B7280" }}>{o.status.toUpperCase()}</span>
-                  <span className="ord-date">{new Date(o.ordered_at).toISOString().slice(0, 10)}</span>
-                </div>
-                <div className="ord-l2">
-                  <span className="ord-buyer">{[o.buyer_first, o.buyer_last].filter(Boolean).join(" ") || "—"}</span>
-                  <span className="ord-chip plat">{o.platform}</span>
-                  <span className="ord-chip seller">{o.seller_name ?? "—"}</span>
-                  {o.store_name && <span className="ord-chip">{o.store_name}</span>}
-                </div>
-                <div className="ord-addr">
-                  <IconPin width={15} height={15} />
-                  <span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ")}</span>
-                </div>
-                <div className="ord-fin">
-                  <div className="fin-cell"><span className="k">{t("o.total")}</span><span className="v">{money(o.total)}</span></div>
-                  <div className="fin-cell"><span className="k">{t("o.fee")}</span><span className="v">{money(o.platform_fee)}</span></div>
-                  <div className="fin-cell net"><span className="k">{t("o.afterFee")}</span><span className="v">{money(Number(o.total) - Number(o.platform_fee))}</span></div>
-                </div>
-                <OrderNote order={o} canEdit={canEdit} onSaved={load} flash={flash} />
-                {canPushFf && (
-                  <button onClick={() => toggleFf(o.id)} className={`ord-toggle${ffOpen === o.id ? " open" : ""}`}>
-                    {t("o.fulfilment")} <IconChevron width={15} height={15} />
-                  </button>
-                )}
-              </div>
-            </div>
-            <div className="ord-actions">
-              {canEdit && <button onClick={() => cloneOrder(o.id)} style={btnGhost} title={t("o.dup")}>{t("o.dup")}</button>}
-              {canEdit && <OrderMenu order={o} patchOrder={patchOrder} downloadInfo={downloadInfo} />}
-            </div>
-          </div>
-
-          {/* Panel Fulfillment inline — chỉ người có quyền fulfillment */}
-          {canPushFf && ffOpen === o.id && (
-            detail ? <FulfillPanel detail={detail} canEdit={canEdit} reload={() => { load(); toggleFf(o.id); }} flash={flash} />
-            : <div className="ff" style={{ color: "var(--muted)", fontSize: 13 }}>{t("o.loadingPanel")}</div>
-          )}
-
-          {/* Items */}
-          {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={load} flash={flash} />)}
-        </div>
+        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf}
+          selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
+          reload={load} flash={flash} patchOrder={patchOrder} cloneOrder={cloneOrder}
+          downloadInfo={downloadInfo} copyText={copyText} />
       ))}
       {!data.orders.length && <div className="panel empty" style={{ marginTop: 12 }}>{t("o.noMatch")}</div>}
 
@@ -281,7 +225,178 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   );
 }
 
-function ItemRow({ it, onSaved, flash }: { it: Item; onSaved: () => void; flash: (m: string) => void }) {
+function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash, patchOrder, cloneOrder, downloadInfo, copyText }: {
+  o: Order; canEdit: boolean; canPushFf: boolean; selected: boolean; onToggleSel: () => void;
+  reload: () => void; flash: (m: string) => void;
+  patchOrder: (id: string, body: Record<string, unknown>) => Promise<{ ok: boolean }>;
+  cloneOrder: (id: string) => void; downloadInfo: (o: Order) => void; copyText: (v: string) => void;
+}) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<Detail | null>(null);
+  const [ffSel, setFfSel] = useState("");
+  const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number }>>({});
+  const [busy, setBusy] = useState(false);
+  const [ship, setShip] = useState({
+    buyerFirst: o.buyer_first ?? "", buyerLast: o.buyer_last ?? "", addr1: o.addr1 ?? "", addr2: o.addr2 ?? "",
+    city: o.city ?? "", state: o.state ?? "", zip: o.zip ?? "", country: o.country ?? "United States",
+    orderLabel: o.order_label ?? "",
+  });
+
+  const toggle = async () => {
+    if (open) { setOpen(false); return; }
+    setOpen(true);
+    if (!detail) {
+      const j = await fetch(`/api/orders/${o.id}`).then((r) => r.json());
+      if (j.ok) {
+        setDetail(j);
+        setShip((s) => ({ ...s, orderLabel: s.orderLabel || [`${(j.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-") }));
+      }
+    }
+  };
+
+  const variants: Variant[] = ffSel && detail ? (detail.catalog[ffSel] ?? []) : [];
+  const pickFulfiller = (id: string) => {
+    setFfSel(id);
+    if (!detail) return;
+    const cat = detail.catalog[id] ?? [];
+    const init: Record<string, { mappingId: string; qty: number }> = {};
+    for (const it of detail.items) {
+      const match = cat.find((v) => v.internalSku === it.internal_sku);
+      init[it.id] = { mappingId: match?.id ?? "", qty: it.qty };
+    }
+    setLines(init);
+  };
+  const complete = !!ffSel && !!detail && detail.items.length > 0 &&
+    detail.items.every((it) => lines[it.id]?.mappingId && lines[it.id]?.qty >= 1);
+  const estCost = complete && detail
+    ? detail.items.reduce((tot, it) => { const l = lines[it.id]; const v = variants.find((x) => x.id === l.mappingId); return tot + (v ? v.unitCost * l.qty : 0); }, 0)
+    : null;
+
+  const createOrder = async () => {
+    if (!complete || !detail) return;
+    setBusy(true);
+    if (canEdit) {
+      const s1 = await fetch(`/api/orders/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ship) }).then((r) => r.json());
+      if (!s1.ok) { setBusy(false); return flash("✗ " + (s1.error ?? "")); }
+    }
+    const body = { orderId: o.id, fulfillerId: ffSel, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })) };
+    const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+    setBusy(false);
+    if (j.ok) { flash(t("o.pushed")); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+
+  const F = (k: keyof typeof ship, label: string) => (
+    <div className="o2-field">
+      <label>{label}</label>
+      <input value={ship[k]} disabled={!canEdit} onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
+        style={{ ...inp, opacity: canEdit ? 1 : 0.65 }} />
+    </div>
+  );
+
+  return (
+    <div className="card o2">
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: open ? 14 : 0 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flex: 1, minWidth: 0 }}>
+          {canEdit && <input type="checkbox" checked={selected} onChange={onToggleSel} style={{ width: 17, height: 17, marginTop: 3, cursor: "pointer", accentColor: "var(--blue)", flexShrink: 0 }} />}
+          <div className={`o2-top${open && detail ? "" : " solo"}`} style={{ flex: 1, minWidth: 0 }}>
+            {/* CỘT 1 — thông tin đơn */}
+            <div className="o2-info">
+              <div className="o2-l1">
+                <span className="o2-num">#{o.external_id}</span>
+                <button className="icon-btn" title={t("d.copy") + " ID"} onClick={() => copyText(o.external_id)}><IconCopy width={12} height={12} /></button>
+                <span className="o2-status" style={{ background: STATUS_COLORS[o.status] ?? "#6B7280" }}>{o.status.toUpperCase()}</span>
+                <span style={{ fontSize: 12, color: "var(--muted)" }}>{new Date(o.ordered_at).toISOString().slice(0, 10)}</span>
+              </div>
+              <div className="o2-ship">
+                <span className="o2-chip plat">{o.platform}</span>
+                <span className="o2-chip seller">{o.seller_name ?? "—"}</span>
+                {o.store_name && <span className="o2-chip">{o.store_name}</span>}
+              </div>
+              <div className="o2-buyer">{[o.buyer_first, o.buyer_last].filter(Boolean).join(" ") || "—"}</div>
+              <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ")}</span></div>
+              <div className="o2-fin">
+                <div className="c"><span className="k">{t("o.total")}</span><span className="v">{money(o.total)}</span></div>
+                <div className="c"><span className="k">{t("o.fee")}</span><span className="v">{money(o.platform_fee)}</span></div>
+                <div className="c net"><span className="k">{t("o.afterFee")}</span><span className="v">{money(Number(o.total) - Number(o.platform_fee))}</span></div>
+              </div>
+              <OrderNote order={o} canEdit={canEdit} onSaved={reload} flash={flash} />
+              {canPushFf && (
+                <button onClick={toggle} className={`o2-toggle${open ? " open" : ""}`}>{t("o.fulfilment")} <IconChevron width={15} height={15} /></button>
+              )}
+            </div>
+
+            {/* CỘT 2+3 — form giao hàng + nhãn/tạo đơn (chỉ khi mở) */}
+            {open && detail && (
+              <>
+                <div>
+                  <div className="o2-secTitle">
+                    <span className="o2-badge"><IconTruck width={13} height={13} /> {t("o.fulfilment")}</span>
+                    <b style={{ fontSize: 13 }}>{t("o.shippingInfo")}</b>
+                  </div>
+                  <div className="o2-form">
+                    {F("buyerFirst", t("o.firstName"))}
+                    {F("buyerLast", t("o.lastName"))}
+                    {F("addr1", t("o.addr1"))}
+                    {F("addr2", t("o.addr2"))}
+                    {F("city", t("o.city"))}
+                    {F("zip", t("o.zip"))}
+                    {F("country", t("o.country"))}
+                    {F("state", t("o.state"))}
+                  </div>
+                </div>
+                <div className="o2-right">
+                  <div className="o2-field">{F("orderLabel", t("o.orderLabel"))}</div>
+                  <div className="o2-field">
+                    <label>{t("o.fulfilledBy")}</label>
+                    <select value={ffSel} onChange={(e) => pickFulfiller(e.target.value)} style={{ ...inp, width: "100%" }}>
+                      <option value="">{t("o.chooseFulfiller")}</option>
+                      {detail.fulfillerOptions.map((ff) => (
+                        <option key={ff.fulfillerId} value={ff.fulfillerId}>{ff.name}{(detail.catalog[ff.fulfillerId]?.length ?? 0) === 0 ? ` ${t("o.noSkuMapping")}` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {complete
+                    ? <div style={{ fontSize: 12.5, textAlign: "right" }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></div>
+                    : ffSel ? <div style={{ fontSize: 11.5, color: "var(--muted)", textAlign: "right" }}>{t("o.needComplete").replace("{n}", String(detail.items.length))}</div> : null}
+                  <button onClick={createOrder} disabled={!complete || busy} style={{ ...btnBlue, width: "100%", padding: "11px", fontSize: 14, opacity: !complete || busy ? 0.5 : 1 }}>
+                    {busy ? t("o.creating") : t("o.pushFfOrder")}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
+          {canEdit && o.status !== "completed" && <button onClick={() => patchOrder(o.id, { status: "completed" })} style={btnDark}>{t("o.complete")}</button>}
+          {canEdit && <OrderMenu order={o} patchOrder={patchOrder} downloadInfo={downloadInfo} />}
+        </div>
+      </div>
+
+      {/* Hàng nút phụ */}
+      {canEdit && (
+        <div className="o2-btns">
+          <button onClick={() => cloneOrder(o.id)} style={btnGhost}>{t("o.dup")}</button>
+          <button onClick={() => downloadInfo(o)} style={{ ...btnGhost, color: "var(--green)", borderColor: "var(--green)" }}>{t("o.downloadInfo")}</button>
+        </div>
+      )}
+
+      {/* Items — variant/qty bên phải khi đã mở fulfillment + chọn nhà fulfill */}
+      {o.items.map((it) => {
+        const dit = detail?.items.find((x) => x.id === it.id);
+        const l = lines[it.id] ?? { mappingId: "", qty: it.qty };
+        return <ItemRow key={it.id} it={it} onSaved={reload} flash={flash}
+          showVariant={open && !!ffSel && !!dit} variants={variants}
+          line={l} setLine={(v) => setLines({ ...lines, [it.id]: v })} />;
+      })}
+    </div>
+  );
+}
+
+function ItemRow({ it, onSaved, flash, showVariant, variants, line, setLine }: {
+  it: Item; onSaved: () => void; flash: (m: string) => void;
+  showVariant?: boolean; variants?: Variant[]; line?: { mappingId: string; qty: number }; setLine?: (v: { mappingId: string; qty: number }) => void;
+}) {
   const { t } = useLang();
   const [skuInput, setSkuInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -297,12 +412,11 @@ function ItemRow({ it, onSaved, flash }: { it: Item; onSaved: () => void; flash:
     if (j.ok) onSaved();
   };
   const img = it.mockupUrl ?? it.designThumb;
+  const v = variants?.find((x) => x.id === line?.mappingId);
   return (
-    <div className="ord-item">
-      <div className="ord-item-img checker">
-        {img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}
-      </div>
-      <div style={{ fontSize: 13.5, minWidth: 0 }}>
+    <div className="o2-item">
+      <div className="o2-thumb">{img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}</div>
+      <div style={{ fontSize: 13, minWidth: 0 }}>
         <b>{it.product_title}</b>
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "var(--muted)", marginTop: 5, fontSize: 12.5 }}>
           <span>{t("o.qtyLabel")}: <b style={{ color: "var(--ink)" }}>{it.qty}</b></span>
@@ -310,194 +424,61 @@ function ItemRow({ it, onSaved, flash }: { it: Item; onSaved: () => void; flash:
           <span>{t("o.price")}: <b style={{ color: "var(--ink)" }}>{money(it.unit_price)}</b></span>
         </div>
         <Personalization it={it} onSaved={onSaved} flash={flash} />
-        <label style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6, marginTop: 10, cursor: "pointer" }}>
+        <label style={{ fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={it.special_print} onChange={toggleSpecial} /> {t("o.specialPrint")}
         </label>
-      </div>
-      <div>
-        {it.design_id ? (
-          <div style={{ border: "1.5px solid var(--green)", borderRadius: 12, padding: 10, textAlign: "center", background: "var(--green-soft)" }}>
-            <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".4px", color: "var(--green)", marginBottom: 6 }}>{t("o.assignedDesign")}</div>
-            {it.designThumb && <div className="checker" style={{ width: 84, height: 84, margin: "0 auto", borderRadius: 8, overflow: "hidden" }}><img src={it.designThumb} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /></div>}
-            <div style={{ fontSize: 12.5, marginTop: 6 }}><b>#{it.design_sku}</b> — {it.design_title}</div>
-            <button onClick={() => assign(null)} disabled={busy} style={{ ...btnGhost, marginTop: 8, fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}><IconTrash width={12} height={12} /> {t("o.unassign")}</button>
-          </div>
-        ) : (
-          <>
-            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 7, color: "var(--muted)" }}>{t("o.suggestDesigns")}</div>
-            {it.suggest ? (
-              <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 8, textAlign: "center", marginBottom: 8 }}>
-                {it.suggest.thumb && <div className="checker" style={{ width: 84, height: 84, margin: "0 auto", borderRadius: 8, overflow: "hidden" }}><img src={it.suggest.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /></div>}
-                <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ display: "block", width: "100%", marginTop: 8, background: "var(--green)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 10px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                  {t("o.acceptDesign")} #{it.suggest.skuCode}
-                </button>
-              </div>
-            ) : <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{t("o.noSuggest")}</div>}
-            <div style={{ display: "flex", gap: 6 }}>
-              <input placeholder={t("o.designId")} value={skuInput} onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
-                onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} style={{ ...inp, flex: 1 }} />
-              <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} style={btnBlue}>{t("o.assign")}</button>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function FulfillPanel({ detail, canEdit, reload, flash }: { detail: Detail; canEdit: boolean; reload: () => void; flash: (m: string) => void }) {
-  const { t } = useLang();
-  const o = detail.order;
-  const [ship, setShip] = useState({
-    buyerFirst: (o.buyer_first as string) ?? "", buyerLast: (o.buyer_last as string) ?? "",
-    addr1: (o.addr1 as string) ?? "", addr2: (o.addr2 as string) ?? "",
-    city: (o.city as string) ?? "", state: (o.state as string) ?? "", zip: (o.zip as string) ?? "",
-    country: (o.country as string) ?? "United States",
-    orderLabel: (o.order_label as string) || [`${(detail.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-"),
-  });
-  // BƯỚC 1: chọn nhà fulfill (bắt đầu trống)
-  const [ffSel, setFfSel] = useState("");
-  // BƯỚC 2: mỗi item chọn variant + qty
-  const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number }>>({});
-  const [busy, setBusy] = useState(false);
-
-  const variants: Variant[] = ffSel ? (detail.catalog[ffSel] ?? []) : [];
-
-  const pickFulfiller = (id: string) => {
-    setFfSel(id);
-    // preselect variant khớp internal_sku nếu có
-    const cat = detail.catalog[id] ?? [];
-    const init: Record<string, { mappingId: string; qty: number }> = {};
-    for (const it of detail.items) {
-      const match = cat.find((v) => v.internalSku === it.internal_sku);
-      init[it.id] = { mappingId: match?.id ?? "", qty: it.qty };
-    }
-    setLines(init);
-  };
-
-  // ĐỦ BIẾN = có nhà fulfill + mọi item có variant + qty >= 1
-  const complete = !!ffSel && detail.items.length > 0 &&
-    detail.items.every((it) => lines[it.id]?.mappingId && lines[it.id]?.qty >= 1);
-  const estCost = complete
-    ? detail.items.reduce((t, it) => {
-        const l = lines[it.id]; const v = variants.find((x) => x.id === l.mappingId);
-        return t + (v ? v.unitCost * l.qty : 0);
-      }, 0)
-    : null;
-
-  const createOrder = async () => {
-    if (!complete) return;
-    setBusy(true);
-    if (canEdit) {
-      const s1 = await fetch(`/api/orders/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ship) }).then((r) => r.json());
-      if (!s1.ok) { setBusy(false); return flash("✗ Lưu địa chỉ lỗi: " + (s1.error ?? "")); }
-    }
-    const body = {
-      orderId: o.id, fulfillerId: ffSel,
-      lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })),
-    };
-    const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
-    setBusy(false);
-    if (j.ok) { flash(t("o.pushed")); reload(); } else flash("✗ " + (j.error ?? "Error"));
-  };
-
-  const F = (k: keyof typeof ship, label: string) => (
-    <div className="ff-field">
-      <label>{label}</label>
-      <input value={ship[k]} disabled={!canEdit}
-        onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
-        style={{ ...inp, width: "100%", opacity: canEdit ? 1 : 0.65 }} />
-    </div>
-  );
-
-  return (
-    <div className="ff">
-      <div className="ff-title">
-        <span className="ff-badge"><IconTruck width={14} height={14} /> {t("o.fulfilment")}</span>
-        <b style={{ fontSize: 13.5 }}>{t("o.shippingInfo")}</b>
-        {!canEdit && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{t("o.viewOnly")}</span>}
-      </div>
-
-      {/* Địa chỉ — mỗi ô có nhãn rõ ràng */}
-      <div className="ff-grid">
-        {F("buyerFirst", t("o.firstName"))}
-        {F("buyerLast", t("o.lastName"))}
-        {F("orderLabel", t("o.orderLabel"))}
-        {F("addr1", t("o.addr1"))}
-        {F("addr2", t("o.addr2"))}
-        {F("city", t("o.city"))}
-        {F("state", t("o.state"))}
-        {F("zip", t("o.zip"))}
-        {F("country", t("o.country"))}
-      </div>
-
-      {/* BƯỚC 1 — chọn nhà fulfill */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18, maxWidth: 920, flexWrap: "wrap" }}>
-        <span className="ff-step">1</span>
-        <span style={{ fontSize: 13, fontWeight: 700 }}>{t("o.fulfilledBy")}</span>
-        <select value={ffSel} onChange={(e) => pickFulfiller(e.target.value)} style={{ ...inp, minWidth: 260 }}>
-          <option value="">{t("o.chooseFulfiller")}</option>
-          {detail.fulfillerOptions.map((f) => (
-            <option key={f.fulfillerId} value={f.fulfillerId}>
-              {f.name}{(detail.catalog[f.fulfillerId]?.length ?? 0) === 0 ? ` ${t("o.noSkuMapping")}` : ""}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* BƯỚC 2 — variant + qty từng item */}
-      {ffSel && (
-        <div style={{ marginTop: 14, maxWidth: 920 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <span className="ff-step">2</span>
-            <span style={{ fontSize: 13, fontWeight: 700 }}>{t("o.chooseVariant")}</span>
-          </div>
-          {variants.length === 0 && (
-            <div style={{ fontSize: 12.5, color: "var(--red)", marginTop: 8 }}>{t("o.noMapping")}</div>
-          )}
-          {detail.items.map((it) => {
-            const l = lines[it.id] ?? { mappingId: "", qty: it.qty };
-            const v = variants.find((x) => x.id === l.mappingId);
-            return (
-              <div key={it.id} className={`ff-line${l.mappingId ? "" : " miss"}`}>
-                <span style={{ fontSize: 12.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: 600 }} title={it.product_title}>{it.product_title}</span>
-                <select value={l.mappingId} onChange={(e) => setLines({ ...lines, [it.id]: { ...l, mappingId: e.target.value } })} style={{ ...inp, width: "100%" }}>
-                  <option value="">{t("o.selectVariant")}</option>
-                  {variants.map((x) => <option key={x.id} value={x.id}>{x.fulfillerSku} — {money(x.unitCost)}</option>)}
-                </select>
-                <span className="qty-wrap">
-                  <span className="qk">{t("o.qty")}</span>
-                  <input type="number" min={1} value={l.qty} onChange={(e) => setLines({ ...lines, [it.id]: { ...l, qty: Number(e.target.value) } })} style={{ ...inp }} />
-                </span>
-                <b style={{ fontSize: 13, color: v ? "var(--green)" : "var(--faint)", minWidth: 66, textAlign: "right" }}>{v ? money(v.unitCost * (l.qty || 0)) : "—"}</b>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* BƯỚC 3 — đủ biến mới hiện Create Order */}
-      {ffSel && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 16, maxWidth: 920 }}>
-          {complete ? (
+        {/* Gán design */}
+        <div className="o2-assign">
+          {it.design_id ? (
             <>
-              <span style={{ fontSize: 13.5 }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></span>
-              <button onClick={createOrder} disabled={busy} style={{ ...btnBlue, padding: "11px 34px", fontSize: 14, opacity: busy ? 0.6 : 1 }}>
-                {busy ? t("o.creating") : t("o.pushFfOrder")}
-              </button>
+              {it.designThumb && <div className="o2-dthumb"><img src={it.designThumb} alt="" /></div>}
+              <div style={{ fontSize: 12.5 }}>
+                <div style={{ fontWeight: 700 }}>#{it.design_sku} — {it.design_title}</div>
+                <button onClick={() => assign(null)} disabled={busy} style={{ ...btnGhost, marginTop: 6, fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}><IconTrash width={12} height={12} /> {t("o.unassign")}</button>
+              </div>
             </>
           ) : (
-            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
-              {t("o.needComplete").replace("{n}", String(detail.items.length))}
-            </span>
+            <div style={{ flex: 1 }}>
+              {it.suggest ? (
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  {it.suggest.thumb && <div className="o2-dthumb"><img src={it.suggest.thumb} alt="" /></div>}
+                  <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ background: "var(--green)", color: "#fff", border: "none", borderRadius: 8, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{t("o.acceptDesign")} #{it.suggest.skuCode}</button>
+                </div>
+              ) : null}
+              <div style={{ display: "flex", gap: 6, marginTop: it.suggest ? 8 : 0 }}>
+                <input placeholder={t("o.designId")} value={skuInput} onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
+                  onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} style={{ ...inp, width: 130 }} />
+                <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} style={btnBlue}>{t("o.assign")}</button>
+              </div>
+            </div>
           )}
         </div>
-      )}
+      </div>
+      {/* Cột variant/qty */}
+      <div className="o2-vary">
+        {showVariant && line && setLine ? (
+          <>
+            <div className="o2-field">
+              <label>{t("o.fulfilledBy")} — variant</label>
+              <select value={line.mappingId} onChange={(e) => setLine({ ...line, mappingId: e.target.value })}
+                style={{ ...inp, width: "100%", ...(line.mappingId ? {} : { borderColor: "#F0A9A0", background: "var(--red-soft)" }) }}>
+                <option value="">{t("o.selectVariant")}</option>
+                {variants!.map((x) => <option key={x.id} value={x.id}>{x.fulfillerSku} — {money(x.unitCost)}</option>)}
+              </select>
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+              <div className="o2-field" style={{ width: 90 }}>
+                <label>{t("o.qtyLabel")}</label>
+                <input type="number" min={1} value={line.qty} onChange={(e) => setLine({ ...line, qty: Number(e.target.value) })} style={{ ...inp, width: "100%", textAlign: "center" }} />
+              </div>
+              <div style={{ flex: 1, textAlign: "right", fontSize: 13, paddingBottom: 8 }}>{v ? <b style={{ color: "var(--green)" }}>{money(v.unitCost * (line.qty || 0))}</b> : <span style={{ color: "var(--faint)" }}>—</span>}</div>
+            </div>
+          </>
+        ) : null}
+      </div>
     </div>
   );
 }
-
-const lbl: React.CSSProperties = { border: "1px solid var(--line)", borderRight: "none", borderRadius: "10px 0 0 10px", padding: "7px 10px", fontSize: 12.5, background: "#F0F3FA", color: "var(--muted)", whiteSpace: "nowrap" };
 
 function CreateOrderModal({ close, reload, flash, sellers, stores }: {
   close: () => void; reload: () => void; flash: (m: string) => void;

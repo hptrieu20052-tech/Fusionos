@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
@@ -31,18 +32,18 @@ export default function AppShell({ user, links, children }: {
     <div className="app">
       <header className="topnav">
         <div className="topnav-inner">
-          <a href="/" className="topnav-brand">
+          <Link href="/" className="topnav-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/Logo-full.png" alt="Fusion" />
-          </a>
+          </Link>
           <nav className="topnav-menu">
             {links.map((l) => {
               const Icon = ICONS[l.icon] ?? IconDashboard;
               return (
-                <a key={l.href} href={l.href} className={`topnav-item${isActive(l.href) ? " active" : ""}`}>
+                <Link key={l.href} href={l.href} prefetch className={`topnav-item${isActive(l.href) ? " active" : ""}`}>
                   <span className="topnav-ic"><Icon width={17} height={17} /></span>
                   {t(l.label)}
-                </a>
+                </Link>
               );
             })}
           </nav>
