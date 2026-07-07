@@ -54,6 +54,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const [page, setPage] = useState(1); const [show, setShow] = useState(20);
   const [msg, setMsg] = useState("");
   const [showCreate, setShowCreate] = useState(false);
+  const [showEtsy, setShowEtsy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [selIds, setSelIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("shipped");
@@ -121,6 +122,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
                 }} />
             </label>
           )}
+          {canEdit && <button onClick={() => setShowEtsy(true)} className="btn btn-outline" style={{ borderColor: "#F0A24B", color: "#C9760F" }}>Import Etsy</button>}
           {canEdit && <button onClick={() => setShowCreate(true)} className="btn btn-primary">{t("o.createOrder")}</button>}
         </div>
       </div>
@@ -230,6 +232,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
 
 
       {showCreate && <CreateOrderModal close={() => setShowCreate(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
+      {showEtsy && <EtsyImportModal close={() => setShowEtsy(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
     </>
   );
 }
@@ -770,6 +773,66 @@ function ItemRow({ it, onSaved, flash }: {
             <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ marginTop: 6, width: "100%", background: "var(--green)", color: "#fff", border: "none", borderRadius: 9, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{t("o.acceptDesign")} #{it.suggest.skuCode}</button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function EtsyImportModal({ close, reload, flash, sellers, stores }: {
+  close: () => void; reload: () => void; flash: (m: string) => void;
+  sellers: Opt[]; stores: Opt[];
+}) {
+  const [storeId, setStoreId] = useState("");
+  const [sellerId, setSellerId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const doImport = async (file: File) => {
+    setBusy(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    if (storeId) fd.append("storeId", storeId);
+    if (sellerId) fd.append("sellerId", sellerId);
+    const j = await fetch("/api/orders/import-etsy", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: "lỗi mạng" }));
+    setBusy(false);
+    if (j.ok) {
+      flash(`✓ ${j.orders} đơn trong file — tạo mới ${j.created}, bỏ qua ${j.skipped} (đã có)${j.errors?.length ? ` · ${j.errors.length} lỗi` : ""}`);
+      if (j.errors?.length) alert("Lỗi:\n" + j.errors.join("\n"));
+      reload(); close();
+    } else flash("✗ " + (j.error ?? "Import lỗi"));
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
+      <div style={{ background: "#fff", borderRadius: 18, width: 460, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <b style={{ fontSize: 16 }}>Import đơn Etsy (CSV)</b>
+          {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
+          Trong Etsy: <b>Shop Manager → Settings → Options → Download Data → Orders</b> (chọn tháng, tải CSV). Không dùng API Etsy — an toàn cho shop.
+        </div>
+
+        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>Store Etsy
+          <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
+            <option value="">— chọn store —</option>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
+        <label style={{ ...rLbl, display: "block", marginBottom: 16 }}>Seller phụ trách (tùy chọn)
+          <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
+            <option value="">—</option>
+            {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
+
+        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) doImport(f); e.target.value = ""; }} />
+        <button onClick={() => fileRef.current?.click()} disabled={busy}
+          style={{ ...btnBlue, width: "100%", padding: "12px", fontSize: 14, opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <IconUpload width={16} height={16} /> {busy ? "Đang import…" : "Chọn file CSV Etsy & Import"}
+        </button>
+        <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10 }}>Đơn trùng (đã có cùng Order ID) sẽ tự bỏ qua, không tạo lặp.</div>
       </div>
     </div>
   );

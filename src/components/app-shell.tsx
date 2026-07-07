@@ -1,9 +1,10 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
-  IconWallet, IconStore, IconSettings, IconProducts, IconEye,
+  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid,
 } from "@/components/icons";
 import { LogoutButton } from "@/app/logout-button";
 import { useLang } from "@/components/lang-provider";
@@ -16,7 +17,7 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
   settings: IconSettings, admin: IconProducts,
 };
 
-export type NavLink = { href: string; label: string; icon: string; section: string };
+export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
 
 export default function AppShell({ user, links, children }: {
   user: { name: string; role: string };
@@ -27,6 +28,7 @@ export default function AppShell({ user, links, children }: {
   const { t, lang, toggle } = useLang();
   const isActive = (href: string) => href === "/" ? path === "/" : path.startsWith(href);
   const initials = user.name.split(" ").map((w) => w[0]).slice(-2).join("").toUpperCase();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
     <div className="app">
@@ -37,7 +39,7 @@ export default function AppShell({ user, links, children }: {
             <img src="/Logo-full.png" alt="Fusion" />
           </Link>
           <nav className="topnav-menu">
-            {links.map((l) => {
+            {links.filter((l) => !l.more).map((l) => {
               const Icon = ICONS[l.icon] ?? IconDashboard;
               return (
                 <Link key={l.href} href={l.href} prefetch className={`topnav-item${isActive(l.href) ? " active" : ""}`}>
@@ -46,6 +48,27 @@ export default function AppShell({ user, links, children }: {
                 </Link>
               );
             })}
+            {links.some((l) => l.more) && (
+              <div className="topnav-more" onMouseLeave={() => setMoreOpen(false)}>
+                <button className={`topnav-item${links.some((l) => l.more && isActive(l.href)) ? " active" : ""}`} onClick={() => setMoreOpen((v) => !v)}>
+                  <span className="topnav-ic"><IconGrid width={17} height={17} /></span>
+                  {t("nav.more")} <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
+                </button>
+                {moreOpen && (
+                  <div className="topnav-more-menu" onClick={() => setMoreOpen(false)}>
+                    {links.filter((l) => l.more).map((l) => {
+                      const Icon = ICONS[l.icon] ?? IconDashboard;
+                      return (
+                        <Link key={l.href} href={l.href} prefetch className={`topnav-more-item${isActive(l.href) ? " active" : ""}`}>
+                          <span className="topnav-ic"><Icon width={16} height={16} /></span>
+                          {t(l.label)}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </nav>
           <button onClick={toggle} className="lang-toggle" title="Chuyển ngôn ngữ / Switch language">
             {/* eslint-disable-next-line @next/next/no-img-element */}

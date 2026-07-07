@@ -11,6 +11,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "nav.statsOrders": { vi: "TK Đơn", en: "Order Stats" },
   "nav.statsDesigners": { vi: "TK Designer", en: "Designer Stats" },
   "nav.finance": { vi: "Tài chính", en: "Finance" },
+  "nav.more": { vi: "Thêm", en: "More" },
   "nav.supplierReport": { vi: "Report Supplier", en: "Supplier Report" },
   "nav.stores": { vi: "Cửa hàng", en: "Stores" },
   "nav.settings": { vi: "Cài đặt", en: "Settings" },
