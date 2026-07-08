@@ -1,4 +1,5 @@
-import { createPrintifyOrder, toISO2 } from "@/lib/printify";
+import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts } from "@/lib/printify";
+import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
  * ------------------------------------------------------------------
@@ -13,7 +14,14 @@ import { createPrintifyOrder, toISO2 } from "@/lib/printify";
  * đụng tới route push chính.
  */
 
-export type PushLine = { fulfillerSku: string; qty: number };
+export type PushLine = {
+  fulfillerSku: string; qty: number;
+  internalSku?: string | null; productId?: string | null;
+  price?: number; currency?: string;
+  image?: string | null;
+  designFront?: string | null; designBack?: string | null; designSleeve?: string | null; designHood?: string | null;
+  pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null;
+};
 export type PushCtx = {
   fulfiller: { id: string; name: string; apiEndpoint: string | null; credentials: unknown };
   order: {
@@ -64,7 +72,7 @@ function makeAdapter(slug: string, label: string): FulfillerAdapter {
 /** Danh sách nhà fulfill hỗ trợ (slug ⇄ nhãn hiển thị). */
 export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   printify: printifyAdapter(),
-  merchize: makeAdapter("merchize", "Merchize"),
+  merchize: merchizeAdapter(),
   printway: makeAdapter("printway", "Printway"),
   wembroidery: makeAdapter("wembroidery", "Wembroidery"),
   flashship: makeAdapter("flashship", "Flashship"),
@@ -90,26 +98,88 @@ function printifyAdapter(): FulfillerAdapter {
       if (!token || !shopId) return simulate("printify"); // chưa cấu hình → simulate
 
       const o = ctx.order;
-      const address_to = {
-        first_name: o.buyerFirst || "Customer",
-        last_name: o.buyerLast || ".",
-        email: o.email || undefined,
-        phone: o.phone || undefined,
-        country: toISO2(o.country),
-        region: o.state || "",
-        address1: o.addr1 || "",
-        address2: o.addr2 || undefined,
-        city: o.city || "",
-        zip: o.zip || "",
+      const address = {
+        first_name: o.buyerFirst || "Customer", last_name: o.buyerLast || ".",
+        email: o.email || undefined, phone: o.phone || undefined,
+        country: toISO2(o.country), region: o.state || "",
+        address1: o.addr1 || "", address2: o.addr2 || undefined,
+        city: o.city || "", zip: o.zip || "",
       };
-      const line_items = ctx.lines.map((l) => ({ sku: l.fulfillerSku, quantity: l.qty }));
-      const res = await createPrintifyOrder(token, shopId, {
-        external_id: o.externalId,
-        label: o.orderLabel || o.externalId,
-        line_items,
-        address_to,
+
+      // Mỗi line phải có recipe (blueprint/provider/variant). Upload design → tạo product → gom line_item.
+      const missing = ctx.lines.filter((l) => !l.pfBlueprintId || !l.pfProviderId || !l.pfVariantId);
+      if (missing.length) {
+        throw new Error(`Chưa cấu hình Blueprint/Provider/Variant cho SKU: ${missing.map((l) => l.fulfillerSku).join(", ")}. Vào SKU mapping → tab Printify để chọn.`);
+      }
+      const lineItems: { product_id: string; variant_id: number; quantity: number }[] = [];
+      for (const l of ctx.lines) {
+        const frontImageId = l.designFront ? await uploadImageByUrl(token, `${l.fulfillerSku}-front`, l.designFront) : undefined;
+        const backImageId = l.designBack ? await uploadImageByUrl(token, `${l.fulfillerSku}-back`, l.designBack) : undefined;
+        const prod = await createProduct(token, shopId, {
+          title: `${o.externalId} · ${l.fulfillerSku}`,
+          blueprintId: l.pfBlueprintId!, providerId: l.pfProviderId!, variantId: l.pfVariantId!,
+          price: l.price ? Math.round(l.price * 100) : 2000,
+          frontImageId, backImageId,
+        });
+        lineItems.push({ product_id: prod.productId, variant_id: prod.variantId, quantity: l.qty });
+      }
+      const res = await createOrderFromProducts(token, shopId, o.externalId, lineItems, address);
+      return { externalFfId: res.orderId, simulated: false, raw: res.raw };
+    },
+  };
+}
+
+/**
+ * Adapter Merchize THẬT — POST /order/external/orders/catalog (x-api-key).
+ * credentials = { apiKey, identifier }, base URL = fulfiller.apiEndpoint.
+ * lines mang theo merchize_sku (fulfillerSku), product_id, giá, và URL design (front/back...).
+ */
+function merchizeAdapter(): FulfillerAdapter {
+  return {
+    slug: "merchize",
+    label: "Merchize",
+    async push(ctx) {
+      const c = (ctx.fulfiller.credentials ?? {}) as { apiKey?: string; apiToken?: string; identifier?: string };
+      const apiKey = c.apiKey || c.apiToken;
+      const baseUrl = ctx.fulfiller.apiEndpoint;
+      const identifier = c.identifier;
+      if (!apiKey || !baseUrl || !identifier) return simulate("merchize"); // chưa cấu hình đủ
+
+      const o = ctx.order;
+      const res = await createMerchizeOrder(baseUrl, apiKey, {
+        order_id: o.externalId,
+        identifier,
+        shipping_info: {
+          full_name: [o.buyerFirst, o.buyerLast].filter(Boolean).join(" ") || "Customer",
+          address_1: o.addr1 || "",
+          address_2: o.addr2 || "",
+          city: o.city || "",
+          state: o.state || "",
+          postcode: o.zip || "",
+          country: toISO2(o.country),
+          email: o.email || undefined,
+          phone: o.phone || undefined,
+        },
+        items: ctx.lines.map((l) => ({
+          product_id: l.productId || undefined,
+          sku: l.internalSku || undefined,
+          merchize_sku: l.fulfillerSku,
+          quantity: l.qty,
+          price: l.price,
+          currency: l.currency || "USD",
+          image: l.image || undefined,
+          design_front: l.designFront || undefined,
+          design_back: l.designBack || undefined,
+          design_sleeve: l.designSleeve || undefined,
+          design_hood: l.designHood || undefined,
+        })),
       });
-      return { externalFfId: res.id, simulated: false, raw: res.raw };
+      // Bước 2: push (confirm) đơn đi sản xuất
+      if (res.orderCode) {
+        try { await pushMerchizeOrder(baseUrl, apiKey, { code: res.orderCode, external_number: o.externalId, identifier }); }
+        catch (e) { throw new Error(`Đã tạo đơn ${res.orderCode} nhưng push (confirm) lỗi: ${String((e as Error)?.message ?? e)}`); }
+      }
+      return { externalFfId: res.orderCode, simulated: false, raw: res.raw };
     },
   };
 }

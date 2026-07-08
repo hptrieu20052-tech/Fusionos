@@ -35,6 +35,9 @@ export async function PATCH(req: NextRequest) {
   if ("fulfillerProduct" in b) patch.fulfillerProduct = b.fulfillerProduct || null;
   if (b.baseCost !== undefined && !isNaN(Number(b.baseCost))) patch.baseCost = Number(b.baseCost).toFixed(2);
   if (b.shipCost !== undefined && !isNaN(Number(b.shipCost))) patch.shipCost = Number(b.shipCost).toFixed(2);
+  if ("pfBlueprintId" in b) patch.pfBlueprintId = b.pfBlueprintId != null ? Number(b.pfBlueprintId) : null;
+  if ("pfProviderId" in b) patch.pfProviderId = b.pfProviderId != null ? Number(b.pfProviderId) : null;
+  if ("pfVariantId" in b) patch.pfVariantId = b.pfVariantId != null ? Number(b.pfVariantId) : null;
   if (typeof b.active === "boolean") patch.active = b.active;
   const { eq } = await import("drizzle-orm");
   try {

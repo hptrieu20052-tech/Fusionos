@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { getAdapter } from "@/lib/fulfillers";
+import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,30 @@ export async function POST(req: NextRequest) {
 
   const items = await db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, order.id));
 
+  // Map design URL (front/back/sleeve/hood) theo designId — cho adapter cần artwork (Merchize...)
+  const designIds = Array.from(new Set(items.map((i) => i.designId).filter(Boolean))) as string[];
+  const sideUrls = new Map<string, { front?: string; back?: string; sleeve?: string; hood?: string }>();
+  if (designIds.length) {
+    const files = await db.select().from(schema.designFiles).where(inArray(schema.designFiles.designId, designIds));
+    for (const f of files) {
+      const cur = sideUrls.get(f.designId) ?? {};
+      const url = fileUrl(f.storageKey) ?? undefined;
+      if (f.kind === "design_front") cur.front = url;
+      else if (f.kind === "design_back") cur.back = url;
+      sideUrls.set(f.designId, cur);
+    }
+  }
+  const enrich = (it: typeof items[number], m: typeof schema.skuMappings.$inferSelect) => {
+    const s = it.designId ? sideUrls.get(it.designId) ?? {} : {};
+    return {
+      internalSku: m.internalSku, productId: m.fulfillerProductId ?? null,
+      price: Number(it.unitPrice) || undefined, currency: "USD",
+      image: it.imageUrl ?? fileUrl(it.mockupKey) ?? null,
+      designFront: s.front ?? null, designBack: s.back ?? null,
+      pfBlueprintId: m.pfBlueprintId ?? null, pfProviderId: m.pfProviderId ?? null, pfVariantId: m.pfVariantId ?? null,
+    };
+  };
+
   // Chế độ mới: client gửi lines [{itemId, mappingId, qty}] — variant do người fulfill chọn tay
   let cost = 0;
   let baseSum = 0;
@@ -63,7 +88,7 @@ export async function POST(req: NextRequest) {
       shipSum += Number(m.shipCost) * qty;
       cost += (Number(m.baseCost) + Number(m.shipCost)) * qty;
       parts.push(`${m.fulfillerSku}×${qty}`);
-      pushLines.push({ fulfillerSku: m.fulfillerSku, qty });
+      pushLines.push({ fulfillerSku: m.fulfillerSku, qty, ...enrich(it, m) });
     }
     lineNote = " · " + parts.join(", ");
   } else {
@@ -83,7 +108,7 @@ export async function POST(req: NextRequest) {
       const m = maps.find((x) => x.internalSku === i.internalSku)!;
       baseSum += Number(m.baseCost) * i.qty;
       shipSum += Number(m.shipCost) * i.qty;
-      pushLines.push({ fulfillerSku: m.fulfillerSku, qty: i.qty });
+      pushLines.push({ fulfillerSku: m.fulfillerSku, qty: i.qty, ...enrich(i, m) });
     }
     cost = baseSum + shipSum;
   }

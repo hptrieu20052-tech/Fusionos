@@ -4,7 +4,7 @@ import { useLang } from "@/components/lang-provider";
 import { SkuMappingClient } from "@/app/sku-mapping/sku-mapping-client";
 import { useConfirm } from "@/components/confirm-provider";
 
-type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; shopId: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string };
+type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; shopId: string | null; identifier: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; productType: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
 const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
 
@@ -14,7 +14,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
   const [tab, setTab] = useState<"api" | "sku">("api");
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [maps, setMaps] = useState<Map[]>([]);
-  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string }>>({});
+  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string; identifier: string }>>({});
   const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "" });
   const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
   const [msg, setMsg] = useState("");
@@ -23,7 +23,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
 
   const setE = (id: string, field: string, value: string) =>
     setEdit((prev) => {
-      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "" };
+      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "" };
       return { ...prev, [id]: { ...base, [field]: value } };
     });
 
@@ -33,7 +33,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
   async function saveFf(id: string) {
     const e = edit[id]; if (!e) return;
     const j = await fetch("/api/fulfillers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
-    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
+    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
   }
   async function listShops(id: string) {
     const token = edit[id]?.apiKey;
@@ -98,6 +98,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                 {f.credentials ? <span className="badge b-ship">Token {f.credentials}</span> : <span className="badge b-issue">{t("s.noApiKey")}</span>}
                 {f.apiEndpoint && <span className="badge b-mut" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.apiEndpoint}>URL: {f.apiEndpoint}</span>}
                 {f.shopId && <span className="badge b-ship">Shop ID: {f.shopId}</span>}
+                {f.identifier && <span className="badge b-ship">ID: {f.identifier}</span>}
                 {f.hasWebhookSecret ? <span className="badge b-ship">{t("s.hasWebhook")}</span> : <span className="badge b-mut">{t("s.noWebhook")}</span>}
                 {canEdit && <button type="button" onClick={() => setEditOpen((p) => ({ ...p, [f.id]: !p[f.id] }))}
                   style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 9, padding: "5px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--blue)" }}>
@@ -115,6 +116,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                   <input placeholder={isMerchize ? "Base URL (…/bo-api)" : (f.apiEndpoint ?? "API endpoint")} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setE(f.id, "apiEndpoint", e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
                   <input placeholder={isMerchize ? "Access Token (Bearer)" : t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(e) => setE(f.id, "apiKey", e.target.value)} style={{ ...inp, width: 200 }} />
+                  {isMerchize && <input placeholder="Identifier (vd hello.com)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 160 }} />}
                   {f.name.toLowerCase().includes("printify") && <>
                     <input placeholder="Shop ID" value={edit[f.id]?.shopId ?? ""} onChange={(e) => setE(f.id, "shopId", e.target.value)} style={{ ...inp, width: 110 }} />
                     <button type="button" onClick={() => listShops(f.id)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{t("s.getShop")}</button>

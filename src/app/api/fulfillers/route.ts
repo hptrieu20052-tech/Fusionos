@@ -19,7 +19,7 @@ export async function GET() {
   const maps = await db.select().from(schema.skuMappings);
   return NextResponse.json({
     ok: true,
-    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, credentials: f.credentials ? "•••• đã lưu" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined })),
+    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, identifier: (f.credentials as { identifier?: string } | null)?.identifier ?? null, credentials: f.credentials ? "•••• đã lưu" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined })),
     mappings: maps,
   });
 }
@@ -46,13 +46,14 @@ export async function PATCH(req: NextRequest) {
   if (typeof b.apiEndpoint === "string") patch.apiEndpoint = b.apiEndpoint || null;
   if (typeof b.webhookSecret === "string" && b.webhookSecret) patch.webhookSecret = b.webhookSecret;
   // Credentials: gộp apiKey (token) + shopId (cho Printify). Giữ giá trị cũ nếu chỉ đổi 1 phần.
-  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "")) {
+  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "") || (b.identifier !== undefined && b.identifier !== "")) {
     const [cur] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.id)).limit(1);
     const prev = (cur?.credentials ?? {}) as Record<string, unknown>;
     patch.credentials = {
       ...prev,
       ...(b.apiKey ? { apiKey: b.apiKey } : {}),
       ...(b.shopId !== undefined && b.shopId !== "" ? { shopId: String(b.shopId) } : {}),
+      ...(b.identifier !== undefined && b.identifier !== "" ? { identifier: String(b.identifier) } : {}),
     };
   }
   if (typeof b.autoPush === "boolean") patch.autoPush = b.autoPush;

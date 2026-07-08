@@ -857,6 +857,15 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
           <IconUpload width={16} height={16} /> {busy ? t("o.importing") : t("o.pickCsvImport")}
         </button>
         <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10 }}>{t("o.dupSkipNote")}</div>
+        <div style={{ borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: 12 }}>
+          <button onClick={async () => {
+            const j = await fetch("/api/orders/reparse-etsy-items", { method: "POST" }).then((r) => r.json()).catch(() => ({ ok: false }));
+            flash(j.ok ? `✓ Dọn ${j.updated}/${j.scanned} đơn cũ (tách variant/personalization)` : "✗ lỗi dọn đơn");
+            if (j.ok) reload();
+          }} disabled={busy} style={{ background: "none", border: "none", color: "var(--blue)", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 }}>
+            🧹 Dọn lại đơn Etsy cũ (tách variant &amp; personalization ra khỏi tên)
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -4,7 +4,7 @@ import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm } from "@/components/confirm-provider";
 
 type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null };
-type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
+type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean; pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null };
 
 const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 12.5, width: "100%" } as const;
 const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
@@ -25,6 +25,39 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [pickerQ, setPickerQ] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [diag, setDiag] = useState<{ shopId: string; rawCount: number } | null>(null);
+  // Recipe picker (Printify): map SKU ↔ blueprint/provider/variant
+  const [recipeFor, setRecipeFor] = useState<Map | null>(null);
+  const [bps, setBps] = useState<{ id: number; title: string; brand: string }[]>([]);
+  const [bpQ, setBpQ] = useState("");
+  const [provs, setProvs] = useState<{ id: number; title: string }[]>([]);
+  const [vars, setVars] = useState<{ id: number; title: string }[]>([]);
+  const [rc, setRc] = useState<{ bp?: number; pv?: number; vr?: number }>({});
+  const [rcLoad, setRcLoad] = useState("");
+
+  async function openRecipe(m: Map) {
+    setRecipeFor(m); setRc({ bp: m.pfBlueprintId ?? undefined, pv: m.pfProviderId ?? undefined, vr: m.pfVariantId ?? undefined });
+    setProvs([]); setVars([]); setBpQ("");
+    if (bps.length === 0) {
+      setRcLoad("Đang tải blueprint…");
+      const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=blueprints`).then((r) => r.json()).catch(() => ({ ok: false }));
+      setRcLoad(""); if (j.ok) setBps(j.blueprints); else setMsg("⚠ " + (j.error ?? "lỗi tải blueprint"));
+    }
+  }
+  async function pickBp(id: number) {
+    setRc({ bp: id }); setProvs([]); setVars([]); setRcLoad("Đang tải nhà in…");
+    const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=providers&blueprint=${id}`).then((r) => r.json()).catch(() => ({ ok: false }));
+    setRcLoad(""); if (j.ok) setProvs(j.providers); else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
+  async function pickPv(id: number) {
+    setRc((p) => ({ ...p, pv: id, vr: undefined })); setVars([]); setRcLoad("Đang tải variant…");
+    const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=variants&blueprint=${rc.bp}&provider=${id}`).then((r) => r.json()).catch(() => ({ ok: false }));
+    setRcLoad(""); if (j.ok) setVars(j.variants); else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
+  async function saveRecipe() {
+    if (!recipeFor || !rc.bp || !rc.pv || !rc.vr) { setMsg("⚠ Chọn đủ blueprint + nhà in + variant"); return; }
+    const j = await fetch("/api/mappings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: recipeFor.id, pfBlueprintId: rc.bp, pfProviderId: rc.pv, pfVariantId: rc.vr }) }).then((r) => r.json());
+    if (j.ok) { setMsg("✓ Đã lưu cấu hình in"); setRecipeFor(null); load(); } else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
 
   const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => {
     if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings); if (!active && j.fulfillers[0]) setActive(j.fulfillers[0].id); }
@@ -75,7 +108,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     const j = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (j.ok) {
       setMsg(`✓ Tìm thấy ${j.found} SKU · thêm mới ${j.created}, bỏ qua ${j.skipped}`);
-      if (j.found === 0 && j.rawSample) console.log("Merchize catalog rawSample:", j.rawSample);
+      if (j.found === 0) console.log("Merchize catalog rawSample:", j.rawSample, "| variantSample:", j.variantSample);
       load();
     } else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
@@ -152,12 +185,18 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                       </> : <>
                         <td style={{ ...td, fontWeight: 700, fontFamily: "ui-monospace,monospace" }}>{m.internalSku}</td>
                         <td style={{ ...td, fontFamily: "ui-monospace,monospace" }}>{m.fulfillerSku}</td>
-                        <td style={td}>{m.fulfillerProduct ? <span>{m.fulfillerProduct}{m.variant ? <span style={{ color: "var(--muted)" }}> · {m.variant}</span> : ""}</span> : (m.variant || <span style={{ color: "var(--faint)" }}>—</span>)}</td>
+                        <td style={td}>
+                          {m.fulfillerProduct ? <span>{m.fulfillerProduct}{m.variant ? <span style={{ color: "var(--muted)" }}> · {m.variant}</span> : ""}</span> : (m.variant || <span style={{ color: "var(--faint)" }}>—</span>)}
+                          {ff.name.toLowerCase().includes("printify") && (m.pfBlueprintId
+                            ? <span style={{ marginLeft: 8, background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>✓ đã cấu hình in</span>
+                            : <span style={{ marginLeft: 8, background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>⚠ chưa cấu hình in</span>)}
+                        </td>
                         <td style={{ ...td, textAlign: "right" }}>{money(m.baseCost)}</td>
                         <td style={{ ...td, textAlign: "right" }}>{money(m.shipCost)}</td>
                         <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{money(Number(m.baseCost) + Number(m.shipCost))}</td>
                         {canEdit && <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                          <button onClick={() => setEditRow((p) => ({ ...p, [m.id]: {} }))} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--blue)", fontWeight: 700, fontSize: 12 }}>Sửa</button>
+                          {ff.name.toLowerCase().includes("printify") && <button onClick={() => openRecipe(m)} title="Chọn blueprint/nhà in/variant để tạo product" style={{ background: "none", border: "none", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 12 }}>⚙ In</button>}
+                          <button onClick={() => setEditRow((p) => ({ ...p, [m.id]: {} }))} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--blue)", fontWeight: 700, fontSize: 12 }}>Sửa</button>
                           <button onClick={() => delRow(m.id)} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700, fontSize: 12 }}>Xóa</button>
                         </td>}
                       </>}
@@ -230,6 +269,60 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {/* Recipe picker Printify: blueprint → nhà in → variant */}
+      {recipeFor && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setRecipeFor(null)}>
+          <div style={{ background: "#fff", borderRadius: 18, width: 640, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <b style={{ fontSize: 16 }}>Cấu hình in cho <span style={{ fontFamily: "ui-monospace,monospace" }}>{recipeFor.internalSku}</span></b>
+              <button onClick={() => setRecipeFor(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "4px 0 12px" }}>Chọn sản phẩm gốc (blueprint) → nhà in → variant (màu/size). Khi đẩy đơn, app tạo product Printify theo cấu hình này rồi đặt đơn.</div>
+            {rcLoad && <div style={{ fontSize: 12, color: "var(--blue)", marginBottom: 8 }}>{rcLoad}</div>}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, flex: 1, minHeight: 0 }}>
+              {/* Blueprint */}
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>1. Blueprint</div>
+                <input placeholder="Tìm…" value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
+                <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1 }}>
+                  {bps.filter((b) => !bpQ || `${b.title} ${b.brand}`.toLowerCase().includes(bpQ.toLowerCase())).slice(0, 200).map((b) => (
+                    <div key={b.id} onClick={() => pickBp(b.id)} style={{ padding: "6px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", background: rc.bp === b.id ? "var(--blue-soft)" : undefined }}>
+                      <div style={{ fontWeight: 600 }}>{b.title}</div><div style={{ color: "var(--muted)", fontSize: 10.5 }}>{b.brand}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Provider */}
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>2. Nhà in</div>
+                <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1, marginTop: 30 }}>
+                  {provs.map((p) => (
+                    <div key={p.id} onClick={() => pickPv(p.id)} style={{ padding: "7px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", fontWeight: 600, background: rc.pv === p.id ? "var(--blue-soft)" : undefined }}>{p.title}</div>
+                  ))}
+                  {provs.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>Chọn blueprint trước</div>}
+                </div>
+              </div>
+              {/* Variant */}
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>3. Variant</div>
+                <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1, marginTop: 30 }}>
+                  {vars.map((v) => (
+                    <div key={v.id} onClick={() => setRc((p) => ({ ...p, vr: v.id }))} style={{ padding: "7px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", background: rc.vr === v.id ? "var(--blue-soft)" : undefined }}>{v.title}</div>
+                  ))}
+                  {vars.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>Chọn nhà in trước</div>}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14, alignItems: "center" }}>
+              <span style={{ fontSize: 11.5, color: "var(--muted)", marginRight: "auto" }}>{rc.bp ? `BP ${rc.bp}` : "—"} · {rc.pv ? `PV ${rc.pv}` : "—"} · {rc.vr ? `VR ${rc.vr}` : "—"}</span>
+              <button onClick={() => setRecipeFor(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
+              <button onClick={saveRecipe} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>Lưu cấu hình</button>
+            </div>
           </div>
         </div>
       )}

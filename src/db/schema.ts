@@ -186,6 +186,11 @@ export const skuMappings = pgTable("sku_mappings", {
   fulfillerId: uuid("fulfiller_id").notNull().references(() => fulfillers.id),
   fulfillerSku: text("fulfiller_sku").notNull(),
   fulfillerProduct: text("fulfiller_product"),
+  fulfillerProductId: text("fulfiller_product_id"),
+  // Printify "recipe": in SKU nội bộ này lên blueprint/provider/variant nào
+  pfBlueprintId: integer("pf_blueprint_id"),
+  pfProviderId: integer("pf_provider_id"),
+  pfVariantId: integer("pf_variant_id"),
   priceTier: text("price_tier"),
   baseCost: numeric("base_cost", { precision: 10, scale: 2 }).notNull(),
   shipCost: numeric("ship_cost", { precision: 10, scale: 2 }).notNull().default("0"),

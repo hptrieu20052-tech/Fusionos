@@ -8,6 +8,22 @@
 
 const clean = (base: string) => base.replace(/\/+$/, "");
 
+/** Push (confirm) đơn Merchize đi sản xuất. POST /order/external/orders/push (x-api-key). */
+export async function pushMerchizeOrder(
+  baseUrl: string, apiKey: string,
+  order: { code?: string; external_number?: string; identifier?: string },
+): Promise<unknown> {
+  const url = `${clean(baseUrl)}/order/external/orders/push`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ order }),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Merchize push HTTP ${res.status}: ${text.slice(0, 300)}`);
+  return text ? JSON.parse(text) : {};
+}
+
 /** GET tracking đơn Merchize. Dùng x-api-key. Trả nguyên JSON (dò field khi dùng). */
 export async function getMerchizeTracking(
   baseUrl: string, apiKey: string,
@@ -36,6 +52,93 @@ export function extractMerchizeTracking(data: unknown): { trackingNumber?: strin
   };
 }
 
+export type MerchizeItem = {
+  product_id?: number | string; sku?: string; merchize_sku: string;
+  quantity: number; price?: number; currency?: string; printing_method?: string;
+  image?: string; design_front?: string; design_back?: string; design_sleeve?: string; design_hood?: string;
+};
+export type MerchizeOrderPayload = {
+  order_id: string; identifier: string;
+  shipping_info: { full_name: string; address_1: string; address_2?: string; city: string; state?: string; postcode: string; country: string; email?: string; phone?: string };
+  tags?: string[]; tax?: string; items: MerchizeItem[];
+};
+
+/** Tạo đơn Merchize từ catalog. POST /order/external/orders/catalog (x-api-key). */
+export async function createMerchizeOrder(baseUrl: string, apiKey: string, payload: MerchizeOrderPayload): Promise<{ orderCode: string; raw: unknown }> {
+  const url = `${clean(baseUrl)}/order/external/orders/catalog`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Merchize create HTTP ${res.status}: ${text.slice(0, 400)}`);
+  const data = text ? JSON.parse(text) : {};
+  // Merchize trả { success, data: { _id, status, data: {...} } }. success=false → coi như lỗi.
+  if (data && data.success === false) {
+    throw new Error(`Merchize từ chối đơn: ${JSON.stringify(data.message ?? data.error ?? data).slice(0, 400)}`);
+  }
+  const inner = (data.data ?? data.resource ?? data) as Record<string, unknown>;
+  const orderCode = String(inner?._id ?? inner?.order_code ?? inner?.code ?? inner?.id ?? data?.order_code ?? "");
+  return { orderCode, raw: data };
+}
+
+/** GET tất cả variant của 1 product Merchize (x-api-key). */
+export async function getMerchizeVariants(baseUrl: string, apiKey: string, productId: string): Promise<unknown> {
+  const url = `${clean(baseUrl)}/product/products/${encodeURIComponent(productId)}/all-variants`;
+  const res = await fetch(url, { headers: { "x-api-key": apiKey, "Content-Type": "application/json" } });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Merchize variants HTTP ${res.status}: ${text.slice(0, 250)}`);
+  return text ? JSON.parse(text) : {};
+}
+
+/** Rút {sku,title,cost} từ response all-variants. Merchize: { success, data:[{_id, sku, title, product, options, retail_price}] }. */
+export function extractMerchizeVariants(data: unknown): { sku: string; title: string; cost: number; variantId?: string; retail?: number }[] {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const nested = (d.data ?? {}) as Record<string, unknown>;
+  const arr = (Array.isArray(data) ? data
+    : Array.isArray(d.data) ? d.data
+    : Array.isArray(d.variants) ? d.variants
+    : Array.isArray(nested.variants) ? nested.variants
+    : Array.isArray(d.items) ? d.items
+    : []) as Record<string, unknown>[];
+  const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return isNaN(n) ? 0 : n; };
+  const out: { sku: string; title: string; cost: number; variantId?: string; retail?: number }[] = [];
+  for (const v of Array.isArray(arr) ? arr : []) {
+    const variantId = String(v._id ?? v.id ?? "").trim();
+    // SKU: dùng sku nếu có; Merchize hay để trống → fallback sang _id để vẫn định danh được
+    const sku = (String(v.sku ?? v.merchize_sku ?? "").trim()) || variantId;
+    if (!sku) continue;
+    // Title: ưu tiên title; else ghép từ options (Color / Size)
+    const opts = Array.isArray(v.options) ? (v.options as Record<string, unknown>[]).map((o) => String(o.name ?? o.value ?? "")).filter(Boolean).join(" / ") : "";
+    const title = String(v.title ?? "") || opts;
+    // Không có fulfill cost trong response → 0 (người dùng tự điền / hoặc cập nhật sau)
+    const cost = num(v.cost ?? v.base_cost ?? v.fulfill_cost ?? 0);
+    out.push({ sku, title, cost, variantId, retail: num(v.retail_price) });
+  }
+  return out;
+}
+
+/** Rút danh sách product {productId, title} từ catalog (để gọi all-variants cho từng cái). */
+export function extractMerchizeProducts(data: unknown): { productId: string; title: string }[] {
+  const d = (data ?? {}) as Record<string, unknown>;
+  const nested = (d.data ?? {}) as Record<string, unknown>;
+  const arr = (Array.isArray(data) ? data
+    : Array.isArray(d.data) ? d.data
+    : Array.isArray(d.products) ? d.products
+    : Array.isArray(d.items) ? d.items
+    : Array.isArray(nested.items) ? nested.items
+    : Array.isArray(nested.products) ? nested.products
+    : []) as Record<string, unknown>[];
+  const out: { productId: string; title: string }[] = [];
+  for (const p of Array.isArray(arr) ? arr : []) {
+    const pid = p.product_id ?? p.id ?? p._id;
+    if (pid == null) continue;
+    out.push({ productId: String(pid), title: String(p.title ?? p.name ?? "") });
+  }
+  return out;
+}
+
 /** GET catalog sản phẩm Merchize (x-api-key). search = danh sách SKU ngăn cách dấu phẩy (tùy chọn). */
 export async function getMerchizeCatalog(
   baseUrl: string, apiKey: string,
@@ -53,7 +156,7 @@ export async function getMerchizeCatalog(
 }
 
 /** Rút danh sách {sku,title,cost} từ response catalog (dò nhiều dạng cấu trúc). */
-export function extractMerchizeCatalog(data: unknown): { sku: string; title: string; cost: number }[] {
+export function extractMerchizeCatalog(data: unknown): { sku: string; title: string; cost: number; productId?: string }[] {
   const d = (data ?? {}) as Record<string, unknown>;
   const nested = (d.data ?? {}) as Record<string, unknown>;
   const arr = (Array.isArray(data) ? data
@@ -63,19 +166,21 @@ export function extractMerchizeCatalog(data: unknown): { sku: string; title: str
     : Array.isArray(nested.items) ? nested.items
     : Array.isArray(nested.products) ? nested.products
     : []) as Record<string, unknown>[];
-  const out: { sku: string; title: string; cost: number }[] = [];
+  const out: { sku: string; title: string; cost: number; productId?: string }[] = [];
   const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return isNaN(n) ? 0 : n; };
   for (const p of Array.isArray(arr) ? arr : []) {
     const title = String(p.title ?? p.name ?? p.product_title ?? "");
+    const pid = p.product_id ?? p.id ?? p._id;
+    const productId = pid != null ? String(pid) : undefined;
     const variants = (p.variants ?? p.varioptions ?? p.options ?? null) as Record<string, unknown>[] | null;
     if (Array.isArray(variants) && variants.length) {
       for (const v of variants) {
         const sku = String(v.sku ?? v.code ?? v.variant_sku ?? "").trim();
-        if (sku) out.push({ sku, title: `${title}${v.title ? " · " + v.title : ""}`.trim(), cost: num(v.cost ?? v.base_cost ?? v.price) });
+        if (sku) out.push({ sku, title: `${title}${v.title ? " · " + v.title : ""}`.trim(), cost: num(v.cost ?? v.base_cost ?? v.price), productId });
       }
     } else {
       const sku = String(p.sku ?? p.code ?? p.product_sku ?? "").trim();
-      if (sku) out.push({ sku, title, cost: num(p.cost ?? p.base_cost ?? p.price) });
+      if (sku) out.push({ sku, title, cost: num(p.cost ?? p.base_cost ?? p.price), productId });
     }
   }
   return out;
