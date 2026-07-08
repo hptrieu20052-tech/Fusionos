@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
+import { parseVariant } from "@/lib/variant";
 
 export const dynamic = "force-dynamic";
 
@@ -37,22 +38,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const maps = skus.length
     ? await db.select().from(schema.skuMappings).where(and(eq(schema.skuMappings.active, true), inArray(schema.skuMappings.internalSku, skus)))
     : [];
-  // Catalog đầy đủ mọi variant của từng fulfiller (để chọn style/size/color tay)
-  const allMaps = await db.select().from(schema.skuMappings).where(eq(schema.skuMappings.active, true));
-  // Tách color/size từ trường variant tự do (vd "Navy / L", "L - Black", "Đen, XL")
-  const SIZE_RE = /^(one size|os|free|xxs|xs|s|m|l|xl|xxl|2xl|3xl|4xl|5xl|\d{1,2}xl|\d{2,3})$/i;
-  const parseVariant = (variant: string | null, productType: string | null) => {
-    const style = (productType || "").trim() || "—";
-    if (!variant) return { style, color: "—", size: "—" };
-    const parts = variant.split(/[\/,|·–—-]| x /i).map((p) => p.trim()).filter(Boolean);
-    let size = "", color = "";
-    for (const p of parts) { if (!size && SIZE_RE.test(p)) size = p; else color = color ? `${color} ${p}` : p; }
-    if (!size && parts.length) size = parts[parts.length - 1];
-    if (!color) color = parts.length > 1 ? parts.slice(0, -1).join(" ") : "—";
-    return { style, color: color || "—", size: size || "—" };
-  };
+  // Catalog SEED (nhẹ): CHỈ variant khớp sẵn SKU của các item trong đơn — để tự điền + tính giá ngay.
+  // KHÔNG dump toàn bộ 1000+ SKU nữa (gây phồng payload + treo dropdown). Muốn chọn khác → form tìm động
+  // qua /api/fulfillers/variants (server-side filter + giới hạn kết quả).
   const catalog: Record<string, { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string }[]> = {};
-  for (const m of allMaps) {
+  for (const m of maps) {
     const { style, color, size } = parseVariant(m.variant, m.productType);
     // provider: chỉ Printify dùng (từ recipe). Merchize không có → "".
     const provider = m.pfProviderId ? `Provider ${m.pfProviderId}` : "";

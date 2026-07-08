@@ -195,9 +195,12 @@ export const skuMappings = pgTable("sku_mappings", {
   baseCost: numeric("base_cost", { precision: 10, scale: 2 }).notNull(),
   shipCost: numeric("ship_cost", { precision: 10, scale: 2 }).notNull().default("0"),
   active: boolean("active").notNull().default(true),
+  // Ghim: chỉ SP được ghim mới hiện mặc định trong form tạo đơn (tránh nhồi cả nghìn SKU)
+  pinned: boolean("pinned").notNull().default(false),
 }, (t) => [
   uniqueIndex("uq_map_sku_ff").on(t.internalSku, t.fulfillerId),
   index("idx_map_sku").on(t.internalSku),
+  index("idx_map_pinned").on(t.fulfillerId, t.pinned),
 ]);
 
 export const fulfillmentOrders = pgTable("fulfillment_orders", {

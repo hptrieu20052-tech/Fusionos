@@ -242,11 +242,45 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   );
 }
 
-function VariantPicker({ variants, line, setLine, label }: {
-  variants: Variant[]; line: { mappingId: string; qty: number };
-  setLine: (v: { mappingId: string; qty: number }) => void; label?: string;
+function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
+  fulfillerId: string; seed: Variant[]; line: { mappingId: string; qty: number; unitCost?: number };
+  setLine: (v: { mappingId: string; qty: number; unitCost?: number }) => void; label?: string;
 }) {
   const { t } = useLang();
+  const [q, setQ] = useState("");
+  const [fetched, setFetched] = useState<Variant[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [capped, setCapped] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Đổi nhà fulfill → reset tìm kiếm
+  useEffect(() => { setQ(""); setFetched([]); setCapped(false); }, [fulfillerId]);
+
+  // q rỗng → nạp SP đã GHIM (mặc định form, nhẹ). Gõ ≥2 ký tự → tìm toàn bộ catalog để chọn SP khác.
+  useEffect(() => {
+    if (!fulfillerId) { setFetched([]); setCapped(false); setLoading(false); return; }
+    const query = q.trim();
+    const searching = query.length >= 2;
+    const url = searching
+      ? `/api/fulfillers/variants?ff=${fulfillerId}&q=${encodeURIComponent(query)}`
+      : `/api/fulfillers/variants?ff=${fulfillerId}&pinned=1`;
+    if (timer.current) clearTimeout(timer.current);
+    setLoading(true);
+    timer.current = setTimeout(async () => {
+      const j = await fetch(url).then((r) => r.json()).catch(() => null);
+      setFetched(j?.ok ? (j.variants as Variant[]) : []);
+      setCapped(!!j?.capped);
+      setLoading(false);
+    }, searching ? 300 : 0);
+    return () => { if (timer.current) clearTimeout(timer.current); };
+  }, [q, fulfillerId]);
+
+  // Gộp seed (variant khớp sẵn đơn) + kết quả tìm, khử trùng theo id
+  const byId = new Map<string, Variant>();
+  for (const vv of seed) byId.set(vv.id, vv);
+  for (const vv of fetched) if (!byId.has(vv.id)) byId.set(vv.id, vv);
+  const variants = Array.from(byId.values());
+
   const uniq = (a: string[]) => Array.from(new Set(a.filter(Boolean)));
   const cur = variants.find((v) => v.id === line.mappingId);
   const hasProvider = variants.some((v) => v.provider); // Merchize: không → ẩn cột Provider
@@ -266,16 +300,30 @@ function VariantPicker({ variants, line, setLine, label }: {
     if (hasProvider && p) { const f = cands.filter((v) => v.provider === p); if (f.length) cands = f; }
     if (c) { const f = cands.filter((v) => v.color === c); if (f.length) cands = f; }
     if (z) { const f = cands.filter((v) => v.size === z); if (f.length) cands = f; }
-    setLine({ ...line, mappingId: cands[0]?.id ?? "" });
+    const chosen = cands[0];
+    setLine({ ...line, mappingId: chosen?.id ?? "", unitCost: chosen?.unitCost });
   };
   const v = cur;
   const box = { ...inp, width: "100%" } as React.CSSProperties;
   const miss = !line.mappingId;
   const cols = hasProvider ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr";
+  const empty = styles.length === 0;
 
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: miss ? "var(--red-soft)" : "#fff", ...(miss ? { borderColor: "#F0A9A0" } : {}) }}>
       {label && <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={label}>{label}</div>}
+      <div style={{ position: "relative", marginBottom: 8 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("o.searchSku")}
+          style={{ ...box, paddingRight: 62 }} />
+        <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "var(--faint)" }}>
+          {loading ? "…" : capped ? t("o.refineMore") : ""}
+        </span>
+      </div>
+      {empty && (
+        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 8 }}>
+          {q.trim().length >= 2 ? t("o.noVariantFound") : t("o.typeToSearchVariant")}
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8 }}>
         <div className="o2-field">
           <label>Style</label>
@@ -472,7 +520,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
   const [detail, setDetail] = useState<Detail | null>(null);
   const [showIssue, setShowIssue] = useState(false);
   const [ffSel, setFfSel] = useState("");
-  const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number }>>({});
+  const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number; unitCost?: number }>>({});
   const [busy, setBusy] = useState(false);
   const [ship, setShip] = useState({
     buyerFirst: o.buyer_first ?? "", buyerLast: o.buyer_last ?? "", addr1: o.addr1 ?? "", addr2: o.addr2 ?? "",
@@ -508,17 +556,17 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
     setFfSel(id);
     if (!detail) return;
     const cat = detail.catalog[id] ?? [];
-    const init: Record<string, { mappingId: string; qty: number }> = {};
+    const init: Record<string, { mappingId: string; qty: number; unitCost?: number }> = {};
     for (const it of detail.items) {
       const match = cat.find((v) => v.internalSku === it.internal_sku);
-      init[it.id] = { mappingId: match?.id ?? "", qty: it.qty };
+      init[it.id] = { mappingId: match?.id ?? "", qty: it.qty, unitCost: match?.unitCost };
     }
     setLines(init);
   };
   const complete = !!ffSel && !!detail && detail.items.length > 0 &&
     detail.items.every((it) => lines[it.id]?.mappingId && lines[it.id]?.qty >= 1);
   const estCost = complete && detail
-    ? detail.items.reduce((tot, it) => { const l = lines[it.id]; const v = variants.find((x) => x.id === l.mappingId); return tot + (v ? v.unitCost * l.qty : 0); }, 0)
+    ? detail.items.reduce((tot, it) => { const l = lines[it.id]; const uc = l.unitCost ?? variants.find((x) => x.id === l.mappingId)?.unitCost ?? 0; return tot + uc * l.qty; }, 0)
     : null;
 
   const createOrder = async () => {
@@ -665,13 +713,13 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                     <select value={ffSel} onChange={(e) => pickFulfiller(e.target.value)} style={{ ...inp, width: "100%" }}>
                       <option value="">{t("o.chooseFulfiller")}</option>
                       {detail.fulfillerOptions.map((ff) => (
-                        <option key={ff.fulfillerId} value={ff.fulfillerId}>{ff.name}{(detail.catalog[ff.fulfillerId]?.length ?? 0) === 0 ? ` ${t("o.noSkuMapping")}` : ""}</option>
+                        <option key={ff.fulfillerId} value={ff.fulfillerId}>{ff.name}{!ff.mapped ? ` ${t("o.noSkuMapping")}` : ""}</option>
                       ))}
                     </select>
                   </div>
                   {/* Variant từng sản phẩm: Style → Color → Size → Qty */}
                   {ffSel && detail.items.map((it) => (
-                    <VariantPicker key={it.id} variants={variants}
+                    <VariantPicker key={it.id} fulfillerId={ffSel} seed={variants}
                       line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
                       setLine={(v) => setLines({ ...lines, [it.id]: v })}
                       label={detail.items.length > 1 ? it.product_title : undefined} />

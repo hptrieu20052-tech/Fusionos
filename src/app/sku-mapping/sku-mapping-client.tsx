@@ -4,7 +4,7 @@ import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm } from "@/components/confirm-provider";
 
 type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null };
-type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean; pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null };
+type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean; pinned?: boolean; pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null };
 
 const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 12.5, width: "100%" } as const;
 const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
@@ -33,6 +33,10 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [vars, setVars] = useState<{ id: number; title: string }[]>([]);
   const [rc, setRc] = useState<{ bp?: number; pv?: number; vr?: number }>({});
   const [rcLoad, setRcLoad] = useState("");
+  // Ghim sản phẩm cho form tạo đơn
+  const [pinPicker, setPinPicker] = useState<{ product: string; count: number }[] | null>(null);
+  const [pinSel, setPinSel] = useState<Set<string>>(new Set());
+  const [pinQ, setPinQ] = useState("");
 
   async function openRecipe(m: Map) {
     setRecipeFor(m); setRc({ bp: m.pfBlueprintId ?? undefined, pv: m.pfProviderId ?? undefined, vr: m.pfVariantId ?? undefined });
@@ -103,6 +107,30 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
   const toggleSel = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  // ---- Ghim sản phẩm cho form tạo đơn (gom SKU theo tên sản phẩm) ----
+  function openPinPicker() {
+    const byProd = new Map<string, { product: string; count: number; anyPinned: boolean }>();
+    for (const m of maps) {
+      if (m.fulfillerId !== active || !m.fulfillerProduct) continue;
+      const key = m.fulfillerProduct;
+      const cur = byProd.get(key) ?? { product: key, count: 0, anyPinned: false };
+      cur.count++; if (m.pinned) cur.anyPinned = true;
+      byProd.set(key, cur);
+    }
+    const arr = Array.from(byProd.values()).sort((a, b) => a.product.localeCompare(b.product));
+    setPinPicker(arr.map((x) => ({ product: x.product, count: x.count })));
+    setPinSel(new Set(arr.filter((x) => x.anyPinned).map((x) => x.product)));
+    setPinQ("");
+  }
+  const togglePin = (p: string) => setPinSel((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  async function savePins() {
+    setMsg("Đang lưu ghim…");
+    const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products: Array.from(pinSel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) { setMsg(`✓ Đã ghim ${j.pinned} SKU (${j.products} SP) cho form đơn`); setPinPicker(null); load(); }
+    else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
+  const pinnedCount = maps.filter((m) => m.fulfillerId === active && m.pinned).length;
   async function importMerchize() {
     setMsg("Đang kéo catalog Merchize…");
     const j = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
@@ -146,13 +174,16 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
           {/* Thanh công cụ supplier */}
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
             <input placeholder="Tìm SKU / variant…" value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{rows.length} dòng</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{rows.length} dòng{pinnedCount > 0 ? <span style={{ color: "#9A6B00", fontWeight: 700 }}> · ⭐ {pinnedCount} ghim</span> : ""}</span>
             <div style={{ flex: 1 }} />
+            {ff.method === "api" && canEdit && countBy(active) > 0 && (
+              <button onClick={openPinPicker} title="Chọn sản phẩm hiện sẵn trong form tạo đơn" style={{ background: "#FFF6E5", border: "1px solid #F3D08A", color: "#9A6B00", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⭐ Chọn SP cho form đơn</button>
+            )}
             {ff.method === "api" && ff.name.toLowerCase().includes("printify") && canEdit && (
               <span style={{ fontSize: 12, color: "var(--muted)" }}>Thêm SKU ở dòng <b>+ Thêm</b> bên dưới → bấm <b style={{ color: "#2E7D46" }}>⚙ In</b> để chọn Blueprint / Nhà in / Variant. Product được tạo tự động khi đẩy đơn.</span>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("merchize") && canEdit && (
-              <button onClick={importMerchize} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⬇ Kéo SKU từ Merchize</button>
+              <button onClick={importMerchize} title="Chỉ kéo sản phẩm MỚI — bỏ qua SKU đã có. Bấm lại nếu catalog còn nhiều." style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>🔄 Cập nhật SKU (kéo SP mới)</button>
             )}
           </div>
 
@@ -185,6 +216,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                         <td style={{ ...td, fontWeight: 700, fontFamily: "ui-monospace,monospace" }}>{m.internalSku}</td>
                         <td style={{ ...td, fontFamily: "ui-monospace,monospace" }}>{m.fulfillerSku}</td>
                         <td style={td}>
+                          {m.pinned && <span title="Đã ghim cho form đơn" style={{ marginRight: 5, color: "#E0A000" }}>⭐</span>}
                           {m.fulfillerProduct ? <span>{m.fulfillerProduct}{m.variant ? <span style={{ color: "var(--muted)" }}> · {m.variant}</span> : ""}</span> : (m.variant || <span style={{ color: "var(--faint)" }}>—</span>)}
                           {ff.name.toLowerCase().includes("printify") && (m.pfBlueprintId
                             ? <span style={{ marginLeft: 8, background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>✓ đã cấu hình in</span>
@@ -268,6 +300,40 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+      {/* Chọn sản phẩm ghim cho form tạo đơn */}
+      {pinPicker !== null && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setPinPicker(null)}>
+          <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <b style={{ fontSize: 16 }}>⭐ Chọn sản phẩm cho form tạo đơn</b>
+              <button onClick={() => setPinPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Chỉ SP được tick mới hiện sẵn khi tạo đơn. SP khác vẫn tìm được bằng ô tìm trong form. Không xóa SKU — chỉ lọc hiển thị.</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+              <input placeholder="Tìm sản phẩm…" value={pinQ} onChange={(e) => setPinQ(e.target.value)} style={{ ...inp, width: 200 }} />
+              <button onClick={() => setPinSel(new Set((pinPicker ?? []).map((p) => p.product)))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả</button>
+              <button onClick={() => setPinSel(new Set())} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn hết</button>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã chọn {pinSel.size}/{pinPicker?.length ?? 0}</span>
+            </div>
+            <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
+              {(pinPicker ?? []).filter((p) => !pinQ || p.product.toLowerCase().includes(pinQ.toLowerCase())).map((p) => (
+                <label key={p.product} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 13px", borderBottom: "1px solid var(--line)", cursor: "pointer" }}>
+                  <input type="checkbox" checked={pinSel.has(p.product)} onChange={() => togglePin(p.product)} style={{ width: 17, height: 17, cursor: "pointer" }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.product}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.count} SKU</div>
+                  </div>
+                </label>
+              ))}
+              {(pinPicker ?? []).length === 0 && <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5 }}>Chưa có sản phẩm nào — kéo SKU về trước đã.</div>}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
+              <button onClick={() => setPinPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
+              <button onClick={savePins} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>Lưu ({pinSel.size})</button>
+            </div>
           </div>
         </div>
       )}
