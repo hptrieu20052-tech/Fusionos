@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { useConfirm } from "@/components/confirm-provider";
 
 type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
@@ -9,6 +10,7 @@ const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius
 const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
 
 export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
+  const confirm = useConfirm();
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [maps, setMaps] = useState<Map[]>([]);
   const [active, setActive] = useState<string>("");
@@ -22,6 +24,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [pickerLoading, setPickerLoading] = useState(false);
   const [pickerQ, setPickerQ] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
+  const [diag, setDiag] = useState<{ shopId: string; rawCount: number } | null>(null);
 
   const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => {
     if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings); if (!active && j.fulfillers[0]) setActive(j.fulfillers[0].id); }
@@ -45,7 +48,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     setMsg(j.ok ? "✓ Đã lưu" : "⚠ " + j.error); if (j.ok) { setEditRow((p) => { const n = { ...p }; delete n[id]; return n; }); load(); }
   }
   async function delRow(id: string) {
-    if (!confirm("Xóa dòng mapping này?")) return;
+    if (!(await confirm({ message: "Xóa dòng mapping này?", danger: true }))) return;
     const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
     if (j.ok) load();
   }
@@ -55,6 +58,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     setPickerLoading(false);
     if (j.ok) {
       setPicker(j.products);
+      setDiag({ shopId: j.shopId, rawCount: j.rawCount });
       // Mặc định tick sản phẩm đã map (>0 variant đã map)
       setSel(new Set((j.products as PP[]).filter((p) => p.mappedCount > 0).map((p) => p.id)));
     } else { setMsg("⚠ " + j.error); setPicker(null); }
@@ -66,6 +70,15 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
   const toggleSel = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  async function importMerchize() {
+    setMsg("Đang kéo catalog Merchize…");
+    const j = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) {
+      setMsg(`✓ Tìm thấy ${j.found} SKU · thêm mới ${j.created}, bỏ qua ${j.skipped}`);
+      if (j.found === 0 && j.rawSample) console.log("Merchize catalog rawSample:", j.rawSample);
+      load();
+    } else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
 
   const mkOf = (name: string) => { const n = name.toLowerCase(); return n.includes("printify") ? "printify" : n.includes("tiktok") ? "tiktok" : "other"; };
   const th = { textAlign: "left" as const, fontSize: 11, color: "var(--faint)", fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: ".3px", padding: "8px 10px", borderBottom: "1px solid var(--line)" };
@@ -105,6 +118,9 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               ff.shopId
                 ? <button onClick={openPicker} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⟳ Cập nhật từ Printify</button>
                 : <span style={{ fontSize: 12, color: "var(--amber)" }}>Cấu hình token + Shop ID ở Settings để kéo sản phẩm</span>
+            )}
+            {ff.method === "api" && ff.name.toLowerCase().includes("merchize") && canEdit && (
+              <button onClick={importMerchize} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⬇ Kéo SKU từ Merchize</button>
             )}
           </div>
 
@@ -197,7 +213,16 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                       </div>
                     </label>
                   ))}
-                  {(picker ?? []).length === 0 && <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Không có sản phẩm nào.</div>}
+                  {(picker ?? []).length === 0 && (
+                    <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5, lineHeight: 1.7 }}>
+                      <b style={{ color: "var(--ink)", fontSize: 13 }}>Không có sản phẩm nào từ Printify.</b>
+                      {diag && <div style={{ marginTop: 4 }}>Đang hỏi shop <b>{diag.shopId}</b> — Printify trả về {diag.rawCount} sản phẩm.</div>}
+                      <div style={{ marginTop: 8 }}>Kiểm tra lần lượt:</div>
+                      <div>• Token có scope <b>products.read</b> chưa? (tạo lại token, tick products.read)</div>
+                      <div>• <b>Shop ID</b> có đúng shop chứa sản phẩm không? Bạn có 2 shop — thử đổi sang shop kia ở <b>Settings → Get shops</b>.</div>
+                      <div>• Sản phẩm trên Printify đã <b>tạo xong</b> (không phải bản nháp trống) chưa?</div>
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
                   <button onClick={() => setPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>

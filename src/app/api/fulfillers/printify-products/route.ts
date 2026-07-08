@@ -46,5 +46,5 @@ export async function POST(req: NextRequest) {
     };
   });
 
-  return NextResponse.json({ ok: true, products: out });
+  return NextResponse.json({ ok: true, products: out, shopId: String(c.shopId), rawCount: products.length });
 }

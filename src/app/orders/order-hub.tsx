@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
+import { useConfirm } from "@/components/confirm-provider";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn } from "@/components/icons";
 
@@ -49,6 +50,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const [sellerId, setSellerId] = useState("");
   const [storeId, setStoreId] = useState("");
   const { t } = useLang();
+  const confirm = useConfirm();
   const copyText = (v: string) => { navigator.clipboard?.writeText(v); flash(t("d.copied")); };
   const [q, setQ] = useState("");
   const [platform, setPlatform] = useState("");
@@ -92,7 +94,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   };
   const applyBulk = async () => {
     if (!selIds.size) return;
-    if (bulkStatus === "trash" && !confirm(`Chuyển ${selIds.size} đơn vào Trash? Giá vốn sẽ hoàn về 0.`)) return;
+    if (bulkStatus === "trash" && !(await confirm({ message: `Chuyển ${selIds.size} đơn vào Trash? Giá vốn sẽ hoàn về 0.`, danger: true }))) return;
     const j = await fetch("/api/orders/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(selIds), status: bulkStatus }) }).then((r) => r.json());
     if (j.ok) { flash(`✓ Đã đổi ${j.updated} đơn → ${bulkStatus.toUpperCase()}${j.refunded ? ` · hoàn giá vốn ${j.refunded} đơn` : ""}${j.skipped ? ` · bỏ qua ${j.skipped}` : ""}`); setSelIds(new Set()); load(); }
     else flash("✗ " + (j.error ?? "Lỗi"));
@@ -119,7 +121,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
                   setImporting(false); e.target.value = "";
                   if (j.ok) {
                     flash(`✓ ${j.rows} dòng — tracking: ${j.trackingUpdated}, base cost: ${j.costUpdated}${j.errors?.length ? ` · ${j.errors.length} lỗi` : ""}`);
-                    if (j.errors?.length) alert("Lỗi import:\n" + j.errors.join("\n"));
+                    if (j.errors?.length) await confirm({ message: "Lỗi import:\n" + j.errors.join("\n"), info: true });
                     load();
                   } else flash("✗ " + (j.error ?? t("o.importError")));
                 }} />
@@ -799,6 +801,7 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
   sellers: Opt[]; stores: Opt[];
 }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const [storeId, setStoreId] = useState("");
   const [sellerId, setSellerId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -818,7 +821,7 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
       } else {
         flash(`✓ ${j.orders} ${t("o.etsyResult")} ${j.created}, ${t("o.etsySkipped")} ${j.skipped}${j.errors?.length ? ` · ${j.errors.length} ${t("o.errors")}` : ""}`);
       }
-      if (j.errors?.length) alert("Lỗi:\n" + j.errors.join("\n"));
+      if (j.errors?.length) await confirm({ message: "Lỗi:\n" + j.errors.join("\n"), info: true });
       reload(); close();
     } else flash("✗ " + (j.error ?? t("o.importError")));
   };

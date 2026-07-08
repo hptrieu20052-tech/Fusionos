@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import { fileUrl } from "@/lib/storage";
 import AppShell, { NavLink } from "@/components/app-shell";
 import { LangProvider } from "@/components/lang-provider";
+import { ConfirmProvider } from "@/components/confirm-provider";
 import { cookies } from "next/headers";
 import { Lang } from "@/lib/i18n";
 
@@ -51,6 +52,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="vi">
       <body>
         <LangProvider initial={lang}>
+          <ConfirmProvider>
           {session ? (
             <AppShell user={{ name: session.name, role: session.role, avatarUrl }} links={links}>
               {children}
@@ -58,6 +60,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           ) : (
             <div className="wrap">{children}</div>
           )}
+          </ConfirmProvider>
         </LangProvider>
       </body>
     </html>

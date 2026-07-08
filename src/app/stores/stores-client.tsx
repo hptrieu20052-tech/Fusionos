@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { useConfirm } from "@/components/confirm-provider";
 import { useLang } from "@/components/lang-provider";
 import { IconSettings, IconTrash, IconLink } from "@/components/icons";
 
@@ -25,6 +26,7 @@ const CRED_FIELDS: Record<string, [string, string][]> = {
 
 export function StoresClient({ canAdd }: { canAdd: boolean }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const [stores, setStores] = useState<Store[]>([]);
   const [sellers, setSellers] = useState<Opt[]>([]);
   const [fSeller, setFSeller] = useState(""); const [fMk, setFMk] = useState("");
@@ -42,7 +44,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
   const delStore = async (s: Store) => {
-    if (!confirm(`Xóa store "${s.name}"? Đơn & design của store sẽ được gỡ liên kết (không xóa), thao tác này không hoàn tác.`)) return;
+    if (!(await confirm({ message: `Xóa store "${s.name}"? Đơn & design của store sẽ được gỡ liên kết (không xóa), thao tác này không hoàn tác.`, danger: true }))) return;
     const j = await fetch(`/api/stores/${s.id}`, { method: "DELETE" }).then((r) => r.json());
     if (j.ok) { flash(t("st.deletedStore")); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
   };

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useConfirm } from "@/components/confirm-provider";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload, IconRefresh } from "@/components/icons";
@@ -47,6 +48,7 @@ async function forceDownload(url: string, filename: string) {
 type ListData = { designs: Design[]; total: number; page: number; show: number; sellers: Opt[]; designers: Opt[] };
 export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const [data, setData] = useState<ListData | null>(null);
   const [q, setQ] = useState("");
   const [sellerId, setSellerId] = useState("");
@@ -231,6 +233,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   doUpload: (designId: string, file: File, kind: string) => Promise<void>;
 }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const d = detail.design;
   const [f, setF] = useState({
     title: d.title, description: d.description ?? "", points: d.points,
@@ -256,7 +259,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     if (j.ok) { flash(t("d.saved")); reload(); close(); } else flash("✗ " + (j.error ?? "Error"));
   };
   const del = async () => {
-    if (!confirm(`#${d.skuCode} "${d.title}" — ${t("d.confirmDeleteDesign")}`)) return;
+    if (!(await confirm({ message: `#${d.skuCode} "${d.title}" — ${t("d.confirmDeleteDesign")}`, danger: true }))) return;
     const j = await fetch(`/api/designs/${d.id}`, { method: "DELETE" }).then((r) => r.json());
     if (j.ok) { flash(t("d.deleted")); reload(); close(); } else flash("✗ " + (j.error ?? "Error"));
   };
@@ -280,7 +283,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     if (fileRef.current) fileRef.current.value = "";
   };
   const delFile = async (fileId: string) => {
-    if (!confirm(t("d.confirmDeleteFile"))) return;
+    if (!(await confirm({ message: t("d.confirmDeleteFile"), danger: true }))) return;
     const j = await fetch(`/api/designs/files/${fileId}`, { method: "DELETE" }).then((r) => r.json());
     if (j.ok) { flash(t("d.fileDeleted")); reopen(d.id); } else flash("✗ " + (j.error ?? "Error"));
   };

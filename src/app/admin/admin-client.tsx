@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useConfirm } from "@/components/confirm-provider";
 import { IconKey, IconLock, IconLockOpen, IconTrash } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 
@@ -24,6 +25,7 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
   const [form, setForm] = useState({ fullName: "", email: "", password: "", role: "seller", team: "" });
   const [msg, setMsg] = useState("");
   const { t } = useLang();
+  const confirm = useConfirm();
 
   function levelOf(role: string, module: string) {
     if (role === "admin") return 2;
@@ -76,7 +78,7 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
     await patchUser(u.id, { status: u.status === "active" ? "disabled" : "active" }, `✓ ${u.status === "active" ? t("adm.didLock") : t("adm.didUnlock")} ${u.fullName}`);
   }
   async function deleteUser(u: User) {
-    if (!confirm(t("adm.confirmDeleteUser").replace("{name}", u.fullName))) return;
+    if (!(await confirm({ message: t("adm.confirmDeleteUser").replace("{name}", u.fullName), danger: true }))) return;
     const j = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id }) }).then((r) => r.json());
     if (j.ok) { setUsers((us) => us.filter((x) => x.id !== u.id)); setMsg(`✓ Đã xóa ${u.fullName}`); }
     else setMsg("⚠ " + (j.error ?? "Error"));
@@ -101,7 +103,7 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
     else { setMsg("⚠ " + (j.error ?? "Error")); loadTeams(); }
   }
   async function deleteTeam(tm: Team) {
-    if (!confirm(t("adm.confirmDeleteTeam").replace("{name}", tm.name).replace("{n}", String(tm.members.length)))) return;
+    if (!(await confirm({ message: t("adm.confirmDeleteTeam").replace("{name}", tm.name).replace("{n}", String(tm.members.length)), danger: true }))) return;
     const j = await fetch("/api/admin/teams", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: tm.id }) }).then((r) => r.json());
     if (j.ok) { setUsers((us) => us.map((u) => u.team === tm.name ? { ...u, team: null } : u)); loadTeams(); }
     else setMsg("⚠ " + (j.error ?? "Error"));
