@@ -793,14 +793,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                       ))}
                     </select>
                   </div>
-                  {/* Chọn variant nằm ở TỪNG sản phẩm bên dưới (ngang hàng DesignId) cho dễ đối chiếu */}
-                  {ffSel && <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>↓ Chọn <b>variant + số lượng</b> ở từng sản phẩm bên dưới</div>}
-                  {complete
-                    ? <div style={{ fontSize: 12.5, textAlign: "right" }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></div>
-                    : ffSel ? <div style={{ fontSize: 11.5, color: "var(--muted)", textAlign: "right" }}>{t("o.needComplete").replace("{n}", String(detail.items.length))}</div> : null}
-                  <button onClick={createOrder} disabled={!complete || busy} style={{ ...btnBlue, width: "100%", padding: "11px", fontSize: 14, opacity: !complete || busy ? 0.5 : 1 }}>
-                    {busy ? t("o.creating") : t("o.pushFfOrder")}
-                  </button>
+                  {/* Chọn variant nằm ở TỪNG sản phẩm bên dưới; nút Create cũng ở cuối cho liền mạch */}
+                  {ffSel && <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>↓ Chọn <b>variant + số lượng</b> ở từng sản phẩm, rồi bấm <b>Create order</b> ở cuối</div>}
                   </>
                   ) : (
                     <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--card)", border: "1px dashed var(--line)", borderRadius: 10, padding: "10px 12px" }}>
@@ -825,6 +819,16 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
         fulfillerId={ffSel} pickerSeed={variants}
         line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
         setLine={(v) => setLines({ ...lines, [it.id]: v })} />)}
+      {canPushFf && detail && canCreate && ffSel && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px dashed var(--line)", flexWrap: "wrap" }}>
+          {complete
+            ? <span style={{ fontSize: 13.5 }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></span>
+            : <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{t("o.needComplete").replace("{n}", String(detail.items.length))}</span>}
+          <button onClick={createOrder} disabled={!complete || busy} style={{ ...btnBlue, padding: "12px 34px", fontSize: 14.5, opacity: !complete || busy ? 0.5 : 1 }}>
+            {busy ? t("o.creating") : t("o.pushFfOrder")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -20,7 +20,10 @@ export async function GET(req: NextRequest) {
   if (!ff) return NextResponse.json({ ok: false, error: "missing ff" }, { status: 400 });
   const q = (sp.get("q") ?? "").trim();
   const pinnedOnly = sp.get("pinned") === "1";
-  const limit = Math.min(Math.max(Number(sp.get("limit")) || 200, 1), 500);
+  // Nạp SP ghim (mặc định form) → lấy ĐỦ để dropdown Style/Provider/Color/Size không thiếu. Tìm kiếm thì cap 500.
+  const limit = (pinnedOnly && !q)
+    ? Math.min(Math.max(Number(sp.get("limit")) || 5000, 1), 8000)
+    : Math.min(Math.max(Number(sp.get("limit")) || 200, 1), 500);
 
   const conds = [eq(schema.skuMappings.active, true), eq(schema.skuMappings.fulfillerId, ff)];
   // Không tìm kiếm → chỉ trả SP đã ghim (mặc định form). Có tìm kiếm → tìm toàn bộ để chọn SP mới.

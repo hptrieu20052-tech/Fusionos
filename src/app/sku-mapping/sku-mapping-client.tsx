@@ -33,7 +33,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [diag, setDiag] = useState<{ shopId: string; rawCount: number } | null>(null);
   // Recipe picker (Printify): map SKU ↔ blueprint/provider/variant
   const [recipeFor, setRecipeFor] = useState<Map | null>(null);
-  const [bps, setBps] = useState<{ id: number; title: string; brand: string }[]>([]);
+  const [bps, setBps] = useState<{ id: number; title: string; brand: string; model?: string }[]>([]);
   const [bpQ, setBpQ] = useState("");
   const [provs, setProvs] = useState<{ id: number; title: string }[]>([]);
   const [vars, setVars] = useState<{ id: number; title: string }[]>([]);
@@ -87,11 +87,20 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
       setRcLoad(""); if (j.ok) setBps(j.blueprints); else setMsg("⚠ " + (j.error ?? "lỗi tải blueprint"));
     }
   }
+  // Làm mới danh sách blueprint từ Printify (bỏ qua cache client + server) — khi Printify ra SP mới
+  async function reloadBlueprints() {
+    setRcLoad("Đang làm mới danh sách sản phẩm…");
+    const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=blueprints&t=${Date.now()}`).then((r) => r.json()).catch(() => ({ ok: false }));
+    setRcLoad("");
+    if (j.ok) { setBps(j.blueprints); setMsg(`✓ Đã làm mới: ${j.blueprints.length} sản phẩm Printify`); }
+    else setMsg("⚠ " + (j.error ?? "lỗi làm mới"));
+  }
   async function importProduct() {
     if (!rc.bp) { setMsg("⚠ Chọn blueprint (sản phẩm gốc)"); return; }
     if (!importAllPv && !rc.pv) { setMsg("⚠ Chọn nhà in, hoặc tick 'Kéo tất cả nhà in'"); return; }
     setImporting(true); setMsg(importAllPv ? "Đang kéo tất cả nhà in… (có thể lâu)" : "Đang import variant…");
-    const title = bps.find((x) => x.id === rc.bp)?.title ?? "";
+    const bpObj = bps.find((x) => x.id === rc.bp);
+    const title = bpObj ? `${bpObj.title}${bpObj.brand || bpObj.model ? ` (${[bpObj.brand, bpObj.model].filter(Boolean).join(" ")})` : ""}` : "";
     const body = importAllPv
       ? { fulfillerId: active, blueprintId: rc.bp, allProviders: true, blueprintTitle: title }
       : { fulfillerId: active, blueprintId: rc.bp, providerId: rc.pv, blueprintTitle: title };
@@ -514,12 +523,15 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, flex: 1, minHeight: 0 }}>
               <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>1. Sản phẩm (blueprint)</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)" }}>1. Sản phẩm (blueprint) {bps.length > 0 && <span style={{ color: "var(--faint)" }}>· {bps.length}</span>}</span>
+                  <button onClick={reloadBlueprints} title="Tải lại danh sách từ Printify (khi Printify có sản phẩm mới)" style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "3px 9px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🔄 Làm mới</button>
+                </div>
                 <input placeholder="Tìm sản phẩm…" value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1 }}>
-                  {bps.filter((b) => !bpQ || `${b.title} ${b.brand}`.toLowerCase().includes(bpQ.toLowerCase())).slice(0, 200).map((b) => (
+                  {bps.filter((b) => !bpQ || `${b.title} ${b.brand} ${b.model ?? ""}`.toLowerCase().includes(bpQ.toLowerCase())).slice(0, 200).map((b) => (
                     <div key={b.id} onClick={() => pickBp(b.id)} style={{ padding: "6px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", background: rc.bp === b.id ? "var(--blue-soft)" : undefined }}>
-                      <div style={{ fontWeight: 600 }}>{b.title}</div><div style={{ color: "var(--muted)", fontSize: 10.5 }}>{b.brand}</div>
+                      <div style={{ fontWeight: 600 }}>{b.title}</div><div style={{ color: "var(--muted)", fontSize: 10.5 }}>{b.brand}{b.model ? " · " + b.model : ""}</div>
                     </div>
                   ))}
                 </div>
@@ -564,9 +576,9 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                 <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>1. Blueprint</div>
                 <input placeholder="Tìm…" value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1 }}>
-                  {bps.filter((b) => !bpQ || `${b.title} ${b.brand}`.toLowerCase().includes(bpQ.toLowerCase())).slice(0, 200).map((b) => (
+                  {bps.filter((b) => !bpQ || `${b.title} ${b.brand} ${b.model ?? ""}`.toLowerCase().includes(bpQ.toLowerCase())).slice(0, 200).map((b) => (
                     <div key={b.id} onClick={() => pickBp(b.id)} style={{ padding: "6px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", background: rc.bp === b.id ? "var(--blue-soft)" : undefined }}>
-                      <div style={{ fontWeight: 600 }}>{b.title}</div><div style={{ color: "var(--muted)", fontSize: 10.5 }}>{b.brand}</div>
+                      <div style={{ fontWeight: 600 }}>{b.title}</div><div style={{ color: "var(--muted)", fontSize: 10.5 }}>{b.brand}{b.model ? " · " + b.model : ""}</div>
                     </div>
                   ))}
                 </div>

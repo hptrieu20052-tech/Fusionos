@@ -95,21 +95,21 @@ export async function listPrintifyProducts(token: string, shopId: string | numbe
 
 export type Blueprint = { id: number; title: string; brand: string; model: string };
 export async function listBlueprints(token: string): Promise<Blueprint[]> {
-  const res = await fetch(`${BASE}/catalog/blueprints.json`, { headers: headers(token) });
+  const res = await fetch(`${BASE}/catalog/blueprints.json`, { headers: headers(token), cache: "no-store" });
   if (!res.ok) throw new Error(`Printify blueprints HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return (await res.json()) as Blueprint[];
 }
 
 export type Provider = { id: number; title: string };
 export async function listProviders(token: string, blueprintId: number | string): Promise<Provider[]> {
-  const res = await fetch(`${BASE}/catalog/blueprints/${blueprintId}/print_providers.json`, { headers: headers(token) });
+  const res = await fetch(`${BASE}/catalog/blueprints/${blueprintId}/print_providers.json`, { headers: headers(token), cache: "no-store" });
   if (!res.ok) throw new Error(`Printify providers HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   return (await res.json()) as Provider[];
 }
 
 export type CatalogVariant = { id: number; title: string; options?: Record<string, string> };
 export async function listVariants(token: string, blueprintId: number | string, providerId: number | string): Promise<CatalogVariant[]> {
-  const res = await fetch(`${BASE}/catalog/blueprints/${blueprintId}/print_providers/${providerId}/variants.json`, { headers: headers(token) });
+  const res = await fetch(`${BASE}/catalog/blueprints/${blueprintId}/print_providers/${providerId}/variants.json`, { headers: headers(token), cache: "no-store" });
   if (!res.ok) throw new Error(`Printify variants HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const j = (await res.json()) as { variants?: CatalogVariant[] };
   return j.variants ?? [];

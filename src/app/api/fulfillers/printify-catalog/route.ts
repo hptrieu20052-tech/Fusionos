@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   try {
     if (level === "blueprints") {
       const bps = await listBlueprints(token);
-      return NextResponse.json({ ok: true, blueprints: bps.map((b) => ({ id: b.id, title: b.title, brand: b.brand })) });
+      return NextResponse.json({ ok: true, blueprints: bps.map((b) => ({ id: b.id, title: b.title, brand: b.brand, model: b.model })) });
     }
     if (level === "providers") {
       const bp = sp.get("blueprint");
