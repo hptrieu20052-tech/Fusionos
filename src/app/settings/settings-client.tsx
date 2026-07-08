@@ -14,6 +14,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
   const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "" });
   const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
   const [msg, setMsg] = useState("");
+  const [shops, setShops] = useState<Record<string, { id: number; title: string }[] | "loading" | string>>({});
 
   const setE = (id: string, field: string, value: string) =>
     setEdit((prev) => {
@@ -31,9 +32,9 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
   }
   async function listShops(id: string) {
     const token = edit[id]?.apiKey;
-    const j = await fetch("/api/fulfillers/printify-shops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(token ? { token } : { fulfillerId: id }) }).then((r) => r.json());
-    if (j.ok) setMsg(t("s.shopList") + " " + j.shops.map((s: { id: number; title: string }) => `${s.title} = ${s.id}`).join("  |  "));
-    else setMsg("⚠ " + j.error);
+    setShops((p) => ({ ...p, [id]: "loading" }));
+    if (j.ok) setShops((p) => ({ ...p, [id]: j.shops }));
+    else { setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? "lỗi") })); }
   }
   async function addFf(e: React.FormEvent) {
     e.preventDefault();
@@ -82,7 +83,25 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                     <button type="button" onClick={() => listShops(f.id)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{t("s.getShop")}</button>
                   </>}
                   <input placeholder={t("s.webhookNew")} value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setE(f.id, "webhookSecret", e.target.value)} style={{ ...inp, width: 150 }} />
-                  <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Lưu</button>
+                  <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("c.save")}</button>
+                </div>
+              )}
+              {/* Kết quả lấy shop Printify — bấm để điền Shop ID */}
+              {shops[f.id] && (
+                <div style={{ marginTop: 8, fontSize: 12.5 }}>
+                  {shops[f.id] === "loading" ? <span style={{ color: "var(--muted)" }}>Đang lấy shop…</span>
+                    : typeof shops[f.id] === "string" ? <span style={{ color: "var(--red)", fontWeight: 700 }}>⚠ {String(shops[f.id]).replace(/^err:/, "")}</span>
+                    : (shops[f.id] as { id: number; title: string }[]).length === 0 ? <span style={{ color: "var(--muted)" }}>Token đúng nhưng chưa có shop nào.</span>
+                    : <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={{ color: "var(--muted)", fontWeight: 700 }}>{t("s.shopList")}</span>
+                        {(shops[f.id] as { id: number; title: string }[]).map((s) => (
+                          <button key={s.id} type="button" onClick={() => setE(f.id, "shopId", String(s.id))}
+                            style={{ background: "var(--blue-soft)", color: "var(--blue)", border: "1px solid #CFE0F5", borderRadius: 9, padding: "4px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>
+                            {s.title} = {s.id}
+                          </button>
+                        ))}
+                        <span style={{ color: "var(--faint)", fontSize: 11 }}>← bấm để điền Shop ID rồi Lưu</span>
+                      </div>}
                 </div>
               )}
             </div>
