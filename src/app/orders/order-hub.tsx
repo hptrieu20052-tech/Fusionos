@@ -793,13 +793,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                       ))}
                     </select>
                   </div>
-                  {/* Variant từng sản phẩm: Style → Color → Size → Qty */}
-                  {ffSel && detail.items.map((it) => (
-                    <VariantPicker key={it.id} fulfillerId={ffSel} seed={variants}
-                      line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
-                      setLine={(v) => setLines({ ...lines, [it.id]: v })}
-                      label={detail.items.length > 1 ? it.product_title : undefined} />
-                  ))}
+                  {/* Chọn variant nằm ở TỪNG sản phẩm bên dưới (ngang hàng DesignId) cho dễ đối chiếu */}
+                  {ffSel && <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>↓ Chọn <b>variant + số lượng</b> ở từng sản phẩm bên dưới</div>}
                   {complete
                     ? <div style={{ fontSize: 12.5, textAlign: "right" }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></div>
                     : ffSel ? <div style={{ fontSize: 11.5, color: "var(--muted)", textAlign: "right" }}>{t("o.needComplete").replace("{n}", String(detail.items.length))}</div> : null}
@@ -825,7 +820,11 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
         close={() => setShowIssue(false)} flash={flash} onSaved={reload} />}
 
       {/* Items — chỉ hiển thị sản phẩm + gán design (variant đã dời lên cột phải) */}
-      {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} canEdit={canEdit} />)}
+      {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} canEdit={canEdit}
+        showPicker={canPushFf && !!detail && canCreate && !!ffSel}
+        fulfillerId={ffSel} pickerSeed={variants}
+        line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
+        setLine={(v) => setLines({ ...lines, [it.id]: v })} />)}
     </div>
   );
 }
@@ -846,8 +845,10 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   );
 }
 
-function ItemRow({ it, onSaved, flash, canEdit = true }: {
+function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine }: {
   it: Item; onSaved: () => void; flash: (m: string) => void; canEdit?: boolean;
+  showPicker?: boolean; fulfillerId?: string; pickerSeed?: Variant[];
+  line?: { mappingId: string; qty: number; unitCost?: number }; setLine?: (v: { mappingId: string; qty: number; unitCost?: number }) => void;
 }) {
   const { t } = useLang();
   const [skuInput, setSkuInput] = useState("");
@@ -962,6 +963,14 @@ function ItemRow({ it, onSaved, flash, canEdit = true }: {
           </div>
         )}
       </div>
+      {showPicker && fulfillerId && (
+        <div style={{ flex: "1 1 300px", minWidth: 260, background: "#FFF6F4", border: "1px solid #F6D9D0", borderRadius: 12, padding: "12px 14px" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 8 }}>Chọn variant để đẩy</div>
+          <VariantPicker fulfillerId={fulfillerId} seed={pickerSeed}
+            line={line ?? { mappingId: "", qty: it.qty }}
+            setLine={setLine ?? (() => {})} />
+        </div>
+      )}
     </div>
   );
 }
