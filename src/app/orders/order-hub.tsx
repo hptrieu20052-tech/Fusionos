@@ -22,7 +22,7 @@ type Order = {
   items: Item[];
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
-type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; color: string; size: string };
+type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
 type Opt = { id: string; name: string };
 type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
@@ -247,47 +247,62 @@ function VariantPicker({ variants, line, setLine, label }: {
   setLine: (v: { mappingId: string; qty: number }) => void; label?: string;
 }) {
   const { t } = useLang();
-  const uniq = (a: string[]) => Array.from(new Set(a));
+  const uniq = (a: string[]) => Array.from(new Set(a.filter(Boolean)));
   const cur = variants.find((v) => v.id === line.mappingId);
+  const hasProvider = variants.some((v) => v.provider); // Merchize: không → ẩn cột Provider
   const style = cur?.style ?? "";
+  const provider = cur?.provider ?? "";
   const color = cur?.color ?? "";
   const size = cur?.size ?? "";
   const styles = uniq(variants.map((v) => v.style));
-  const colors = uniq(variants.filter((v) => v.style === style).map((v) => v.color));
-  const sizes = uniq(variants.filter((v) => v.style === style && v.color === color).map((v) => v.size));
+  const providers = uniq(variants.filter((v) => v.style === style).map((v) => v.provider));
+  const afterProv = (v: Variant) => v.style === style && (!hasProvider || v.provider === provider);
+  const colors = uniq(variants.filter(afterProv).map((v) => v.color));
+  const sizes = uniq(variants.filter((v) => afterProv(v) && v.color === color).map((v) => v.size));
 
-  const pick = (nextStyle: string, nextColor: string, nextSize: string) => {
-    // tìm variant khớp nhất theo thứ tự style > color > size
-    let cands = variants.filter((v) => v.style === nextStyle);
-    if (nextColor) { const c = cands.filter((v) => v.color === nextColor); if (c.length) cands = c; }
-    if (nextSize) { const s = cands.filter((v) => v.size === nextSize); if (s.length) cands = s; }
+  const pick = (nx: { style?: string; provider?: string; color?: string; size?: string }) => {
+    const s = nx.style ?? style, p = nx.provider ?? provider, c = nx.color ?? color, z = nx.size ?? size;
+    let cands = variants.filter((v) => v.style === s);
+    if (hasProvider && p) { const f = cands.filter((v) => v.provider === p); if (f.length) cands = f; }
+    if (c) { const f = cands.filter((v) => v.color === c); if (f.length) cands = f; }
+    if (z) { const f = cands.filter((v) => v.size === z); if (f.length) cands = f; }
     setLine({ ...line, mappingId: cands[0]?.id ?? "" });
   };
   const v = cur;
   const box = { ...inp, width: "100%" } as React.CSSProperties;
   const miss = !line.mappingId;
+  const cols = hasProvider ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr";
 
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: miss ? "var(--red-soft)" : "#fff", ...(miss ? { borderColor: "#F0A9A0" } : {}) }}>
       {label && <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={label}>{label}</div>}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+      <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8 }}>
         <div className="o2-field">
           <label>Style</label>
-          <select value={style} onChange={(e) => pick(e.target.value, "", "")} style={box}>
+          <select value={style} onChange={(e) => pick({ style: e.target.value, provider: "", color: "", size: "" })} style={box}>
             <option value="">—</option>
             {styles.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
+        {hasProvider && (
+          <div className="o2-field">
+            <label>Provider</label>
+            <select value={provider} disabled={!style} onChange={(e) => pick({ provider: e.target.value, color: "", size: "" })} style={box}>
+              <option value="">—</option>
+              {providers.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+        )}
         <div className="o2-field">
           <label>Color</label>
-          <select value={color} disabled={!style} onChange={(e) => pick(style, e.target.value, "")} style={box}>
+          <select value={color} disabled={!style || (hasProvider && !provider)} onChange={(e) => pick({ color: e.target.value, size: "" })} style={box}>
             <option value="">—</option>
             {colors.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
         <div className="o2-field">
           <label>Size</label>
-          <select value={size} disabled={!color} onChange={(e) => pick(style, color, e.target.value)} style={box}>
+          <select value={size} disabled={!color} onChange={(e) => pick({ size: e.target.value })} style={box}>
             <option value="">—</option>
             {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
