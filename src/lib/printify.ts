@@ -79,8 +79,8 @@ export type PrintifyProduct = { id: string; title: string; variants: PrintifyVar
 export async function listPrintifyProducts(token: string, shopId: string | number): Promise<PrintifyProduct[]> {
   const out: PrintifyProduct[] = [];
   let page = 1;
-  for (let i = 0; i < 50; i++) { // trần an toàn 50 trang
-    const res = await fetch(`${BASE}/shops/${shopId}/products.json?limit=100&page=${page}`, { headers: headers(token) });
+  for (let i = 0; i < 100; i++) { // trần an toàn 100 trang
+    const res = await fetch(`${BASE}/shops/${shopId}/products.json?limit=50&page=${page}`, { headers: headers(token) });
     if (!res.ok) throw new Error(`Printify products HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
     const j = await res.json();
     const data: PrintifyProduct[] = j.data ?? [];

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useLang } from "@/components/lang-provider";
+import { SkuMappingClient } from "@/app/sku-mapping/sku-mapping-client";
 
 type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; shopId: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; productType: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
@@ -8,6 +9,7 @@ const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius
 
 export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean; ingestConfigured: boolean }) {
   const { t } = useLang();
+  const [tab, setTab] = useState<"api" | "sku">("api");
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [maps, setMaps] = useState<Map[]>([]);
   const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string }>>({});
@@ -62,7 +64,20 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
         <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("s.title")}</h3>
         <div className="sub">{t("s.sub1")} <a href="/admin" style={{ color: "var(--blue)", fontWeight: 700 }}>{t("s.adminPage")}</a>.</div>
         {msg && <div style={{ marginTop: 8, fontWeight: 700, fontSize: 12.5 }}>{msg}</div>}
+        {/* 2 tab: Fulfillment API · SKU mapping */}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          {([["api", t("s.tabApi")], ["sku", t("s.tabSku")]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)}
+              style={{ padding: "8px 16px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700,
+                border: tab === k ? "1.5px solid var(--blue)" : "1px solid var(--line)",
+                background: tab === k ? "var(--blue-soft)" : "var(--card)", color: tab === k ? "var(--blue)" : "var(--ink)" }}>
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {tab === "api" && <>
 
       <div className="panel">
         <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{t("s.ingestTitle")}</h3>
@@ -73,7 +88,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
       </div>
 
       <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Fulfillers · {ffs.length}</h3>
+        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{t("s.fulfillmentApi")} · {ffs.length}</h3>
         <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 10 }}>
           {ffs.map((f) => (
             <div key={f.id} style={{ border: "1px solid var(--line)", borderRadius: 14, padding: "13px 15px" }}>
@@ -133,41 +148,9 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
         )}
       </div>
 
-      <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>SKU Mapping · {maps.length}</h3>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ marginTop: 8 }}>
-            <thead><tr><th>{t("s.internalSku")}</th><th>Fulfiller</th><th>{t("s.fulfillerSku")}</th><th>{t("s.typeVariant")}</th><th style={{ textAlign: "right" }}>Base</th><th style={{ textAlign: "right" }}>Ship</th><th style={{ textAlign: "right" }}>Tổng vốn</th></tr></thead>
-            <tbody>
-              {maps.map((m) => (
-                <tr key={m.id}>
-                  <td><b>{m.internalSku}</b></td>
-                  <td>{ffs.find((f) => f.id === m.fulfillerId)?.name ?? "—"}</td>
-                  <td style={{ fontSize: 12 }}>{m.fulfillerSku}</td>
-                  <td style={{ fontSize: 12 }}>{m.productType} {m.variant ? `· ${m.variant}` : ""}</td>
-                  <td style={{ textAlign: "right" }}>${Number(m.baseCost).toFixed(2)}</td>
-                  <td style={{ textAlign: "right" }}>${Number(m.shipCost).toFixed(2)}</td>
-                  <td style={{ textAlign: "right", fontWeight: 800 }}>${(Number(m.baseCost) + Number(m.shipCost)).toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {canEdit && (
-          <form onSubmit={addMap} style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-            <b style={{ fontSize: 12.5, alignSelf: "center" }}>＋ Mapping:</b>
-            <input required placeholder={t("s.internalSku")} value={nm.internalSku} onChange={(e) => setNm({ ...nm, internalSku: e.target.value })} style={{ ...inp, width: 150 }} />
-            <select required value={nm.fulfillerId} onChange={(e) => setNm({ ...nm, fulfillerId: e.target.value })} style={inp}>
-              <option value="">— fulfiller —</option>
-              {ffs.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-            </select>
-            <input required placeholder={t("s.fulfillerSku")} value={nm.fulfillerSku} onChange={(e) => setNm({ ...nm, fulfillerSku: e.target.value })} style={{ ...inp, width: 160 }} />
-            <input required type="number" step="0.01" placeholder="Base $" value={nm.baseCost} onChange={(e) => setNm({ ...nm, baseCost: e.target.value })} style={{ ...inp, width: 90 }} />
-            <input type="number" step="0.01" placeholder="Ship $" value={nm.shipCost} onChange={(e) => setNm({ ...nm, shipCost: e.target.value })} style={{ ...inp, width: 90 }} />
-            <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Thêm</button>
-          </form>
-        )}
-      </div>
+      </>}
+
+      {tab === "sku" && <SkuMappingClient canEdit={canEdit} />}
     </>
   );
 }

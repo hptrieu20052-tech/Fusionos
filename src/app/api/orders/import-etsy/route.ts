@@ -31,7 +31,12 @@ export async function POST(req: NextRequest) {
     sellerId = st?.s ?? null;
   }
 
-  const wb = XLSX.read(Buffer.from(await file.arrayBuffer()), { type: "buffer" });
+  const buf = Buffer.from(await file.arrayBuffer());
+  // Ép đọc UTF-8 (tránh ký tự lỗi kiểu â≣≣); CSV đọc dạng string, Excel đọc dạng buffer
+  const isCsv = /\.csv$/i.test(file.name) || file.type.includes("csv");
+  const wb = isCsv
+    ? XLSX.read(new TextDecoder("utf-8").decode(buf), { type: "string" })
+    : XLSX.read(buf, { type: "buffer" });
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "" });
   if (!rows.length) return NextResponse.json({ ok: false, error: "file trống" }, { status: 400 });
 
@@ -123,7 +128,7 @@ export async function POST(req: NextRequest) {
         variant = variations.slice(0, pIdx).replace(/[,;\s]+$/, "").trim();
       }
       g.lines.push({
-        title: variant ? `${title} — ${variant}` : title,
+        title,
         sku: pick(r, ["sku"]),
         qty: Number(pick(r, ["quantity", "qty"]) || 1) || 1,
         price: money(pick(r, ["price", "itemtotal"])),
@@ -179,6 +184,7 @@ export async function POST(req: NextRequest) {
           orderId: order.id, productTitle: l.title, internalSku: l.sku || null,
           qty: l.qty, unitPrice: l.price.toFixed(2),
           personalization: l.personalization || null,
+          variant: l.variant || null,
           designId: (l.listingId && listingDesign.get(l.listingId)) || null,
           etsyListingId: l.listingId || null,
           productUrl: l.listingId ? `https://www.etsy.com/listing/${l.listingId}` : null,

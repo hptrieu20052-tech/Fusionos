@@ -99,6 +99,7 @@ export const orderItems = pgTable("order_items", {
   designId: uuid("design_id").references(() => designs.id),
   specialPrint: boolean("special_print").notNull().default(false),
   personalization: text("personalization"),
+  variant: text("variant"),
   imageUrl: text("image_url"),
   productUrl: text("product_url"),
   etsyListingId: text("etsy_listing_id"),

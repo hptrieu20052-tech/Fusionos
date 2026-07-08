@@ -130,6 +130,7 @@ export async function GET(req: NextRequest) {
       mockupUrl: fileUrl(i.mockup_key as string | null),
       imageUrl: (i.image_url as string | null) ?? null,
       productUrl: (i.product_url as string | null) ?? null,
+      variant: (i.variant as string | null) ?? null,
       suggest: i.design_id ? null : suggestFor(String(i.product_title)),
     })),
   }));

@@ -1,0 +1,155 @@
+"use client";
+import { useEffect, useMemo, useState } from "react";
+import { MarketplaceLogo } from "@/components/marketplace-logo";
+
+type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null };
+type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
+
+const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 12.5, width: "100%" } as const;
+const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
+
+export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
+  const [ffs, setFfs] = useState<Ff[]>([]);
+  const [maps, setMaps] = useState<Map[]>([]);
+  const [active, setActive] = useState<string>("");
+  const [msg, setMsg] = useState("");
+  const [q, setQ] = useState("");
+  const [editRow, setEditRow] = useState<Record<string, Partial<Map>>>({});
+  const [nm, setNm] = useState({ internalSku: "", fulfillerSku: "", variant: "", baseCost: "", shipCost: "" });
+
+  const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => {
+    if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings); if (!active && j.fulfillers[0]) setActive(j.fulfillers[0].id); }
+  });
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+
+  const ff = ffs.find((f) => f.id === active);
+  const rows = useMemo(() => maps.filter((m) => m.fulfillerId === active &&
+    (!q || m.internalSku.toLowerCase().includes(q.toLowerCase()) || m.fulfillerSku.toLowerCase().includes(q.toLowerCase()) || (m.variant ?? "").toLowerCase().includes(q.toLowerCase()))
+  ), [maps, active, q]);
+  const countBy = (id: string) => maps.filter((m) => m.fulfillerId === id).length;
+
+  async function addMap() {
+    if (!nm.internalSku || !nm.fulfillerSku || isNaN(Number(nm.baseCost))) { setMsg("⚠ Nhập đủ SKU nội bộ, SKU fulfiller, base cost"); return; }
+    const j = await fetch("/api/mappings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...nm, fulfillerId: active }) }).then((r) => r.json());
+    setMsg(j.ok ? "✓ Đã thêm" : "⚠ " + j.error); if (j.ok) { setNm({ internalSku: "", fulfillerSku: "", variant: "", baseCost: "", shipCost: "" }); load(); }
+  }
+  async function saveRow(id: string) {
+    const e = editRow[id]; if (!e) return;
+    const j = await fetch("/api/mappings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
+    setMsg(j.ok ? "✓ Đã lưu" : "⚠ " + j.error); if (j.ok) { setEditRow((p) => { const n = { ...p }; delete n[id]; return n; }); load(); }
+  }
+  async function delRow(id: string) {
+    if (!confirm("Xóa dòng mapping này?")) return;
+    const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
+    if (j.ok) load();
+  }
+  async function importPrintify() {
+    if (!confirm("Kéo toàn bộ SKU + giá vốn từ Printify về? (bỏ qua SKU đã có)")) return;
+    setMsg("Đang kéo SKU từ Printify…");
+    const j = await fetch("/api/fulfillers/printify-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setMsg(j.ok ? `✓ Thêm mới ${j.created}, bỏ qua ${j.skipped}${j.noSku ? ` · ${j.noSku} variant chưa có SKU` : ""}` : "⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) load();
+  }
+
+  const mkOf = (name: string) => { const n = name.toLowerCase(); return n.includes("printify") ? "printify" : n.includes("tiktok") ? "tiktok" : "other"; };
+  const th = { textAlign: "left" as const, fontSize: 11, color: "var(--faint)", fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: ".3px", padding: "8px 10px", borderBottom: "1px solid var(--line)" };
+  const td = { padding: "7px 10px", borderBottom: "1px solid var(--line)", fontSize: 12.5, verticalAlign: "middle" as const };
+
+  return (
+    <div className="panel" style={{ marginTop: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h3 style={{ fontWeight: 800, fontSize: 16 }}>SKU Mapping</h3>
+          <div className="sub">Map SKU nội bộ ↔ SKU nhà fulfill + giá vốn (base/ship). Đẩy đơn dùng SKU này. Chia theo từng nhà cung cấp.</div>
+        </div>
+        {msg && <div style={{ fontWeight: 700, fontSize: 12.5, alignSelf: "center" }}>{msg}</div>}
+      </div>
+
+      {/* Tabs supplier */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14, marginBottom: 14 }}>
+        {ffs.map((f) => (
+          <button key={f.id} onClick={() => setActive(f.id)}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", borderRadius: 11, cursor: "pointer", fontSize: 12.5, fontWeight: 700,
+              border: active === f.id ? "1.5px solid var(--blue)" : "1px solid var(--line)",
+              background: active === f.id ? "var(--blue-soft)" : "var(--card)", color: active === f.id ? "var(--blue)" : "var(--ink)" }}>
+            <MarketplaceLogo mk={mkOf(f.name)} size={16} /> {f.name}
+            <span style={{ background: active === f.id ? "#fff" : "var(--line)", borderRadius: 6, padding: "1px 6px", fontSize: 11 }}>{countBy(f.id)}</span>
+          </button>
+        ))}
+      </div>
+
+      {ff && (
+        <>
+          {/* Thanh công cụ supplier */}
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+            <input placeholder="Tìm SKU / variant…" value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{rows.length} dòng</span>
+            <div style={{ flex: 1 }} />
+            {ff.method === "api" && ff.name.toLowerCase().includes("printify") && canEdit && (
+              ff.shopId
+                ? <button onClick={importPrintify} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⬇ Import SKU từ Printify</button>
+                : <span style={{ fontSize: 12, color: "var(--amber)" }}>Cấu hình token + Shop ID ở Settings để Import tự động</span>
+            )}
+          </div>
+
+          {/* Bảng mapping */}
+          <div style={{ overflowX: "auto", border: "1px solid var(--line)", borderRadius: 12 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+              <thead><tr>
+                <th style={th}>SKU nội bộ</th><th style={th}>SKU {ff.name}</th><th style={th}>Sản phẩm / Variant</th>
+                <th style={{ ...th, textAlign: "right" }}>Base</th><th style={{ ...th, textAlign: "right" }}>Ship</th><th style={{ ...th, textAlign: "right" }}>Tổng</th>
+                {canEdit && <th style={{ ...th, textAlign: "right", width: 90 }}></th>}
+              </tr></thead>
+              <tbody>
+                {rows.length === 0 && <tr><td style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 24 }} colSpan={canEdit ? 7 : 6}>Chưa có mapping nào cho {ff.name}.</td></tr>}
+                {rows.map((m) => {
+                  const e = editRow[m.id];
+                  return (
+                    <tr key={m.id} style={e ? { background: "var(--blue-soft)" } : undefined}>
+                      {e ? <>
+                        <td style={td}><input value={e.internalSku ?? m.internalSku} onChange={(ev) => setEditRow((p) => ({ ...p, [m.id]: { ...p[m.id], internalSku: ev.target.value } }))} style={inp} /></td>
+                        <td style={td}><input value={e.fulfillerSku ?? m.fulfillerSku} onChange={(ev) => setEditRow((p) => ({ ...p, [m.id]: { ...p[m.id], fulfillerSku: ev.target.value } }))} style={inp} /></td>
+                        <td style={td}><input value={e.variant ?? m.variant ?? ""} onChange={(ev) => setEditRow((p) => ({ ...p, [m.id]: { ...p[m.id], variant: ev.target.value } }))} style={inp} /></td>
+                        <td style={td}><input type="number" step="0.01" value={e.baseCost ?? m.baseCost} onChange={(ev) => setEditRow((p) => ({ ...p, [m.id]: { ...p[m.id], baseCost: ev.target.value } }))} style={{ ...inp, width: 74 }} /></td>
+                        <td style={td}><input type="number" step="0.01" value={e.shipCost ?? m.shipCost} onChange={(ev) => setEditRow((p) => ({ ...p, [m.id]: { ...p[m.id], shipCost: ev.target.value } }))} style={{ ...inp, width: 74 }} /></td>
+                        <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{money(Number(e.baseCost ?? m.baseCost) + Number(e.shipCost ?? m.shipCost))}</td>
+                        <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
+                          <button onClick={() => saveRow(m.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 8, padding: "5px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Lưu</button>
+                          <button onClick={() => setEditRow((p) => { const n = { ...p }; delete n[m.id]; return n; })} style={{ marginLeft: 5, background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>✕</button>
+                        </td>
+                      </> : <>
+                        <td style={{ ...td, fontWeight: 700, fontFamily: "ui-monospace,monospace" }}>{m.internalSku}</td>
+                        <td style={{ ...td, fontFamily: "ui-monospace,monospace" }}>{m.fulfillerSku}</td>
+                        <td style={td}>{m.fulfillerProduct ? <span>{m.fulfillerProduct}{m.variant ? <span style={{ color: "var(--muted)" }}> · {m.variant}</span> : ""}</span> : (m.variant || <span style={{ color: "var(--faint)" }}>—</span>)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{money(m.baseCost)}</td>
+                        <td style={{ ...td, textAlign: "right" }}>{money(m.shipCost)}</td>
+                        <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{money(Number(m.baseCost) + Number(m.shipCost))}</td>
+                        {canEdit && <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
+                          <button onClick={() => setEditRow((p) => ({ ...p, [m.id]: {} }))} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--blue)", fontWeight: 700, fontSize: 12 }}>Sửa</button>
+                          <button onClick={() => delRow(m.id)} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700, fontSize: 12 }}>Xóa</button>
+                        </td>}
+                      </>}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Thêm dòng */}
+          {canEdit && (
+            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center", borderTop: "1px dashed var(--line)", paddingTop: 12 }}>
+              <b style={{ fontSize: 12.5 }}>＋ Thêm:</b>
+              <input placeholder="SKU nội bộ" value={nm.internalSku} onChange={(e) => setNm({ ...nm, internalSku: e.target.value })} style={{ ...inp, width: 150 }} />
+              <input placeholder={`SKU ${ff.name}`} value={nm.fulfillerSku} onChange={(e) => setNm({ ...nm, fulfillerSku: e.target.value })} style={{ ...inp, width: 150 }} />
+              <input placeholder="Variant (tùy chọn)" value={nm.variant} onChange={(e) => setNm({ ...nm, variant: e.target.value })} style={{ ...inp, width: 160 }} />
+              <input type="number" step="0.01" placeholder="Base $" value={nm.baseCost} onChange={(e) => setNm({ ...nm, baseCost: e.target.value })} style={{ ...inp, width: 90 }} />
+              <input type="number" step="0.01" placeholder="Ship $" value={nm.shipCost} onChange={(e) => setNm({ ...nm, shipCost: e.target.value })} style={{ ...inp, width: 90 }} />
+              <button onClick={addMap} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Thêm</button>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
