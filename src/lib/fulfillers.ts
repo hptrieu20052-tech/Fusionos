@@ -33,7 +33,7 @@ export type PushCtx = {
   };
   lines: PushLine[];
 };
-export type PushResult = { externalFfId: string; simulated: boolean; raw?: unknown };
+export type PushResult = { externalFfId: string; simulated: boolean; raw?: unknown; reason?: string };
 export type FulfillerAdapter = {
   slug: string;
   label: string;
@@ -143,7 +143,10 @@ function merchizeAdapter(): FulfillerAdapter {
       const apiKey = c.apiKey || c.apiToken;
       const baseUrl = ctx.fulfiller.apiEndpoint;
       const identifier = c.identifier;
-      if (!apiKey || !baseUrl || !identifier) return simulate("merchize"); // chưa cấu hình đủ
+      if (!apiKey || !baseUrl || !identifier) {
+        const missing = [!baseUrl && "Base URL", !apiKey && "API Key", !identifier && "Identifier"].filter(Boolean).join(", ");
+        return { ...simulate("merchize"), reason: `Chưa cấu hình đủ Merchize (thiếu: ${missing}) → đơn KHÔNG lên nhà in` };
+      }
 
       const o = ctx.order;
       const res = await createMerchizeOrder(baseUrl, apiKey, {

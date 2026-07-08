@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
   let shipSum = 0;
   let lineNote = "";
   const pushLines: { fulfillerSku: string; qty: number }[] = [];
+  const pushedLines: { product: string; variant: string | null; sku: string; qty: number }[] = [];
   if (Array.isArray(b.lines) && b.lines.length) {
     if (b.lines.length !== items.length) {
       return NextResponse.json({ ok: false, error: "thiếu lựa chọn variant cho một số item" }, { status: 400 });
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
       cost += (Number(m.baseCost) + Number(m.shipCost)) * qty;
       parts.push(`${m.fulfillerSku}×${qty}`);
       pushLines.push({ fulfillerSku: m.fulfillerSku, qty, ...enrich(it, m) });
+      pushedLines.push({ product: it.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty });
     }
     lineNote = " · " + parts.join(", ");
   } else {
@@ -109,6 +111,7 @@ export async function POST(req: NextRequest) {
       baseSum += Number(m.baseCost) * i.qty;
       shipSum += Number(m.shipCost) * i.qty;
       pushLines.push({ fulfillerSku: m.fulfillerSku, qty: i.qty, ...enrich(i, m) });
+      pushedLines.push({ product: i.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty: i.qty });
     }
     cost = baseSum + shipSum;
   }
@@ -136,6 +139,7 @@ export async function POST(req: NextRequest) {
   const [ffo] = await db.insert(schema.fulfillmentOrders).values({
     orderId: order.id, fulfillerId: ff.id, externalFfId,
     status: "pushed", cost: cost.toFixed(2), baseCost: baseSum.toFixed(2), shipCost: shipSum.toFixed(2), pushedAt: new Date(),
+    lines: pushedLines,
   }).returning();
 
   await db.update(schema.orders).set({ status: "created", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
@@ -148,5 +152,5 @@ export async function POST(req: NextRequest) {
     occurredAt: new Date().toISOString().slice(0, 10),
   });
 
-  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost, simulated: pushRes.simulated });
+  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost, simulated: pushRes.simulated, reason: pushRes.reason });
 }

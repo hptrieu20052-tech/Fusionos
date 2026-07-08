@@ -26,12 +26,17 @@ type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unit
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
 type Opt = { id: string; name: string };
-type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
+type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; lines?: { product: string; variant: string | null; sku: string; qty: number }[] | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
   completed: "#5E86C9", has_issues: "#C06B82", trash: "#BBA054",
 };
+const FF_STATUS_COLORS: Record<string, string> = {
+  pending: "#8A93A6", pushed: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
+  delivered: "#5E86C9", error: "#C0392B", cancelled: "#8A93A6",
+};
+const fmtDateTime = (v: string | null | undefined) => { if (!v) return ""; const d = new Date(v); return isNaN(d.getTime()) ? "" : d.toLocaleString(); };
 const SIDE_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 const money = (n: number | string) => "$" + Number(n).toFixed(2);
 const cleanName = (v: string | null | undefined) => (v ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim();
@@ -547,9 +552,11 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
   cloneOrder: (id: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
 }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [showIssue, setShowIssue] = useState(false);
   const [ffSel, setFfSel] = useState("");
+  const canCreate = ["new", "has_issues"].includes(o.status); // chỉ đơn NEW / Has issues mới đẩy được
   const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number; unitCost?: number }>>({});
   const [busy, setBusy] = useState(false);
   const [ship, setShip] = useState({
@@ -581,6 +588,13 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
+  const delFf = async (id: string) => {
+    if (!(await confirm({ message: "Xoá bản ghi đẩy này? Hoàn lại chi phí đã ghi; nếu đơn hết bản ghi đẩy sẽ về trạng thái New.", danger: true }))) return;
+    const j = await fetch(`/api/fulfillment/${id}`, { method: "DELETE" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) { flash("✓ Đã xoá bản ghi đẩy"); loadDetail(); reload(); }
+    else flash("✗ " + (j.error ?? "lỗi"));
+  };
+
   const variants: Variant[] = ffSel && detail ? (detail.catalog[ffSel] ?? []) : [];
   const pickFulfiller = (id: string) => {
     setFfSel(id);
@@ -609,7 +623,11 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
     const body = { orderId: o.id, fulfillerId: ffSel, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })) };
     const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
     setBusy(false);
-    if (j.ok) { flash(t("o.pushed")); reload(); } else flash("✗ " + (j.error ?? "Error"));
+    if (j.ok) {
+      if (j.simulated) flash("⚠ Đẩy MÔ PHỎNG — đơn CHƯA lên nhà in. " + (j.reason ?? "Kiểm tra cấu hình nhà fulfill ở Settings."));
+      else flash("✓ Đã đẩy lên nhà in thật");
+      reload();
+    } else flash("✗ " + (j.error ?? "Error"));
   };
 
   const F = (k: keyof typeof ship, label: string, placeholder?: string) => (
@@ -662,12 +680,38 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                       {/* Header: tên supplier + link đơn supplier cùng hàng */}
                       <div className="o2-ff-head">
                         <span className="o2-track-h" style={{ margin: 0 }}>{f.fulfillerName || t("o.fulfilledBy")}</span>
+                        <span style={{ background: FF_STATUS_COLORS[f.status] ?? "#8A93A6", color: "#fff", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}>{f.status}</span>
+                        {f.externalFfId?.startsWith("SIM-") && <span title="Đẩy mô phỏng — không lên nhà in thật" style={{ background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>MÔ PHỎNG</span>}
                         {f.supplierOrderUrl && (
                           <a href={f.supplierOrderUrl} target="_blank" rel="noreferrer" className="o2-ff-link">
                             <IconTruck width={12} height={12} /> {t("o.viewSupplierOrder")} ↗
                           </a>
                         )}
+                        {canEdit && <button onClick={() => delFf(f.id)} title="Xoá bản ghi đẩy này" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontSize: 13, fontWeight: 700, padding: "0 4px" }}>✕</button>}
                       </div>
+                      {/* Mã đơn nhà in + thời điểm đẩy */}
+                      {(f.externalFfId || f.pushedAt) && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", margin: "2px 0" }}>
+                          {f.externalFfId && <>
+                            <span>Mã:</span>
+                            <b style={{ fontFamily: "ui-monospace,monospace", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{f.externalFfId}</b>
+                            <button className="icon-btn" title="Copy mã đơn nhà in" onClick={() => copyText(f.externalFfId!)}><IconCopy width={11} height={11} /></button>
+                          </>}
+                          {f.pushedAt && <span style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>{fmtDateTime(f.pushedAt)}</span>}
+                        </div>
+                      )}
+                      {/* Variant + số lượng đã đẩy */}
+                      {f.lines && f.lines.length > 0 && (
+                        <div style={{ fontSize: 11.5, color: "var(--ink)", margin: "3px 0" }}>
+                          {f.lines.map((l, i) => (
+                            <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              <b>{l.variant || l.sku}</b>
+                              {l.variant && l.sku && <span style={{ color: "var(--faint)", fontFamily: "ui-monospace,monospace", fontSize: 10.5 }}>{l.sku}</span>}
+                              <span style={{ color: "var(--muted)" }}>× {l.qty}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {/* Chi phí supplier */}
                       {(f.baseCost != null || f.shipCost != null) && (
                         <div className="o2-supcost">
@@ -738,6 +782,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                 </div>
                 <div className="o2-right">
                   <div className="o2-field">{F("orderLabel", t("o.orderLabel"))}</div>
+                  {canCreate ? (
+                  <>
                   <div className="o2-field">
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{ffSel && <SupplierLogo name={detail.fulfillerOptions.find((x) => x.fulfillerId === ffSel)?.name ?? ""} size={15} />}{t("o.fulfilledBy")}</label>
                     <select value={ffSel} onChange={(e) => pickFulfiller(e.target.value)} style={{ ...inp, width: "100%" }}>
@@ -760,6 +806,12 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                   <button onClick={createOrder} disabled={!complete || busy} style={{ ...btnBlue, width: "100%", padding: "11px", fontSize: 14, opacity: !complete || busy ? 0.5 : 1 }}>
                     {busy ? t("o.creating") : t("o.pushFfOrder")}
                   </button>
+                  </>
+                  ) : (
+                    <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--card)", border: "1px dashed var(--line)", borderRadius: 10, padding: "10px 12px" }}>
+                      Đơn đã <b style={{ color: STATUS_COLORS[o.status] ?? "var(--ink)" }}>{o.status.toUpperCase()}</b> — xem bản ghi đẩy ở cột trái. Chỉ đơn <b>NEW</b> mới tạo đơn fulfill.
+                    </div>
+                  )}
                 </div>
               </>
             )}
