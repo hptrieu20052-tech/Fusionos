@@ -209,6 +209,7 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   cost: numeric("cost", { precision: 12, scale: 2 }),
   baseCost: numeric("base_cost", { precision: 12, scale: 2 }),
   shipCost: numeric("ship_cost", { precision: 12, scale: 2 }),
+  extraFee: numeric("extra_fee", { precision: 12, scale: 2 }).default("0"),
   trackingNumber: text("tracking_number"),
   trackingCarrier: text("tracking_carrier"),
   trackingUrl: text("tracking_url"),

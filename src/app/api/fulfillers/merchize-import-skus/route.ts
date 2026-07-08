@@ -26,23 +26,42 @@ export async function POST(req: NextRequest) {
   const baseUrl = ff.apiEndpoint;
   if (!apiKey || !baseUrl) return NextResponse.json({ ok: false, error: "Chưa cấu hình Base URL + API Key cho Merchize" }, { status: 400 });
 
-  let catalogRaw;
-  try { catalogRaw = await getMerchizeCatalog(baseUrl, apiKey, { limit: 50, page: 1, search: b.search || undefined }); }
-  catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 }); }
+  // ---- 1. Phân trang catalog: lấy TOÀN BỘ product ----
+  type Prod = { productId: string; title: string };
+  const products: Prod[] = [];
+  const directRows: { sku: string; title: string; cost: number; productId?: string; variant?: string }[] = [];
+  let catalogSample: unknown = null;
+  try {
+    for (let page = 1; page <= 30; page++) {
+      const raw = await getMerchizeCatalog(baseUrl, apiKey, { limit: 50, page, search: b.search || undefined });
+      if (!catalogSample) { const dd = raw as Record<string, unknown>; const a = (Array.isArray(dd) ? dd : dd.data ?? dd.products ?? dd.items ?? []) as unknown[]; catalogSample = Array.isArray(a) ? a[0] ?? null : null; }
+      const direct = extractMerchizeCatalog(raw);
+      if (direct.length) directRows.push(...direct); // catalog có sẵn SKU
+      const ps = extractMerchizeProducts(raw);
+      products.push(...ps);
+      if (ps.length < 50 && direct.length < 50) break; // hết trang
+    }
+  } catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 }); }
 
-  // Gom SKU: (a) nếu catalog có sẵn SKU thì dùng luôn; (b) else gọi all-variants từng product.
-  type Row = { sku: string; title: string; cost: number; productId?: string };
-  const rows: Row[] = [...extractMerchizeCatalog(catalogRaw)];
+  // ---- 2. Gọi all-variants cho từng product (song song theo lô, có ngân sách thời gian) ----
+  type Row = { sku: string; productType: string; variant: string; cost: number; productId?: string };
+  const rows: Row[] = directRows.map((d) => ({ sku: d.sku, productType: d.title, variant: d.variant ?? "", cost: d.cost, productId: d.productId }));
   let variantSample: unknown = null;
-  if (rows.length === 0) {
-    const products = extractMerchizeProducts(catalogRaw).slice(0, 40); // trần an toàn 40 product/lần
-    for (const p of products) {
+  const start = Date.now();
+  const uniqueProducts = Array.from(new Map(products.map((p) => [p.productId, p])).values());
+  let processed = 0;
+  const BATCH = 8, BUDGET_MS = 48000;
+  for (let i = 0; i < uniqueProducts.length; i += BATCH) {
+    if (Date.now() - start > BUDGET_MS) break; // hết ngân sách → dừng, lần sau kéo tiếp
+    const batch = uniqueProducts.slice(i, i + BATCH);
+    await Promise.all(batch.map(async (p) => {
       try {
         const vraw = await getMerchizeVariants(baseUrl, apiKey, p.productId);
-        if (!variantSample) variantSample = Array.isArray((vraw as Record<string, unknown>)?.data) ? ((vraw as Record<string, unknown>).data as unknown[])[0] : vraw;
-        for (const v of extractMerchizeVariants(vraw)) rows.push({ ...v, productId: p.productId, title: `${p.title}${v.title ? " · " + v.title : ""}`.trim() });
+        if (!variantSample) { const vd = vraw as Record<string, unknown>; variantSample = Array.isArray(vd?.data) ? (vd.data as unknown[])[0] : vraw; }
+        for (const v of extractMerchizeVariants(vraw)) rows.push({ sku: v.sku, productType: p.title, variant: v.title, cost: v.cost, productId: p.productId });
+        processed++;
       } catch { /* bỏ qua product lỗi */ }
-    }
+    }));
   }
 
   const existing = await db.select({ sku: schema.skuMappings.internalSku }).from(schema.skuMappings).where(eq(schema.skuMappings.fulfillerId, ff.id));
@@ -50,12 +69,14 @@ export async function POST(req: NextRequest) {
   let created = 0, skipped = 0;
   const seen = new Set<string>();
   for (const it of rows) {
-    if (have.has(it.sku) || seen.has(it.sku)) { skipped++; continue; }
+    if (!it.sku || have.has(it.sku) || seen.has(it.sku)) { skipped++; continue; }
     seen.add(it.sku);
     try {
       await db.insert(schema.skuMappings).values({
         internalSku: it.sku, fulfillerId: ff.id, fulfillerSku: it.sku,
-        fulfillerProduct: it.title?.slice(0, 200) || null,
+        productType: it.productType?.slice(0, 120) || null,
+        fulfillerProduct: it.productType?.slice(0, 200) || null,
+        variant: it.variant?.slice(0, 120) || null,
         fulfillerProductId: it.productId ?? null,
         baseCost: it.cost.toFixed(2), shipCost: "0",
       });
@@ -63,9 +84,10 @@ export async function POST(req: NextRequest) {
     } catch { skipped++; }
   }
 
-  const d = catalogRaw as Record<string, unknown>;
-  const arr = (Array.isArray(d) ? d : d.data ?? d.products ?? d.items ?? []) as unknown[];
-  const rawSample = Array.isArray(arr) ? arr[0] ?? null : null;
-
-  return NextResponse.json({ ok: true, found: rows.length, created, skipped, rawSample, variantSample });
+  const done = processed >= uniqueProducts.length;
+  return NextResponse.json({
+    ok: true, found: rows.length, created, skipped,
+    productsTotal: uniqueProducts.length, productsProcessed: processed, done,
+    rawSample: catalogSample, variantSample,
+  });
 }
