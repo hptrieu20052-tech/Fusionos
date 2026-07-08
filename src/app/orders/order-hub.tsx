@@ -807,7 +807,11 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
     const j = await fetch("/api/orders/import-etsy", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
     setBusy(false);
     if (j.ok) {
-      flash(`✓ ${j.orders} ${t("o.etsyResult")} ${j.created}, ${t("o.etsySkipped")} ${j.skipped}${j.errors?.length ? ` · ${j.errors.length} ${t("o.errors")}` : ""}`);
+      if (j.mode === "payments") {
+        flash(`✓ Cập nhật phí sàn: ${j.updated} đơn${j.notFound ? ` · ${j.notFound} đơn chưa import` : ""}`);
+      } else {
+        flash(`✓ ${j.orders} ${t("o.etsyResult")} ${j.created}, ${t("o.etsySkipped")} ${j.skipped}${j.errors?.length ? ` · ${j.errors.length} ${t("o.errors")}` : ""}`);
+      }
       if (j.errors?.length) alert("Lỗi:\n" + j.errors.join("\n"));
       reload(); close();
     } else flash("✗ " + (j.error ?? t("o.importError")));

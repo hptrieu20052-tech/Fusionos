@@ -46,6 +46,30 @@ export async function POST(req: NextRequest) {
   };
   const money = (v: string) => { const n = Number(String(v).replace(/[^0-9.\-]/g, "")); return isNaN(n) ? 0 : n; };
 
+  // ===== NHẬN DIỆN FILE PAYMENTS (Gross/Fees/Net) → cập nhật phí sàn, KHÔNG tạo đơn =====
+  const hdr = Object.keys(rows[0]).map(key);
+  const isPayments = hdr.includes("netamount") || (hdr.includes("fees") && hdr.includes("grossamount"));
+  if (isPayments) {
+    let updated = 0, notFound = 0;
+    const errs: string[] = [];
+    for (const r of rows) {
+      const ext = pick(r, ["orderid", "orderno", "receiptid"]);
+      const gross = money(pick(r, ["grossamount", "postedgross", "adjustedgross"]));
+      const fees = money(pick(r, ["fees", "postedfees", "adjustedfees"]));
+      if (!ext || gross <= 0) continue;
+      const feeRate = fees / gross; // tỉ lệ phí (không phụ thuộc tiền tệ)
+      const [ord] = await db.select().from(schema.orders)
+        .where(and(eq(schema.orders.platform, "etsy" as never), eq(schema.orders.externalId, ext))).limit(1);
+      if (!ord) { notFound++; continue; }
+      try {
+        const fee = (Number(ord.total) * feeRate).toFixed(2);
+        await db.update(schema.orders).set({ platformFee: fee, updatedAt: new Date() }).where(eq(schema.orders.id, ord.id));
+        updated++;
+      } catch (e) { errs.push(`${ext}: ${String((e as Error)?.message ?? e).slice(0, 80)}`); }
+    }
+    return NextResponse.json({ ok: true, mode: "payments", rows: rows.length, updated, notFound, errors: errs.slice(0, 30) });
+  }
+
   // Gộp theo Order ID
   type Line = { title: string; sku: string; qty: number; price: number; personalization: string; variant: string; listingId: string };
   type Grp = { ext: string; first: string; last: string; addr1: string; addr2: string; city: string; state: string; zip: string; country: string; total: number; discount: number; shipping: number; tax: number; lines: Line[] };
