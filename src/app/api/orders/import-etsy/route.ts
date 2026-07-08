@@ -26,9 +26,12 @@ export async function POST(req: NextRequest) {
   if (!file) return NextResponse.json({ ok: false, error: "thiếu file" }, { status: 400 });
 
   // Không chọn seller → lấy seller mặc định của store (đồng bộ với cấu hình store)
-  if (!sellerId && storeId) {
-    const [st] = await db.select({ s: schema.stores.sellerId }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
-    sellerId = st?.s ?? null;
+  let fxRate = 1;
+  if (storeId) {
+    const [st] = await db.select({ s: schema.stores.sellerId, fx: schema.stores.fxRate }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
+    if (!sellerId) sellerId = st?.s ?? null;
+    const r = Number(st?.fx ?? 1);
+    if (r > 0) fxRate = r; // tiền shop → USD: chia cho tỉ giá
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
@@ -175,14 +178,14 @@ export async function POST(req: NextRequest) {
         buyerFirst: g.first || null, buyerLast: g.last || null,
         addr1: g.addr1 || null, addr2: g.addr2 || null, city: g.city || null,
         state: g.state || null, zip: g.zip || null, country: g.country,
-        total: total.toFixed(2), platformFee: "0.00",
+        total: (total / fxRate).toFixed(2), platformFee: "0.00",
         orderedAt: new Date(),
       }).returning();
       const lines = g.lines.length ? g.lines : [{ title: `Đơn Etsy ${g.ext}`, sku: "", qty: 1, price: total, personalization: "", variant: "", listingId: "" }];
       for (const l of lines) {
         await db.insert(schema.orderItems).values({
           orderId: order.id, productTitle: l.title, internalSku: l.sku || null,
-          qty: l.qty, unitPrice: l.price.toFixed(2),
+          qty: l.qty, unitPrice: (l.price / fxRate).toFixed(2),
           personalization: l.personalization || null,
           variant: l.variant || null,
           designId: (l.listingId && listingDesign.get(l.listingId)) || null,

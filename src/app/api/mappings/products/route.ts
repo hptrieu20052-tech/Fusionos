@@ -36,6 +36,6 @@ export async function GET(req: NextRequest) {
     )`);
   }
 
-  const rows = await qb.orderBy(asc(schema.skuMappings.fulfillerProduct)).limit(500);
+  const rows = await qb.orderBy(asc(schema.skuMappings.fulfillerProduct)).limit(5000);
   return NextResponse.json({ ok: true, products: rows.map((r) => ({ product: r.product as string, count: r.count, pinned: !!r.pinned })) });
 }

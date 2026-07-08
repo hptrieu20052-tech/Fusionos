@@ -65,6 +65,12 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const [selIds, setSelIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("shipped");
 
+  // Deep-link từ Dashboard: /orders?status=new → set sẵn tab trạng thái
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("status");
+    if (s) { setStatus(s); setPage(1); }
+  }, []);
+
   const load = useCallback(async () => {
     const p = new URLSearchParams({ page: String(page), show: String(show) });
     if (status) p.set("status", status);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +67,12 @@ export async function POST(req: NextRequest) {
     patch.cost = (base + ship + extra).toFixed(2);
 
     await db.update(schema.fulfillmentOrders).set(patch).where(eq(schema.fulfillmentOrders.id, ffo.id));
+
+    // Đã có phí fulfillment = đơn đã "paid" → tự chuyển sang In Production (chỉ tiến, không lùi shipped/completed)
+    if (fulfillmentCost !== undefined) {
+      await db.update(schema.orders).set({ status: "in_production", updatedAt: new Date() })
+        .where(and(eq(schema.orders.id, ffo.orderId), inArray(schema.orders.status, ["new", "created"])));
+    }
     return NextResponse.json({ ok: true, matched: ffo.id, updated: "cost", cost: patch.cost });
   }
 
@@ -93,11 +99,13 @@ export async function POST(req: NextRequest) {
     trackingSyncedAt: trackingNumber ? new Date() : ffo.trackingSyncedAt,
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
 
-  // Đồng bộ trạng thái đơn chính
+  // Đồng bộ trạng thái đơn chính (chỉ tiến, không lùi)
   if (trackingNumber || status === "shipped") {
-    await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+    await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() })
+      .where(and(eq(schema.orders.id, ffo.orderId), inArray(schema.orders.status, ["new", "created", "in_production"])));
   } else if (status === "in_production") {
-    await db.update(schema.orders).set({ status: "in_production", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+    await db.update(schema.orders).set({ status: "in_production", updatedAt: new Date() })
+      .where(and(eq(schema.orders.id, ffo.orderId), inArray(schema.orders.status, ["new", "created"])));
   }
 
   return NextResponse.json({ ok: true, matched: ffo.id, status });

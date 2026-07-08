@@ -35,6 +35,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ("storeUrl" in b) patch.storeUrl = (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null;
   if ("sellerId" in b) patch.sellerId = b.sellerId || null;
   if ("note" in b) patch.note = b.note || null;
+  if (typeof b.currency === "string" && b.currency.trim()) patch.currency = b.currency.trim().toUpperCase();
+  if (b.fxRate != null && !isNaN(Number(b.fxRate)) && Number(b.fxRate) > 0) patch.fxRate = String(Number(b.fxRate));
   if (b.status && (schema.stores.status.enumValues as readonly string[]).includes(b.status)) patch.status = b.status;
   if (b.connectMethod && (schema.stores.connectMethod.enumValues as readonly string[]).includes(b.connectMethod)) patch.connectMethod = b.connectMethod;
 

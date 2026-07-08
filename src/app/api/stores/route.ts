@@ -77,6 +77,8 @@ export async function POST(req: NextRequest) {
     name: String(b.name).trim(), marketplace: b.marketplace, connectMethod: b.connectMethod,
     sellerId: b.sellerId || null, status: "active", note: b.note,
     storeUrl: (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null,
+    currency: (typeof b.currency === "string" && b.currency.trim()) ? b.currency.trim().toUpperCase() : "USD",
+    fxRate: (b.fxRate != null && Number(b.fxRate) > 0) ? String(Number(b.fxRate)) : "1",
   }).returning();
   return NextResponse.json({ ok: true, store: s });
 }

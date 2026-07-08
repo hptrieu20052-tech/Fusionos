@@ -46,6 +46,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [pinPicker, setPinPicker] = useState<{ product: string; count: number }[] | null>(null);
   const [pinSel, setPinSel] = useState<Set<string>>(new Set());
   const [pinQ, setPinQ] = useState("");
+  const [pinOnlySel, setPinOnlySel] = useState(false);
 
   async function openRecipe(m: Map) {
     setRecipeFor(m); setRc({ bp: m.pfBlueprintId ?? undefined, pv: m.pfProviderId ?? undefined, vr: m.pfVariantId ?? undefined });
@@ -115,6 +116,16 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const pinnedCount = ff?.pinnedCount ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / SIZE));
 
+  // Danh sách hiển thị trong popup ghim: toàn bộ, hoặc chỉ SP đã chọn (để bỏ chọn cho tiện)
+  const pinShown = (() => {
+    const all = pinPicker ?? [];
+    if (!pinOnlySel) return all;
+    const cmap = new Map(all.map((p) => [p.product, p.count]));
+    return Array.from(pinSel).sort((a, b) => a.localeCompare(b))
+      .filter((p) => !pinQ || p.toLowerCase().includes(pinQ.toLowerCase()))
+      .map((product) => ({ product, count: cmap.get(product) ?? 0 }));
+  })();
+
   async function addMap() {
     if (!nm.internalSku || !nm.fulfillerSku || isNaN(Number(nm.baseCost))) { setMsg("⚠ Nhập đủ SKU nội bộ, SKU fulfiller, base cost"); return; }
     const j = await fetch("/api/mappings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...nm, fulfillerId: active }) }).then((r) => r.json());
@@ -155,7 +166,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     return j.ok ? (j.products as { product: string; count: number; pinned: boolean }[]) : [];
   }, [active]);
   async function openPinPicker() {
-    setPinQ("");
+    setPinQ(""); setPinOnlySel(false);
     setMsg("Đang tải danh sách sản phẩm…");
     const products = await fetchPinProducts("");
     setMsg("");
@@ -165,7 +176,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Tìm trong popup ghim (server-side: theo tên hoặc SKU) — debounce, giữ nguyên lựa chọn đã tick
   const pinOpen = pinPicker !== null;
   useEffect(() => {
-    if (!pinOpen) return;
+    if (!pinOpen || pinOnlySel) return;   // đang lọc "chỉ đã ghim" → lọc client, khỏi gọi server
     const t = setTimeout(async () => { setPinPicker(await fetchPinProducts(pinQ.trim())); }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -380,10 +391,11 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               <input placeholder="Tìm theo tên hoặc SKU…" value={pinQ} onChange={(e) => setPinQ(e.target.value)} style={{ ...inp, width: 240 }} />
               <button onClick={() => setPinSel((s) => new Set([...Array.from(s), ...(pinPicker ?? []).map((p) => p.product)]))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả</button>
               <button onClick={() => setPinSel((s) => { const n = new Set(s); for (const p of pinPicker ?? []) n.delete(p.product); return n; })} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn hết</button>
-              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã ghim {pinSel.size} SP{pinQ ? ` · hiện ${pinPicker?.length ?? 0}` : ""}</span>
+              <button onClick={() => setPinOnlySel((v) => !v)} style={{ background: pinOnlySel ? "#FFF6E5" : "var(--card)", border: `1px solid ${pinOnlySel ? "#F3D08A" : "var(--line)"}`, color: pinOnlySel ? "#9A6B00" : "var(--ink)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>⭐ Chỉ đã ghim ({pinSel.size})</button>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã ghim {pinSel.size} SP{(pinQ || pinOnlySel) ? ` · hiện ${pinShown.length}` : ""}</span>
             </div>
             <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
-              {(pinPicker ?? []).map((p) => (
+              {pinShown.map((p) => (
                 <label key={p.product} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 13px", borderBottom: "1px solid var(--line)", cursor: "pointer" }}>
                   <input type="checkbox" checked={pinSel.has(p.product)} onChange={() => togglePin(p.product)} style={{ width: 17, height: 17, cursor: "pointer" }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -392,7 +404,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                   </div>
                 </label>
               ))}
-              {(pinPicker ?? []).length === 0 && <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5 }}>Chưa có sản phẩm nào — kéo SKU về trước đã.</div>}
+              {pinShown.length === 0 && <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5 }}>{pinOnlySel ? "Chưa ghim SP nào." : "Chưa có sản phẩm nào — kéo SKU về trước đã."}</div>}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
               <button onClick={() => setPinPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>

@@ -53,6 +53,9 @@ export const stores = pgTable("stores", {
   health: jsonb("health").notNull().default({}),
   apiCredentials: jsonb("api_credentials"),
   note: text("note"),
+  // Tiền tệ shop + tỉ giá quy đổi sang USD (fx_rate = số đơn vị tiền này / 1 USD; VND ≈ 25400).
+  currency: text("currency").notNull().default("USD"),
+  fxRate: numeric("fx_rate", { precision: 14, scale: 4 }).notNull().default("1"),
   lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_stores_seller").on(t.sellerId)]);

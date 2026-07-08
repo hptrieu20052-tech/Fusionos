@@ -8,6 +8,7 @@ import { IconSettings, IconTrash, IconLink } from "@/components/icons";
 type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
   sellerName: string | null; sellerId: string | null; note: string | null; storeUrl: string | null;
+  currency: string; fxRate: string; health?: { fxConvertedAt?: string; fxConvertedRate?: number } | null;
   orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
 };
@@ -15,6 +16,8 @@ type Opt = { id: string; name: string };
 
 const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["other", "Other"]];
 const CONNECT: [string, string][] = [["extension", "Chrome Extension"], ["api", "API"], ["excel", "Excel Import"]];
+const CURRENCIES: [string, string][] = [["USD", "USD ($)"], ["VND", "VND (₫)"], ["EUR", "EUR (€)"], ["GBP", "GBP (£)"], ["AUD", "AUD"], ["CAD", "CAD"], ["JPY", "JPY (¥)"]];
+const FX_DEFAULT: Record<string, number> = { VND: 25400, EUR: 0.92, GBP: 0.79, AUD: 1.5, CAD: 1.36, JPY: 157 };
 const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 // Field credentials theo từng sàn
 const CRED_FIELDS: Record<string, [string, string][]> = {
@@ -145,7 +148,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
 
 function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
-  const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "", storeUrl: "" });
+  const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "", storeUrl: "", currency: "USD", fxRate: "1" });
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     if (!f.name.trim()) return;
@@ -167,6 +170,10 @@ function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; clos
       </div>
       <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <L label="Tiền tệ shop"><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (f.fxRate === "1" ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={`Tỉ giá: 1 USD = ? ${f.currency}`}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
+      </div>
       <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
       <Actions close={close} onOk={submit} busy={busy} okLabel={t("st.addStore")} disabled={!f.name.trim()} />
     </Modal>
@@ -175,7 +182,7 @@ function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; clos
 
 function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store; sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
-  const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "" });
+  const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "", currency: store.currency ?? "USD", fxRate: store.fxRate ?? "1" });
   const [cred, setCred] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<{ ok: boolean; message: string } | null>(null);
@@ -199,6 +206,18 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
     setBusy(false);
     if (j.ok) setHealth(j.health);
   };
+  async function fxConvert() {
+    const rate = Number(store.fxRate);
+    if (!(rate > 1)) { flash("Nhập tỉ giá > 1 rồi bấm Lưu store TRƯỚC, sau đó mới quy đổi."); return; }
+    const already = store.health?.fxConvertedAt;
+    const warn = `Chia total + đơn giá của TẤT CẢ đơn shop "${store.name}" cho ${rate} (→ USD)?\n\nCHỈ chạy 1 LẦN cho các đơn đã import trước khi bật tỉ giá.${already ? `\n\n⚠ ĐÃ quy đổi lúc ${new Date(already).toLocaleString()} — chạy lại sẽ chia SAI!` : ""}`;
+    if (!window.confirm(warn)) return;
+    setBusy(true);
+    const j = await fetch(`/api/stores/${store.id}/fx-convert`, { method: "POST" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setBusy(false);
+    if (j.ok) { flash(`✓ Đã quy đổi ${j.orders} đơn (÷${j.rate})`); reload(); close(); }
+    else flash("✗ " + (j.error ?? "lỗi"));
+  }
 
   return (
     <Modal title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk={store.marketplace} size={22} /> {store.name}</span>} close={close}>
@@ -209,6 +228,20 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
         <L label={t("st.connect")}><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <L label="Tiền tệ shop"><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (Number(f.fxRate) <= 1 ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={`Tỉ giá: 1 USD = ? ${f.currency}`}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
+      </div>
+      {f.currency !== "USD" && (
+        <div style={{ border: "1px solid #F3D08A", background: "#FFF9EC", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <button onClick={fxConvert} disabled={busy} style={{ ...btnGhost, color: "#9A6B00", borderColor: "#F3D08A", fontWeight: 700, fontSize: 12.5 }}>⤵ Quy đổi đơn đã import (÷ tỉ giá)</button>
+          <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1 }}>
+            {store.health?.fxConvertedAt
+              ? `✓ Đã quy đổi lúc ${new Date(store.health.fxConvertedAt).toLocaleString()} (÷${store.health.fxConvertedRate}). Đừng chạy lại.`
+              : "Chạy 1 LẦN cho đơn đã import trước đó. Nhớ bấm Lưu (lưu tỉ giá) trước khi quy đổi."}
+          </span>
+        </div>
+      )}
       <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
 
       {/* Setup API */}
