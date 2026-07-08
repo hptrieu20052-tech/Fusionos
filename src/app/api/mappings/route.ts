@@ -51,8 +51,21 @@ export async function DELETE(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "settings")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
+  const { eq, and, inArray } = await import("drizzle-orm");
+
+  // Xóa hàng loạt theo sản phẩm (nhiều variant) hoặc xóa TẤT CẢ của 1 nhà fulfill
+  if (b?.fulfillerId && (Array.isArray(b?.products) || b?.all)) {
+    const conds = [eq(schema.skuMappings.fulfillerId, b.fulfillerId)];
+    if (!b.all) {
+      const products = (b.products as unknown[]).map(String).filter(Boolean);
+      if (!products.length) return NextResponse.json({ ok: false, error: "chưa chọn sản phẩm" }, { status: 400 });
+      conds.push(inArray(schema.skuMappings.fulfillerProduct, products));
+    }
+    const res = await db.delete(schema.skuMappings).where(and(...conds)).returning({ id: schema.skuMappings.id });
+    return NextResponse.json({ ok: true, deleted: res.length });
+  }
+
   if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
-  const { eq } = await import("drizzle-orm");
   await db.delete(schema.skuMappings).where(eq(schema.skuMappings.id, b.id));
   return NextResponse.json({ ok: true });
 }

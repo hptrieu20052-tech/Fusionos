@@ -46,6 +46,10 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Ghim sản phẩm cho form tạo đơn
   const [pinPicker, setPinPicker] = useState<{ product: string; count: number }[] | null>(null);
   const [pinSel, setPinSel] = useState<Set<string>>(new Set());
+  const [delPicker, setDelPicker] = useState<{ product: string; count: number }[] | null>(null);
+  const [delSel, setDelSel] = useState<Set<string>>(new Set());
+  const [delQ, setDelQ] = useState("");
+  const [delBusy, setDelBusy] = useState(false);
   const [pinQ, setPinQ] = useState("");
   const [pinOnlySel, setPinOnlySel] = useState(false);
 
@@ -191,6 +195,41 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pinQ]);
   const togglePin = (p: string) => setPinSel((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+
+  // ---- Xóa bớt sản phẩm (nhiều variant) để bảng nhẹ hơn ----
+  async function openDelPicker() {
+    setDelQ(""); setDelSel(new Set());
+    setMsg("Đang tải danh sách sản phẩm…");
+    const products = await fetchPinProducts("");
+    setMsg("");
+    setDelPicker(products.map((p) => ({ product: p.product, count: p.count })));
+  }
+  const delOpen = delPicker !== null;
+  useEffect(() => {
+    if (!delOpen) return;
+    const t = setTimeout(async () => { setDelPicker(await fetchPinProducts(delQ.trim())); }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [delQ]);
+  const toggleDel = (p: string) => setDelSel((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
+  async function delProducts() {
+    const products = Array.from(delSel);
+    if (!products.length) { setMsg("⚠ Chưa chọn sản phẩm để xóa"); return; }
+    if (!(await confirm({ message: `Xóa ${products.length} sản phẩm (toàn bộ variant/SKU của chúng) khỏi ${ff?.name ?? "nhà này"}? Không thể hoàn tác.`, danger: true }))) return;
+    setDelBusy(true);
+    const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setDelBusy(false);
+    if (j.ok) { setMsg(`✓ Đã xóa ${j.deleted} SKU (${products.length} SP)`); setDelPicker(null); refresh(); }
+    else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
+  async function delAllOfFf() {
+    if (!(await confirm({ message: `XÓA TẤT CẢ ${countBy(active).toLocaleString()} SKU của ${ff?.name ?? "nhà này"}? Không thể hoàn tác.`, danger: true }))) return;
+    setDelBusy(true);
+    const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, all: true }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setDelBusy(false);
+    if (j.ok) { setMsg(`✓ Đã xóa tất cả ${j.deleted} SKU`); setDelPicker(null); refresh(); }
+    else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
   async function savePins() {
     setMsg("Đang lưu ghim…");
     const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products: Array.from(pinSel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
@@ -252,6 +291,9 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             <div style={{ flex: 1 }} />
             {ff.method === "api" && canEdit && countBy(active) > 0 && (
               <button onClick={openPinPicker} title="Chọn sản phẩm hiện sẵn trong form tạo đơn" style={{ background: "#FFF6E5", border: "1px solid #F3D08A", color: "#9A6B00", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⭐ Chọn SP cho form đơn</button>
+            )}
+            {ff.method === "api" && canEdit && countBy(active) > 0 && (
+              <button onClick={openDelPicker} title="Xóa bớt sản phẩm (nhiều variant) cho bảng nhẹ, load nhanh" style={{ background: "#FBECEC", border: "1px solid #F3C6C0", color: "var(--red)", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>🗑 Xóa bớt SP</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("printify") && canEdit && (
               <button onClick={openAddProduct} title="Chọn 1 sản phẩm gốc (blueprint) + nhà in → kéo hết variant về, sẵn sàng đẩy đơn. Không cần cấu hình ⚙ In từng cái." style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>➕ Thêm sản phẩm Printify</button>
@@ -418,6 +460,43 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
               <button onClick={() => setPinPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
               <button onClick={savePins} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>Lưu ({pinSel.size})</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Xóa bớt sản phẩm (nhiều variant) */}
+      {delPicker !== null && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !delBusy && setDelPicker(null)}>
+          <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <b style={{ fontSize: 16 }}>🗑 Xóa bớt sản phẩm — {ff?.name}</b>
+              <button onClick={() => !delBusy && setDelPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "6px 0 12px" }}>Tick sản phẩm muốn xóa → xóa <b>toàn bộ variant/SKU</b> của SP đó. Giúp bảng nhẹ, load nhanh. Không thể hoàn tác.</div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+              <input placeholder="Tìm tên SP / SKU…" value={delQ} onChange={(e) => setDelQ(e.target.value)} style={{ ...inp, width: 240 }} />
+              <button onClick={() => setDelSel((s) => new Set([...Array.from(s), ...(delPicker ?? []).map((p) => p.product)]))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả (đang hiện)</button>
+              <button onClick={() => setDelSel(new Set())} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn</button>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã chọn {delSel.size} SP</span>
+            </div>
+            <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
+              {(delPicker ?? []).map((p) => (
+                <label key={p.product} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 13px", borderBottom: "1px solid var(--line)", cursor: "pointer" }}>
+                  <input type="checkbox" checked={delSel.has(p.product)} onChange={() => toggleDel(p.product)} style={{ width: 17, height: 17, cursor: "pointer" }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.product}</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.count} SKU sẽ bị xóa</div>
+                  </div>
+                </label>
+              ))}
+              {(delPicker ?? []).length === 0 && <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5 }}>Không có sản phẩm.</div>}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 14 }}>
+              <button onClick={delAllOfFf} disabled={delBusy} style={{ background: "#fff", border: "1px solid #F3C6C0", color: "var(--red)", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", fontSize: 12.5 }}>Xóa TẤT CẢ {countBy(active).toLocaleString()} SKU</button>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setDelPicker(null)} disabled={delBusy} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
+                <button onClick={delProducts} disabled={delBusy || delSel.size === 0} style={{ background: "var(--red)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: delBusy || delSel.size === 0 ? "default" : "pointer", fontSize: 13, opacity: delBusy || delSel.size === 0 ? 0.5 : 1 }}>{delBusy ? "Đang xóa…" : `Xóa ${delSel.size} SP đã chọn`}</button>
+              </div>
             </div>
           </div>
         </div>
