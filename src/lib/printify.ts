@@ -71,3 +71,22 @@ export async function getPrintifyOrder(token: string, shopId: string | number, o
   if (!res.ok) throw new Error(`Printify get order HTTP ${res.status}`);
   return res.json();
 }
+
+export type PrintifyVariant = { id: number; sku: string; cost: number; price: number; title: string; is_enabled: boolean };
+export type PrintifyProduct = { id: string; title: string; variants: PrintifyVariant[] };
+
+/** Lấy toàn bộ product + variant của shop (phân trang). cost/price ở đơn vị cent. */
+export async function listPrintifyProducts(token: string, shopId: string | number): Promise<PrintifyProduct[]> {
+  const out: PrintifyProduct[] = [];
+  let page = 1;
+  for (let i = 0; i < 50; i++) { // trần an toàn 50 trang
+    const res = await fetch(`${BASE}/shops/${shopId}/products.json?limit=100&page=${page}`, { headers: headers(token) });
+    if (!res.ok) throw new Error(`Printify products HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const j = await res.json();
+    const data: PrintifyProduct[] = j.data ?? [];
+    out.push(...data);
+    if (!j.last_page || page >= j.last_page || data.length === 0) break;
+    page++;
+  }
+  return out;
+}

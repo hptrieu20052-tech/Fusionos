@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useLang } from "@/components/lang-provider";
 
-type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string };
+type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; shopId: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; productType: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
 const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
 
@@ -15,6 +15,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
   const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
   const [msg, setMsg] = useState("");
   const [shops, setShops] = useState<Record<string, { id: number; title: string }[] | "loading" | string>>({});
+  const [editOpen, setEditOpen] = useState<Record<string, boolean>>({});
 
   const setE = (id: string, field: string, value: string) =>
     setEdit((prev) => {
@@ -28,7 +29,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
   async function saveFf(id: string) {
     const e = edit[id]; if (!e) return;
     const j = await fetch("/api/fulfillers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
-    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "" } }); load(); }
+    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
   }
   async function listShops(id: string) {
     const token = edit[id]?.apiKey;
@@ -36,6 +37,13 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
     const j = await fetch("/api/fulfillers/printify-shops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(token ? { token } : { fulfillerId: id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (j.ok) setShops((p) => ({ ...p, [id]: j.shops }));
     else { setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? "lỗi") })); }
+  }
+  async function importSkus(id: string) {
+    if (!confirm("Kéo toàn bộ SKU + giá vốn từ Printify về? (bỏ qua SKU đã có)")) return;
+    setMsg("Đang kéo SKU từ Printify…");
+    const j = await fetch("/api/fulfillers/printify-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) { setMsg(`✓ Import SKU Printify: thêm mới ${j.created}, bỏ qua ${j.skipped}${j.noSku ? ` · ${j.noSku} variant chưa đặt SKU` : ""}`); load(); }
+    else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
   async function addFf(e: React.FormEvent) {
     e.preventDefault();
@@ -73,15 +81,21 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                 <b style={{ fontSize: 13.5 }}>{f.name}</b>
                 <span className="chip">{f.method}</span>
                 {f.credentials ? <span className="badge b-ship">API key {f.credentials}</span> : <span className="badge b-issue">{t("s.noApiKey")}</span>}
+                {f.shopId && <span className="badge b-ship">Shop ID: {f.shopId}</span>}
                 {f.hasWebhookSecret ? <span className="badge b-ship">{t("s.hasWebhook")}</span> : <span className="badge b-mut">{t("s.noWebhook")}</span>}
+                {canEdit && <button type="button" onClick={() => setEditOpen((p) => ({ ...p, [f.id]: !p[f.id] }))}
+                  style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 9, padding: "5px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--blue)" }}>
+                  {editOpen[f.id] ? "✕ Đóng" : "✎ " + t("c.edit")}
+                </button>}
               </div>
-              {canEdit && (
+              {canEdit && editOpen[f.id] && (
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                   <input placeholder={f.apiEndpoint ?? "API endpoint"} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setE(f.id, "apiEndpoint", e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
                   <input placeholder={t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(e) => setE(f.id, "apiKey", e.target.value)} style={{ ...inp, width: 160 }} />
                   {f.name.toLowerCase().includes("printify") && <>
                     <input placeholder="Shop ID" value={edit[f.id]?.shopId ?? ""} onChange={(e) => setE(f.id, "shopId", e.target.value)} style={{ ...inp, width: 110 }} />
                     <button type="button" onClick={() => listShops(f.id)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{t("s.getShop")}</button>
+                    {f.shopId && <button type="button" onClick={() => importSkus(f.id)} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>⬇ Import SKU</button>}
                   </>}
                   <input placeholder={t("s.webhookNew")} value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setE(f.id, "webhookSecret", e.target.value)} style={{ ...inp, width: 150 }} />
                   <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("c.save")}</button>

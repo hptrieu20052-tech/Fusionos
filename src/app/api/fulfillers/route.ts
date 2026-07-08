@@ -19,7 +19,7 @@ export async function GET() {
   const maps = await db.select().from(schema.skuMappings);
   return NextResponse.json({
     ok: true,
-    fulfillers: ffs.map((f) => ({ ...f, credentials: f.credentials ? "•••• đã lưu" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined })),
+    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, credentials: f.credentials ? "•••• đã lưu" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined })),
     mappings: maps,
   });
 }
