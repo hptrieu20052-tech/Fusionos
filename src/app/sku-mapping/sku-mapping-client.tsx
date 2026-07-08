@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { SupplierLogo } from "@/components/supplier-logo";
 import { useConfirm } from "@/components/confirm-provider";
 
 type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null; mapCount?: number; pinnedCount?: number };
@@ -184,27 +184,19 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     if (j.ok) { setMsg(pin ? `⭐ Đã ghim "${product}" (${j.count} SKU) vào form đơn` : `Đã bỏ ghim "${product}"`); refresh(); }
     else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
-  // 1 nút "Get SKU": kéo SP mới → rồi lấy nhãn màu/size cho SKU trống. Chạy tuần tự, tăng dần.
+  // 1 nút "Cập nhật SKU": kéo SP mới → điền màu/size + base + ship từ catalog. Chạy tuần tự, tăng dần.
   async function getSkuMerchize() {
     setMsg("Đang kéo SKU mới từ Merchize…");
     const imp = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? "lỗi kéo SKU")); return; }
-    if (imp.found === 0) console.log("Merchize rawSample:", imp.rawSample, "| variantSample:", imp.variantSample);
-    setMsg(`Đã thêm ${imp.created} SKU mới · đang lấy màu/size…`);
+    setMsg(`Đã thêm ${imp.created} SKU mới · đang điền màu/size + giá…`);
     const enr = await fetch("/api/fulfillers/merchize-enrich-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false }));
     refresh();
-    if (enr.ok && enr.updated === 0 && (enr.productsTotal > 0 || enr.noProductId > 0)) {
-      console.log("Merchize enrich sample:", enr.sample, "| parsed:", enr.sampleParsed);
-      const info = `✓ Thêm mới ${imp.created} · ⚠ Không lấy được nhãn màu/size (SP có product_id: ${enr.productsTotal}, SKU thiếu product_id: ${enr.noProductId}). Mở Console (F12) xem 'Merchize enrich sample' rồi gửi mình.`;
-      setMsg(info);
-      return;
-    }
     const notDone = imp.done === false || (enr.ok && enr.done === false);
-    const info = `✓ Thêm mới ${imp.created}${enr.ok ? `, điền nhãn ${enr.updated}` : ""}`;
+    const info = `✓ Thêm mới ${imp.created}${enr.ok ? `, điền nhãn/giá ${enr.updated}` : ""}`;
     setMsg(info + (notDone ? " · CÒN nữa — bấm lại để tiếp" : " · xong"));
   }
 
-  const mkOf = (name: string) => { const n = name.toLowerCase(); return n.includes("printify") ? "printify" : n.includes("tiktok") ? "tiktok" : "other"; };
   const th = { textAlign: "left" as const, fontSize: 11, color: "var(--faint)", fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: ".3px", padding: "8px 10px", borderBottom: "1px solid var(--line)" };
   const td = { padding: "7px 10px", borderBottom: "1px solid var(--line)", fontSize: 12.5, verticalAlign: "middle" as const };
 
@@ -225,7 +217,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", borderRadius: 11, cursor: "pointer", fontSize: 12.5, fontWeight: 700,
               border: active === f.id ? "1.5px solid var(--blue)" : "1px solid var(--line)",
               background: active === f.id ? "var(--blue-soft)" : "var(--card)", color: active === f.id ? "var(--blue)" : "var(--ink)" }}>
-            <MarketplaceLogo mk={mkOf(f.name)} size={16} /> {f.name}
+            <SupplierLogo name={f.name} size={18} /> {f.name}
             <span style={{ background: active === f.id ? "#fff" : "var(--line)", borderRadius: 6, padding: "1px 6px", fontSize: 11 }}>{countBy(f.id)}</span>
           </button>
         ))}

@@ -4,6 +4,7 @@ import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-ran
 import { useLang } from "@/components/lang-provider";
 import { useConfirm } from "@/components/confirm-provider";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { SupplierLogo } from "@/components/supplier-logo";
 import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn } from "@/components/icons";
 
 type Item = {
@@ -732,7 +733,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                 <div className="o2-right">
                   <div className="o2-field">{F("orderLabel", t("o.orderLabel"))}</div>
                   <div className="o2-field">
-                    <label>{t("o.fulfilledBy")}</label>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{ffSel && <SupplierLogo name={detail.fulfillerOptions.find((x) => x.fulfillerId === ffSel)?.name ?? ""} size={15} />}{t("o.fulfilledBy")}</label>
                     <select value={ffSel} onChange={(e) => pickFulfiller(e.target.value)} style={{ ...inp, width: "100%" }}>
                       <option value="">{t("o.chooseFulfiller")}</option>
                       {detail.fulfillerOptions.map((ff) => (

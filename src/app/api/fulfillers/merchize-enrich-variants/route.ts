@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { getMerchizeVariants, extractMerchizeVariants } from "@/lib/merchize";
+import { getMerchizeCatalog, extractCatalogProducts, catalogVariantsOf } from "@/lib/merchize";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * POST { fulfillerId } — lấy nhãn màu/size (variant title) cho các SKU Merchize đang TRỐNG variant.
- * Không xoá, không đụng ghim/giá — chỉ UPDATE cột variant. Chạy tăng dần (bấm lại nếu còn).
+ * POST { fulfillerId } — điền màu/size (+ base tier1 + ship US) cho SKU Merchize đang trống.
+ * Đọc THẲNG từ catalog (đã kèm variants[].attributes/tiers/shipping) — không cần all-variants.
+ * Không xoá, chỉ UPDATE. Chạy tăng dần theo trang (bấm lại nếu còn).
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -25,49 +26,36 @@ export async function POST(req: NextRequest) {
   const baseUrl = ff.apiEndpoint;
   if (!apiKey || !baseUrl) return NextResponse.json({ ok: false, error: "Chưa cấu hình Base URL + API Key" }, { status: 400 });
 
-  const emptyVariant = sql`(${schema.skuMappings.variant} IS NULL OR ${schema.skuMappings.variant} = '')`;
-
-  // Các product còn SKU trống variant (mỗi product gọi all-variants 1 lần)
-  const need = await db.selectDistinct({ pid: schema.skuMappings.fulfillerProductId })
-    .from(schema.skuMappings)
-    .where(and(eq(schema.skuMappings.fulfillerId, ff.id), isNotNull(schema.skuMappings.fulfillerProductId), emptyVariant));
-  const pids = need.map((x) => x.pid).filter(Boolean) as string[];
-
+  const startPage = Math.max(Number(b.page) || 1, 1);
+  const LIMIT = 50, BUDGET_MS = 45000;
   const start = Date.now();
-  const BATCH = 6, BUDGET_MS = 45000;
-  let processed = 0, updated = 0;
-  let sample: unknown = null;         // raw all-variants của product đầu (soi cấu trúc)
-  let sampleParsed: unknown = null;   // extractMerchizeVariants ra gì
-  for (let i = 0; i < pids.length; i += BATCH) {
-    if (Date.now() - start > BUDGET_MS) break;
-    const batch = pids.slice(i, i + BATCH);
-    await Promise.all(batch.map(async (pid) => {
-      try {
-        const vraw = await getMerchizeVariants(baseUrl, apiKey, pid);
-        const parsed = extractMerchizeVariants(vraw);
-        if (!sample) { sample = vraw; sampleParsed = parsed.slice(0, 3); }
-        for (const v of parsed) {
-          if (!v.sku || !v.title) continue;
-          const res = await db.update(schema.skuMappings)
-            .set({ variant: v.title.slice(0, 120) })
-            .where(and(eq(schema.skuMappings.fulfillerId, ff.id), eq(schema.skuMappings.fulfillerSku, v.sku), emptyVariant))
-            .returning({ id: schema.skuMappings.id });
-          updated += res.length;
-        }
-        processed++;
-      } catch { /* bỏ qua product lỗi, lần sau kéo lại */ }
-    }));
+  let page = startPage, pages = 0, updated = 0, done = false;
+
+  try {
+    for (; ; page++) {
+      if (Date.now() - start > BUDGET_MS) break;
+      const raw = await getMerchizeCatalog(baseUrl, apiKey, { limit: LIMIT, page });
+      const products = extractCatalogProducts(raw);
+      pages++;
+      const rows = products.flatMap((p) => catalogVariantsOf(p)).filter((r) => r.sku && r.variant);
+      if (rows.length) {
+        const values = sql.join(rows.map((r) => sql`(${r.sku}, ${r.variant}, ${r.base}::numeric, ${r.ship}::numeric)`), sql`, `);
+        const res = await db.execute(sql`
+          UPDATE sku_mappings AS m
+          SET variant   = COALESCE(NULLIF(m.variant, ''), v.variant),
+              base_cost = CASE WHEN m.base_cost = 0 THEN v.base ELSE m.base_cost END,
+              ship_cost = CASE WHEN m.ship_cost = 0 THEN v.ship ELSE m.ship_cost END
+          FROM (VALUES ${values}) AS v(sku, variant, base, ship)
+          WHERE m.fulfiller_id = ${ff.id} AND m.fulfiller_sku = v.sku
+            AND (NULLIF(m.variant, '') IS NULL OR m.base_cost = 0 OR m.ship_cost = 0)
+        `);
+        updated += (res as { rowCount?: number }).rowCount ?? 0;
+      }
+      if (products.length < LIMIT) { done = true; break; }
+    }
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 });
   }
 
-  const remaining = pids.length - processed;
-  // Đếm số SKU trống variant nhưng KHÔNG có product_id (không enrich được qua all-variants)
-  const [{ noPid }] = await db.select({ noPid: sql<number>`count(*)::int` }).from(schema.skuMappings)
-    .where(and(eq(schema.skuMappings.fulfillerId, ff.id), sql`${schema.skuMappings.fulfillerProductId} IS NULL`, emptyVariant));
-
-  return NextResponse.json({
-    ok: true, productsTotal: pids.length, processed, updated, remaining, done: remaining <= 0,
-    noProductId: noPid,
-    sample: updated === 0 ? sample : undefined,
-    sampleParsed: updated === 0 ? sampleParsed : undefined,
-  });
+  return NextResponse.json({ ok: true, updated, pages, done, nextPage: done ? null : page });
 }

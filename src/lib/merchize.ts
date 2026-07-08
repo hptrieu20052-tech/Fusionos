@@ -161,32 +161,60 @@ export async function getMerchizeCatalog(
   return text ? JSON.parse(text) : {};
 }
 
-/** Rút danh sách {sku,title,cost} từ response catalog (dò nhiều dạng cấu trúc). */
-export function extractMerchizeCatalog(data: unknown): { sku: string; title: string; cost: number; productId?: string }[] {
+/** Lấy mảng products từ response catalog (dạng { data: { products: [...] } } hoặc phẳng). */
+export function extractCatalogProducts(data: unknown): Record<string, unknown>[] {
   const d = (data ?? {}) as Record<string, unknown>;
   const nested = (d.data ?? {}) as Record<string, unknown>;
-  const arr = (Array.isArray(data) ? data
-    : Array.isArray(d.data) ? d.data
+  const arr = (Array.isArray(nested.products) ? nested.products
     : Array.isArray(d.products) ? d.products
-    : Array.isArray(d.items) ? d.items
-    : Array.isArray(nested.items) ? nested.items
-    : Array.isArray(nested.products) ? nested.products
+    : Array.isArray(d.data) ? d.data
+    : Array.isArray(data) ? data
     : []) as Record<string, unknown>[];
-  const out: { sku: string; title: string; cost: number; productId?: string }[] = [];
-  const num = (v: unknown) => { const n = Number(String(v ?? "").replace(/[^0-9.]/g, "")); return isNaN(n) ? 0 : n; };
-  for (const p of Array.isArray(arr) ? arr : []) {
-    const title = String(p.title ?? p.name ?? p.product_title ?? "");
-    const pid = p.product_id ?? p.id ?? p._id;
-    const productId = pid != null ? String(pid) : undefined;
-    const variants = (p.variants ?? p.varioptions ?? p.options ?? null) as Record<string, unknown>[] | null;
-    if (Array.isArray(variants) && variants.length) {
-      for (const v of variants) {
-        const sku = String(v.sku ?? v.code ?? v.variant_sku ?? "").trim();
-        if (sku) out.push({ sku, title: `${title}${v.title ? " · " + v.title : ""}`.trim(), cost: num(v.cost ?? v.base_cost ?? v.price), productId });
-      }
+  return Array.isArray(arr) ? arr : [];
+}
+
+/** Rút danh sách variant (sku + nhãn màu/size + base tier1 + ship US) từ 1 product trong catalog. */
+export function catalogVariantsOf(product: Record<string, unknown>): { sku: string; title: string; productId: string; variant: string; base: number; ship: number }[] {
+  const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+  const title = String(product.title ?? product.name ?? "").trim();
+  const productId = String(product._id ?? product.id ?? "");
+  const variants = (Array.isArray(product.variants) ? product.variants : []) as Record<string, unknown>[];
+  const out: { sku: string; title: string; productId: string; variant: string; base: number; ship: number }[] = [];
+  for (const v of variants) {
+    const sku = String(v.sku ?? "").trim();
+    if (!sku) continue;
+    // Nhãn màu/size từ attributes[]: {name/type, value_text}. Color trước, Size sau, còn lại nối tiếp.
+    const attrs = (Array.isArray(v.attributes) ? v.attributes : []) as Record<string, unknown>[];
+    const key = (a: Record<string, unknown>) => String(a.type ?? a.name ?? "").toLowerCase();
+    const txt = (a: Record<string, unknown>) => String(a.value_text ?? a.value ?? a.name ?? "").trim();
+    const color = attrs.find((a) => /colou?r/.test(key(a)));
+    const size = attrs.find((a) => /size/.test(key(a)));
+    const others = attrs.filter((a) => a !== color && a !== size).map(txt).filter(Boolean);
+    const variant = [color ? txt(color) : "", size ? txt(size) : "", ...others].filter(Boolean).join(" / ");
+    // Base = giá tier1 (mặc định); Ship = first_item của zone US
+    const tiers = (Array.isArray(v.tiers) ? v.tiers : []) as Record<string, unknown>[];
+    const t1 = tiers.find((t) => t.name === "tier1") ?? tiers[0];
+    const base = num(t1?.price);
+    const ships = (Array.isArray(v.shipping_prices) ? v.shipping_prices : []) as Record<string, unknown>[];
+    const us = ships.find((s) => String(s.to_zone ?? "").toUpperCase() === "US") ?? ships[0];
+    const ship = num(us?.first_item);
+    out.push({ sku, title, productId, variant, base, ship });
+  }
+  return out;
+}
+
+/** Rút danh sách {sku,title,cost,ship,variant,productId} từ response catalog (đọc cả variant + màu/size + giá). */
+export function extractMerchizeCatalog(data: unknown): { sku: string; title: string; cost: number; ship?: number; variant?: string; productId?: string }[] {
+  const products = extractCatalogProducts(data);
+  const out: { sku: string; title: string; cost: number; ship?: number; variant?: string; productId?: string }[] = [];
+  for (const p of products) {
+    const vs = catalogVariantsOf(p);
+    if (vs.length) {
+      for (const r of vs) out.push({ sku: r.sku, title: r.title, cost: r.base, ship: r.ship, variant: r.variant, productId: r.productId });
     } else {
-      const sku = String(p.sku ?? p.code ?? p.product_sku ?? "").trim();
-      if (sku) out.push({ sku, title, cost: num(p.cost ?? p.base_cost ?? p.price), productId });
+      // Fallback: product không có variants[] → 1 dòng theo product sku
+      const sku = String(p.sku ?? "").trim();
+      if (sku) out.push({ sku, title: String(p.title ?? p.name ?? ""), cost: 0, productId: String(p._id ?? p.id ?? "") || undefined });
     }
   }
   return out;

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useLang } from "@/components/lang-provider";
 import { SkuMappingClient } from "@/app/sku-mapping/sku-mapping-client";
 import { useConfirm } from "@/components/confirm-provider";
+import { SupplierLogo } from "@/components/supplier-logo";
 
 type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; shopId: string | null; identifier: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; productType: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
@@ -27,7 +28,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
       return { ...prev, [id]: { ...base, [field]: value } };
     });
 
-  const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => { if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings); } });
+  const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => { if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings ?? []); } });
   useEffect(() => { load(); }, []);
 
   async function saveFf(id: string) {
@@ -93,6 +94,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
           {ffs.map((f) => (
             <div key={f.id} style={{ border: "1px solid var(--line)", borderRadius: 14, padding: "13px 15px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <SupplierLogo name={f.name} size={22} />
                 <b style={{ fontSize: 13.5 }}>{f.name}</b>
                 <span className="chip">{f.method}</span>
                 {f.credentials ? <span className="badge b-ship">Token {f.credentials}</span> : <span className="badge b-issue">{t("s.noApiKey")}</span>}
