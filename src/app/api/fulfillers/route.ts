@@ -45,7 +45,16 @@ export async function PATCH(req: NextRequest) {
   const patch: Record<string, unknown> = {};
   if (typeof b.apiEndpoint === "string") patch.apiEndpoint = b.apiEndpoint || null;
   if (typeof b.webhookSecret === "string" && b.webhookSecret) patch.webhookSecret = b.webhookSecret;
-  if (typeof b.apiKey === "string" && b.apiKey) patch.credentials = { apiKey: b.apiKey };
+  // Credentials: gộp apiKey (token) + shopId (cho Printify). Giữ giá trị cũ nếu chỉ đổi 1 phần.
+  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "")) {
+    const [cur] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.id)).limit(1);
+    const prev = (cur?.credentials ?? {}) as Record<string, unknown>;
+    patch.credentials = {
+      ...prev,
+      ...(b.apiKey ? { apiKey: b.apiKey } : {}),
+      ...(b.shopId !== undefined && b.shopId !== "" ? { shopId: String(b.shopId) } : {}),
+    };
+  }
   if (typeof b.autoPush === "boolean") patch.autoPush = b.autoPush;
   await db.update(schema.fulfillers).set(patch).where(eq(schema.fulfillers.id, b.id));
   return NextResponse.json({ ok: true });

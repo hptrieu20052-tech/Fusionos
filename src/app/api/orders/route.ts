@@ -128,6 +128,8 @@ export async function GET(req: NextRequest) {
       designThumb: fileUrl(i.design_thumb as string | null),
       designSides: i.design_id ? (sidesMap[i.design_id as string] ?? []) : [],
       mockupUrl: fileUrl(i.mockup_key as string | null),
+      imageUrl: (i.image_url as string | null) ?? null,
+      productUrl: (i.product_url as string | null) ?? null,
       suggest: i.design_id ? null : suggestFor(String(i.product_title)),
     })),
   }));

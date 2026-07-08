@@ -1,3 +1,4 @@
+import { createPrintifyOrder, toISO2 } from "@/lib/printify";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
  * ------------------------------------------------------------------
@@ -62,7 +63,7 @@ function makeAdapter(slug: string, label: string): FulfillerAdapter {
 
 /** Danh sách nhà fulfill hỗ trợ (slug ⇄ nhãn hiển thị). */
 export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
-  printify: makeAdapter("printify", "Printify"),
+  printify: printifyAdapter(),
   merchize: makeAdapter("merchize", "Merchize"),
   printway: makeAdapter("printway", "Printway"),
   wembroidery: makeAdapter("wembroidery", "Wembroidery"),
@@ -71,6 +72,47 @@ export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   compassup: makeAdapter("compassup", "Compassup"),
   gearment: makeAdapter("gearment", "Gearment"),
 };
+
+/**
+ * Adapter Printify THẬT — gọi API tạo đơn.
+ * credentials = { apiKey: <Personal Access Token>, shopId: <shop_id> }
+ * lines[].fulfillerSku = SKU của variant sản phẩm bên Printify.
+ * Chưa cấu hình token/shopId → simulate (không chặn luồng).
+ */
+function printifyAdapter(): FulfillerAdapter {
+  return {
+    slug: "printify",
+    label: "Printify",
+    async push(ctx) {
+      const c = (ctx.fulfiller.credentials ?? {}) as { apiKey?: string; apiToken?: string; shopId?: string | number };
+      const token = c.apiKey || c.apiToken;
+      const shopId = c.shopId;
+      if (!token || !shopId) return simulate("printify"); // chưa cấu hình → simulate
+
+      const o = ctx.order;
+      const address_to = {
+        first_name: o.buyerFirst || "Customer",
+        last_name: o.buyerLast || ".",
+        email: o.email || undefined,
+        phone: o.phone || undefined,
+        country: toISO2(o.country),
+        region: o.state || "",
+        address1: o.addr1 || "",
+        address2: o.addr2 || undefined,
+        city: o.city || "",
+        zip: o.zip || "",
+      };
+      const line_items = ctx.lines.map((l) => ({ sku: l.fulfillerSku, quantity: l.qty }));
+      const res = await createPrintifyOrder(token, shopId, {
+        external_id: o.externalId,
+        label: o.orderLabel || o.externalId,
+        line_items,
+        address_to,
+      });
+      return { externalFfId: res.id, simulated: false, raw: res.raw };
+    },
+  };
+}
 
 /** Chuẩn hoá tên nhà fulfill → slug (bỏ dấu, khoảng trắng, ký tự đặc biệt). */
 export function slugifyFulfiller(name: string): string {

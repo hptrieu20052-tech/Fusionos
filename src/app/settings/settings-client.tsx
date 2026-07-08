@@ -8,10 +8,16 @@ const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius
 export function SettingsClient({ canEdit, ingestHint }: { canEdit: boolean; ingestHint: string }) {
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [maps, setMaps] = useState<Map[]>([]);
-  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string }>>({});
+  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string }>>({});
   const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "" });
   const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
   const [msg, setMsg] = useState("");
+
+  const setE = (id: string, field: string, value: string) =>
+    setEdit((prev) => {
+      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "" };
+      return { ...prev, [id]: { ...base, [field]: value } };
+    });
 
   const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => { if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings); } });
   useEffect(() => { load(); }, []);
@@ -19,7 +25,13 @@ export function SettingsClient({ canEdit, ingestHint }: { canEdit: boolean; inge
   async function saveFf(id: string) {
     const e = edit[id]; if (!e) return;
     const j = await fetch("/api/fulfillers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
-    setMsg(j.ok ? "Đã lưu " : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "" } }); load(); }
+    setMsg(j.ok ? "Đã lưu " : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "" } }); load(); }
+  }
+  async function listShops(id: string) {
+    const token = edit[id]?.apiKey;
+    const j = await fetch("/api/fulfillers/printify-shops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(token ? { token } : { fulfillerId: id }) }).then((r) => r.json());
+    if (j.ok) setMsg("Shop Printify: " + j.shops.map((s: { id: number; title: string }) => `${s.title} = ${s.id}`).join("  |  "));
+    else setMsg("⚠ " + j.error);
   }
   async function addFf(e: React.FormEvent) {
     e.preventDefault();
@@ -61,9 +73,13 @@ export function SettingsClient({ canEdit, ingestHint }: { canEdit: boolean; inge
               </div>
               {canEdit && (
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                  <input placeholder={f.apiEndpoint ?? "API endpoint"} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setEdit({ ...edit, [f.id]: { ...(edit[f.id] ?? { apiKey: "", webhookSecret: "" }), apiEndpoint: e.target.value } })} style={{ ...inp, flex: 1, minWidth: 180 }} />
-                  <input placeholder="API key mới" value={edit[f.id]?.apiKey ?? ""} onChange={(e) => setEdit({ ...edit, [f.id]: { ...(edit[f.id] ?? { apiEndpoint: "", webhookSecret: "" }), apiKey: e.target.value } })} style={{ ...inp, width: 160 }} />
-                  <input placeholder="Webhook secret mới" value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setEdit({ ...edit, [f.id]: { ...(edit[f.id] ?? { apiEndpoint: "", apiKey: "" }), webhookSecret: e.target.value } })} style={{ ...inp, width: 170 }} />
+                  <input placeholder={f.apiEndpoint ?? "API endpoint"} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setE(f.id, "apiEndpoint", e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
+                  <input placeholder="API token / key mới" value={edit[f.id]?.apiKey ?? ""} onChange={(e) => setE(f.id, "apiKey", e.target.value)} style={{ ...inp, width: 160 }} />
+                  {f.name.toLowerCase().includes("printify") && <>
+                    <input placeholder="Shop ID" value={edit[f.id]?.shopId ?? ""} onChange={(e) => setE(f.id, "shopId", e.target.value)} style={{ ...inp, width: 110 }} />
+                    <button type="button" onClick={() => listShops(f.id)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Lấy shop</button>
+                  </>}
+                  <input placeholder="Webhook secret mới" value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setE(f.id, "webhookSecret", e.target.value)} style={{ ...inp, width: 150 }} />
                   <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Lưu</button>
                 </div>
               )}

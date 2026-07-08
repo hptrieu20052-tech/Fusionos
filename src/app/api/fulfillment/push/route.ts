@@ -90,16 +90,22 @@ export async function POST(req: NextRequest) {
 
   // --- Gọi API fulfiller qua adapter theo từng nhà ---
   const adapter = getAdapter(ff.name);
-  const pushRes = await adapter.push({
-    fulfiller: { id: ff.id, name: ff.name, apiEndpoint: ff.apiEndpoint, credentials: ff.credentials },
-    order: {
-      externalId: order.externalId, orderLabel: order.orderLabel,
-      buyerFirst: order.buyerFirst, buyerLast: order.buyerLast,
-      addr1: order.addr1, addr2: order.addr2, city: order.city,
-      state: order.state, zip: order.zip, country: order.country,
-    },
-    lines: pushLines,
-  });
+  let pushRes;
+  try {
+    pushRes = await adapter.push({
+      fulfiller: { id: ff.id, name: ff.name, apiEndpoint: ff.apiEndpoint, credentials: ff.credentials },
+      order: {
+        externalId: order.externalId, orderLabel: order.orderLabel,
+        buyerFirst: order.buyerFirst, buyerLast: order.buyerLast,
+        addr1: order.addr1, addr2: order.addr2, city: order.city,
+        state: order.state, zip: order.zip, country: order.country,
+      },
+      lines: pushLines,
+    });
+  } catch (e) {
+    // API nhà fulfill báo lỗi → KHÔNG ghi sổ, trả lỗi rõ ràng cho người dùng
+    return NextResponse.json({ ok: false, error: `Đẩy đơn ${ff.name} thất bại: ${String((e as Error)?.message ?? e).slice(0, 400)}` }, { status: 502 });
+  }
   const externalFfId = pushRes.externalFfId;
 
   const [ffo] = await db.insert(schema.fulfillmentOrders).values({

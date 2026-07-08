@@ -8,6 +8,7 @@ type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
   design_id: string | null; design_sku: number | null; design_title: string | null; personalization: string | null;
   special_print: boolean; designThumb: string | null; mockupUrl: string | null;
+  imageUrl?: string | null; productUrl?: string | null;
   designSides?: { kind: string; label: string; thumb: string | null; original: string | null }[];
   suggest: { designId: string; skuCode: number; title: string; thumb: string | null } | null;
 };
@@ -707,7 +708,7 @@ function ItemRow({ it, onSaved, flash }: {
     if (j.ok) { flash(sku === null ? t("o.unassigned") : `${t("o.assigned")} #${j.design?.sku_code ?? sku}`); onSaved(); }
     else flash("✗ " + (j.error ?? "Error"));
   };
-  const img = it.mockupUrl ?? it.designThumb;
+  const img = it.mockupUrl ?? it.designThumb ?? it.imageUrl;
   const [zoom, setZoom] = useState<string | null>(null);
   return (
     <div className="o2-item">
@@ -717,6 +718,11 @@ function ItemRow({ it, onSaved, flash }: {
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
         <b>{it.product_title}</b>
+        {it.productUrl && (
+          <a href={it.productUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#E0913C", fontWeight: 700, textDecoration: "none", marginTop: 3 }}>
+            Xem trên Etsy ↗
+          </a>
+        )}
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "var(--muted)", marginTop: 5, fontSize: 12.5 }}>
           <span>{t("o.qtyLabel")}: <b style={{ color: "var(--ink)" }}>{it.qty}</b></span>
           {it.internal_sku && <span>SKU: <b style={{ color: "var(--ink)" }}>{it.internal_sku}</b></span>}

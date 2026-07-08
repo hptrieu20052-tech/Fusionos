@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import * as XLSX from "xlsx";
@@ -31,15 +31,18 @@ export async function POST(req: NextRequest) {
 
   const norm = (s: unknown) => String(s ?? "").trim();
   const key = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Ưu tiên theo THỨ TỰ tên truyền vào (không phải theo thứ tự cột trong file)
   const pick = (r: Record<string, unknown>, names: string[]) => {
-    for (const k of Object.keys(r)) if (names.includes(key(k))) { const v = norm(r[k]); if (v) return v; }
+    for (const name of names) {
+      for (const k of Object.keys(r)) if (key(k) === name) { const v = norm(r[k]); if (v) return v; }
+    }
     return "";
   };
   const money = (v: string) => { const n = Number(String(v).replace(/[^0-9.\-]/g, "")); return isNaN(n) ? 0 : n; };
 
   // Gộp theo Order ID
-  type Line = { title: string; sku: string; qty: number; price: number };
-  type Grp = { ext: string; first: string; last: string; addr1: string; addr2: string; city: string; state: string; zip: string; country: string; total: number; lines: Line[] };
+  type Line = { title: string; sku: string; qty: number; price: number; personalization: string; variant: string; listingId: string };
+  type Grp = { ext: string; first: string; last: string; addr1: string; addr2: string; city: string; state: string; zip: string; country: string; total: number; discount: number; shipping: number; tax: number; lines: Line[] };
   const groups = new Map<string, Grp>();
 
   for (const r of rows) {
@@ -51,7 +54,7 @@ export async function POST(req: NextRequest) {
       let first = pick(r, ["firstname"]);
       let last = pick(r, ["lastname"]);
       if (!first && !last) {
-        const full = pick(r, ["fullname", "shipname", "buyer", "buyername"]);
+        const full = pick(r, ["shipname", "fullname", "buyer", "buyername"]).replace(/\s*\([^)]*\)\s*$/, "").trim();
         if (full) { const p = full.split(/\s+/); last = p.length > 1 ? p.slice(1).join(" ") : ""; first = p[0]; }
       }
       g = {
@@ -62,7 +65,11 @@ export async function POST(req: NextRequest) {
         state: pick(r, ["shipstate", "state", "shipstateprovince"]),
         zip: pick(r, ["shipzipcode", "zipcode", "zip", "shipzip"]),
         country: pick(r, ["shipcountry", "country"]) || "United States",
-        total: money(pick(r, ["ordertotal", "ordervalue", "adjustedordertotal", "grandtotal"])),
+        // Sold Orders có "Order Total" trực tiếp; Sold Order Items thì tính từ các cột dưới
+        total: money(pick(r, ["ordertotal", "adjustedordertotal", "grandtotal"])),
+        discount: money(pick(r, ["discountamount"])),
+        shipping: money(pick(r, ["ordershipping", "shipping"])),
+        tax: money(pick(r, ["ordersalestax", "salestax"])),
         lines: [],
       };
       groups.set(ext, g);
@@ -71,16 +78,45 @@ export async function POST(req: NextRequest) {
     const title = pick(r, ["itemname", "title", "listingtitle", "productname"]);
     const variations = pick(r, ["variations", "variation"]);
     if (title) {
+      // Tách "Personalization:..." khỏi Variations (lấy hết phần sau Personalization: kể cả có dấu phẩy)
+      let personalization = "";
+      let variant = variations;
+      const pIdx = variations.search(/personaliz\w*\s*:/i);
+      if (pIdx >= 0) {
+        const after = variations.slice(pIdx);
+        const colon = after.indexOf(":");
+        personalization = after.slice(colon + 1).trim();
+        variant = variations.slice(0, pIdx).replace(/[,;\s]+$/, "").trim();
+      }
       g.lines.push({
-        title: variations ? `${title} — ${variations}` : title,
+        title: variant ? `${title} — ${variant}` : title,
         sku: pick(r, ["sku"]),
         qty: Number(pick(r, ["quantity", "qty"]) || 1) || 1,
         price: money(pick(r, ["price", "itemtotal"])),
+        personalization,
+        variant,
+        listingId: pick(r, ["listingid", "listing"]),
       });
     }
   }
 
   if (!groups.size) return NextResponse.json({ ok: false, error: "Không nhận diện được cột Order ID — kiểm tra đúng file Etsy export chưa" }, { status: 400 });
+
+  // Tự học: listing đã từng được gán design ở đơn trước → tự gán lại cho đơn mới.
+  const allListingIds = Array.from(new Set(
+    Array.from(groups.values()).flatMap((g) => g.lines.map((l) => l.listingId).filter(Boolean)),
+  ));
+  const listingDesign = new Map<string, string>(); // listingId -> designId
+  if (allListingIds.length) {
+    const prior = (await db.execute(sql`
+      SELECT DISTINCT ON (etsy_listing_id) etsy_listing_id, design_id
+      FROM order_items
+      WHERE etsy_listing_id IN (${sql.join(allListingIds.map((x) => sql`${x}`), sql`, `)})
+        AND design_id IS NOT NULL
+      ORDER BY etsy_listing_id, id DESC
+    `)).rows as { etsy_listing_id: string; design_id: string }[];
+    for (const p of prior) listingDesign.set(p.etsy_listing_id, p.design_id);
+  }
 
   let created = 0, skipped = 0;
   const errors: string[] = [];
@@ -91,7 +127,9 @@ export async function POST(req: NextRequest) {
       .where(and(eq(schema.orders.platform, "etsy" as never), eq(schema.orders.externalId, g.ext))).limit(1);
     if (dup) { skipped++; continue; }
     try {
-      const total = g.total || g.lines.reduce((s: number, l: Line) => s + l.price * l.qty, 0);
+      const subtotal = g.lines.reduce((s: number, l: Line) => s + l.price * l.qty, 0);
+      // Sold Orders: dùng Order Total trực tiếp. Sold Order Items: subtotal − giảm giá + ship + thuế.
+      const total = g.total || Math.max(0, subtotal - g.discount + g.shipping + g.tax);
       const [order] = await db.insert(schema.orders).values({
         externalId: g.ext, platform: "etsy" as never,
         storeId, sellerId, source: "excel",
@@ -101,11 +139,15 @@ export async function POST(req: NextRequest) {
         total: total.toFixed(2), platformFee: "0.00",
         orderedAt: new Date(),
       }).returning();
-      const lines = g.lines.length ? g.lines : [{ title: `Đơn Etsy ${g.ext}`, sku: "", qty: 1, price: total }];
+      const lines = g.lines.length ? g.lines : [{ title: `Đơn Etsy ${g.ext}`, sku: "", qty: 1, price: total, personalization: "", variant: "", listingId: "" }];
       for (const l of lines) {
         await db.insert(schema.orderItems).values({
           orderId: order.id, productTitle: l.title, internalSku: l.sku || null,
           qty: l.qty, unitPrice: l.price.toFixed(2),
+          personalization: l.personalization || null,
+          designId: (l.listingId && listingDesign.get(l.listingId)) || null,
+          etsyListingId: l.listingId || null,
+          productUrl: l.listingId ? `https://www.etsy.com/listing/${l.listingId}` : null,
         });
       }
       created++;
