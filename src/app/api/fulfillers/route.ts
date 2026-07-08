@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 
@@ -16,11 +16,16 @@ async function guard(min: 1 | 2) {
 export async function GET() {
   if (!(await guard(1))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const ffs = await db.select().from(schema.fulfillers);
-  const maps = await db.select().from(schema.skuMappings);
+  // Đếm mapping + ghim theo từng nhà (KHÔNG kéo toàn bộ rows — bảng dùng /api/mappings/list phân trang)
+  const counts = await db.select({
+    fid: schema.skuMappings.fulfillerId,
+    total: sql<number>`count(*)::int`,
+    pinned: sql<number>`count(*) filter (where ${schema.skuMappings.pinned})::int`,
+  }).from(schema.skuMappings).groupBy(schema.skuMappings.fulfillerId);
+  const cmap = new Map(counts.map((c) => [c.fid, c]));
   return NextResponse.json({
     ok: true,
-    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, identifier: (f.credentials as { identifier?: string } | null)?.identifier ?? null, credentials: f.credentials ? "•••• đã lưu" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined })),
-    mappings: maps,
+    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, identifier: (f.credentials as { identifier?: string } | null)?.identifier ?? null, credentials: f.credentials ? "•••• đã lưu" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined, mapCount: cmap.get(f.id)?.total ?? 0, pinnedCount: cmap.get(f.id)?.pinned ?? 0 })),
   });
 }
 

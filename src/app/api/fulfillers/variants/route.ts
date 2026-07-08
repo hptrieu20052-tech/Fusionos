@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
       internalSku: m.internalSku,
       unitCost: hideProfit ? 0 : Number(m.baseCost) + Number(m.shipCost),
       style, provider, color, size,
+      variant: m.variant ?? "",
     };
   });
   variants.sort((a, b) => a.style.localeCompare(b.style) || a.fulfillerSku.localeCompare(b.fulfillerSku));

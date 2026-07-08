@@ -1,18 +1,24 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm } from "@/components/confirm-provider";
 
-type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null };
+type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null; mapCount?: number; pinnedCount?: number };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean; pinned?: boolean; pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null };
 
 const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 12.5, width: "100%" } as const;
 const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
+const pgBtn = (disabled: boolean): CSSProperties => ({ background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1, color: "var(--ink)" });
 
 export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const confirm = useConfirm();
   const [ffs, setFfs] = useState<Ff[]>([]);
-  const [maps, setMaps] = useState<Map[]>([]);
+  const [rows, setRows] = useState<Map[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const SIZE = 50;
+  const [rowsLoading, setRowsLoading] = useState(false);
   const [active, setActive] = useState<string>("");
   const [msg, setMsg] = useState("");
   const [q, setQ] = useState("");
@@ -60,34 +66,47 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   async function saveRecipe() {
     if (!recipeFor || !rc.bp || !rc.pv || !rc.vr) { setMsg("⚠ Chọn đủ blueprint + nhà in + variant"); return; }
     const j = await fetch("/api/mappings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: recipeFor.id, pfBlueprintId: rc.bp, pfProviderId: rc.pv, pfVariantId: rc.vr }) }).then((r) => r.json());
-    if (j.ok) { setMsg("✓ Đã lưu cấu hình in"); setRecipeFor(null); load(); } else setMsg("⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) { setMsg("✓ Đã lưu cấu hình in"); setRecipeFor(null); refresh(); } else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
 
-  const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => {
-    if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings); if (!active && j.fulfillers[0]) setActive(j.fulfillers[0].id); }
-  });
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  const loadFfs = useCallback(async () => {
+    const j = await fetch("/api/fulfillers").then((r) => r.json()).catch(() => null);
+    if (j?.ok) { setFfs(j.fulfillers); setActive((a) => a || (j.fulfillers[0]?.id ?? "")); }
+  }, []);
+  const [qDeb, setQDeb] = useState("");
+  const loadRows = useCallback(async () => {
+    if (!active) { setRows([]); setTotal(0); return; }
+    setRowsLoading(true);
+    const j = await fetch(`/api/mappings/list?ff=${active}&q=${encodeURIComponent(qDeb)}&page=${page}&size=${SIZE}`).then((r) => r.json()).catch(() => null);
+    setRowsLoading(false);
+    if (j?.ok) { setRows(j.rows); setTotal(j.total); }
+  }, [active, qDeb, page]);
+  const refresh = useCallback(() => { loadFfs(); loadRows(); }, [loadFfs, loadRows]);
+
+  useEffect(() => { loadFfs(); }, [loadFfs]);
+  useEffect(() => { const t = setTimeout(() => setQDeb(q), 250); return () => clearTimeout(t); }, [q]);
+  useEffect(() => { setPage(1); }, [qDeb, active]);   // đổi nhà / tìm kiếm → về trang 1
+  useEffect(() => { loadRows(); }, [loadRows]);
 
   const ff = ffs.find((f) => f.id === active);
-  const rows = useMemo(() => maps.filter((m) => m.fulfillerId === active &&
-    (!q || m.internalSku.toLowerCase().includes(q.toLowerCase()) || m.fulfillerSku.toLowerCase().includes(q.toLowerCase()) || (m.variant ?? "").toLowerCase().includes(q.toLowerCase()))
-  ), [maps, active, q]);
-  const countBy = (id: string) => maps.filter((m) => m.fulfillerId === id).length;
+  const countBy = (id: string) => ffs.find((f) => f.id === id)?.mapCount ?? 0;
+  const pinnedCount = ff?.pinnedCount ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / SIZE));
 
   async function addMap() {
     if (!nm.internalSku || !nm.fulfillerSku || isNaN(Number(nm.baseCost))) { setMsg("⚠ Nhập đủ SKU nội bộ, SKU fulfiller, base cost"); return; }
     const j = await fetch("/api/mappings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...nm, fulfillerId: active }) }).then((r) => r.json());
-    setMsg(j.ok ? "✓ Đã thêm" : "⚠ " + j.error); if (j.ok) { setNm({ internalSku: "", fulfillerSku: "", variant: "", baseCost: "", shipCost: "" }); load(); }
+    setMsg(j.ok ? "✓ Đã thêm" : "⚠ " + j.error); if (j.ok) { setNm({ internalSku: "", fulfillerSku: "", variant: "", baseCost: "", shipCost: "" }); refresh(); }
   }
   async function saveRow(id: string) {
     const e = editRow[id]; if (!e) return;
     const j = await fetch("/api/mappings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
-    setMsg(j.ok ? "✓ Đã lưu" : "⚠ " + j.error); if (j.ok) { setEditRow((p) => { const n = { ...p }; delete n[id]; return n; }); load(); }
+    setMsg(j.ok ? "✓ Đã lưu" : "⚠ " + j.error); if (j.ok) { setEditRow((p) => { const n = { ...p }; delete n[id]; return n; }); refresh(); }
   }
   async function delRow(id: string) {
     if (!(await confirm({ message: "Xóa dòng mapping này?", danger: true }))) return;
     const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
-    if (j.ok) load();
+    if (j.ok) refresh();
   }
   async function openPicker() {
     setPickerLoading(true); setPicker([]); setMsg("");
@@ -103,43 +122,48 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   async function syncPicker() {
     setMsg("Đang đồng bộ…");
     const j = await fetch("/api/fulfillers/printify-sync-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, selectedProductIds: Array.from(sel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) { setMsg(`✓ Thêm ${j.added}, gỡ ${j.removed}`); setPicker(null); load(); }
+    if (j.ok) { setMsg(`✓ Thêm ${j.added}, gỡ ${j.removed}`); setPicker(null); refresh(); }
     else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
   const toggleSel = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  // ---- Ghim sản phẩm cho form tạo đơn (gom SKU theo tên sản phẩm) ----
-  function openPinPicker() {
-    const byProd = new Map<string, { product: string; count: number; anyPinned: boolean }>();
-    for (const m of maps) {
-      if (m.fulfillerId !== active || !m.fulfillerProduct) continue;
-      const key = m.fulfillerProduct;
-      const cur = byProd.get(key) ?? { product: key, count: 0, anyPinned: false };
-      cur.count++; if (m.pinned) cur.anyPinned = true;
-      byProd.set(key, cur);
-    }
-    const arr = Array.from(byProd.values()).sort((a, b) => a.product.localeCompare(b.product));
-    setPinPicker(arr.map((x) => ({ product: x.product, count: x.count })));
-    setPinSel(new Set(arr.filter((x) => x.anyPinned).map((x) => x.product)));
+  // ---- Ghim sản phẩm cho form tạo đơn (danh sách SP lấy từ server, không kéo toàn bộ variant) ----
+  async function openPinPicker() {
+    setMsg("Đang tải danh sách sản phẩm…");
+    const j = await fetch(`/api/mappings/products?ff=${active}`).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (!j.ok) { setMsg("⚠ " + (j.error ?? "lỗi")); return; }
+    setMsg("");
+    const products = (j.products ?? []) as { product: string; count: number; pinned: boolean }[];
+    setPinPicker(products.map((p) => ({ product: p.product, count: p.count })));
+    setPinSel(new Set(products.filter((p) => p.pinned).map((p) => p.product)));
     setPinQ("");
   }
   const togglePin = (p: string) => setPinSel((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
   async function savePins() {
     setMsg("Đang lưu ghim…");
     const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products: Array.from(pinSel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) { setMsg(`✓ Đã ghim ${j.pinned} SKU (${j.products} SP) cho form đơn`); setPinPicker(null); load(); }
+    if (j.ok) { setMsg(`✓ Đã ghim ${j.pinned} SKU (${j.products} SP) cho form đơn`); setPinPicker(null); refresh(); }
     else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
-  const pinnedCount = maps.filter((m) => m.fulfillerId === active && m.pinned).length;
-  async function importMerchize() {
-    setMsg("Đang kéo catalog Merchize…");
-    const j = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) {
-      const more = j.done === false ? ` · CÒN ${j.remaining} product — bấm lại để kéo tiếp` : "";
-      setMsg(`✓ Thêm mới ${j.created}, bỏ qua ${j.skipped}${more}`);
-      if (j.found === 0) console.log("Merchize catalog rawSample:", j.rawSample, "| variantSample:", j.variantSample);
-      load();
-    } else setMsg("⚠ " + (j.error ?? "lỗi"));
+  // Ghim/bỏ ghim nhanh 1 sản phẩm ngay trên bảng (khỏi mở popup)
+  async function togglePinProduct(product: string | null, pin: boolean) {
+    if (!product) { setMsg("⚠ Dòng này chưa có tên sản phẩm để ghim"); return; }
+    const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, toggleProduct: product, pinned: pin }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) { setMsg(pin ? `⭐ Đã ghim "${product}" (${j.count} SKU) vào form đơn` : `Đã bỏ ghim "${product}"`); refresh(); }
+    else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
+  // 1 nút "Get SKU": kéo SP mới → rồi lấy nhãn màu/size cho SKU trống. Chạy tuần tự, tăng dần.
+  async function getSkuMerchize() {
+    setMsg("Đang kéo SKU mới từ Merchize…");
+    const imp = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? "lỗi kéo SKU")); return; }
+    if (imp.found === 0) console.log("Merchize rawSample:", imp.rawSample, "| variantSample:", imp.variantSample);
+    setMsg(`Đã thêm ${imp.created} SKU mới · đang lấy màu/size…`);
+    const enr = await fetch("/api/fulfillers/merchize-enrich-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false }));
+    refresh();
+    const notDone = imp.done === false || (enr.ok && enr.done === false);
+    const info = `✓ Thêm mới ${imp.created}${enr.ok ? `, điền nhãn ${enr.updated}` : ""}`;
+    setMsg(info + (notDone ? " · CÒN nữa — bấm lại để tiếp" : " · xong"));
   }
 
   const mkOf = (name: string) => { const n = name.toLowerCase(); return n.includes("printify") ? "printify" : n.includes("tiktok") ? "tiktok" : "other"; };
@@ -173,8 +197,8 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <>
           {/* Thanh công cụ supplier */}
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-            <input placeholder="Tìm SKU / variant…" value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, width: 220 }} />
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{rows.length} dòng{pinnedCount > 0 ? <span style={{ color: "#9A6B00", fontWeight: 700 }}> · ⭐ {pinnedCount} ghim</span> : ""}</span>
+            <input placeholder="Tìm SKU / tên SP / variant…" value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, width: 260 }} />
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{total.toLocaleString()} dòng{qDeb ? " (lọc)" : ""}{rowsLoading ? " · …" : ""}{pinnedCount > 0 ? <span style={{ color: "#9A6B00", fontWeight: 700 }}> · ⭐ {pinnedCount} ghim</span> : ""}</span>
             <div style={{ flex: 1 }} />
             {ff.method === "api" && canEdit && countBy(active) > 0 && (
               <button onClick={openPinPicker} title="Chọn sản phẩm hiện sẵn trong form tạo đơn" style={{ background: "#FFF6E5", border: "1px solid #F3D08A", color: "#9A6B00", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⭐ Chọn SP cho form đơn</button>
@@ -183,7 +207,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               <span style={{ fontSize: 12, color: "var(--muted)" }}>Thêm SKU ở dòng <b>+ Thêm</b> bên dưới → bấm <b style={{ color: "#2E7D46" }}>⚙ In</b> để chọn Blueprint / Nhà in / Variant. Product được tạo tự động khi đẩy đơn.</span>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("merchize") && canEdit && (
-              <button onClick={importMerchize} title="Chỉ kéo sản phẩm MỚI — bỏ qua SKU đã có. Bấm lại nếu catalog còn nhiều." style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>🔄 Cập nhật SKU (kéo SP mới)</button>
+              <button onClick={getSkuMerchize} title="Kéo sản phẩm mới + lấy nhãn màu/size cho SKU đang trống. Bấm lại nếu báo CÒN nữa." style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>🔄 Cập nhật SKU</button>
             )}
           </div>
 
@@ -193,7 +217,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               <thead><tr>
                 <th style={th}>SKU nội bộ</th><th style={th}>SKU {ff.name}</th><th style={th}>Sản phẩm / Variant</th>
                 <th style={{ ...th, textAlign: "right" }}>Base</th><th style={{ ...th, textAlign: "right" }}>Ship</th><th style={{ ...th, textAlign: "right" }}>Tổng</th>
-                {canEdit && <th style={{ ...th, textAlign: "right", width: 90 }}></th>}
+                {canEdit && <th style={{ ...th, textAlign: "right", width: 120 }}></th>}
               </tr></thead>
               <tbody>
                 {rows.length === 0 && <tr><td style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 24 }} colSpan={canEdit ? 7 : 6}>Chưa có mapping nào cho {ff.name}.</td></tr>}
@@ -216,7 +240,6 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                         <td style={{ ...td, fontWeight: 700, fontFamily: "ui-monospace,monospace" }}>{m.internalSku}</td>
                         <td style={{ ...td, fontFamily: "ui-monospace,monospace" }}>{m.fulfillerSku}</td>
                         <td style={td}>
-                          {m.pinned && <span title="Đã ghim cho form đơn" style={{ marginRight: 5, color: "#E0A000" }}>⭐</span>}
                           {m.fulfillerProduct ? <span>{m.fulfillerProduct}{m.variant ? <span style={{ color: "var(--muted)" }}> · {m.variant}</span> : ""}</span> : (m.variant || <span style={{ color: "var(--faint)" }}>—</span>)}
                           {ff.name.toLowerCase().includes("printify") && (m.pfBlueprintId
                             ? <span style={{ marginLeft: 8, background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>✓ đã cấu hình in</span>
@@ -226,7 +249,8 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                         <td style={{ ...td, textAlign: "right" }}>{money(m.shipCost)}</td>
                         <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{money(Number(m.baseCost) + Number(m.shipCost))}</td>
                         {canEdit && <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                          {ff.name.toLowerCase().includes("printify") && <button onClick={() => openRecipe(m)} title="Chọn blueprint/nhà in/variant để tạo product" style={{ background: "none", border: "none", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 12 }}>⚙ In</button>}
+                          <button onClick={() => togglePinProduct(m.fulfillerProduct, !m.pinned)} title={m.pinned ? "Bỏ ghim khỏi form đơn" : "Ghim SP này vào form đơn"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: m.pinned ? "#E0A000" : "var(--faint)" }}>{m.pinned ? "⭐" : "☆"}</button>
+                          {ff.name.toLowerCase().includes("printify") && <button onClick={() => openRecipe(m)} title="Chọn blueprint/nhà in/variant để tạo product" style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 12 }}>⚙ In</button>}
                           <button onClick={() => setEditRow((p) => ({ ...p, [m.id]: {} }))} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--blue)", fontWeight: 700, fontSize: 12 }}>Sửa</button>
                           <button onClick={() => delRow(m.id)} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700, fontSize: 12 }}>Xóa</button>
                         </td>}
@@ -238,6 +262,16 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             </table>
           </div>
 
+          {/* Phân trang */}
+          {pageCount > 1 && (
+            <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 12 }}>
+              <button onClick={() => setPage(1)} disabled={page <= 1} style={pgBtn(page <= 1)}>«</button>
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} style={pgBtn(page <= 1)}>‹ Trước</button>
+              <span style={{ fontSize: 12.5, color: "var(--muted)", minWidth: 90, textAlign: "center" }}>Trang <b style={{ color: "var(--ink)" }}>{page}</b> / {pageCount}</span>
+              <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount} style={pgBtn(page >= pageCount)}>Sau ›</button>
+              <button onClick={() => setPage(pageCount)} disabled={page >= pageCount} style={pgBtn(page >= pageCount)}>»</button>
+            </div>
+          )}
           {/* Thêm dòng */}
           {canEdit && (
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center", borderTop: "1px dashed var(--line)", paddingTop: 12 }}>

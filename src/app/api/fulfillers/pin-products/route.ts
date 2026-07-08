@@ -13,8 +13,18 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "settings")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
-  if (!b?.fulfillerId || !Array.isArray(b.products)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
+  if (!b?.fulfillerId) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
 
+  // Chế độ 1: toggle 1 sản phẩm (ghim/bỏ ghim ngay từ bảng, không đụng SP khác)
+  if (typeof b.toggleProduct === "string" && b.toggleProduct) {
+    const res = await db.update(schema.skuMappings).set({ pinned: !!b.pinned })
+      .where(and(eq(schema.skuMappings.fulfillerId, b.fulfillerId), eq(schema.skuMappings.fulfillerProduct, b.toggleProduct)))
+      .returning({ id: schema.skuMappings.id });
+    return NextResponse.json({ ok: true, pinned: !!b.pinned, count: res.length });
+  }
+
+  // Chế độ 2: đặt lại đúng danh sách ghim (dùng ở popup "Chọn SP cho form đơn")
+  if (!Array.isArray(b.products)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   const products = (b.products as unknown[]).map(String).filter(Boolean);
 
   // Reset toàn bộ nhà này về false, rồi bật true cho sản phẩm được chọn

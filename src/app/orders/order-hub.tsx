@@ -22,7 +22,7 @@ type Order = {
   items: Item[];
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
-type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string };
+type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
 type Opt = { id: string; name: string };
 type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null };
@@ -375,7 +375,7 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
           <label>{t("o.skuVariant")}{skuCands.length > 1 ? ` (${skuCands.length})` : ""}</label>
           <select value={line.mappingId} onChange={(e) => { const ch = variants.find((x) => x.id === e.target.value); setLine({ ...line, mappingId: e.target.value, unitCost: ch?.unitCost }); }} style={box}>
             <option value="">—</option>
-            {skuCands.map((vv) => <option key={vv.id} value={vv.id}>{vv.fulfillerSku}{(meaningful(vv.color) || meaningful(vv.size)) ? ` · ${[vv.color, vv.size].filter(meaningful).join(" / ")}` : ""}</option>)}
+            {skuCands.map((vv) => { const lbl = (vv.variant && vv.variant.trim()) || [vv.color, vv.size].filter(meaningful).join(" / "); return <option key={vv.id} value={vv.id}>{lbl ? `${lbl} — ${vv.fulfillerSku}` : vv.fulfillerSku}</option>; })}
           </select>
         </div>
       )}
