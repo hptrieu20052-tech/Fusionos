@@ -304,7 +304,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
 
   // Designs
   "d.bulkUpload": { vi: "Bulk upload +", en: "Bulk upload +" },
-  "d.searchPlaceholder": { vi: "Tên design hoặc ID…", en: "Design name or ID…" },
+  "d.searchPlaceholder": { vi: "Tên design, hoặc ID (vd 29)…", en: "Design name, or ID (e.g. 29)…" },
   "d.noMatch": { vi: "Không có design nào khớp bộ lọc.", en: "No designs match the filter." },
   "d.more": { vi: "More", en: "More" },
   "d.design": { vi: "design", en: "designs" },

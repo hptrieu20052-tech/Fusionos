@@ -42,13 +42,13 @@ export async function GET(req: NextRequest) {
 
   const variants = rows.map((m) => {
     const { style, color, size } = parseVariant(m.variant, m.productType);
-    const provider = m.pfProviderId ? `Provider ${m.pfProviderId}` : "";
+    // Recipe (blueprint/nhà in/variant) đã bake sẵn theo từng dòng → không cần chọn nhà in ở form.
     return {
       id: m.id,
       fulfillerSku: m.fulfillerSku,
       internalSku: m.internalSku,
       unitCost: hideProfit ? 0 : Number(m.baseCost) + Number(m.shipCost),
-      style, provider, color, size,
+      style, provider: "", color, size,
       variant: m.variant ?? "",
     };
   });

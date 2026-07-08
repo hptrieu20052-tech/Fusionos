@@ -39,6 +39,9 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [vars, setVars] = useState<{ id: number; title: string }[]>([]);
   const [rc, setRc] = useState<{ bp?: number; pv?: number; vr?: number }>({});
   const [rcLoad, setRcLoad] = useState("");
+  // Thêm sản phẩm Printify: chọn blueprint + nhà in → import TẤT CẢ variant
+  const [addProd, setAddProd] = useState(false);
+  const [importing, setImporting] = useState(false);
   // Ghim sản phẩm cho form tạo đơn
   const [pinPicker, setPinPicker] = useState<{ product: string; count: number }[] | null>(null);
   const [pinSel, setPinSel] = useState<Set<string>>(new Set());
@@ -67,6 +70,25 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     if (!recipeFor || !rc.bp || !rc.pv || !rc.vr) { setMsg("⚠ Chọn đủ blueprint + nhà in + variant"); return; }
     const j = await fetch("/api/mappings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: recipeFor.id, pfBlueprintId: rc.bp, pfProviderId: rc.pv, pfVariantId: rc.vr }) }).then((r) => r.json());
     if (j.ok) { setMsg("✓ Đã lưu cấu hình in"); setRecipeFor(null); refresh(); } else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
+
+  // ---- Thêm sản phẩm Printify: pick blueprint → nhà in → import toàn bộ variant (như Merchize) ----
+  async function openAddProduct() {
+    setAddProd(true); setRc({}); setProvs([]); setVars([]); setBpQ("");
+    if (bps.length === 0) {
+      setRcLoad("Đang tải blueprint…");
+      const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=blueprints`).then((r) => r.json()).catch(() => ({ ok: false }));
+      setRcLoad(""); if (j.ok) setBps(j.blueprints); else setMsg("⚠ " + (j.error ?? "lỗi tải blueprint"));
+    }
+  }
+  async function importProduct() {
+    if (!rc.bp || !rc.pv) { setMsg("⚠ Chọn blueprint + nhà in"); return; }
+    setImporting(true); setMsg("Đang import variant…");
+    const title = bps.find((x) => x.id === rc.bp)?.title ?? "";
+    const j = await fetch("/api/fulfillers/printify-import-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, blueprintId: rc.bp, providerId: rc.pv, blueprintTitle: title }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setImporting(false);
+    if (j.ok) { setMsg(`✓ Import ${j.created} variant (bỏ qua ${j.skipped}) · đã ghim vào form đơn`); setAddProd(false); refresh(); }
+    else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
 
   const loadFfs = useCallback(async () => {
@@ -161,6 +183,12 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     setMsg(`Đã thêm ${imp.created} SKU mới · đang lấy màu/size…`);
     const enr = await fetch("/api/fulfillers/merchize-enrich-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false }));
     refresh();
+    if (enr.ok && enr.updated === 0 && (enr.productsTotal > 0 || enr.noProductId > 0)) {
+      console.log("Merchize enrich sample:", enr.sample, "| parsed:", enr.sampleParsed);
+      const info = `✓ Thêm mới ${imp.created} · ⚠ Không lấy được nhãn màu/size (SP có product_id: ${enr.productsTotal}, SKU thiếu product_id: ${enr.noProductId}). Mở Console (F12) xem 'Merchize enrich sample' rồi gửi mình.`;
+      setMsg(info);
+      return;
+    }
     const notDone = imp.done === false || (enr.ok && enr.done === false);
     const info = `✓ Thêm mới ${imp.created}${enr.ok ? `, điền nhãn ${enr.updated}` : ""}`;
     setMsg(info + (notDone ? " · CÒN nữa — bấm lại để tiếp" : " · xong"));
@@ -204,7 +232,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               <button onClick={openPinPicker} title="Chọn sản phẩm hiện sẵn trong form tạo đơn" style={{ background: "#FFF6E5", border: "1px solid #F3D08A", color: "#9A6B00", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⭐ Chọn SP cho form đơn</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("printify") && canEdit && (
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>Thêm SKU ở dòng <b>+ Thêm</b> bên dưới → bấm <b style={{ color: "#2E7D46" }}>⚙ In</b> để chọn Blueprint / Nhà in / Variant. Product được tạo tự động khi đẩy đơn.</span>
+              <button onClick={openAddProduct} title="Chọn 1 sản phẩm gốc (blueprint) + nhà in → kéo hết variant về, sẵn sàng đẩy đơn. Không cần cấu hình ⚙ In từng cái." style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>➕ Thêm sản phẩm Printify</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("merchize") && canEdit && (
               <button onClick={getSkuMerchize} title="Kéo sản phẩm mới + lấy nhãn màu/size cho SKU đang trống. Bấm lại nếu báo CÒN nữa." style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>🔄 Cập nhật SKU</button>
@@ -367,6 +395,48 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
               <button onClick={() => setPinPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
               <button onClick={savePins} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>Lưu ({pinSel.size})</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Thêm sản phẩm Printify: blueprint → nhà in → import toàn bộ variant */}
+      {addProd && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { if (!importing) setAddProd(false); }}>
+          <div style={{ background: "#fff", borderRadius: 18, width: 680, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <b style={{ fontSize: 16 }}>➕ Thêm sản phẩm Printify</b>
+              <button onClick={() => !importing && setAddProd(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "4px 0 12px" }}>Chọn sản phẩm gốc (blueprint) → nhà in → kéo <b>hết variant</b> (màu/size) về thành SKU sẵn sàng. Đẩy đơn khỏi cấu hình từng cái. Tự ghim vào form đơn.</div>
+            {rcLoad && <div style={{ fontSize: 12, color: "var(--blue)", marginBottom: 8 }}>{rcLoad}</div>}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, flex: 1, minHeight: 0 }}>
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>1. Sản phẩm (blueprint)</div>
+                <input placeholder="Tìm sản phẩm…" value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
+                <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1 }}>
+                  {bps.filter((b) => !bpQ || `${b.title} ${b.brand}`.toLowerCase().includes(bpQ.toLowerCase())).slice(0, 200).map((b) => (
+                    <div key={b.id} onClick={() => pickBp(b.id)} style={{ padding: "6px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", background: rc.bp === b.id ? "var(--blue-soft)" : undefined }}>
+                      <div style={{ fontWeight: 600 }}>{b.title}</div><div style={{ color: "var(--muted)", fontSize: 10.5 }}>{b.brand}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>2. Nhà in</div>
+                <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1, marginTop: 30 }}>
+                  {provs.map((p) => (
+                    <div key={p.id} onClick={() => pickPv(p.id)} style={{ padding: "7px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", fontWeight: 600, background: rc.pv === p.id ? "var(--blue-soft)" : undefined }}>{p.title}</div>
+                  ))}
+                  {provs.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>Chọn sản phẩm trước</div>}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14, alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: "var(--muted)", marginRight: "auto" }}>{rc.pv ? <b style={{ color: "#2E7D46" }}>{vars.length} variant</b> : "—"} sẽ được import</span>
+              <button onClick={() => !importing && setAddProd(false)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
+              <button onClick={importProduct} disabled={!rc.pv || importing} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: !rc.pv || importing ? "default" : "pointer", fontSize: 13, opacity: !rc.pv || importing ? 0.5 : 1 }}>{importing ? "Đang import…" : `Import ${rc.pv ? vars.length : ""} variant`}</button>
             </div>
           </div>
         </div>

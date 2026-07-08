@@ -34,9 +34,19 @@ export async function GET(req: NextRequest) {
   }
   const q = sp.get("q")?.trim();
   if (q) {
-    const like = "%" + q + "%";
-    const idNum = Number(q);
-    parts.push(or(ilike(schema.designs.title, like), Number.isInteger(idNum) ? eq(schema.designs.skuCode, idNum) : dsql`false`)!);
+    const clean = q.replace(/^#/, "").trim();
+    if (/^\d+$/.test(clean)) {
+      // Gõ SỐ → tìm theo ID (#skuCode) chính xác, HOẶC số đứng riêng trong tên
+      // (tránh dính chuỗi số dài trong title auto-gen như ...0829122).
+      const idNum = Number(clean);
+      parts.push(or(
+        Number.isSafeInteger(idNum) ? eq(schema.designs.skuCode, idNum) : dsql`false`,
+        dsql`${schema.designs.title} ~ ${"(^|[^0-9])" + clean + "([^0-9]|$)"}`,
+      )!);
+    } else {
+      // Gõ CHỮ → tìm theo tên
+      parts.push(ilike(schema.designs.title, "%" + q + "%"));
+    }
   }
   if (sp.get("platform")) parts.push(eq(schema.designs.platform, sp.get("platform") as never));
   if (sp.get("sellerId")) parts.push(eq(schema.designs.sellerId, sp.get("sellerId")!));

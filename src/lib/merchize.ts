@@ -109,9 +109,15 @@ export function extractMerchizeVariants(data: unknown): { sku: string; title: st
     // SKU: dùng sku nếu có; Merchize hay để trống → fallback sang _id để vẫn định danh được
     const sku = (String(v.sku ?? v.merchize_sku ?? "").trim()) || variantId;
     if (!sku) continue;
-    // Title: ưu tiên title; else ghép từ options (Color / Size)
-    const opts = Array.isArray(v.options) ? (v.options as Record<string, unknown>[]).map((o) => String(o.name ?? o.value ?? "")).filter(Boolean).join(" / ") : "";
-    const title = String(v.title ?? "") || opts;
+    // Title màu/size: thử nhiều dạng field Merchize hay dùng
+    const attrArr = (Array.isArray(v.options) ? v.options
+      : Array.isArray(v.attributes) ? v.attributes
+      : Array.isArray(v.variant_options) ? v.variant_options
+      : Array.isArray(v.option_values) ? v.option_values
+      : []) as Record<string, unknown>[];
+    const optStr = attrArr.map((o) => String(o?.value ?? o?.name ?? o?.title ?? o?.option ?? "")).filter(Boolean).join(" / ");
+    const opt123 = [v.option1, v.option2, v.option3].map((x) => String(x ?? "").trim()).filter(Boolean).join(" / ");
+    const title = String(v.title ?? v.variant_title ?? v.name ?? "").trim() || optStr || opt123;
     // Không có fulfill cost trong response → 0 (người dùng tự điền / hoặc cập nhật sau)
     const cost = num(v.cost ?? v.base_cost ?? v.fulfill_cost ?? 0);
     out.push({ sku, title, cost, variantId, retail: num(v.retail_price) });

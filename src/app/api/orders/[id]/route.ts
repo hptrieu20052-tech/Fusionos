@@ -44,9 +44,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const catalog: Record<string, { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string }[]> = {};
   for (const m of maps) {
     const { style, color, size } = parseVariant(m.variant, m.productType);
-    // provider: chỉ Printify dùng (từ recipe). Merchize không có → "".
-    const provider = m.pfProviderId ? `Provider ${m.pfProviderId}` : "";
-    (catalog[m.fulfillerId] ??= []).push({ id: m.id, fulfillerSku: m.fulfillerSku, internalSku: m.internalSku, unitCost: Number(m.baseCost) + Number(m.shipCost), style, provider, color, size, variant: m.variant ?? "" });
+    // Recipe đã bake sẵn theo dòng → không cần cột chọn nhà in.
+    (catalog[m.fulfillerId] ??= []).push({ id: m.id, fulfillerSku: m.fulfillerSku, internalSku: m.internalSku, unitCost: Number(m.baseCost) + Number(m.shipCost), style, provider: "", color, size, variant: m.variant ?? "" });
   }
   for (const k of Object.keys(catalog)) catalog[k].sort((a, b) => a.fulfillerSku.localeCompare(b.fulfillerSku));
   const options = fulfillers.map((f) => {

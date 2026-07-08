@@ -36,13 +36,17 @@ export async function POST(req: NextRequest) {
   const start = Date.now();
   const BATCH = 6, BUDGET_MS = 45000;
   let processed = 0, updated = 0;
+  let sample: unknown = null;         // raw all-variants của product đầu (soi cấu trúc)
+  let sampleParsed: unknown = null;   // extractMerchizeVariants ra gì
   for (let i = 0; i < pids.length; i += BATCH) {
     if (Date.now() - start > BUDGET_MS) break;
     const batch = pids.slice(i, i + BATCH);
     await Promise.all(batch.map(async (pid) => {
       try {
         const vraw = await getMerchizeVariants(baseUrl, apiKey, pid);
-        for (const v of extractMerchizeVariants(vraw)) {
+        const parsed = extractMerchizeVariants(vraw);
+        if (!sample) { sample = vraw; sampleParsed = parsed.slice(0, 3); }
+        for (const v of parsed) {
           if (!v.sku || !v.title) continue;
           const res = await db.update(schema.skuMappings)
             .set({ variant: v.title.slice(0, 120) })
@@ -56,5 +60,14 @@ export async function POST(req: NextRequest) {
   }
 
   const remaining = pids.length - processed;
-  return NextResponse.json({ ok: true, productsTotal: pids.length, processed, updated, remaining, done: remaining <= 0 });
+  // Đếm số SKU trống variant nhưng KHÔNG có product_id (không enrich được qua all-variants)
+  const [{ noPid }] = await db.select({ noPid: sql<number>`count(*)::int` }).from(schema.skuMappings)
+    .where(and(eq(schema.skuMappings.fulfillerId, ff.id), sql`${schema.skuMappings.fulfillerProductId} IS NULL`, emptyVariant));
+
+  return NextResponse.json({
+    ok: true, productsTotal: pids.length, processed, updated, remaining, done: remaining <= 0,
+    noProductId: noPid,
+    sample: updated === 0 ? sample : undefined,
+    sampleParsed: updated === 0 ? sampleParsed : undefined,
+  });
 }
