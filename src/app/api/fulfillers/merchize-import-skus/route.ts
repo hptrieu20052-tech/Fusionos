@@ -72,6 +72,8 @@ export async function POST(req: NextRequest) {
 
   let created = 0, skipped = 0;
   const seen = new Set<string>();
+  // Trùng SKU: ưu tiên dòng CÓ nhãn variant (màu/size từ all-variants) hơn dòng catalog phẳng (variant rỗng)
+  rows.sort((a, b) => (b.variant ? 1 : 0) - (a.variant ? 1 : 0));
   for (const it of rows) {
     if (!it.sku || have.has(it.sku) || seen.has(it.sku)) { skipped++; continue; }
     seen.add(it.sku);

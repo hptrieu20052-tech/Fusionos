@@ -110,6 +110,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "o.typeToSearchVariant": { vi: "Chưa ghim SP nào — gõ để tìm, hoặc vào SKU Mapping ⭐ ghim SP hay dùng.", en: "No pinned products — type to search, or pin frequent ones in SKU Mapping ⭐." },
   "o.noVariantFound": { vi: "Không tìm thấy variant khớp.", en: "No matching variants found." },
   "o.refineMore": { vi: "gõ thêm để lọc", en: "type more to filter" },
+  "o.skuVariant": { vi: "SKU / Variant", en: "SKU / Variant" },
   "o.qty": { vi: "SL", en: "Qty" },
   "o.estCost": { vi: "Giá vốn ước tính", en: "Estimated cost" },
   "o.createOrder": { vi: "Tạo đơn +", en: "Create order +" },

@@ -288,11 +288,20 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
   const provider = cur?.provider ?? "";
   const color = cur?.color ?? "";
   const size = cur?.size ?? "";
+  const meaningful = (x: string) => !!x && x !== "—";
   const styles = uniq(variants.map((v) => v.style));
   const providers = uniq(variants.filter((v) => v.style === style).map((v) => v.provider));
   const afterProv = (v: Variant) => v.style === style && (!hasProvider || v.provider === provider);
-  const colors = uniq(variants.filter(afterProv).map((v) => v.color));
-  const sizes = uniq(variants.filter((v) => afterProv(v) && v.color === color).map((v) => v.size));
+  const colors = uniq(variants.filter(afterProv).map((v) => v.color)).filter(meaningful);
+  const sizes = uniq(variants.filter((v) => afterProv(v) && (!meaningful(color) || v.color === color)).map((v) => v.size)).filter(meaningful);
+  const hasColor = colors.length > 0, hasSize = sizes.length > 0;
+  // SKU ứng viên còn lại sau khi lọc theo các chiều CÓ nghĩa → ô chốt SKU (luôn hiện; cần khi màu/size trống)
+  const skuCands = variants.filter((vv) =>
+    vv.style === style &&
+    (!hasProvider || !meaningful(provider) || vv.provider === provider) &&
+    (!hasColor || !meaningful(color) || vv.color === color) &&
+    (!hasSize || !meaningful(size) || vv.size === size)
+  );
 
   const pick = (nx: { style?: string; provider?: string; color?: string; size?: string }) => {
     const s = nx.style ?? style, p = nx.provider ?? provider, c = nx.color ?? color, z = nx.size ?? size;
@@ -306,7 +315,8 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
   const v = cur;
   const box = { ...inp, width: "100%" } as React.CSSProperties;
   const miss = !line.mappingId;
-  const cols = hasProvider ? "1fr 1fr 1fr 1fr" : "1fr 1fr 1fr";
+  const gridN = 1 + (hasProvider ? 1 : 0) + (hasColor ? 1 : 0) + (hasSize ? 1 : 0);
+  const cols = Array(gridN).fill("1fr").join(" ");
   const empty = styles.length === 0;
 
   return (
@@ -341,21 +351,34 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
             </select>
           </div>
         )}
-        <div className="o2-field">
-          <label>Color</label>
-          <select value={color} disabled={!style || (hasProvider && !provider)} onChange={(e) => pick({ color: e.target.value, size: "" })} style={box}>
-            <option value="">—</option>
-            {colors.map((c) => <option key={c} value={c}>{c}</option>)}
-          </select>
-        </div>
-        <div className="o2-field">
-          <label>Size</label>
-          <select value={size} disabled={!color} onChange={(e) => pick({ size: e.target.value })} style={box}>
-            <option value="">—</option>
-            {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
+        {hasColor && (
+          <div className="o2-field">
+            <label>Color</label>
+            <select value={color} disabled={!style || (hasProvider && !provider)} onChange={(e) => pick({ color: e.target.value, size: "" })} style={box}>
+              <option value="">—</option>
+              {colors.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        )}
+        {hasSize && (
+          <div className="o2-field">
+            <label>Size</label>
+            <select value={size} disabled={!color} onChange={(e) => pick({ size: e.target.value })} style={box}>
+              <option value="">—</option>
+              {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+        )}
       </div>
+      {style && skuCands.length > 0 && (
+        <div className="o2-field" style={{ marginTop: 8 }}>
+          <label>{t("o.skuVariant")}{skuCands.length > 1 ? ` (${skuCands.length})` : ""}</label>
+          <select value={line.mappingId} onChange={(e) => { const ch = variants.find((x) => x.id === e.target.value); setLine({ ...line, mappingId: e.target.value, unitCost: ch?.unitCost }); }} style={box}>
+            <option value="">—</option>
+            {skuCands.map((vv) => <option key={vv.id} value={vv.id}>{vv.fulfillerSku}{(meaningful(vv.color) || meaningful(vv.size)) ? ` · ${[vv.color, vv.size].filter(meaningful).join(" / ")}` : ""}</option>)}
+          </select>
+        </div>
+      )}
       <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginTop: 8 }}>
         <div className="o2-field" style={{ width: 84 }}>
           <label>{t("o.qtyLabel")}</label>
