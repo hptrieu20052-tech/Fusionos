@@ -150,16 +150,26 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const toggleSel = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   // ---- Ghim sản phẩm cho form tạo đơn (danh sách SP lấy từ server, không kéo toàn bộ variant) ----
+  const fetchPinProducts = useCallback(async (query: string) => {
+    const j = await fetch(`/api/mappings/products?ff=${active}&q=${encodeURIComponent(query)}`).then((r) => r.json()).catch(() => ({ ok: false }));
+    return j.ok ? (j.products as { product: string; count: number; pinned: boolean }[]) : [];
+  }, [active]);
   async function openPinPicker() {
+    setPinQ("");
     setMsg("Đang tải danh sách sản phẩm…");
-    const j = await fetch(`/api/mappings/products?ff=${active}`).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (!j.ok) { setMsg("⚠ " + (j.error ?? "lỗi")); return; }
+    const products = await fetchPinProducts("");
     setMsg("");
-    const products = (j.products ?? []) as { product: string; count: number; pinned: boolean }[];
     setPinPicker(products.map((p) => ({ product: p.product, count: p.count })));
     setPinSel(new Set(products.filter((p) => p.pinned).map((p) => p.product)));
-    setPinQ("");
   }
+  // Tìm trong popup ghim (server-side: theo tên hoặc SKU) — debounce, giữ nguyên lựa chọn đã tick
+  const pinOpen = pinPicker !== null;
+  useEffect(() => {
+    if (!pinOpen) return;
+    const t = setTimeout(async () => { setPinPicker(await fetchPinProducts(pinQ.trim())); }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pinQ]);
   const togglePin = (p: string) => setPinSel((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
   async function savePins() {
     setMsg("Đang lưu ghim…");
@@ -375,13 +385,13 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             </div>
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Chỉ SP được tick mới hiện sẵn khi tạo đơn. SP khác vẫn tìm được bằng ô tìm trong form. Không xóa SKU — chỉ lọc hiển thị.</div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-              <input placeholder="Tìm sản phẩm…" value={pinQ} onChange={(e) => setPinQ(e.target.value)} style={{ ...inp, width: 200 }} />
-              <button onClick={() => setPinSel(new Set((pinPicker ?? []).map((p) => p.product)))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả</button>
-              <button onClick={() => setPinSel(new Set())} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn hết</button>
-              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã chọn {pinSel.size}/{pinPicker?.length ?? 0}</span>
+              <input placeholder="Tìm theo tên hoặc SKU…" value={pinQ} onChange={(e) => setPinQ(e.target.value)} style={{ ...inp, width: 240 }} />
+              <button onClick={() => setPinSel((s) => new Set([...Array.from(s), ...(pinPicker ?? []).map((p) => p.product)]))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả</button>
+              <button onClick={() => setPinSel((s) => { const n = new Set(s); for (const p of pinPicker ?? []) n.delete(p.product); return n; })} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn hết</button>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã ghim {pinSel.size} SP{pinQ ? ` · hiện ${pinPicker?.length ?? 0}` : ""}</span>
             </div>
             <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
-              {(pinPicker ?? []).filter((p) => !pinQ || p.product.toLowerCase().includes(pinQ.toLowerCase())).map((p) => (
+              {(pinPicker ?? []).map((p) => (
                 <label key={p.product} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 13px", borderBottom: "1px solid var(--line)", cursor: "pointer" }}>
                   <input type="checkbox" checked={pinSel.has(p.product)} onChange={() => togglePin(p.product)} style={{ width: 17, height: 17, cursor: "pointer" }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
