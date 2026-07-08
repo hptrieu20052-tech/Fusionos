@@ -51,12 +51,16 @@ export async function POST(req: NextRequest) {
     let g = groups.get(ext);
     if (!g) {
       // Tên: ưu tiên First/Last, else tách Full Name / Ship Name
-      let first = pick(r, ["firstname"]);
-      let last = pick(r, ["lastname"]);
+      const stripId = (v: string) => v.replace(/\s*\([^)]*\)\s*$/, "").trim();
+      let first = stripId(pick(r, ["firstname"]));
+      let last = stripId(pick(r, ["lastname"]));
       if (!first && !last) {
-        const full = pick(r, ["shipname", "fullname", "buyer", "buyername"]).replace(/\s*\([^)]*\)\s*$/, "").trim();
+        const full = stripId(pick(r, ["shipname", "fullname", "buyer", "buyername"]));
         if (full) { const p = full.split(/\s+/); last = p.length > 1 ? p.slice(1).join(" ") : ""; first = p[0]; }
       }
+      // Chốt lại: cắt user ID Etsy (dạng "(xxxx)") khỏi cả first & last nếu còn sót
+      first = stripId(first);
+      last = stripId(last);
       g = {
         ext, first, last,
         addr1: pick(r, ["shipaddress1", "street1", "shipstreet1", "address1"]),

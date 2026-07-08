@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
+import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn } from "@/components/icons";
 
 type Item = {
@@ -31,6 +32,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 const SIDE_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 const money = (n: number | string) => "$" + Number(n).toFixed(2);
+const cleanName = (v: string | null | undefined) => (v ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim();
 // Link tra cứu tracking theo hãng vận chuyển
 function trackingUrl(carrier: string | null, num: string): string {
   const c = (carrier ?? "").toLowerCase();
@@ -113,17 +115,17 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
                   const file = e.target.files?.[0]; if (!file) return;
                   setImporting(true);
                   const fd = new FormData(); fd.append("file", file);
-                  const j = await fetch("/api/orders/import", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: "lỗi mạng" }));
+                  const j = await fetch("/api/orders/import", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
                   setImporting(false); e.target.value = "";
                   if (j.ok) {
                     flash(`✓ ${j.rows} dòng — tracking: ${j.trackingUpdated}, base cost: ${j.costUpdated}${j.errors?.length ? ` · ${j.errors.length} lỗi` : ""}`);
                     if (j.errors?.length) alert("Lỗi import:\n" + j.errors.join("\n"));
                     load();
-                  } else flash("✗ " + (j.error ?? "Import lỗi"));
+                  } else flash("✗ " + (j.error ?? t("o.importError")));
                 }} />
             </label>
           )}
-          {canEdit && <button onClick={() => setShowEtsy(true)} className="btn btn-outline" style={{ borderColor: "#F0A24B", color: "#C9760F" }}>Import Etsy</button>}
+          {canEdit && <button onClick={() => setShowEtsy(true)} className="btn btn-outline" style={{ borderColor: "#F0A24B", color: "#C9760F" }}>{t("o.importEtsy")}</button>}
           {canEdit && <button onClick={() => setShowCreate(true)} className="btn btn-primary">{t("o.createOrder")}</button>}
         </div>
       </div>
@@ -469,8 +471,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
       const od = j.order ?? {};
       setShip((s) => ({
         // Tự đổ thông tin người nhận + địa chỉ (gồm Apt/Box ở line 2) từ đơn sang form
-        buyerFirst: s.buyerFirst || (od.buyerFirst ?? ""),
-        buyerLast: s.buyerLast || (od.buyerLast ?? ""),
+        buyerFirst: s.buyerFirst || cleanName(od.buyerFirst),
+        buyerLast: s.buyerLast || cleanName(od.buyerLast),
         addr1: s.addr1 || (od.addr1 ?? ""),
         addr2: s.addr2 || (od.addr2 ?? ""),
         city: s.city || (od.city ?? ""),
@@ -537,13 +539,15 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{new Date(o.ordered_at).toISOString().slice(0, 10)}</span>
               </div>
               <div className="o2-ship">
-                <span className="o2-chip plat">{o.platform}</span>
+                <span className="o2-chip plat" style={{ display: "inline-flex", alignItems: "center", gap: 5, paddingLeft: 4 }}>
+                  <MarketplaceLogo mk={o.platform} size={16} /> {o.platform}
+                </span>
                 <span className="o2-chip seller">{o.seller_name ?? "—"}</span>
                 {o.store_name && <span className="o2-chip">{o.store_name}</span>}
               </div>
               {/* Người nhận + địa chỉ */}
-              {([o.buyer_first, o.buyer_last].filter(Boolean).join(" ")) && (
-                <div className="o2-buyer">{[o.buyer_first, o.buyer_last].filter(Boolean).join(" ")}</div>
+              {([cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")) && (
+                <div className="o2-buyer">{[cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")}</div>
               )}
               <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ") || t("o.noAddress")}</span></div>
               {/* Tài chính đơn */}
@@ -720,7 +724,7 @@ function ItemRow({ it, onSaved, flash }: {
         <b>{it.product_title}</b>
         {it.productUrl && (
           <a href={it.productUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#E0913C", fontWeight: 700, textDecoration: "none", marginTop: 3 }}>
-            Xem trên Etsy ↗
+            {t("o.viewOnEtsy")} ↗
           </a>
         )}
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "var(--muted)", marginTop: 5, fontSize: 12.5 }}>
@@ -788,6 +792,7 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
   close: () => void; reload: () => void; flash: (m: string) => void;
   sellers: Opt[]; stores: Opt[];
 }) {
+  const { t } = useLang();
   const [storeId, setStoreId] = useState("");
   const [sellerId, setSellerId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -799,33 +804,33 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
     fd.append("file", file);
     if (storeId) fd.append("storeId", storeId);
     if (sellerId) fd.append("sellerId", sellerId);
-    const j = await fetch("/api/orders/import-etsy", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: "lỗi mạng" }));
+    const j = await fetch("/api/orders/import-etsy", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
     setBusy(false);
     if (j.ok) {
-      flash(`✓ ${j.orders} đơn trong file — tạo mới ${j.created}, bỏ qua ${j.skipped} (đã có)${j.errors?.length ? ` · ${j.errors.length} lỗi` : ""}`);
+      flash(`✓ ${j.orders} ${t("o.etsyResult")} ${j.created}, ${t("o.etsySkipped")} ${j.skipped}${j.errors?.length ? ` · ${j.errors.length} ${t("o.errors")}` : ""}`);
       if (j.errors?.length) alert("Lỗi:\n" + j.errors.join("\n"));
       reload(); close();
-    } else flash("✗ " + (j.error ?? "Import lỗi"));
+    } else flash("✗ " + (j.error ?? t("o.importError")));
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
       <div style={{ background: "#fff", borderRadius: 18, width: 460, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <b style={{ fontSize: 16 }}>Import đơn Etsy (CSV)</b>
+          <b style={{ fontSize: 16 }}>{t("o.etsyModalTitle")}</b>
           {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
         </div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
-          Trong Etsy: <b>Shop Manager → Settings → Options → Download Data → Orders</b> (chọn tháng, tải CSV). Không dùng API Etsy — an toàn cho shop.
+          {t("o.etsyGuide")}
         </div>
 
-        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>Store Etsy
+        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.etsyStore")}
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
-            <option value="">— chọn store —</option>
+            <option value="">{t("o.pickStore")}</option>
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
-        <label style={{ ...rLbl, display: "block", marginBottom: 16 }}>Seller phụ trách (tùy chọn)
+        <label style={{ ...rLbl, display: "block", marginBottom: 16 }}>{t("o.sellerOptional")}
           <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
             <option value="">—</option>
             {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -836,9 +841,9 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
           onChange={(e) => { const f = e.target.files?.[0]; if (f) doImport(f); e.target.value = ""; }} />
         <button onClick={() => fileRef.current?.click()} disabled={busy}
           style={{ ...btnBlue, width: "100%", padding: "12px", fontSize: 14, opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          <IconUpload width={16} height={16} /> {busy ? "Đang import…" : "Chọn file CSV Etsy & Import"}
+          <IconUpload width={16} height={16} /> {busy ? t("o.importing") : t("o.pickCsvImport")}
         </button>
-        <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10 }}>Đơn trùng (đã có cùng Order ID) sẽ tự bỏ qua, không tạo lặp.</div>
+        <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10 }}>{t("o.dupSkipNote")}</div>
       </div>
     </div>
   );

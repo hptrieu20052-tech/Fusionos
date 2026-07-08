@@ -1,16 +1,16 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { HBarList } from "@/components/charts";
+import { useLang } from "@/components/lang-provider";
 
-const TYPE_VI: Record<string, string> = {
-  revenue: "Doanh thu", base_cost: "Base cost", shipping: "Vận chuyển", platform_fee: "Phí sàn",
-  ads: "Quảng cáo", sample: "Sample", salary: "Lương", tool: "Công cụ", refund: "Hoàn tiền", other: "Khác",
-};
+const typeLabel = (t: (k: string) => string, ty: string) => t(`fin.t.${ty}`) || ty;
 type Row = Record<string, string | number | null>;
 const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
 const money = (v: unknown) => "$" + Math.abs(Number(v ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
+const TX_TYPES = ["revenue","base_cost","shipping","platform_fee","ads","sample","salary","tool","refund","other"];
 export function FinanceClient({ canAdd }: { canAdd: boolean }) {
+  const { t: tr } = useLang();
   const [days, setDays] = useState(30);
   const [data, setData] = useState<{ byType: Row[]; daily: Row[]; bySeller: Row[]; byPlatform: Row[] } | null>(null);
   const [form, setForm] = useState({ type: "ads", amount: "", note: "" });
@@ -22,11 +22,11 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   async function addTx(e: React.FormEvent) {
     e.preventDefault();
     const j = await fetch("/api/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) }).then((r) => r.json());
-    setMsg(j.ok ? "Đã ghi sổ" : "⚠ " + j.error);
+    setMsg(j.ok ? tr("fin.recorded") : "⚠ " + j.error);
     if (j.ok) { setForm({ type: "ads", amount: "", note: "" }); load(); }
   }
 
-  if (!data) return <div className="panel empty">Đang tải…</div>;
+  if (!data) return <div className="panel empty">{tr("c.loading2")}</div>;
 
   const revenue = data.byType.filter((t) => Number(t.total) > 0).reduce((a, t) => a + Number(t.total), 0);
   const cost = data.byType.filter((t) => Number(t.total) < 0).reduce((a, t) => a + Number(t.total), 0);
@@ -45,10 +45,10 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
       </div>
 
       <div className="kpis">
-        <div className="kpi"><div className="l">Doanh thu</div><div className="v" style={{ color: "var(--green)" }}>{money(revenue)}</div></div>
-        <div className="kpi"><div className="l">Tổng chi phí</div><div className="v" style={{ color: "var(--red)" }}>{money(cost)}</div></div>
-        <div className="kpi"><div className="l">Lợi nhuận</div><div className="v" style={{ color: profit >= 0 ? "var(--green)" : "var(--red)" }}>{profit >= 0 ? "" : "-"}{money(profit)}</div></div>
-        <div className="kpi"><div className="l">Biên lợi nhuận</div><div className="v">{margin.toFixed(1)}%</div></div>
+        <div className="kpi"><div className="l">{tr("fin.revenue")}</div><div className="v" style={{ color: "var(--green)" }}>{money(revenue)}</div></div>
+        <div className="kpi"><div className="l">{tr("fin.totalCost")}</div><div className="v" style={{ color: "var(--red)" }}>{money(cost)}</div></div>
+        <div className="kpi"><div className="l">{tr("fin.profit")}</div><div className="v" style={{ color: profit >= 0 ? "var(--green)" : "var(--red)" }}>{profit >= 0 ? "" : "-"}{money(profit)}</div></div>
+        <div className="kpi"><div className="l">{tr("fin.margin")}</div><div className="v">{margin.toFixed(1)}%</div></div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 14 }}>
@@ -66,9 +66,9 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
           </svg>
         </div>
         <div className="panel">
-          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Cơ cấu chi phí</h3>
+          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{tr("fin.costBreakdown")}</h3>
           <HBarList rows={data.byType.filter((t) => Number(t.total) < 0).map((t) => ({
-            label: TYPE_VI[String(t.type)] ?? String(t.type), value: Math.abs(Number(t.total)),
+            label: typeLabel(tr, String(t.type)), value: Math.abs(Number(t.total)),
             color: "#CE6B6B", suffix: money(t.total),
           }))} />
         </div>
@@ -98,13 +98,13 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
           </table>
           {canAdd && (
             <form onSubmit={addTx} style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", borderTop: "1px solid var(--line)", paddingTop: 12, alignItems: "center" }}>
-              <b style={{ fontSize: 12.5 }}>＋ Ghi chi phí:</b>
+              <b style={{ fontSize: 12.5 }}>{tr("fin.addExpense")}</b>
               <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={inp}>
-                {Object.entries(TYPE_VI).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                {TX_TYPES.map((k) => <option key={k} value={k}>{typeLabel(tr, k)}</option>)}
               </select>
-              <input required type="number" step="0.01" placeholder="Số tiền $" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ ...inp, width: 110 }} />
-              <input placeholder="Ghi chú" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} style={{ ...inp, flex: 1, minWidth: 120 }} />
-              <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Lưu</button>
+              <input required type="number" step="0.01" placeholder={tr("fin.amount")} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ ...inp, width: 110 }} />
+              <input placeholder={tr("fin.note")} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} style={{ ...inp, flex: 1, minWidth: 120 }} />
+              <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{tr("c.save")}</button>
               {msg && <span style={{ fontSize: 12, fontWeight: 700 }}>{msg}</span>}
             </form>
           )}
