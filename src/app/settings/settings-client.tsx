@@ -33,6 +33,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
   async function listShops(id: string) {
     const token = edit[id]?.apiKey;
     setShops((p) => ({ ...p, [id]: "loading" }));
+    const j = await fetch("/api/fulfillers/printify-shops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(token ? { token } : { fulfillerId: id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (j.ok) setShops((p) => ({ ...p, [id]: j.shops }));
     else { setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? "lỗi") })); }
   }
