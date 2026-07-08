@@ -40,6 +40,11 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
     if (j.ok) setShops((p) => ({ ...p, [id]: j.shops }));
     else { setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? "lỗi") })); }
   }
+  async function delFf(id: string, name: string) {
+    if (!confirm(`Xóa nhà fulfill "${name}"? (SKU mapping của nhà này cũng bị xóa)`)) return;
+    const j = await fetch("/api/fulfillers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
+    setMsg(j.ok ? "✓ Đã xóa" : "⚠ " + j.error); if (j.ok) load();
+  }
   async function importSkus(id: string) {
     if (!confirm("Kéo toàn bộ SKU + giá vốn từ Printify về? (bỏ qua SKU đã có)")) return;
     setMsg("Đang kéo SKU từ Printify…");
@@ -101,6 +106,10 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                 {canEdit && <button type="button" onClick={() => setEditOpen((p) => ({ ...p, [f.id]: !p[f.id] }))}
                   style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 9, padding: "5px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--blue)" }}>
                   {editOpen[f.id] ? "✕ Đóng" : "✎ " + t("c.edit")}
+                </button>}
+                {canEdit && <button type="button" onClick={() => delFf(f.id, f.name)} title="Xóa nhà fulfill"
+                  style={{ background: "var(--card)", border: "1px solid #F3C7C7", borderRadius: 9, padding: "5px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--red)" }}>
+                  🗑
                 </button>}
               </div>
               {canEdit && editOpen[f.id] && (

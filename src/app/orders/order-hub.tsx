@@ -11,7 +11,7 @@ type Item = {
   special_print: boolean; designThumb: string | null; mockupUrl: string | null;
   imageUrl?: string | null; productUrl?: string | null; variant?: string | null;
   designSides?: { kind: string; label: string; thumb: string | null; original: string | null }[];
-  suggest: { designId: string; skuCode: number; title: string; thumb: string | null } | null;
+  suggest: { designId: string; skuCode: number; title: string; thumb: string | null; reason?: "listing" | "name" } | null;
 };
 type Order = {
   id: string; external_id: string; platform: string; status: string; ordered_at: string;
@@ -775,7 +775,12 @@ function ItemRow({ it, onSaved, flash }: {
         {/* Gợi ý khi chưa gán */}
         {!it.design_id && it.suggest && (
           <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 6 }}>{t("o.suggestDesigns")}</div>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+              {t("o.suggestDesigns")}
+              {it.suggest.reason === "listing"
+                ? <span style={{ background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "none", letterSpacing: 0 }}>✓ đã dùng cho listing này</span>
+                : <span style={{ background: "var(--line)", color: "var(--muted)", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>khớp tên</span>}
+            </div>
             {it.suggest.thumb && (
               <div className="o2-dpreview checker" onClick={() => setZoom(it.suggest!.thumb)} title={t("o.clickEnlarge")}>
                 <img src={it.suggest.thumb} alt="" />

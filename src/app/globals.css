@@ -58,7 +58,7 @@ tr:last-child td{border-bottom:none}
 .topnav-item.active .topnav-ic svg{opacity:1}
 .topnav-user{display:flex;align-items:center;gap:9px;flex-shrink:0}
 .tb-divider{width:1px;height:28px;background:var(--line)}
-.user-avatar{width:32px;height:32px;border-radius:50%;background:var(--primary-grad);color:#fff;
+.user-avatar{width:32px;height:32px;border-radius:50%;overflow:hidden;background:var(--primary-grad);color:#fff;
   display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0}
 .tb-user-txt{display:flex;flex-direction:column;align-items:flex-start;line-height:1.2}
 .tb-user-name{font-weight:600;font-size:13px}

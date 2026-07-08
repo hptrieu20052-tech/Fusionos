@@ -106,7 +106,26 @@ export async function GET(req: NextRequest) {
       const score = cw.reduce((a, w) => a + (words.has(w) ? 1 : 0), 0);
       if (score > bestScore) { bestScore = score; best = c; }
     }
-    return best && bestScore > 0 ? { designId: best.id, skuCode: best.sku_code, title: best.title, thumb: fileUrl(best.thumb_key) } : null;
+    return best && bestScore > 0 ? { designId: best.id, skuCode: best.sku_code, title: best.title, thumb: fileUrl(best.thumb_key), reason: "name" as const } : null;
+  };
+
+  // ƯU TIÊN 1 — Học từ lịch sử: listing từng gán design nào → gợi ý lại (chính xác nhất)
+  const needListingIds = Array.from(new Set(need.map((i) => i.etsy_listing_id).filter(Boolean))) as string[];
+  const learnedByListing = new Map<string, { designId: string; skuCode: number; title: string; thumb: string | null; reason: "listing" }>();
+  if (needListingIds.length) {
+    const lr = (await db.execute(sql`
+      SELECT DISTINCT ON (oi.etsy_listing_id) oi.etsy_listing_id AS lid, d.id, d.sku_code, d.title, df.thumb_key
+      FROM order_items oi JOIN designs d ON d.id = oi.design_id
+      LEFT JOIN LATERAL (SELECT thumb_key FROM design_files WHERE design_id = d.id AND thumb_key IS NOT NULL LIMIT 1) df ON TRUE
+      WHERE oi.etsy_listing_id IN (${sql.join(needListingIds.map((x) => sql`${x}`), sql`, `)}) AND oi.design_id IS NOT NULL
+      ORDER BY oi.etsy_listing_id, oi.id DESC
+    `)).rows as { lid: string; id: string; sku_code: number; title: string; thumb_key: string | null }[];
+    for (const r of lr) learnedByListing.set(r.lid, { designId: r.id, skuCode: r.sku_code, title: r.title, thumb: fileUrl(r.thumb_key), reason: "listing" });
+  }
+  const suggestForItem = (i: Record<string, unknown>) => {
+    const lid = i.etsy_listing_id as string | null;
+    if (lid && learnedByListing.has(lid)) return learnedByListing.get(lid); // đã học → chính xác nhất
+    return suggestFor(String(i.product_title)); // fallback: khớp tên
   };
 
   // Đếm theo trạng thái (áp dụng own restriction, KHÔNG áp filter khác để pill luôn đủ)
@@ -131,7 +150,7 @@ export async function GET(req: NextRequest) {
       imageUrl: (i.image_url as string | null) ?? null,
       productUrl: (i.product_url as string | null) ?? null,
       variant: (i.variant as string | null) ?? null,
-      suggest: i.design_id ? null : suggestFor(String(i.product_title)),
+      suggest: i.design_id ? null : suggestForItem(i),
     })),
   }));
   return NextResponse.json({ ok: true, total, page, show, counts, sellers, stores: storesR, fulfillers: fulfillersR, orders: out });

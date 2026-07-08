@@ -59,3 +59,18 @@ export async function PATCH(req: NextRequest) {
   await db.update(schema.fulfillers).set(patch).where(eq(schema.fulfillers.id, b.id));
   return NextResponse.json({ ok: true });
 }
+
+// DELETE { id } — xóa fulfiller (chặn nếu đã có đơn đẩy qua để giữ lịch sử)
+export async function DELETE(req: NextRequest) {
+  if (!(await guard(2))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const b = await req.json().catch(() => null);
+  if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
+  // Có đơn fulfillment đã đẩy qua nhà này → không xóa (giữ lịch sử)
+  const ffo = await db.select({ id: schema.fulfillmentOrders.id }).from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.fulfillerId, b.id)).limit(1);
+  if (ffo.length) return NextResponse.json({ ok: false, error: "Đã có đơn đẩy qua nhà này — không xóa được. Có thể để nguyên (không cấu hình token là không dùng)." }, { status: 409 });
+  // Dọn cấu hình liên quan rồi xóa
+  await db.delete(schema.skuMappings).where(eq(schema.skuMappings.fulfillerId, b.id));
+  await db.update(schema.orderIssues).set({ fulfillerId: null }).where(eq(schema.orderIssues.fulfillerId, b.id));
+  await db.delete(schema.fulfillers).where(eq(schema.fulfillers.id, b.id));
+  return NextResponse.json({ ok: true });
+}

@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { getSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
+import { db, schema } from "@/lib/db";
+import { eq } from "drizzle-orm";
+import { fileUrl } from "@/lib/storage";
 import AppShell, { NavLink } from "@/components/app-shell";
 import { LangProvider } from "@/components/lang-provider";
 import { cookies } from "next/headers";
@@ -16,6 +19,11 @@ export const dynamic = "force-dynamic";
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const lang = ((await cookies()).get("fusion_lang")?.value === "en" ? "en" : "vi") as Lang;
   const session = await getSession();
+  let avatarUrl: string | null = null;
+  if (session) {
+    const [u] = await db.select({ k: schema.users.avatarKey }).from(schema.users).where(eq(schema.users.id, session.sub)).limit(1);
+    avatarUrl = fileUrl(u?.k ?? null);
+  }
   const [orders, stores, designs, ff, finance, settings] = session
     ? await Promise.all([
         can(session, "orders"), can(session, "stores"), can(session, "designs"),
@@ -44,7 +52,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body>
         <LangProvider initial={lang}>
           {session ? (
-            <AppShell user={{ name: session.name, role: session.role }} links={links}>
+            <AppShell user={{ name: session.name, role: session.role, avatarUrl }} links={links}>
               {children}
             </AppShell>
           ) : (

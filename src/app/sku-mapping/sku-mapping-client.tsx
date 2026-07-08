@@ -16,6 +16,12 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [q, setQ] = useState("");
   const [editRow, setEditRow] = useState<Record<string, Partial<Map>>>({});
   const [nm, setNm] = useState({ internalSku: "", fulfillerSku: "", variant: "", baseCost: "", shipCost: "" });
+  // Bộ chọn sản phẩm Printify
+  type PP = { id: string; title: string; total: number; mappedCount: number; noSku: number };
+  const [picker, setPicker] = useState<PP[] | null>(null);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerQ, setPickerQ] = useState("");
+  const [sel, setSel] = useState<Set<string>>(new Set());
 
   const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => {
     if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings); if (!active && j.fulfillers[0]) setActive(j.fulfillers[0].id); }
@@ -43,13 +49,23 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
     if (j.ok) load();
   }
-  async function importPrintify() {
-    if (!confirm("Kéo toàn bộ SKU + giá vốn từ Printify về? (bỏ qua SKU đã có)")) return;
-    setMsg("Đang kéo SKU từ Printify…");
-    const j = await fetch("/api/fulfillers/printify-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    setMsg(j.ok ? `✓ Thêm mới ${j.created}, bỏ qua ${j.skipped}${j.noSku ? ` · ${j.noSku} variant chưa có SKU` : ""}` : "⚠ " + (j.error ?? "lỗi"));
-    if (j.ok) load();
+  async function openPicker() {
+    setPickerLoading(true); setPicker([]); setMsg("");
+    const j = await fetch("/api/fulfillers/printify-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setPickerLoading(false);
+    if (j.ok) {
+      setPicker(j.products);
+      // Mặc định tick sản phẩm đã map (>0 variant đã map)
+      setSel(new Set((j.products as PP[]).filter((p) => p.mappedCount > 0).map((p) => p.id)));
+    } else { setMsg("⚠ " + j.error); setPicker(null); }
   }
+  async function syncPicker() {
+    setMsg("Đang đồng bộ…");
+    const j = await fetch("/api/fulfillers/printify-sync-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, selectedProductIds: Array.from(sel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) { setMsg(`✓ Thêm ${j.added}, gỡ ${j.removed}`); setPicker(null); load(); }
+    else setMsg("⚠ " + (j.error ?? "lỗi"));
+  }
+  const toggleSel = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
   const mkOf = (name: string) => { const n = name.toLowerCase(); return n.includes("printify") ? "printify" : n.includes("tiktok") ? "tiktok" : "other"; };
   const th = { textAlign: "left" as const, fontSize: 11, color: "var(--faint)", fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: ".3px", padding: "8px 10px", borderBottom: "1px solid var(--line)" };
@@ -87,8 +103,8 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             <div style={{ flex: 1 }} />
             {ff.method === "api" && ff.name.toLowerCase().includes("printify") && canEdit && (
               ff.shopId
-                ? <button onClick={importPrintify} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⬇ Import SKU từ Printify</button>
-                : <span style={{ fontSize: 12, color: "var(--amber)" }}>Cấu hình token + Shop ID ở Settings để Import tự động</span>
+                ? <button onClick={openPicker} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⟳ Cập nhật từ Printify</button>
+                : <span style={{ fontSize: 12, color: "var(--amber)" }}>Cấu hình token + Shop ID ở Settings để kéo sản phẩm</span>
             )}
           </div>
 
@@ -149,6 +165,48 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             </div>
           )}
         </>
+      )}
+
+      {/* Bộ chọn sản phẩm Printify */}
+      {(picker !== null || pickerLoading) && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { if (!pickerLoading) setPicker(null); }}>
+          <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <b style={{ fontSize: 16 }}>Chọn sản phẩm cần fulfill</b>
+              {!pickerLoading && <button onClick={() => setPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Tick sản phẩm cần map, bỏ tick sản phẩm không cần. Bấm Lưu để đồng bộ (thêm SKU mới, gỡ SKU đã bỏ tick).</div>
+
+            {pickerLoading ? <div style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Đang kéo sản phẩm từ Printify…</div> : (
+              <>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+                  <input placeholder="Tìm sản phẩm…" value={pickerQ} onChange={(e) => setPickerQ(e.target.value)} style={{ ...inp, width: 200 }} />
+                  <button onClick={() => setSel(new Set((picker ?? []).map((p) => p.id)))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả</button>
+                  <button onClick={() => setSel(new Set())} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn hết</button>
+                  <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã chọn {sel.size}/{picker?.length ?? 0}</span>
+                </div>
+                <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
+                  {(picker ?? []).filter((p) => !pickerQ || p.title.toLowerCase().includes(pickerQ.toLowerCase())).map((p) => (
+                    <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 13px", borderBottom: "1px solid var(--line)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={sel.has(p.id)} onChange={() => toggleSel(p.id)} style={{ width: 17, height: 17, cursor: "pointer" }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.title}</div>
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                          {p.total} SKU{p.mappedCount > 0 ? <span style={{ color: "#2E7D46", fontWeight: 700 }}> · đã map {p.mappedCount}</span> : ""}{p.noSku > 0 ? <span style={{ color: "var(--amber)" }}> · {p.noSku} variant chưa có SKU</span> : ""}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                  {(picker ?? []).length === 0 && <div style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Không có sản phẩm nào.</div>}
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
+                  <button onClick={() => setPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
+                  <button onClick={syncPicker} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>Lưu ({sel.size})</button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );

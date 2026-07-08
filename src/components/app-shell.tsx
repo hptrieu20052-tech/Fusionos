@@ -20,7 +20,7 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
 
 export default function AppShell({ user, links, children }: {
-  user: { name: string; role: string };
+  user: { name: string; role: string; avatarUrl?: string | null };
   links: NavLink[];
   children: React.ReactNode;
 }) {
@@ -77,7 +77,7 @@ export default function AppShell({ user, links, children }: {
           </button>
           <div className="topnav-user">
             <Link href="/account" className="topnav-user-link" title="My account" prefetch>
-              <div className="user-avatar">{initials}</div>
+              <div className="user-avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit", display: "block" }} /> : initials}</div>
               <div className="tb-user-txt">
                 <span className="tb-user-name">{user.name}</span>
                 <span className="tb-role">{user.role}</span>
