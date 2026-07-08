@@ -107,7 +107,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     setMsg("Đang kéo catalog Merchize…");
     const j = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (j.ok) {
-      const more = j.done === false ? ` · CÒN NỮA (${j.productsProcessed}/${j.productsTotal} product) — bấm lại để kéo tiếp` : "";
+      const more = j.done === false ? ` · CÒN ${j.remaining} product — bấm lại để kéo tiếp` : "";
       setMsg(`✓ Thêm mới ${j.created}, bỏ qua ${j.skipped}${more}`);
       if (j.found === 0) console.log("Merchize catalog rawSample:", j.rawSample, "| variantSample:", j.variantSample);
       load();
