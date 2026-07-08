@@ -50,6 +50,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   await db.update(schema.stores).set(patch).where(eq(schema.stores.id, params.id));
+
+  // Đổi seller của store → cập nhật seller cho TẤT CẢ đơn & design thuộc store này
+  if ("sellerId" in b) {
+    const sellerId = b.sellerId || null;
+    await db.update(schema.orders).set({ sellerId, updatedAt: new Date() }).where(eq(schema.orders.storeId, params.id));
+    await db.update(schema.designs).set({ sellerId }).where(eq(schema.designs.storeId, params.id));
+  }
+
   return NextResponse.json({ ok: true });
 }
 

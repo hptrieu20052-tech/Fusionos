@@ -22,8 +22,14 @@ export async function POST(req: NextRequest) {
   const form = await req.formData().catch(() => null);
   const file = form?.get("file") as File | null;
   const storeId = (form?.get("storeId") as string) || null;
-  const sellerId = (form?.get("sellerId") as string) || null;
+  let sellerId = (form?.get("sellerId") as string) || null;
   if (!file) return NextResponse.json({ ok: false, error: "thiếu file" }, { status: 400 });
+
+  // Không chọn seller → lấy seller mặc định của store (đồng bộ với cấu hình store)
+  if (!sellerId && storeId) {
+    const [st] = await db.select({ s: schema.stores.sellerId }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
+    sellerId = st?.s ?? null;
+  }
 
   const wb = XLSX.read(Buffer.from(await file.arrayBuffer()), { type: "buffer" });
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "" });
