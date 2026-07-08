@@ -115,7 +115,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                 <div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                   <input placeholder={isMerchize ? "Base URL (…/bo-api)" : (f.apiEndpoint ?? "API endpoint")} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setE(f.id, "apiEndpoint", e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
-                  <input placeholder={isMerchize ? "Access Token (Bearer)" : t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(e) => setE(f.id, "apiKey", e.target.value)} style={{ ...inp, width: 200 }} />
+                  <input placeholder={isMerchize ? "API Key (x-api-key)" : t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(e) => setE(f.id, "apiKey", e.target.value)} style={{ ...inp, width: 200 }} />
                   {isMerchize && <input placeholder="Identifier (vd hello.com)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 160 }} />}
                   {f.name.toLowerCase().includes("printify") && <>
                     <input placeholder="Shop ID" value={edit[f.id]?.shopId ?? ""} onChange={(e) => setE(f.id, "shopId", e.target.value)} style={{ ...inp, width: 110 }} />
@@ -124,7 +124,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                   <input placeholder={t("s.webhookNew")} value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setE(f.id, "webhookSecret", e.target.value)} style={{ ...inp, width: 150 }} />
                   <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("c.save")}</button>
                 </div>
-                {isMerchize && <div style={{ fontSize: 11.5, color: "var(--amber)", marginTop: 6 }}>💡 Merchize đổi token hàng tháng — mỗi lần đổi, dán Access Token mới vào đây rồi Lưu. Base URL giữ nguyên.</div>}
+                {isMerchize && <div style={{ fontSize: 11.5, color: "var(--amber)", marginTop: 6 }}>💡 Dán <b>API Key</b> (KHÔNG phải Access Token) — Merchize có 2 token, các endpoint fulfill dùng API Key qua header x-api-key. Token đổi hàng tháng, mỗi lần đổi dán lại rồi Lưu. Base URL + Identifier giữ nguyên.</div>}
                 </div>
                 );
               })()}

@@ -148,9 +148,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             <span style={{ fontSize: 12, color: "var(--muted)" }}>{rows.length} dòng</span>
             <div style={{ flex: 1 }} />
             {ff.method === "api" && ff.name.toLowerCase().includes("printify") && canEdit && (
-              ff.shopId
-                ? <button onClick={openPicker} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⟳ Cập nhật từ Printify</button>
-                : <span style={{ fontSize: 12, color: "var(--amber)" }}>Cấu hình token + Shop ID ở Settings để kéo sản phẩm</span>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>Thêm SKU ở dòng <b>+ Thêm</b> bên dưới → bấm <b style={{ color: "#2E7D46" }}>⚙ In</b> để chọn Blueprint / Nhà in / Variant. Product được tạo tự động khi đẩy đơn.</span>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("merchize") && canEdit && (
               <button onClick={importMerchize} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⬇ Kéo SKU từ Merchize</button>
