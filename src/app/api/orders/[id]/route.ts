@@ -4,6 +4,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
 import { parseVariant } from "@/lib/variant";
+import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   // Mapping chi tiết theo item × fulfiller (SKU nhà cung cấp + giá vốn đơn vị)
   const itemsOut = items.map((it) => ({
     ...it,
+    mockupUrl: fileUrl(it.mockupKey),
     mappings: hideProfit ? {} : Object.fromEntries(
       maps.filter((m) => m.internalSku === it.internalSku)
         .map((m) => [m.fulfillerId, { fulfillerSku: m.fulfillerSku, unitCost: Number(m.baseCost) + Number(m.shipCost) }])

@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
 
   // Map design URL (front/back/sleeve/hood) theo designId — cho adapter cần artwork (Merchize...)
   const designIds = Array.from(new Set(items.map((i) => i.designId).filter(Boolean))) as string[];
-  const sideUrls = new Map<string, { front?: string; back?: string; sleeve?: string; hood?: string }>();
+  const sideUrls = new Map<string, { front?: string; back?: string; sleeve?: string; hood?: string; mockup?: string }>();
   if (designIds.length) {
     const files = await db.select().from(schema.designFiles).where(inArray(schema.designFiles.designId, designIds));
     for (const f of files) {
@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
       const url = fileUrl(f.storageKey) ?? undefined;
       if (f.kind === "design_front") cur.front = url;
       else if (f.kind === "design_back") cur.back = url;
+      else if (f.kind === "mockup") cur.mockup = url;
       sideUrls.set(f.designId, cur);
     }
   }
@@ -54,7 +55,8 @@ export async function POST(req: NextRequest) {
     return {
       internalSku: m.internalSku, productId: m.fulfillerProductId ?? null,
       price: Number(it.unitPrice) || undefined, currency: "USD",
-      image: it.imageUrl ?? fileUrl(it.mockupKey) ?? null,
+      // Merchize image = mockup của item → mockup của design → design front (preview). KHÔNG dùng ảnh Etsy.
+      image: fileUrl(it.mockupKey) ?? s.mockup ?? s.front ?? null,
       designFront: s.front ?? null, designBack: s.back ?? null,
       pfBlueprintId: m.pfBlueprintId ?? null, pfProviderId: m.pfProviderId ?? null, pfVariantId: m.pfVariantId ?? null,
     };

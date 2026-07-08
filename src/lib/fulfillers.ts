@@ -163,19 +163,22 @@ function merchizeAdapter(): FulfillerAdapter {
           email: o.email || undefined,
           phone: o.phone || undefined,
         },
-        items: ctx.lines.map((l) => ({
-          product_id: l.productId || undefined,
-          sku: l.internalSku || undefined,
-          merchize_sku: l.fulfillerSku,
-          quantity: l.qty,
-          price: l.price,
-          currency: l.currency || "USD",
-          image: l.image || undefined,
-          design_front: l.designFront || undefined,
-          design_back: l.designBack || undefined,
-          design_sleeve: l.designSleeve || undefined,
-          design_hood: l.designHood || undefined,
-        })),
+        items: ctx.lines.map((l) => {
+          const url = (u?: string | null) => (typeof u === "string" && /^https?:\/\//i.test(u.trim())) ? u.trim() : undefined;
+          return {
+            product_id: l.productId || undefined,
+            sku: l.internalSku || undefined,
+            merchize_sku: l.fulfillerSku,
+            quantity: l.qty,
+            price: l.price,
+            currency: l.currency || "USD",
+            image: url(l.image),
+            design_front: url(l.designFront),
+            design_back: url(l.designBack),
+            design_sleeve: url(l.designSleeve),
+            design_hood: url(l.designHood),
+          };
+        }),
       });
       // Bước 2: push (confirm) đơn đi sản xuất
       if (res.orderCode) {
