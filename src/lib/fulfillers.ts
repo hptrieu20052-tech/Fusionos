@@ -149,8 +149,9 @@ function merchizeAdapter(): FulfillerAdapter {
       }
 
       const o = ctx.order;
+      const extNumber = (o.orderLabel && o.orderLabel.trim()) ? o.orderLabel.trim() : o.externalId; // TênStore-IDĐơn
       const res = await createMerchizeOrder(baseUrl, apiKey, {
-        order_id: o.externalId,
+        order_id: extNumber,
         identifier,
         shipping_info: {
           full_name: [o.buyerFirst, o.buyerLast].filter(Boolean).join(" ") || "Customer",
@@ -182,7 +183,7 @@ function merchizeAdapter(): FulfillerAdapter {
       });
       // Bước 2: push (confirm) đơn đi sản xuất
       if (res.orderCode) {
-        try { await pushMerchizeOrder(baseUrl, apiKey, { code: res.orderCode, external_number: o.externalId, identifier }); }
+        try { await pushMerchizeOrder(baseUrl, apiKey, { code: res.orderCode, external_number: extNumber, identifier }); }
         catch (e) { throw new Error(`Đã tạo đơn ${res.orderCode} nhưng push (confirm) lỗi: ${String((e as Error)?.message ?? e)}`); }
       }
       return { externalFfId: res.orderCode, simulated: false, raw: res.raw };

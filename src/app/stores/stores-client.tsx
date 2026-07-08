@@ -18,6 +18,7 @@ const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"]
 const CONNECT: [string, string][] = [["extension", "Chrome Extension"], ["api", "API"], ["excel", "Excel Import"]];
 const CURRENCIES: [string, string][] = [["USD", "USD ($)"], ["VND", "VND (₫)"], ["EUR", "EUR (€)"], ["GBP", "GBP (£)"], ["AUD", "AUD"], ["CAD", "CAD"], ["JPY", "JPY (¥)"]];
 const FX_DEFAULT: Record<string, number> = { VND: 25400, EUR: 0.92, GBP: 0.79, AUD: 1.5, CAD: 1.36, JPY: 157 };
+const MK_COLOR: Record<string, string> = { tiktok: "#25242A", amazon: "#FF9900", etsy: "#F1641E", other: "#66788E" };
 const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 // Field credentials theo từng sàn
 const CRED_FIELDS: Record<string, [string, string][]> = {
@@ -95,7 +96,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
         {MKS.map(([mk, label]) => {
           const list = byMk(mk);
           return (
-            <div key={mk} className="card" style={{ padding: 16 }}>
+            <div key={mk} className="card" style={{ padding: 16, borderTop: `3px solid ${MK_COLOR[mk] ?? "#66788E"}` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <MarketplaceLogo mk={mk} size={26} />
                 <b style={{ fontSize: 15 }}>{label}</b>
@@ -103,9 +104,9 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
               </div>
               {list.length === 0 && <div style={{ color: "var(--faint)", fontSize: 13, textAlign: "center", padding: "20px 0" }}>{t("s.empty")}</div>}
               {list.map((s) => (
-                <div key={s.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginBottom: 10, transition: "border-color .15s" }}
-                  onMouseEnter={(e) => { if (canAdd) e.currentTarget.style.borderColor = "var(--accent)"; }}
-                  onMouseLeave={(e) => e.currentTarget.style.borderColor = "var(--line)"}>
+                <div key={s.id} style={{ border: "1px solid var(--line)", borderLeft: `3px solid ${s.live ? "var(--green)" : "var(--red)"}`, borderRadius: 12, padding: "12px 14px", marginBottom: 10, transition: "border-color .15s" }}
+                  onMouseEnter={(e) => { if (canAdd) { e.currentTarget.style.borderColor = "var(--accent)"; e.currentTarget.style.borderLeftColor = s.live ? "var(--green)" : "var(--red)"; } }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.borderLeftColor = s.live ? "var(--green)" : "var(--red)"; }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                     <b style={{ fontSize: 14 }}>{s.name}</b>
                     {/* Live/Die badge */}

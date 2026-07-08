@@ -42,13 +42,15 @@ export async function GET(req: NextRequest) {
 
   const variants = rows.map((m) => {
     const { style, color, size } = parseVariant(m.variant, m.productType);
-    // Recipe (blueprint/nhà in/variant) đã bake sẵn theo từng dòng → không cần chọn nhà in ở form.
+    // Printify: nhà in nằm sau " · " trong fulfillerProduct ("Blueprint · Nhà in") → tách ra làm cột Provider.
+    const fp = m.fulfillerProduct ?? "";
+    const provider = (m.fulfillerSku?.startsWith("PF-") && fp.includes(" · ")) ? fp.split(" · ").slice(1).join(" · ").trim() : "";
     return {
       id: m.id,
       fulfillerSku: m.fulfillerSku,
       internalSku: m.internalSku,
       unitCost: hideProfit ? 0 : Number(m.baseCost) + Number(m.shipCost),
-      style, provider: "", color, size,
+      style, provider, color, size,
       variant: m.variant ?? "",
     };
   });

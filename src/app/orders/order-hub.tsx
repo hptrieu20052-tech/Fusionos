@@ -546,39 +546,6 @@ function ManualTracking({ orderId, ff, fulfillerId, fulfillers, flash, onSaved }
   );
 }
 
-function MockupRow({ orderId, mockupUrl, canEdit, flash, onSaved }: { orderId: string; mockupUrl: string | null; canEdit: boolean; flash: (m: string) => void; onSaved: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const ref = useRef<HTMLInputElement>(null);
-  const upload = async (file: File) => {
-    if (!file.type.startsWith("image/")) return flash("✗ Chỉ nhận file ảnh");
-    setBusy(true);
-    try {
-      const tk = await fetch("/api/order-issues/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, contentType: file.type }) }).then((r) => r.json());
-      if (!tk.ok) throw new Error(tk.error ?? "upload-url");
-      const put = await fetch(tk.url, { method: tk.method ?? "PUT", headers: tk.headers ?? {}, body: file });
-      if (!put.ok) throw new Error(`R2 ${put.status}`);
-      const s = await fetch(`/api/orders/${orderId}/mockup`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: tk.storageKey }) }).then((r) => r.json());
-      if (!s.ok) throw new Error(s.error ?? "save");
-      flash("✓ Đã thêm mockup"); onSaved();
-    } catch (e) { flash("✗ " + (e as Error).message); }
-    setBusy(false);
-  };
-  const remove = async () => { setBusy(true); await fetch(`/api/orders/${orderId}/mockup`, { method: "DELETE" }); setBusy(false); flash("Đã gỡ mockup"); onSaved(); };
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid var(--line)" }}>
-      {mockupUrl
-        ? <img src={mockupUrl} alt="mockup" style={{ width: 34, height: 34, borderRadius: 6, objectFit: "cover", border: "1px solid var(--line)" }} />
-        : <div style={{ width: 34, height: 34, borderRadius: 6, border: "1px dashed var(--line)", display: "grid", placeItems: "center", fontSize: 15, color: "var(--faint)" }}>🖼</div>}
-      <span style={{ fontSize: 11.5, color: mockupUrl ? "var(--green)" : "var(--muted)", flex: 1 }}>{mockupUrl ? "Mockup đã có" : "Chưa có mockup (đơn CSV)"}</span>
-      {canEdit && <>
-        <input ref={ref} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
-        <button onClick={() => ref.current?.click()} disabled={busy} style={{ ...btnGhost, fontSize: 11, padding: "4px 9px" }}>{busy ? "…" : (mockupUrl ? "Đổi" : "＋ Upload mockup")}</button>
-        {mockupUrl && <button onClick={remove} disabled={busy} style={{ ...btnGhost, fontSize: 11, padding: "4px 9px", color: "var(--red)" }}>Gỡ</button>}
-      </>}
-    </div>
-  );
-}
-
 function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash, cloneOrder, copyText, fulfillers }: {
   o: Order; canEdit: boolean; canPushFf: boolean; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
@@ -672,7 +639,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
   );
 
   return (
-    <div className="card o2">
+    <div className="card o2" style={{ borderTop: `3px solid ${STATUS_COLORS[o.status] ?? "#6B7280"}` }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
         <div className={`o2-top${canPushFf && detail ? "" : " solo"}`} style={{ flex: 1, minWidth: 0 }}>
             {/* CỘT 1 — thông tin đơn */}
@@ -708,7 +675,6 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
               {/* Tracking / chi phí — hiện dữ liệu đã có + cho nhập tay */}
               {canPushFf && detail && (
                 <div className="o2-track">
-                  <MockupRow orderId={o.id} mockupUrl={detail.items.find((it) => it.mockupUrl)?.mockupUrl ?? null} canEdit={canEdit} flash={flash} onSaved={loadDetail} />
                   {(detail.ffOrders ?? []).map((f) => (
                     <div key={f.id} className="o2-ff">
                       {/* Header: tên supplier + link đơn supplier cùng hàng */}
@@ -859,7 +825,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
         close={() => setShowIssue(false)} flash={flash} onSaved={reload} />}
 
       {/* Items — chỉ hiển thị sản phẩm + gán design (variant đã dời lên cột phải) */}
-      {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} />)}
+      {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} canEdit={canEdit} />)}
     </div>
   );
 }
@@ -880,8 +846,8 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   );
 }
 
-function ItemRow({ it, onSaved, flash }: {
-  it: Item; onSaved: () => void; flash: (m: string) => void;
+function ItemRow({ it, onSaved, flash, canEdit = true }: {
+  it: Item; onSaved: () => void; flash: (m: string) => void; canEdit?: boolean;
 }) {
   const { t } = useLang();
   const [skuInput, setSkuInput] = useState("");
@@ -893,13 +859,38 @@ function ItemRow({ it, onSaved, flash }: {
     if (j.ok) { flash(sku === null ? t("o.unassigned") : `${t("o.assigned")} #${j.design?.sku_code ?? sku}`); onSaved(); }
     else flash("✗ " + (j.error ?? "Error"));
   };
+  // Upload mockup thẳng vào ô ảnh của item (đơn CSV không có mockup)
+  const mockRef = useRef<HTMLInputElement>(null);
+  const [upBusy, setUpBusy] = useState(false);
+  const uploadMockup = async (file: File) => {
+    if (!file.type.startsWith("image/")) return flash("✗ Chỉ nhận file ảnh");
+    setUpBusy(true);
+    try {
+      const tk = await fetch("/api/order-issues/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, contentType: file.type }) }).then((r) => r.json());
+      if (!tk.ok) throw new Error(tk.error ?? "upload-url");
+      const put = await fetch(tk.url, { method: tk.method ?? "PUT", headers: tk.headers ?? {}, body: file });
+      if (!put.ok) throw new Error(`R2 ${put.status}`);
+      const s = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mockupKey: tk.storageKey }) }).then((r) => r.json());
+      if (!s.ok) throw new Error(s.error ?? "save");
+      flash("✓ Đã tải mockup"); onSaved();
+    } catch (e) { flash("✗ " + (e as Error).message); }
+    setUpBusy(false);
+  };
   const img = it.mockupUrl ?? it.designThumb ?? it.imageUrl;
   const [zoom, setZoom] = useState<string | null>(null);
   return (
     <div className="o2-item">
       {zoom && <Lightbox src={zoom} onClose={() => setZoom(null)} />}
-      <div className="o2-thumb" onClick={() => img && setZoom(img)} style={img ? { cursor: "zoom-in" } : undefined} title={img ? t("o.clickEnlarge") : undefined}>
-        {img ? <img src={img} alt="" loading="lazy" /> : <span style={{ fontSize: 11, color: "var(--muted)" }}>{t("o.noImg")}</span>}
+      <div className="o2-thumb" style={{ position: "relative", ...(img ? { cursor: "zoom-in" } : (canEdit ? { cursor: "pointer" } : {})) }}
+        onClick={() => { if (img) setZoom(img); else if (canEdit) mockRef.current?.click(); }}
+        title={img ? t("o.clickEnlarge") : (canEdit ? "Bấm để tải mockup" : undefined)}>
+        {img
+          ? <img src={img} alt="" loading="lazy" />
+          : <span style={{ fontSize: 10.5, color: "var(--muted)", textAlign: "center", lineHeight: 1.3, padding: 4 }}>{upBusy ? "Đang tải…" : (canEdit ? "＋ Mockup" : t("o.noImg"))}</span>}
+        {canEdit && <>
+          <input ref={mockRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMockup(f); e.target.value = ""; }} />
+          {img && <button onClick={(e) => { e.stopPropagation(); mockRef.current?.click(); }} title="Đổi / thêm mockup" style={{ position: "absolute", bottom: 3, right: 3, width: 20, height: 20, borderRadius: 6, border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>{upBusy ? "…" : "✎"}</button>}
+        </>}
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
         <b>{it.product_title}</b>

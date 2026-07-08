@@ -38,6 +38,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [provs, setProvs] = useState<{ id: number; title: string }[]>([]);
   const [vars, setVars] = useState<{ id: number; title: string }[]>([]);
   const [rc, setRc] = useState<{ bp?: number; pv?: number; vr?: number }>({});
+  const [importAllPv, setImportAllPv] = useState(false);
   const [rcLoad, setRcLoad] = useState("");
   // Thêm sản phẩm Printify: chọn blueprint + nhà in → import TẤT CẢ variant
   const [addProd, setAddProd] = useState(false);
@@ -83,13 +84,21 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     }
   }
   async function importProduct() {
-    if (!rc.bp || !rc.pv) { setMsg("⚠ Chọn blueprint + nhà in"); return; }
-    setImporting(true); setMsg("Đang import variant…");
+    if (!rc.bp) { setMsg("⚠ Chọn blueprint (sản phẩm gốc)"); return; }
+    if (!importAllPv && !rc.pv) { setMsg("⚠ Chọn nhà in, hoặc tick 'Kéo tất cả nhà in'"); return; }
+    setImporting(true); setMsg(importAllPv ? "Đang kéo tất cả nhà in… (có thể lâu)" : "Đang import variant…");
     const title = bps.find((x) => x.id === rc.bp)?.title ?? "";
-    const j = await fetch("/api/fulfillers/printify-import-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, blueprintId: rc.bp, providerId: rc.pv, blueprintTitle: title }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const body = importAllPv
+      ? { fulfillerId: active, blueprintId: rc.bp, allProviders: true, blueprintTitle: title }
+      : { fulfillerId: active, blueprintId: rc.bp, providerId: rc.pv, blueprintTitle: title };
+    const j = await fetch("/api/fulfillers/printify-import-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setImporting(false);
-    if (j.ok) { setMsg(`✓ Import ${j.created} variant (bỏ qua ${j.skipped}) · đã ghim vào form đơn`); setAddProd(false); refresh(); }
-    else setMsg("⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) {
+      const more = j.done === false ? " · CÒN nữa, bấm lại để tiếp" : "";
+      setMsg(`✓ Import ${j.created} variant từ ${j.providersDone ?? 1}/${j.providers ?? 1} nhà in (bỏ qua ${j.skipped})${more} · đã ghim vào form đơn`);
+      if (j.done !== false) { setAddProd(false); setImportAllPv(false); }
+      refresh();
+    } else setMsg("⚠ " + (j.error ?? "lỗi"));
   }
 
   const loadFfs = useCallback(async () => {
@@ -438,7 +447,11 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               </div>
               <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>2. Nhà in</div>
-                <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1, marginTop: 30 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, marginBottom: 6, cursor: "pointer", color: importAllPv ? "#2E7D46" : "var(--ink)" }}>
+                  <input type="checkbox" checked={importAllPv} onChange={(e) => setImportAllPv(e.target.checked)} style={{ width: 15, height: 15 }} />
+                  ⭐ Kéo TẤT CẢ nhà in của SP này
+                </label>
+                <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1, opacity: importAllPv ? 0.45 : 1, pointerEvents: importAllPv ? "none" : "auto" }}>
                   {provs.map((p) => (
                     <div key={p.id} onClick={() => pickPv(p.id)} style={{ padding: "7px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", fontWeight: 600, background: rc.pv === p.id ? "var(--blue-soft)" : undefined }}>{p.title}</div>
                   ))}
@@ -448,9 +461,9 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: "var(--muted)", marginRight: "auto" }}>{rc.pv ? <b style={{ color: "#2E7D46" }}>{vars.length} variant</b> : "—"} sẽ được import</span>
+              <span style={{ fontSize: 12, color: "var(--muted)", marginRight: "auto" }}>{importAllPv ? <b style={{ color: "#2E7D46" }}>Tất cả nhà in</b> : (rc.pv ? <b style={{ color: "#2E7D46" }}>{vars.length} variant</b> : "—")} sẽ được import</span>
               <button onClick={() => !importing && setAddProd(false)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
-              <button onClick={importProduct} disabled={!rc.pv || importing} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: !rc.pv || importing ? "default" : "pointer", fontSize: 13, opacity: !rc.pv || importing ? 0.5 : 1 }}>{importing ? "Đang import…" : `Import ${rc.pv ? vars.length : ""} variant`}</button>
+              <button onClick={importProduct} disabled={(!rc.pv && !importAllPv) || !rc.bp || importing} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: ((!rc.pv && !importAllPv) || importing) ? "default" : "pointer", fontSize: 13, opacity: ((!rc.pv && !importAllPv) || !rc.bp || importing) ? 0.5 : 1 }}>{importing ? "Đang import…" : (importAllPv ? "Import tất cả nhà in" : `Import ${rc.pv ? vars.length : ""} variant`)}</button>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     ? (await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.externalFfId, orderCode)).limit(1))[0]
     : undefined;
   if (!ffo && externalNumber) {
-    const [ord] = await db.select().from(schema.orders).where(eq(schema.orders.externalId, externalNumber)).limit(1);
+    const [ord] = await db.select().from(schema.orders).where(or(eq(schema.orders.externalId, externalNumber), eq(schema.orders.orderLabel, externalNumber))).limit(1);
     if (ord) ffo = (await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, ord.id)).limit(1))[0];
   }
   if (!ffo) return NextResponse.json({ ok: false, error: "không tìm thấy đơn khớp" }, { status: 404 });

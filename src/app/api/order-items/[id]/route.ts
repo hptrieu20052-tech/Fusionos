@@ -43,5 +43,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ("specialPrint" in b) {
     await db.update(schema.orderItems).set({ specialPrint: !!b.specialPrint }).where(eq(schema.orderItems.id, params.id));
   }
+  if ("mockupKey" in b) {
+    const key = (typeof b.mockupKey === "string" && b.mockupKey.trim()) ? b.mockupKey.trim() : null;
+    await db.update(schema.orderItems).set({ mockupKey: key }).where(eq(schema.orderItems.id, params.id));
+  }
   return NextResponse.json({ ok: true, design });
 }

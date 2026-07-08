@@ -147,7 +147,7 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
       {/* Grid card */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(248px,1fr))", gap: 18, marginTop: 14 }}>
         {designs.map((d) => (
-          <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)} style={{ overflow: "hidden", cursor: "pointer" }}>
+          <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)} style={{ overflow: "hidden", cursor: "pointer", borderTop: "3px solid var(--blue)" }}>
             <div className="dc-img checker">
               {d.coverLabel && <span className="dc-side-badge">{(d.coverKind ? t(KIND_KEY[d.coverKind]) : "") || d.coverLabel}</span>}
               {(d.cover?.thumb || d.cover?.preview) ? (
