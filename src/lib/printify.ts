@@ -150,12 +150,15 @@ export type CreateProductInput = {
   price?: number; // cents; mặc định 2000
   frontImageId?: string; backImageId?: string;
   frontScale?: number; backScale?: number; // scale ảnh (khớp chiều cao vùng in)
+  frontPosition?: string; backPosition?: string; // vị trí placeholder (SP 1 mặt → Front vào vùng duy nhất)
 };
 /** Tạo product trong shop. Trả { productId, variantId }. */
 export async function createProduct(token: string, shopId: string | number, inp: CreateProductInput): Promise<{ productId: string; variantId: number }> {
   const placeholders: { position: string; images: { id: string; x: number; y: number; scale: number; angle: number }[] }[] = [];
-  if (inp.frontImageId) placeholders.push({ position: "front", images: [{ id: inp.frontImageId, x: 0.5, y: 0.5, scale: inp.frontScale ?? 1, angle: 0 }] });
-  if (inp.backImageId) placeholders.push({ position: "back", images: [{ id: inp.backImageId, x: 0.5, y: 0.5, scale: inp.backScale ?? 1, angle: 0 }] });
+  const fPos = inp.frontPosition ?? "front";
+  const bPos = inp.backPosition ?? "back";
+  if (inp.frontImageId) placeholders.push({ position: fPos, images: [{ id: inp.frontImageId, x: 0.5, y: 0.5, scale: inp.frontScale ?? 1, angle: 0 }] });
+  if (inp.backImageId && bPos !== fPos) placeholders.push({ position: bPos, images: [{ id: inp.backImageId, x: 0.5, y: 0.5, scale: inp.backScale ?? 1, angle: 0 }] });
 
   const body = {
     title: inp.title.slice(0, 120) || "Fusion order",

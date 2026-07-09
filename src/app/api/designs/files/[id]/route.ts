@@ -13,8 +13,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const b = await req.json().catch(() => null);
-  const kind = String(b?.kind ?? "") as "design_front" | "design_back" | "mockup" | "video";
-  if (!["design_front", "design_back", "mockup", "video"].includes(kind)) {
+  const kind = String(b?.kind ?? "");
+  const allowed = ["mockup", "video", "design_front", "design_back", "sleeve_left", "sleeve_right",
+    "cover_front", "back_cover", "month_01", "month_02", "month_03", "month_04", "month_05", "month_06",
+    "month_07", "month_08", "month_09", "month_10", "month_11", "month_12"];
+  if (!allowed.includes(kind)) {
     return NextResponse.json({ ok: false, error: "kind không hợp lệ" }, { status: 400 });
   }
   const [f] = await db.select().from(schema.designFiles).where(eq(schema.designFiles.id, params.id)).limit(1);

@@ -138,13 +138,18 @@ function printifyAdapter(): FulfillerAdapter {
           printAreasOf(l.pfBlueprintId!, l.pfProviderId!),
         ]);
         const ph = pa.get(l.pfVariantId!) ?? {};
+        const positions = Object.keys(ph);
+        // SP 1 mặt in → Front vào vùng in DUY NHẤT (dù tên không phải "front", vd phone case = mặt lưng)
+        const frontPos = ph["front"] ? "front" : (positions.length === 1 ? positions[0] : "front");
+        const backPos = ph["back"] ? "back" : "back";
         const prod = await createProduct(token, shopId, {
           title: `${extNumber} · ${l.fulfillerSku}`,
           blueprintId: l.pfBlueprintId!, providerId: l.pfProviderId!, variantId: l.pfVariantId!,
           price: l.price ? Math.round(l.price * 100) : 2000,
           frontImageId, backImageId,
-          frontScale: fitHeightScale(ph["front"], l.designFrontW, l.designFrontH),
-          backScale: fitHeightScale(ph["back"], l.designBackW, l.designBackH),
+          frontScale: fitHeightScale(ph[frontPos], l.designFrontW, l.designFrontH),
+          backScale: fitHeightScale(ph[backPos], l.designBackW, l.designBackH),
+          frontPosition: frontPos, backPosition: backPos,
         });
         return { product_id: prod.productId, variant_id: prod.variantId, quantity: l.qty };
       }));

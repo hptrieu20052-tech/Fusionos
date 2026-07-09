@@ -147,7 +147,7 @@ export const designs = pgTable("designs", {
 export const designFiles = pgTable("design_files", {
   id: uuid("id").primaryKey().defaultRandom(),
   designId: uuid("design_id").notNull().references(() => designs.id, { onDelete: "cascade" }),
-  kind: fileKindEnum("kind").notNull(),
+  kind: text("kind").notNull(), // mặt in: design_front/back, sleeve_left/right, cover_front/back, month_01..12, mockup, video (text để linh hoạt theo sản phẩm)
   filename: text("filename"),
   uploadedBy: uuid("uploaded_by").references(() => users.id),
   storageKey: text("storage_key").notNull(),

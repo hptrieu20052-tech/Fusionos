@@ -6,6 +6,19 @@ import { useLang } from "@/components/lang-provider";
 import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload, IconRefresh } from "@/components/icons";
 
 const KIND_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
+// Nhãn hiển thị cho mọi mặt in (áo + calendar). Ưu tiên nhãn này rồi mới đến i18n.
+const SIDE_LABEL: Record<string, string> = {
+  design_front: "Front", design_back: "Back", sleeve_left: "Sleeve trái", sleeve_right: "Sleeve phải",
+  cover_front: "Bìa trước", back_cover: "Bìa sau",
+  month_01: "Tháng 1", month_02: "Tháng 2", month_03: "Tháng 3", month_04: "Tháng 4", month_05: "Tháng 5", month_06: "Tháng 6",
+  month_07: "Tháng 7", month_08: "Tháng 8", month_09: "Tháng 9", month_10: "Tháng 10", month_11: "Tháng 11", month_12: "Tháng 12",
+  mockup: "Mockup", video: "Video",
+};
+// Nhóm mặt in để thêm (theo loại sản phẩm)
+const SIDE_GROUPS: { group: string; sides: string[] }[] = [
+  { group: "Áo / Hoodie", sides: ["design_front", "design_back", "sleeve_left", "sleeve_right"] },
+  { group: "Calendar", sides: ["cover_front", "month_01", "month_02", "month_03", "month_04", "month_05", "month_06", "month_07", "month_08", "month_09", "month_10", "month_11", "month_12", "back_cover"] },
+];
 type FileRow = { id: string; kind: string; filename?: string | null; uploaderName?: string | null; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
 type Design = {
   id: string; skuCode: number; title: string; description: string | null; points: number;
@@ -149,7 +162,7 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
         {designs.map((d) => (
           <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)} style={{ overflow: "hidden", cursor: "pointer" }}>
             <div className="dc-img checker">
-              {d.coverLabel && <span className="dc-side-badge">{(d.coverKind ? t(KIND_KEY[d.coverKind]) : "") || d.coverLabel}</span>}
+              {d.coverLabel && <span className="dc-side-badge">{(d.coverKind ? (SIDE_LABEL[d.coverKind] || t(KIND_KEY[d.coverKind])) : "") || d.coverLabel}</span>}
               {(d.cover?.thumb || d.cover?.preview) ? (
                 <img src={(d.cover.thumb ?? d.cover.preview)!} alt="" loading="lazy" decoding="async"
                   onError={(e) => {
@@ -174,9 +187,9 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
             {d.sides && d.sides.length > 0 && (
               <div className="dc-sides">
                 {d.sides.filter((s) => s.thumb).map((s) => (
-                  <div key={s.id} className="dc-side" title={t(KIND_KEY[s.kind]) || s.label}>
-                    <div className="dc-side-img checker"><img src={s.thumb!} alt={t(KIND_KEY[s.kind]) || s.label} loading="lazy" /></div>
-                    <span>{t(KIND_KEY[s.kind]) || s.label}</span>
+                  <div key={s.id} className="dc-side" title={SIDE_LABEL[s.kind] || t(KIND_KEY[s.kind]) || s.label}>
+                    <div className="dc-side-img checker"><img src={s.thumb!} alt={SIDE_LABEL[s.kind] || t(KIND_KEY[s.kind]) || s.label} loading="lazy" /></div>
+                    <span>{SIDE_LABEL[s.kind] || t(KIND_KEY[s.kind]) || s.label}</span>
                   </div>
                 ))}
               </div>
@@ -244,12 +257,13 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   });
   const [tagInput, setTagInput] = useState("");
   const [tab, setTab] = useState<"mockup" | "design" | "video">("design");
+  const [addSideOpen, setAddSideOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const filesOf = (k: string) => k === "design"
-    ? detail.files.filter((x) => x.kind === "design_front" || x.kind === "design_back")
+    ? detail.files.filter((x) => x.kind !== "mockup" && x.kind !== "video")
     : detail.files.filter((x) => x.kind === (k === "mockup" ? "mockup" : "video"));
 
   const save = async () => {
@@ -273,12 +287,21 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     } else flash("✗ " + (j.error ?? "Error"));
   };
   const pendingKind = useRef("mockup");
+  const pendingReplace = useRef<string | null>(null);
   const [busyUp, setBusyUp] = useState(false);
-  const pickAndUpload = (kind: string) => { pendingKind.current = kind; fileRef.current?.click(); };
+  const pickAndUpload = (kind: string) => { pendingKind.current = kind; pendingReplace.current = null; fileRef.current?.click(); };
+  // Thay file cho mặt đã có design (upload file mới cùng loại → xoá file cũ)
+  const replaceFile = (fileId: string, kind: string) => { pendingKind.current = kind; pendingReplace.current = fileId; fileRef.current?.click(); };
   const onPicked = async (file: File) => {
     setBusyUp(true);
-    try { await doUpload(d.id, file, pendingKind.current); flash(t("d.uploaded")); reopen(d.id); reload(); }
+    try {
+      const oldId = pendingReplace.current;
+      await doUpload(d.id, file, pendingKind.current);
+      if (oldId) { await fetch(`/api/designs/files/${oldId}`, { method: "DELETE" }).catch(() => {}); } // xoá file cũ sau khi up thành công
+      flash(oldId ? "✓ Đã thay file" : t("d.uploaded")); reopen(d.id); reload();
+    }
     catch (e) { flash("✗ " + (e as Error).message); }
+    pendingReplace.current = null;
     setBusyUp(false);
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -291,11 +314,6 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     flash(t("d.retrying"));
     const j = await fetch("/api/designs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileId }) }).then((r) => r.json());
     if (j.ok) { flash(t("d.thumbCreated")); reopen(d.id); } else flash("✗ " + (j.error ?? "Error"));
-  };
-  // Đổi loại file (front/back/mockup) — sửa nhầm mặt. Front↔Back tự hoán đổi.
-  const changeKind = async (fileId: string, kind: string) => {
-    const j = await fetch(`/api/designs/files/${fileId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) }).then((r) => r.json()).catch(() => ({ ok: false }));
-    if (j.ok) { flash(j.swapped ? "✓ Đã hoán đổi Front ↔ Back" : "✓ Đã đổi loại file"); reopen(d.id); reload(); } else flash("✗ " + (j.error ?? "lỗi"));
   };
   const downloadAll = (rows: FileRow[]) => rows.forEach((x, i) => x.originalUrl && setTimeout(() => forceDownload(x.originalUrl!, `${d.title}-${x.kind}-${i + 1}`), i * 400));
   const copy = (v: string) => { navigator.clipboard?.writeText(v); flash(t("d.copied")); };
@@ -402,7 +420,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {filesOf(tab).map((x) => (
                 <div key={x.id} className="file-item">
                   <div className="file-cell checker">
-                    <span className="file-kind">{t(KIND_KEY[x.kind]) || x.kind}</span>
+                    <span className="file-kind">{SIDE_LABEL[x.kind] || t(KIND_KEY[x.kind]) || x.kind}</span>
                     {x.thumbUrl || x.originalUrl
                       ? <img src={x.thumbUrl ?? x.originalUrl!} alt="" loading="lazy" />
                       : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</div>}
@@ -410,17 +428,11 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   </div>
                   <div className="file-cap">
                     {x.filename && <div className="fn" title={x.filename}>{x.filename}</div>}
-                    <div className="kw" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      {canEdit
-                        ? <select value={x.kind} onChange={(e) => changeKind(x.id, e.target.value)} title="Đổi loại / mặt file" style={{ fontSize: 11, border: "1px solid var(--line)", borderRadius: 6, padding: "1px 5px", background: "#fff", cursor: "pointer", fontWeight: 700 }}>
-                            {KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-                          </select>
-                        : <>{t(KIND_KEY[x.kind]) || x.kind}</>}
-                      {x.uploaderName ? <span style={{ color: "var(--muted)" }}>· {x.uploaderName}</span> : null}
-                    </div>
+                    <div className="kw">{SIDE_LABEL[x.kind] || t(KIND_KEY[x.kind]) || x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
                     <div className="file-actions">
                       {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
                       {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
+                      {canEdit && <button className="fa-btn" title="Thay file khác (cùng mặt)" disabled={busyUp} onClick={() => replaceFile(x.id, x.kind)}><IconUpload width={14} height={14} /></button>}
                       {x.processingStatus === "failed" && <button className="fa-btn" title={t("d.retryThumb")} style={{ color: "var(--amber)" }} onClick={() => retryFile(x.id)}><IconRefresh width={14} height={14} /></button>}
                       {canEdit && <button className="fa-btn danger" title={t("c.delete")} onClick={() => delFile(x.id)}><IconTrash width={14} height={14} /></button>}
                     </div>
@@ -430,10 +442,31 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {/* Ô ＋ upload theo tab */}
               {canEdit && tab === "mockup" && <AddTile label="Mockup" busy={busyUp} onClick={() => pickAndUpload("mockup")} />}
               {canEdit && tab === "video" && <AddTile label="Video" busy={busyUp} onClick={() => pickAndUpload("video")} />}
-              {canEdit && tab === "design" && <>
-                {!detail.files.some((x) => x.kind === "design_front") && <AddTile label={t("d.kindFront")} busy={busyUp} onClick={() => pickAndUpload("design_front")} />}
-                {!detail.files.some((x) => x.kind === "design_back") && <AddTile label={t("d.kindBack")} busy={busyUp} onClick={() => pickAndUpload("design_back")} />}
-              </>}
+              {canEdit && tab === "design" && (
+                <div style={{ position: "relative" }}>
+                  <AddTile label="＋ Thêm mặt in" busy={busyUp} onClick={() => setAddSideOpen((v) => !v)} />
+                  {addSideOpen && (<>
+                    <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
+                    <div style={{ position: "absolute", top: 0, left: "calc(100% + 8px)", zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 210, maxHeight: 340, overflowY: "auto", padding: 6 }}>
+                      {SIDE_GROUPS.map((g) => {
+                        const avail = g.sides.filter((s) => !detail.files.some((x) => x.kind === s));
+                        if (!avail.length) return null;
+                        return (
+                          <div key={g.group}>
+                            <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{g.group}</div>
+                            {avail.map((s) => (
+                              <button key={s} onClick={() => { setAddSideOpen(false); pickAndUpload(s); }}
+                                style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "none", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                                {SIDE_LABEL[s] || s}
+                              </button>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>)}
+                </div>
+              )}
             </div>
             {filesOf(tab).length === 0 && !canEdit && (
               <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "6px 0 2px" }}>{t("d.noFiles")}</div>
