@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, or, ilike } from "drizzle-orm";
+import { and, eq, or, ilike, asc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
 import { parseVariant } from "@/lib/variant";
@@ -8,8 +8,8 @@ import { parseVariant } from "@/lib/variant";
 export const dynamic = "force-dynamic";
 
 // GET /api/fulfillers/variants?ff=<id>&q=<search>&limit=200
-// Tìm variant của 1 nhà fulfill (lọc ở server, giới hạn kết quả) — thay cho việc
-// nạp toàn bộ catalog vào form. Gõ mới nạp → chỉ hiện SKU cần.
+//   ?styles=1        → trả danh sách SẢN PHẨM (productType) riêng, nhẹ — để dựng dropdown STYLE khi có hàng nghìn SKU.
+//   ?product=<name>  → trả variant của đúng 1 sản phẩm (chọn STYLE xong nạp variant của nó).
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
@@ -20,14 +20,30 @@ export async function GET(req: NextRequest) {
   if (!ff) return NextResponse.json({ ok: false, error: "missing ff" }, { status: 400 });
   const q = (sp.get("q") ?? "").trim();
   const pinnedOnly = sp.get("pinned") === "1";
-  // Nạp SP ghim (mặc định form) → lấy ĐỦ để dropdown Style/Provider/Color/Size không thiếu. Tìm kiếm thì cap 500.
-  const limit = (pinnedOnly && !q)
-    ? Math.min(Math.max(Number(sp.get("limit")) || 5000, 1), 8000)
-    : Math.min(Math.max(Number(sp.get("limit")) || 200, 1), 500);
+  const product = (sp.get("product") ?? "").trim();
+
+  // ---- Chế độ styles: danh sách sản phẩm (blueprint) để dựng dropdown STYLE, không nạp toàn bộ variant ----
+  if (sp.get("styles") === "1") {
+    const c = [eq(schema.skuMappings.active, true), eq(schema.skuMappings.fulfillerId, ff)];
+    if (pinnedOnly) c.push(eq(schema.skuMappings.pinned, true));
+    if (q) c.push(ilike(schema.skuMappings.productType, `%${q}%`));
+    const rows = await db.selectDistinct({ style: schema.skuMappings.productType })
+      .from(schema.skuMappings).where(and(...c)).orderBy(asc(schema.skuMappings.productType)).limit(q ? 500 : 2000);
+    const styles = rows.map((r) => r.style).filter((s): s is string => !!s);
+    return NextResponse.json({ ok: true, styles });
+  }
+
+  // Chọn 1 sản phẩm → nạp NHIỀU variant của nó; tìm kiếm/ghim → cap thấp hơn.
+  const limit = product
+    ? 3000
+    : (pinnedOnly && !q)
+      ? Math.min(Math.max(Number(sp.get("limit")) || 5000, 1), 8000)
+      : Math.min(Math.max(Number(sp.get("limit")) || 200, 1), 500);
 
   const conds = [eq(schema.skuMappings.active, true), eq(schema.skuMappings.fulfillerId, ff)];
-  // Không tìm kiếm → chỉ trả SP đã ghim (mặc định form). Có tìm kiếm → tìm toàn bộ để chọn SP mới.
-  if (pinnedOnly && !q) conds.push(eq(schema.skuMappings.pinned, true));
+  if (product) conds.push(eq(schema.skuMappings.productType, product));
+  // Không tìm kiếm + không chọn SP → chỉ trả SP đã ghim (mặc định form).
+  else if (pinnedOnly && !q) conds.push(eq(schema.skuMappings.pinned, true));
   if (q) {
     const like = `%${q}%`;
     conds.push(

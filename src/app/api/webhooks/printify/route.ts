@@ -47,13 +47,15 @@ export async function POST(req: NextRequest) {
 
   // Trạng thái ffo: từ event type hoặc order.status
   const pfStatus = String(ord?.status ?? "").toLowerCase();
+  const isCancel = evtType.includes("cancel") || pfStatus === "canceled" || pfStatus === "cancelled";
   let status = ffo.status;
-  if (evtType.includes("delivered") || pfStatus === "delivered") status = "delivered";
+  if (isCancel) status = "cancelled";
+  else if (evtType.includes("delivered") || pfStatus === "delivered") status = "delivered";
   else if (evtType.includes("shipment") || trackingNumber || pfStatus === "fulfilled" || pfStatus === "shipped") status = "shipped";
   else if (evtType.includes("sent-to-production") || pfStatus.includes("production")) status = "in_production";
 
   const patch: Record<string, unknown> = { status };
-  if (hasCost) {
+  if (hasCost && !isCancel) {
     patch.baseCost = (baseC / 100).toFixed(2);
     patch.shipCost = (shipC / 100).toFixed(2);
     patch.extraFee = (taxC / 100).toFixed(2);
@@ -66,6 +68,18 @@ export async function POST(req: NextRequest) {
     patch.trackingSyncedAt = new Date();
   }
   await db.update(schema.fulfillmentOrders).set(patch).where(eq(schema.fulfillmentOrders.id, ffo.id));
+
+  // ĐƠN BỊ HUỶ bên Printify → đưa đơn vào TRASH + XOÁ chi phí (seller không phải chịu)
+  if (isCancel) {
+    await db.delete(schema.transactions).where(and(
+      eq(schema.transactions.orderId, ffo.orderId),
+      eq(schema.transactions.type, "base_cost"),
+      like(schema.transactions.note, `%${printifyOrderId}%`),
+    ));
+    await db.update(schema.fulfillmentOrders).set({ baseCost: "0", shipCost: "0", extraFee: "0", cost: "0" }).where(eq(schema.fulfillmentOrders.id, ffo.id));
+    await db.update(schema.orders).set({ status: "trash", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+    return NextResponse.json({ ok: true, updated: ffo.id, status: "cancelled", trashed: true });
+  }
 
   // Cập nhật bút toán base_cost = giá THẬT (thay giá ước tính lúc đẩy)
   if (hasCost) {

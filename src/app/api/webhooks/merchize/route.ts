@@ -111,6 +111,19 @@ export async function POST(req: NextRequest) {
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
 
   // Đồng bộ trạng thái đơn chính (chỉ tiến, không lùi)
+  if (status === "cancelled") {
+    // ĐƠN BỊ HUỶ bên Merchize → đưa đơn vào TRASH + XOÁ chi phí (seller không phải chịu)
+    if (ffo.externalFfId) {
+      await db.delete(schema.transactions).where(and(
+        eq(schema.transactions.orderId, ffo.orderId),
+        eq(schema.transactions.type, "base_cost"),
+        like(schema.transactions.note, `%${ffo.externalFfId}%`),
+      ));
+    }
+    await db.update(schema.fulfillmentOrders).set({ baseCost: "0", shipCost: "0", extraFee: "0", cost: "0", costEvents: {} }).where(eq(schema.fulfillmentOrders.id, ffo.id));
+    await db.update(schema.orders).set({ status: "trash", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+    return NextResponse.json({ ok: true, matched: ffo.id, status, trashed: true });
+  }
   if (trackingNumber || status === "shipped") {
     await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() })
       .where(and(eq(schema.orders.id, ffo.orderId), inArray(schema.orders.status, ["new", "created", "in_production"])));

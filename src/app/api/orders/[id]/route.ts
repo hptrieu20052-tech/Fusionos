@@ -51,13 +51,21 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     (catalog[m.fulfillerId] ??= []).push({ id: m.id, fulfillerSku: m.fulfillerSku, internalSku: m.internalSku, unitCost: Number(m.baseCost) + Number(m.shipCost), style, provider, color, size, variant: m.variant ?? "" });
   }
   for (const k of Object.keys(catalog)) catalog[k].sort((a, b) => a.fulfillerSku.localeCompare(b.fulfillerSku));
+
+  // Nhà nào ĐÃ CÓ sản phẩm (mapping) — để cột "Fulfilled by" không báo nhầm "no SKU mapping"
+  const cntRows = (await db.execute(sql`
+    SELECT fulfiller_id AS ff, count(*)::int AS c FROM sku_mappings WHERE active = true GROUP BY fulfiller_id
+  `)).rows as { ff: string; c: number }[];
+  const hasProducts = new Map(cntRows.map((r) => [r.ff, r.c > 0]));
+
   const options = fulfillers.map((f) => {
     const lines = items.map((it) => {
       const m = maps.find((x) => x.internalSku === it.internalSku && x.fulfillerId === f.id);
       return m ? (Number(m.baseCost) + Number(m.shipCost)) * it.qty : null;
     });
-    const mapped = lines.every((l) => l !== null);
-    return { fulfillerId: f.id, name: f.name, mapped, estCost: mapped ? lines.reduce((t, l) => t! + l!, 0) : null };
+    const autoMatched = lines.every((l) => l !== null); // khớp sẵn SKU đơn → tự tính giá
+    const mapped = hasProducts.get(f.id) ?? false;       // nhà đã có sản phẩm để chọn
+    return { fulfillerId: f.id, name: f.name, mapped, estCost: autoMatched ? lines.reduce((t, l) => t! + l!, 0) : null };
   });
 
   const hideCustomer = await hasRestriction(session.sub, "hide_customer_info");

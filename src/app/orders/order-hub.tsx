@@ -304,33 +304,38 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
   const { t } = useLang();
   const [q, setQ] = useState("");
   const [fetched, setFetched] = useState<Variant[]>([]);
+  const [styleList, setStyleList] = useState<string[]>([]);
+  const [selStyle, setSelStyle] = useState("");
   const [loading, setLoading] = useState(false);
-  const [capped, setCapped] = useState(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Đổi nhà fulfill → reset tìm kiếm
-  useEffect(() => { setQ(""); setFetched([]); setCapped(false); }, [fulfillerId]);
-
-  // q rỗng → nạp SP đã GHIM (mặc định form, nhẹ). Gõ ≥2 ký tự → tìm toàn bộ catalog để chọn SP khác.
+  // Đổi nhà fulfill → reset lựa chọn
   useEffect(() => {
-    if (!fulfillerId) { setFetched([]); setCapped(false); setLoading(false); return; }
-    const query = q.trim();
-    const searching = query.length >= 2;
-    const url = searching
-      ? `/api/fulfillers/variants?ff=${fulfillerId}&q=${encodeURIComponent(query)}`
-      : `/api/fulfillers/variants?ff=${fulfillerId}&pinned=1`;
-    if (timer.current) clearTimeout(timer.current);
-    setLoading(true);
-    timer.current = setTimeout(async () => {
-      const j = await fetch(url).then((r) => r.json()).catch(() => null);
-      setFetched(j?.ok ? (j.variants as Variant[]) : []);
-      setCapped(!!j?.capped);
-      setLoading(false);
-    }, searching ? 300 : 0);
-    return () => { if (timer.current) clearTimeout(timer.current); };
-  }, [q, fulfillerId]);
+    setQ(""); setFetched([]); setSelStyle("");
+  }, [fulfillerId]);
 
-  // Gộp seed (variant khớp sẵn đơn) + kết quả tìm, khử trùng theo id
+  // Nạp DANH SÁCH SẢN PHẨM cho dropdown Style — tìm ở SERVER theo ô lọc (không giới hạn số SP)
+  useEffect(() => {
+    if (!fulfillerId) { setStyleList([]); return; }
+    const query = q.trim();
+    const t = setTimeout(() => {
+      fetch(`/api/fulfillers/variants?ff=${fulfillerId}&styles=1&pinned=1${query ? `&q=${encodeURIComponent(query)}` : ""}`)
+        .then((r) => r.json()).then((j) => setStyleList(j?.ok ? (j.styles as string[]) : [])).catch(() => setStyleList([]));
+    }, query ? 250 : 0);
+    return () => clearTimeout(t);
+  }, [fulfillerId, q]);
+
+  // Chọn 1 STYLE → nạp variant của đúng sản phẩm đó (mọi nhà in / màu / size)
+  const selectStyle = async (style: string) => {
+    setSelStyle(style);
+    setLine({ ...line, mappingId: "", unitCost: undefined });
+    if (!style || !fulfillerId) { setFetched([]); return; }
+    setLoading(true);
+    const j = await fetch(`/api/fulfillers/variants?ff=${fulfillerId}&product=${encodeURIComponent(style)}`).then((r) => r.json()).catch(() => null);
+    setFetched(j?.ok ? (j.variants as Variant[]) : []);
+    setLoading(false);
+  };
+
+  // Gộp seed (variant khớp sẵn đơn) + variant của style đã chọn, khử trùng theo id
   const byId = new Map<string, Variant>();
   for (const vv of seed) byId.set(vv.id, vv);
   for (const vv of fetched) if (!byId.has(vv.id)) byId.set(vv.id, vv);
@@ -339,12 +344,14 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
   const uniq = (a: string[]) => Array.from(new Set(a.filter(Boolean)));
   const cur = variants.find((v) => v.id === line.mappingId);
   const hasProvider = variants.some((v) => v.provider); // Merchize: không → ẩn cột Provider
-  const style = cur?.style ?? "";
+  const style = selStyle || cur?.style || "";
   const provider = cur?.provider ?? "";
   const color = cur?.color ?? "";
   const size = cur?.size ?? "";
   const meaningful = (x: string) => !!x && x !== "—";
-  const styles = uniq(variants.map((v) => v.style));
+  // Dropdown Style = danh sách sản phẩm (lọc theo ô tìm); fallback về style trong variants nếu chưa có list
+  const allStyles = uniq([...(styleList.length ? styleList : variants.map((v) => v.style)), ...variants.map((v) => v.style)]);
+  const styles = allStyles.filter((s) => !q.trim() || s.toLowerCase().includes(q.trim().toLowerCase()));
   const providers = uniq(variants.filter((v) => v.style === style).map((v) => v.provider));
   const afterProv = (v: Variant) => v.style === style && (!hasProvider || v.provider === provider);
   const colors = uniq(variants.filter(afterProv).map((v) => v.color)).filter(meaningful);
@@ -372,27 +379,24 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
   const miss = !line.mappingId;
   const gridN = 1 + (hasProvider ? 1 : 0) + (hasColor ? 1 : 0) + (hasSize ? 1 : 0);
   const cols = Array(gridN).fill("1fr").join(" ");
-  const empty = styles.length === 0;
 
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: miss ? "var(--red-soft)" : "#fff", ...(miss ? { borderColor: "#F0A9A0" } : {}) }}>
       {label && <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={label}>{label}</div>}
       <div style={{ position: "relative", marginBottom: 8 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("o.searchSku")}
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Lọc theo tên sản phẩm…"
           style={{ ...box, paddingRight: 62 }} />
         <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "var(--faint)" }}>
-          {loading ? "…" : capped ? t("o.refineMore") : ""}
+          {loading ? "…" : styleList.length ? `${styleList.length} SP` : ""}
         </span>
       </div>
-      {empty && (
-        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 8 }}>
-          {q.trim().length >= 2 ? t("o.noVariantFound") : t("o.typeToSearchVariant")}
-        </div>
+      {styleList.length === 0 && !loading && (
+        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 8 }}>Chưa có sản phẩm ghim cho nhà này. Vào SKU Mapping ghim SP, hoặc bấm ⭐ Chọn SP cho form đơn.</div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8 }}>
         <div className="o2-field">
           <label>Style</label>
-          <select value={style} onChange={(e) => pick({ style: e.target.value, provider: "", color: "", size: "" })} style={box}>
+          <select value={style} onChange={(e) => selectStyle(e.target.value)} style={box}>
             <option value="">—</option>
             {styles.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
