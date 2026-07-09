@@ -3,8 +3,8 @@
 
 -- ===== Quyền module (0 ẩn · 1 xem · 2 toàn quyền) =====
 INSERT INTO role_permissions (role, module, level) VALUES
-  -- SELLER: Add Store, Kéo Order, Gửi Idea, Check Design, Dán ID Design vào Order (KHÔNG fulfill)
-  ('seller','dashboard',1),('seller','orders',2),('seller','fulfillment',0),('seller','designs',1),
+  -- SELLER: Add Store, Kéo Order, Gửi Idea, Upload/Check Design (của mình), Dán ID Design vào Order (KHÔNG fulfill)
+  ('seller','dashboard',1),('seller','orders',2),('seller','fulfillment',0),('seller','designs',2),
   ('seller','finance',0),('seller','hr',0),('seller','stores',2),('seller','settings',0),
   -- DESIGNER: Thiết kế, Upload/Sửa file
   ('designer','dashboard',1),('designer','orders',0),('designer','fulfillment',0),('designer','designs',2),
@@ -29,7 +29,7 @@ ON CONFLICT (role, restriction_key) DO UPDATE SET enabled = EXCLUDED.enabled;
 
 -- ===== Phạm vi dữ liệu (all/team/own) — chạy sau khi có bảng role_data_scopes =====
 INSERT INTO role_data_scopes (role, resource, scope) VALUES
-  ('seller','orders','own'),   ('seller','designs','all'),
+  ('seller','orders','own'),   ('seller','designs','own'),
   ('designer','designs','own'),('designer','orders','all'),
   ('support','orders','all'),  ('support','designs','all')
 ON CONFLICT (role, resource) DO UPDATE SET scope = EXCLUDED.scope;

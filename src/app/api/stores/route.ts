@@ -79,9 +79,11 @@ export async function POST(req: NextRequest) {
   if (!b?.name || !schema.stores.marketplace.enumValues.includes(b.marketplace) || !schema.stores.connectMethod.enumValues.includes(b.connectMethod)) {
     return NextResponse.json({ ok: false, error: "Thiếu tên / sàn / phương thức kết nối" }, { status: 400 });
   }
+  // Seller tạo store → luôn là store của chính mình (bỏ qua sellerId gửi lên)
+  const sellerId = session.role === "seller" ? session.sub : (b.sellerId || null);
   const [s] = await db.insert(schema.stores).values({
     name: String(b.name).trim(), marketplace: b.marketplace, connectMethod: b.connectMethod,
-    sellerId: b.sellerId || null, status: "active", note: b.note,
+    sellerId, status: "active", note: b.note,
     storeUrl: (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null,
     currency: (typeof b.currency === "string" && b.currency.trim()) ? b.currency.trim().toUpperCase() : "USD",
     fxRate: (b.fxRate != null && Number(b.fxRate) > 0) ? String(Number(b.fxRate)) : "1",

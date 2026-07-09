@@ -9,5 +9,5 @@ export default async function StoresPage() {
   if (!session || !(await can(session, "stores"))) {
     return <div className="panel empty">Bạn không có quyền xem module Store.</div>;
   }
-  return <StoresClient canAdd={(await levelOf(session, "stores")) >= 2} />;
+  return <StoresClient canAdd={(await levelOf(session, "stores")) >= 2} role={session.role} />;
 }

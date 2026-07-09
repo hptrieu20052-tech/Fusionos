@@ -613,7 +613,6 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
   });
 
   const loadDetail = useCallback(async () => {
-    if (!canPushFf) return;
     const j = await fetch(`/api/orders/${o.id}`).then((r) => r.json()).catch(() => null);
     if (j?.ok) {
       setDetail(j);
@@ -631,7 +630,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
         orderLabel: s.orderLabel || [`${(j.storeName ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase()}`, o.external_id].filter(Boolean).join("-"),
       }));
     }
-  }, [o.id, o.external_id, canPushFf]);
+  }, [o.id, o.external_id]);
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
@@ -688,7 +687,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
   return (
     <div className="card o2" style={{ borderTop: `3px solid ${STATUS_COLORS[o.status] ?? "#6B7280"}` }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 14 }}>
-        <div className={`o2-top${canPushFf && detail ? "" : " solo"}`} style={{ flex: 1, minWidth: 0 }}>
+        <div className={`o2-top${detail ? "" : " solo"}`} style={{ flex: 1, minWidth: 0 }}>
             {/* CỘT 1 — thông tin đơn */}
             <div className="o2-info">
               <div className="o2-l1">
@@ -809,12 +808,12 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
               </div>
             </div>
 
-            {/* CỘT 2+3 — form giao hàng + nhãn/tạo đơn */}
-            {canPushFf && detail && (
+            {/* CỘT 2+3 — thông tin giao hàng (ai xem đơn đều thấy) + tạo đơn fulfill (chỉ người có quyền đẩy) */}
+            {detail && (
               <>
                 <div>
                   <div className="o2-secTitle">
-                    <span className="o2-badge"><IconTruck width={13} height={13} /> {t("o.fulfilment")}</span>
+                    {canPushFf && <span className="o2-badge"><IconTruck width={13} height={13} /> {t("o.fulfilment")}</span>}
                     <b style={{ fontSize: 13 }}>{t("o.shippingInfo")}</b>
                   </div>
                   <div className="o2-form">
@@ -830,7 +829,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                 </div>
                 <div className="o2-right">
                   <div className="o2-field">{F("orderLabel", t("o.orderLabel"))}</div>
-                  {canCreate ? (
+                  {!canPushFf ? null : canCreate ? (
                   <>
                   <div className="o2-field">
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{ffSel && <SupplierLogo name={detail.fulfillerOptions.find((x) => x.fulfillerId === ffSel)?.name ?? ""} size={15} />}{t("o.fulfilledBy")}</label>

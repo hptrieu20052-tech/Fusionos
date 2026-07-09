@@ -28,7 +28,7 @@ const CRED_FIELDS: Record<string, [string, string][]> = {
   other: [["endpoint", "Endpoint"], ["token", "Token"]],
 };
 
-export function StoresClient({ canAdd }: { canAdd: boolean }) {
+export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }) {
   const { t } = useLang();
   const confirm = useConfirm();
   const [stores, setStores] = useState<Store[]>([]);
@@ -144,13 +144,13 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
         })}
       </div>
 
-      {showAdd && <AddStoreModal sellers={sellers} close={() => setShowAdd(false)} reload={load} flash={flash} />}
-      {edit && <EditStoreModal store={edit} sellers={sellers} close={() => setEdit(null)} reload={load} flash={flash} />}
+      {showAdd && <AddStoreModal sellers={sellers} isSeller={role === "seller"} close={() => setShowAdd(false)} reload={load} flash={flash} />}
+      {edit && <EditStoreModal store={edit} sellers={sellers} isSeller={role === "seller"} close={() => setEdit(null)} reload={load} flash={flash} />}
     </>
   );
 }
 
-function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
+function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: Opt[]; isSeller: boolean; close: () => void; reload: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
   const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "", storeUrl: "", currency: "USD", fxRate: "1" });
   const [busy, setBusy] = useState(false);
@@ -172,7 +172,7 @@ function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; clos
         <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => setF({ ...f, marketplace: e.target.value })} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
         <L label={t("st.connect")}><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
-      <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
+      {!isSeller && <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label="Tiền tệ shop"><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (f.fxRate === "1" ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
@@ -184,7 +184,7 @@ function AddStoreModal({ sellers, close, reload, flash }: { sellers: Opt[]; clos
   );
 }
 
-function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store; sellers: Opt[]; close: () => void; reload: () => void; flash: (m: string) => void }) {
+function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { store: Store; sellers: Opt[]; isSeller: boolean; close: () => void; reload: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
   const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "", currency: store.currency ?? "USD", fxRate: store.fxRate ?? "1" });
   const [cred, setCred] = useState<Record<string, string>>({});
@@ -228,7 +228,7 @@ function EditStoreModal({ store, sellers, close, reload, flash }: { store: Store
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={inp} /></L>
         <L label={t("st.status")}><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}><option value="active">Active</option><option value="warning">Warning</option><option value="suspended">Suspended</option><option value="pending">Pending</option></select></L>
-        <L label="Seller"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>
+        {!isSeller && <L label="Seller"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
         <L label={t("st.connect")}><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>

@@ -30,6 +30,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const b = await req.json().catch(() => null);
   if (!b) return NextResponse.json({ ok: false }, { status: 400 });
 
+  const isSeller = session.role === "seller";
+  if (isSeller) {
+    // Seller chỉ sửa được store của chính mình và không đổi chủ store
+    const [own] = await db.select({ sellerId: schema.stores.sellerId }).from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
+    if (!own || own.sellerId !== session.sub) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    delete b.sellerId;
+  }
+
   const patch: Record<string, unknown> = {};
   if (typeof b.name === "string" && b.name.trim()) patch.name = b.name.trim();
   if ("storeUrl" in b) patch.storeUrl = (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null;
