@@ -4,6 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { getAdapter } from "@/lib/fulfillers";
+import { ensureWebhooks } from "@/lib/printify";
 import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -157,6 +158,21 @@ export async function POST(req: NextRequest) {
   }).returning();
 
   await db.update(schema.orders).set({ status: "created", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
+
+  // Tự đăng ký webhook Printify LẦN ĐẦU (idempotent) — khỏi terminal/curl. Cờ lưu trong credentials.
+  if (!pushRes.simulated && ff.name.toLowerCase().includes("printify")) {
+    const cr = (ff.credentials ?? {}) as Record<string, unknown>;
+    if (!cr.printifyWebhooksAt) {
+      const token = (cr.apiKey || cr.apiToken) as string | undefined;
+      const shopId = cr.shopId as string | number | undefined;
+      if (token && shopId) {
+        try {
+          await ensureWebhooks(token, shopId, `${req.nextUrl.origin}/api/webhooks/printify`);
+          await db.update(schema.fulfillers).set({ credentials: { ...cr, printifyWebhooksAt: new Date().toISOString() } }).where(eq(schema.fulfillers.id, ff.id));
+        } catch { /* không chặn đẩy đơn */ }
+      }
+    }
+  }
 
   // Ghi chi phí vào sổ (âm) — trang Tài chính SUM là ra
   await db.insert(schema.transactions).values({

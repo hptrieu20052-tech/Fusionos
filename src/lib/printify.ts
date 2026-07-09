@@ -187,3 +187,33 @@ export async function createOrderFromProducts(
   const j = (await res.json()) as { id: string };
   return { orderId: j.id, raw: j };
 }
+
+/** Liệt kê webhook đang có của shop. */
+export async function listWebhooks(token: string, shopId: string | number): Promise<{ id: string; topic: string; url: string }[]> {
+  const res = await fetch(`${BASE}/shops/${shopId}/webhooks.json`, { headers: headers(token), cache: "no-store" });
+  if (!res.ok) return [];
+  const j = await res.json();
+  return (Array.isArray(j) ? j : []) as { id: string; topic: string; url: string }[];
+}
+
+/** Tạo 1 webhook. */
+export async function createWebhook(token: string, shopId: string | number, topic: string, url: string): Promise<boolean> {
+  const res = await fetch(`${BASE}/shops/${shopId}/webhooks.json`, {
+    method: "POST", headers: headers(token), body: JSON.stringify({ topic, url }),
+  });
+  return res.ok;
+}
+
+/** Đảm bảo đã đăng ký đủ webhook trỏ về `url` (idempotent — không tạo trùng). */
+export async function ensureWebhooks(token: string, shopId: string | number, url: string): Promise<{ created: number; existing: number }> {
+  const topics = ["order:updated", "order:sent-to-production", "order:shipment:created", "order:shipment:delivered"];
+  let existing: { topic: string; url: string }[] = [];
+  try { existing = await listWebhooks(token, shopId); } catch { /* bỏ qua */ }
+  const have = new Set(existing.filter((w) => w.url === url).map((w) => w.topic));
+  let created = 0;
+  for (const t of topics) {
+    if (have.has(t)) continue;
+    try { if (await createWebhook(token, shopId, t, url)) created++; } catch { /* bỏ qua topic lỗi */ }
+  }
+  return { created, existing: have.size };
+}
