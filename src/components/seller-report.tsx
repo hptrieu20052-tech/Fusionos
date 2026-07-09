@@ -17,13 +17,16 @@ export default function SellerReport({ range, from, to }: RangeProps) {
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
+    setLoading(true); setErr(false);
     fetch(`/api/stats/seller-report?range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
-      .then((j) => { if (j.ok) setData(j); }).finally(() => setLoading(false));
+      .then((j) => { if (j.ok) setData(j); else setErr(true); })
+      .catch(() => setErr(true)).finally(() => setLoading(false));
   }, [range, from, to]);
 
+  if (err) return null; // không có quyền / lỗi → không hiển thị thay vì kẹt loading
   if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>Đang tải báo cáo seller…</div>;
 
   const { buckets, sellers, totals } = data;

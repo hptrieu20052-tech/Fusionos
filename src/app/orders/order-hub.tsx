@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useSearchParams } from "next/navigation";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { useConfirm } from "@/components/confirm-provider";
@@ -53,8 +54,13 @@ function trackingUrl(carrier: string | null, num: string): string {
 }
 
 export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean }) {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: { id: string; name: string }[]; fulfillers: { id: string; name: string }[] } | null>(null);
-  const [status, setStatus] = useState("");
+  // Khởi tạo trạng thái ngay từ URL (?status=new) để chỉ gọi API 1 lần đúng bộ lọc, tránh race đè dữ liệu
+  const [status, setStatus] = useState(() => {
+    const s = searchParams.get("status");
+    return s && s in STATUS_COLORS ? s : "";
+  });
   const [sellerId, setSellerId] = useState("");
   const [storeId, setStoreId] = useState("");
   const { t } = useLang();
@@ -75,13 +81,9 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const [selIds, setSelIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("shipped");
 
-  // Deep-link từ Dashboard: /orders?status=new → set sẵn tab trạng thái
-  useEffect(() => {
-    const s = new URLSearchParams(window.location.search).get("status");
-    if (s) { setStatus(s); setPage(1); }
-  }, []);
-
+  const reqSeq = useRef(0);
   const load = useCallback(async () => {
+    const my = ++reqSeq.current;
     const p = new URLSearchParams({ page: String(page), show: String(show) });
     if (status) p.set("status", status);
     if (sellerId) p.set("sellerId", sellerId);
@@ -91,6 +93,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
     if (fulfillerId) p.set("fulfillerId", fulfillerId);
     if (dr) { const d = rangeToDates(dr); p.set("from", d.from); p.set("to", d.to); }
     const j = await fetch(`/api/orders?${p}`).then((r) => r.json());
+    if (my !== reqSeq.current) return; // bỏ response cũ nếu đã có request mới hơn
     if (j.ok) setData(j);
   }, [page, show, status, sellerId, storeId, q, platform, fulfillerId, dr]);
   useEffect(() => { load(); }, [load]);

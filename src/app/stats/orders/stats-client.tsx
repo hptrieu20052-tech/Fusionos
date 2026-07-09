@@ -9,10 +9,11 @@ export function OrderStats() {
   const [metric, setMetric] = useState<"orders" | "items">("orders");
   const [dayList, setDayList] = useState<string[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
+  const [scoped, setScoped] = useState(false);
 
   const load = useCallback(() => {
     fetch(`/api/stats/orders?days=${days}&metric=${metric}`).then((r) => r.json()).then((j) => {
-      if (j.ok) { setDayList(j.days); setSellers(j.sellers); }
+      if (j.ok) { setDayList(j.days); setSellers(j.sellers); setScoped(!!j.scoped); }
     });
   }, [days, metric]);
   useEffect(() => { load(); }, [load]);
@@ -48,7 +49,7 @@ export function OrderStats() {
       </div>
 
       <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{L} theo ngày — toàn công ty</h3>
+        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{L} theo ngày{scoped ? " — nhóm của bạn" : " — toàn công ty"}</h3>
         <div className="sub" style={{ marginBottom: 8 }}>Cột đậm là hôm nay · nét đứt là trung bình kỳ</div>
         <BarChart labels={dayList.map(fmtD)} values={totals} />
       </div>
@@ -69,7 +70,7 @@ export function OrderStats() {
                 </tr>
               ))}
               <tr style={{ background: "var(--blue-soft)" }}>
-                <td style={{ fontWeight: 800 }}>Toàn công ty</td>
+                <td style={{ fontWeight: 800 }}>{scoped ? "Tổng nhóm" : "Toàn công ty"}</td>
                 {totals.map((v, i) => <td key={i} style={{ textAlign: "center", fontWeight: 800 }}>{v}</td>)}
                 <td style={{ textAlign: "right", fontWeight: 800 }}>{grand.toLocaleString()}</td>
                 <td style={{ textAlign: "right", fontWeight: 800 }}>{(grand / (days || 1)).toFixed(1)}</td>

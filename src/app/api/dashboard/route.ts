@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { levelOf } from "@/lib/rbac";
 import { scopeOwnerIds } from "@/lib/scope";
 import { rangeCond } from "@/lib/ranges";
 
@@ -12,7 +11,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "orders")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // KPI tổng ở Dashboard chỉ dành cho admin (staff/seller/designer đã ẩn ở UI)
+  if (session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const sp = req.nextUrl.searchParams;
   const range = sp.get("range") ?? "today";

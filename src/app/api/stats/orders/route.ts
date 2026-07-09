@@ -40,5 +40,5 @@ export async function GET(req: NextRequest) {
   })).map((s) => ({ ...s, total: s.values.reduce((a, b) => a + b, 0) }))
     .sort((a, b) => b.total - a.total);
 
-  return NextResponse.json({ ok: true, days: dayList, metric, sellers: matrix });
+  return NextResponse.json({ ok: true, days: dayList, metric, sellers: matrix, scoped: !!_si });
 }

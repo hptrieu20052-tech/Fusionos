@@ -14,8 +14,8 @@ const PALETTE = [
 ];
 const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-type RangeProps = { range: string; from?: string; to?: string };
-export default function DesignerReport({ range, from, to }: RangeProps) {
+type RangeProps = { range: string; from?: string; to?: string; hideMoney?: boolean };
+export default function DesignerReport({ range, from, to, hideMoney }: RangeProps) {
   const [metric, setMetric] = useState<"d" | "s">("d"); // d = design tạo, s = đơn phát sinh
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
@@ -47,7 +47,7 @@ export default function DesignerReport({ range, from, to }: RangeProps) {
           ))}
         </div>
         <div style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14 }}>
-          {totals.designs.toLocaleString()} design · {totals.salesOrders.toLocaleString()} đơn phát sinh · <span style={{ color: "var(--green)" }}>{money(totals.salesRevenue)}</span>
+          {totals.designs.toLocaleString()} design · {totals.salesOrders.toLocaleString()} đơn phát sinh{!hideMoney && <> · <span style={{ color: "var(--green)" }}>{money(totals.salesRevenue)}</span></>}
         </div>
       </div>
 
@@ -94,7 +94,7 @@ export default function DesignerReport({ range, from, to }: RangeProps) {
                   <th style={{ textAlign: "left", padding: "3px 4px" }}>#  Designer</th>
                   <th style={{ padding: "3px 4px" }}>Design</th>
                   <th style={{ padding: "3px 4px" }}>Sale</th>
-                  <th style={{ padding: "3px 4px" }}>Doanh thu</th>
+                  {!hideMoney && <th style={{ padding: "3px 4px" }}>Doanh thu</th>}
                   <th style={{ padding: "3px 4px" }}>Điểm</th>
                   <th style={{ padding: "3px 4px" }}>KPI</th>
                 </tr>
@@ -109,7 +109,7 @@ export default function DesignerReport({ range, from, to }: RangeProps) {
                     </td>
                     <td style={{ padding: "5px 4px" }}><b>{s.designs}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.points}đ)</span></td>
                     <td style={{ padding: "5px 4px" }}>{s.salesOrders}</td>
-                    <td style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>
+                    {!hideMoney && <td style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
                     <td style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     <td style={{ padding: "5px 4px" }}>
                       <span style={{ background: si === 0 ? "var(--blue)" : "var(--blue-soft)", color: si === 0 ? "#fff" : "var(--blue)", borderRadius: 8, padding: "2px 8px", fontWeight: 800 }}>{s.kpi.toFixed(1)}</span>

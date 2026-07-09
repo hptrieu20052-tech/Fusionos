@@ -8,5 +8,6 @@ export default async function Dashboard() {
   const session = await getSession();
   if (!session) return null;
   const canDesigns = (await levelOf(session, "designs")) >= 1;
-  return <DashboardClient canDesigns={canDesigns} showTeamReport={session.role === "admin"} />;
+  const canOrders = (await levelOf(session, "orders")) >= 1;
+  return <DashboardClient canDesigns={canDesigns} canOrders={canOrders} isAdmin={session.role === "admin"} />;
 }

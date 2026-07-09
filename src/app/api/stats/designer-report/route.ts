@@ -99,5 +99,9 @@ export async function GET(req: NextRequest) {
     salesOrders: designers.reduce((a, x) => a + x.salesOrders, 0),
     salesRevenue: Number(designers.reduce((a, x) => a + x.salesRevenue, 0).toFixed(2)),
   };
-  return NextResponse.json({ ok: true, range, buckets, designers, totals });
+  // Ẩn doanh thu với non-admin (tránh hiểu nhầm; số vẫn giữ cho admin)
+  const showMoney = session.role === "admin";
+  const designersOut = showMoney ? designers : designers.map((x) => ({ ...x, salesRevenue: 0 }));
+  const totalsOut = showMoney ? totals : { ...totals, salesRevenue: 0 };
+  return NextResponse.json({ ok: true, range, buckets, designers: designersOut, totals: totalsOut });
 }

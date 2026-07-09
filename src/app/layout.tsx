@@ -48,8 +48,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     ...(session.role === "admin" ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "Hệ thống" }] : []),
   ] : [];
 
-  // "More" (các trang đang chờ lên plan) tạm thời chỉ cho seller + admin thấy; staff/designer chưa hiện.
-  const showMore = session?.role === "seller" || session?.role === "admin";
+  // "More" (các trang đang chờ lên plan) tạm thời chỉ admin thấy; seller/staff/designer đều ẩn.
+  const showMore = session?.role === "admin";
   const navLinks = showMore ? links : links.filter((l) => !l.more);
 
   return (

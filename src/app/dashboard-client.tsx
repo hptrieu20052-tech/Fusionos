@@ -13,7 +13,7 @@ type Pipe = { c: number; q: number };
 type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitCost: number;
   pipeline: { order: { c: number; q: number; prev: number | null }; in_production: Pipe; in_transit: Pipe; delivered: Pipe } };
 
-export default function DashboardClient({ canDesigns, showTeamReport }: { canDesigns: boolean; showTeamReport: boolean }) {
+export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { canDesigns: boolean; canOrders: boolean; isAdmin: boolean }) {
   const { t: tr } = useLang();
   const [dr, setDr] = useState<RangeValue>({ range: "30d" });
   const range = dr.range;
@@ -24,11 +24,11 @@ export default function DashboardClient({ canDesigns, showTeamReport }: { canDes
   const t = range === "custom" ? dr.to : undefined;
 
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || !isAdmin) return; // KPI chỉ dành cho admin — không tải với staff
     const p = new URLSearchParams({ range });
     if (f) p.set("from", f); if (t) p.set("to", t);
     fetch(`/api/dashboard?${p}`).then((r) => r.json()).then((j) => { if (j.ok) setKpi(j); });
-  }, [range, f, t, ready]);
+  }, [range, f, t, ready, isAdmin]);
 
   const delta = (cur: number, prev: number | null, label = tr("db.prevPeriod")) => {
     if (prev === null) return <div className="d" style={{ color: "var(--faint)" }}>— chưa có dữ liệu {label}</div>;
@@ -48,6 +48,8 @@ export default function DashboardClient({ canDesigns, showTeamReport }: { canDes
         <DateRangePicker value={dr} onChange={setDr} align="right" />
       </div>
 
+      {/* Khối KPI (đơn/tài chính) — chỉ admin xem, staff/seller/designer ẩn */}
+      {isAdmin && <>
       {/* Hàng 1 — Số lượng đơn */}
       {kpi?.pipeline && (
         <div className="dash-row">
@@ -112,13 +114,14 @@ export default function DashboardClient({ canDesigns, showTeamReport }: { canDes
           </Link>
         </div>
       )}
+      </>}
 
       {/* Thứ tự: Team → Seller → Designer, cùng ăn theo range */}
       {ready && (
         <>
-          {showTeamReport && <div className="section"><TeamReport range={range} from={f} to={t} /></div>}
-          <div className="section"><SellerReport range={range} from={f} to={t} /></div>
-          {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} /></div>}
+          {isAdmin && <div className="section"><TeamReport range={range} from={f} to={t} /></div>}
+          {canOrders && <div className="section"><SellerReport range={range} from={f} to={t} /></div>}
+          {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} /></div>}
         </>
       )}
       {!ready && <div className="panel empty">Chọn đủ ngày bắt đầu và kết thúc để xem dữ liệu.</div>}
