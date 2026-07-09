@@ -117,6 +117,14 @@ export async function POST(req: NextRequest) {
     cost = baseSum + shipSum;
   }
 
+  // Đảm bảo số đơn gửi nhà in = TênStore-IDĐơn (nếu chưa set orderLabel thì tự dựng)
+  let orderLabel = (order.orderLabel ?? "").trim();
+  if (!orderLabel) {
+    const [st] = order.storeId ? await db.select({ name: schema.stores.name }).from(schema.stores).where(eq(schema.stores.id, order.storeId)).limit(1) : [];
+    const shop = (st?.name ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+    orderLabel = `${shop}-${order.externalId}`;
+  }
+
   // --- Gọi API fulfiller qua adapter theo từng nhà ---
   const adapter = getAdapter(ff.name);
   let pushRes;
@@ -124,7 +132,7 @@ export async function POST(req: NextRequest) {
     pushRes = await adapter.push({
       fulfiller: { id: ff.id, name: ff.name, apiEndpoint: ff.apiEndpoint, credentials: ff.credentials },
       order: {
-        externalId: order.externalId, orderLabel: order.orderLabel,
+        externalId: order.externalId, orderLabel,
         buyerFirst: order.buyerFirst, buyerLast: order.buyerLast,
         addr1: order.addr1, addr2: order.addr2, city: order.city,
         state: order.state, zip: order.zip, country: order.country,
@@ -132,26 +140,31 @@ export async function POST(req: NextRequest) {
       lines: pushLines,
     });
   } catch (e) {
-    // API nhà fulfill báo lỗi → KHÔNG ghi sổ, trả lỗi rõ ràng cho người dùng
     return NextResponse.json({ ok: false, error: `Đẩy đơn ${ff.name} thất bại: ${String((e as Error)?.message ?? e).slice(0, 400)}` }, { status: 502 });
   }
   const externalFfId = pushRes.externalFfId;
 
+  // Chi phí: ưu tiên giá THẬT nhà in trả về (Printify); else giá vốn từ SKU mapping
+  const finalBase = pushRes.baseCost != null ? pushRes.baseCost : baseSum;
+  const finalShip = pushRes.shipCost != null ? pushRes.shipCost : shipSum;
+  const finalTax = pushRes.tax ?? 0;
+  const finalCost = finalBase + finalShip + finalTax;
+
   const [ffo] = await db.insert(schema.fulfillmentOrders).values({
     orderId: order.id, fulfillerId: ff.id, externalFfId,
-    status: "pushed", cost: cost.toFixed(2), baseCost: baseSum.toFixed(2), shipCost: shipSum.toFixed(2), pushedAt: new Date(),
+    status: "pushed", cost: finalCost.toFixed(2), baseCost: finalBase.toFixed(2), shipCost: finalShip.toFixed(2), extraFee: finalTax.toFixed(2), pushedAt: new Date(),
     lines: pushedLines,
   }).returning();
 
   await db.update(schema.orders).set({ status: "created", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
 
-  // Ghi chi phí base cost vào sổ (âm) — trang Tài chính SUM là ra
+  // Ghi chi phí vào sổ (âm) — trang Tài chính SUM là ra
   await db.insert(schema.transactions).values({
-    type: "base_cost", amount: (-cost).toFixed(2),
+    type: "base_cost", amount: (-finalCost).toFixed(2),
     orderId: order.id, storeId: order.storeId, sellerId: order.sellerId,
     note: `${ff.name} · ${externalFfId}${lineNote}`,
     occurredAt: new Date().toISOString().slice(0, 10),
   });
 
-  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost, simulated: pushRes.simulated, reason: pushRes.reason });
+  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost: finalCost, simulated: pushRes.simulated, reason: pushRes.reason });
 }

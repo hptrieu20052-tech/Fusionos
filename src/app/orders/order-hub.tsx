@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { useConfirm } from "@/components/confirm-provider";
@@ -37,6 +37,8 @@ const FF_STATUS_COLORS: Record<string, string> = {
   delivered: "#5E86C9", error: "#C0392B", cancelled: "#8A93A6",
 };
 const fmtDateTime = (v: string | null | undefined) => { if (!v) return ""; const d = new Date(v); return isNaN(d.getTime()) ? "" : d.toLocaleString(); };
+const IMPORT_ITEM: CSSProperties = { display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 10px", background: "none", border: "none", borderRadius: 9, cursor: "pointer", fontSize: 13.5 };
+const IMPORT_SUB: CSSProperties = { fontSize: 11, color: "var(--muted)", fontWeight: 400, marginTop: 1 };
 const SIDE_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 const money = (n: number | string) => "$" + Number(n).toFixed(2);
 const cleanName = (v: string | null | undefined) => (v ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim();
@@ -66,6 +68,9 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
   const [msg, setMsg] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showEtsy, setShowEtsy] = useState(false);
+  const [importMenu, setImportMenu] = useState(false);
+  const [exportMenu, setExportMenu] = useState(false);
+  const excelRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [selIds, setSelIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("shipped");
@@ -120,11 +125,50 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
       <div className="page-head">
         <div className="page-actions">
           <DateRangePicker value={dr ?? { range: "" }} onChange={setDr} align="right" allowClear onClear={() => setDr(null)} />
-          <a href={`/api/orders/export${status ? `?status=${status}` : ""}`} className="btn btn-outline">{t("c.export")}</a>
+          <div style={{ position: "relative" }}>
+            <button onClick={() => setExportMenu((v) => !v)} className="btn btn-outline">📤 {t("c.export")} ▾</button>
+            {exportMenu && (<>
+              <div onClick={() => setExportMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+              <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.14)", minWidth: 300, overflow: "hidden", padding: 6 }}>
+                <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Excel</div>
+                <a href={`/api/orders/export${status ? `?status=${status}` : ""}`} onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
+                  <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>📊</span><div style={{ textAlign: "left" }}><b>Tất cả đơn</b><div style={IMPORT_SUB}>Kèm giá vốn + tracking</div></div>
+                </a>
+                <a href={`/api/orders/export?complete=1${status ? `&status=${status}` : ""}`} onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
+                  <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>✅</span><div style={{ textAlign: "left" }}><b>Chỉ đơn đủ điều kiện</b><div style={IMPORT_SUB}>Đủ design + mockup + địa chỉ — bỏ đơn thiếu</div></div>
+                </a>
+                <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Nhà in (không API)</div>
+                {["Printway", "Wembroidery", "Flashship", "Onospod"].map((s) => (
+                  <button key={s} disabled style={{ ...IMPORT_ITEM, opacity: .5, cursor: "default" }}>
+                    <SupplierLogo name={s} size={18} /><div style={{ textAlign: "left" }}><b>{s}</b><div style={IMPORT_SUB}>Mẫu file riêng — sắp có</div></div>
+                  </button>
+                ))}
+              </div>
+            </>)}
+          </div>
           {canEdit && (
-            <label className="btn btn-outline" style={{ cursor: "pointer" }}>
-              {importing ? t("c.loading") : t("c.import")}
-              <input type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} disabled={importing}
+            <div style={{ position: "relative" }}>
+              <button onClick={() => setImportMenu((v) => !v)} className="btn btn-outline">{importing ? t("c.loading") : `📥 ${t("c.import")} đơn ▾`}</button>
+              {importMenu && (<>
+                <div onClick={() => setImportMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.14)", minWidth: 264, overflow: "hidden", padding: 6 }}>
+                  <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Marketplace</div>
+                  <button onClick={() => { setImportMenu(false); setShowEtsy(true); }} style={IMPORT_ITEM}>
+                    <MarketplaceLogo mk="etsy" size={20} /><div style={{ textAlign: "left" }}><b>Etsy</b><div style={IMPORT_SUB}>Tạo đơn từ file CSV</div></div>
+                  </button>
+                  <button disabled style={{ ...IMPORT_ITEM, opacity: .5, cursor: "default" }}>
+                    <MarketplaceLogo mk="tiktok" size={20} /><div style={{ textAlign: "left" }}><b>TikTok Shop</b><div style={IMPORT_SUB}>Sắp có</div></div>
+                  </button>
+                  <button disabled style={{ ...IMPORT_ITEM, opacity: .5, cursor: "default" }}>
+                    <MarketplaceLogo mk="amazon" size={20} /><div style={{ textAlign: "left" }}><b>Amazon</b><div style={IMPORT_SUB}>Sắp có</div></div>
+                  </button>
+                  <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Khác</div>
+                  <button onClick={() => { setImportMenu(false); excelRef.current?.click(); }} style={IMPORT_ITEM}>
+                    <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>📊</span><div style={{ textAlign: "left" }}><b>Excel (cập nhật)</b><div style={IMPORT_SUB}>Tracking + giá vốn cho đơn đã có</div></div>
+                  </button>
+                </div>
+              </>)}
+              <input ref={excelRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} disabled={importing}
                 onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return;
                   setImporting(true);
@@ -137,9 +181,8 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
                     load();
                   } else flash("✗ " + (j.error ?? t("o.importError")));
                 }} />
-            </label>
+            </div>
           )}
-          {canEdit && <button onClick={() => setShowEtsy(true)} className="btn btn-outline" style={{ borderColor: "#F0A24B", color: "#C9760F" }}>{t("o.importEtsy")}</button>}
           {canEdit && <button onClick={() => setShowCreate(true)} className="btn btn-primary">{t("o.createOrder")}</button>}
         </div>
       </div>

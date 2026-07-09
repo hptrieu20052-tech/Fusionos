@@ -33,13 +33,17 @@ export type PushCtx = {
   };
   lines: PushLine[];
 };
-export type PushResult = { externalFfId: string; simulated: boolean; raw?: unknown; reason?: string };
+export type PushResult = { externalFfId: string; simulated: boolean; raw?: unknown; reason?: string; baseCost?: number; shipCost?: number; tax?: number };
 export type FulfillerAdapter = {
   slug: string;
   label: string;
   /** Đẩy đơn sang nhà fulfill. Trả về id đơn bên nhà fulfill. */
   push: (ctx: PushCtx) => Promise<PushResult>;
 };
+
+/** Số đơn gửi nhà in = TênStore-IDĐơn (orderLabel) nếu có, else ID đơn. Dùng cho MỌI nhà in. */
+export const orderExtNumber = (o: { orderLabel?: string | null; externalId: string }) =>
+  (o.orderLabel && o.orderLabel.trim()) ? o.orderLabel.trim() : o.externalId;
 
 /** Sinh mã simulate — dùng chung khi chưa có credentials / chưa ráp API thật. */
 const simulate = (slug: string): PushResult => ({
@@ -111,19 +115,23 @@ function printifyAdapter(): FulfillerAdapter {
       if (missing.length) {
         throw new Error(`Chưa cấu hình Blueprint/Provider/Variant cho SKU: ${missing.map((l) => l.fulfillerSku).join(", ")}. Vào SKU mapping → tab Printify để chọn.`);
       }
-      const lineItems: { product_id: string; variant_id: number; quantity: number }[] = [];
-      for (const l of ctx.lines) {
-        const frontImageId = l.designFront ? await uploadImageByUrl(token, `${l.fulfillerSku}-front`, l.designFront) : undefined;
-        const backImageId = l.designBack ? await uploadImageByUrl(token, `${l.fulfillerSku}-back`, l.designBack) : undefined;
+      const extNumber = orderExtNumber(o);
+      // Parallel: mỗi line upload ảnh (front+back song song) → tạo product. Các line chạy đồng thời.
+      const lineItems = await Promise.all(ctx.lines.map(async (l) => {
+        const [frontImageId, backImageId] = await Promise.all([
+          l.designFront ? uploadImageByUrl(token, `${l.fulfillerSku}-front`, l.designFront) : Promise.resolve(undefined),
+          l.designBack ? uploadImageByUrl(token, `${l.fulfillerSku}-back`, l.designBack) : Promise.resolve(undefined),
+        ]);
         const prod = await createProduct(token, shopId, {
-          title: `${o.externalId} · ${l.fulfillerSku}`,
+          title: `${extNumber} · ${l.fulfillerSku}`,
           blueprintId: l.pfBlueprintId!, providerId: l.pfProviderId!, variantId: l.pfVariantId!,
           price: l.price ? Math.round(l.price * 100) : 2000,
           frontImageId, backImageId,
         });
-        lineItems.push({ product_id: prod.productId, variant_id: prod.variantId, quantity: l.qty });
-      }
-      const res = await createOrderFromProducts(token, shopId, o.externalId, lineItems, address);
+        return { product_id: prod.productId, variant_id: prod.variantId, quantity: l.qty };
+      }));
+      const res = await createOrderFromProducts(token, shopId, extNumber, lineItems, address);
+      // Không fetch chi phí ở đây (chậm) — base/ship/tax + tracking sẽ về tự động qua webhook Printify.
       return { externalFfId: res.orderId, simulated: false, raw: res.raw };
     },
   };

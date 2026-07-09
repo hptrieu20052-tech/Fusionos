@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, like, or } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
@@ -38,42 +38,53 @@ export async function POST(req: NextRequest) {
   const ev = String(b?.event_type ?? "").toUpperCase();
   const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? undefined : n; };
 
-  // ---- Sự kiện PAYMENT: ghi giá vốn/ship/phí vào ff order (KHÔNG đổi tracking/status) ----
-  // CHỈ nhận diện qua event_type — vì event tracking cũng mang shipping_cost, tránh bắt nhầm.
+  // ---- Sự kiện PAYMENT: ghi giá vốn/ship/phí (idempotent qua costEvents; KHÔNG đổi tracking/status) ----
   if (ev.includes("PAYMENT")) {
     const fulfillmentCost = num(r.fulfillment_cost);
     const shippingCost = num(r.shipping_cost);
-    const patch: Record<string, unknown> = {};
-    let extra = Number(ffo.extraFee ?? 0);
+    const eventId = String(b?.event_id ?? b?.event_time ?? "");
+
+    // Bản ghi chi phí hiện có: { base, ship, fees: { [eventId]: amount } }. Áp lại cùng eventId → ghi đè, không cộng trùng.
+    const prev = (ffo.costEvents ?? {}) as { base?: number; ship?: number; fees?: Record<string, number> };
+    const ce = { base: prev.base, ship: prev.ship, fees: { ...(prev.fees ?? {}) } };
 
     if (fulfillmentCost !== undefined || shippingCost !== undefined) {
-      // FULFILLMENT_COST: đặt base + ship, cộng branding − discount vào extra
-      if (fulfillmentCost !== undefined) patch.baseCost = fulfillmentCost.toFixed(2);
-      if (shippingCost !== undefined) patch.shipCost = shippingCost.toFixed(2);
+      if (fulfillmentCost !== undefined) ce.base = fulfillmentCost;
+      if (shippingCost !== undefined) ce.ship = shippingCost;
       const branding = num(r.branding_cost) ?? 0;
       const discount = num(r.discount_amount) ?? 0;
-      extra += branding - discount;
-      patch.extraFee = extra.toFixed(2);
-    } else if (/SURCHARGE|TRANSACTION|FEE/.test(ev)) {
-      // SURCHARGE / TRANSACTION_FEE: phụ phí ở field price → cộng dồn vào extra
-      const amt = num(r.price) ?? num(r.amount) ?? 0;
-      extra += amt;
-      patch.extraFee = extra.toFixed(2);
+      if (branding || discount) ce.fees[`fc:${eventId}`] = branding - discount;
+    } else if (/SURCHARGE|TRANSACTION|FEE|TAX/.test(ev)) {
+      const amt = num(r.price) ?? num(r.amount) ?? num(r.tax) ?? num(r.tax_amount) ?? 0;
+      ce.fees[eventId || `fee:${b?.event_time ?? Date.now()}`] = amt;
+    } else {
+      return NextResponse.json({ ok: true, matched: ffo.id, skipped: "payment event không kèm cost" });
     }
 
-    // cost tổng = base + ship + extra (dùng giá trị mới nhất)
-    const base = patch.baseCost !== undefined ? Number(patch.baseCost) : Number(ffo.baseCost ?? 0);
-    const ship = patch.shipCost !== undefined ? Number(patch.shipCost) : Number(ffo.shipCost ?? 0);
-    patch.cost = (base + ship + extra).toFixed(2);
+    const base = Number(ce.base ?? ffo.baseCost ?? 0);
+    const ship = Number(ce.ship ?? ffo.shipCost ?? 0);
+    const extra = Object.values(ce.fees).reduce((s, v) => s + Number(v || 0), 0);
+    const total = base + ship + extra;
 
-    await db.update(schema.fulfillmentOrders).set(patch).where(eq(schema.fulfillmentOrders.id, ffo.id));
+    await db.update(schema.fulfillmentOrders).set({
+      baseCost: base.toFixed(2), shipCost: ship.toFixed(2), extraFee: extra.toFixed(2), cost: total.toFixed(2), costEvents: ce,
+    }).where(eq(schema.fulfillmentOrders.id, ffo.id));
 
-    // Đã có phí fulfillment = đơn đã "paid" → tự chuyển sang In Production (chỉ tiến, không lùi shipped/completed)
+    // Bút toán Tài chính = giá THẬT (luôn SET, không cộng → idempotent)
+    if (ffo.externalFfId) {
+      await db.update(schema.transactions).set({ amount: (-total).toFixed(2) }).where(and(
+        eq(schema.transactions.orderId, ffo.orderId),
+        eq(schema.transactions.type, "base_cost"),
+        like(schema.transactions.note, `%${ffo.externalFfId}%`),
+      ));
+    }
+
+    // Đã có phí fulfillment = đơn đã "paid" → In Production (chỉ tiến)
     if (fulfillmentCost !== undefined) {
       await db.update(schema.orders).set({ status: "in_production", updatedAt: new Date() })
         .where(and(eq(schema.orders.id, ffo.orderId), inArray(schema.orders.status, ["new", "created"])));
     }
-    return NextResponse.json({ ok: true, matched: ffo.id, updated: "cost", cost: patch.cost });
+    return NextResponse.json({ ok: true, matched: ffo.id, updated: "cost", base, ship, extra, cost: total });
   }
 
   // Lấy tracking (nếu có ở event ship) — Merchize để rải rác, dò nhiều tên field

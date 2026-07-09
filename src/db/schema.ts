@@ -218,6 +218,8 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   extraFee: numeric("extra_fee", { precision: 12, scale: 2 }).default("0"),
   // Dòng đã đẩy: [{ product, variant, sku, qty }] — để hiện lại Variant/Qty của mỗi lần đẩy
   lines: jsonb("lines"),
+  // Chi phí theo từng event webhook (idempotent): { base, ship, fees: { [eventId]: amount } }
+  costEvents: jsonb("cost_events").notNull().default({}),
   trackingNumber: text("tracking_number"),
   trackingCarrier: text("tracking_carrier"),
   trackingUrl: text("tracking_url"),

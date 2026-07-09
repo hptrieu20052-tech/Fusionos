@@ -26,6 +26,12 @@ export async function GET(req: NextRequest) {
   }
   if (sp.get("from")) conds.push(sql`o.ordered_at::date >= ${sp.get("from")}::date`);
   if (sp.get("to")) conds.push(sql`o.ordered_at::date <= ${sp.get("to")}::date`);
+  // Chỉ đơn ĐỦ ĐIỀU KIỆN (để import lên nhà in không API): có item, mọi item có design + mockup, đủ địa chỉ
+  if (sp.get("complete") === "1") {
+    conds.push(sql`EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id)`);
+    conds.push(sql`NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND (oi.design_id IS NULL OR oi.mockup_key IS NULL OR oi.mockup_key = ''))`);
+    conds.push(sql`coalesce(o.addr1,'') <> '' AND coalesce(o.city,'') <> '' AND coalesce(o.zip,'') <> '' AND coalesce(o.country,'') <> ''`);
+  }
   const where = conds.length ? conds.reduce((a, c) => sql`${a} AND ${c}`) : sql`TRUE`;
 
   const rows = (await db.execute(sql`
