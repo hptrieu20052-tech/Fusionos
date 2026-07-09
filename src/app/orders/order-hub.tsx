@@ -53,7 +53,7 @@ function trackingUrl(carrier: string | null, num: string): string {
   return `https://parcelsapp.com/en/tracking/${num}`;
 }
 
-export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean }) {
+export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: { id: string; name: string }[]; fulfillers: { id: string; name: string }[] } | null>(null);
   // Khởi tạo trạng thái ngay từ URL (?status=new) để chỉ gọi API 1 lần đúng bộ lọc, tránh race đè dữ liệu
@@ -251,12 +251,14 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
       {selIds.size > 0 && canEdit && (
         <div className="card" style={{ position: "sticky", top: 8, zIndex: 40, padding: "10px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", border: "1.5px solid var(--blue)" }}>
           <b style={{ fontSize: 13.5 }}>{selIds.size} đơn đã chọn</b>
+          {isAdmin && <>
           <span style={{ width: 1, height: 22, background: "var(--line)" }} />
           <span style={{ fontSize: 13 }}>Chuyển trạng thái:</span>
           <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)} style={inp}>
             {Object.keys(STATUS_COLORS).map((st) => <option key={st} value={st}>{st.toUpperCase()}</option>)}
           </select>
           <button onClick={applyBulk} style={btnBlue}>Áp dụng</button>
+          </>}
           <span style={{ width: 1, height: 22, background: "var(--line)" }} />
           <a href={`/api/orders/export?ids=${Array.from(selIds).join(",")}`} style={{ ...btnGhost, textDecoration: "none" }}>Export {selIds.size} đơn</a>
           <button onClick={() => setSelIds(new Set())} style={{ ...btnGhost, marginLeft: "auto" }}>Bỏ chọn tất cả</button>
@@ -282,7 +284,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true }: { canEdit
 
       {/* Cards */}
       {data.orders.map((o) => (
-        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf}
+        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
           reload={load} flash={flash} cloneOrder={cloneOrder} copyText={copyText}
           fulfillers={data.fulfillers} />
@@ -596,8 +598,8 @@ function ManualTracking({ orderId, ff, fulfillerId, fulfillers, flash, onSaved }
   );
 }
 
-function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash, cloneOrder, copyText, fulfillers }: {
-  o: Order; canEdit: boolean; canPushFf: boolean; selected: boolean; onToggleSel: () => void;
+function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, reload, flash, cloneOrder, copyText, fulfillers }: {
+  o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
   cloneOrder: (id: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
 }) {
@@ -679,11 +681,13 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
     } else flash("✗ " + (j.error ?? "Error"));
   };
 
+  // Sửa địa chỉ: cần quyền edit; với non-admin chỉ được sửa khi đơn còn NEW (đã Create là khoá)
+  const addrEditable = canEdit && (isAdmin || o.status === "new");
   const F = (k: keyof typeof ship, label: string, placeholder?: string) => (
     <div className="o2-field">
       <label>{label}</label>
-      <input value={ship[k]} disabled={!canEdit} placeholder={placeholder} onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
-        style={{ ...inp, opacity: canEdit ? 1 : 0.65 }} />
+      <input value={ship[k]} disabled={!addrEditable} placeholder={placeholder} onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
+        style={{ ...inp, opacity: addrEditable ? 1 : 0.65 }} />
     </div>
   );
 
@@ -857,7 +861,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
           </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
           {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
-          {canEdit && <button onClick={() => cloneOrder(o.id)} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
+          {isAdmin && <button onClick={() => cloneOrder(o.id)} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
       </div>
       {showIssue && <IssueModal order={o} fulfillers={fulfillers}

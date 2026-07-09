@@ -14,5 +14,5 @@ export default async function OrdersPage() {
     hasRestriction(session, "own_orders_only"),
     levelOf(session, "fulfillment"),
   ]);
-  return <OrderHub canEdit={lvl >= 2} canPushFf={ffLvl >= 2} ownOnly={ownOnly} />;
+  return <OrderHub canEdit={lvl >= 2} canPushFf={ffLvl >= 2} ownOnly={ownOnly} isAdmin={session.role === "admin"} />;
 }

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { levelOf } from "@/lib/rbac";
 import { inScope } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +10,8 @@ export const dynamic = "force-dynamic";
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "orders")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // Nhân bản đơn chỉ dành cho admin (staff/seller đã ẩn ở UI)
+  if (session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const o = (await db.execute(sql`SELECT * FROM orders WHERE id = ${params.id}::uuid`)).rows[0] as Record<string, unknown> | undefined;
   if (!o) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });

@@ -109,7 +109,11 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!b) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
 
   const patch: Record<string, unknown> = { updatedAt: new Date() };
+  // Non-admin chỉ được sửa địa chỉ khi đơn còn NEW; đơn đã Create thì bỏ qua các field địa chỉ
+  const addrLocked = g.session.role !== "admin" && g.order.status !== "new";
+  const addrKeys = ["buyerFirst", "buyerLast", "addr1", "addr2", "city", "state", "zip", "country"];
   for (const k of ["buyerFirst", "buyerLast", "addr1", "addr2", "city", "state", "zip", "country", "orderLabel", "note"] as const) {
+    if (addrLocked && addrKeys.includes(k)) continue;
     if (typeof b[k] === "string") patch[k] = b[k];
   }
   // Workflow mới: không dùng cancel / out_of_stock nữa
