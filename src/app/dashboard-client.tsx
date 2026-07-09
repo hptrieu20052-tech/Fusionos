@@ -120,7 +120,7 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
       {ready && (
         <>
           {isAdmin && <div className="section"><TeamReport range={range} from={f} to={t} /></div>}
-          {canOrders && <div className="section"><SellerReport range={range} from={f} to={t} /></div>}
+          {(canOrders || canDesigns) && <div className="section"><SellerReport range={range} from={f} to={t} /></div>}
           {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} /></div>}
         </>
       )}
