@@ -3,10 +3,11 @@ import { db, schema } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { isDesignKind } from "@/lib/design-kinds";
 
 export const dynamic = "force-dynamic";
 
-// PATCH /api/designs/files/[id] — đổi loại file (front/back/mockup/video). Đổi sang front/back mà mặt đó đã có file → tự HOÁN ĐỔI.
+// PATCH /api/designs/files/[id] — đổi loại file. Đổi sang front/back mà mặt đó đã có file → tự HOÁN ĐỔI.
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
@@ -14,10 +15,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const b = await req.json().catch(() => null);
   const kind = String(b?.kind ?? "");
-  const allowed = ["mockup", "video", "design_front", "design_back", "sleeve_left", "sleeve_right",
-    "cover_front", "back_cover", "month_01", "month_02", "month_03", "month_04", "month_05", "month_06",
-    "month_07", "month_08", "month_09", "month_10", "month_11", "month_12"];
-  if (!allowed.includes(kind)) {
+  if (!isDesignKind(kind)) {
     return NextResponse.json({ ok: false, error: "kind không hợp lệ" }, { status: 400 });
   }
   const [f] = await db.select().from(schema.designFiles).where(eq(schema.designFiles.id, params.id)).limit(1);

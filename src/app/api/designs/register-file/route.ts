@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { isDesignKind, isSingleSide } from "@/lib/design-kinds";
 
 export const dynamic = "force-dynamic";
 
@@ -15,14 +16,14 @@ export async function POST(req: NextRequest) {
 
   const b = await req.json().catch(() => null);
   const storageKey = b?.storageKey ?? b?.key;
-  if (!b?.designId || !storageKey || !b?.sha256 || !schema.designFiles.kind.enumValues.includes(b.kind)) {
+  if (!b?.designId || !storageKey || !b?.sha256 || !isDesignKind(b.kind)) {
     return NextResponse.json({ ok: false, error: "invalid", got: { designId: !!b?.designId, storageKey: !!storageKey, sha256: !!b?.sha256, kind: b?.kind } }, { status: 400 });
   }
 
   const [dup] = await db.select().from(schema.designFiles).where(eq(schema.designFiles.sha256, b.sha256)).limit(1);
 
-  // Mỗi mặt trước/sau chỉ giữ 1 file — upload mới thay file cũ cùng loại
-  if (b.kind === "design_front" || b.kind === "design_back") {
+  // Mỗi MẶT thiết kế chỉ giữ 1 file (front/back/sleeve/trang…) — upload mới thay file cũ cùng mặt. Mockup/video thì nhiều file.
+  if (isSingleSide(b.kind)) {
     await db.delete(schema.designFiles).where(and(eq(schema.designFiles.designId, b.designId), eq(schema.designFiles.kind, b.kind)));
   }
 

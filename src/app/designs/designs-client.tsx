@@ -6,18 +6,21 @@ import { useLang } from "@/components/lang-provider";
 import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload, IconRefresh } from "@/components/icons";
 
 const KIND_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
-// Nhãn hiển thị cho mọi mặt in (áo + calendar). Ưu tiên nhãn này rồi mới đến i18n.
+const pad2 = (n: number) => String(n).padStart(2, "0");
+const bookPages = Array.from({ length: 24 }, (_, i) => `page_${pad2(i + 1)}`);
+// Nhãn hiển thị cho mọi mặt in. Ưu tiên nhãn này rồi mới đến i18n.
 const SIDE_LABEL: Record<string, string> = {
   design_front: "Front", design_back: "Back", sleeve_left: "Sleeve trái", sleeve_right: "Sleeve phải",
-  cover_front: "Bìa trước", back_cover: "Bìa sau",
-  month_01: "Tháng 1", month_02: "Tháng 2", month_03: "Tháng 3", month_04: "Tháng 4", month_05: "Tháng 5", month_06: "Tháng 6",
-  month_07: "Tháng 7", month_08: "Tháng 8", month_09: "Tháng 9", month_10: "Tháng 10", month_11: "Tháng 11", month_12: "Tháng 12",
+  cover_front: "Bìa trước", back_cover: "Bìa sau", book_cover: "Cover (bìa)",
+  ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, `Tháng ${i + 1}`])),
+  ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`page_${pad2(i + 1)}`, `Trang ${i + 1}`])),
   mockup: "Mockup", video: "Video",
 };
 // Nhóm mặt in để thêm (theo loại sản phẩm)
 const SIDE_GROUPS: { group: string; sides: string[] }[] = [
   { group: "Áo / Hoodie", sides: ["design_front", "design_back", "sleeve_left", "sleeve_right"] },
-  { group: "Calendar", sides: ["cover_front", "month_01", "month_02", "month_03", "month_04", "month_05", "month_06", "month_07", "month_08", "month_09", "month_10", "month_11", "month_12", "back_cover"] },
+  { group: "Calendar", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`), "back_cover"] },
+  { group: "Photo Book (bìa cứng)", sides: ["book_cover", ...bookPages] },
 ];
 type FileRow = { id: string; kind: string; filename?: string | null; uploaderName?: string | null; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
 type Design = {
@@ -279,7 +282,9 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   };
   const genAI = async () => {
     setAiBusy(true);
-    const j = await fetch(`/api/designs/${d.id}/ai-info`, { method: "POST" }).then((r) => r.json());
+    const j = await fetch(`/api/designs/${d.id}/ai-info`, { method: "POST" })
+      .then(async (r) => { const txt = await r.text(); try { return txt ? JSON.parse(txt) : { ok: false, error: `Máy chủ trả rỗng (HTTP ${r.status})` }; } catch { return { ok: false, error: "Phản hồi không hợp lệ (có thể AI quá lâu)" }; } })
+      .catch(() => ({ ok: false, error: "Lỗi mạng" }));
     setAiBusy(false);
     if (j.ok) {
       setF({ ...f, title: j.title ?? f.title, description: j.description ?? f.description, tags: j.tags ?? f.tags });
@@ -447,19 +452,21 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   <AddTile label="＋ Thêm mặt in" busy={busyUp} onClick={() => setAddSideOpen((v) => !v)} />
                   {addSideOpen && (<>
                     <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
-                    <div style={{ position: "absolute", top: 0, left: "calc(100% + 8px)", zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 210, maxHeight: 340, overflowY: "auto", padding: 6 }}>
+                    <div style={{ position: "absolute", top: 0, left: "calc(100% + 8px)", zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 340, maxHeight: 360, overflowY: "auto", padding: 10 }}>
                       {SIDE_GROUPS.map((g) => {
                         const avail = g.sides.filter((s) => !detail.files.some((x) => x.kind === s));
                         if (!avail.length) return null;
                         return (
-                          <div key={g.group}>
-                            <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{g.group}</div>
-                            {avail.map((s) => (
-                              <button key={s} onClick={() => { setAddSideOpen(false); pickAndUpload(s); }}
-                                style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", background: "none", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-                                {SIDE_LABEL[s] || s}
-                              </button>
-                            ))}
+                          <div key={g.group} style={{ marginBottom: 6 }}>
+                            <div style={{ padding: "4px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{g.group}</div>
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                              {avail.map((s) => (
+                                <button key={s} onClick={() => { setAddSideOpen(false); pickAndUpload(s); }}
+                                  style={{ padding: "8px 6px", background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--ink)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  {SIDE_LABEL[s] || s}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         );
                       })}

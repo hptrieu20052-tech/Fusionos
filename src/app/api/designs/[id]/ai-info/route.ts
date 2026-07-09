@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // POST /api/designs/[id]/ai-info — sinh Title/Description/Tags chuẩn listing.
 // Có ANTHROPIC_API_KEY trong .env → gọi Claude; không có → sinh theo mẫu.
@@ -21,6 +22,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
     try {
       const r = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
+        signal: AbortSignal.timeout(45000), // tránh treo hết function → luôn kịp fallback
         headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
         body: JSON.stringify({
           model: "claude-sonnet-4-5",

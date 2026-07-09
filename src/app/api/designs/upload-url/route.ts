@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { getUploadTarget } from "@/lib/storage";
+import { isDesignKind } from "@/lib/design-kinds";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest) {
   if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const b = await req.json().catch(() => null);
-  if (!b?.designId || !b?.filename || !schema.designFiles.kind.enumValues.includes(b.kind)) {
+  if (!b?.designId || !b?.filename || !isDesignKind(b.kind)) {
     return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   }
   const [d] = await db.select({ id: schema.designs.id }).from(schema.designs).where(eq(schema.designs.id, b.designId)).limit(1);
