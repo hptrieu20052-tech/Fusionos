@@ -13,7 +13,7 @@ type Pipe = { c: number; q: number };
 type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitCost: number;
   pipeline: { order: { c: number; q: number; prev: number | null }; in_production: Pipe; in_transit: Pipe; delivered: Pipe } };
 
-export default function DashboardClient({ canDesigns }: { canDesigns: boolean }) {
+export default function DashboardClient({ canDesigns, showTeamReport }: { canDesigns: boolean; showTeamReport: boolean }) {
   const { t: tr } = useLang();
   const [dr, setDr] = useState<RangeValue>({ range: "30d" });
   const range = dr.range;
@@ -116,7 +116,7 @@ export default function DashboardClient({ canDesigns }: { canDesigns: boolean })
       {/* Thứ tự: Team → Seller → Designer, cùng ăn theo range */}
       {ready && (
         <>
-          <div className="section"><TeamReport range={range} from={f} to={t} /></div>
+          {showTeamReport && <div className="section"><TeamReport range={range} from={f} to={t} /></div>}
           <div className="section"><SellerReport range={range} from={f} to={t} /></div>
           {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} /></div>}
         </>

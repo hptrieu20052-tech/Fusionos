@@ -16,8 +16,8 @@ ON CONFLICT (role, module) DO UPDATE SET level = EXCLUDED.level;
 
 -- ===== Giới hạn dữ liệu theo role =====
 INSERT INTO role_restrictions (role, restriction_key, enabled) VALUES
-  -- Seller: chỉ đơn/store của mình, ẩn lợi nhuận (kiểm toán/lương là của Support)
-  ('seller','own_orders_only',true),('seller','hide_profit',true),
+  -- Seller: chỉ đơn/store của mình. Cho xem lợi nhuận để cân đối giá bán (kiểm toán/lương vẫn của Support)
+  ('seller','own_orders_only',true),('seller','hide_profit',false),
   ('seller','own_designs_only',false),('seller','hide_customer_info',false),
   -- Designer: chỉ design của mình, ẩn lợi nhuận + thông tin khách
   ('designer','own_designs_only',true),('designer','hide_profit',true),('designer','hide_customer_info',true),

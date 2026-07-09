@@ -24,7 +24,7 @@ type Order = {
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
-type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
+type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
 type Opt = { id: string; name: string };
 type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; lines?: { product: string; variant: string | null; sku: string; qty: number }[] | null };
 
@@ -718,8 +718,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
               {/* Vùng thao tác: ghi chú + tracking/chi phí */}
               <div className="o2-actions">
                 <OrderNote order={o} canEdit={canEdit} onSaved={reload} flash={flash} />
-              {/* Tracking / chi phí — hiện dữ liệu đã có + cho nhập tay */}
-              {canPushFf && detail && (
+              {/* Tracking / chi phí — seller cũng xem được nếu đơn đã đẩy; chỉ người có quyền đẩy mới nhập tay */}
+              {detail && ((detail.ffOrders?.length ?? 0) > 0 || canPushFf) && (
                 <div className="o2-track">
                   {(detail.ffOrders ?? []).map((f) => (
                     <div key={f.id} className="o2-ff">
@@ -733,7 +733,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                             <IconTruck width={12} height={12} /> {t("o.viewSupplierOrder")} ↗
                           </a>
                         )}
-                        {canEdit && <button onClick={() => delFf(f.id)} title="Xoá bản ghi đẩy này" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontSize: 13, fontWeight: 700, padding: "0 4px" }}>✕</button>}
+                        {canPushFf && canEdit && <button onClick={() => delFf(f.id)} title="Xoá bản ghi đẩy này" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontSize: 13, fontWeight: 700, padding: "0 4px" }}>✕</button>}
                       </div>
                       {/* Mã đơn nhà in + thời điểm đẩy */}
                       {(f.externalFfId || f.pushedAt) && (
@@ -798,11 +798,11 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                     );
                   })()}
 
-                  <ManualTracking key={(detail.ffOrders ?? [])[0]?.id ?? "new"} orderId={o.id}
+                  {canPushFf && <ManualTracking key={(detail.ffOrders ?? [])[0]?.id ?? "new"} orderId={o.id}
                     ff={(detail.ffOrders ?? [])[0]}
                     fulfillerId={ffSel || (detail.ffOrders ?? [])[0]?.fulfillerId || ""}
                     fulfillers={fulfillers}
-                    flash={flash} onSaved={() => { loadDetail(); reload(); }} />
+                    flash={flash} onSaved={() => { loadDetail(); reload(); }} />}
                 </div>
               )}
               </div>

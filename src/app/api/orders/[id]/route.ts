@@ -90,7 +90,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     storeName: store?.name ?? null,
     order: masked,
     items: itemsOut,
-    ffOrders: ffOrders.map((x) => ({ ...x.f, fulfillerName: x.name })),
+    ffOrders: ffOrders.map((x) => {
+      const f = { ...x.f, fulfillerName: x.name } as Record<string, unknown>;
+      if (hideProfit) { f.cost = null; f.baseCost = null; f.shipCost = null; f.extraFee = null; }
+      return f;
+    }),
     fulfillerOptions: hideProfit ? options.map((o) => ({ ...o, estCost: null })) : options,
     catalog: hideProfit ? {} : catalog,
     hideProfit,
