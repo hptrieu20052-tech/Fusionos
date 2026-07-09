@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export const dynamic = "force-dynamic";
 export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session || (await levelOf(session, "stores")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "stores.fx"))) return NextResponse.json({ ok: false, error: "forbidden: fx" }, { status: 403 });
 
   const [store] = await db.select().from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
   if (!store) return NextResponse.json({ ok: false, error: "store không tồn tại" }, { status: 404 });

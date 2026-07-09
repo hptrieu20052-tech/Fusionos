@@ -4,7 +4,8 @@ import { and, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { invalidatePermissionCache } from "@/lib/rbac";
 import { invalidateScopeCache } from "@/lib/scope";
-import { MODULES, RESTRICTIONS, SCOPES, SCOPE_RESOURCES } from "@/db/schema";
+import { invalidateActionCache } from "@/lib/actions";
+import { MODULES, RESTRICTIONS, SCOPES, SCOPE_RESOURCES, ACTIONS } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 const ROLES = schema.rolePermissions.role.enumValues;
@@ -14,23 +15,36 @@ async function requireAdmin() {
   return s?.role === "admin" ? s : null;
 }
 
-// GET: ma trận quyền + giới hạn dữ liệu + phạm vi (all/team/own)
+// GET: ma trận quyền + giới hạn + phạm vi + hành động
 export async function GET() {
   if (!(await requireAdmin())) return NextResponse.json({ ok: false }, { status: 403 });
-  const [permissions, roleRestrictions, dataScopes] = await Promise.all([
+  const [permissions, roleRestrictions, dataScopes, roleActions] = await Promise.all([
     db.select().from(schema.rolePermissions),
     db.select().from(schema.roleRestrictions).catch(() => []),
     db.select().from(schema.roleDataScopes).catch(() => []),
+    db.select().from(schema.roleActions).catch(() => []),
   ]);
-  return NextResponse.json({ ok: true, modules: MODULES, roles: ROLES, permissions, restrictions: RESTRICTIONS, roleRestrictions, scopes: SCOPES, scopeResources: SCOPE_RESOURCES, dataScopes });
+  return NextResponse.json({ ok: true, modules: MODULES, roles: ROLES, permissions, restrictions: RESTRICTIONS, roleRestrictions, scopes: SCOPES, scopeResources: SCOPE_RESOURCES, dataScopes, actions: ACTIONS, roleActions });
 }
 
-// PATCH: module { role, module, level } · restriction { role, restriction, enabled } · scope { role, resource, scope }
+// PATCH: module{role,module,level} · restriction{role,restriction,enabled} · scope{role,resource,scope} · action{role,action,enabled}
 export async function PATCH(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ ok: false }, { status: 403 });
   const b = await req.json().catch(() => null);
   if (!b || !ROLES.includes(b.role)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   if (b.role === "admin") return NextResponse.json({ ok: false, error: "admin luôn toàn quyền" }, { status: 400 });
+
+  // Hành động chi tiết
+  if (b.action !== undefined) {
+    if (!ACTIONS.some((a) => a.key === b.action) || typeof b.enabled !== "boolean") {
+      return NextResponse.json({ ok: false, error: "invalid action" }, { status: 400 });
+    }
+    await db.insert(schema.roleActions)
+      .values({ role: b.role, actionKey: b.action, enabled: b.enabled })
+      .onConflictDoUpdate({ target: [schema.roleActions.role, schema.roleActions.actionKey], set: { enabled: b.enabled } });
+    invalidateActionCache();
+    return NextResponse.json({ ok: true });
+  }
 
   // Phạm vi dữ liệu theo role
   if (b.resource !== undefined && b.scope !== undefined) {

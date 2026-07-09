@@ -6,9 +6,11 @@ export function parseVariant(variant: string | null, productType: string | null)
   const style = (productType || "").trim() || "—";
   if (!variant) return { style, color: "—", size: "—" };
   const parts = variant.split(/[\/,|·–—-]| x /i).map((p) => p.trim()).filter(Boolean);
-  let size = "", color = "";
-  for (const p of parts) { if (!size && SIZE_RE.test(p)) size = p; else color = color ? `${color} ${p}` : p; }
-  if (!size && parts.length) size = parts[parts.length - 1];
-  if (!color) color = parts.length > 1 ? parts.slice(0, -1).join(" ") : "—";
-  return { style, color: color || "—", size: size || "—" };
+  if (!parts.length) return { style, color: "—", size: "—" };
+  // Size = phần khớp regex; nếu không có → phần CUỐI. Phần còn lại = color (không nhân đôi giá trị).
+  let sizeIdx = parts.findIndex((p) => SIZE_RE.test(p));
+  if (sizeIdx === -1) sizeIdx = parts.length - 1;
+  const size = parts[sizeIdx] || "—";
+  const color = parts.filter((_, i) => i !== sizeIdx).join(" ") || "—";
+  return { style, color, size };
 }

@@ -285,6 +285,41 @@ export const roleDataScopes = pgTable("role_data_scopes", {
   scope: text("scope").notNull().default("all"), // all | team | own
 }, (t) => [primaryKey({ columns: [t.role, t.resource] })]);
 
+// Quyền HÀNH ĐỘNG chi tiết (tick như AdsPower). Không có bản ghi = mặc định CHO PHÉP (không phá hành vi cũ).
+export const ACTIONS: { key: string; module: string; label: string }[] = [
+  { key: "orders.import", module: "orders", label: "Import đơn" },
+  { key: "orders.export", module: "orders", label: "Export đơn" },
+  { key: "orders.trash", module: "orders", label: "Xoá / cho vào Trash" },
+  { key: "orders.manual_cost", module: "orders", label: "Nhập tracking / cost tay" },
+  { key: "designs.ai", module: "designs", label: "Sinh info bằng AI" },
+  { key: "designs.delete", module: "designs", label: "Xoá design / file" },
+  { key: "fulfillment.undo", module: "fulfillment", label: "Xoá / hoàn tác đơn đã đẩy" },
+  { key: "fulfillment.credentials", module: "fulfillment", label: "Cấu hình credential nhà in" },
+  { key: "stores.fx", module: "stores", label: "Đổi tỉ giá (FX)" },
+];
+export const roleActions = pgTable("role_actions", {
+  role: roleEnum("role").notNull(),
+  actionKey: text("action_key").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+}, (t) => [primaryKey({ columns: [t.role, t.actionKey] })]);
+
+// ===== GHI ĐÈ THEO TỪNG USER (override role mặc định). Có bản ghi = dùng giá trị này; không có = theo role. =====
+export const userPermissions = pgTable("user_permissions", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  module: text("module").notNull(),
+  level: smallint("level").notNull(), // 0 ẩn · 1 xem · 2 full
+}, (t) => [primaryKey({ columns: [t.userId, t.module] })]);
+export const userDataScopes = pgTable("user_data_scopes", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  resource: text("resource").notNull(),
+  scope: text("scope").notNull(),
+}, (t) => [primaryKey({ columns: [t.userId, t.resource] })]);
+export const userActions = pgTable("user_actions", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  actionKey: text("action_key").notNull(),
+  enabled: boolean("enabled").notNull().default(true),
+}, (t) => [primaryKey({ columns: [t.userId, t.actionKey] })]);
+
 // ---------- DESIGN REVIEWS (chấm điểm KPI) ----------
 export const reviewDecisionEnum = pgEnum("review_decision", ["approve", "request_fix", "reject"]);
 

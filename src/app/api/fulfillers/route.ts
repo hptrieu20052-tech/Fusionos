@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await guard(2))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const _s = await guard(2);
+  if (!_s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(_s, "fulfillment.credentials"))) return NextResponse.json({ ok: false, error: "forbidden: credentials" }, { status: 403 });
   const b = await req.json().catch(() => null);
   if (!b?.name || !["api", "excel"].includes(b.method)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   try {
@@ -44,7 +47,9 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!(await guard(2))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const _s = await guard(2);
+  if (!_s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(_s, "fulfillment.credentials"))) return NextResponse.json({ ok: false, error: "forbidden: credentials" }, { status: 403 });
   const b = await req.json().catch(() => null);
   if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   const patch: Record<string, unknown> = {};
@@ -68,7 +73,9 @@ export async function PATCH(req: NextRequest) {
 
 // DELETE { id } — xóa fulfiller (chặn nếu đã có đơn đẩy qua để giữ lịch sử)
 export async function DELETE(req: NextRequest) {
-  if (!(await guard(2))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const _s = await guard(2);
+  if (!_s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(_s, "fulfillment.credentials"))) return NextResponse.json({ ok: false, error: "forbidden: credentials" }, { status: 403 });
   const b = await req.json().catch(() => null);
   if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   // Có đơn fulfillment đã đẩy qua nhà này → không xóa (giữ lịch sử)

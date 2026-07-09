@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useConfirm } from "@/components/confirm-provider";
 import { IconKey, IconLock, IconLockOpen, IconTrash } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
+import { UserFunctionPermission } from "./user-function-permission";
 
 const MODULES = ["dashboard", "orders", "fulfillment", "designs", "finance", "hr", "stores", "settings"] as const;
 const MODULE_KEY: Record<string, string> = { dashboard: "adm.modDashboard", orders: "adm.modOrders", fulfillment: "adm.modFulfillment", designs: "adm.modDesigns", finance: "adm.modFinance", hr: "adm.modHr", stores: "adm.modStores", settings: "adm.modSettings" };
@@ -24,11 +25,14 @@ const RESTR_LABEL: Record<string, string> = {
 type Perm = { role: string; module: string; level: number };
 type RoleRestr = { role: string; restrictionKey: string; enabled: boolean };
 type DataScope = { role: string; resource: string; scope: string };
+type Action = { key: string; module: string; label: string };
+type RoleAction = { role: string; actionKey: string; enabled: boolean };
 const SCOPE_RESOURCES: { key: string; label: string }[] = [{ key: "orders", label: "Đơn hàng" }, { key: "designs", label: "Design" }];
 const SCOPE_OPTS: { v: string; label: string }[] = [{ v: "all", label: "Tất cả" }, { v: "team", label: "Cả Team" }, { v: "own", label: "Chỉ của mình" }];
+const ACTION_MODULE_LABEL: Record<string, string> = { orders: "Orders", designs: "Design Studio", fulfillment: "Fulfillment", stores: "Stores", finance: "Finance" };
 type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string };
 
-export function AdminClient({ users: initialUsers, permissions, roleRestrictions, dataScopes }: { users: User[]; permissions: Perm[]; roleRestrictions: RoleRestr[]; dataScopes: DataScope[] }) {
+export function AdminClient({ users: initialUsers, permissions, roleRestrictions, dataScopes, actions, roleActions }: { users: User[]; permissions: Perm[]; roleRestrictions: RoleRestr[]; dataScopes: DataScope[]; actions: Action[]; roleActions: RoleAction[] }) {
   const [users, setUsers] = useState(initialUsers);
   const [perms, setPerms] = useState<Map<string, number>>(
     new Map(permissions.map((p) => [`${p.role}:${p.module}`, p.level]))
@@ -39,6 +43,11 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   const [scopes, setScopes] = useState<Map<string, string>>(
     new Map(dataScopes.map((s) => [`${s.role}:${s.resource}`, s.scope]))
   );
+  // Hành động BỊ TẮT (không có bản ghi = cho phép)
+  const [denied, setDenied] = useState<Set<string>>(
+    new Set(roleActions.filter((a) => !a.enabled).map((a) => `${a.role}:${a.actionKey}`))
+  );
+  const [actRole, setActRole] = useState("seller");
   const [form, setForm] = useState({ fullName: "", email: "", password: "", role: "seller", team: "" });
   const [msg, setMsg] = useState("");
   const { t } = useLang();
@@ -80,6 +89,20 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
       body: JSON.stringify({ role, resource, scope }),
     });
     if (res.ok) setScopes(new Map(scopes).set(`${role}:${resource}`, scope));
+  }
+
+  // Tick hành động (checked = cho phép). Lưu enabled; bỏ tick → enabled=false (denied).
+  async function toggleAction(role: string, action: string) {
+    if (role === "admin") return;
+    const k = `${role}:${action}`;
+    const nowAllowed = !denied.has(k);   // đang cho phép → sẽ tắt
+    const enabled = !nowAllowed;
+    const res = await fetch("/api/admin/permissions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, action, enabled }),
+    });
+    if (res.ok) { const n = new Set(denied); enabled ? n.delete(k) : n.add(k); setDenied(n); }
   }
 
   async function createUser(e: React.FormEvent) {
@@ -250,108 +273,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
         )}
       </div>
 
-      <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("adm.permMatrix")}</h3>
-        <div className="sub" style={{ marginBottom: 10 }}>{t("adm.permHint")}</div>
-        <div style={{ overflowX: "auto" }}>
-          <table>
-            <thead>
-              <tr><th>Module</th>{ROLES.map((r) => <th key={r} style={{ textAlign: "center" }}>{r}</th>)}</tr>
-            </thead>
-            <tbody>
-              {MODULES.map((m) => (
-                <tr key={m}>
-                  <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{t(MODULE_KEY[m])}</td>
-                  {ROLES.map((r) => {
-                    const lv = levelOf(r, m);
-                    return (
-                      <td key={r} style={{ textAlign: "center" }}>
-                        <span
-                          onClick={() => cycle(r, m)}
-                          style={{
-                            ...LEVEL_STYLE[lv],
-                            display: "inline-block", minWidth: 78, padding: "5px 0", borderRadius: 8,
-                            fontSize: 11.5, fontWeight: 800, cursor: r === "admin" ? "not-allowed" : "pointer",
-                            opacity: r === "admin" ? 0.55 : 1, userSelect: "none",
-                          }}
-                        >
-                          {t(LEVEL_KEY[lv])}
-                        </span>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Giới hạn dữ liệu theo role</h3>
-        <div className="sub" style={{ marginBottom: 10 }}>Bấm để bật/tắt. Áp cho mọi user của role (Admin không bị giới hạn). Lưu tức thì.</div>
-        <div style={{ overflowX: "auto" }}>
-          <table>
-            <thead>
-              <tr><th>Giới hạn</th>{ROLES.filter((r) => r !== "admin").map((r) => <th key={r} style={{ textAlign: "center" }}>{r}</th>)}</tr>
-            </thead>
-            <tbody>
-              {RESTRICTIONS.map((rk) => (
-                <tr key={rk}>
-                  <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{RESTR_LABEL[rk]}</td>
-                  {ROLES.filter((r) => r !== "admin").map((r) => {
-                    const on = restr.has(`${r}:${rk}`);
-                    return (
-                      <td key={r} style={{ textAlign: "center" }}>
-                        <span
-                          onClick={() => toggleRestr(r, rk)}
-                          style={{
-                            ...(on ? { background: "var(--green-soft)", color: "var(--green)" } : { background: "#EEF0F5", color: "#9CA3AF" }),
-                            display: "inline-block", minWidth: 64, padding: "5px 0", borderRadius: 8,
-                            fontSize: 11.5, fontWeight: 800, cursor: "pointer", userSelect: "none",
-                          }}
-                        >
-                          {on ? "BẬT" : "—"}
-                        </span>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Phạm vi dữ liệu theo role</h3>
-        <div className="sub" style={{ marginBottom: 10 }}>Mỗi role xem dữ liệu ở mức: Tất cả · Cả Team · Chỉ của mình. Áp cho Đơn hàng và Design. Admin luôn Tất cả.</div>
-        <div style={{ overflowX: "auto" }}>
-          <table>
-            <thead>
-              <tr><th>Phạm vi</th>{ROLES.filter((r) => r !== "admin").map((r) => <th key={r} style={{ textAlign: "center" }}>{r}</th>)}</tr>
-            </thead>
-            <tbody>
-              {SCOPE_RESOURCES.map((res) => (
-                <tr key={res.key}>
-                  <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{res.label}</td>
-                  {ROLES.filter((r) => r !== "admin").map((r) => (
-                    <td key={r} style={{ textAlign: "center" }}>
-                      <select
-                        value={scopes.get(`${r}:${res.key}`) ?? "all"}
-                        onChange={(e) => setScope(r, res.key, e.target.value)}
-                        style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer", background: "#fff" }}
-                      >
-                        {SCOPE_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
-                      </select>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <UserFunctionPermission />
     </>
   );
 }

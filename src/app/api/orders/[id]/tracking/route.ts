@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "fulfillment")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "orders.manual_cost"))) return NextResponse.json({ ok: false, error: "forbidden: manual cost" }, { status: 403 });
 
   const b = await req.json().catch(() => null);
   if (!b) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });

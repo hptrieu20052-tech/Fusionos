@@ -7,6 +7,7 @@ export type Scope = "all" | "team" | "own";
 export type ScopeResource = "orders" | "designs";
 
 let scache: { at: number; map: Map<string, Scope> } | null = null;
+let uscache: { at: number; map: Map<string, Scope> } | null = null;
 async function roleScopeMap(): Promise<Map<string, Scope>> {
   if (scache && Date.now() - scache.at < 30_000) return scache.map;
   const rows = await db.select().from(schema.roleDataScopes).catch(() => [] as { role: string; resource: string; scope: string }[]);
@@ -14,13 +15,21 @@ async function roleScopeMap(): Promise<Map<string, Scope>> {
   scache = { at: Date.now(), map };
   return map;
 }
-export function invalidateScopeCache() { scache = null; }
+async function userScopeMap(): Promise<Map<string, Scope>> {
+  if (uscache && Date.now() - uscache.at < 30_000) return uscache.map;
+  const rows = await db.select().from(schema.userDataScopes).catch(() => [] as { userId: string; resource: string; scope: string }[]);
+  const map = new Map(rows.map((r) => [`${r.userId}:${r.resource}`, r.scope as Scope]));
+  uscache = { at: Date.now(), map };
+  return map;
+}
+export function invalidateScopeCache() { scache = null; uscache = null; }
 
-/** Phạm vi dữ liệu của user với 1 resource. Admin = all. Nếu chưa cấu hình → suy từ restriction own_* (own) else all. */
+/** Phạm vi dữ liệu của user với 1 resource. Override user → mặc định role → suy từ restriction cũ → all. Admin=all. */
 export async function resolveScope(session: Session, resource: ScopeResource): Promise<Scope> {
   if (session.role === "admin") return "all";
-  const map = await roleScopeMap();
-  const s = map.get(`${session.role}:${resource}`);
+  const uv = (await userScopeMap()).get(`${session.sub}:${resource}`);
+  if (uv) return uv;
+  const s = (await roleScopeMap()).get(`${session.role}:${resource}`);
   if (s) return s;
   // Fallback tương thích cũ: có own_* restriction → own
   const legacyKey = resource === "orders" ? "own_orders_only" : "own_designs_only";

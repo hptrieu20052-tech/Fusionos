@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 import { scopeOwnerIds } from "@/lib/scope";
 import * as XLSX from "xlsx";
 
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "orders")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "orders.export"))) return NextResponse.json({ ok: false, error: "forbidden: export" }, { status: 403 });
   const hideProfit = await hasRestriction(session, "hide_profit");
   const _si = await scopeOwnerIds(session, "orders");
   const own = _si ? sql` AND o.seller_id IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;

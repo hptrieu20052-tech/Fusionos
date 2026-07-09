@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,6 +14,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "designs.ai"))) return NextResponse.json({ ok: false, error: "forbidden: ai" }, { status: 403 });
 
   const [d] = await db.select().from(schema.designs).where(eq(schema.designs.id, params.id)).limit(1);
   if (!d) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });

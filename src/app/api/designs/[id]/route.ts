@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -83,6 +84,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "designs.delete"))) return NextResponse.json({ ok: false, error: "forbidden: delete" }, { status: 403 });
   await db.delete(schema.designs).where(eq(schema.designs.id, params.id));
   return NextResponse.json({ ok: true });
 }

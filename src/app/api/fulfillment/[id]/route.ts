@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, like } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic";
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session || (await levelOf(session, "fulfillment")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "fulfillment.undo"))) return NextResponse.json({ ok: false, error: "forbidden: undo" }, { status: 403 });
 
   const [ffo] = await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.id, params.id)).limit(1);
   if (!ffo) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });

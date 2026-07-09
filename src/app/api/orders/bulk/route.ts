@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { sql, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 import { scopeOwnerIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,9 @@ export async function POST(req: NextRequest) {
   }
   if (!(schema.orders.status.enumValues as readonly string[]).includes(status)) {
     return NextResponse.json({ ok: false, error: "trạng thái không hợp lệ" }, { status: 400 });
+  }
+  if (status === "trash" && !(await hasAction(session, "orders.trash"))) {
+    return NextResponse.json({ ok: false, error: "forbidden: trash" }, { status: 403 });
   }
 
   // own_orders_only: chỉ đổi đơn của chính mình

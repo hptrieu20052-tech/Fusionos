@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { hasAction } from "@/lib/actions";
 import * as XLSX from "xlsx";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +19,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "orders")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "orders.import"))) return NextResponse.json({ ok: false, error: "forbidden: import" }, { status: 403 });
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file") as File | null;
