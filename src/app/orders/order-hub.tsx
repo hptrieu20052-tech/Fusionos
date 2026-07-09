@@ -74,6 +74,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const [msg, setMsg] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showEtsy, setShowEtsy] = useState(false);
+  const [showTiktok, setShowTiktok] = useState(false);
   const [importMenu, setImportMenu] = useState(false);
   const [exportMenu, setExportMenu] = useState(false);
   const excelRef = useRef<HTMLInputElement>(null);
@@ -159,8 +160,8 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
                   <button onClick={() => { setImportMenu(false); setShowEtsy(true); }} style={IMPORT_ITEM}>
                     <MarketplaceLogo mk="etsy" size={20} /><div style={{ textAlign: "left" }}><b>Etsy</b><div style={IMPORT_SUB}>Tạo đơn từ file CSV</div></div>
                   </button>
-                  <button disabled style={{ ...IMPORT_ITEM, opacity: .5, cursor: "default" }}>
-                    <MarketplaceLogo mk="tiktok" size={20} /><div style={{ textAlign: "left" }}><b>TikTok Shop</b><div style={IMPORT_SUB}>Sắp có</div></div>
+                  <button onClick={() => { setImportMenu(false); setShowTiktok(true); }} style={IMPORT_ITEM}>
+                    <MarketplaceLogo mk="tiktok" size={20} /><div style={{ textAlign: "left" }}><b>TikTok Shop</b><div style={IMPORT_SUB}>Tạo đơn từ file CSV &quot;To Ship&quot;</div></div>
                   </button>
                   <button disabled style={{ ...IMPORT_ITEM, opacity: .5, cursor: "default" }}>
                     <MarketplaceLogo mk="amazon" size={20} /><div style={{ textAlign: "left" }}><b>Amazon</b><div style={IMPORT_SUB}>Sắp có</div></div>
@@ -298,6 +299,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
 
       {showCreate && <CreateOrderModal close={() => setShowCreate(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
       {showEtsy && <EtsyImportModal close={() => setShowEtsy(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
+      {showTiktok && <TikTokImportModal close={() => setShowTiktok(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
     </>
   );
 }
@@ -1032,6 +1034,69 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
     </div>
   );
 }
+
+function TikTokImportModal({ close, reload, flash, sellers, stores }: {
+  close: () => void; reload: () => void; flash: (m: string) => void;
+  sellers: Opt[]; stores: Opt[];
+}) {
+  const { t } = useLang();
+  const confirm = useConfirm();
+  const [storeId, setStoreId] = useState("");
+  const [sellerId, setSellerId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const doImport = async (file: File) => {
+    setBusy(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    if (storeId) fd.append("storeId", storeId);
+    if (sellerId) fd.append("sellerId", sellerId);
+    const j = await fetch("/api/orders/import-tiktok", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
+    setBusy(false);
+    if (j.ok) {
+      flash(`✓ ${j.orders} đơn — tạo mới ${j.created}, bỏ qua ${j.skipped}${j.errors?.length ? ` · ${j.errors.length} lỗi` : ""}`);
+      if (j.errors?.length) await confirm({ message: "Lỗi:\n" + j.errors.join("\n"), info: true });
+      reload(); close();
+    } else flash("✗ " + (j.error ?? t("o.importError")));
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
+      <div style={{ background: "#fff", borderRadius: 18, width: 460, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk="tiktok" size={20} /> Import đơn TikTok Shop</b>
+          {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
+          Xuất file đơn ở TikTok Seller Center (Orders → To Ship → Export), rồi tải file CSV lên đây. Nhiều dòng cùng Order ID sẽ gộp thành 1 đơn.
+        </div>
+
+        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.etsyStore")}
+          <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
+            <option value="">{t("o.pickStore")}</option>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
+        <label style={{ ...rLbl, display: "block", marginBottom: 16 }}>{t("o.sellerOptional")}
+          <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
+            <option value="">—</option>
+            {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </label>
+
+        <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }}
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) doImport(f); e.target.value = ""; }} />
+        <button onClick={() => fileRef.current?.click()} disabled={busy}
+          style={{ ...btnBlue, width: "100%", padding: "12px", fontSize: 14, opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <IconUpload width={16} height={16} /> {busy ? t("o.importing") : t("o.pickCsvImport")}
+        </button>
+        <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10 }}>{t("o.dupSkipNote")}</div>
+      </div>
+    </div>
+  );
+}
+
 
 function EtsyImportModal({ close, reload, flash, sellers, stores }: {
   close: () => void; reload: () => void; flash: (m: string) => void;
