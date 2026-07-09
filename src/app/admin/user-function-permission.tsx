@@ -18,6 +18,13 @@ type Data = {
 const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", finance: "Finance", hr: "Staff", stores: "Stores", settings: "Settings" };
 const LEVELS = [{ v: 2, label: "Full" }, { v: 1, label: "Xem" }, { v: 0, label: "Ẩn" }];
 const SCOPE_LABEL: Record<string, string> = { all: "Tất cả", team: "Cả Team", own: "Chỉ của mình" };
+// 1 lựa chọn 4 mức cho mỗi trang (gộp truy cập + phạm vi)
+const ACCESS_OPTS = [
+  { v: "all", label: "Xem full", bg: "var(--green-soft)", fg: "var(--green)" },
+  { v: "team", label: "Xem của Team", bg: "#EAF1FF", fg: "#2563EB" },
+  { v: "own", label: "Chỉ của mình", bg: "var(--amber-soft)", fg: "var(--amber)" },
+  { v: "hidden", label: "Không được xem", bg: "#F1F3F7", fg: "#6B7280" },
+];
 const RESTR_LABEL: Record<string, string> = { hide_profit: "Ẩn lợi nhuận / giá vốn", hide_customer_info: "Ẩn thông tin khách hàng", own_orders_only: "Chỉ đơn của mình", own_designs_only: "Chỉ design của mình" };
 const RES_LABEL: Record<string, string> = { orders: "Đơn hàng", designs: "Design" };
 // own_* thể hiện bằng Phạm vi → chỉ hiện 2 giới hạn còn lại trong panel
@@ -60,8 +67,18 @@ export function UserFunctionPermission() {
   const aOn = (k: string) => { const uv = maps.uA.get(`${sel}:${k}`); if (uv !== undefined) return uv; return !maps.roleDenied.has(`${user!.role}:${k}`); };
   const aIsOwn = (k: string) => maps.uA.has(`${sel}:${k}`);
 
-  const patch = async (kind: string, key: string, value: unknown, reset = false) => {
-    await fetch("/api/admin/user-permissions", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: sel, kind, key, value, reset }) });
+  const send = (kind: string, key: string, value: unknown, reset = false) =>
+    fetch("/api/admin/user-permissions", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: sel, kind, key, value, reset }) });
+  const patch = async (kind: string, key: string, value: unknown, reset = false) => { await send(kind, key, value, reset); await load(); };
+
+  // Phạm vi theo trang (dùng orders/designs scope cho enforcement; các trang khác lưu để hiển thị)
+  const scopeFor = (m: string) => maps.uS.get(`${sel}:${m}`) ?? maps.roleS.get(`${user!.role}:${m}`) ?? "all";
+  const accessOf = (m: string) => (mLevel(m) === 0 ? "hidden" : scopeFor(m));
+  const accessIsOwn = (m: string) => maps.uP.has(`${sel}:${m}`) || maps.uS.has(`${sel}:${m}`);
+  // Đặt 1 trong 4 mức: ẩn → level 0; còn lại → hiện (full) + lưu phạm vi. Edit tinh chỉnh bằng "Hành động".
+  const setAccess = async (m: string, v: string) => {
+    if (v === "hidden") await send("module", m, 0);
+    else { await send("module", m, 2); await send("scope", m, v); }
     await load();
   };
 
@@ -93,40 +110,32 @@ export function UserFunctionPermission() {
         {/* Quyền của người đang chọn */}
         {!user ? <div style={{ color: "var(--muted)" }}>Chọn một người.</div> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {/* Truy cập module */}
+            {/* Quyền xem theo trang — 1 list thẳng hàng, 4 mức */}
             <section>
-              <div style={{ fontWeight: 800, fontSize: 12.5, textTransform: "uppercase", color: "var(--muted)", marginBottom: 8, letterSpacing: ".3px" }}>Truy cập trang</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 8 }}>
-                {data.modules.map((m) => (
-                  <div key={m} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px" }}>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{MODULE_LABEL[m] || m}{dot(mIsOwn(m))}</span>
-                    <div style={{ display: "flex", gap: 4 }}>
-                      {LEVELS.map((lv) => (
-                        <button key={lv.v} onClick={() => patch("module", m, lv.v)}
-                          style={{ padding: "3px 9px", borderRadius: 7, border: "1px solid var(--line)", cursor: "pointer", fontSize: 11, fontWeight: 800,
-                            background: mLevel(m) === lv.v ? "var(--green-soft)" : "#fff", color: mLevel(m) === lv.v ? "var(--green)" : "var(--muted)",
-                            borderColor: mLevel(m) === lv.v ? "var(--green)" : "var(--line)" }}>{lv.label}</button>
-                      ))}
+              <div style={{ fontWeight: 800, fontSize: 12.5, textTransform: "uppercase", color: "var(--muted)", marginBottom: 8, letterSpacing: ".3px" }}>Quyền xem theo trang</div>
+              <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+                {data.modules.map((m, i) => {
+                  const cur = accessOf(m);
+                  return (
+                    <div key={m} style={{ display: "grid", gridTemplateColumns: "170px 1fr", alignItems: "center", gap: 12, padding: "9px 14px", borderTop: i ? "1px solid var(--line)" : "none" }}>
+                      <span style={{ fontWeight: 700, fontSize: 13 }}>{MODULE_LABEL[m] || m}{dot(accessIsOwn(m))}</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                        {ACCESS_OPTS.map((o) => {
+                          const on = cur === o.v;
+                          return (
+                            <button key={o.v} onClick={() => setAccess(m, o.v)}
+                              style={{ padding: "6px 6px", borderRadius: 8, border: "1px solid", cursor: "pointer", fontSize: 11.5, fontWeight: 800, textAlign: "center", whiteSpace: "nowrap",
+                                background: on ? o.bg : "#fff", color: on ? o.fg : "var(--muted)", borderColor: on ? o.fg : "var(--line)" }}>
+                              {o.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            </section>
-
-            {/* Phạm vi dữ liệu */}
-            <section>
-              <div style={{ fontWeight: 800, fontSize: 12.5, textTransform: "uppercase", color: "var(--muted)", marginBottom: 8, letterSpacing: ".3px" }}>Phạm vi dữ liệu</div>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                {data.scopeResources.map((res) => (
-                  <div key={res} style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px" }}>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{RES_LABEL[res] || res}{dot(sIsOwn(res))}</span>
-                    <select value={sVal(res)} onChange={(e) => patch("scope", res, e.target.value)}
-                      style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer", background: "#fff" }}>
-                      {data.scopes.map((s) => <option key={s} value={s}>{SCOPE_LABEL[s] || s}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
+              <div className="sub" style={{ marginTop: 6, fontSize: 11.5 }}>“Cả Team / Chỉ của mình” lọc dữ liệu ở <b>Đơn hàng</b>, <b>Design</b> (và Dashboard theo đơn). Các trang khác: “Xem full” = hiện, “Không được xem” = ẩn. Quyền sửa/xoá tinh chỉnh ở mục <b>Hành động</b> bên dưới.</div>
             </section>
 
             {/* Giới hạn */}

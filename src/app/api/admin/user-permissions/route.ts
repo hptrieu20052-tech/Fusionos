@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest) {
         .onConflictDoUpdate({ target: [schema.userRestrictions.userId, schema.userRestrictions.restrictionKey], set: { enabled: b.value } });
       invalidatePermissionCache();
     } else if (b.kind === "scope") {
-      if (!SCOPE_RESOURCES.includes(b.key) || !SCOPES.includes(b.value)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
+      if (!MODULES.includes(b.key) || !SCOPES.includes(b.value)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
       if (b.reset) await db.delete(schema.userDataScopes).where(and(eq(schema.userDataScopes.userId, b.userId), eq(schema.userDataScopes.resource, b.key)));
       else await db.insert(schema.userDataScopes).values({ userId: b.userId, resource: b.key, scope: b.value })
         .onConflictDoUpdate({ target: [schema.userDataScopes.userId, schema.userDataScopes.resource], set: { scope: b.value } });
