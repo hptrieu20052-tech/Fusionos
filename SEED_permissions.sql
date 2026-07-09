@@ -26,3 +26,10 @@ INSERT INTO role_restrictions (role, restriction_key, enabled) VALUES
   ('support','own_orders_only',false),('support','hide_profit',false),
   ('support','own_designs_only',false),('support','hide_customer_info',false)
 ON CONFLICT (role, restriction_key) DO UPDATE SET enabled = EXCLUDED.enabled;
+
+-- ===== Phạm vi dữ liệu (all/team/own) — chạy sau khi có bảng role_data_scopes =====
+INSERT INTO role_data_scopes (role, resource, scope) VALUES
+  ('seller','orders','own'),   ('seller','designs','all'),
+  ('designer','designs','own'),('designer','orders','all'),
+  ('support','orders','all'),  ('support','designs','all')
+ON CONFLICT (role, resource) DO UPDATE SET scope = EXCLUDED.scope;

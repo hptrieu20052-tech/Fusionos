@@ -19,7 +19,7 @@ export function invalidatePermissionCache() { cache = null; rcache = null; }
 let rcache: { at: number; map: Map<string, boolean> } | null = null;
 async function roleRestrictionMap(): Promise<Map<string, boolean>> {
   if (rcache && Date.now() - rcache.at < 30_000) return rcache.map;
-  const rows = await db.select().from(schema.roleRestrictions);
+  const rows = await db.select().from(schema.roleRestrictions).catch(() => [] as { role: string; restrictionKey: string; enabled: boolean }[]);
   const map = new Map(rows.filter((r) => r.enabled).map((r) => [`${r.role}:${r.restrictionKey}`, true]));
   rcache = { at: Date.now(), map };
   return map;

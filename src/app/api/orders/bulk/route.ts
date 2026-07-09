@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { sql, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { levelOf, hasRestriction } from "@/lib/rbac";
+import { levelOf } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -25,9 +26,9 @@ export async function POST(req: NextRequest) {
   }
 
   // own_orders_only: chỉ đổi đơn của chính mình
-  const own = await hasRestriction(session, "own_orders_only");
+  const scopeIds = await scopeOwnerIds(session, "orders");
   const orders = await db.select().from(schema.orders).where(inArray(schema.orders.id, ids));
-  const allowed = own ? orders.filter((o) => o.sellerId === session.sub) : orders;
+  const allowed = scopeIds ? orders.filter((o) => o.sellerId && scopeIds.includes(o.sellerId)) : orders;
   if (!allowed.length) return NextResponse.json({ ok: false, error: "không có đơn hợp lệ" }, { status: 400 });
 
   await db.update(schema.orders)

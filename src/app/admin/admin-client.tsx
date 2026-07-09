@@ -23,15 +23,21 @@ const RESTR_LABEL: Record<string, string> = {
 
 type Perm = { role: string; module: string; level: number };
 type RoleRestr = { role: string; restrictionKey: string; enabled: boolean };
+type DataScope = { role: string; resource: string; scope: string };
+const SCOPE_RESOURCES: { key: string; label: string }[] = [{ key: "orders", label: "Đơn hàng" }, { key: "designs", label: "Design" }];
+const SCOPE_OPTS: { v: string; label: string }[] = [{ v: "all", label: "Tất cả" }, { v: "team", label: "Cả Team" }, { v: "own", label: "Chỉ của mình" }];
 type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string };
 
-export function AdminClient({ users: initialUsers, permissions, roleRestrictions }: { users: User[]; permissions: Perm[]; roleRestrictions: RoleRestr[] }) {
+export function AdminClient({ users: initialUsers, permissions, roleRestrictions, dataScopes }: { users: User[]; permissions: Perm[]; roleRestrictions: RoleRestr[]; dataScopes: DataScope[] }) {
   const [users, setUsers] = useState(initialUsers);
   const [perms, setPerms] = useState<Map<string, number>>(
     new Map(permissions.map((p) => [`${p.role}:${p.module}`, p.level]))
   );
   const [restr, setRestr] = useState<Set<string>>(
     new Set(roleRestrictions.filter((r) => r.enabled).map((r) => `${r.role}:${r.restrictionKey}`))
+  );
+  const [scopes, setScopes] = useState<Map<string, string>>(
+    new Map(dataScopes.map((s) => [`${s.role}:${s.resource}`, s.scope]))
   );
   const [form, setForm] = useState({ fullName: "", email: "", password: "", role: "seller", team: "" });
   const [msg, setMsg] = useState("");
@@ -64,6 +70,16 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
       body: JSON.stringify({ role, restriction, enabled }),
     });
     if (res.ok) { const n = new Set(restr); enabled ? n.add(k) : n.delete(k); setRestr(n); }
+  }
+
+  async function setScope(role: string, resource: string, scope: string) {
+    if (role === "admin") return;
+    const res = await fetch("/api/admin/permissions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, resource, scope }),
+    });
+    if (res.ok) setScopes(new Map(scopes).set(`${role}:${resource}`, scope));
   }
 
   async function createUser(e: React.FormEvent) {
@@ -300,6 +316,36 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                       </td>
                     );
                   })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Phạm vi dữ liệu theo role</h3>
+        <div className="sub" style={{ marginBottom: 10 }}>Mỗi role xem dữ liệu ở mức: Tất cả · Cả Team · Chỉ của mình. Áp cho Đơn hàng và Design. Admin luôn Tất cả.</div>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr><th>Phạm vi</th>{ROLES.filter((r) => r !== "admin").map((r) => <th key={r} style={{ textAlign: "center" }}>{r}</th>)}</tr>
+            </thead>
+            <tbody>
+              {SCOPE_RESOURCES.map((res) => (
+                <tr key={res.key}>
+                  <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{res.label}</td>
+                  {ROLES.filter((r) => r !== "admin").map((r) => (
+                    <td key={r} style={{ textAlign: "center" }}>
+                      <select
+                        value={scopes.get(`${r}:${res.key}`) ?? "all"}
+                        onChange={(e) => setScope(r, res.key, e.target.value)}
+                        style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer", background: "#fff" }}
+                      >
+                        {SCOPE_OPTS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
+                      </select>
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>

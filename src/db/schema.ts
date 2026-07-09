@@ -276,6 +276,15 @@ export const roleRestrictions = pgTable("role_restrictions", {
   enabled: boolean("enabled").notNull().default(false),
 }, (t) => [primaryKey({ columns: [t.role, t.restrictionKey] })]);
 
+// Phạm vi dữ liệu theo role: 'all' (tất cả) · 'team' (cả team) · 'own' (chỉ của mình). Cho orders + designs.
+export const SCOPES = ["all", "team", "own"] as const;
+export const SCOPE_RESOURCES = ["orders", "designs"] as const;
+export const roleDataScopes = pgTable("role_data_scopes", {
+  role: roleEnum("role").notNull(),
+  resource: text("resource").notNull(), // orders | designs
+  scope: text("scope").notNull().default("all"), // all | team | own
+}, (t) => [primaryKey({ columns: [t.role, t.resource] })]);
+
 // ---------- DESIGN REVIEWS (chấm điểm KPI) ----------
 export const reviewDecisionEnum = pgEnum("review_decision", ["approve", "request_fix", "reject"]);
 

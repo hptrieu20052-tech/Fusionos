@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { levelOf, hasRestriction } from "@/lib/rbac";
+import { levelOf } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
 import { rangeCond, isMonthly, bucketExprs } from "@/lib/ranges";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,8 @@ export async function GET(req: NextRequest) {
   const cond = rangeCond("o.ordered_at", range, from, to);
   const { bucketExpr, bucketOrd } = bucketExprs("o.ordered_at", isMonthly(range, from, to));
 
-  const own = (await hasRestriction(session, "own_orders_only")) ? sql` AND o.seller_id = ${session.sub}` : sql``;
+  const _si = await scopeOwnerIds(session, "orders");
+  const own = _si ? sql` AND o.seller_id IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const r = await db.execute(sql`
     SELECT ${sql.raw(bucketExpr)} AS bucket, min(${sql.raw(bucketOrd)}) AS ord,

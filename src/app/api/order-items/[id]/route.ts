@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { sql, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { levelOf, hasRestriction } from "@/lib/rbac";
+import { levelOf } from "@/lib/rbac";
+import { inScope } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     SELECT i.id, i.order_id, o.seller_id FROM order_items i JOIN orders o ON o.id = i.order_id WHERE i.id = ${params.id}::uuid
   `)).rows[0] as { id: string; order_id: string; seller_id: string | null } | undefined;
   if (!item) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  if ((await hasRestriction(session, "own_orders_only")) && item.seller_id !== session.sub) {
+  if (!(await inScope(session, "orders", item.seller_id))) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 

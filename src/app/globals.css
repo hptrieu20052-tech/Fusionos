@@ -318,8 +318,10 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent) 
 
 /* Design card — nhãn mặt + thumbnail các mặt khác */
 .dc-side-badge{position:absolute;top:8px;left:8px;z-index:2;background:rgba(17,24,39,.78);color:#fff;font-size:10px;font-weight:800;padding:3px 8px;border-radius:7px;letter-spacing:.2px}
-.dc-sides{display:flex;gap:8px;padding:8px 10px 2px;flex-wrap:wrap}
-.dc-side{display:flex;flex-direction:column;align-items:center;gap:3px;width:46px}
+.dc-sides{display:flex;gap:8px;padding:8px 10px 8px;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+.dc-sides::-webkit-scrollbar{height:6px}
+.dc-sides::-webkit-scrollbar-thumb{background:var(--line);border-radius:6px}
+.dc-side{display:flex;flex-direction:column;align-items:center;gap:3px;width:46px;flex:0 0 auto}
 .dc-side-img{width:46px;height:46px;border-radius:8px;overflow:hidden;border:1px solid var(--line);display:flex;align-items:center;justify-content:center}
 .dc-side-img img{width:100%;height:100%;object-fit:contain}
 .dc-side span{font-size:9.5px;color:var(--muted);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46px}

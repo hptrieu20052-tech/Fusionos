@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
+import { inScope } from "@/lib/scope";
 import { parseVariant } from "@/lib/variant";
 import { fileUrl } from "@/lib/storage";
 
@@ -14,7 +15,7 @@ async function guard(orderId: string, min: 1 | 2) {
   if ((await levelOf(session, "orders")) < min) return { err: NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }) };
   const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
   if (!order) return { err: NextResponse.json({ ok: false, error: "not found" }, { status: 404 }) };
-  if ((await hasRestriction(session, "own_orders_only")) && order.sellerId !== session.sub) {
+  if (!(await inScope(session, "orders", order.sellerId))) {
     return { err: NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }) };
   }
   return { session, order };

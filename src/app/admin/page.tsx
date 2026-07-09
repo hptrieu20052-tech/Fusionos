@@ -9,13 +9,14 @@ export default async function AdminPage() {
   if (session?.role !== "admin") {
     return <div className="panel empty">Chỉ Admin được truy cập trang này.</div>;
   }
-  const [users, perms, roleRestr] = await Promise.all([
+  const [users, perms, roleRestr, dataScopes] = await Promise.all([
     db.select({
       id: schema.users.id, fullName: schema.users.fullName, email: schema.users.email,
       role: schema.users.role, team: schema.users.team, status: schema.users.status,
     }).from(schema.users),
     db.select().from(schema.rolePermissions),
-    db.select().from(schema.roleRestrictions),
+    db.select().from(schema.roleRestrictions).catch(() => []),      // bảng có thể chưa migrate
+    db.select().from(schema.roleDataScopes).catch(() => []),        // bảng có thể chưa migrate
   ]);
-  return <AdminClient users={users} permissions={perms} roleRestrictions={roleRestr} />;
+  return <AdminClient users={users} permissions={perms} roleRestrictions={roleRestr} dataScopes={dataScopes} />;
 }

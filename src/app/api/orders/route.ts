@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
+import { scopeOwnerIds, resolveScope } from "@/lib/scope";
 import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -18,11 +19,11 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const show = Math.min(Math.max(Number(sp.get("show") ?? 20), 5), 100);
   const page = Math.max(Number(sp.get("page") ?? 1), 1);
-  const own = (await hasRestriction(session, "own_orders_only")) || session.role === "seller";
+  const scopeIds = await scopeOwnerIds(session, "orders");
   const hideCustomer = await hasRestriction(session, "hide_customer_info");
 
   const conds: ReturnType<typeof sql>[] = [];
-  if (own) conds.push(sql`o.seller_id = ${session.sub}`);
+  if (scopeIds) conds.push(sql`o.seller_id IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})`);
   else if (sp.get("sellerId")) conds.push(sql`o.seller_id = ${sp.get("sellerId")}::uuid`);
   if (sp.get("storeId")) conds.push(sql`o.store_id = ${sp.get("storeId")}::uuid`);
   if (sp.get("platform")) conds.push(sql`o.platform = ${sp.get("platform")}::marketplace`);
@@ -128,14 +129,14 @@ export async function GET(req: NextRequest) {
     return suggestFor(String(i.product_title)); // fallback: khớp tên
   };
 
-  // Đếm theo trạng thái (áp dụng own restriction, KHÔNG áp filter khác để pill luôn đủ)
-  const ownCond = own ? sql` WHERE seller_id = ${session.sub}` : sql``;
+  // Đếm theo trạng thái (áp phạm vi, KHÔNG áp filter khác để pill luôn đủ)
+  const ownCond = scopeIds ? sql` WHERE seller_id IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
   const countRows = await db.execute(sql`SELECT status, count(*)::int c FROM orders${ownCond} GROUP BY status`);
   const counts: Record<string, number> = {};
   for (const r of countRows.rows as { status: string; c: number }[]) counts[r.status] = r.c;
 
   // Dropdown filter data
-  const sellers = own ? [] : (await db.execute(sql`SELECT id, full_name AS name FROM users WHERE role='seller' ORDER BY full_name`)).rows;
+  const sellers = scopeIds ? [] : (await db.execute(sql`SELECT id, full_name AS name FROM users WHERE role='seller' ORDER BY full_name`)).rows;
   const storesR = (await db.execute(sql`SELECT id, name FROM stores ORDER BY name`)).rows;
   const fulfillersR = (await db.execute(sql`SELECT id, name FROM fulfillers ORDER BY name`)).rows;
 
@@ -169,8 +170,8 @@ export async function POST(req: NextRequest) {
   const platform = (schema.orders.platform.enumValues as readonly string[]).includes(b.platform) ? b.platform : "etsy";
   const externalId = String(b.externalId ?? "").trim() || `MANUAL-${Date.now()}`;
 
-  const own = (await hasRestriction(session, "own_orders_only")) || session.role === "seller";
-  const sellerId = own ? session.sub : (b.sellerId || null);
+  const scope = await resolveScope(session, "orders");
+  const sellerId = scope === "all" ? (b.sellerId || null) : session.sub;
 
   const [order] = await db.insert(schema.orders).values({
     externalId, platform: platform as never,
