@@ -62,7 +62,7 @@ async function forceDownload(url: string, filename: string) {
 }
 
 type ListData = { designs: Design[]; total: number; page: number; show: number; sellers: Opt[]; designers: Opt[] };
-export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
+export default function DesignsClient({ canEdit, role }: { canEdit: boolean; role: string }) {
   const { t } = useLang();
   const confirm = useConfirm();
   const [data, setData] = useState<ListData | null>(null);
@@ -229,7 +229,7 @@ export default function DesignsClient({ canEdit }: { canEdit: boolean }) {
       <div style={{ marginTop: 16 }}><DesignPager page={page} total={total} show={show} setPage={setPage} label={t("d.design")} /></div>
 
       {sel && <DetailModal detail={sel} canEdit={canEdit} close={() => setSel(null)} reload={() => { load(); }} reopen={openDetail} flash={flash} doUpload={doUpload} />}
-      {showCreate && <BulkUploadModal close={() => setShowCreate(false)} reload={load} flash={flash} doUpload={doUpload} sellers={data?.sellers ?? []} designers={data?.designers ?? []} />}
+      {showCreate && <BulkUploadModal close={() => setShowCreate(false)} reload={load} flash={flash} doUpload={doUpload} sellers={data?.sellers ?? []} designers={data?.designers ?? []} role={role} />}
     </>
   );
 }
@@ -593,10 +593,10 @@ function DesignPager({ page, total, show, setPage, label }: { page: number; tota
   );
 }
 
-function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }: {
+function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers, role }: {
   close: () => void; reload: () => void; flash: (m: string) => void;
   doUpload: (designId: string, file: File, kind: string) => Promise<void>;
-  sellers: Opt[]; designers: Opt[];
+  sellers: Opt[]; designers: Opt[]; role: string;
 }) {
   const { t } = useLang();
   const [files, setFiles] = useState<File[]>([]);
@@ -693,21 +693,36 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }:
           Mỗi file = 1 design mới (mặt <b>Front</b>). Thêm mặt sau / mockup và chỉnh sửa trong <b>chi tiết design</b> sau.
         </div>
 
-        {/* Seller + Designer áp cho tất cả */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 14 }}>
-          <label style={rLbl}>{t("c.seller")} <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 11 }}>{t("d.applyAll")}</span>
-            <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
-              <option value="">—</option>
-              {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
-          <label style={rLbl}>{t("c.designer")}
-            <select value={designerId} onChange={(e) => setDesignerId(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
-              <option value="">—</option>
-              {designers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
-        </div>
+        {/* Seller + Designer áp cho tất cả. Ẩn ô của chính role đang up (tự gán = mình). */}
+        {(() => {
+          const showSeller = role !== "seller";     // seller up → tự là seller, ẩn ô
+          const showDesigner = role !== "designer"; // designer up → tự là designer, ẩn ô
+          const cols = showSeller && showDesigner ? "1fr 1fr" : "1fr";
+          return (
+            <div style={{ marginTop: 12, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: cols, gap: 12 }}>
+                {showSeller && (
+                  <label style={rLbl}>{t("c.seller")} <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 11 }}>{t("d.applyAll")}</span>
+                    <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
+                      <option value="">—</option>
+                      {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </label>
+                )}
+                {showDesigner && (
+                  <label style={rLbl}>{t("c.designer")}
+                    <select value={designerId} onChange={(e) => setDesignerId(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
+                      <option value="">—</option>
+                      {designers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </label>
+                )}
+              </div>
+              {!showDesigner && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Design sẽ tự gán Designer = bạn. Chỉ cần chọn Seller.</div>}
+              {!showSeller && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Design sẽ tự gán Seller = bạn. Chỉ cần chọn Designer.</div>}
+            </div>
+          );
+        })()}
 
         {progress && (
           <div style={{ marginBottom: 12 }}>

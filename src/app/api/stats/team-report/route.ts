@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
 import { rangeCond, isMonthly, bucketExprs } from "@/lib/ranges";
 
 export const dynamic = "force-dynamic";
@@ -20,6 +21,10 @@ export async function GET(req: NextRequest) {
   const cond = rangeCond("o.ordered_at", range, from, to);
   const { bucketExpr, bucketOrd } = bucketExprs("o.ordered_at", isMonthly(range, from, to));
 
+  // Phạm vi: team/own → chỉ đơn trong phạm vi (→ chỉ team của mình hiện ra)
+  const scopeIds = await scopeOwnerIds(session, "orders");
+  const inO = scopeIds ? sql` AND o.seller_id IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+
   const r = await db.execute(sql`
     SELECT ${sql.raw(bucketExpr)} AS bucket, min(${sql.raw(bucketOrd)}) AS ord,
            coalesce(u.team,'(chưa gán team)') AS team,
@@ -27,7 +32,7 @@ export async function GET(req: NextRequest) {
     FROM orders o
     LEFT JOIN users u ON u.id = o.seller_id
     LEFT JOIN (SELECT order_id, sum(qty) qty FROM order_items GROUP BY 1) oi ON oi.order_id = o.id
-    WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')
+    WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')${inO}
     GROUP BY 1, u.team ORDER BY ord
   `);
   const rows = r.rows as { bucket: string; team: string; o: number; i: number; r: string }[];
@@ -37,7 +42,7 @@ export async function GET(req: NextRequest) {
     SELECT coalesce(u.team,'(chưa gán team)') AS team, u.full_name AS name, u.role,
            count(o.id)::int AS orders, coalesce(sum(o.total),0)::numeric AS revenue
     FROM orders o JOIN users u ON u.id = o.seller_id
-    WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')
+    WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')${inO}
     GROUP BY 1, u.full_name, u.role ORDER BY revenue DESC
   `);
 

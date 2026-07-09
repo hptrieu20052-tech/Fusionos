@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -13,23 +14,25 @@ export async function GET(req: NextRequest) {
   if ((await levelOf(session, "designs")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days") ?? 7), 1), 31);
+  const _si = await scopeOwnerIds(session, "designs");
+  const inD = _si ? sql` AND d.designer_id IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const daily = await db.execute(sql`
     SELECT u.id designer_id, u.full_name name, d.created_at::date dd, count(*)::int v, coalesce(sum(d.points),0)::int pts
     FROM designs d JOIN users u ON u.id = d.designer_id
-    WHERE d.created_at > CURRENT_DATE - (${days - 1})::int
+    WHERE d.created_at > CURRENT_DATE - (${days - 1})::int${inD}
     GROUP BY 1,2,3
   `);
   const scores = await db.execute(sql`
     SELECT d.designer_id, round(avg(r.quality_score),1) score, count(r.id)::int reviews
     FROM design_reviews r JOIN designs d ON d.id = r.design_id
-    WHERE d.designer_id IS NOT NULL GROUP BY 1
+    WHERE d.designer_id IS NOT NULL${inD} GROUP BY 1
   `);
   const biz = await db.execute(sql`
     SELECT d.designer_id, count(DISTINCT oi.order_id)::int orders
     FROM order_items oi JOIN designs d ON d.id = oi.design_id
     JOIN orders o ON o.id = oi.order_id
-    WHERE o.ordered_at > NOW() - interval '30 days' AND d.designer_id IS NOT NULL
+    WHERE o.ordered_at > NOW() - interval '30 days' AND d.designer_id IS NOT NULL${inD}
     GROUP BY 1
   `);
 

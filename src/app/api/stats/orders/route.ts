@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,8 @@ export async function GET(req: NextRequest) {
 
   const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days") ?? 7), 1), 31);
   const metric = req.nextUrl.searchParams.get("metric") === "items" ? "items" : "orders";
+  const _si = await scopeOwnerIds(session, "orders");
+  const inO = _si ? sql` AND o.seller_id IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const val = metric === "items" ? sql`coalesce(sum(oi.qty),0)::int` : sql`count(DISTINCT o.id)::int`;
   const r = await db.execute(sql`
@@ -21,7 +24,7 @@ export async function GET(req: NextRequest) {
     FROM orders o
     JOIN users u ON u.id = o.seller_id
     LEFT JOIN order_items oi ON oi.order_id = o.id
-    WHERE o.ordered_at > CURRENT_DATE - (${days - 1})::int AND o.status NOT IN ('cancel','trash')
+    WHERE o.ordered_at > CURRENT_DATE - (${days - 1})::int AND o.status NOT IN ('cancel','trash')${inO}
     GROUP BY 1,2,3 ORDER BY 3
   `);
   const dayList: string[] = [];

@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
 import { rangeCond, isMonthly, bucketExprs } from "@/lib/ranges";
 
 export const dynamic = "force-dynamic";
@@ -23,13 +24,17 @@ export async function GET(req: NextRequest) {
   const bucket = (col: string) => bucketExprs(col, monthly).bucketExpr;
   const bucketOrd = (col: string) => bucketExprs(col, monthly).bucketOrd;
 
+  // Phạm vi: team/own → chỉ designer trong phạm vi
+  const scopeIds = await scopeOwnerIds(session, "designs");
+  const inD = scopeIds ? sql` AND d.designer_id IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+
   // 1. Design tạo trong kỳ theo designer × bucket (kèm points cho KPI)
   const dz = await db.execute(sql`
     SELECT ${sql.raw(bucket("d.created_at"))} AS bucket, min(${sql.raw(bucketOrd("d.created_at"))}) AS ord,
            d.designer_id, coalesce(u.full_name,'(chưa gán)') AS name,
            count(*)::int AS c, coalesce(sum(d.points),0)::int AS pts
     FROM designs d LEFT JOIN users u ON u.id = d.designer_id
-    WHERE ${sql.raw(cond("d.created_at"))} AND d.designer_id IS NOT NULL
+    WHERE ${sql.raw(cond("d.created_at"))} AND d.designer_id IS NOT NULL${inD}
     GROUP BY 1, d.designer_id, u.full_name ORDER BY ord
   `);
   // 2. Sale phát sinh trong kỳ từ design của designer × bucket
@@ -40,14 +45,14 @@ export async function GET(req: NextRequest) {
     FROM order_items oi
     JOIN designs d ON d.id = oi.design_id AND d.designer_id IS NOT NULL
     JOIN orders o ON o.id = oi.order_id
-    WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('cancel','trash')
+    WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('cancel','trash')${inD}
     GROUP BY 1, d.designer_id ORDER BY ord
   `);
   // 3. Điểm review trong kỳ theo designer
   const scores = await db.execute(sql`
     SELECT d.designer_id, avg(r.total_score)::numeric(4,2) AS score, count(*)::int AS reviews
     FROM design_reviews r JOIN designs d ON d.id = r.design_id
-    WHERE ${sql.raw(cond("r.created_at"))} AND d.designer_id IS NOT NULL
+    WHERE ${sql.raw(cond("r.created_at"))} AND d.designer_id IS NOT NULL${inD}
     GROUP BY 1
   `);
 

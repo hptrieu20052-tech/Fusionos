@@ -10,5 +10,5 @@ export default async function DesignsPage() {
     return <div className="panel empty">Bạn không có quyền xem Design Studio.</div>;
   }
   const canUpload = (await levelOf(session, "designs")) >= 2;
-  return <DesignsClient canEdit={canUpload} />;
+  return <DesignsClient canEdit={canUpload} role={session.role} />;
 }
