@@ -293,22 +293,27 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   };
   const pendingKind = useRef("mockup");
   const pendingReplace = useRef<string | null>(null);
-  const [busyUp, setBusyUp] = useState(false);
+  const [uploads, setUploads] = useState<{ id: string; kind: string; name: string }[]>([]);
   const pickAndUpload = (kind: string) => { pendingKind.current = kind; pendingReplace.current = null; fileRef.current?.click(); };
   // Thay file cho mặt đã có design (upload file mới cùng loại → xoá file cũ)
   const replaceFile = (fileId: string, kind: string) => { pendingKind.current = kind; pendingReplace.current = fileId; fileRef.current?.click(); };
-  const onPicked = async (file: File) => {
-    setBusyUp(true);
-    try {
-      const oldId = pendingReplace.current;
-      await doUpload(d.id, file, pendingKind.current);
-      if (oldId) { await fetch(`/api/designs/files/${oldId}`, { method: "DELETE" }).catch(() => {}); } // xoá file cũ sau khi up thành công
-      flash(oldId ? "✓ Đã thay file" : t("d.uploaded")); reopen(d.id); reload();
-    }
-    catch (e) { flash("✗ " + (e as Error).message); }
+  // Không khoá — up SONG SONG, mỗi file 1 card "đang tải" riêng, up file khác được ngay
+  const onPicked = (file: File) => {
+    const kind = pendingKind.current;
+    const oldId = pendingReplace.current;
     pendingReplace.current = null;
-    setBusyUp(false);
     if (fileRef.current) fileRef.current.value = "";
+    const upId = Math.random().toString(36).slice(2);
+    setUploads((u) => [...u, { id: upId, kind, name: file.name }]);
+    (async () => {
+      try {
+        await doUpload(d.id, file, kind);
+        if (oldId) await fetch(`/api/designs/files/${oldId}`, { method: "DELETE" }).catch(() => {});
+        flash(oldId ? "✓ Đã thay file" : t("d.uploaded"));
+        reopen(d.id); reload();
+      } catch (e) { flash("✗ " + (e as Error).message); }
+      setUploads((u) => u.filter((x) => x.id !== upId));
+    })();
   };
   const delFile = async (fileId: string) => {
     if (!(await confirm({ message: t("d.confirmDeleteFile"), danger: true }))) return;
@@ -437,19 +442,34 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                     <div className="file-actions">
                       {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
                       {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
-                      {canEdit && <button className="fa-btn" title="Thay file khác (cùng mặt)" disabled={busyUp} onClick={() => replaceFile(x.id, x.kind)}><IconUpload width={14} height={14} /></button>}
+                      {canEdit && <button className="fa-btn" title="Thay file khác (cùng mặt)" onClick={() => replaceFile(x.id, x.kind)}><IconUpload width={14} height={14} /></button>}
                       {x.processingStatus === "failed" && <button className="fa-btn" title={t("d.retryThumb")} style={{ color: "var(--amber)" }} onClick={() => retryFile(x.id)}><IconRefresh width={14} height={14} /></button>}
                       {canEdit && <button className="fa-btn danger" title={t("c.delete")} onClick={() => delFile(x.id)}><IconTrash width={14} height={14} /></button>}
                     </div>
                   </div>
                 </div>
               ))}
-              {/* Ô ＋ upload theo tab */}
-              {canEdit && tab === "mockup" && <AddTile label="Mockup" busy={busyUp} onClick={() => pickAndUpload("mockup")} />}
-              {canEdit && tab === "video" && <AddTile label="Video" busy={busyUp} onClick={() => pickAndUpload("video")} />}
+              {/* Card ĐANG TẢI (up song song, không khoá) */}
+              {uploads.filter((u) => tab === "mockup" ? u.kind === "mockup" : tab === "video" ? u.kind === "video" : (u.kind !== "mockup" && u.kind !== "video")).map((u) => (
+                <div key={u.id} className="file-item">
+                  <div className="file-cell checker" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ textAlign: "center" }}>
+                      <div className="mini-spinner" style={{ margin: "0 auto" }} />
+                      <div style={{ fontSize: 11, marginTop: 8, color: "var(--muted)", fontWeight: 600 }}>Đang tải…</div>
+                    </div>
+                  </div>
+                  <div className="file-cap">
+                    <div className="fn" title={u.name}>{u.name}</div>
+                    <div className="kw">{SIDE_LABEL[u.kind] || u.kind}</div>
+                  </div>
+                </div>
+              ))}
+              {/* Ô ＋ upload theo tab (không bị khoá khi đang tải) */}
+              {canEdit && tab === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
+              {canEdit && tab === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
               {canEdit && tab === "design" && (
                 <div style={{ position: "relative" }}>
-                  <AddTile label="＋ Thêm mặt in" busy={busyUp} onClick={() => setAddSideOpen((v) => !v)} />
+                  <AddTile label="＋ Thêm mặt in" onClick={() => setAddSideOpen((v) => !v)} />
                   {addSideOpen && (<>
                     <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
                     <div style={{ position: "absolute", top: 0, left: "calc(100% + 8px)", zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 340, maxHeight: 360, overflowY: "auto", padding: 10 }}>

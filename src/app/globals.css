@@ -373,3 +373,7 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 .topnav-more-item.active{background:var(--blue-soft);color:var(--blue)}
 .topnav-more-item .topnav-ic{color:var(--muted)}
 .topnav-more-item:hover .topnav-ic,.topnav-more-item.active .topnav-ic{color:var(--blue)}
+
+/* Spinner nhỏ cho card đang tải file */
+@keyframes fspin { to { transform: rotate(360deg); } }
+.mini-spinner { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: fspin .7s linear infinite; }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray, like } from "drizzle-orm";
+import { and, eq, inArray, like, or, desc } from "drizzle-orm";
 import { getPrintifyOrder } from "@/lib/printify";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,15 @@ export async function POST(req: NextRequest) {
   const evtType = String(body?.type ?? "");
   if (!printifyOrderId) return NextResponse.json({ ok: true, skipped: "no order id" });
 
-  const [ffo] = await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.externalFfId, printifyOrderId)).limit(1);
-  if (!ffo) return NextResponse.json({ ok: true, skipped: "no matching order" });
+  // Khớp bản ghi fulfillment: ưu tiên theo Printify order id; nếu không có → theo external_id (TênStore-IDĐơn) của đơn
+  const rd = (resource.data ?? {}) as Record<string, unknown>;
+  const externalRef = String(rd.external_id ?? rd.label ?? "").trim();
+  let [ffo] = await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.externalFfId, printifyOrderId)).limit(1);
+  if (!ffo && externalRef) {
+    const [ord0] = await db.select().from(schema.orders).where(or(eq(schema.orders.orderLabel, externalRef), eq(schema.orders.externalId, externalRef))).limit(1);
+    if (ord0) [ffo] = await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, ord0.id)).orderBy(desc(schema.fulfillmentOrders.createdAt)).limit(1);
+  }
+  if (!ffo) return NextResponse.json({ ok: true, skipped: "no matching order", printifyOrderId, externalRef });
 
   // Lấy creds nhà in để GET đơn đầy đủ (cost + shipments)
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, ffo.fulfillerId)).limit(1);
@@ -47,7 +54,8 @@ export async function POST(req: NextRequest) {
 
   // Trạng thái ffo: từ event type hoặc order.status
   const pfStatus = String(ord?.status ?? "").toLowerCase();
-  const isCancel = evtType.includes("cancel") || pfStatus === "canceled" || pfStatus === "cancelled";
+  const isCancel = evtType.includes("cancel") || pfStatus === "canceled" || pfStatus === "cancelled"
+    || !!ord?.canceled_at || !!ord?.cancelled_at;
   let status = ffo.status;
   if (isCancel) status = "cancelled";
   else if (evtType.includes("delivered") || pfStatus === "delivered") status = "delivered";
