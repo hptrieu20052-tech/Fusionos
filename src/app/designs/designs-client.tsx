@@ -292,6 +292,11 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     const j = await fetch("/api/designs/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fileId }) }).then((r) => r.json());
     if (j.ok) { flash(t("d.thumbCreated")); reopen(d.id); } else flash("✗ " + (j.error ?? "Error"));
   };
+  // Đổi loại file (front/back/mockup) — sửa nhầm mặt. Front↔Back tự hoán đổi.
+  const changeKind = async (fileId: string, kind: string) => {
+    const j = await fetch(`/api/designs/files/${fileId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind }) }).then((r) => r.json()).catch(() => ({ ok: false }));
+    if (j.ok) { flash(j.swapped ? "✓ Đã hoán đổi Front ↔ Back" : "✓ Đã đổi loại file"); reopen(d.id); reload(); } else flash("✗ " + (j.error ?? "lỗi"));
+  };
   const downloadAll = (rows: FileRow[]) => rows.forEach((x, i) => x.originalUrl && setTimeout(() => forceDownload(x.originalUrl!, `${d.title}-${x.kind}-${i + 1}`), i * 400));
   const copy = (v: string) => { navigator.clipboard?.writeText(v); flash(t("d.copied")); };
 
@@ -405,7 +410,14 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   </div>
                   <div className="file-cap">
                     {x.filename && <div className="fn" title={x.filename}>{x.filename}</div>}
-                    <div className="kw">{t(KIND_KEY[x.kind]) || x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
+                    <div className="kw" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {canEdit
+                        ? <select value={x.kind} onChange={(e) => changeKind(x.id, e.target.value)} title="Đổi loại / mặt file" style={{ fontSize: 11, border: "1px solid var(--line)", borderRadius: 6, padding: "1px 5px", background: "#fff", cursor: "pointer", fontWeight: 700 }}>
+                            {KINDS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                          </select>
+                        : <>{t(KIND_KEY[x.kind]) || x.kind}</>}
+                      {x.uploaderName ? <span style={{ color: "var(--muted)" }}>· {x.uploaderName}</span> : null}
+                    </div>
                     <div className="file-actions">
                       {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
                       {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
@@ -528,7 +540,6 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }:
 }) {
   const { t } = useLang();
   const [files, setFiles] = useState<File[]>([]);
-  const [kind, setKind] = useState("design_front");
   const [sellerId, setSellerId] = useState("");
   const [designerId, setDesignerId] = useState("");
   const [busy, setBusy] = useState(false);
@@ -563,7 +574,7 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }:
           body: JSON.stringify({ title: cleanTitle(files[i].name), sellerId: sellerId || null, designerId: designerId || null }),
         }).then((r) => r.json());
         if (!j.ok) throw new Error(j.error ?? "create error");
-        await doUpload(j.design.id, files[i], kind);
+        await doUpload(j.design.id, files[i], "design_front");
         ok++;
       } catch (e) {
         errs.push(`${files[i].name}: ${e instanceof Error ? e.message : String(e)}`);
@@ -618,13 +629,12 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers }:
           </>
         )}
 
-        {/* Tuỳ chọn */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 14, marginBottom: 14 }}>
-          <label style={rLbl}>{t("d.fileType")}
-            <select value={kind} onChange={(e) => setKind(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
-              {KINDS.filter(([k]) => k === "design_front" || k === "design_back").map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
-          </label>
+        <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 12 }}>
+          Mỗi file = 1 design mới (mặt <b>Front</b>). Thêm mặt sau / mockup và chỉnh sửa trong <b>chi tiết design</b> sau.
+        </div>
+
+        {/* Seller + Designer áp cho tất cả */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12, marginBottom: 14 }}>
           <label style={rLbl}>{t("c.seller")} <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: 11 }}>{t("d.applyAll")}</span>
             <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} disabled={busy} style={{ ...inp, width: "100%", marginTop: 4 }}>
               <option value="">—</option>

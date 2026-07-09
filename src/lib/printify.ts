@@ -115,6 +115,22 @@ export async function listVariants(token: string, blueprintId: number | string, 
   return j.variants ?? [];
 }
 
+/** Kích thước vùng in (px) theo variant + vị trí: Map<variantId, { front|back → {width,height} }>. Để tính scale khớp chiều cao. */
+export async function getPrintAreas(token: string, blueprintId: number | string, providerId: number | string): Promise<Map<number, Record<string, { width: number; height: number }>>> {
+  const map = new Map<number, Record<string, { width: number; height: number }>>();
+  try {
+    const res = await fetch(`${BASE}/catalog/blueprints/${blueprintId}/print_providers/${providerId}/variants.json`, { headers: headers(token), cache: "no-store" });
+    if (!res.ok) return map;
+    const j = (await res.json()) as { variants?: { id: number; placeholders?: { position: string; width: number; height: number }[] }[] };
+    for (const v of j.variants ?? []) {
+      const rec: Record<string, { width: number; height: number }> = {};
+      for (const p of v.placeholders ?? []) if (p.position && p.width && p.height) rec[p.position] = { width: p.width, height: p.height };
+      map.set(v.id, rec);
+    }
+  } catch { /* bỏ qua → fallback scale 1 */ }
+  return map;
+}
+
 /* ============ UPLOAD ẢNH → tạo PRODUCT → tạo ĐƠN ============ */
 
 /** Upload ảnh lên Printify bằng URL. Trả image_id. */
@@ -133,12 +149,13 @@ export type CreateProductInput = {
   blueprintId: number; providerId: number; variantId: number;
   price?: number; // cents; mặc định 2000
   frontImageId?: string; backImageId?: string;
+  frontScale?: number; backScale?: number; // scale ảnh (khớp chiều cao vùng in)
 };
 /** Tạo product trong shop. Trả { productId, variantId }. */
 export async function createProduct(token: string, shopId: string | number, inp: CreateProductInput): Promise<{ productId: string; variantId: number }> {
   const placeholders: { position: string; images: { id: string; x: number; y: number; scale: number; angle: number }[] }[] = [];
-  if (inp.frontImageId) placeholders.push({ position: "front", images: [{ id: inp.frontImageId, x: 0.5, y: 0.5, scale: 1, angle: 0 }] });
-  if (inp.backImageId) placeholders.push({ position: "back", images: [{ id: inp.backImageId, x: 0.5, y: 0.5, scale: 1, angle: 0 }] });
+  if (inp.frontImageId) placeholders.push({ position: "front", images: [{ id: inp.frontImageId, x: 0.5, y: 0.5, scale: inp.frontScale ?? 1, angle: 0 }] });
+  if (inp.backImageId) placeholders.push({ position: "back", images: [{ id: inp.backImageId, x: 0.5, y: 0.5, scale: inp.backScale ?? 1, angle: 0 }] });
 
   const body = {
     title: inp.title.slice(0, 120) || "Fusion order",

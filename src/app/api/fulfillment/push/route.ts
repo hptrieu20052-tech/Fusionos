@@ -39,14 +39,14 @@ export async function POST(req: NextRequest) {
 
   // Map design URL (front/back/sleeve/hood) theo designId — cho adapter cần artwork (Merchize...)
   const designIds = Array.from(new Set(items.map((i) => i.designId).filter(Boolean))) as string[];
-  const sideUrls = new Map<string, { front?: string; back?: string; sleeve?: string; hood?: string }>();
+  const sideUrls = new Map<string, { front?: string; back?: string; frontW?: number; frontH?: number; backW?: number; backH?: number }>();
   if (designIds.length) {
     const files = await db.select().from(schema.designFiles).where(inArray(schema.designFiles.designId, designIds));
     for (const f of files) {
       const cur = sideUrls.get(f.designId) ?? {};
       const url = fileUrl(f.storageKey) ?? undefined;
-      if (f.kind === "design_front") cur.front = url;
-      else if (f.kind === "design_back") cur.back = url;
+      if (f.kind === "design_front") { cur.front = url; cur.frontW = f.width ?? undefined; cur.frontH = f.height ?? undefined; }
+      else if (f.kind === "design_back") { cur.back = url; cur.backW = f.width ?? undefined; cur.backH = f.height ?? undefined; }
       sideUrls.set(f.designId, cur);
     }
   }
@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       // Merchize image = mockup của ĐƠN (upload theo order), KHÔNG lấy từ card design.
       image: fileUrl(it.mockupKey) ?? null,
       designFront: s.front ?? null, designBack: s.back ?? null,
+      designFrontW: s.frontW, designFrontH: s.frontH, designBackW: s.backW, designBackH: s.backH,
       pfBlueprintId: m.pfBlueprintId ?? null, pfProviderId: m.pfProviderId ?? null, pfVariantId: m.pfVariantId ?? null,
     };
   };

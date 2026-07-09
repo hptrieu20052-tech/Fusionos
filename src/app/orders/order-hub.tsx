@@ -26,7 +26,7 @@ type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unit
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[] };
 type Opt = { id: string; name: string };
-type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; lines?: { product: string; variant: string | null; sku: string; qty: number }[] | null };
+type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; lines?: { product: string; variant: string | null; sku: string; qty: number }[] | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -760,7 +760,8 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
                         <div className="o2-supcost">
                           <span>{t("o.baseCost")}: <b>{money(f.baseCost ?? 0)}</b></span>
                           <span>{t("o.shipFee")}: <b>{money(f.shipCost ?? 0)}</b></span>
-                          <span className="tot">{t("o.total")}: <b>{money(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0)))}</b></span>
+                          {Number(f.extraFee ?? 0) !== 0 && <span>Tax/phí: <b>{money(f.extraFee ?? 0)}</b></span>}
+                          <span className="tot">{t("o.total")}: <b>{money(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0) + Number(f.extraFee ?? 0)))}</b></span>
                         </div>
                       )}
                       {/* Tracking gọn 1 hàng */}
@@ -781,7 +782,7 @@ function OrderCard({ o, canEdit, canPushFf, selected, onToggleSel, reload, flash
 
                   {/* Lợi nhuận sau chi phí */}
                   {(() => {
-                    const ffCost = (detail.ffOrders ?? []).reduce((s, f) => s + Number(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0))), 0);
+                    const ffCost = (detail.ffOrders ?? []).reduce((s, f) => s + Number(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0) + Number(f.extraFee ?? 0))), 0);
                     if (ffCost <= 0) return null;
                     const afterFee = Number(o.total) - Number(o.platform_fee);
                     const profit = afterFee - ffCost;

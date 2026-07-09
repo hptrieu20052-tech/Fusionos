@@ -1,4 +1,4 @@
-import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts } from "@/lib/printify";
+import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPrintAreas } from "@/lib/printify";
 import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
@@ -20,6 +20,7 @@ export type PushLine = {
   price?: number; currency?: string;
   image?: string | null;
   designFront?: string | null; designBack?: string | null; designSleeve?: string | null; designHood?: string | null;
+  designFrontW?: number; designFrontH?: number; designBackW?: number; designBackH?: number;
   pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null;
 };
 export type PushCtx = {
@@ -116,17 +117,34 @@ function printifyAdapter(): FulfillerAdapter {
         throw new Error(`Chưa cấu hình Blueprint/Provider/Variant cho SKU: ${missing.map((l) => l.fulfillerSku).join(", ")}. Vào SKU mapping → tab Printify để chọn.`);
       }
       const extNumber = orderExtNumber(o);
+      // Lấy kích thước vùng in theo (blueprint, provider) — cache theo cặp để không gọi trùng
+      const paCache = new Map<string, Awaited<ReturnType<typeof getPrintAreas>>>();
+      const printAreasOf = async (bp: number, pv: number) => {
+        const key = `${bp}:${pv}`;
+        if (!paCache.has(key)) paCache.set(key, await getPrintAreas(token, bp, pv));
+        return paCache.get(key)!;
+      };
+      // Scale để ảnh KHỚP CHIỀU CAO vùng in (căn trên–dưới). Không có số liệu → 1 (khớp bề ngang như cũ).
+      const fitHeightScale = (pa: { width: number; height: number } | undefined, imgW?: number, imgH?: number) => {
+        if (!pa || !imgW || !imgH) return 1;
+        const s = (pa.height * imgW) / (pa.width * imgH);
+        return Math.max(0.1, Math.min(s, 1));
+      };
       // Parallel: mỗi line upload ảnh (front+back song song) → tạo product. Các line chạy đồng thời.
       const lineItems = await Promise.all(ctx.lines.map(async (l) => {
-        const [frontImageId, backImageId] = await Promise.all([
+        const [frontImageId, backImageId, pa] = await Promise.all([
           l.designFront ? uploadImageByUrl(token, `${l.fulfillerSku}-front`, l.designFront) : Promise.resolve(undefined),
           l.designBack ? uploadImageByUrl(token, `${l.fulfillerSku}-back`, l.designBack) : Promise.resolve(undefined),
+          printAreasOf(l.pfBlueprintId!, l.pfProviderId!),
         ]);
+        const ph = pa.get(l.pfVariantId!) ?? {};
         const prod = await createProduct(token, shopId, {
           title: `${extNumber} · ${l.fulfillerSku}`,
           blueprintId: l.pfBlueprintId!, providerId: l.pfProviderId!, variantId: l.pfVariantId!,
           price: l.price ? Math.round(l.price * 100) : 2000,
           frontImageId, backImageId,
+          frontScale: fitHeightScale(ph["front"], l.designFrontW, l.designFrontH),
+          backScale: fitHeightScale(ph["back"], l.designBackW, l.designBackH),
         });
         return { product_id: prod.productId, variant_id: prod.variantId, quantity: l.qty };
       }));
