@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { desc, eq, and, sql } from "drizzle-orm";
+import { desc, eq, and, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -13,8 +14,11 @@ export async function GET(req: NextRequest) {
   if ((await levelOf(session, "stores")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const sp = req.nextUrl.searchParams;
+  const scopeIds = await scopeOwnerIds(session, "stores");
   const parts = [];
-  if (sp.get("sellerId")) parts.push(eq(schema.stores.sellerId, sp.get("sellerId")!));
+  // Phạm vi own/team: chỉ store thuộc seller trong phạm vi (store chưa gán seller cũng bị ẩn)
+  if (scopeIds) parts.push(inArray(schema.stores.sellerId, scopeIds));
+  else if (sp.get("sellerId")) parts.push(eq(schema.stores.sellerId, sp.get("sellerId")!));
   if (sp.get("marketplace")) parts.push(eq(schema.stores.marketplace, sp.get("marketplace") as never));
   const where = parts.length ? and(...parts) : undefined;
 
@@ -36,11 +40,13 @@ export async function GET(req: NextRequest) {
   const cmap = new Map((counts.rows as { store_id: string; c30: number; c7: number; rev30: string; last_order: string }[]).map((r) => [r.store_id, r]));
 
   const sellers = await db.select({ id: schema.users.id, name: schema.users.fullName })
-    .from(schema.users).where(eq(schema.users.role, "seller"));
+    .from(schema.users)
+    .where(scopeIds ? and(eq(schema.users.role, "seller"), inArray(schema.users.id, scopeIds)) : eq(schema.users.role, "seller"));
 
   return NextResponse.json({
     ok: true,
     sellers,
+    scoped: !!scopeIds,
     stores: rows.map((r) => {
       const c = cmap.get(r.s.id);
       const lastOrder = c?.last_order ? new Date(c.last_order) : null;

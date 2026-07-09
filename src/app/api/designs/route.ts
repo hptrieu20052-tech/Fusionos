@@ -115,9 +115,15 @@ export async function GET(req: NextRequest) {
       sides,
     };
   });
-  const sellers = await cachedRoleUsers("seller");
-  const designers = await cachedRoleUsers("designer");
-  return NextResponse.json({ ok: true, designs: out, total, page, show, sellers, designers });
+  let sellers = await cachedRoleUsers("seller");
+  let designers = await cachedRoleUsers("designer");
+  // Phạm vi own/team: dropdown chỉ hiện người trong phạm vi
+  if (scopeIds) {
+    const allow = new Set(scopeIds);
+    sellers = sellers.filter((u) => allow.has(u.id));
+    designers = designers.filter((u) => allow.has(u.id));
+  }
+  return NextResponse.json({ ok: true, designs: out, total, page, show, sellers, designers, scoped: !!scopeIds });
 }
 
 // Cache danh sách seller/designer (đổi rất ít) trong 60s → giảm 2 truy vấn DB mỗi lần load lưới.

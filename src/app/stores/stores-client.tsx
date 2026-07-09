@@ -33,6 +33,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
   const confirm = useConfirm();
   const [stores, setStores] = useState<Store[]>([]);
   const [sellers, setSellers] = useState<Opt[]>([]);
+  const [scoped, setScoped] = useState(false);
   const [fSeller, setFSeller] = useState(""); const [fMk, setFMk] = useState("");
   const [showAdd, setShowAdd] = useState(false);
   const [edit, setEdit] = useState<Store | null>(null);
@@ -42,7 +43,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
     const p = new URLSearchParams();
     if (fSeller) p.set("sellerId", fSeller);
     if (fMk) p.set("marketplace", fMk);
-    fetch(`/api/stores?${p}`).then((r) => r.json()).then((j) => { if (j.ok) { setStores(j.stores); setSellers(j.sellers); } });
+    fetch(`/api/stores?${p}`).then((r) => r.json()).then((j) => { if (j.ok) { setStores(j.stores); setSellers(j.sellers); setScoped(!!j.scoped); } });
   }, [fSeller, fMk]);
   useEffect(() => { load(); }, [load]);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
@@ -70,6 +71,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
       {/* Filter */}
       <div className="card" style={{ padding: "16px 18px", marginBottom: 14 }}>
         <div className="filters">
+          {!(scoped && sellers.length <= 1) && (
           <div className="field">
             <label>{t("c.seller")}</label>
             <select value={fSeller} onChange={(e) => setFSeller(e.target.value)}>
@@ -77,6 +79,7 @@ export function StoresClient({ canAdd }: { canAdd: boolean }) {
               {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
+          )}
           <div className="field">
             <label>{t("c.marketplace")}</label>
             <select value={fMk} onChange={(e) => setFMk(e.target.value)}>

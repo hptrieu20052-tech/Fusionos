@@ -4,7 +4,7 @@ import type { Session } from "@/lib/auth";
 import { hasRestriction } from "@/lib/rbac";
 
 export type Scope = "all" | "team" | "own";
-export type ScopeResource = "orders" | "designs";
+export type ScopeResource = "orders" | "designs" | "stores";
 
 let scache: { at: number; map: Map<string, Scope> } | null = null;
 let uscache: { at: number; map: Map<string, Scope> } | null = null;
@@ -31,9 +31,9 @@ export async function resolveScope(session: Session, resource: ScopeResource): P
   if (uv) return uv;
   const s = (await roleScopeMap()).get(`${session.role}:${resource}`);
   if (s) return s;
-  // Fallback tương thích cũ: có own_* restriction → own
-  const legacyKey = resource === "orders" ? "own_orders_only" : "own_designs_only";
-  if (await hasRestriction(session, legacyKey)) return "own";
+  // Fallback tương thích cũ: có own_* restriction → own (chỉ orders/designs mới có key cũ)
+  if (resource === "orders" && (await hasRestriction(session, "own_orders_only"))) return "own";
+  if (resource === "designs" && (await hasRestriction(session, "own_designs_only"))) return "own";
   return "all";
 }
 
