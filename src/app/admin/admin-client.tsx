@@ -13,14 +13,25 @@ const LEVEL_STYLE = [
   { background: "var(--amber-soft)", color: "var(--amber)" },
   { background: "var(--green-soft)", color: "var(--green)" },
 ];
+const RESTRICTIONS = ["hide_profit", "own_orders_only", "own_designs_only", "hide_customer_info"] as const;
+const RESTR_LABEL: Record<string, string> = {
+  hide_profit: "Ẩn lợi nhuận / giá vốn",
+  own_orders_only: "Chỉ xem đơn của mình",
+  own_designs_only: "Chỉ xem design của mình",
+  hide_customer_info: "Ẩn thông tin khách hàng",
+};
 
 type Perm = { role: string; module: string; level: number };
+type RoleRestr = { role: string; restrictionKey: string; enabled: boolean };
 type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string };
 
-export function AdminClient({ users: initialUsers, permissions }: { users: User[]; permissions: Perm[] }) {
+export function AdminClient({ users: initialUsers, permissions, roleRestrictions }: { users: User[]; permissions: Perm[]; roleRestrictions: RoleRestr[] }) {
   const [users, setUsers] = useState(initialUsers);
   const [perms, setPerms] = useState<Map<string, number>>(
     new Map(permissions.map((p) => [`${p.role}:${p.module}`, p.level]))
+  );
+  const [restr, setRestr] = useState<Set<string>>(
+    new Set(roleRestrictions.filter((r) => r.enabled).map((r) => `${r.role}:${r.restrictionKey}`))
   );
   const [form, setForm] = useState({ fullName: "", email: "", password: "", role: "seller", team: "" });
   const [msg, setMsg] = useState("");
@@ -41,6 +52,18 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
       body: JSON.stringify({ role, module, level: next }),
     });
     if (res.ok) setPerms(new Map(perms).set(`${role}:${module}`, next));
+  }
+
+  async function toggleRestr(role: string, restriction: string) {
+    if (role === "admin") return;
+    const k = `${role}:${restriction}`;
+    const enabled = !restr.has(k);
+    const res = await fetch("/api/admin/permissions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role, restriction, enabled }),
+    });
+    if (res.ok) { const n = new Set(restr); enabled ? n.add(k) : n.delete(k); setRestr(n); }
   }
 
   async function createUser(e: React.FormEvent) {
@@ -237,6 +260,42 @@ export function AdminClient({ users: initialUsers, permissions }: { users: User[
                           }}
                         >
                           {t(LEVEL_KEY[lv])}
+                        </span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Giới hạn dữ liệu theo role</h3>
+        <div className="sub" style={{ marginBottom: 10 }}>Bấm để bật/tắt. Áp cho mọi user của role (Admin không bị giới hạn). Lưu tức thì.</div>
+        <div style={{ overflowX: "auto" }}>
+          <table>
+            <thead>
+              <tr><th>Giới hạn</th>{ROLES.filter((r) => r !== "admin").map((r) => <th key={r} style={{ textAlign: "center" }}>{r}</th>)}</tr>
+            </thead>
+            <tbody>
+              {RESTRICTIONS.map((rk) => (
+                <tr key={rk}>
+                  <td style={{ fontWeight: 700, whiteSpace: "nowrap" }}>{RESTR_LABEL[rk]}</td>
+                  {ROLES.filter((r) => r !== "admin").map((r) => {
+                    const on = restr.has(`${r}:${rk}`);
+                    return (
+                      <td key={r} style={{ textAlign: "center" }}>
+                        <span
+                          onClick={() => toggleRestr(r, rk)}
+                          style={{
+                            ...(on ? { background: "var(--green-soft)", color: "var(--green)" } : { background: "#EEF0F5", color: "#9CA3AF" }),
+                            display: "inline-block", minWidth: 64, padding: "5px 0", borderRadius: 8,
+                            fontSize: 11.5, fontWeight: 800, cursor: "pointer", userSelect: "none",
+                          }}
+                        >
+                          {on ? "BẬT" : "—"}
                         </span>
                       </td>
                     );

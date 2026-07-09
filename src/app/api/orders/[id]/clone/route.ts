@@ -14,7 +14,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
 
   const o = (await db.execute(sql`SELECT * FROM orders WHERE id = ${params.id}::uuid`)).rows[0] as Record<string, unknown> | undefined;
   if (!o) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  if ((await hasRestriction(session.sub, "own_orders_only")) && o.seller_id !== session.sub) {
+  if ((await hasRestriction(session, "own_orders_only")) && o.seller_id !== session.sub) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 

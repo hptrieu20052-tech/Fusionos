@@ -267,6 +267,15 @@ export const userRestrictions = pgTable("user_restrictions", {
   enabled: boolean("enabled").notNull().default(true),
 }, (t) => [primaryKey({ columns: [t.userId, t.restrictionKey] })]);
 
+// Giới hạn dữ liệu áp theo ROLE (mặc định cho mọi user của role đó). user_restrictions vẫn override được từng người.
+export const RESTRICTIONS = ["hide_profit", "own_orders_only", "own_designs_only", "hide_customer_info"] as const;
+export type Restriction = (typeof RESTRICTIONS)[number];
+export const roleRestrictions = pgTable("role_restrictions", {
+  role: roleEnum("role").notNull(),
+  restrictionKey: text("restriction_key").notNull(),
+  enabled: boolean("enabled").notNull().default(false),
+}, (t) => [primaryKey({ columns: [t.role, t.restrictionKey] })]);
+
 // ---------- DESIGN REVIEWS (chấm điểm KPI) ----------
 export const reviewDecisionEnum = pgEnum("review_decision", ["approve", "request_fix", "reject"]);
 

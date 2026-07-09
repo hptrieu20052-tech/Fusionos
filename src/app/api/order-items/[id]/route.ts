@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     SELECT i.id, i.order_id, o.seller_id FROM order_items i JOIN orders o ON o.id = i.order_id WHERE i.id = ${params.id}::uuid
   `)).rows[0] as { id: string; order_id: string; seller_id: string | null } | undefined;
   if (!item) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  if ((await hasRestriction(session.sub, "own_orders_only")) && item.seller_id !== session.sub) {
+  if ((await hasRestriction(session, "own_orders_only")) && item.seller_id !== session.sub) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 

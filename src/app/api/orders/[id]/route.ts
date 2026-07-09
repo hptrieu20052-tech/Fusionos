@@ -14,7 +14,7 @@ async function guard(orderId: string, min: 1 | 2) {
   if ((await levelOf(session, "orders")) < min) return { err: NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }) };
   const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
   if (!order) return { err: NextResponse.json({ ok: false, error: "not found" }, { status: 404 }) };
-  if ((await hasRestriction(session.sub, "own_orders_only")) && order.sellerId !== session.sub) {
+  if ((await hasRestriction(session, "own_orders_only")) && order.sellerId !== session.sub) {
     return { err: NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }) };
   }
   return { session, order };
@@ -68,8 +68,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     return { fulfillerId: f.id, name: f.name, mapped, estCost: autoMatched ? lines.reduce((t, l) => t! + l!, 0) : null };
   });
 
-  const hideCustomer = await hasRestriction(session.sub, "hide_customer_info");
-  const hideProfit = await hasRestriction(session.sub, "hide_profit");
+  const hideCustomer = await hasRestriction(session, "hide_customer_info");
+  const hideProfit = await hasRestriction(session, "hide_profit");
   const masked = hideCustomer
     ? { ...order, buyerFirst: "***", buyerLast: "***", addr1: "***", addr2: null, city: "***", zip: "***" }
     : order;

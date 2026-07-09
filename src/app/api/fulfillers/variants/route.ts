@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = await db.select().from(schema.skuMappings).where(and(...conds)).limit(limit);
-  const hideProfit = await hasRestriction(session.sub, "hide_profit");
+  const hideProfit = await hasRestriction(session, "hide_profit");
 
   const variants = rows.map((m) => {
     const { style, color, size } = parseVariant(m.variant, m.productType);

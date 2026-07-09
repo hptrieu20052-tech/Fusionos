@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const range = sp.get("range") ?? "today";
   const from = sp.get("from"), to = sp.get("to");
   const cond = rangeCond("o.ordered_at", range, from, to);
-  const ownFlag = await hasRestriction(session.sub, "own_orders_only");
+  const ownFlag = await hasRestriction(session, "own_orders_only");
   const own = ownFlag ? sql` AND o.seller_id = ${session.sub}` : sql``;
   const ownItems = ownFlag ? sql` AND o2.seller_id = ${session.sub}` : sql``;
 
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
   `)).rows as { pending_new: number; issues: number; designs: number }[];
 
   // Dự toán lợi nhuận trong kỳ = doanh thu - phí sàn - giá vốn (từ transactions)
-  const own2 = (await hasRestriction(session.sub, "own_orders_only")) ? sql` AND o2.seller_id = ${session.sub}` : sql``;
+  const own2 = (await hasRestriction(session, "own_orders_only")) ? sql` AND o2.seller_id = ${session.sub}` : sql``;
   const [pnl] = (await db.execute(sql`
     SELECT
       coalesce(sum(o.total),0)::numeric AS revenue,

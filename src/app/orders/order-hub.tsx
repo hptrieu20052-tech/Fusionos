@@ -422,7 +422,7 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
         {hasSize && (
           <div className="o2-field">
             <label>Size</label>
-            <select value={size} disabled={!color} onChange={(e) => pick({ size: e.target.value })} style={box}>
+            <select value={size} disabled={(hasProvider && !meaningful(provider)) || (hasColor && !meaningful(color))} onChange={(e) => pick({ size: e.target.value })} style={box}>
               <option value="">—</option>
               {sizes.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>

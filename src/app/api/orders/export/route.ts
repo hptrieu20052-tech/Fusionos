@@ -12,8 +12,8 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "orders")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  const hideProfit = await hasRestriction(session.sub, "hide_profit");
-  const own = (await hasRestriction(session.sub, "own_orders_only")) ? sql` AND o.seller_id = ${session.sub}` : sql``;
+  const hideProfit = await hasRestriction(session, "hide_profit");
+  const own = (await hasRestriction(session, "own_orders_only")) ? sql` AND o.seller_id = ${session.sub}` : sql``;
 
   const sp = req.nextUrl.searchParams;
   const conds: ReturnType<typeof sql>[] = [];

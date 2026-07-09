@@ -13,7 +13,17 @@ export async function permissionMap(): Promise<Map<string, number>> {
   cache = { at: Date.now(), map };
   return map;
 }
-export function invalidatePermissionCache() { cache = null; }
+export function invalidatePermissionCache() { cache = null; rcache = null; }
+
+// Cache giới hạn theo role
+let rcache: { at: number; map: Map<string, boolean> } | null = null;
+async function roleRestrictionMap(): Promise<Map<string, boolean>> {
+  if (rcache && Date.now() - rcache.at < 30_000) return rcache.map;
+  const rows = await db.select().from(schema.roleRestrictions);
+  const map = new Map(rows.filter((r) => r.enabled).map((r) => [`${r.role}:${r.restrictionKey}`, true]));
+  rcache = { at: Date.now(), map };
+  return map;
+}
 
 /** level của (role, module): 0 ẩn · 1 xem · 2 toàn quyền. Admin luôn 2. */
 export async function levelOf(session: Session, module: Module): Promise<number> {
@@ -27,11 +37,23 @@ export async function can(session: Session | null, module: Module, min: 1 | 2 = 
   return (await levelOf(session, module)) >= min;
 }
 
-export async function hasRestriction(userId: string, key: string): Promise<boolean> {
+/**
+ * Giới hạn dữ liệu có bật cho user không. Nhận Session (ưu tiên) để áp mặc định theo ROLE,
+ * hoặc userId (string) — chỉ xét mức user. Admin không bao giờ bị giới hạn.
+ * Hiệu lực = (mặc định theo role) HOẶC (override theo user).
+ */
+export async function hasRestriction(userOrSession: string | Session, key: string): Promise<boolean> {
+  const sub = typeof userOrSession === "string" ? userOrSession : userOrSession.sub;
+  const role = typeof userOrSession === "string" ? null : userOrSession.role;
+  if (role === "admin") return false;
+  if (role) {
+    const rm = await roleRestrictionMap();
+    if (rm.get(`${role}:${key}`)) return true;
+  }
   const [r] = await db
     .select()
     .from(schema.userRestrictions)
-    .where(and(eq(schema.userRestrictions.userId, userId), eq(schema.userRestrictions.restrictionKey, key)))
+    .where(and(eq(schema.userRestrictions.userId, sub), eq(schema.userRestrictions.restrictionKey, key)))
     .limit(1);
   return !!r?.enabled;
 }

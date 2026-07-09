@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   const cond = rangeCond("o.ordered_at", range, from, to);
   const { bucketExpr, bucketOrd } = bucketExprs("o.ordered_at", isMonthly(range, from, to));
 
-  const own = (await hasRestriction(session.sub, "own_orders_only")) ? sql` AND o.seller_id = ${session.sub}` : sql``;
+  const own = (await hasRestriction(session, "own_orders_only")) ? sql` AND o.seller_id = ${session.sub}` : sql``;
 
   const r = await db.execute(sql`
     SELECT ${sql.raw(bucketExpr)} AS bucket, min(${sql.raw(bucketOrd)}) AS ord,

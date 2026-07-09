@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   const page = Math.max(Number(sp.get("page") ?? 1), 1);
 
   const parts = [] as ReturnType<typeof eq>[];
-  if (await hasRestriction(session.sub, "own_designs_only")) {
+  if (await hasRestriction(session, "own_designs_only")) {
     parts.push(eq(schema.designs.designerId, session.sub));
   } else if (session.role !== "admin" && session.role !== "seller") {
     // Chỉ thành viên cùng team thấy design của team (theo team của designer/seller/creator).

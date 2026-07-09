@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   }
 
   // own_orders_only: chỉ đổi đơn của chính mình
-  const own = await hasRestriction(session.sub, "own_orders_only");
+  const own = await hasRestriction(session, "own_orders_only");
   const orders = await db.select().from(schema.orders).where(inArray(schema.orders.id, ids));
   const allowed = own ? orders.filter((o) => o.sellerId === session.sub) : orders;
   if (!allowed.length) return NextResponse.json({ ok: false, error: "không có đơn hợp lệ" }, { status: 400 });
