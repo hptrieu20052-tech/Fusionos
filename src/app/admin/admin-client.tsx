@@ -30,7 +30,7 @@ type RoleAction = { role: string; actionKey: string; enabled: boolean };
 const SCOPE_RESOURCES: { key: string; label: string }[] = [{ key: "orders", label: "Đơn hàng" }, { key: "designs", label: "Design" }];
 const SCOPE_OPTS: { v: string; label: string }[] = [{ v: "all", label: "Tất cả" }, { v: "team", label: "Cả Team" }, { v: "own", label: "Chỉ của mình" }];
 const ACTION_MODULE_LABEL: Record<string, string> = { orders: "Orders", designs: "Design Studio", fulfillment: "Fulfillment", stores: "Stores", finance: "Finance" };
-type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string };
+type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string; avatarUrl?: string | null };
 
 export function AdminClient({ users: initialUsers, permissions, roleRestrictions, dataScopes, actions, roleActions }: { users: User[]; permissions: Perm[]; roleRestrictions: RoleRestr[]; dataScopes: DataScope[]; actions: Action[]; roleActions: RoleAction[] }) {
   const [users, setUsers] = useState(initialUsers);
@@ -199,10 +199,18 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
         <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("adm.staff")} · {users.length}</h3>
         <div className="sub" style={{ marginBottom: 8 }}>{t("adm.staffHint")}</div>
         <table style={{ marginTop: 8 }}>
-          <thead><tr><th>{t("adm.colName")}</th><th>Email</th><th>{t("adm.colRole")}</th><th>Team</th><th>{t("adm.colStatus")}</th><th style={{ textAlign: "right" }}>{t("adm.colActions")}</th></tr></thead>
+          <thead><tr><th style={{ width: 44 }}></th><th>{t("adm.colName")}</th><th>Email</th><th>{t("adm.colRole")}</th><th>Team</th><th>{t("adm.colStatus")}</th><th style={{ textAlign: "right" }}>{t("adm.colActions")}</th></tr></thead>
           <tbody>
             {users.map((u) => (
               <tr key={u.id} style={{ opacity: u.status === "active" ? 1 : 0.55 }}>
+                <td>
+                  <div style={{ width: 34, height: 34, borderRadius: "50%", overflow: "hidden", background: "var(--blue-soft)", color: "var(--blue)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12.5 }}>
+                    {u.avatarUrl
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={u.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : u.fullName.trim().split(/\s+/).slice(-2).map((w) => w[0]).join("").toUpperCase()}
+                  </div>
+                </td>
                 <td><b>{u.fullName}</b></td>
                 <td>{u.email}</td>
                 <td>
