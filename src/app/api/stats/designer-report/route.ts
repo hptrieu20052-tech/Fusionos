@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
     GROUP BY 1, d.designer_id, u.full_name ORDER BY ord
   `);
   // 2. Sale phát sinh trong kỳ từ design của designer × bucket
+  //    CHỈ tính khi đơn ĐÃ CREATE (đẩy đơn) trở đi — đơn còn NEW (chưa Create) chưa tính.
   const sales = await db.execute(sql`
     SELECT ${sql.raw(bucket("o.ordered_at"))} AS bucket, min(${sql.raw(bucketOrd("o.ordered_at"))}) AS ord,
            d.designer_id,
@@ -45,7 +46,7 @@ export async function GET(req: NextRequest) {
     FROM order_items oi
     JOIN designs d ON d.id = oi.design_id AND d.designer_id IS NOT NULL
     JOIN orders o ON o.id = oi.order_id
-    WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('cancel','trash')${inD}
+    WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('new','cancel','trash')${inD}
     GROUP BY 1, d.designer_id ORDER BY ord
   `);
   // 3. Điểm review trong kỳ theo designer

@@ -265,6 +265,23 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const [tagInput, setTagInput] = useState("");
   const [tab, setTab] = useState<"mockup" | "design" | "video">("design");
   const [addSideOpen, setAddSideOpen] = useState(false);
+  const addTileRef = useRef<HTMLDivElement>(null);
+  const [sideMenuPos, setSideMenuPos] = useState<{ left: number; top: number; maxH: number } | null>(null);
+  const openSideMenu = () => {
+    const el = addTileRef.current;
+    if (!el) { setAddSideOpen((v) => !v); return; }
+    if (addSideOpen) { setAddSideOpen(false); return; }
+    const r = el.getBoundingClientRect();
+    const W = 340, GAP = 8, M = 10;
+    let left = r.right + GAP;
+    if (left + W > window.innerWidth - M) left = Math.max(M, r.left - W - GAP); // hết chỗ bên phải → lật sang trái
+    const spaceBelow = window.innerHeight - r.top - M;
+    const maxH = Math.min(380, Math.max(200, spaceBelow));
+    let top = r.top;
+    if (top + maxH > window.innerHeight - M) top = Math.max(M, window.innerHeight - M - maxH); // kẹp trong màn hình
+    setSideMenuPos({ left, top, maxH });
+    setAddSideOpen(true);
+  };
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -472,11 +489,11 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {canEdit && tab === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
               {canEdit && tab === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
               {canEdit && tab === "design" && (
-                <div style={{ position: "relative" }}>
-                  <AddTile label="＋ Thêm mặt in" onClick={() => setAddSideOpen((v) => !v)} />
-                  {addSideOpen && (<>
+                <div style={{ position: "relative" }} ref={addTileRef}>
+                  <AddTile label="＋ Thêm mặt in" onClick={openSideMenu} />
+                  {addSideOpen && sideMenuPos && (<>
                     <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
-                    <div style={{ position: "absolute", top: 0, left: "calc(100% + 8px)", zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 340, maxHeight: 360, overflowY: "auto", padding: 10 }}>
+                    <div style={{ position: "fixed", left: sideMenuPos.left, top: sideMenuPos.top, zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 340, maxHeight: sideMenuPos.maxH, overflowY: "auto", padding: 10 }}>
                       {SIDE_GROUPS.map((g) => {
                         const avail = g.sides.filter((s) => !detail.files.some((x) => x.kind === s));
                         if (!avail.length) return null;

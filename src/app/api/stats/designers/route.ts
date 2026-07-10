@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
     SELECT d.designer_id, count(DISTINCT oi.order_id)::int orders
     FROM order_items oi JOIN designs d ON d.id = oi.design_id
     JOIN orders o ON o.id = oi.order_id
-    WHERE o.ordered_at > NOW() - interval '30 days' AND d.designer_id IS NOT NULL${inD}
+    WHERE o.ordered_at > NOW() - interval '30 days' AND o.status NOT IN ('new','cancel','trash') AND d.designer_id IS NOT NULL${inD}
     GROUP BY 1
   `);
 

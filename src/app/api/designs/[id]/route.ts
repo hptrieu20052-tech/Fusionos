@@ -32,7 +32,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   `);
   const n = names.rows[0] as { designer: string | null; seller: string | null; creator: string | null; store: string | null };
 
-  const orders = await db.execute(sql`SELECT count(*)::int c, coalesce(sum(oi.qty),0)::int items FROM order_items oi WHERE oi.design_id = ${d.id}`);
+  const orders = await db.execute(sql`SELECT count(*)::int c, coalesce(sum(oi.qty),0)::int items FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.design_id = ${d.id} AND o.status NOT IN ('new','cancel','trash')`);
   const score = await db.execute(sql`SELECT avg(total_score)::numeric(4,2) s, count(*)::int c FROM design_reviews WHERE design_id = ${d.id}`);
 
   // Data cho các dropdown trong modal
