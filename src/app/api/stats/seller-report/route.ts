@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   const cond = rangeCond("o.ordered_at", range, from, to);
   const { bucketExpr, bucketOrd } = bucketExprs("o.ordered_at", isMonthly(range, from, to));
 
-  const _si = await scopeOwnerIds(session, "orders");
+  const _si = await scopeOwnerIds(session, "dashboard");
   const own = _si ? sql` AND o.seller_id IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const r = await db.execute(sql`

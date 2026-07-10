@@ -4,7 +4,7 @@ import type { Session } from "@/lib/auth";
 import { hasRestriction } from "@/lib/rbac";
 
 export type Scope = "all" | "team" | "own";
-export type ScopeResource = "orders" | "designs" | "stores";
+export type ScopeResource = "orders" | "designs" | "stores" | "dashboard";
 
 let scache: { at: number; map: Map<string, Scope> } | null = null;
 let uscache: { at: number; map: Map<string, Scope> } | null = null;

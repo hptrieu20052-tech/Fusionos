@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
   const bucketOrd = (col: string) => bucketExprs(col, monthly).bucketOrd;
 
   // Phạm vi: team/own → chỉ designer trong phạm vi
-  const scopeIds = await scopeOwnerIds(session, "designs");
+  const scopeIds = await scopeOwnerIds(session, "dashboard");
   const inD = scopeIds ? sql` AND d.designer_id IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   // 1. Design tạo trong kỳ theo designer × bucket (kèm points cho KPI)

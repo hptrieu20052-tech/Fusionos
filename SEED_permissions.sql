@@ -29,7 +29,7 @@ ON CONFLICT (role, restriction_key) DO UPDATE SET enabled = EXCLUDED.enabled;
 
 -- ===== Phạm vi dữ liệu (all/team/own) — chạy sau khi có bảng role_data_scopes =====
 INSERT INTO role_data_scopes (role, resource, scope) VALUES
-  ('seller','orders','own'),   ('seller','designs','own'),
-  ('designer','designs','own'),('designer','orders','all'),
-  ('support','orders','all'),  ('support','designs','all')
+  ('seller','orders','own'),   ('seller','designs','own'),   ('seller','dashboard','team'),
+  ('designer','designs','own'),('designer','orders','all'),  ('designer','dashboard','team'),
+  ('support','orders','all'),  ('support','designs','all'),  ('support','dashboard','all')
 ON CONFLICT (role, resource) DO UPDATE SET scope = EXCLUDED.scope;
