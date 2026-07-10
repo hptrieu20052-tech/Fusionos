@@ -1,4 +1,5 @@
 "use client";
+import { useLang } from "@/components/lang-provider";
 import { useEffect, useState } from "react";
 
 type Designer = {
@@ -16,6 +17,7 @@ const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFraction
 
 type RangeProps = { range: string; from?: string; to?: string; hideMoney?: boolean };
 export default function DesignerReport({ range, from, to, hideMoney }: RangeProps) {
+  const { t: tr } = useLang();
   const [metric, setMetric] = useState<"d" | "s">("d"); // d = design tạo, s = đơn phát sinh
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
@@ -27,7 +29,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
       .then((j) => { if (j.ok) setData(j); }).finally(() => setLoading(false));
   }, [range, from, to]);
 
-  if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>Đang tải báo cáo designer…</div>;
+  if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingDesigner")}</div>;
 
   const { buckets, designers, totals } = data;
   const colTotal = buckets.map((_, bi) => designers.reduce((a, s) => a + s.daily[bi][metric], 0));
@@ -37,7 +39,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
   return (
     <div className="card" style={{ padding: "20px 22px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-        <a href="/stats/designers" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>Designer Report <span style={{ color: "var(--sky)", fontSize: 12.5 }}>Xem chi tiết →</span></a>
+        <a href="/stats/designers" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>Designer Report <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
           {([["d", "Design"], ["s", "Sale"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
@@ -47,7 +49,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
           ))}
         </div>
         <div style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14 }}>
-          {totals.designs.toLocaleString()} design · {totals.salesOrders.toLocaleString()} đơn phát sinh{!hideMoney && <> · <span style={{ color: "var(--green)" }}>{money(totals.salesRevenue)}</span></>}
+          {totals.designs.toLocaleString()} design · {totals.salesOrders.toLocaleString()} {tr("rep.genOrdersUnit")}{!hideMoney && <> · <span style={{ color: "var(--green)" }}>{money(totals.salesRevenue)}</span></>}
         </div>
       </div>
 
@@ -56,7 +58,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
         {designers.map((s, si) => (
           <span key={si} style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 10, height: 10, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block" }} />
-            <b>{s.name}</b> {s.designs} <span style={{ color: "var(--muted)" }}>({s.salesOrders} đơn)</span>
+            <b>{s.name}</b> {s.designs} <span style={{ color: "var(--muted)" }}>({s.salesOrders} {tr("rep.ordersWord")})</span>
           </span>
         ))}
       </div>
@@ -95,7 +97,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
                   <th style={{ padding: "3px 4px" }}>Design</th>
                   <th style={{ padding: "3px 4px" }}>Sale</th>
                   {!hideMoney && <th style={{ padding: "3px 4px" }}>Doanh thu</th>}
-                  <th style={{ padding: "3px 4px" }}>Điểm</th>
+                  <th style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>
                   <th style={{ padding: "3px 4px" }}>KPI</th>
                 </tr>
               </thead>
@@ -107,7 +109,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
                       <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block", marginRight: 5 }} />
                       <b style={{ fontWeight: si < 3 ? 700 : 500 }}>{s.name}</b>
                     </td>
-                    <td style={{ padding: "5px 4px" }}><b>{s.designs}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.points}đ)</span></td>
+                    <td style={{ padding: "5px 4px" }}><b>{s.designs}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.points}{tr("rep.ptSuffix")})</span></td>
                     <td style={{ padding: "5px 4px" }}>{s.salesOrders}</td>
                     {!hideMoney && <td style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
                     <td style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
@@ -119,7 +121,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 6 }}>KPI = 40% sản lượng (points) · 30% điểm chấm · 30% đơn phát sinh — trong khoảng thời gian đang chọn</div>
+          <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 6 }}>{tr("rep.kpiFormula")}</div>
         </div>
       </div>
 
@@ -129,7 +131,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
           position: "fixed", left: Math.min(tip.x + 14, typeof window !== "undefined" ? window.innerWidth - 240 : tip.x), top: tip.y + 10, zIndex: 50,
           background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(17,24,39,.12)", padding: "10px 14px", minWidth: 200, pointerEvents: "none",
         }}>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "d" ? "design" : "đơn"}</div>
+          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "d" ? "design" : tr("rep.ordersWord")}</div>
           {designers.map((s, si) => {
             const v = s.daily[tip.bi][metric];
             return v ? (
@@ -146,6 +148,7 @@ export default function DesignerReport({ range, from, to, hideMoney }: RangeProp
 }
 
 function Donut({ designers, metric, total }: { designers: Designer[]; metric: "d" | "s"; total: number }) {
+  const { t: tr } = useLang();
   const [hov, setHov] = useState<number | null>(null);
   const R = 70, r = 44, C = 100;
   let acc = 0;
@@ -171,7 +174,7 @@ function Donut({ designers, metric, total }: { designers: Designer[]; metric: "d
       ))}
       <text x="100" y="94" textAnchor="middle" style={{ fontSize: 22, fontWeight: 800, fill: "var(--ink)" }}>{showV.toLocaleString()}</text>
       <text x="100" y="114" textAnchor="middle" style={{ fontSize: 11, fill: "var(--muted)" }}>
-        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "d" ? "tổng design" : "tổng đơn phát sinh"}
+        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "d" ? tr("rep.totalDesigns") : tr("rep.totalGenOrders")}
       </text>
     </svg>
   );

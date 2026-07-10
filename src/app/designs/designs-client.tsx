@@ -9,19 +9,19 @@ const KIND_KEY: Record<string, string> = { design_front: "d.kindFront", design_b
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const bookPages = Array.from({ length: 24 }, (_, i) => `page_${pad2(i + 1)}`);
 // Nhãn hiển thị cho mọi mặt in. Ưu tiên nhãn này rồi mới đến i18n.
-const SIDE_LABEL: Record<string, string> = {
-  design_front: "Front", design_back: "Back", sleeve_left: "Sleeve trái", sleeve_right: "Sleeve phải",
-  cover_front: "Bìa trước", back_cover: "Bìa sau", book_cover: "Cover (bìa)",
-  ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, `Tháng ${i + 1}`])),
-  ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`page_${pad2(i + 1)}`, `Trang ${i + 1}`])),
+const sideLabel = (t: (k: string) => string): Record<string, string> => ({
+  design_front: "Front", design_back: "Back", sleeve_left: t("dz.sleeveLeft"), sleeve_right: t("dz.sleeveRight"),
+  cover_front: t("dz.coverFront"), back_cover: t("dz.coverBack"), book_cover: t("dz.cover"),
+  ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.month").replace("{n}", String(i + 1))])),
+  ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`page_${pad2(i + 1)}`, t("dz.page").replace("{n}", String(i + 1))])),
   mockup: "Mockup", video: "Video",
-};
+});
 // Nhóm mặt in để thêm (theo loại sản phẩm)
-const SIDE_GROUPS: { group: string; sides: string[] }[] = [
-  { group: "Áo / Hoodie", sides: ["design_front", "design_back", "sleeve_left", "sleeve_right"] },
+const sideGroups = (t: (k: string) => string): { group: string; sides: string[] }[] => ([
+  { group: t("dz.groupShirt"), sides: ["design_front", "design_back", "sleeve_left", "sleeve_right"] },
   { group: "Calendar", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`), "back_cover"] },
-  { group: "Photo Book (bìa cứng)", sides: ["book_cover", ...bookPages] },
-];
+  { group: t("dz.photoBookHard"), sides: ["book_cover", ...bookPages] },
+]);
 type FileRow = { id: string; kind: string; filename?: string | null; uploaderName?: string | null; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
 type Design = {
   id: string; skuCode: number; title: string; description: string | null; points: number;
@@ -169,7 +169,7 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
         {designs.map((d) => (
           <div key={d.id} className="card design-card" onClick={() => openDetail(d.id)} style={{ overflow: "hidden", cursor: "pointer" }}>
             <div className="dc-img checker">
-              {d.coverLabel && <span className="dc-side-badge">{(d.coverKind ? (SIDE_LABEL[d.coverKind] || t(KIND_KEY[d.coverKind])) : "") || d.coverLabel}</span>}
+              {d.coverLabel && <span className="dc-side-badge">{(d.coverKind ? (sideLabel(t)[d.coverKind] || t(KIND_KEY[d.coverKind])) : "") || d.coverLabel}</span>}
               {(d.cover?.thumb || d.cover?.preview) ? (
                 <img src={(d.cover.thumb ?? d.cover.preview)!} alt="" loading="lazy" decoding="async"
                   onError={(e) => {
@@ -194,9 +194,9 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
             {d.sides && d.sides.length > 0 && (
               <div className="dc-sides">
                 {d.sides.filter((s) => s.thumb).map((s) => (
-                  <div key={s.id} className="dc-side" title={SIDE_LABEL[s.kind] || t(KIND_KEY[s.kind]) || s.label}>
-                    <div className="dc-side-img checker"><img src={s.thumb!} alt={SIDE_LABEL[s.kind] || t(KIND_KEY[s.kind]) || s.label} loading="lazy" /></div>
-                    <span>{SIDE_LABEL[s.kind] || t(KIND_KEY[s.kind]) || s.label}</span>
+                  <div key={s.id} className="dc-side" title={sideLabel(t)[s.kind] || t(KIND_KEY[s.kind]) || s.label}>
+                    <div className="dc-side-img checker"><img src={s.thumb!} alt={sideLabel(t)[s.kind] || t(KIND_KEY[s.kind]) || s.label} loading="lazy" /></div>
+                    <span>{sideLabel(t)[s.kind] || t(KIND_KEY[s.kind]) || s.label}</span>
                   </div>
                 ))}
               </div>
@@ -304,8 +304,8 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const genAI = async () => {
     setAiBusy(true);
     const j = await fetch(`/api/designs/${d.id}/ai-info`, { method: "POST" })
-      .then(async (r) => { const txt = await r.text(); try { return txt ? JSON.parse(txt) : { ok: false, error: `Máy chủ trả rỗng (HTTP ${r.status})` }; } catch { return { ok: false, error: "Phản hồi không hợp lệ (có thể AI quá lâu)" }; } })
-      .catch(() => ({ ok: false, error: "Lỗi mạng" }));
+      .then(async (r) => { const txt = await r.text(); try { return txt ? JSON.parse(txt) : { ok: false, error: t("dz.serverEmpty").replace("{status}", String(r.status)) }; } catch { return { ok: false, error: t("dz.invalidResp") }; } })
+      .catch(() => ({ ok: false, error: t("dz.netErr") }));
     setAiBusy(false);
     if (j.ok) {
       setF({ ...f, title: j.title ?? f.title, description: j.description ?? f.description, tags: j.tags ?? f.tags });
@@ -318,7 +318,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const pickAndUpload = (kind: string) => { pendingKind.current = kind; pendingReplace.current = null; fileRef.current?.click(); };
   // Thay file cho mặt đã có design (upload file mới cùng loại → xoá file cũ)
   const replaceFile = (fileId: string, kind: string) => { pendingKind.current = kind; pendingReplace.current = fileId; fileRef.current?.click(); };
-  // Không khoá — up SONG SONG, mỗi file 1 card "đang tải" riêng, up file khác được ngay
+  // Không khoá — up SONG SONG, mỗi file 1 card t("dz.loadingLow") riêng, up file khác được ngay
   const onPicked = (file: File) => {
     const kind = pendingKind.current;
     const oldId = pendingReplace.current;
@@ -330,7 +330,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
       try {
         await doUpload(d.id, file, kind);
         if (oldId) await fetch(`/api/designs/files/${oldId}`, { method: "DELETE" }).catch(() => {});
-        flash(oldId ? "✓ Đã thay file" : t("d.uploaded"));
+        flash(oldId ? t("dz.fileReplaced") : t("d.uploaded"));
         reopen(d.id); reload();
       } catch (e) { flash("✗ " + (e as Error).message); }
       setUploads((u) => u.filter((x) => x.id !== upId));
@@ -451,7 +451,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {filesOf(tab).map((x) => (
                 <div key={x.id} className="file-item">
                   <div className="file-cell checker">
-                    <span className="file-kind">{SIDE_LABEL[x.kind] || t(KIND_KEY[x.kind]) || x.kind}</span>
+                    <span className="file-kind">{sideLabel(t)[x.kind] || t(KIND_KEY[x.kind]) || x.kind}</span>
                     {x.thumbUrl || x.originalUrl
                       ? <img src={x.thumbUrl ?? x.originalUrl!} alt="" loading="lazy" />
                       : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</div>}
@@ -459,11 +459,11 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   </div>
                   <div className="file-cap">
                     {x.filename && <div className="fn" title={x.filename}>{x.filename}</div>}
-                    <div className="kw">{SIDE_LABEL[x.kind] || t(KIND_KEY[x.kind]) || x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
+                    <div className="kw">{sideLabel(t)[x.kind] || t(KIND_KEY[x.kind]) || x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
                     <div className="file-actions">
                       {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
                       {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
-                      {canEdit && <button className="fa-btn" title="Thay file khác (cùng mặt)" onClick={() => replaceFile(x.id, x.kind)}><IconUpload width={14} height={14} /></button>}
+                      {canEdit && <button className="fa-btn" title={t("dz.replaceFile")} onClick={() => replaceFile(x.id, x.kind)}><IconUpload width={14} height={14} /></button>}
                       {x.processingStatus === "failed" && <button className="fa-btn" title={t("d.retryThumb")} style={{ color: "var(--amber)" }} onClick={() => retryFile(x.id)}><IconRefresh width={14} height={14} /></button>}
                       {canEdit && <button className="fa-btn danger" title={t("c.delete")} onClick={() => delFile(x.id)}><IconTrash width={14} height={14} /></button>}
                     </div>
@@ -476,12 +476,12 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   <div className="file-cell checker" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <div style={{ textAlign: "center" }}>
                       <div className="mini-spinner" style={{ margin: "0 auto" }} />
-                      <div style={{ fontSize: 11, marginTop: 8, color: "var(--muted)", fontWeight: 600 }}>Đang tải…</div>
+                      <div style={{ fontSize: 11, marginTop: 8, color: "var(--muted)", fontWeight: 600 }}>{t("o.loadingShort")}</div>
                     </div>
                   </div>
                   <div className="file-cap">
                     <div className="fn" title={u.name}>{u.name}</div>
-                    <div className="kw">{SIDE_LABEL[u.kind] || u.kind}</div>
+                    <div className="kw">{sideLabel(t)[u.kind] || u.kind}</div>
                   </div>
                 </div>
               ))}
@@ -490,11 +490,11 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {canEdit && tab === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
               {canEdit && tab === "design" && (
                 <div style={{ position: "relative" }} ref={addTileRef}>
-                  <AddTile label="＋ Thêm mặt in" onClick={openSideMenu} />
+                  <AddTile label={t("dz.addFace")} onClick={openSideMenu} />
                   {addSideOpen && sideMenuPos && (<>
                     <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
                     <div style={{ position: "fixed", left: sideMenuPos.left, top: sideMenuPos.top, zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 340, maxHeight: sideMenuPos.maxH, overflowY: "auto", padding: 10 }}>
-                      {SIDE_GROUPS.map((g) => {
+                      {sideGroups(t).map((g) => {
                         const avail = g.sides.filter((s) => !detail.files.some((x) => x.kind === s));
                         if (!avail.length) return null;
                         return (
@@ -504,7 +504,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                               {avail.map((s) => (
                                 <button key={s} onClick={() => { setAddSideOpen(false); pickAndUpload(s); }}
                                   style={{ padding: "8px 6px", background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--ink)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                  {SIDE_LABEL[s] || s}
+                                  {sideLabel(t)[s] || s}
                                 </button>
                               ))}
                             </div>
@@ -711,7 +711,7 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers, r
         )}
 
         <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px", marginTop: 12 }}>
-          Mỗi file = 1 design mới (mặt <b>Front</b>). Thêm mặt sau / mockup và chỉnh sửa trong <b>chi tiết design</b> sau.
+          {t("dz.uploadHintPre")}<b>Front</b>{t("dz.uploadHintMid")}<b>{t("dz.designDetail")}</b>{t("dz.uploadHintPost")}
         </div>
 
         {/* Seller + Designer áp cho tất cả. Ẩn ô của chính role đang up (tự gán = mình). */}
@@ -739,8 +739,8 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers, r
                   </label>
                 )}
               </div>
-              {!showDesigner && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Design sẽ tự gán Designer = bạn. Chỉ cần chọn Seller.</div>}
-              {!showSeller && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Design sẽ tự gán Seller = bạn. Chỉ cần chọn Designer.</div>}
+              {!showDesigner && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>{t("dz.autoDesigner")}</div>}
+              {!showSeller && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>{t("dz.autoSeller")}</div>}
             </div>
           );
         })()}

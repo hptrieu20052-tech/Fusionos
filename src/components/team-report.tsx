@@ -1,4 +1,5 @@
 "use client";
+import { useLang } from "@/components/lang-provider";
 import { useEffect, useState } from "react";
 
 type Team = { name: string; orders: number; items: number; revenue: number; aov: number; members: { name: string; role: string; orders: number; revenue: number }[]; daily: { o: number; r: number }[] };
@@ -10,6 +11,7 @@ const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFraction
 
 type RangeProps = { range: string; from?: string; to?: string };
 export default function TeamReport({ range, from, to }: RangeProps) {
+  const { t: tr } = useLang();
   const [metric, setMetric] = useState<"r" | "o">("r"); // r = doanh thu, o = đơn
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
@@ -21,7 +23,7 @@ export default function TeamReport({ range, from, to }: RangeProps) {
       .then((j) => { if (j.ok) setData(j); }).finally(() => setLoading(false));
   }, [range, from, to]);
 
-  if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>Đang tải báo cáo team…</div>;
+  if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingTeam")}</div>;
 
   const { buckets, teams, totals } = data;
   const colTotal = buckets.map((_, bi) => teams.reduce((a, t) => a + t.daily[bi][metric], 0));
@@ -31,9 +33,9 @@ export default function TeamReport({ range, from, to }: RangeProps) {
   return (
     <div className="card" style={{ padding: "20px 22px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-        <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>Team Report <span style={{ color: "var(--sky)", fontSize: 12.5 }}>Xem chi tiết →</span></a>
+        <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>Team Report <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-          {([["r", "Doanh thu"], ["o", "Đơn"]] as const).map(([k, label]) => (
+          {([["r", tr("rep.revenueTab")], ["o", tr("rep.ordersTab")]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
               padding: "6px 12px", fontSize: 12.5, border: "none", cursor: "pointer",
               background: metric === k ? "var(--blue-soft)" : "#fff", color: metric === k ? "var(--blue)" : "var(--muted)", fontWeight: 600,
@@ -41,7 +43,7 @@ export default function TeamReport({ range, from, to }: RangeProps) {
           ))}
         </div>
         <div style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14 }}>
-          <span style={{ color: "var(--green)" }}>{money(totals.revenue)}</span> · {totals.orders.toLocaleString()} đơn ({totals.items.toLocaleString()} items)
+          <span style={{ color: "var(--green)" }}>{money(totals.revenue)}</span> · {totals.orders.toLocaleString()} {tr("rep.ordersWord")} ({totals.items.toLocaleString()} items)
         </div>
       </div>
 
@@ -81,7 +83,7 @@ export default function TeamReport({ range, from, to }: RangeProps) {
                   <b style={{ fontSize: 13.5, color: "var(--green)" }}>{money(t.revenue)}</b>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11.5, color: "var(--muted)", paddingLeft: 24 }}>
-                  <span>{t.orders} đơn ({t.items} items)</span>
+                  <span>{t.orders} {tr("rep.ordersWord")} ({t.items} items)</span>
                   <span>AOV {money(t.aov)}</span>
                 </div>
               </div>
@@ -96,7 +98,7 @@ export default function TeamReport({ range, from, to }: RangeProps) {
           background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(17,24,39,.12)", padding: "10px 14px", minWidth: 210, pointerEvents: "none",
         }}>
           <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>
-            {buckets[tip.bi]} — {metric === "r" ? money(colTotal[tip.bi]) : `${colTotal[tip.bi]} đơn`}
+            {buckets[tip.bi]} — {metric === "r" ? money(colTotal[tip.bi]) : `${colTotal[tip.bi]} ${tr("rep.ordersWord")}`}
           </div>
           {teams.map((s, si) => {
             const v = s.daily[tip.bi][metric];
@@ -114,6 +116,7 @@ export default function TeamReport({ range, from, to }: RangeProps) {
 }
 
 function Donut({ teams, metric, total }: { teams: Team[]; metric: "r" | "o"; total: number }) {
+  const { t: tr } = useLang();
   const [hov, setHov] = useState<number | null>(null);
   const R = 70, r = 44, C = 100;
   let acc = 0;
@@ -140,7 +143,7 @@ function Donut({ teams, metric, total }: { teams: Team[]; metric: "r" | "o"; tot
       ))}
       <text x="100" y="94" textAnchor="middle" style={{ fontSize: 20, fontWeight: 800, fill: "var(--ink)" }}>{fmt(showV)}</text>
       <text x="100" y="114" textAnchor="middle" style={{ fontSize: 11, fill: "var(--muted)" }}>
-        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "r" ? "tổng doanh thu" : "tổng đơn"}
+        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "r" ? tr("rep.totalRevenue") : tr("rep.totalOrders")}
       </text>
     </svg>
   );

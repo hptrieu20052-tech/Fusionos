@@ -1,4 +1,5 @@
 "use client";
+import { useLang } from "@/components/lang-provider";
 import { useEffect, useState } from "react";
 
 type Seller = { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number }[] };
@@ -13,6 +14,7 @@ const PALETTE = [
 
 type RangeProps = { range: string; from?: string; to?: string };
 export default function SellerReport({ range, from, to }: RangeProps) {
+  const { t: tr } = useLang();
   const [metric, setMetric] = useState<"o" | "i">("o");
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
@@ -27,7 +29,7 @@ export default function SellerReport({ range, from, to }: RangeProps) {
   }, [range, from, to]);
 
   if (err) return null; // không có quyền / lỗi → không hiển thị thay vì kẹt loading
-  if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>Đang tải báo cáo seller…</div>;
+  if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingSeller")}</div>;
 
   const { buckets, sellers, totals } = data;
   const colTotal = buckets.map((_, bi) => sellers.reduce((a, s) => a + s.daily[bi][metric], 0));
@@ -37,9 +39,9 @@ export default function SellerReport({ range, from, to }: RangeProps) {
   return (
     <div className="card" style={{ padding: "20px 22px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-        <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>Seller Report <span style={{ color: "var(--sky)", fontSize: 12.5 }}>Xem chi tiết →</span></a>
+        <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>Seller Report <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-          {([["o", "Đơn"], ["i", "Items"]] as const).map(([k, label]) => (
+          {([["o", tr("rep.ordersTab")], ["i", "Items"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
               padding: "6px 12px", fontSize: 12.5, border: "none", cursor: "pointer",
               background: metric === k ? "var(--blue-soft)" : "#fff", color: metric === k ? "var(--blue)" : "var(--muted)", fontWeight: 600,
@@ -47,7 +49,7 @@ export default function SellerReport({ range, from, to }: RangeProps) {
           ))}
         </div>
         <div style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14 }}>
-          Tổng: {totals.orders.toLocaleString()} <span style={{ color: "var(--muted)", fontWeight: 400 }}>({totals.items.toLocaleString()} items)</span>
+          {tr("rep.totalColon")} {totals.orders.toLocaleString()} <span style={{ color: "var(--muted)", fontWeight: 400 }}>({totals.items.toLocaleString()} items)</span>
         </div>
       </div>
 
@@ -113,7 +115,7 @@ export default function SellerReport({ range, from, to }: RangeProps) {
           position: "fixed", left: Math.min(tip.x + 14, typeof window !== "undefined" ? window.innerWidth - 240 : tip.x), top: tip.y + 10, zIndex: 50,
           background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(17,24,39,.12)", padding: "10px 14px", minWidth: 200, pointerEvents: "none",
         }}>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "o" ? "đơn" : "items"}</div>
+          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "o" ? tr("rep.ordersWord") : "items"}</div>
           {sellers.map((s, si) => {
             const v = s.daily[tip.bi][metric];
             return v ? (
@@ -130,6 +132,7 @@ export default function SellerReport({ range, from, to }: RangeProps) {
 }
 
 function Donut({ sellers, metric, total }: { sellers: Seller[]; metric: "o" | "i"; total: number }) {
+  const { t: tr } = useLang();
   const [hov, setHov] = useState<number | null>(null);
   const R = 70, r = 44, C = 100;
   let acc = 0;
@@ -154,7 +157,7 @@ function Donut({ sellers, metric, total }: { sellers: Seller[]; metric: "o" | "i
       ))}
       <text x="100" y="94" textAnchor="middle" style={{ fontSize: 22, fontWeight: 800, fill: "var(--ink)" }}>{showV.toLocaleString()}</text>
       <text x="100" y="114" textAnchor="middle" style={{ fontSize: 11, fill: "var(--muted)" }}>
-        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "o" ? "tổng đơn" : "tổng items"}
+        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "o" ? tr("rep.totalOrders") : tr("rep.totalItems")}
       </text>
     </svg>
   );

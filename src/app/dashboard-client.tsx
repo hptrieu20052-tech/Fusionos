@@ -31,8 +31,8 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
   }, [range, f, t, ready, isAdmin]);
 
   const delta = (cur: number, prev: number | null, label = tr("db.prevPeriod")) => {
-    if (prev === null) return <div className="d" style={{ color: "var(--faint)" }}>— chưa có dữ liệu {label}</div>;
-    if (prev === 0) return <div className="d" style={{ color: "var(--faint)" }}>mới so với {label}</div>;
+    if (prev === null) return <div className="d" style={{ color: "var(--faint)" }}>{tr("db.noPrevData").replace("{label}", String(label))}</div>;
+    if (prev === 0) return <div className="d" style={{ color: "var(--faint)" }}>{tr("db.newVs").replace("{label}", String(label))}</div>;
     const d = ((cur - prev) / prev) * 100;
     return (
       <div className="d" style={{ color: d >= 0 ? "var(--green)" : "var(--red)" }}>
@@ -110,7 +110,7 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
           <Link href="/finance" className="pipe-card" style={{ ...kpiLink, borderTopColor: kpi.profit >= 0 ? "#2FA36B" : "#DB6B5E" }}>
             <div className="pipe-l">{tr("db.kpiProfit")}</div>
             <div className="pipe-v" style={{ color: kpi.profit >= 0 ? "var(--green)" : "var(--red)" }}>{money(kpi.profit)}</div>
-            <div className="pipe-sub">DT {money(kpi.profitRevenue)} − phí {money(kpi.profitFee)} − vốn {money(kpi.profitCost)}</div>
+            <div className="pipe-sub">{tr("db.profitBreakdown").replace("{r}", money(kpi.profitRevenue)).replace("{f}", money(kpi.profitFee)).replace("{c}", money(kpi.profitCost))}</div>
           </Link>
         </div>
       )}
@@ -124,7 +124,7 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
           {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} /></div>}
         </>
       )}
-      {!ready && <div className="panel empty">Chọn đủ ngày bắt đầu và kết thúc để xem dữ liệu.</div>}
+      {!ready && <div className="panel empty">{tr("rep.chooseDates")}</div>}
     </>
   );
 }

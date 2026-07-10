@@ -1,4 +1,5 @@
 "use client";
+import { useLang } from "@/components/lang-provider";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { SupplierLogo } from "@/components/supplier-logo";
@@ -12,6 +13,7 @@ const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
 const pgBtn = (disabled: boolean): CSSProperties => ({ background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1, color: "var(--ink)" });
 
 export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
+  const { t } = useLang();
   const confirm = useConfirm();
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [rows, setRows] = useState<Map[]>([]);
@@ -57,48 +59,48 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     setRecipeFor(m); setRc({ bp: m.pfBlueprintId ?? undefined, pv: m.pfProviderId ?? undefined, vr: m.pfVariantId ?? undefined });
     setProvs([]); setVars([]); setBpQ("");
     if (bps.length === 0) {
-      setRcLoad("Đang tải blueprint…");
+      setRcLoad(t("sk.loadingBp"));
       const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=blueprints`).then((r) => r.json()).catch(() => ({ ok: false }));
-      setRcLoad(""); if (j.ok) setBps(j.blueprints); else setMsg("⚠ " + (j.error ?? "lỗi tải blueprint"));
+      setRcLoad(""); if (j.ok) setBps(j.blueprints); else setMsg("⚠ " + (j.error ?? t("sk.errLoadBp")));
     }
   }
   async function pickBp(id: number) {
-    setRc({ bp: id }); setProvs([]); setVars([]); setRcLoad("Đang tải nhà in…");
+    setRc({ bp: id }); setProvs([]); setVars([]); setRcLoad(t("sk.loadingProviders"));
     const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=providers&blueprint=${id}`).then((r) => r.json()).catch(() => ({ ok: false }));
-    setRcLoad(""); if (j.ok) setProvs(j.providers); else setMsg("⚠ " + (j.error ?? "lỗi"));
+    setRcLoad(""); if (j.ok) setProvs(j.providers); else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   async function pickPv(id: number) {
-    setRc((p) => ({ ...p, pv: id, vr: undefined })); setVars([]); setRcLoad("Đang tải variant…");
+    setRc((p) => ({ ...p, pv: id, vr: undefined })); setVars([]); setRcLoad(t("sk.loadingVariants"));
     const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=variants&blueprint=${rc.bp}&provider=${id}`).then((r) => r.json()).catch(() => ({ ok: false }));
-    setRcLoad(""); if (j.ok) setVars(j.variants); else setMsg("⚠ " + (j.error ?? "lỗi"));
+    setRcLoad(""); if (j.ok) setVars(j.variants); else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   async function saveRecipe() {
-    if (!recipeFor || !rc.bp || !rc.pv || !rc.vr) { setMsg("⚠ Chọn đủ blueprint + nhà in + variant"); return; }
+    if (!recipeFor || !rc.bp || !rc.pv || !rc.vr) { setMsg(t("sk.warnPickAll")); return; }
     const j = await fetch("/api/mappings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: recipeFor.id, pfBlueprintId: rc.bp, pfProviderId: rc.pv, pfVariantId: rc.vr }) }).then((r) => r.json());
-    if (j.ok) { setMsg("✓ Đã lưu cấu hình in"); setRecipeFor(null); refresh(); } else setMsg("⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) { setMsg(t("sk.printConfigSaved")); setRecipeFor(null); refresh(); } else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
 
   // ---- Thêm sản phẩm Printify: pick blueprint → nhà in → import toàn bộ variant (như Merchize) ----
   async function openAddProduct() {
     setAddProd(true); setRc({}); setProvs([]); setVars([]); setBpQ("");
     if (bps.length === 0) {
-      setRcLoad("Đang tải blueprint…");
+      setRcLoad(t("sk.loadingBp"));
       const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=blueprints`).then((r) => r.json()).catch(() => ({ ok: false }));
-      setRcLoad(""); if (j.ok) setBps(j.blueprints); else setMsg("⚠ " + (j.error ?? "lỗi tải blueprint"));
+      setRcLoad(""); if (j.ok) setBps(j.blueprints); else setMsg("⚠ " + (j.error ?? t("sk.errLoadBp")));
     }
   }
   // Làm mới danh sách blueprint từ Printify (bỏ qua cache client + server) — khi Printify ra SP mới
   async function reloadBlueprints() {
-    setRcLoad("Đang làm mới danh sách sản phẩm…");
+    setRcLoad(t("sk.refreshingProducts"));
     const j = await fetch(`/api/fulfillers/printify-catalog?fulfillerId=${active}&level=blueprints&t=${Date.now()}`).then((r) => r.json()).catch(() => ({ ok: false }));
     setRcLoad("");
-    if (j.ok) { setBps(j.blueprints); setMsg(`✓ Đã làm mới: ${j.blueprints.length} sản phẩm Printify`); }
-    else setMsg("⚠ " + (j.error ?? "lỗi làm mới"));
+    if (j.ok) { setBps(j.blueprints); setMsg(t("sk.refreshedResult").replace("{n}", String(j.blueprints.length))); }
+    else setMsg("⚠ " + (j.error ?? t("sk.errRefresh")));
   }
   async function importProduct() {
-    if (!rc.bp) { setMsg("⚠ Chọn blueprint (sản phẩm gốc)"); return; }
-    if (!importAllPv && !rc.pv) { setMsg("⚠ Chọn nhà in, hoặc tick 'Kéo tất cả nhà in'"); return; }
-    setImporting(true); setMsg(importAllPv ? "Đang kéo tất cả nhà in… (có thể lâu)" : "Đang import variant…");
+    if (!rc.bp) { setMsg(t("sk.warnPickBp")); return; }
+    if (!importAllPv && !rc.pv) { setMsg(t("sk.warnPickProvider")); return; }
+    setImporting(true); setMsg(importAllPv ? t("sk.pullingAll") : t("sk.importingVariant"));
     const bpObj = bps.find((x) => x.id === rc.bp);
     const title = bpObj ? `${bpObj.title}${bpObj.brand || bpObj.model ? ` (${[bpObj.brand, bpObj.model].filter(Boolean).join(" ")})` : ""}` : "";
     const body = importAllPv
@@ -107,11 +109,11 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     const j = await fetch("/api/fulfillers/printify-import-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setImporting(false);
     if (j.ok) {
-      const more = j.done === false ? " · CÒN nữa, bấm lại để tiếp" : "";
-      setMsg(`✓ Import ${j.created} variant từ ${j.providersDone ?? 1}/${j.providers ?? 1} nhà in (bỏ qua ${j.skipped})${more} · đã ghim vào form đơn`);
+      const more = j.done === false ? t("sk.moreClickAgain2") : "";
+      setMsg(t("sk.importResult").replace("{v}", String(j.created)).replace("{pd}", String(j.providersDone ?? 1)).replace("{p}", String(j.providers ?? 1)).replace("{s}", String(j.skipped)) + more + t("sk.pinnedFormSuffix"));
       if (j.done !== false) { setAddProd(false); setImportAllPv(false); }
       refresh();
-    } else setMsg("⚠ " + (j.error ?? "lỗi"));
+    } else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
 
   const loadFfs = useCallback(async () => {
@@ -149,17 +151,17 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   })();
 
   async function addMap() {
-    if (!nm.internalSku || !nm.fulfillerSku || isNaN(Number(nm.baseCost))) { setMsg("⚠ Nhập đủ SKU nội bộ, SKU fulfiller, base cost"); return; }
+    if (!nm.internalSku || !nm.fulfillerSku || isNaN(Number(nm.baseCost))) { setMsg(t("sk.warnFillSku")); return; }
     const j = await fetch("/api/mappings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...nm, fulfillerId: active }) }).then((r) => r.json());
-    setMsg(j.ok ? "✓ Đã thêm" : "⚠ " + j.error); if (j.ok) { setNm({ internalSku: "", fulfillerSku: "", variant: "", baseCost: "", shipCost: "" }); refresh(); }
+    setMsg(j.ok ? t("sk.added") : "⚠ " + j.error); if (j.ok) { setNm({ internalSku: "", fulfillerSku: "", variant: "", baseCost: "", shipCost: "" }); refresh(); }
   }
   async function saveRow(id: string) {
     const e = editRow[id]; if (!e) return;
     const j = await fetch("/api/mappings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
-    setMsg(j.ok ? "✓ Đã lưu" : "⚠ " + j.error); if (j.ok) { setEditRow((p) => { const n = { ...p }; delete n[id]; return n; }); refresh(); }
+    setMsg(j.ok ? t("sk.saved") : "⚠ " + j.error); if (j.ok) { setEditRow((p) => { const n = { ...p }; delete n[id]; return n; }); refresh(); }
   }
   async function delRow(id: string) {
-    if (!(await confirm({ message: "Xóa dòng mapping này?", danger: true }))) return;
+    if (!(await confirm({ message: t("sk.deleteMappingRow"), danger: true }))) return;
     const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
     if (j.ok) refresh();
   }
@@ -175,10 +177,10 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     } else { setMsg("⚠ " + j.error); setPicker(null); }
   }
   async function syncPicker() {
-    setMsg("Đang đồng bộ…");
+    setMsg(t("sk.syncing"));
     const j = await fetch("/api/fulfillers/printify-sync-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, selectedProductIds: Array.from(sel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) { setMsg(`✓ Thêm ${j.added}, gỡ ${j.removed}`); setPicker(null); refresh(); }
-    else setMsg("⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) { setMsg(t("sk.syncResult").replace("{a}", String(j.added)).replace("{r}", String(j.removed))); setPicker(null); refresh(); }
+    else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   const toggleSel = (id: string) => setSel((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -189,7 +191,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   }, [active]);
   async function openPinPicker() {
     setPinQ(""); setPinOnlySel(false);
-    setMsg("Đang tải danh sách sản phẩm…");
+    setMsg(t("sk.loadingProducts"));
     const products = await fetchPinProducts("");
     setMsg("");
     setPinPicker(products.map((p) => ({ product: p.product, count: p.count })));
@@ -198,7 +200,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Tìm trong popup ghim (server-side: theo tên hoặc SKU) — debounce, giữ nguyên lựa chọn đã tick
   const pinOpen = pinPicker !== null;
   useEffect(() => {
-    if (!pinOpen || pinOnlySel) return;   // đang lọc "chỉ đã ghim" → lọc client, khỏi gọi server
+    if (!pinOpen || pinOnlySel) return;   // đang lọc t("sk.pinnedOnly") → lọc client, khỏi gọi server
     const t = setTimeout(async () => { setPinPicker(await fetchPinProducts(pinQ.trim())); }, 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -208,7 +210,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // ---- Xóa bớt sản phẩm (nhiều variant) để bảng nhẹ hơn ----
   async function openDelPicker() {
     setDelQ(""); setDelSel(new Set());
-    setMsg("Đang tải danh sách sản phẩm…");
+    setMsg(t("sk.loadingProducts"));
     const products = await fetchPinProducts("");
     setMsg("");
     setDelPicker(products.map((p) => ({ product: p.product, count: p.count })));
@@ -223,46 +225,46 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const toggleDel = (p: string) => setDelSel((s) => { const n = new Set(s); n.has(p) ? n.delete(p) : n.add(p); return n; });
   async function delProducts() {
     const products = Array.from(delSel);
-    if (!products.length) { setMsg("⚠ Chưa chọn sản phẩm để xóa"); return; }
-    if (!(await confirm({ message: `Xóa ${products.length} sản phẩm (toàn bộ variant/SKU của chúng) khỏi ${ff?.name ?? "nhà này"}? Không thể hoàn tác.`, danger: true }))) return;
+    if (!products.length) { setMsg(t("sk.warnNoProductToDelete")); return; }
+    if (!(await confirm({ message: t("sk.deleteProductsConfirm").replace("{n}", String(products.length)).replace("{ff}", ff?.name ?? t("sk.thisProvider")), danger: true }))) return;
     setDelBusy(true);
     const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setDelBusy(false);
-    if (j.ok) { setMsg(`✓ Đã xóa ${j.deleted} SKU (${products.length} SP)`); setDelPicker(null); refresh(); }
-    else setMsg("⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) { setMsg(t("sk.deletedResult").replace("{d}", String(j.deleted)).replace("{n}", String(products.length))); setDelPicker(null); refresh(); }
+    else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   async function delAllOfFf() {
-    if (!(await confirm({ message: `XÓA TẤT CẢ ${countBy(active).toLocaleString()} SKU của ${ff?.name ?? "nhà này"}? Không thể hoàn tác.`, danger: true }))) return;
+    if (!(await confirm({ message: t("sk.deleteAllConfirm").replace("{n}", countBy(active).toLocaleString()).replace("{ff}", ff?.name ?? t("sk.thisProvider")), danger: true }))) return;
     setDelBusy(true);
     const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, all: true }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setDelBusy(false);
-    if (j.ok) { setMsg(`✓ Đã xóa tất cả ${j.deleted} SKU`); setDelPicker(null); refresh(); }
-    else setMsg("⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) { setMsg(t("sk.deletedAllResult").replace("{d}", String(j.deleted))); setDelPicker(null); refresh(); }
+    else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   async function savePins() {
-    setMsg("Đang lưu ghim…");
+    setMsg(t("sk.savingPin"));
     const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products: Array.from(pinSel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) { setMsg(`✓ Đã ghim ${j.pinned} SKU (${j.products} SP) cho form đơn`); setPinPicker(null); refresh(); }
-    else setMsg("⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) { setMsg(t("sk.pinnedResult").replace("{p}", String(j.pinned)).replace("{n}", String(j.products))); setPinPicker(null); refresh(); }
+    else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   // Ghim/bỏ ghim nhanh 1 sản phẩm ngay trên bảng (khỏi mở popup)
   async function togglePinProduct(product: string | null, pin: boolean) {
-    if (!product) { setMsg("⚠ Dòng này chưa có tên sản phẩm để ghim"); return; }
+    if (!product) { setMsg(t("sk.warnNoNameToPin")); return; }
     const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, toggleProduct: product, pinned: pin }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) { setMsg(pin ? `⭐ Đã ghim "${product}" (${j.count} SKU) vào form đơn` : `Đã bỏ ghim "${product}"`); refresh(); }
-    else setMsg("⚠ " + (j.error ?? "lỗi"));
+    if (j.ok) { setMsg(pin ? t("sk.pinnedStar").replace("{p}", product).replace("{n}", String(j.count)) : t("sk.unpinnedName").replace("{p}", product)); refresh(); }
+    else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
-  // 1 nút "Cập nhật SKU": kéo SP mới → điền màu/size + base + ship từ catalog. Chạy tuần tự, tăng dần.
+  // 1 nút t("sk.updateSku"): kéo SP mới → điền màu/size + base + ship từ catalog. Chạy tuần tự, tăng dần.
   async function getSkuMerchize() {
-    setMsg("Đang kéo SKU mới từ Merchize…");
+    setMsg(t("sk.pullingMerchize"));
     const imp = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? "lỗi kéo SKU")); return; }
-    setMsg(`Đã thêm ${imp.created} SKU mới · đang điền màu/size + giá…`);
+    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
+    setMsg(t("sk.addedFilling").replace("{n}", String(imp.created)));
     const enr = await fetch("/api/fulfillers/merchize-enrich-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false }));
     refresh();
     const notDone = imp.done === false || (enr.ok && enr.done === false);
-    const info = `✓ Thêm mới ${imp.created}${enr.ok ? `, điền nhãn/giá ${enr.updated}` : ""}`;
-    setMsg(info + (notDone ? " · CÒN nữa — bấm lại để tiếp" : " · xong"));
+    const info = t("sk.addedNew").replace("{n}", String(imp.created)) + (enr.ok ? t("sk.filledLabels").replace("{n}", String(enr.updated)) : "");
+    setMsg(info + (notDone ? t("sk.moreClickAgain") : " · xong"));
   }
 
   const th = { textAlign: "left" as const, fontSize: 11, color: "var(--faint)", fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: ".3px", padding: "8px 10px", borderBottom: "1px solid var(--line)" };
@@ -273,7 +275,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
         <div>
           <h3 style={{ fontWeight: 800, fontSize: 16 }}>SKU Mapping</h3>
-          <div className="sub">Map SKU nội bộ ↔ SKU nhà fulfill + giá vốn (base/ship). Đẩy đơn dùng SKU này. Chia theo từng nhà cung cấp.</div>
+          <div className="sub">{t("sk.mapDesc")}</div>
         </div>
         {msg && <div style={{ fontWeight: 700, fontSize: 12.5, alignSelf: "center" }}>{msg}</div>}
       </div>
@@ -295,20 +297,20 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <>
           {/* Thanh công cụ supplier */}
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
-            <input placeholder="Tìm SKU / tên SP / variant…" value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, width: 260 }} />
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{total.toLocaleString()} dòng{qDeb ? " (lọc)" : ""}{rowsLoading ? " · …" : ""}{pinnedCount > 0 ? <span style={{ color: "#9A6B00", fontWeight: 700 }}> · ⭐ {pinnedCount} ghim</span> : ""}</span>
+            <input placeholder={t("sk.searchSkuNameVar")} value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, width: 260 }} />
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{total.toLocaleString()} {t("sk.rowsWord")}{qDeb ? t("sk.filterSuffix") : ""}{rowsLoading ? " · …" : ""}{pinnedCount > 0 ? <span style={{ color: "#9A6B00", fontWeight: 700 }}> · ⭐ {pinnedCount} ghim</span> : ""}</span>
             <div style={{ flex: 1 }} />
             {ff.method === "api" && canEdit && countBy(active) > 0 && (
-              <button onClick={openPinPicker} title="Chọn sản phẩm hiện sẵn trong form tạo đơn" style={{ background: "#FFF6E5", border: "1px solid #F3D08A", color: "#9A6B00", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>⭐ Chọn SP cho form đơn</button>
+              <button onClick={openPinPicker} title={t("sk.pickExistingProduct")} style={{ background: "#FFF6E5", border: "1px solid #F3D08A", color: "#9A6B00", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.pickForForm")}</button>
             )}
             {ff.method === "api" && canEdit && countBy(active) > 0 && (
-              <button onClick={openDelPicker} title="Xóa bớt sản phẩm (nhiều variant) cho bảng nhẹ, load nhanh" style={{ background: "#FBECEC", border: "1px solid #F3C6C0", color: "var(--red)", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>🗑 Xóa bớt SP</button>
+              <button onClick={openDelPicker} title={t("sk.removeHeavyProducts")} style={{ background: "#FBECEC", border: "1px solid #F3C6C0", color: "var(--red)", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.removeProductsBtn")}</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("printify") && canEdit && (
-              <button onClick={openAddProduct} title="Chọn 1 sản phẩm gốc (blueprint) + nhà in → kéo hết variant về, sẵn sàng đẩy đơn. Không cần cấu hình ⚙ In từng cái." style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>➕ Thêm sản phẩm Printify</button>
+              <button onClick={openAddProduct} title={t("sk.printifyHint")} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.addPrintifyProduct")}</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("merchize") && canEdit && (
-              <button onClick={getSkuMerchize} title="Kéo sản phẩm mới + lấy nhãn màu/size cho SKU đang trống. Bấm lại nếu báo CÒN nữa." style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>🔄 Cập nhật SKU</button>
+              <button onClick={getSkuMerchize} title={t("sk.pullNewLabels")} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.updateSkuBtn")}</button>
             )}
           </div>
 
@@ -316,12 +318,12 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
           <div style={{ overflowX: "auto", border: "1px solid var(--line)", borderRadius: 12 }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
               <thead><tr>
-                <th style={th}>SKU nội bộ</th><th style={th}>SKU {ff.name}</th><th style={th}>Sản phẩm / Variant</th>
-                <th style={{ ...th, textAlign: "right" }}>Base</th><th style={{ ...th, textAlign: "right" }}>Ship</th><th style={{ ...th, textAlign: "right" }}>Tổng</th>
+                <th style={th}>{t("sk.internalSku")}</th><th style={th}>SKU {ff.name}</th><th style={th}>{t("sk.productVariant")}</th>
+                <th style={{ ...th, textAlign: "right" }}>Base</th><th style={{ ...th, textAlign: "right" }}>Ship</th><th style={{ ...th, textAlign: "right" }}>{t("sk.totalTh")}</th>
                 {canEdit && <th style={{ ...th, textAlign: "right", width: 120 }}></th>}
               </tr></thead>
               <tbody>
-                {rows.length === 0 && <tr><td style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 24 }} colSpan={canEdit ? 7 : 6}>Chưa có mapping nào cho {ff.name}.</td></tr>}
+                {rows.length === 0 && <tr><td style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 24 }} colSpan={canEdit ? 7 : 6}>{t("sk.noMappingYet")} · {ff.name}</td></tr>}
                 {rows.map((m) => {
                   const e = editRow[m.id];
                   return (
@@ -334,7 +336,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                         <td style={td}><input type="number" step="0.01" value={e.shipCost ?? m.shipCost} onChange={(ev) => setEditRow((p) => ({ ...p, [m.id]: { ...p[m.id], shipCost: ev.target.value } }))} style={{ ...inp, width: 74 }} /></td>
                         <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{money(Number(e.baseCost ?? m.baseCost) + Number(e.shipCost ?? m.shipCost))}</td>
                         <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                          <button onClick={() => saveRow(m.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 8, padding: "5px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Lưu</button>
+                          <button onClick={() => saveRow(m.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 8, padding: "5px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{t("sk.save")}</button>
                           <button onClick={() => setEditRow((p) => { const n = { ...p }; delete n[m.id]; return n; })} style={{ marginLeft: 5, background: "none", border: "none", cursor: "pointer", color: "var(--muted)" }}>✕</button>
                         </td>
                       </> : <>
@@ -343,17 +345,17 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                         <td style={td}>
                           {m.fulfillerProduct ? <span>{m.fulfillerProduct}{m.variant ? <span style={{ color: "var(--muted)" }}> · {m.variant}</span> : ""}</span> : (m.variant || <span style={{ color: "var(--faint)" }}>—</span>)}
                           {ff.name.toLowerCase().includes("printify") && (m.pfBlueprintId
-                            ? <span style={{ marginLeft: 8, background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>✓ đã cấu hình in</span>
-                            : <span style={{ marginLeft: 8, background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>⚠ chưa cấu hình in</span>)}
+                            ? <span style={{ marginLeft: 8, background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>{t("sk.configured")}</span>
+                            : <span style={{ marginLeft: 8, background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>{t("sk.notConfigured")}</span>)}
                         </td>
                         <td style={{ ...td, textAlign: "right" }}>{money(m.baseCost)}</td>
                         <td style={{ ...td, textAlign: "right" }}>{money(m.shipCost)}</td>
                         <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{money(Number(m.baseCost) + Number(m.shipCost))}</td>
                         {canEdit && <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                          <button onClick={() => togglePinProduct(m.fulfillerProduct, !m.pinned)} title={m.pinned ? "Bỏ ghim khỏi form đơn" : "Ghim SP này vào form đơn"} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: m.pinned ? "#E0A000" : "var(--faint)" }}>{m.pinned ? "⭐" : "☆"}</button>
-                          {ff.name.toLowerCase().includes("printify") && <button onClick={() => openRecipe(m)} title="Chọn blueprint/nhà in/variant để tạo product" style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 12 }}>⚙ In</button>}
-                          <button onClick={() => setEditRow((p) => ({ ...p, [m.id]: {} }))} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--blue)", fontWeight: 700, fontSize: 12 }}>Sửa</button>
-                          <button onClick={() => delRow(m.id)} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700, fontSize: 12 }}>Xóa</button>
+                          <button onClick={() => togglePinProduct(m.fulfillerProduct, !m.pinned)} title={m.pinned ? t("sk.unpinFromForm") : t("sk.pinToForm")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: m.pinned ? "#E0A000" : "var(--faint)" }}>{m.pinned ? "⭐" : "☆"}</button>
+                          {ff.name.toLowerCase().includes("printify") && <button onClick={() => openRecipe(m)} title={t("sk.pickBpProvVar")} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 12 }}>⚙ In</button>}
+                          <button onClick={() => setEditRow((p) => ({ ...p, [m.id]: {} }))} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--blue)", fontWeight: 700, fontSize: 12 }}>{t("c.edit")}</button>
+                          <button onClick={() => delRow(m.id)} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700, fontSize: 12 }}>{t("c.delete")}</button>
                         </td>}
                       </>}
                     </tr>
@@ -367,22 +369,22 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
           {pageCount > 1 && (
             <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 12 }}>
               <button onClick={() => setPage(1)} disabled={page <= 1} style={pgBtn(page <= 1)}>«</button>
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} style={pgBtn(page <= 1)}>‹ Trước</button>
-              <span style={{ fontSize: 12.5, color: "var(--muted)", minWidth: 90, textAlign: "center" }}>Trang <b style={{ color: "var(--ink)" }}>{page}</b> / {pageCount}</span>
-              <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount} style={pgBtn(page >= pageCount)}>Sau ›</button>
+              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1} style={pgBtn(page <= 1)}>{t("sk.prev")}</button>
+              <span style={{ fontSize: 12.5, color: "var(--muted)", minWidth: 90, textAlign: "center" }}>{t("sk.pageWord")} <b style={{ color: "var(--ink)" }}>{page}</b> / {pageCount}</span>
+              <button onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={page >= pageCount} style={pgBtn(page >= pageCount)}>{t("sk.next")}</button>
               <button onClick={() => setPage(pageCount)} disabled={page >= pageCount} style={pgBtn(page >= pageCount)}>»</button>
             </div>
           )}
           {/* Thêm dòng */}
           {canEdit && (
             <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center", borderTop: "1px dashed var(--line)", paddingTop: 12 }}>
-              <b style={{ fontSize: 12.5 }}>＋ Thêm:</b>
-              <input placeholder="SKU nội bộ" value={nm.internalSku} onChange={(e) => setNm({ ...nm, internalSku: e.target.value })} style={{ ...inp, width: 150 }} />
+              <b style={{ fontSize: 12.5 }}>{t("sk.addColon")}</b>
+              <input placeholder={t("sk.internalSku")} value={nm.internalSku} onChange={(e) => setNm({ ...nm, internalSku: e.target.value })} style={{ ...inp, width: 150 }} />
               <input placeholder={`SKU ${ff.name}`} value={nm.fulfillerSku} onChange={(e) => setNm({ ...nm, fulfillerSku: e.target.value })} style={{ ...inp, width: 150 }} />
-              <input placeholder="Variant (tùy chọn)" value={nm.variant} onChange={(e) => setNm({ ...nm, variant: e.target.value })} style={{ ...inp, width: 160 }} />
+              <input placeholder={t("sk.variantOptional")} value={nm.variant} onChange={(e) => setNm({ ...nm, variant: e.target.value })} style={{ ...inp, width: 160 }} />
               <input type="number" step="0.01" placeholder="Base $" value={nm.baseCost} onChange={(e) => setNm({ ...nm, baseCost: e.target.value })} style={{ ...inp, width: 90 }} />
               <input type="number" step="0.01" placeholder="Ship $" value={nm.shipCost} onChange={(e) => setNm({ ...nm, shipCost: e.target.value })} style={{ ...inp, width: 90 }} />
-              <button onClick={addMap} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Thêm</button>
+              <button onClick={addMap} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.add")}</button>
             </div>
           )}
         </>
@@ -393,18 +395,18 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { if (!pickerLoading) setPicker(null); }}>
           <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <b style={{ fontSize: 16 }}>Chọn sản phẩm cần fulfill</b>
+              <b style={{ fontSize: 16 }}>{t("sk.pickProductToFulfill")}</b>
               {!pickerLoading && <button onClick={() => setPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Tick sản phẩm cần map, bỏ tick sản phẩm không cần. Bấm Lưu để đồng bộ (thêm SKU mới, gỡ SKU đã bỏ tick).</div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>{t("sk.tickToMap")}</div>
 
-            {pickerLoading ? <div style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Đang kéo sản phẩm từ Printify…</div> : (
+            {pickerLoading ? <div style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>{t("sk.pullingFromPrintify")}</div> : (
               <>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-                  <input placeholder="Tìm sản phẩm…" value={pickerQ} onChange={(e) => setPickerQ(e.target.value)} style={{ ...inp, width: 200 }} />
-                  <button onClick={() => setSel(new Set((picker ?? []).map((p) => p.id)))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả</button>
-                  <button onClick={() => setSel(new Set())} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn hết</button>
-                  <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã chọn {sel.size}/{picker?.length ?? 0}</span>
+                  <input placeholder={t("sk.searchProduct")} value={pickerQ} onChange={(e) => setPickerQ(e.target.value)} style={{ ...inp, width: 200 }} />
+                  <button onClick={() => setSel(new Set((picker ?? []).map((p) => p.id)))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.selectAll")}</button>
+                  <button onClick={() => setSel(new Set())} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.deselectAll")}</button>
+                  <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{t("sk.selectedCount")} {sel.size}/{picker?.length ?? 0}</span>
                 </div>
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
                   {(picker ?? []).filter((p) => !pickerQ || p.title.toLowerCase().includes(pickerQ.toLowerCase())).map((p) => (
@@ -413,25 +415,25 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.title}</div>
                         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
-                          {p.total} SKU{p.mappedCount > 0 ? <span style={{ color: "#2E7D46", fontWeight: 700 }}> · đã map {p.mappedCount}</span> : ""}{p.noSku > 0 ? <span style={{ color: "var(--amber)" }}> · {p.noSku} variant chưa có SKU</span> : ""}
+                          {p.total} SKU{p.mappedCount > 0 ? <span style={{ color: "#2E7D46", fontWeight: 700 }}>{t("sk.mappedMid")}{p.mappedCount}</span> : ""}{p.noSku > 0 ? <span style={{ color: "var(--amber)" }}>{t("sk.noSkuSuffix").replace("{n}", String(p.noSku))}</span> : ""}
                         </div>
                       </div>
                     </label>
                   ))}
                   {(picker ?? []).length === 0 && (
                     <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5, lineHeight: 1.7 }}>
-                      <b style={{ color: "var(--ink)", fontSize: 13 }}>Không có sản phẩm nào từ Printify.</b>
-                      {diag && <div style={{ marginTop: 4 }}>Đang hỏi shop <b>{diag.shopId}</b> — Printify trả về {diag.rawCount} sản phẩm.</div>}
-                      <div style={{ marginTop: 8 }}>Kiểm tra lần lượt:</div>
-                      <div>• Token có scope <b>products.read</b> chưa? (tạo lại token, tick products.read)</div>
-                      <div>• <b>Shop ID</b> có đúng shop chứa sản phẩm không? Bạn có 2 shop — thử đổi sang shop kia ở <b>Settings → Get shops</b>.</div>
-                      <div>• Sản phẩm trên Printify đã <b>tạo xong</b> (không phải bản nháp trống) chưa?</div>
+                      <b style={{ color: "var(--ink)", fontSize: 13 }}>{t("sk.noPrintifyProducts")}</b>
+                      {diag && <div style={{ marginTop: 4 }}>{t("sk.askShopPre")}<b>{diag.shopId}</b>{t("sk.askShopMid")}{diag.rawCount}{t("sk.askShopPost")}</div>}
+                      <div style={{ marginTop: 8 }}>{t("sk.checkInOrder")}</div>
+                      <div>• {t("sk.tokenHasScope")} <b>products.read</b> {t("sk.notYetToken")}</div>
+                      <div>• <b>Shop ID</b> {t("sk.rightShopQ")} <b>Settings → Get shops</b>.</div>
+                      <div>{t("sk.printifyProductDot")} <b>{t("sk.created")}</b> {t("sk.notEmptyDraft")}</div>
                     </div>
                   )}
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
-                  <button onClick={() => setPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
-                  <button onClick={syncPicker} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>Lưu ({sel.size})</button>
+                  <button onClick={() => setPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{t("c.cancel")}</button>
+                  <button onClick={syncPicker} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>{t("sk.save")} ({sel.size})</button>
                 </div>
               </>
             )}
@@ -443,16 +445,16 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setPinPicker(null)}>
           <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-              <b style={{ fontSize: 16 }}>⭐ Chọn sản phẩm cho form tạo đơn</b>
+              <b style={{ fontSize: 16 }}>{t("sk.pickForFormLong")}</b>
               <button onClick={() => setPinPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>Chỉ SP được tick mới hiện sẵn khi tạo đơn. SP khác vẫn tìm được bằng ô tìm trong form. Không xóa SKU — chỉ lọc hiển thị.</div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>{t("sk.pinFilterDesc")}</div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-              <input placeholder="Tìm theo tên hoặc SKU…" value={pinQ} onChange={(e) => setPinQ(e.target.value)} style={{ ...inp, width: 240 }} />
-              <button onClick={() => setPinSel((s) => new Set([...Array.from(s), ...(pinPicker ?? []).map((p) => p.product)]))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả</button>
-              <button onClick={() => setPinSel((s) => { const n = new Set(s); for (const p of pinPicker ?? []) n.delete(p.product); return n; })} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn hết</button>
-              <button onClick={() => setPinOnlySel((v) => !v)} style={{ background: pinOnlySel ? "#FFF6E5" : "var(--card)", border: `1px solid ${pinOnlySel ? "#F3D08A" : "var(--line)"}`, color: pinOnlySel ? "#9A6B00" : "var(--ink)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>⭐ Chỉ đã ghim ({pinSel.size})</button>
-              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã ghim {pinSel.size} SP{(pinQ || pinOnlySel) ? ` · hiện ${pinShown.length}` : ""}</span>
+              <input placeholder={t("sk.searchNameSku")} value={pinQ} onChange={(e) => setPinQ(e.target.value)} style={{ ...inp, width: 240 }} />
+              <button onClick={() => setPinSel((s) => new Set([...Array.from(s), ...(pinPicker ?? []).map((p) => p.product)]))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.selectAll")}</button>
+              <button onClick={() => setPinSel((s) => { const n = new Set(s); for (const p of pinPicker ?? []) n.delete(p.product); return n; })} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.deselectAll")}</button>
+              <button onClick={() => setPinOnlySel((v) => !v)} style={{ background: pinOnlySel ? "#FFF6E5" : "var(--card)", border: `1px solid ${pinOnlySel ? "#F3D08A" : "var(--line)"}`, color: pinOnlySel ? "#9A6B00" : "var(--ink)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.onlyPinned")} ({pinSel.size})</button>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{t("sk.pinnedWord")} {pinSel.size} {t("sk.productsAbbr")}{(pinQ || pinOnlySel) ? t("sk.pinShown").replace("{n}", String(pinShown.length)) : ""}</span>
             </div>
             <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
               {pinShown.map((p) => (
@@ -464,11 +466,11 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                   </div>
                 </label>
               ))}
-              {pinShown.length === 0 && <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5 }}>{pinOnlySel ? "Chưa ghim SP nào." : "Chưa có sản phẩm nào — kéo SKU về trước đã."}</div>}
+              {pinShown.length === 0 && <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5 }}>{pinOnlySel ? t("sk.noPinned") : t("sk.noProductPullFirst")}</div>}
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14 }}>
-              <button onClick={() => setPinPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
-              <button onClick={savePins} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>Lưu ({pinSel.size})</button>
+              <button onClick={() => setPinPicker(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{t("c.cancel")}</button>
+              <button onClick={savePins} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>{t("sk.save")} ({pinSel.size})</button>
             </div>
           </div>
         </div>
@@ -478,15 +480,15 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !delBusy && setDelPicker(null)}>
           <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <b style={{ fontSize: 16 }}>🗑 Xóa bớt sản phẩm — {ff?.name}</b>
+              <b style={{ fontSize: 16 }}>{t("sk.removeProductsTitle")}{ff?.name}</b>
               <button onClick={() => !delBusy && setDelPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "6px 0 12px" }}>Tick sản phẩm muốn xóa → xóa <b>toàn bộ variant/SKU</b> của SP đó. Giúp bảng nhẹ, load nhanh. Không thể hoàn tác.</div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "6px 0 12px" }}>{t("sk.tickToDelete")} <b>{t("sk.allVariantsSku")}</b> {t("sk.deleteProductDesc")}</div>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
-              <input placeholder="Tìm tên SP / SKU…" value={delQ} onChange={(e) => setDelQ(e.target.value)} style={{ ...inp, width: 240 }} />
-              <button onClick={() => setDelSel((s) => new Set([...Array.from(s), ...(delPicker ?? []).map((p) => p.product)]))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Chọn tất cả (đang hiện)</button>
-              <button onClick={() => setDelSel(new Set())} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Bỏ chọn</button>
-              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>Đã chọn {delSel.size} SP</span>
+              <input placeholder={t("sk.searchNameSku2")} value={delQ} onChange={(e) => setDelQ(e.target.value)} style={{ ...inp, width: 240 }} />
+              <button onClick={() => setDelSel((s) => new Set([...Array.from(s), ...(delPicker ?? []).map((p) => p.product)]))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.selectAllShown")}</button>
+              <button onClick={() => setDelSel(new Set())} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.deselect")}</button>
+              <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{t("sk.selectedCount")} {delSel.size} {t("sk.productsAbbr")}</span>
             </div>
             <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
               {(delPicker ?? []).map((p) => (
@@ -494,17 +496,17 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                   <input type="checkbox" checked={delSel.has(p.product)} onChange={() => toggleDel(p.product)} style={{ width: 17, height: 17, cursor: "pointer" }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.product}</div>
-                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.count} SKU sẽ bị xóa</div>
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.count}{t("sk.willBeDeleted")}</div>
                   </div>
                 </label>
               ))}
-              {(delPicker ?? []).length === 0 && <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5 }}>Không có sản phẩm.</div>}
+              {(delPicker ?? []).length === 0 && <div style={{ padding: "20px 18px", color: "var(--muted)", fontSize: 12.5 }}>{t("sk.noProducts")}</div>}
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 14 }}>
-              <button onClick={delAllOfFf} disabled={delBusy} style={{ background: "#fff", border: "1px solid #F3C6C0", color: "var(--red)", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", fontSize: 12.5 }}>Xóa TẤT CẢ {countBy(active).toLocaleString()} SKU</button>
+              <button onClick={delAllOfFf} disabled={delBusy} style={{ background: "#fff", border: "1px solid #F3C6C0", color: "var(--red)", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", fontSize: 12.5 }}>{t("sk.deleteAllBtn")} {countBy(active).toLocaleString()} SKU</button>
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setDelPicker(null)} disabled={delBusy} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
-                <button onClick={delProducts} disabled={delBusy || delSel.size === 0} style={{ background: "var(--red)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: delBusy || delSel.size === 0 ? "default" : "pointer", fontSize: 13, opacity: delBusy || delSel.size === 0 ? 0.5 : 1 }}>{delBusy ? "Đang xóa…" : `Xóa ${delSel.size} SP đã chọn`}</button>
+                <button onClick={() => setDelPicker(null)} disabled={delBusy} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{t("c.cancel")}</button>
+                <button onClick={delProducts} disabled={delBusy || delSel.size === 0} style={{ background: "var(--red)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: delBusy || delSel.size === 0 ? "default" : "pointer", fontSize: 13, opacity: delBusy || delSel.size === 0 ? 0.5 : 1 }}>{delBusy ? t("sk.deletingShort") : t("sk.deleteSelectedBtn").replace("{n}", String(delSel.size))}</button>
               </div>
             </div>
           </div>
@@ -515,19 +517,19 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { if (!importing) setAddProd(false); }}>
           <div style={{ background: "#fff", borderRadius: 18, width: 680, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <b style={{ fontSize: 16 }}>➕ Thêm sản phẩm Printify</b>
+              <b style={{ fontSize: 16 }}>{t("sk.addPrintifyProduct")}</b>
               <button onClick={() => !importing && setAddProd(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "4px 0 12px" }}>Chọn sản phẩm gốc (blueprint) → nhà in → kéo <b>hết variant</b> (màu/size) về thành SKU sẵn sàng. Đẩy đơn khỏi cấu hình từng cái. Tự ghim vào form đơn.</div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "4px 0 12px" }}>{t("sk.pickBpProviderPull")} <b>{t("sk.pullVariantMid")}</b> {t("sk.pullVariantDesc")}</div>
             {rcLoad && <div style={{ fontSize: 12, color: "var(--blue)", marginBottom: 8 }}>{rcLoad}</div>}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, flex: 1, minHeight: 0 }}>
               <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)" }}>1. Sản phẩm (blueprint) {bps.length > 0 && <span style={{ color: "var(--faint)" }}>· {bps.length}</span>}</span>
-                  <button onClick={reloadBlueprints} title="Tải lại danh sách từ Printify (khi Printify có sản phẩm mới)" style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "3px 9px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🔄 Làm mới</button>
+                  <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)" }}>{t("sk.step1Product")} {bps.length > 0 && <span style={{ color: "var(--faint)" }}>· {bps.length}</span>}</span>
+                  <button onClick={reloadBlueprints} title={t("sk.reloadPrintify")} style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "3px 9px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>{t("sk.refresh")}</button>
                 </div>
-                <input placeholder="Tìm sản phẩm…" value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
+                <input placeholder={t("sk.searchProduct")} value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1 }}>
                   {bps.filter((b) => !bpQ || `${b.title} ${b.brand} ${b.model ?? ""}`.toLowerCase().includes(bpQ.toLowerCase())).slice(0, 200).map((b) => (
                     <div key={b.id} onClick={() => pickBp(b.id)} style={{ padding: "6px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", background: rc.bp === b.id ? "var(--blue-soft)" : undefined }}>
@@ -537,24 +539,24 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                 </div>
               </div>
               <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>2. Nhà in</div>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>{t("sk.step2Provider")}</div>
                 <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, marginBottom: 6, cursor: "pointer", color: importAllPv ? "#2E7D46" : "var(--ink)" }}>
                   <input type="checkbox" checked={importAllPv} onChange={(e) => setImportAllPv(e.target.checked)} style={{ width: 15, height: 15 }} />
-                  ⭐ Kéo TẤT CẢ nhà in của SP này
+                  {t("sk.pullAllForProduct")}
                 </label>
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1, opacity: importAllPv ? 0.45 : 1, pointerEvents: importAllPv ? "none" : "auto" }}>
                   {provs.map((p) => (
                     <div key={p.id} onClick={() => pickPv(p.id)} style={{ padding: "7px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", fontWeight: 600, background: rc.pv === p.id ? "var(--blue-soft)" : undefined }}>{p.title}</div>
                   ))}
-                  {provs.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>Chọn sản phẩm trước</div>}
+                  {provs.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>{t("sk.pickProductFirst")}</div>}
                 </div>
               </div>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14, alignItems: "center" }}>
-              <span style={{ fontSize: 12, color: "var(--muted)", marginRight: "auto" }}>{importAllPv ? <b style={{ color: "#2E7D46" }}>Tất cả nhà in</b> : (rc.pv ? <b style={{ color: "#2E7D46" }}>{vars.length} variant</b> : "—")} sẽ được import</span>
-              <button onClick={() => !importing && setAddProd(false)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
-              <button onClick={importProduct} disabled={(!rc.pv && !importAllPv) || !rc.bp || importing} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: ((!rc.pv && !importAllPv) || importing) ? "default" : "pointer", fontSize: 13, opacity: ((!rc.pv && !importAllPv) || !rc.bp || importing) ? 0.5 : 1 }}>{importing ? "Đang import…" : (importAllPv ? "Import tất cả nhà in" : `Import ${rc.pv ? vars.length : ""} variant`)}</button>
+              <span style={{ fontSize: 12, color: "var(--muted)", marginRight: "auto" }}>{importAllPv ? <b style={{ color: "#2E7D46" }}>{t("sk.allProviders")}</b> : (rc.pv ? <b style={{ color: "#2E7D46" }}>{vars.length} variant</b> : "—")} {t("sk.willImport")}</span>
+              <button onClick={() => !importing && setAddProd(false)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{t("c.cancel")}</button>
+              <button onClick={importProduct} disabled={(!rc.pv && !importAllPv) || !rc.bp || importing} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: ((!rc.pv && !importAllPv) || importing) ? "default" : "pointer", fontSize: 13, opacity: ((!rc.pv && !importAllPv) || !rc.bp || importing) ? 0.5 : 1 }}>{importing ? t("sk.importingShort") : (importAllPv ? t("sk.importAllProviders") : `Import ${rc.pv ? vars.length : ""} variant`)}</button>
             </div>
           </div>
         </div>
@@ -564,17 +566,17 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setRecipeFor(null)}>
           <div style={{ background: "#fff", borderRadius: 18, width: 640, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <b style={{ fontSize: 16 }}>Cấu hình in cho <span style={{ fontFamily: "ui-monospace,monospace" }}>{recipeFor.internalSku}</span></b>
+              <b style={{ fontSize: 16 }}>{t("sk.printConfigFor")} <span style={{ fontFamily: "ui-monospace,monospace" }}>{recipeFor.internalSku}</span></b>
               <button onClick={() => setRecipeFor(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "4px 0 12px" }}>Chọn sản phẩm gốc (blueprint) → nhà in → variant (màu/size). Khi đẩy đơn, app tạo product Printify theo cấu hình này rồi đặt đơn.</div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "4px 0 12px" }}>{t("sk.printifyFlowDesc")}</div>
             {rcLoad && <div style={{ fontSize: 12, color: "var(--blue)", marginBottom: 8 }}>{rcLoad}</div>}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, flex: 1, minHeight: 0 }}>
               {/* Blueprint */}
               <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
                 <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>1. Blueprint</div>
-                <input placeholder="Tìm…" value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
+                <input placeholder={t("sk.searchShort")} value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1 }}>
                   {bps.filter((b) => !bpQ || `${b.title} ${b.brand} ${b.model ?? ""}`.toLowerCase().includes(bpQ.toLowerCase())).slice(0, 200).map((b) => (
                     <div key={b.id} onClick={() => pickBp(b.id)} style={{ padding: "6px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", background: rc.bp === b.id ? "var(--blue-soft)" : undefined }}>
@@ -585,12 +587,12 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               </div>
               {/* Provider */}
               <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>2. Nhà in</div>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>{t("sk.step2Provider")}</div>
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1, marginTop: 30 }}>
                   {provs.map((p) => (
                     <div key={p.id} onClick={() => pickPv(p.id)} style={{ padding: "7px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", fontWeight: 600, background: rc.pv === p.id ? "var(--blue-soft)" : undefined }}>{p.title}</div>
                   ))}
-                  {provs.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>Chọn blueprint trước</div>}
+                  {provs.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>{t("sk.pickBpFirst")}</div>}
                 </div>
               </div>
               {/* Variant */}
@@ -600,15 +602,15 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                   {vars.map((v) => (
                     <div key={v.id} onClick={() => setRc((p) => ({ ...p, vr: v.id }))} style={{ padding: "7px 9px", cursor: "pointer", fontSize: 12, borderBottom: "1px solid var(--line)", background: rc.vr === v.id ? "var(--blue-soft)" : undefined }}>{v.title}</div>
                   ))}
-                  {vars.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>Chọn nhà in trước</div>}
+                  {vars.length === 0 && <div style={{ padding: 12, color: "var(--faint)", fontSize: 11.5 }}>{t("sk.pickProviderFirst")}</div>}
                 </div>
               </div>
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 14, alignItems: "center" }}>
               <span style={{ fontSize: 11.5, color: "var(--muted)", marginRight: "auto" }}>{rc.bp ? `BP ${rc.bp}` : "—"} · {rc.pv ? `PV ${rc.pv}` : "—"} · {rc.vr ? `VR ${rc.vr}` : "—"}</span>
-              <button onClick={() => setRecipeFor(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Hủy</button>
-              <button onClick={saveRecipe} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>Lưu cấu hình</button>
+              <button onClick={() => setRecipeFor(null)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{t("c.cancel")}</button>
+              <button onClick={saveRecipe} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13 }}>{t("sk.saveConfig")}</button>
             </div>
           </div>
         </div>
