@@ -1,8 +1,9 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { JOURNEY_IMG } from "./journey-images";
 
-// Hành trình phát triển — ảnh nhúng sẵn (base64) trong ./journey-images.ts nên luôn hiển thị.
+// Hành trình phát triển — ảnh chính lấy từ /public/journey/<năm>.jpg (thay bằng commit file),
+// có base64 lưới đỡ trong ./journey-images.ts nếu file lỗi/chưa deploy.
 const JOURNEY = [
   { year: "2021", title: "Những bước đi đầu tiên" },
   { year: "2022", title: "Mở rộng đội ngũ & thị trường" },
@@ -10,13 +11,33 @@ const JOURNEY = [
   { year: "2024", title: "Vươn tầm đa nền tảng" },
   { year: "2025", title: "Chuẩn hoá vận hành với Fusion OS" },
 ];
+const SLIDE_MS = 3500;
 
-function JImg({ year }: { year: string }) {
-  const [failed, setFailed] = useState(false);
-  const src = JOURNEY_IMG[year];
-  if (failed || !src) return <div className="lg-jimg lg-jimg-fallback"><span>{year}</span></div>;
+// Ảnh: thử file public trước → base64 → ô năm. Dùng cho cả thumbnail nhỏ và slide lớn.
+function useImgSrc(year: string) {
+  const [stage, setStage] = useState(0);
+  const b64 = JOURNEY_IMG[year];
+  const broken = stage >= 2 || (stage === 1 && !b64);
+  const src = stage === 0 ? `/journey/${year}.jpg` : b64;
+  return { src, broken, onError: () => setStage((s) => s + 1) };
+}
+
+function Thumb({ year }: { year: string }) {
+  const { src, broken, onError } = useImgSrc(year);
+  if (broken) return <div className="lg-thumb lg-thumb-fb"><span>{year}</span></div>;
   // eslint-disable-next-line @next/next/no-img-element
-  return <img className="lg-jimg" src={src} alt={year} onError={() => setFailed(true)} />;
+  return <img className="lg-thumb" src={src} alt={year} onError={onError} />;
+}
+
+function SlideLayer({ year, on }: { year: string; on: boolean }) {
+  const { src, broken, onError } = useImgSrc(year);
+  return (
+    <div className="lg-slide-layer" style={{ opacity: on ? 1 : 0 }}>
+      {broken ? <div className="lg-slide-fb">{year}</div>
+        // eslint-disable-next-line @next/next/no-img-element
+        : <img className="lg-slide-img" src={src} alt={year} onError={onError} />}
+    </div>
+  );
 }
 
 export default function LoginPage() {
@@ -27,31 +48,33 @@ export default function LoginPage() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const [active, setActive] = useState(0);
+  const [resetKey, setResetKey] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setActive((a) => (a + 1) % JOURNEY.length), SLIDE_MS);
+    return () => clearInterval(id);
+  }, [resetKey]);
+  const pick = (i: number) => { setActive(i); setResetKey((k) => k + 1); };
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true); setErr("");
     const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password, remember }),
     });
-    if (res.ok) {
-      const next = new URLSearchParams(location.search).get("next") ?? "/";
-      location.href = next;
-    } else {
-      setErr("Sai email hoặc mật khẩu");
-      setBusy(false);
-    }
+    if (res.ok) { location.href = new URLSearchParams(location.search).get("next") ?? "/"; }
+    else { setErr("Sai email hoặc mật khẩu"); setBusy(false); }
   }
 
   return (
     <div className="lg-root">
       <style>{`
         .lg-root{position:fixed;inset:0;display:flex;background:#fff;overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
-        .lg-left{flex:1.05;position:relative;overflow:hidden;color:#fff;display:flex;flex-direction:column;justify-content:center;
+        .lg-left{flex:1.15;position:relative;overflow:hidden;color:#fff;display:flex;flex-direction:column;justify-content:center;
           background:linear-gradient(150deg,#003c84 0%,#0a3f8f 42%,#3b2f8f 78%,#5b2f8f 100%)}
-        .lg-left-inner{padding:34px 56px;max-width:640px;width:100%}
-        .lg-right{flex:.95;display:flex;align-items:center;justify-content:center;padding:32px;overflow:hidden}
+        .lg-left-inner{padding:38px 52px;width:100%}
+        .lg-right{flex:.85;display:flex;align-items:center;justify-content:center;padding:32px;overflow:hidden}
         .lg-form{width:100%;max-width:400px}
         .lg-brand{display:flex;align-items:center;gap:12px;margin-bottom:14px}
         .lg-brand-chip{width:50px;height:50px;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.18);flex-shrink:0}
@@ -60,18 +83,34 @@ export default function LoginPage() {
         .lg-brand-tag{font-size:11px;opacity:.8;margin-top:3px}
         .lg-sub{font-size:11.5px;letter-spacing:2px;text-transform:uppercase;opacity:.7;margin-bottom:7px;font-weight:700}
         .lg-h1{font-size:26px;font-weight:800;line-height:1.15;margin-bottom:9px}
-        .lg-p{font-size:13.5px;line-height:1.6;opacity:.9;margin-bottom:6px}
+        .lg-p{font-size:13.5px;line-height:1.6;opacity:.9;max-width:620px}
         .lg-p b{font-weight:700;color:#bfe3ff}
-        .lg-hr{height:1px;background:rgba(255,255,255,.18);margin:15px 0 13px}
+        .lg-hr{height:1px;background:rgba(255,255,255,.18);margin:16px 0 14px}
         .lg-jtitle{font-weight:800;font-size:15px;margin-bottom:12px}
-        .lg-timeline{display:flex;flex-direction:column;gap:11px;position:relative}
-        .lg-jrow{display:flex;align-items:center;gap:15px;position:relative}
-        .lg-jimg{width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,.22);border:2px solid rgba(255,255,255,.35)}
-        .lg-jimg-fallback{display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(255,255,255,.28),rgba(255,255,255,.08))}
-        .lg-jimg-fallback span{font-size:13px;font-weight:800;color:#fff;opacity:.95}
-        .lg-jyear{font-size:16px;font-weight:800;color:#bfe3ff;line-height:1.1}
-        .lg-jdesc{font-size:13px;opacity:.9;line-height:1.35;margin-top:2px}
+
+        .lg-body{display:flex;gap:30px;align-items:stretch}
+        .lg-tl{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:6px}
+        .lg-tlrow{display:flex;align-items:center;gap:13px;padding:7px 9px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:background .18s,border .18s}
+        .lg-tlrow:hover{background:rgba(255,255,255,.07)}
+        .lg-tlrow.on{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.25)}
+        .lg-thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;border:2px solid rgba(255,255,255,.35)}
+        .lg-thumb-fb{display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(255,255,255,.28),rgba(255,255,255,.08))}
+        .lg-thumb-fb span{font-size:12px;font-weight:800}
+        .lg-jyear{font-size:15.5px;font-weight:800;color:#bfe3ff;line-height:1.1}
+        .lg-jdesc{font-size:12.5px;opacity:.9;line-height:1.3;margin-top:2px}
+
+        .lg-slide{flex:1;position:relative;border-radius:18px;overflow:hidden;box-shadow:0 14px 40px rgba(0,0,0,.3);min-height:340px;background:rgba(255,255,255,.06)}
+        .lg-slide-layer{position:absolute;inset:0;transition:opacity .8s ease}
+        .lg-slide-img{width:100%;height:100%;object-fit:cover;display:block}
+        .lg-slide-fb{width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:44px;font-weight:800;color:rgba(255,255,255,.85);background:linear-gradient(135deg,rgba(255,255,255,.2),rgba(255,255,255,.05))}
+        .lg-slide-cap{position:absolute;left:0;right:0;bottom:0;padding:40px 20px 16px;background:linear-gradient(to top,rgba(6,14,34,.82),rgba(6,14,34,0));z-index:2}
+        .lg-slide-cap .y{font-size:22px;font-weight:800;color:#fff;line-height:1}
+        .lg-slide-cap .d{font-size:13.5px;color:#e6eefc;margin-top:4px}
+        .lg-dots{position:absolute;top:14px;right:14px;display:flex;gap:6px;z-index:2}
+        .lg-dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.45);cursor:pointer;transition:background .2s,width .2s}
+        .lg-dot.on{background:#fff;width:20px;border-radius:5px}
         .lg-copy{font-size:11.5px;opacity:.6;margin-top:16px}
+
         .lg-ftitle{font-size:26px;font-weight:800;margin-bottom:4px}
         .lg-fsub{color:var(--muted,#4a5a6a);font-size:13.5px;margin-bottom:26px}
         .lg-label{display:block;font-size:12.5px;font-weight:700;color:#33445a;margin:0 0 6px}
@@ -91,23 +130,18 @@ export default function LoginPage() {
         .lg-dev{text-align:center;font-size:12.5px;color:#4a5a6a;margin-top:20px;padding-top:16px;border-top:1px solid #eef1f4}
         .lg-dev b{color:#003c84}
         .lg-mobilebrand{display:none}
-        @media(max-width:880px){
+        @media(max-width:1100px){ .lg-slide{min-height:280px} .lg-tl{width:250px} }
+        @media(max-width:900px){
           .lg-left{display:none}
           .lg-right{flex:1;overflow-y:auto}
           .lg-mobilebrand{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:24px}
           .lg-mobilebrand img{width:38px;height:38px;object-fit:contain}
           .lg-mobilebrand b{font-size:20px;font-weight:800;color:#003c84}
         }
-        @media(max-height:720px){
-          .lg-left-inner{padding:26px 56px}
-          .lg-h1{font-size:23px;margin-bottom:8px}
-          .lg-timeline{gap:10px}
-          .lg-jimg,.lg-jimg-fallback{width:48px;height:48px}
-          .lg-hr{margin:14px 0}
-        }
+        @media(max-height:760px){ .lg-left-inner{padding:24px 52px} .lg-slide{min-height:300px} .lg-h1{font-size:22px} }
       `}</style>
 
-      {/* CỘT TRÁI — thương hiệu & hành trình phát triển */}
+      {/* CỘT TRÁI — thương hiệu + hành trình dạng slide */}
       <div className="lg-left">
         <div className="lg-left-inner">
           <div className="lg-brand">
@@ -123,16 +157,30 @@ export default function LoginPage() {
 
           <div className="lg-hr" />
           <div className="lg-jtitle">Hành trình phát triển</div>
-          <div className="lg-timeline">
-            {JOURNEY.map((j) => (
-              <div className="lg-jrow" key={j.year}>
-                <JImg year={j.year} />
-                <div>
-                  <div className="lg-jyear">{j.year}</div>
-                  <div className="lg-jdesc">{j.title}</div>
+          <div className="lg-body">
+            {/* Timeline bấm chọn */}
+            <div className="lg-tl">
+              {JOURNEY.map((j, i) => (
+                <div key={j.year} className={`lg-tlrow${i === active ? " on" : ""}`} onClick={() => pick(i)}>
+                  <Thumb year={j.year} />
+                  <div>
+                    <div className="lg-jyear">{j.year}</div>
+                    <div className="lg-jdesc">{j.title}</div>
+                  </div>
                 </div>
+              ))}
+            </div>
+            {/* Slide ảnh lớn tự chạy */}
+            <div className="lg-slide">
+              {JOURNEY.map((j, i) => <SlideLayer key={j.year} year={j.year} on={i === active} />)}
+              <div className="lg-dots">
+                {JOURNEY.map((j, i) => <span key={j.year} className={`lg-dot${i === active ? " on" : ""}`} onClick={() => pick(i)} />)}
               </div>
-            ))}
+              <div className="lg-slide-cap">
+                <div className="y">{JOURNEY[active].year}</div>
+                <div className="d">{JOURNEY[active].title}</div>
+              </div>
+            </div>
           </div>
 
           <div className="lg-copy">© 2026 FUSION CO., LTD.</div>
