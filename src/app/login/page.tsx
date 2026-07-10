@@ -76,12 +76,8 @@ export default function LoginPage() {
         .lg-left-inner{padding:38px 52px;width:100%}
         .lg-right{flex:.85;display:flex;align-items:center;justify-content:center;padding:32px;overflow:hidden}
         .lg-form{width:100%;max-width:400px}
-        .lg-brand{display:flex;align-items:center;gap:12px;margin-bottom:14px}
-        .lg-brand-chip{width:50px;height:50px;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.18);flex-shrink:0}
-        .lg-brand-chip img{width:32px;height:32px;object-fit:contain}
-        .lg-brand-name{font-size:21px;font-weight:800;letter-spacing:.5px;line-height:1}
-        .lg-brand-tag{font-size:11px;opacity:.8;margin-top:3px}
-        .lg-sub{font-size:11.5px;letter-spacing:2px;text-transform:uppercase;opacity:.7;margin-bottom:7px;font-weight:700}
+        .lg-brand{display:inline-flex;margin-bottom:18px}
+        .lg-logo{height:58px;width:auto;object-fit:contain;background:#fff;border-radius:16px;padding:11px 20px;box-shadow:0 8px 22px rgba(0,0,0,.2)}
         .lg-h1{font-size:26px;font-weight:800;line-height:1.15;margin-bottom:9px}
         .lg-p{font-size:13.5px;line-height:1.6;opacity:.9;max-width:620px}
         .lg-p b{font-weight:700;color:#bfe3ff}
@@ -90,7 +86,7 @@ export default function LoginPage() {
 
         .lg-body{display:flex;gap:30px;align-items:stretch}
         .lg-tl{width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:6px}
-        .lg-tlrow{display:flex;align-items:center;gap:13px;padding:7px 9px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:background .18s,border .18s}
+        .lg-tlrow{display:flex;align-items:center;gap:13px;padding:8px 10px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:background .18s,border .18s}
         .lg-tlrow:hover{background:rgba(255,255,255,.07)}
         .lg-tlrow.on{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.25)}
         .lg-thumb{width:44px;height:44px;border-radius:10px;object-fit:cover;flex-shrink:0;border:2px solid rgba(255,255,255,.35)}
@@ -145,15 +141,11 @@ export default function LoginPage() {
       <div className="lg-left">
         <div className="lg-left-inner">
           <div className="lg-brand">
-            <div className="lg-brand-chip"><img src="/logomark.png" alt="Fusion" /></div>
-            <div>
-              <div className="lg-brand-name">FUSION</div>
-              <div className="lg-brand-tag">together we grow</div>
-            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className="lg-logo" src="/Logo-full.png" alt="Fusion — together we grow" />
           </div>
-          <div className="lg-sub">Hệ thống quản lý nội bộ</div>
           <h1 className="lg-h1">Chào mừng đến với FUSION</h1>
-          <p className="lg-p">Công ty <b>Print-on-Demand &amp; TMĐT xuyên biên giới</b>, phục vụ khách hàng tại <b>Mỹ và Châu Âu</b> qua Amazon, TikTok, Etsy và Shopify.</p>
+          <p className="lg-p">Công ty <b>Print-on-Demand &amp; TMĐT xuyên biên giới</b>, phục vụ khách hàng tại <b>Mỹ và Châu Âu</b> qua <b>Amazon, TikTok, Etsy</b>.</p>
 
           <div className="lg-hr" />
           <div className="lg-jtitle">Hành trình phát triển</div>
@@ -163,10 +155,7 @@ export default function LoginPage() {
               {JOURNEY.map((j, i) => (
                 <div key={j.year} className={`lg-tlrow${i === active ? " on" : ""}`} onClick={() => pick(i)}>
                   <Thumb year={j.year} />
-                  <div>
-                    <div className="lg-jyear">{j.year}</div>
-                    <div className="lg-jdesc">{j.title}</div>
-                  </div>
+                  <div className="lg-jyear">{j.year}</div>
                 </div>
               ))}
             </div>
@@ -178,7 +167,6 @@ export default function LoginPage() {
               </div>
               <div className="lg-slide-cap">
                 <div className="y">{JOURNEY[active].year}</div>
-                <div className="d">{JOURNEY[active].title}</div>
               </div>
             </div>
           </div>
