@@ -87,9 +87,10 @@ export async function POST(req: NextRequest) {
 
   // Seller tạo store → luôn là store của chính mình (bỏ qua sellerId gửi lên)
   const sellerId = session.role === "seller" ? session.sub : (b.sellerId || null);
+  const ingestToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
   const [s] = await db.insert(schema.stores).values({
     name, marketplace: b.marketplace, connectMethod: b.connectMethod,
-    sellerId, status: "active", note: b.note,
+    sellerId, status: "active", note: b.note, ingestToken,
     storeUrl: (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null,
     currency: (typeof b.currency === "string" && b.currency.trim()) ? b.currency.trim().toUpperCase() : "USD",
     fxRate: (b.fxRate != null && Number(b.fxRate) > 0) ? String(Number(b.fxRate)) : "1",

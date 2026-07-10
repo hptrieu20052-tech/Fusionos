@@ -51,6 +51,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ("note" in b) patch.note = b.note || null;
   if (typeof b.currency === "string" && b.currency.trim()) patch.currency = b.currency.trim().toUpperCase();
   if (b.fxRate != null && !isNaN(Number(b.fxRate)) && Number(b.fxRate) > 0) patch.fxRate = String(Number(b.fxRate));
+  if (b.regenIngestToken === true) patch.ingestToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
   if (b.status && (schema.stores.status.enumValues as readonly string[]).includes(b.status)) patch.status = b.status;
   if (b.connectMethod && (schema.stores.connectMethod.enumValues as readonly string[]).includes(b.connectMethod)) patch.connectMethod = b.connectMethod;
 
@@ -74,7 +75,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     await db.update(schema.designs).set({ sellerId }).where(eq(schema.designs.storeId, params.id));
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, ingestToken: patch.ingestToken as string | undefined });
 }
 
 // DELETE — xóa store (gỡ liên kết đơn/design về null để giữ lịch sử)

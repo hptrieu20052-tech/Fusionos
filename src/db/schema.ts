@@ -52,6 +52,8 @@ export const stores = pgTable("stores", {
   status: storeStatusEnum("status").notNull().default("pending"),
   health: jsonb("health").notNull().default({}),
   apiCredentials: jsonb("api_credentials"),
+  // Token cho Extension đẩy đơn về (Bearer). Mỗi store 1 token riêng.
+  ingestToken: text("ingest_token"),
   note: text("note"),
   // Tiền tệ shop + tỉ giá quy đổi sang USD (fx_rate = số đơn vị tiền này / 1 USD; VND ≈ 25400).
   currency: text("currency").notNull().default("USD"),

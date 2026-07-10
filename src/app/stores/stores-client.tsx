@@ -8,7 +8,7 @@ import { IconSettings, IconTrash, IconLink } from "@/components/icons";
 type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
   sellerName: string | null; sellerId: string | null; note: string | null; storeUrl: string | null;
-  currency: string; fxRate: string; health?: { fxConvertedAt?: string; fxConvertedRate?: number } | null;
+  currency: string; fxRate: string; ingestToken?: string | null; health?: { fxConvertedAt?: string; fxConvertedRate?: number } | null;
   orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
 };
@@ -191,6 +191,14 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const [cred, setCred] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<{ ok: boolean; message: string } | null>(null);
+  const [tok, setTok] = useState(store.ingestToken ?? "");
+  const [showTok, setShowTok] = useState(false);
+  const regenToken = async () => {
+    if (!(await confirm({ title: "Tạo token mới", message: "Token cũ sẽ ngừng hoạt động, Extension phải nhập lại token mới. Tiếp tục?", danger: true, confirmText: "Tạo mới" }))) return;
+    const j = await fetch(`/api/stores/${store.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regenIngestToken: true }) }).then((r) => r.json());
+    if (j.ok && j.ingestToken) { setTok(j.ingestToken); flash("✓ Đã tạo token mới"); } else flash("✗ Lỗi tạo token");
+  };
+  const ingestUrl = typeof window !== "undefined" ? `${window.location.origin}/api/ingest/etsy` : "/api/ingest/etsy";
   const fields = CRED_FIELDS[store.marketplace] ?? CRED_FIELDS.other;
 
   const save = async () => {
@@ -248,6 +256,28 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         </div>
       )}
       <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
+
+      {/* Extension: Kéo đơn Etsy về FUSION (chỉ store Etsy) */}
+      {store.marketplace === "etsy" && (
+        <div style={{ border: "1px solid #CDE3FA", background: "#F3F9FF", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
+          <b style={{ fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>🧩 Extension kéo đơn Etsy → FUSION</b>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>Cài Extension &quot;Fusion Etsy Puller&quot;, dán 2 dòng dưới vào phần cài đặt của Extension.</div>
+          <L label="Ingest URL">
+            <div style={{ display: "flex", gap: 6 }}>
+              <input readOnly value={ingestUrl} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
+              <button onClick={() => { navigator.clipboard?.writeText(ingestUrl); flash("✓ Đã copy URL"); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
+            </div>
+          </L>
+          <L label="Store token (Bearer)">
+            <div style={{ display: "flex", gap: 6 }}>
+              <input readOnly type={showTok ? "text" : "password"} value={tok} style={{ ...inp, flex: 1, fontSize: 12, letterSpacing: showTok ? 0 : 2 }} onFocus={(e) => e.target.select()} />
+              <button onClick={() => setShowTok((v) => !v)} style={{ ...btnGhost, fontSize: 12 }}>{showTok ? "Ẩn" : "Hiện"}</button>
+              <button onClick={() => { navigator.clipboard?.writeText(tok); flash("✓ Đã copy token"); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
+            </div>
+          </L>
+          <button onClick={regenToken} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C0C0", fontSize: 12, marginTop: 4 }}>↻ Tạo token mới</button>
+        </div>
+      )}
 
       {/* Setup API */}
       {f.connectMethod === "api" && (
