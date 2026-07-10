@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useConfirm } from "@/components/confirm-provider";
+import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import { IconKey, IconLock, IconLockOpen, IconTrash } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 import { UserFunctionPermission } from "./user-function-permission";
@@ -52,6 +52,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   const [msg, setMsg] = useState("");
   const { t } = useLang();
   const confirm = useConfirm();
+  const askPassword = usePrompt();
 
   function levelOf(role: string, module: string) {
     if (role === "admin") return 2;
@@ -131,9 +132,13 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
     } else setMsg("⚠ " + (j.error ?? "Error"));
   }
   async function resetPass(u: User) {
-    const pw = prompt(t("adm.newPwPrompt").replace("{name}", u.fullName));
+    const pw = await askPassword({
+      title: "Đặt lại mật khẩu",
+      message: `Nhập mật khẩu mới cho ${u.fullName} (tối thiểu 6 ký tự):`,
+      confirmText: "Đặt lại",
+      input: { type: "password", placeholder: "Mật khẩu mới", minLength: 6 },
+    });
     if (!pw) return;
-    if (pw.length < 6) return setMsg(t("adm.pwTooShort"));
     await patchUser(u.id, { password: pw }, `✓ Đã đặt lại mật khẩu cho ${u.fullName}`);
   }
   async function toggleStatus(u: User) {

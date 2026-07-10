@@ -186,6 +186,7 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
 
 function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { store: Store; sellers: Opt[]; isSeller: boolean; close: () => void; reload: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
+  const confirm = useConfirm();
   const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "", currency: store.currency ?? "USD", fxRate: store.fxRate ?? "1" });
   const [cred, setCred] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -215,7 +216,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     if (!(rate > 1)) { flash("Nhập tỉ giá > 1 rồi bấm Lưu store TRƯỚC, sau đó mới quy đổi."); return; }
     const already = store.health?.fxConvertedAt;
     const warn = `Chia total + đơn giá của TẤT CẢ đơn shop "${store.name}" cho ${rate} (→ USD)?\n\nCHỈ chạy 1 LẦN cho các đơn đã import trước khi bật tỉ giá.${already ? `\n\n⚠ ĐÃ quy đổi lúc ${new Date(already).toLocaleString()} — chạy lại sẽ chia SAI!` : ""}`;
-    if (!window.confirm(warn)) return;
+    if (!(await confirm({ title: "Quy đổi tỉ giá", message: warn, danger: true, confirmText: "Quy đổi", cancelText: "Hủy" }))) return;
     setBusy(true);
     const j = await fetch(`/api/stores/${store.id}/fx-convert`, { method: "POST" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setBusy(false);
