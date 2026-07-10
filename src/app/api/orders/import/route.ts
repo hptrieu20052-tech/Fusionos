@@ -23,11 +23,11 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file") as File | null;
-  if (!file) return NextResponse.json({ ok: false, error: "thiếu file" }, { status: 400 });
+  if (!file) return NextResponse.json({ ok: false, error: "missing file" }, { status: 400 });
 
   const wb = XLSX.read(Buffer.from(await file.arrayBuffer()), { type: "buffer" });
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-  if (!rows.length) return NextResponse.json({ ok: false, error: "file trống" }, { status: 400 });
+  if (!rows.length) return NextResponse.json({ ok: false, error: "empty file" }, { status: 400 });
 
   const norm = (s: unknown) => String(s ?? "").trim();
   const pick = (r: Record<string, unknown>, names: string[]) => {

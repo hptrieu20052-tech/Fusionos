@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       baseCost: Number(b.baseCost).toFixed(2), shipCost: Number(b.shipCost ?? 0).toFixed(2),
     }).returning();
     return NextResponse.json({ ok: true, mapping: m });
-  } catch { return NextResponse.json({ ok: false, error: "mapping đã tồn tại" }, { status: 409 }); }
+  } catch { return NextResponse.json({ ok: false, error: "mapping already exists" }, { status: 409 }); }
 }
 
 // PATCH { id, ...fields } — sửa 1 mapping
@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest) {
   try {
     await db.update(schema.skuMappings).set(patch).where(eq(schema.skuMappings.id, b.id));
     return NextResponse.json({ ok: true });
-  } catch { return NextResponse.json({ ok: false, error: "SKU nội bộ trùng với dòng khác" }, { status: 409 }); }
+  } catch { return NextResponse.json({ ok: false, error: "Internal SKU duplicates another row" }, { status: 409 }); }
 }
 
 // DELETE { id }
@@ -58,7 +58,7 @@ export async function DELETE(req: NextRequest) {
     const conds = [eq(schema.skuMappings.fulfillerId, b.fulfillerId)];
     if (!b.all) {
       const products = (b.products as unknown[]).map(String).filter(Boolean);
-      if (!products.length) return NextResponse.json({ ok: false, error: "chưa chọn sản phẩm" }, { status: 400 });
+      if (!products.length) return NextResponse.json({ ok: false, error: "no product selected" }, { status: 400 });
       conds.push(inArray(schema.skuMappings.fulfillerProduct, products));
     }
     const res = await db.delete(schema.skuMappings).where(and(...conds)).returning({ id: schema.skuMappings.id });

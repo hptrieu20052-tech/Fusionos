@@ -13,7 +13,7 @@ import { Lang } from "@/lib/i18n";
 
 export const metadata: Metadata = {
   title: "FUSION OS",
-  description: "Hệ thống quản lý ecommerce FUSION CO., LTD",
+  description: "FUSION CO., LTD e-commerce management system",
 };
 export const dynamic = "force-dynamic";
 

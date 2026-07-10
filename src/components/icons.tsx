@@ -267,3 +267,20 @@ export const IconGrid = (p: P) => (
     <rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" />
   </svg>
 );
+export const IconPlus = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 5v14" />
+    <path d="M5 12h14" />
+  </svg>
+);
+export const IconPencil = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+);
+export const IconCheck = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);

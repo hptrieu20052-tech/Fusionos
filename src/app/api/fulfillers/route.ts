@@ -26,7 +26,7 @@ export async function GET() {
   const cmap = new Map(counts.map((c) => [c.fid, c]));
   return NextResponse.json({
     ok: true,
-    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, identifier: (f.credentials as { identifier?: string } | null)?.identifier ?? null, credentials: f.credentials ? "•••• đã lưu" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined, mapCount: cmap.get(f.id)?.total ?? 0, pinnedCount: cmap.get(f.id)?.pinned ?? 0 })),
+    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, identifier: (f.credentials as { identifier?: string } | null)?.identifier ?? null, credentials: f.credentials ? "•••• saved" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined, mapCount: cmap.get(f.id)?.total ?? 0, pinnedCount: cmap.get(f.id)?.pinned ?? 0 })),
   });
 }
 
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
       credentials: b.apiKey ? { apiKey: b.apiKey } : null,
     }).returning();
     return NextResponse.json({ ok: true, id: f.id });
-  } catch { return NextResponse.json({ ok: false, error: "tên đã tồn tại" }, { status: 409 }); }
+  } catch { return NextResponse.json({ ok: false, error: "name already exists" }, { status: 409 }); }
 }
 
 export async function PATCH(req: NextRequest) {
@@ -80,7 +80,7 @@ export async function DELETE(req: NextRequest) {
   if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   // Có đơn fulfillment đã đẩy qua nhà này → không xóa (giữ lịch sử)
   const ffo = await db.select({ id: schema.fulfillmentOrders.id }).from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.fulfillerId, b.id)).limit(1);
-  if (ffo.length) return NextResponse.json({ ok: false, error: "Đã có đơn đẩy qua nhà này — không xóa được. Có thể để nguyên (không cấu hình token là không dùng)." }, { status: 409 });
+  if (ffo.length) return NextResponse.json({ ok: false, error: "Orders have already been pushed to this provider — can't delete. You can leave it (not configuring a token means it's unused)." }, { status: 409 });
   // Dọn cấu hình liên quan rồi xóa
   await db.delete(schema.skuMappings).where(eq(schema.skuMappings.fulfillerId, b.id));
   await db.update(schema.orderIssues).set({ fulfillerId: null }).where(eq(schema.orderIssues.fulfillerId, b.id));

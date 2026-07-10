@@ -28,38 +28,38 @@ export function DesignerStats() {
   return (
     <>
       <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Thống kê Designer</h3>
+        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Designer Statistics</h3>
         <div className="nav" style={{ marginTop: 0, marginLeft: "auto" }}>
-          {[7, 14, 30].map((d) => <a key={d} onClick={() => setDays(d)} className={days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} ngày</a>)}
+          {[7, 14, 30].map((d) => <a key={d} onClick={() => setDays(d)} className={days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
         </div>
       </div>
 
       <div className="kpis">
-        <div className="kpi"><div className="l">Design hôm nay</div><div className="v">{today}</div>
+        <div className="kpi"><div className="l">Designs today</div><div className="v">{today}</div>
           <div className="d" style={{ color: today >= yest ? "var(--green)" : "var(--red)" }}>{today >= yest ? "▲ +" : "▼ "}{today - yest} vs hôm qua</div></div>
-        <div className="kpi"><div className="l">Tổng {days} ngày</div><div className="v">{grand}</div><div className="d">TB {(grand / (days || 1)).toFixed(1)}/ngày · {designers.length} designer</div></div>
-        <div className="kpi"><div className="l">Điểm chất lượng TB</div><div className="v">{avgScore ? avgScore.toFixed(1) : "—"}<span style={{ fontSize: 13, color: "var(--muted)" }}>/10</span></div></div>
-        <div className="kpi"><div className="l">Design &quot;ra đơn&quot; nhất</div><div className="v" style={{ fontSize: 17 }}>{topBiz?.name ?? "—"}</div><div className="d" style={{ color: "var(--green)" }}>{topBiz?.bizOrders ?? 0} đơn / 30 ngày</div></div>
+        <div className="kpi"><div className="l">Total {days} days</div><div className="v">{grand}</div><div className="d">TB {(grand / (days || 1)).toFixed(1)}/ngày · {designers.length} designer</div></div>
+        <div className="kpi"><div className="l">Avg quality score</div><div className="v">{avgScore ? avgScore.toFixed(1) : "—"}<span style={{ fontSize: 13, color: "var(--muted)" }}>/10</span></div></div>
+        <div className="kpi"><div className="l">Top order-generating design</div><div className="v" style={{ fontSize: 17 }}>{topBiz?.name ?? "—"}</div><div className="d" style={{ color: "var(--green)" }}>{topBiz?.bizOrders ?? 0} đơn / 30 ngày</div></div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 14 }}>
         <div className="panel">
-          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Design hoàn thành theo ngày</h3>
-          <div className="sub" style={{ marginBottom: 8 }}>Toàn team</div>
+          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Designs completed per day</h3>
+          <div className="sub" style={{ marginBottom: 8 }}>Whole team</div>
           <BarChart labels={dayList.map(fmtD)} values={totals} />
         </div>
         <div className="panel">
-          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Xếp hạng KPI tổng hợp</h3>
-          <div className="sub" style={{ marginBottom: 8 }}>40% sản lượng (points) + 30% chất lượng + 30% hiệu quả</div>
+          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Overall KPI ranking</h3>
+          <div className="sub" style={{ marginBottom: 8 }}>40% output (points) + 30% quality + 30% impact</div>
           <HBarList rows={designers.map((d, i) => ({ label: (i === 0 ? "" : "") + d.name, value: d.kpi, suffix: d.kpi.toFixed(1) }))} />
         </div>
       </div>
 
       <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Bảng chi tiết: Designer × Ngày</h3>
+        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Detail: Designer × Day</h3>
         <div style={{ overflowX: "auto", marginTop: 8 }}>
           <table>
-            <thead><tr><th>Designer</th>{dayList.map((d) => <th key={d} style={{ textAlign: "center" }}>{fmtD(d)}</th>)}<th style={{ textAlign: "right" }}>Tổng</th><th style={{ textAlign: "right" }}>Points</th></tr></thead>
+            <thead><tr><th>Designer</th>{dayList.map((d) => <th key={d} style={{ textAlign: "center" }}>{fmtD(d)}</th>)}<th style={{ textAlign: "right" }}>Total</th><th style={{ textAlign: "right" }}>Points</th></tr></thead>
             <tbody>
               {designers.map((d) => (
                 <tr key={d.id}>
@@ -70,7 +70,7 @@ export function DesignerStats() {
                 </tr>
               ))}
               <tr style={{ background: "var(--blue-soft)" }}>
-                <td style={{ fontWeight: 800 }}>Toàn team</td>
+                <td style={{ fontWeight: 800 }}>Whole team</td>
                 {totals.map((v, i) => <td key={i} style={{ textAlign: "center", fontWeight: 800 }}>{v}</td>)}
                 <td style={{ textAlign: "right", fontWeight: 800 }}>{grand}</td><td></td>
               </tr>
@@ -80,9 +80,9 @@ export function DesignerStats() {
       </div>
 
       <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Chất lượng & hiệu quả từng designer</h3>
+        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Quality & impact per designer</h3>
         <table style={{ marginTop: 8 }}>
-          <thead><tr><th>Designer</th><th style={{ textAlign: "center" }}>Điểm review TB</th><th style={{ textAlign: "center" }}>Số review</th><th style={{ textAlign: "right" }}>Đơn từ design (30d)</th><th style={{ textAlign: "right" }}>KPI</th></tr></thead>
+          <thead><tr><th>Designer</th><th style={{ textAlign: "center" }}>Avg review score</th><th style={{ textAlign: "center" }}>Reviews</th><th style={{ textAlign: "right" }}>Orders from designs (30d)</th><th style={{ textAlign: "right" }}>KPI</th></tr></thead>
           <tbody>
             {designers.map((d) => (
               <tr key={d.id}>

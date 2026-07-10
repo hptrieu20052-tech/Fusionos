@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   const file = form?.get("file") as File | null;
   const storeId = (form?.get("storeId") as string) || null;
   let sellerId = (form?.get("sellerId") as string) || null;
-  if (!file) return NextResponse.json({ ok: false, error: "thiếu file" }, { status: 400 });
+  if (!file) return NextResponse.json({ ok: false, error: "missing file" }, { status: 400 });
 
   // Không chọn seller → lấy seller mặc định của store (đồng bộ với cấu hình store)
   let fxRate = 1;
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     ? XLSX.read(new TextDecoder("utf-8").decode(buf), { type: "string" })
     : XLSX.read(buf, { type: "buffer" });
   const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "" });
-  if (!rows.length) return NextResponse.json({ ok: false, error: "file trống" }, { status: 400 });
+  if (!rows.length) return NextResponse.json({ ok: false, error: "empty file" }, { status: 400 });
 
   const norm = (s: unknown) => String(s ?? "").trim();
   const key = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (!groups.size) return NextResponse.json({ ok: false, error: "Không nhận diện được cột Order ID — kiểm tra đúng file Etsy export chưa" }, { status: 400 });
+  if (!groups.size) return NextResponse.json({ ok: false, error: "Could not detect the Order ID column — check that this is a valid Etsy export file" }, { status: 400 });
 
   // Tự học: listing đã từng được gán design ở đơn trước → tự gán lại cho đơn mới.
   const allListingIds = Array.from(new Set(

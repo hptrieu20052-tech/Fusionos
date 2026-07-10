@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
   const file = form?.get("file") as File | null;
   const storeId = (form?.get("storeId") as string) || null;
   let sellerId = (form?.get("sellerId") as string) || null;
-  if (!file) return NextResponse.json({ ok: false, error: "thiếu file" }, { status: 400 });
+  if (!file) return NextResponse.json({ ok: false, error: "missing file" }, { status: 400 });
 
   let fxRate = 1;
   if (storeId) {
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const wb = XLSX.read(buf, { type: "buffer", cellText: true, raw: false });
     rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]], { defval: "", raw: false });
   }
-  if (!rows.length) return NextResponse.json({ ok: false, error: "file trống" }, { status: 400 });
+  if (!rows.length) return NextResponse.json({ ok: false, error: "empty file" }, { status: 400 });
 
   // TikTok chèn ký tự tab/khoảng trắng ẩn cuối ID để ép Excel hiểu là text → cần cắt sạch
   const norm = (s: unknown) => String(s ?? "").replace(/[\t\r\n]+/g, " ").trim();
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
   // Nhận diện đúng file TikTok (có cột Order ID + Product Name)
   const hdr = Object.keys(rows[0]).map(key);
   if (!hdr.includes("orderid") || !(hdr.includes("productname") || hdr.includes("sellersku"))) {
-    return NextResponse.json({ ok: false, error: "Không nhận diện được file TikTok Shop — cần cột Order ID + Product Name" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Could not recognize the TikTok Shop file — needs Order ID + Product Name columns" }, { status: 400 });
   }
 
   // Map trạng thái TikTok → trạng thái nội bộ
@@ -155,7 +155,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (!groups.size) return NextResponse.json({ ok: false, error: "Không có đơn hợp lệ trong file" }, { status: 400 });
+  if (!groups.size) return NextResponse.json({ ok: false, error: "No valid orders in the file" }, { status: 400 });
 
   let created = 0, skipped = 0;
   const errors: string[] = [];

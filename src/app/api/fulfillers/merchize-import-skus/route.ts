@@ -17,14 +17,14 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "settings")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
-  if (!b?.fulfillerId) return NextResponse.json({ ok: false, error: "thiếu fulfillerId" }, { status: 400 });
+  if (!b?.fulfillerId) return NextResponse.json({ ok: false, error: "missing fulfillerId" }, { status: 400 });
 
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.fulfillerId)).limit(1);
-  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller không tồn tại" }, { status: 404 });
+  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller doesn't exist" }, { status: 404 });
   const c = (ff.credentials ?? {}) as { apiKey?: string; apiToken?: string };
   const apiKey = c.apiKey || c.apiToken;
   const baseUrl = ff.apiEndpoint;
-  if (!apiKey || !baseUrl) return NextResponse.json({ ok: false, error: "Chưa cấu hình Base URL + API Key cho Merchize" }, { status: 400 });
+  if (!apiKey || !baseUrl) return NextResponse.json({ ok: false, error: "Base URL + API Key not configured for Merchize" }, { status: 400 });
 
   // ---- 1. Phân trang catalog: lấy TOÀN BỘ product ----
   const start = Date.now();

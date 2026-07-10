@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
   const profit = Number(pnl.revenue) - Number(pnl.fee) - Number(pnl.cost);
 
   // nhãn kỳ so sánh theo range
-  const prevLabel = ({ today: "hôm qua", yesterday: "hôm kia", "3d": "3 ngày trước", "7d": "tuần trước", "30d": "30 ngày trước", this_month: "tháng trước", last_month: "tháng trước đó", this_year: "năm trước" } as Record<string, string>)[range] ?? "kỳ trước";
+  const prevLabel = ({ today: "yesterday", yesterday: "day before yesterday", "3d": "3 days ago", "7d": "last week", "30d": "30 days ago", this_month: "last month", last_month: "the previous month", this_year: "last year" } as Record<string, string>)[range] ?? "previous period";
 
   // Pipeline theo trạng thái trong kỳ: In production / In Transit (shipped) / Delivered (completed)
   const pipeRows = (await db.execute(sql`

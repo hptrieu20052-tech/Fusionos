@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: `đơn đang ở trạng thái ${order.status}, không đẩy được` }, { status: 409 });
   }
   if (!order.addr1 || !order.buyerLast) {
-    return NextResponse.json({ ok: false, error: "thiếu địa chỉ người nhận — sửa Shipping Info trước" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "missing recipient address — edit Shipping Info first" }, { status: 400 });
   }
 
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.fulfillerId)).limit(1);
@@ -72,11 +72,11 @@ export async function POST(req: NextRequest) {
   const pushedLines: { product: string; variant: string | null; sku: string; qty: number }[] = [];
   if (Array.isArray(b.lines) && b.lines.length) {
     if (b.lines.length !== items.length) {
-      return NextResponse.json({ ok: false, error: "thiếu lựa chọn variant cho một số item" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "missing variant selection for some items" }, { status: 400 });
     }
     const mapIds = b.lines.map((l: { mappingId: string }) => l.mappingId).filter(Boolean);
     if (mapIds.length !== items.length) {
-      return NextResponse.json({ ok: false, error: "mỗi item phải chọn đủ style/size/color (SKU nhà fulfill)" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "each item must have style/size/color selected (fulfiller SKU)" }, { status: 400 });
     }
     const chosen = await db.select().from(schema.skuMappings)
       .where(and(eq(schema.skuMappings.fulfillerId, ff.id), inArray(schema.skuMappings.id, mapIds)));
@@ -85,9 +85,9 @@ export async function POST(req: NextRequest) {
       const it = items.find((x) => x.id === l.itemId);
       const m = chosen.find((x) => x.id === l.mappingId);
       const qty = Number(l.qty);
-      if (!it) return NextResponse.json({ ok: false, error: "item không thuộc đơn này" }, { status: 400 });
-      if (!m) return NextResponse.json({ ok: false, error: "variant không thuộc nhà fulfill đã chọn" }, { status: 400 });
-      if (!Number.isInteger(qty) || qty < 1) return NextResponse.json({ ok: false, error: "qty phải ≥ 1" }, { status: 400 });
+      if (!it) return NextResponse.json({ ok: false, error: "item doesn't belong to this order" }, { status: 400 });
+      if (!m) return NextResponse.json({ ok: false, error: "variant doesn't belong to the selected fulfiller" }, { status: 400 });
+      if (!Number.isInteger(qty) || qty < 1) return NextResponse.json({ ok: false, error: "qty must be ≥ 1" }, { status: 400 });
       baseSum += Number(m.baseCost) * qty;
       shipSum += Number(m.shipCost) * qty;
       cost += (Number(m.baseCost) + Number(m.shipCost)) * qty;

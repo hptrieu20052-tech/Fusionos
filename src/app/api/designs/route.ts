@@ -95,7 +95,7 @@ export async function GET(req: NextRequest) {
     const main = front ?? cover;
     const m = mmap.get(d.id);
     // Các mặt/ảnh khác (khác cover) để hiện thumbnail dưới chân card
-    const KIND_LABEL: Record<string, string> = { design_front: "Mặt trước", design_back: "Mặt sau", mockup: "Mockup", video: "Video" };
+    const KIND_LABEL: Record<string, string> = { design_front: "Front", design_back: "Back", mockup: "Mockup", video: "Video" };
     const sides = f
       .filter((x) => x.id !== cover?.id && x.kind !== "video")
       .map((x) => ({ id: x.id, kind: x.kind, label: KIND_LABEL[x.kind] ?? x.kind, thumb: fileUrl(x.thumbKey) ?? fileUrl(x.previewKey), original: fileUrl(x.storageKey) }));

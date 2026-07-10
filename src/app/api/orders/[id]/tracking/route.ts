@@ -50,7 +50,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   // Tạo mới — cần chọn nhà fulfill
-  if (!b.fulfillerId) return NextResponse.json({ ok: false, error: "Chọn nhà cung cấp (Fulfilled by) trước khi nhập tay" }, { status: 400 });
+  if (!b.fulfillerId) return NextResponse.json({ ok: false, error: "Pick a provider (Fulfilled by) before manual entry" }, { status: 400 });
   const cost = (Number(patch.baseCost ?? 0) + Number(patch.shipCost ?? 0)).toFixed(2);
   const [row] = await db.insert(schema.fulfillmentOrders).values({
     orderId: params.id, fulfillerId: b.fulfillerId,

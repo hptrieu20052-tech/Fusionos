@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function DesignsPage() {
   const session = await getSession();
   if (!session || !(await can(session, "designs"))) {
-    return <div className="panel empty">Bạn không có quyền xem Design Studio.</div>;
+    return <div className="panel empty">You don't have permission to view Design Studio.</div>;
   }
   const canUpload = (await levelOf(session, "designs")) >= 2;
   return <DesignsClient canEdit={canUpload} role={session.role} />;

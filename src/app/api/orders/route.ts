@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
   // Tất cả file (các mặt) của design đã gán → hiển thị đầy đủ
   const dIds = Array.from(new Set(items.map((i) => i.design_id).filter(Boolean))) as string[];
   const KIND_ORDER: Record<string, number> = { design_front: 0, design_back: 1, mockup: 2, video: 3 };
-  const KIND_LABEL: Record<string, string> = { design_front: "Mặt trước", design_back: "Mặt sau", mockup: "Mockup", video: "Video" };
+  const KIND_LABEL: Record<string, string> = { design_front: "Front", design_back: "Back", mockup: "Mockup", video: "Video" };
   const sidesMap: Record<string, { kind: string; label: string; thumb: string | null; original: string | null }[]> = {};
   if (dIds.length) {
     const fr = (await db.execute(sql`
@@ -169,7 +169,7 @@ export async function POST(req: NextRequest) {
 
   const b = await req.json().catch(() => null);
   if (!b || !Array.isArray(b.items) || !b.items.length || !b.items.every((i: { productTitle?: string }) => i.productTitle)) {
-    return NextResponse.json({ ok: false, error: "cần ít nhất 1 sản phẩm có tên" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "need at least 1 named product" }, { status: 400 });
   }
   const platform = (schema.orders.platform.enumValues as readonly string[]).includes(b.platform) ? b.platform : "etsy";
   const externalId = String(b.externalId ?? "").trim() || `MANUAL-${Date.now()}`;

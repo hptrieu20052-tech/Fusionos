@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     const c = (ff?.credentials ?? {}) as { apiKey?: string; apiToken?: string };
     token = c.apiKey || c.apiToken;
   }
-  if (!token) return NextResponse.json({ ok: false, error: "thiếu token" }, { status: 400 });
+  if (!token) return NextResponse.json({ ok: false, error: "missing token" }, { status: 400 });
   try {
     const shops = await listPrintifyShops(token);
     return NextResponse.json({ ok: true, shops: shops.map((s) => ({ id: s.id, title: s.title, channel: s.sales_channel })) });

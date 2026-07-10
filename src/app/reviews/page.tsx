@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function ReviewsPage() {
   const session = await getSession();
   if (!session || !(await can(session, "designs"))) {
-    return <div className="panel empty">Bạn không có quyền xem module Chấm điểm.</div>;
+    return <div className="panel empty">You don't have permission to view the Reviews module.</div>;
   }
   return <ReviewsClient canReview={(await levelOf(session, "designs")) >= 2} />;
 }

@@ -18,12 +18,12 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const ids: string[] = Array.isArray(b?.ids) ? b.ids.slice(0, 500) : [];
   const status: string = b?.status;
-  if (!ids.length) return NextResponse.json({ ok: false, error: "chưa chọn đơn nào" }, { status: 400 });
+  if (!ids.length) return NextResponse.json({ ok: false, error: "no orders selected" }, { status: 400 });
   if (status === "cancel" || status === "out_of_stock") {
-    return NextResponse.json({ ok: false, error: "Trạng thái này đã bỏ — dùng Trash / Has Issues" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "This status is deprecated — use Trash / Has Issues" }, { status: 400 });
   }
   if (!(schema.orders.status.enumValues as readonly string[]).includes(status)) {
-    return NextResponse.json({ ok: false, error: "trạng thái không hợp lệ" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
   }
   if (status === "trash" && !(await hasAction(session, "orders.trash"))) {
     return NextResponse.json({ ok: false, error: "forbidden: trash" }, { status: 403 });
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const scopeIds = await scopeOwnerIds(session, "orders");
   const orders = await db.select().from(schema.orders).where(inArray(schema.orders.id, ids));
   const allowed = scopeIds ? orders.filter((o) => o.sellerId && scopeIds.includes(o.sellerId)) : orders;
-  if (!allowed.length) return NextResponse.json({ ok: false, error: "không có đơn hợp lệ" }, { status: 400 });
+  if (!allowed.length) return NextResponse.json({ ok: false, error: "no valid orders" }, { status: 400 });
 
   await db.update(schema.orders)
     .set({ status: status as never, updatedAt: new Date() })
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         await db.insert(schema.transactions).values({
           type: "base_cost", amount: (-bal).toFixed(2),
           orderId: o.id, storeId: o.storeId, sellerId: o.sellerId,
-          note: "Hoàn giá vốn — đơn chuyển vào Trash (bulk)",
+          note: "Refund cost — order moved to Trash (bulk)",
           occurredAt: new Date().toISOString().slice(0, 10),
         });
         refunded++;

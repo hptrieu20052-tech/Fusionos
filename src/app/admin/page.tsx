@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 export default async function AdminPage() {
   const session = await getSession();
   if (session?.role !== "admin") {
-    return <div className="panel empty">Chỉ Admin được truy cập trang này.</div>;
+    return <div className="panel empty">Only Admin can access this page.</div>;
   }
   const [users, perms, roleRestr, dataScopes, roleActs] = await Promise.all([
     db.select({

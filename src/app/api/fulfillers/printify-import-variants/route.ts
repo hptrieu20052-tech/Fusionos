@@ -23,14 +23,14 @@ export async function POST(req: NextRequest) {
   const allProviders = !!b?.allProviders;
   const pv = Number(b?.providerId);
   if (!b?.fulfillerId || !Number.isInteger(bp) || (!allProviders && !Number.isInteger(pv))) {
-    return NextResponse.json({ ok: false, error: "thiếu blueprint/nhà in" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "missing blueprint/provider" }, { status: 400 });
   }
 
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.fulfillerId)).limit(1);
-  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller không tồn tại" }, { status: 404 });
+  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller doesn't exist" }, { status: 404 });
   const c = (ff.credentials ?? {}) as { apiKey?: string; apiToken?: string };
   const token = c.apiKey || c.apiToken;
-  if (!token) return NextResponse.json({ ok: false, error: "Chưa cấu hình token Printify" }, { status: 400 });
+  if (!token) return NextResponse.json({ ok: false, error: "Printify token not configured" }, { status: 400 });
 
   const title = (String(b.blueprintTitle ?? "").trim() || `Blueprint ${bp}`).slice(0, 120);
 
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 });
   }
-  if (!providers.length) return NextResponse.json({ ok: false, error: "Blueprint không có nhà in" }, { status: 400 });
+  if (!providers.length) return NextResponse.json({ ok: false, error: "Blueprint has no providers" }, { status: 400 });
 
   const start = Date.now();
   type Row = typeof schema.skuMappings.$inferInsert;
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       providersDone++;
     } catch { providersFailed++; }
   }
-  if (!rows.length) return NextResponse.json({ ok: false, error: "Không kéo được variant nào" }, { status: 400 });
+  if (!rows.length) return NextResponse.json({ ok: false, error: "Could not pull any variants" }, { status: 400 });
 
   // Chèn theo lô để tránh payload quá lớn
   let created = 0;

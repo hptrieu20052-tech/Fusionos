@@ -17,9 +17,9 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!(await hasAction(session, "stores.fx"))) return NextResponse.json({ ok: false, error: "forbidden: fx" }, { status: 403 });
 
   const [store] = await db.select().from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
-  if (!store) return NextResponse.json({ ok: false, error: "store không tồn tại" }, { status: 404 });
+  if (!store) return NextResponse.json({ ok: false, error: "store doesn't exist" }, { status: 404 });
   const rate = Number(store.fxRate ?? 1);
-  if (!(rate > 1)) return NextResponse.json({ ok: false, error: "Tỉ giá phải > 1 (vd VND ≈ 25400) — set ở form store trước." }, { status: 400 });
+  if (!(rate > 1)) return NextResponse.json({ ok: false, error: "Rate must be > 1 (e.g. VND ≈ 25400) — set it in the store form first." }, { status: 400 });
 
   // Chia total + platform_fee của đơn, và unit_price của item, cho tỉ giá → USD
   const res = await db.execute(sql`

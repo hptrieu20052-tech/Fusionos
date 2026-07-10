@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export default async function FulfillmentPage() {
   const session = await getSession();
   if (!session || !(await can(session, "fulfillment"))) {
-    return <div className="panel empty">Bạn không có quyền xem module Fulfillment.</div>;
+    return <div className="panel empty">You don't have permission to view the Fulfillment module.</div>;
   }
   const canPush = (await levelOf(session, "fulfillment")) >= 2;
 

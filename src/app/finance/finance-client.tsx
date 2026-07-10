@@ -38,9 +38,9 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   return (
     <>
       <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Tài chính</h3>
+        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Finance</h3>
         <div className="nav" style={{ marginTop: 0, marginLeft: "auto" }}>
-          {[7, 30, 90].map((d) => <a key={d} onClick={() => setDays(d)} className={days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} ngày</a>)}
+          {[7, 30, 90].map((d) => <a key={d} onClick={() => setDays(d)} className={days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
         </div>
       </div>
 
@@ -53,8 +53,8 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 14 }}>
         <div className="panel">
-          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Lãi/lỗ ròng theo ngày</h3>
-          <div className="sub" style={{ marginBottom: 8 }}>Xanh = lãi · đỏ = lỗ</div>
+          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Net profit/loss per day</h3>
+          <div className="sub" style={{ marginBottom: 8 }}>Green = profit · red = loss</div>
           <svg viewBox="0 0 640 200" width="100%" height={200}>
             <line x1={0} x2={640} y1={100} y2={100} stroke="#E5E9F2" />
             {dailyNet.map((v, i) => {
@@ -76,9 +76,9 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <div className="panel">
-          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Lợi nhuận theo seller</h3>
+          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by seller</h3>
           <table style={{ marginTop: 8 }}>
-            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Doanh thu</th><th style={{ textAlign: "right" }}>Lợi nhuận</th></tr></thead>
+            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
             <tbody>{data.bySeller.map((s) => (
               <tr key={String(s.name)}><td><b>{String(s.name)}</b></td>
                 <td style={{ textAlign: "right" }}>{money(s.rev)}</td>
@@ -87,9 +87,9 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
           </table>
         </div>
         <div className="panel">
-          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Lợi nhuận theo nền tảng</h3>
+          <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by platform</h3>
           <table style={{ marginTop: 8 }}>
-            <thead><tr><th>Sàn</th><th style={{ textAlign: "right" }}>Doanh thu</th><th style={{ textAlign: "right" }}>Lợi nhuận</th></tr></thead>
+            <thead><tr><th>Marketplace</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
             <tbody>{data.byPlatform.map((p) => (
               <tr key={String(p.marketplace)}><td><span className="chip">{String(p.marketplace)}</span></td>
                 <td style={{ textAlign: "right" }}>{money(p.rev)}</td>

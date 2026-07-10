@@ -20,13 +20,13 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const fulfillerId = sp.get("fulfillerId");
   const level = sp.get("level") ?? "blueprints";
-  if (!fulfillerId) return NextResponse.json({ ok: false, error: "thiếu fulfillerId" }, { status: 400 });
+  if (!fulfillerId) return NextResponse.json({ ok: false, error: "missing fulfillerId" }, { status: 400 });
 
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, fulfillerId)).limit(1);
-  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller không tồn tại" }, { status: 404 });
+  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller doesn't exist" }, { status: 404 });
   const c = (ff.credentials ?? {}) as { apiKey?: string; apiToken?: string };
   const token = c.apiKey || c.apiToken;
-  if (!token) return NextResponse.json({ ok: false, error: "Chưa cấu hình token Printify" }, { status: 400 });
+  if (!token) return NextResponse.json({ ok: false, error: "Printify token not configured" }, { status: 400 });
 
   try {
     if (level === "blueprints") {
@@ -35,17 +35,17 @@ export async function GET(req: NextRequest) {
     }
     if (level === "providers") {
       const bp = sp.get("blueprint");
-      if (!bp) return NextResponse.json({ ok: false, error: "thiếu blueprint" }, { status: 400 });
+      if (!bp) return NextResponse.json({ ok: false, error: "missing blueprint" }, { status: 400 });
       const ps = await listProviders(token, bp);
       return NextResponse.json({ ok: true, providers: ps });
     }
     if (level === "variants") {
       const bp = sp.get("blueprint"); const pv = sp.get("provider");
-      if (!bp || !pv) return NextResponse.json({ ok: false, error: "thiếu blueprint/provider" }, { status: 400 });
+      if (!bp || !pv) return NextResponse.json({ ok: false, error: "missing blueprint/provider" }, { status: 400 });
       const vs = await listVariants(token, bp, pv);
       return NextResponse.json({ ok: true, variants: vs.map((v) => ({ id: v.id, title: v.title })) });
     }
-    return NextResponse.json({ ok: false, error: "level không hợp lệ" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "invalid level" }, { status: 400 });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 });
   }

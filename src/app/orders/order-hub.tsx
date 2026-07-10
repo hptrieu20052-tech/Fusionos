@@ -6,7 +6,7 @@ import { useLang } from "@/components/lang-provider";
 import { useConfirm } from "@/components/confirm-provider";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { SupplierLogo } from "@/components/supplier-logo";
-import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn } from "@/components/icons";
+import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn, IconDownload, IconReport, IconCheck, IconPencil, IconRefresh } from "@/components/icons";
 
 type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
@@ -130,16 +130,16 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
         <div className="page-actions">
           <DateRangePicker value={dr ?? { range: "" }} onChange={setDr} align="right" allowClear onClear={() => setDr(null)} />
           <div style={{ position: "relative" }}>
-            <button onClick={() => setExportMenu((v) => !v)} className="btn btn-outline">📤 {t("c.export")} ▾</button>
+            <button onClick={() => setExportMenu((v) => !v)} className="btn btn-outline"><IconUpload width={14} height={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("c.export")} ▾</button>
             {exportMenu && (<>
               <div onClick={() => setExportMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.14)", minWidth: 300, overflow: "hidden", padding: 6 }}>
                 <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Excel</div>
                 <a href={`/api/orders/export${status ? `?status=${status}` : ""}`} onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
-                  <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>📊</span><div style={{ textAlign: "left" }}><b>{t("o.allOrders")}</b><div style={IMPORT_SUB}>{t("o.withCostTracking")}</div></div>
+                  <span style={{ fontSize: 19, width: 20, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IconReport width={17} height={17} /></span><div style={{ textAlign: "left" }}><b>{t("o.allOrders")}</b><div style={IMPORT_SUB}>{t("o.withCostTracking")}</div></div>
                 </a>
                 <a href={`/api/orders/export?complete=1${status ? `&status=${status}` : ""}`} onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
-                  <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>✅</span><div style={{ textAlign: "left" }}><b>{t("o.onlyEligible")}</b><div style={IMPORT_SUB}>{t("o.eligibleDesc")}</div></div>
+                  <span style={{ fontSize: 19, width: 20, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IconCheck width={17} height={17} /></span><div style={{ textAlign: "left" }}><b>{t("o.onlyEligible")}</b><div style={IMPORT_SUB}>{t("o.eligibleDesc")}</div></div>
                 </a>
                 <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>{t("o.printerNoApi")}</div>
                 {["Printway", "Wembroidery", "Flashship", "Onospod"].map((s) => (
@@ -152,7 +152,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
           </div>
           {canEdit && (
             <div style={{ position: "relative" }}>
-              <button onClick={() => setImportMenu((v) => !v)} className="btn btn-outline">{importing ? t("c.loading") : `📥 ${t("c.import")} ${t("o.ordersWord")} ▾`}</button>
+              <button onClick={() => setImportMenu((v) => !v)} className="btn btn-outline">{importing ? t("c.loading") : <><IconDownload width={14} height={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("c.import")} {t("o.ordersWord")} ▾</>}</button>
               {importMenu && (<>
                 <div onClick={() => setImportMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                 <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.14)", minWidth: 264, overflow: "hidden", padding: 6 }}>
@@ -168,7 +168,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
                   </button>
                   <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>{t("o.otherWord")}</div>
                   <button onClick={() => { setImportMenu(false); excelRef.current?.click(); }} style={IMPORT_ITEM}>
-                    <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>📊</span><div style={{ textAlign: "left" }}><b>{t("o.excelUpdate")}</b><div style={IMPORT_SUB}>{t("o.trackingCostExisting")}</div></div>
+                    <span style={{ fontSize: 19, width: 20, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IconReport width={17} height={17} /></span><div style={{ textAlign: "left" }}><b>{t("o.excelUpdate")}</b><div style={IMPORT_SUB}>{t("o.trackingCostExisting")}</div></div>
                   </button>
                 </div>
               </>)}
@@ -850,7 +850,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                     </select>
                   </div>
                   {/* Chọn variant nằm ở TỪNG sản phẩm bên dưới; nút Create cũng ở cuối cho liền mạch */}
-                  {ffSel && <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>↓ Chọn <b>{t("o.variantQty")}</b> ở từng sản phẩm, rồi bấm <b>Create order</b> ở cuối</div>}
+                  {ffSel && <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>↓ Pick <b>{t("o.variantQty")}</b> on each product, then click <b>Create order</b> at the bottom</div>}
                   </>
                   ) : (
                     <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--card)", border: "1px dashed var(--line)", borderRadius: 10, padding: "10px 12px" }}>
@@ -950,7 +950,7 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
           : <span style={{ fontSize: 10.5, color: "var(--muted)", textAlign: "center", lineHeight: 1.3, padding: 4 }}>{upBusy ? t("o.loadingShort") : (canEdit ? "＋ Mockup" : t("o.noImg"))}</span>}
         {canEdit && <>
           <input ref={mockRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMockup(f); e.target.value = ""; }} />
-          {img && <button onClick={(e) => { e.stopPropagation(); mockRef.current?.click(); }} title={t("o.changeMockup")} style={{ position: "absolute", bottom: 3, right: 3, width: 20, height: 20, borderRadius: 6, border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>{upBusy ? "…" : "✎"}</button>}
+          {img && <button onClick={(e) => { e.stopPropagation(); mockRef.current?.click(); }} title={t("o.changeMockup")} style={{ position: "absolute", bottom: 3, right: 3, width: 20, height: 20, borderRadius: 6, border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>{upBusy ? "…" : <IconPencil width={12} height={12} />}</button>}
         </>}
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
@@ -1165,7 +1165,7 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
             flash(j.ok ? t("o.cleanupResult").replace("{u}", String(j.updated)).replace("{s}", String(j.scanned)) : t("o.cleanupErr"));
             if (j.ok) reload();
           }} disabled={busy} style={{ background: "none", border: "none", color: "var(--blue)", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 }}>
-            {t("o.cleanupEtsyBtn")}
+            <IconRefresh width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("o.cleanupEtsyBtn")}
           </button>
         </div>
       </div>

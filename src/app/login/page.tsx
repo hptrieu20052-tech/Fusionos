@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { JOURNEY_IMG, LOGO_WHITE } from "./journey-images";
 
-// Hành trình phát triển — ảnh & logo nhúng base64 (hiển thị trực tiếp, không phụ thuộc file public).
+// Our journey — ảnh & logo nhúng base64 (hiển thị trực tiếp, không phụ thuộc file public).
 const JOURNEY = ["2021", "2022", "2023", "2024", "2025"];
 const SLIDE_MS = 3500;
 
@@ -30,7 +30,7 @@ export default function LoginPage() {
       body: JSON.stringify({ email, password, remember }),
     });
     if (res.ok) { location.href = new URLSearchParams(location.search).get("next") ?? "/"; }
-    else { setErr("Sai email hoặc mật khẩu"); setBusy(false); }
+    else { setErr("Wrong email or password"); setBusy(false); }
   }
 
   return (
@@ -100,11 +100,11 @@ export default function LoginPage() {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="lg-logo" src={LOGO_WHITE} alt="Fusion — together we grow" />
           </div>
-          <h1 className="lg-h1">Chào mừng đến với FUSION</h1>
-          <p className="lg-p">Công ty <b>Print-on-Demand &amp; TMĐT xuyên biên giới</b>, phục vụ khách hàng tại <b>Mỹ và Châu Âu</b> qua <b>Amazon, TikTok, Etsy</b>.</p>
+          <h1 className="lg-h1">Welcome to FUSION</h1>
+          <p className="lg-p">A <b>Print-on-Demand &amp; cross-border e-commerce</b>, serving customers in <b>the US and Europe</b> via <b>Amazon, TikTok, Etsy</b>.</p>
 
           <div className="lg-hr" />
-          <div className="lg-jtitle">Hành trình phát triển</div>
+          <div className="lg-jtitle">Our journey</div>
           <div className="lg-cf">
             {JOURNEY.map((y, i) => {
               const n = JOURNEY.length;
@@ -133,7 +133,7 @@ export default function LoginPage() {
             })}
           </div>
           <div className="lg-cf-nav">
-            <button className="lg-cf-arrow" onClick={() => pick((active - 1 + JOURNEY.length) % JOURNEY.length)} aria-label="Trước">‹</button>
+            <button className="lg-cf-arrow" onClick={() => pick((active - 1 + JOURNEY.length) % JOURNEY.length)} aria-label="Prev">‹</button>
             <div className="lg-dots">
               {JOURNEY.map((y, i) => <span key={y} className={`lg-dot${i === active ? " on" : ""}`} onClick={() => pick(i)} />)}
             </div>
@@ -148,20 +148,20 @@ export default function LoginPage() {
       <div className="lg-right">
         <div className="lg-form">
           <div className="lg-mobilebrand"><img src="/logomark.png" alt="" /><b>FUSION</b></div>
-          <div className="lg-ftitle">Đăng nhập</div>
-          <div className="lg-fsub">Tài khoản nội bộ do Admin cấp.</div>
+          <div className="lg-ftitle">Sign in</div>
+          <div className="lg-fsub">Internal accounts are provided by Admin.</div>
 
           <form onSubmit={submit}>
             <label className="lg-label" htmlFor="lg-email">Email</label>
             <input id="lg-email" className="lg-input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@example.com" type="email" required autoComplete="username" />
 
             <div className="lg-row">
-              <label className="lg-label" htmlFor="lg-pass" style={{ margin: 0 }}>Mật khẩu</label>
-              <button type="button" className="lg-forgot" onClick={() => setErr("Liên hệ Admin để đặt lại mật khẩu.")}>Quên mật khẩu?</button>
+              <label className="lg-label" htmlFor="lg-pass" style={{ margin: 0 }}>Password</label>
+              <button type="button" className="lg-forgot" onClick={() => setErr("Contact Admin to reset your password.")}>Forgot password?</button>
             </div>
             <div className="lg-inwrap" style={{ marginTop: 6 }}>
-              <input id="lg-pass" className="lg-input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Nhập mật khẩu" type={show ? "text" : "password"} required autoComplete="current-password" style={{ paddingRight: 44 }} />
-              <button type="button" className="lg-eye" onClick={() => setShow((s) => !s)} aria-label="Hiện/ẩn mật khẩu">
+              <input id="lg-pass" className="lg-input" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" type={show ? "text" : "password"} required autoComplete="current-password" style={{ paddingRight: 44 }} />
+              <button type="button" className="lg-eye" onClick={() => setShow((s) => !s)} aria-label="Show/hide password">
                 {show
                   ? <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" /></svg>
                   : <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>}
@@ -170,15 +170,15 @@ export default function LoginPage() {
 
             <label className="lg-remember">
               <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-              Ghi nhớ đăng nhập trên thiết bị này
+              Remember me on this device
             </label>
 
-            <button className="lg-btn" disabled={busy}>{busy ? "Đang đăng nhập…" : "Đăng nhập"}</button>
+            <button className="lg-btn" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
             {err && <div className="lg-err">{err}</div>}
           </form>
 
-          <div className="lg-terms">Bằng cách đăng nhập, bạn đồng ý với <b>quy định nội bộ</b> của Fusion.</div>
-          <div className="lg-dev">✦ Được phát triển nội bộ · <b>Fusion OS</b></div>
+          <div className="lg-terms">By signing in, you agree to the <b>Fusion internal policy</b>.</div>
+          <div className="lg-dev">✦ Built in-house · <b>Fusion OS</b></div>
         </div>
       </div>
     </div>

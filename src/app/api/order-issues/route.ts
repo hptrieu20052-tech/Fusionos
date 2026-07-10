@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "orders")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
-  if (!b?.orderId || !b?.reason?.trim()) return NextResponse.json({ ok: false, error: "Thiếu đơn hoặc lý do" }, { status: 400 });
+  if (!b?.orderId || !b?.reason?.trim()) return NextResponse.json({ ok: false, error: "Missing order or reason" }, { status: 400 });
 
   const [row] = await db.insert(schema.orderIssues).values({
     orderId: b.orderId,

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function SupplierReportPage() {
   const session = await getSession();
   if (!session || !(await can(session, "orders"))) {
-    return <div className="panel empty">Không có quyền truy cập.</div>;
+    return <div className="panel empty">Access denied.</div>;
   }
   return <SupplierReportClient />;
 }

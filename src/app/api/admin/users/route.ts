@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
     }
     return NextResponse.json({ ok: true, id: u.id });
   } catch {
-    return NextResponse.json({ ok: false, error: "email đã tồn tại" }, { status: 409 });
+    return NextResponse.json({ ok: false, error: "email already exists" }, { status: 409 });
   }
 }
 
@@ -56,7 +56,7 @@ export async function PATCH(req: NextRequest) {
   const patch: Record<string, unknown> = {};
   if (typeof b.password === "string" && b.password) patch.passwordHash = await bcrypt.hash(String(b.password), 10);
   if (b.status === "active" || b.status === "disabled") {
-    if (b.status === "disabled" && b.userId === s.sub) return NextResponse.json({ ok: false, error: "Không thể tự khóa tài khoản của mình" }, { status: 400 });
+    if (b.status === "disabled" && b.userId === s.sub) return NextResponse.json({ ok: false, error: "You can't lock your own account" }, { status: 400 });
     patch.status = b.status;
   }
   if (typeof b.role === "string" && schema.users.role.enumValues.includes(b.role)) patch.role = b.role;
@@ -78,15 +78,15 @@ export async function DELETE(req: NextRequest) {
   if (s?.role !== "admin") return NextResponse.json({ ok: false }, { status: 403 });
   const b = await req.json().catch(() => null);
   if (!b?.userId) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
-  if (b.userId === s.sub) return NextResponse.json({ ok: false, error: "Không thể xóa chính mình" }, { status: 400 });
+  if (b.userId === s.sub) return NextResponse.json({ ok: false, error: "You can't delete yourself" }, { status: 400 });
   const admins = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.role, "admin"));
   if (admins.length <= 1 && admins.some((a) => a.id === b.userId)) {
-    return NextResponse.json({ ok: false, error: "Không thể xóa admin cuối cùng" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Can't delete the last admin" }, { status: 400 });
   }
   try {
     await db.delete(schema.users).where(eq(schema.users.id, b.userId));
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ ok: false, error: "User đang gắn với design/đơn — hãy KHÓA thay vì xóa để giữ lịch sử." }, { status: 409 });
+    return NextResponse.json({ ok: false, error: "This user is linked to designs/orders — LOCK instead of deleting to keep history." }, { status: 409 });
   }
 }

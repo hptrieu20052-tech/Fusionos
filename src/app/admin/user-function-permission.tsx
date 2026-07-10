@@ -1,4 +1,5 @@
 "use client";
+import { useLang } from "@/components/lang-provider";
 import { useEffect, useMemo, useState } from "react";
 
 type U = { id: string; fullName: string; email: string; role: string; team: string | null };
@@ -13,15 +14,16 @@ type Data = {
 
 const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", finance: "Finance", hr: "Staff", stores: "Stores", settings: "Settings" };
 // 1 lựa chọn 4 mức cho mỗi trang (gộp truy cập + phạm vi)
-const ACCESS_OPTS = [
-  { v: "all", label: "Xem full", bg: "var(--green-soft)", fg: "var(--green)" },
-  { v: "team", label: "Xem của Team", bg: "#EAF1FF", fg: "#2563EB" },
-  { v: "own", label: "Chỉ của mình", bg: "var(--amber-soft)", fg: "var(--amber)" },
-  { v: "hidden", label: "Không được xem", bg: "#F1F3F7", fg: "#6B7280" },
-];
+const accessOpts = (t: (k: string) => string) => ([
+  { v: "all", label: "View full", bg: "var(--green-soft)", fg: "var(--green)" },
+  { v: "team", label: t("perm.viewTeam"), bg: "#EAF1FF", fg: "#2563EB" },
+  { v: "own", label: "Own only", bg: "var(--amber-soft)", fg: "var(--amber)" },
+  { v: "hidden", label: t("perm.cantView"), bg: "#F1F3F7", fg: "#6B7280" },
+]);
 type Change = { kind: string; key: string; value: unknown };
 
 export function UserFunctionPermission() {
+  const { t } = useLang();
   const [data, setData] = useState<Data | null>(null);
   const [sel, setSel] = useState("");
   const [q, setQ] = useState("");
@@ -42,7 +44,7 @@ export function UserFunctionPermission() {
     };
   }, [data]);
 
-  if (!data || !maps) return <div className="panel">Đang tải quyền…</div>;
+  if (!data || !maps) return <div className="panel">{t("perm.loading")}</div>;
   const user = data.users.find((u) => u.id === sel);
   const nonAdmin = data.users.filter((u) => u.role !== "admin");
   const shown = nonAdmin.filter((u) => !q.trim() || (u.fullName || u.email).toLowerCase().includes(q.trim().toLowerCase()));
@@ -67,27 +69,27 @@ export function UserFunctionPermission() {
       }
       await load();
       setChanges(new Map());
-      setMsg("✓ Đã lưu quyền cho " + (user?.fullName || user?.email));
+      setMsg(t("perm.savedPermFor") + (user?.fullName || user?.email));
       setTimeout(() => setMsg(""), 3000);
     } catch (e) { setMsg("✗ " + (e as Error).message); }
     setSaving(false);
   };
 
-  const dot = (own: boolean) => <span title={own ? "Đặt riêng cho người này" : "Theo role"} style={{ display: "inline-block", width: 6, height: 6, borderRadius: 3, background: own ? "#2563EB" : "transparent", marginLeft: 6, verticalAlign: "middle" }} />;
+  const dot = (own: boolean) => <span title={own ? t("perm.setForPerson") : "Theo role"} style={{ display: "inline-block", width: 6, height: 6, borderRadius: 3, background: own ? "#2563EB" : "transparent", marginLeft: 6, verticalAlign: "middle" }} />;
 
   return (
     <div className="panel">
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
-          <h3 style={{ fontWeight: 800, fontSize: 15 }}>Phân quyền theo từng người</h3>
-          <div className="sub">Chọn người → chọn 1 trong 4 mức cho mỗi trang → bấm <b>Lưu</b>. Mặc định theo role; chỉnh ở đây là đặt riêng (chấm xanh). Admin luôn full.</div>
+          <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("perm.title")}</h3>
+          <div className="sub">{t("perm.pickThenSave")} <b>Save</b>{t("perm.pageHint2")}</div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           {msg && <span style={{ fontSize: 12.5, fontWeight: 700, color: msg.startsWith("✓") ? "var(--green)" : "var(--red, #dc2626)" }}>{msg}</span>}
           <button onClick={save} disabled={!changes.size || saving}
             style={{ padding: "9px 20px", borderRadius: 10, border: "none", fontWeight: 800, fontSize: 13, cursor: changes.size && !saving ? "pointer" : "not-allowed",
               background: changes.size && !saving ? "var(--ink, #111827)" : "#E5E7EB", color: changes.size && !saving ? "#fff" : "#9CA3AF" }}>
-            {saving ? "Đang lưu…" : changes.size ? `Lưu (${changes.size})` : "Đã lưu"}
+            {saving ? "Saving…" : changes.size ? t("perm.saveN").replace("{n}", String(changes.size)) : t("perm.saved")}
           </button>
         </div>
       </div>
@@ -96,7 +98,7 @@ export function UserFunctionPermission() {
         {/* Danh sách người */}
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
           <div style={{ padding: 8, borderBottom: "1px solid var(--line)" }}>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Tìm người…" style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 13 }} />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("perm.searchPerson")} style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 13 }} />
           </div>
           <div style={{ maxHeight: 520, overflowY: "auto" }}>
             {shown.map((u) => (
@@ -106,14 +108,14 @@ export function UserFunctionPermission() {
                 <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>{u.role}</div>
               </button>
             ))}
-            {!shown.length && <div style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>Không có người.</div>}
+            {!shown.length && <div style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>{t("perm.noPeople")}</div>}
           </div>
         </div>
 
         {/* Quyền xem theo trang — 1 list thẳng hàng, 4 mức */}
-        {!user ? <div style={{ color: "var(--muted)" }}>Chọn một người.</div> : (
+        {!user ? <div style={{ color: "var(--muted)" }}>{t("perm.pickOne")}</div> : (
           <div>
-            {changes.size > 0 && <div style={{ fontSize: 12, color: "var(--amber)", fontWeight: 700, marginBottom: 8 }}>Có {changes.size} thay đổi chưa lưu — bấm Lưu (đổi người sẽ mất thay đổi).</div>}
+            {changes.size > 0 && <div style={{ fontSize: 12, color: "var(--amber)", fontWeight: 700, marginBottom: 8 }}>{changes.size} unsaved change(s) — click Save (switching person discards changes).</div>}
             <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
               {data.modules.map((m, i) => {
                 const cur = accessOf(m);
@@ -121,7 +123,7 @@ export function UserFunctionPermission() {
                   <div key={m} style={{ display: "grid", gridTemplateColumns: "170px 1fr", alignItems: "center", gap: 12, padding: "9px 14px", borderTop: i ? "1px solid var(--line)" : "none" }}>
                     <span style={{ fontWeight: 700, fontSize: 13 }}>{MODULE_LABEL[m] || m}{dot(isOwn(m))}</span>
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-                      {ACCESS_OPTS.map((o) => {
+                      {accessOpts(t).map((o) => {
                         const on = cur === o.v;
                         return (
                           <button key={o.v} onClick={() => setAccess(m, o.v)}
@@ -136,7 +138,7 @@ export function UserFunctionPermission() {
                 );
               })}
             </div>
-            <div className="sub" style={{ marginTop: 8, fontSize: 11.5 }}>“Cả Team / Chỉ của mình” lọc dữ liệu ở <b>Đơn hàng</b>, <b>Design</b> (và Dashboard theo đơn). Trang khác: “Xem full” = hiện, “Không được xem” = ẩn.</div>
+            <div className="sub" style={{ marginTop: 8, fontSize: 11.5 }}>{t("perm.teamOwnHint")} <b>Orders</b>, <b>Design</b> {t("perm.pageHint1")}</div>
           </div>
         )}
       </div>

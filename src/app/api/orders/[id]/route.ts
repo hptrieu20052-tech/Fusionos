@@ -118,7 +118,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
   // Workflow mới: không dùng cancel / out_of_stock nữa
   if (b.status === "cancel" || b.status === "out_of_stock") {
-    return NextResponse.json({ ok: false, error: "Trạng thái này đã bỏ — đơn huỷ cho vào Trash, đơn lỗi dùng Has Issues" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "This status is deprecated — cancelled orders go to Trash, problem orders use Has Issues" }, { status: 400 });
   }
   if (b.status && (schema.orders.status.enumValues as readonly string[]).includes(b.status)) patch.status = b.status;
 
@@ -135,7 +135,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       await db.insert(schema.transactions).values({
         type: "base_cost", amount: (-bal).toFixed(2),
         orderId: params.id, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
-        note: "Hoàn giá vốn — đơn chuyển vào Trash",
+        note: "Refund cost — order moved to Trash",
         occurredAt: new Date().toISOString().slice(0, 10),
       });
     }

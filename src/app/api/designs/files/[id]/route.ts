@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const b = await req.json().catch(() => null);
   const kind = String(b?.kind ?? "");
   if (!isDesignKind(kind)) {
-    return NextResponse.json({ ok: false, error: "kind không hợp lệ" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "invalid kind" }, { status: 400 });
   }
   const [f] = await db.select().from(schema.designFiles).where(eq(schema.designFiles.id, params.id)).limit(1);
   if (!f) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });

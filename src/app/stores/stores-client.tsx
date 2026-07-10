@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm } from "@/components/confirm-provider";
 import { useLang } from "@/components/lang-provider";
-import { IconSettings, IconTrash, IconLink } from "@/components/icons";
+import { IconSettings, IconTrash, IconLink, IconPuzzle, IconRefresh, IconKey, IconDownload, IconWarn } from "@/components/icons";
 
 type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
@@ -75,7 +75,7 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
           <div className="field">
             <label>{t("c.seller")}</label>
             <select value={fSeller} onChange={(e) => setFSeller(e.target.value)}>
-              <option value="">Tất cả</option>
+              <option value="">All</option>
               {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
@@ -83,7 +83,7 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
           <div className="field">
             <label>{t("c.marketplace")}</label>
             <select value={fMk} onChange={(e) => setFMk(e.target.value)}>
-              <option value="">Tất cả</option>
+              <option value="">All</option>
               {MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
             </select>
           </div>
@@ -128,14 +128,14 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
                   </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 3 }}>
                     {s.sellerName ?? "—"} · {CONNECT.find(([k]) => k === s.connectMethod)?.[1] ?? s.connectMethod}
-                    {s.connectMethod === "api" && (s.hasCredentials ? ` · 🔑 ${t("st.apiSet")}` : ` · ⚠ ${t("st.noApi")}`)}
+                    {s.connectMethod === "api" && (s.hasCredentials ? <> · <IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> {t("st.apiSet")}</> : <> · <IconWarn width={11} height={11} style={{ verticalAlign: "-1px" }} /> {t("st.noApi")}</>)}
                   </div>
                   <div style={{ fontSize: 13 }}>
-                    <b>{s.orders30d}</b> đơn · <b style={{ color: "var(--green)" }}>{money(s.revenue30d)}</b> <span style={{ color: "var(--muted)" }}>/ 30d</span>
-                    {s.orders7d > 0 && <span style={{ color: "var(--muted)", fontSize: 11.5 }}> · {s.orders7d} đơn/7d</span>}
+                    <b>{s.orders30d}</b> orders · <b style={{ color: "var(--green)" }}>{money(s.revenue30d)}</b> <span style={{ color: "var(--muted)" }}>/ 30d</span>
+                    {s.orders7d > 0 && <span style={{ color: "var(--muted)", fontSize: 11.5 }}> · {s.orders7d} orders/7d</span>}
                   </div>
                   {s.lastOrderDays != null && s.lastOrderDays > 7 && (
-                    <div style={{ fontSize: 11, color: "var(--red)", marginTop: 3 }}>⚠ {s.lastOrderDays} ngày không có đơn</div>
+                    <div style={{ fontSize: 11, color: "var(--red)", marginTop: 3 }}>⚠ {s.lastOrderDays} days without orders</div>
                   )}
                 </div>
               ))}
@@ -247,7 +247,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
       </div>
       {f.currency !== "USD" && (
         <div style={{ border: "1px solid #F3D08A", background: "#FFF9EC", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <button onClick={fxConvert} disabled={busy} style={{ ...btnGhost, color: "#9A6B00", borderColor: "#F3D08A", fontWeight: 700, fontSize: 12.5 }}>{t("st.fxConvertImported")}</button>
+          <button onClick={fxConvert} disabled={busy} style={{ ...btnGhost, color: "#9A6B00", borderColor: "#F3D08A", fontWeight: 700, fontSize: 12.5 }}><IconDownload width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("st.fxConvertImported")}</button>
           <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1 }}>
             {store.health?.fxConvertedAt
               ? t("st.fxDoneAt").replace("{time}", new Date(store.health.fxConvertedAt).toLocaleString()).replace("{rate}", String(store.health.fxConvertedRate))
@@ -260,7 +260,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
       {/* Extension: Kéo đơn Etsy về FUSION (chỉ store Etsy) */}
       {store.marketplace === "etsy" && (
         <div style={{ border: "1px solid #CDE3FA", background: "#F3F9FF", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
-          <b style={{ fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>{t("st.extTitle")}</b>
+          <b style={{ fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}><IconPuzzle width={16} height={16} />{t("st.extTitle")}</b>
           <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>{t("st.extDesc")}</div>
           <L label="Ingest URL">
             <div style={{ display: "flex", gap: 6 }}>
@@ -275,7 +275,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
               <button onClick={() => { navigator.clipboard?.writeText(tok); flash(t("st.copiedToken")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
             </div>
           </L>
-          <button onClick={regenToken} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C0C0", fontSize: 12, marginTop: 4 }}>↻ {t("st.newToken")}</button>
+          <button onClick={regenToken} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C0C0", fontSize: 12, marginTop: 4 }}><IconRefresh width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("st.newToken")}</button>
         </div>
       )}
 
@@ -284,7 +284,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <b style={{ fontSize: 13.5 }}>{t("st.apiConfig")}</b>
-            {store.hasCredentials && <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}>`🔑 ${t("st.apiHas")}:` {store.credentialKeys.join(", ")}</span>}
+            {store.hasCredentials && <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}><IconKey width={12} height={12} style={{ verticalAlign: "-2px" }} /> {t("st.apiHas")}: {store.credentialKeys.join(", ")}</span>}
             <button onClick={check} disabled={busy} style={{ ...btnGhost, marginLeft: "auto", fontSize: 12 }}>{t("st.checkConn")}</button>
           </div>
           {health && (
@@ -300,7 +300,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
               </L>
             ))}
           </div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Credentials được mã hoá lưu server, không bao giờ hiển thị lại. Để trống field = giữ giá trị cũ.</div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Credentials are encrypted on the server and never shown again. Leave a field blank to keep the current value.</div>
         </div>
       )}
       <Actions close={close} onOk={save} busy={busy} okLabel={t("st.saveStore")} />

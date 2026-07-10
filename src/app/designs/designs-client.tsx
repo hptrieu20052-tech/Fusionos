@@ -12,7 +12,7 @@ const bookPages = Array.from({ length: 24 }, (_, i) => `page_${pad2(i + 1)}`);
 const sideLabel = (t: (k: string) => string): Record<string, string> => ({
   design_front: "Front", design_back: "Back", sleeve_left: t("dz.sleeveLeft"), sleeve_right: t("dz.sleeveRight"),
   cover_front: t("dz.coverFront"), back_cover: t("dz.coverBack"), book_cover: t("dz.cover"),
-  ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.month").replace("{n}", String(i + 1))])),
+  ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.mo" + (i + 1))])),
   ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`page_${pad2(i + 1)}`, t("dz.page").replace("{n}", String(i + 1))])),
   mockup: "Mockup", video: "Video",
 });
@@ -223,7 +223,7 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
               <div className="dc-meta"><span>{t("c.designer")}</span><b>{d.designerName ?? "—"}</b></div>
               <div className="dc-foot">
                 <span>{d.dims ?? "—"}{d.sizeMB ? ` · ${d.sizeMB}MB` : ""}</span>
-                <span>★ {d.avgScore != null && d.avgScore > 0 ? d.avgScore.toFixed(1) : "0"}</span>
+                <span><IconSparkle width={12} height={12} style={{ verticalAlign: "-2px" }} /> {d.avgScore != null && d.avgScore > 0 ? d.avgScore.toFixed(1) : "0"}</span>
               </div>
             </div>
           </div>

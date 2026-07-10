@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const s = (v: unknown) => Number(v) >= 1 && Number(v) <= 10 ? Number(v) : null;
   if (!b?.designId || !["approve", "request_fix", "reject"].includes(b.decision) || !s(b.scoreBrief) || !s(b.scoreAesthetic) || !s(b.scoreTechnical)) {
-    return NextResponse.json({ ok: false, error: "invalid: cần 3 điểm 1-10 + decision" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "invalid: need 3 scores 1-10 + decision" }, { status: 400 });
   }
   const [d] = await db.select().from(schema.designs).where(eq(schema.designs.id, b.designId)).limit(1);
   if (!d) return NextResponse.json({ ok: false, error: "design not found" }, { status: 404 });

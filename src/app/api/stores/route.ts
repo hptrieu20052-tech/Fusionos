@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
 
   const b = await req.json().catch(() => null);
   if (!b?.name || !schema.stores.marketplace.enumValues.includes(b.marketplace) || !schema.stores.connectMethod.enumValues.includes(b.connectMethod)) {
-    return NextResponse.json({ ok: false, error: "Thiếu tên / sàn / phương thức kết nối" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Missing name / marketplace / connection method" }, { status: 400 });
   }
   // Chặn trùng tên store (không phân biệt hoa/thường) — tránh nhầm lẫn khi khớp đơn về sau
   const name = String(b.name).trim();

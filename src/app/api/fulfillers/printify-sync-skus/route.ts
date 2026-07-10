@@ -20,10 +20,10 @@ export async function POST(req: NextRequest) {
   if (!b?.fulfillerId || !Array.isArray(b.selectedProductIds)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
 
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.fulfillerId)).limit(1);
-  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller không tồn tại" }, { status: 404 });
+  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller doesn't exist" }, { status: 404 });
   const c = (ff.credentials ?? {}) as { apiKey?: string; apiToken?: string; shopId?: string };
   const token = c.apiKey || c.apiToken;
-  if (!token || !c.shopId) return NextResponse.json({ ok: false, error: "Chưa cấu hình token + Shop ID" }, { status: 400 });
+  if (!token || !c.shopId) return NextResponse.json({ ok: false, error: "Token + Shop ID not configured" }, { status: 400 });
 
   let products;
   try { products = await listPrintifyProducts(token, c.shopId); }

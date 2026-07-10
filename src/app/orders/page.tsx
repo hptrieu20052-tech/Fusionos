@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function OrdersPage() {
   const session = await getSession();
   if (!session || !(await can(session, "orders"))) {
-    return <div className="panel empty">Bạn không có quyền xem module Đơn hàng. Liên hệ Admin nếu cần cấp quyền.</div>;
+    return <div className="panel empty">You don't have permission to view the Orders module. Contact Admin if you need access.</div>;
   }
   const [lvl, ownOnly, ffLvl] = await Promise.all([
     levelOf(session, "orders"),

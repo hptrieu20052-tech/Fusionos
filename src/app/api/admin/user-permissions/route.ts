@@ -46,7 +46,7 @@ export async function PATCH(req: NextRequest) {
   // Không cho tự khóa chính mình khỏi admin (an toàn)
   const [u] = await db.select({ role: schema.users.role }).from(schema.users).where(eq(schema.users.id, b.userId)).limit(1);
   if (!u) return NextResponse.json({ ok: false, error: "user not found" }, { status: 404 });
-  if (u.role === "admin") return NextResponse.json({ ok: false, error: "admin luôn toàn quyền" }, { status: 400 });
+  if (u.role === "admin") return NextResponse.json({ ok: false, error: "admin always has full access" }, { status: 400 });
 
   try {
     if (b.kind === "module") {

@@ -5,6 +5,6 @@ export const dynamic = "force-dynamic";
 
 export default async function AccountPage() {
   const session = await getSession();
-  if (!session) return <div className="panel empty">Cần đăng nhập để xem trang này.</div>;
+  if (!session) return <div className="panel empty">You must sign in to view this page.</div>;
   return <AccountClient />;
 }

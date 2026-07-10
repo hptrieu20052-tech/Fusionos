@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const r = b?.resource ?? {};
   const orderCode = String(r.order_code ?? "");
   const externalNumber = String(r.external_number ?? "");
-  if (!orderCode && !externalNumber) return NextResponse.json({ ok: false, error: "thiếu order_code/external_number" }, { status: 400 });
+  if (!orderCode && !externalNumber) return NextResponse.json({ ok: false, error: "missing order_code/external_number" }, { status: 400 });
 
   // Tìm fulfillment order: ưu tiên order_code (= external_ff_id), else theo external_number → order → ff order
   let ffo = orderCode
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     const [ord] = await db.select().from(schema.orders).where(or(eq(schema.orders.externalId, externalNumber), eq(schema.orders.orderLabel, externalNumber))).limit(1);
     if (ord) ffo = (await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, ord.id)).limit(1))[0];
   }
-  if (!ffo) return NextResponse.json({ ok: false, error: "không tìm thấy đơn khớp" }, { status: 404 });
+  if (!ffo) return NextResponse.json({ ok: false, error: "no matching order found" }, { status: 404 });
 
   // Xác thực secret theo nhà fulfill của đơn (phải là Merchize và secret khớp)
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, ffo.fulfillerId)).limit(1);
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       const amt = num(r.price) ?? num(r.amount) ?? num(r.tax) ?? num(r.tax_amount) ?? 0;
       ce.fees[eventId || `fee:${b?.event_time ?? Date.now()}`] = amt;
     } else {
-      return NextResponse.json({ ok: true, matched: ffo.id, skipped: "payment event không kèm cost" });
+      return NextResponse.json({ ok: true, matched: ffo.id, skipped: "payment event without cost" });
     }
 
     const base = Number(ce.base ?? ffo.baseCost ?? 0);

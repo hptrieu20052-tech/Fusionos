@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!session || (await levelOf(session, "orders")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
   const key = typeof b?.key === "string" && b.key.trim() ? b.key.trim() : null;
-  if (!key) return NextResponse.json({ ok: false, error: "thiếu key" }, { status: 400 });
+  if (!key) return NextResponse.json({ ok: false, error: "missing key" }, { status: 400 });
   await db.update(schema.orderItems).set({ mockupKey: key }).where(eq(schema.orderItems.orderId, params.id));
   return NextResponse.json({ ok: true, key });
 }

@@ -71,7 +71,8 @@ export async function POST(req: NextRequest) {
         country: s(o.country) ?? "United States",
         total: (total / fx).toFixed(2), platformFee: (num(o.fee) / fx).toFixed(2),
         note: s(o.note),
-        orderedAt: o.orderedAt ? new Date(o.orderedAt) : new Date(),
+        // Dùng NGÀY KÉO ĐƠN (thời điểm ingest) để mọi thống kê tính theo ngày kéo, không phải ngày khách mua.
+        orderedAt: new Date(),
       }).returning();
 
       const rows = items.length ? items : [{ title: `Đơn Etsy ${ext}`, qty: 1, price: total } as InItem];

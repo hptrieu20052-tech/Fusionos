@@ -1,10 +1,12 @@
 "use client";
+import { useLang } from "@/components/lang-provider";
 import { useEffect, useState } from "react";
 
 type D = { id: string; sku_code: number; title: string; points: number; designer: string | null; thumb: string | null; biz_items: number; reviewed: number };
 const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 10, font: "inherit", fontSize: 12.5, width: 64, textAlign: "center" as const };
 
 export function ReviewsClient({ canReview }: { canReview: boolean }) {
+  const { t } = useLang();
   const [designs, setDesigns] = useState<D[]>([]);
   const [sel, setSel] = useState<D | null>(null);
   const [scores, setScores] = useState({ scoreBrief: 8, scoreAesthetic: 8, scoreTechnical: 8 });
@@ -18,13 +20,13 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
 
   async function submit(decision: string) {
     if (!sel) return;
-    setMsg("Đang lưu…");
+    setMsg(t("rev.saving"));
     const j = await fetch("/api/reviews", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ designId: sel.id, ...scores, comment, decision }),
     }).then((r) => r.json());
     if (j.ok) {
-      setMsg(`Tổng điểm ${j.breakdown.total.toFixed(1)} (CL ${j.breakdown.quality.toFixed(1)} · SL ${j.breakdown.discipline.toFixed(1)} · HQ ${j.breakdown.business.toFixed(1)} từ ${j.breakdown.bizOrders} đơn)`);
+      setMsg(t("rev.totalScore").replace("{total}", j.breakdown.total.toFixed(1)).replace("{q}", j.breakdown.quality.toFixed(1)).replace("{d}", j.breakdown.discipline.toFixed(1)).replace("{b}", j.breakdown.business.toFixed(1)).replace("{n}", String(j.breakdown.bizOrders)));
       setSel(null); load();
     } else setMsg("⚠ " + j.error);
   }
@@ -40,12 +42,12 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
   return (
     <>
       <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Chấm điểm Design</h3>
-        <div className="sub">Rubric: 40% sản lượng & kỷ luật (tự động) · 30% chất lượng (chấm tay) · 30% hiệu quả kinh doanh (tự động từ đơn phát sinh). Design chưa chấm xếp trước.</div>
+        <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("rev.scoreDesign")}</h3>
+        <div className="sub">{t("rev.rubric")}</div>
       </div>
       <div className="panel">
         <table>
-          <thead><tr><th></th><th>Design</th><th>Designer</th><th style={{ textAlign: "center" }}>Độ khó</th><th style={{ textAlign: "center" }}>Items phát sinh</th><th style={{ textAlign: "center" }}>Đã chấm</th><th></th></tr></thead>
+          <thead><tr><th></th><th>Design</th><th>Designer</th><th style={{ textAlign: "center" }}>Difficulty</th><th style={{ textAlign: "center" }}>{t("rev.genItems")}</th><th style={{ textAlign: "center" }}>{t("rev.scored")}</th><th></th></tr></thead>
           <tbody>
             {designs.map((d) => (
               <tr key={d.id}>
@@ -59,9 +61,9 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
                 <td>{d.designer ?? "—"}</td>
                 <td style={{ textAlign: "center" }}><span className="chip">×{d.points}</span></td>
                 <td style={{ textAlign: "center", fontWeight: 800 }}>{d.biz_items}</td>
-                <td style={{ textAlign: "center" }}>{d.reviewed > 0 ? <span className="badge b-ship">{d.reviewed} lần</span> : <span className="badge b-issue">Chưa</span>}</td>
+                <td style={{ textAlign: "center" }}>{d.reviewed > 0 ? <span className="badge b-ship">{d.reviewed} time(s)</span> : <span className="badge b-issue">{t("rev.notYet")}</span>}</td>
                 <td>{canReview && <button onClick={() => { setSel(d); setScores({ scoreBrief: 8, scoreAesthetic: 8, scoreTechnical: 8 }); setComment(""); setMsg(""); }}
-                  style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "7px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>Chấm</button>}</td>
+                  style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "7px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>Score</button>}</td>
               </tr>
             ))}
           </tbody>
@@ -72,23 +74,23 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
       {sel && (
         <div onClick={() => setSel(null)} style={{ position: "fixed", inset: 0, background: "rgba(17,24,39,.45)", zIndex: 95, display: "grid", placeItems: "center", padding: 20 }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 18, width: "min(560px,95vw)", padding: "22px 24px" }}>
-            <h3 style={{ fontWeight: 800 }}>Chấm: {sel.title} <span className="chip">×{sel.points}</span></h3>
-            <div className="sub" style={{ marginBottom: 14 }}>Designer: {sel.designer ?? "—"} · 30% chất lượng chấm tay bên dưới, 70% còn lại hệ thống tự tính</div>
+            <h3 style={{ fontWeight: 800 }}>Score: {sel.title} <span className="chip">×{sel.points}</span></h3>
+            <div className="sub" style={{ marginBottom: 14 }}>Designer: {sel.designer ?? "—"} · 30% manual quality below, the other 70% is auto-computed</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              <S k="scoreBrief" label="Đúng brief / yêu cầu" />
-              <S k="scoreAesthetic" label="Thẩm mỹ / bố cục" />
-              <S k="scoreTechnical" label="Kỹ thuật file (DPI, nét…)" />
+              <S k="scoreBrief" label={t("rev.matchBrief")} />
+              <S k="scoreAesthetic" label={t("rev.aesthetic")} />
+              <S k="scoreTechnical" label={t("rev.fileTech")} />
             </div>
             <div style={{ marginTop: 12, padding: "10px 14px", background: "var(--blue-soft)", borderRadius: 12, fontWeight: 800, fontSize: 13 }}>
-              Điểm chất lượng: {quality.toFixed(1)}/10 <span style={{ fontWeight: 600, color: "var(--muted)" }}>(chiếm 30% tổng điểm)</span>
+              Quality score: {quality.toFixed(1)}/10 <span style={{ fontWeight: 600, color: "var(--muted)" }}>{t("rev.pct30")}</span>
             </div>
-            <textarea placeholder="Nhận xét cho designer…" value={comment} onChange={(e) => setComment(e.target.value)}
+            <textarea placeholder={t("rev.commentPh")} value={comment} onChange={(e) => setComment(e.target.value)}
               style={{ width: "100%", marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5, minHeight: 70 }} />
             {msg && <div style={{ marginTop: 8, fontWeight: 700, fontSize: 12.5 }}>{msg}</div>}
             <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
-              <button onClick={() => submit("reject")} style={{ background: "var(--red-soft)", color: "var(--red)", border: 0, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer" }}>Từ chối</button>
-              <button onClick={() => submit("request_fix")} style={{ background: "var(--amber-soft)", color: "var(--amber)", border: 0, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer" }}>Yêu cầu sửa</button>
-              <button onClick={() => submit("approve")} style={{ background: "var(--green)", color: "#fff", border: 0, borderRadius: 10, padding: "10px 20px", fontWeight: 800, cursor: "pointer" }}>✓ Duyệt</button>
+              <button onClick={() => submit("reject")} style={{ background: "var(--red-soft)", color: "var(--red)", border: 0, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer" }}>Reject</button>
+              <button onClick={() => submit("request_fix")} style={{ background: "var(--amber-soft)", color: "var(--amber)", border: 0, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer" }}>{t("rev.needFix")}</button>
+              <button onClick={() => submit("approve")} style={{ background: "var(--green)", color: "#fff", border: 0, borderRadius: 10, padding: "10px 20px", fontWeight: 800, cursor: "pointer" }}>✓ Approve</button>
             </div>
           </div>
         </div>

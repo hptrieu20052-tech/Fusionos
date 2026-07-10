@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { IconTrash, IconPencil } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 import { SkuMappingClient } from "@/app/sku-mapping/sku-mapping-client";
 import { useConfirm } from "@/components/confirm-provider";
@@ -41,12 +42,12 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
     setShops((p) => ({ ...p, [id]: "loading" }));
     const j = await fetch("/api/fulfillers/printify-shops", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(token ? { token } : { fulfillerId: id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (j.ok) setShops((p) => ({ ...p, [id]: j.shops }));
-    else { setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? "lỗi") })); }
+    else { setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? t("set.errLow")) })); }
   }
   async function delFf(id: string, name: string) {
-    if (!(await confirm({ message: `Xóa nhà fulfill "${name}"? SKU mapping của nhà này cũng bị xóa.`, danger: true }))) return;
+    if (!(await confirm({ message: t("set.deleteFulfillerConfirm").replace("{name}", name), danger: true }))) return;
     const j = await fetch("/api/fulfillers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
-    setMsg(j.ok ? "✓ Đã xóa" : "⚠ " + j.error); if (j.ok) load();
+    setMsg(j.ok ? t("set.deleted") : "⚠ " + j.error); if (j.ok) load();
   }
   async function addFf(e: React.FormEvent) {
     e.preventDefault();
@@ -84,7 +85,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
         <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{t("s.ingestTitle")}</h3>
         <div className="sub" style={{ marginTop: 6 }}>
           Endpoint: <b>POST /api/ingest/orders</b> · header <b>x-api-key</b> — key {ingestConfigured ? t("s.ingestKeyConfigured") : t("s.ingestKeyMissing")}.
-          Webhook tracking fulfiller: <b>POST /api/webhooks/fulfillment</b> · header <b>x-webhook-secret</b> theo từng hãng bên dưới.
+          Webhook tracking fulfiller: <b>POST /api/webhooks/fulfillment</b> · header <b>x-webhook-secret</b> {t("set.perBrandBelow")}
         </div>
       </div>
 
@@ -104,12 +105,10 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                 {f.hasWebhookSecret ? <span className="badge b-ship">{t("s.hasWebhook")}</span> : <span className="badge b-mut">{t("s.noWebhook")}</span>}
                 {canEdit && <button type="button" onClick={() => setEditOpen((p) => ({ ...p, [f.id]: !p[f.id] }))}
                   style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 9, padding: "5px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--blue)" }}>
-                  {editOpen[f.id] ? "✕ Đóng" : "✎ " + t("c.edit")}
+                  {editOpen[f.id] ? t("set.close") : <><IconPencil width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("c.edit")}</>}
                 </button>}
-                {canEdit && <button type="button" onClick={() => delFf(f.id, f.name)} title="Xóa nhà fulfill"
-                  style={{ background: "var(--card)", border: "1px solid #F3C7C7", borderRadius: 9, padding: "5px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--red)" }}>
-                  🗑
-                </button>}
+                {canEdit && <button type="button" onClick={() => delFf(f.id, f.name)} title={t("set.deleteFulfiller")}
+                  style={{ background: "var(--card)", border: "1px solid #F3C7C7", borderRadius: 9, padding: "5px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--red)" }}><IconTrash width={14} height={14} /></button>}
               </div>
               {canEdit && editOpen[f.id] && (() => {
                 const isMerchize = f.name.toLowerCase().includes("merchize");
@@ -126,16 +125,16 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                   <input placeholder={t("s.webhookNew")} value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setE(f.id, "webhookSecret", e.target.value)} style={{ ...inp, width: 150 }} />
                   <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("c.save")}</button>
                 </div>
-                {isMerchize && <div style={{ fontSize: 11.5, color: "var(--amber)", marginTop: 6 }}>💡 Dán <b>API Key</b> (KHÔNG phải Access Token) — Merchize có 2 token, các endpoint fulfill dùng API Key qua header x-api-key. Token đổi hàng tháng, mỗi lần đổi dán lại rồi Lưu. Base URL + Identifier giữ nguyên.</div>}
+                {isMerchize && <div style={{ fontSize: 11.5, color: "var(--amber)", marginTop: 6 }}>{t("set.pasteTip")} <b>API Key</b> {t("set.merchizeKeyNote")}</div>}
                 </div>
                 );
               })()}
               {/* Kết quả lấy shop Printify — bấm để điền Shop ID */}
               {shops[f.id] && (
                 <div style={{ marginTop: 8, fontSize: 12.5 }}>
-                  {shops[f.id] === "loading" ? <span style={{ color: "var(--muted)" }}>Đang lấy shop…</span>
+                  {shops[f.id] === "loading" ? <span style={{ color: "var(--muted)" }}>Fetching shops…</span>
                     : typeof shops[f.id] === "string" ? <span style={{ color: "var(--red)", fontWeight: 700 }}>⚠ {String(shops[f.id]).replace(/^err:/, "")}</span>
-                    : (shops[f.id] as { id: number; title: string }[]).length === 0 ? <span style={{ color: "var(--muted)" }}>Token đúng nhưng chưa có shop nào.</span>
+                    : (shops[f.id] as { id: number; title: string }[]).length === 0 ? <span style={{ color: "var(--muted)" }}>{t("set.tokenNoShop")}</span>
                     : <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                         <span style={{ color: "var(--muted)", fontWeight: 700 }}>{t("s.shopList")}</span>
                         {(shops[f.id] as { id: number; title: string }[]).map((s) => (
@@ -144,7 +143,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                             {s.title} = {s.id}
                           </button>
                         ))}
-                        <span style={{ color: "var(--faint)", fontSize: 11 }}>← bấm để điền Shop ID rồi Lưu</span>
+                        <span style={{ color: "var(--faint)", fontSize: 11 }}>{t("set.clickFillShop")}</span>
                       </div>}
                 </div>
               )}
@@ -157,7 +156,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
             <input required placeholder={t("s.fulfillerNamePh")} value={nf.name} onChange={(e) => setNf({ ...nf, name: e.target.value })} style={{ ...inp, minWidth: 170 }} />
             <select value={nf.method} onChange={(e) => setNf({ ...nf, method: e.target.value })} style={inp}><option value="api">API</option><option value="excel">Excel</option></select>
             <input placeholder="API endpoint" value={nf.apiEndpoint} onChange={(e) => setNf({ ...nf, apiEndpoint: e.target.value })} style={{ ...inp, flex: 1, minWidth: 160 }} />
-            <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>Thêm</button>
+            <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("set.add")}</button>
           </form>
         )}
       </div>

@@ -15,20 +15,20 @@ const LEVEL_STYLE = [
   { background: "var(--green-soft)", color: "var(--green)" },
 ];
 const RESTRICTIONS = ["hide_profit", "own_orders_only", "own_designs_only", "hide_customer_info"] as const;
-const RESTR_LABEL: Record<string, string> = {
-  hide_profit: "Ẩn lợi nhuận / giá vốn",
-  own_orders_only: "Chỉ xem đơn của mình",
-  own_designs_only: "Chỉ xem design của mình",
-  hide_customer_info: "Ẩn thông tin khách hàng",
-};
+const restrLabel = (t: (k: string) => string): Record<string, string> => ({
+  hide_profit: t("adm.hideProfit"),
+  own_orders_only: t("adm.viewOwnOrders"),
+  own_designs_only: t("adm.viewOwnDesigns"),
+  hide_customer_info: t("adm.hideCustomer"),
+});
 
 type Perm = { role: string; module: string; level: number };
 type RoleRestr = { role: string; restrictionKey: string; enabled: boolean };
 type DataScope = { role: string; resource: string; scope: string };
 type Action = { key: string; module: string; label: string };
 type RoleAction = { role: string; actionKey: string; enabled: boolean };
-const SCOPE_RESOURCES: { key: string; label: string }[] = [{ key: "orders", label: "Đơn hàng" }, { key: "designs", label: "Design" }];
-const SCOPE_OPTS: { v: string; label: string }[] = [{ v: "all", label: "Tất cả" }, { v: "team", label: "Cả Team" }, { v: "own", label: "Chỉ của mình" }];
+const scopeResources = (t: (k: string) => string): { key: string; label: string }[] => [{ key: "orders", label: t("adm.ordersWord") }, { key: "designs", label: "Design" }];
+const scopeOpts = (t: (k: string) => string): { v: string; label: string }[] => [{ v: "all", label: t("adm.allWord") }, { v: "team", label: t("adm.wholeTeam") }, { v: "own", label: t("adm.ownOnly") }];
 const ACTION_MODULE_LABEL: Record<string, string> = { orders: "Orders", designs: "Design Studio", fulfillment: "Fulfillment", stores: "Stores", finance: "Finance" };
 type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string; avatarUrl?: string | null };
 
@@ -133,13 +133,13 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   }
   async function resetPass(u: User) {
     const pw = await askPassword({
-      title: "Đặt lại mật khẩu",
-      message: `Nhập mật khẩu mới cho ${u.fullName} (tối thiểu 6 ký tự):`,
-      confirmText: "Đặt lại",
-      input: { type: "password", placeholder: "Mật khẩu mới", minLength: 6 },
+      title: t("adm.resetPassword"),
+      message: t("adm.newPwFor").replace("{name}", u.fullName),
+      confirmText: t("adm.resetWord"),
+      input: { type: "password", placeholder: t("adm.newPassword"), minLength: 6 },
     });
     if (!pw) return;
-    await patchUser(u.id, { password: pw }, `✓ Đã đặt lại mật khẩu cho ${u.fullName}`);
+    await patchUser(u.id, { password: pw }, t("adm.pwResetFor").replace("{name}", u.fullName));
   }
   async function toggleStatus(u: User) {
     await patchUser(u.id, { status: u.status === "active" ? "disabled" : "active" }, `✓ ${u.status === "active" ? t("adm.didLock") : t("adm.didUnlock")} ${u.fullName}`);
@@ -147,7 +147,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   async function deleteUser(u: User) {
     if (!(await confirm({ message: t("adm.confirmDeleteUser").replace("{name}", u.fullName), danger: true }))) return;
     const j = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id }) }).then((r) => r.json());
-    if (j.ok) { setUsers((us) => us.filter((x) => x.id !== u.id)); setMsg(`✓ Đã xóa ${u.fullName}`); }
+    if (j.ok) { setUsers((us) => us.filter((x) => x.id !== u.id)); setMsg(t("adm.deletedUser").replace("{name}", u.fullName)); }
     else setMsg("⚠ " + (j.error ?? "Error"));
   }
   const actBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5, background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer", marginLeft: 6, fontWeight: 600, color: "var(--ink)" };

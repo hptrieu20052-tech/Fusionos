@@ -33,7 +33,7 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
             role: "user",
             content: `Bạn là chuyên gia viết listing POD (print-on-demand) cho Etsy/Amazon/TikTok Shop.
 Design hiện tại: title="${d.title}", tags=${JSON.stringify(d.tags)}, personalize=${d.personalize}.
-Viết lại giúp tôi và trả về CHỈ JSON (không markdown): {"title": "...tối đa 130 ký tự, chuẩn SEO...", "description": "...3-5 câu bán hàng, nêu chất liệu/dịp tặng...", "tags": ["...13 tag, mỗi tag <20 ký tự..."]}`,
+Viết lại giúp tôi và trả về CHỈ JSON (không markdown): {"title": "...max 130 characters, SEO-friendly...", "description": "...3-5 selling sentences, mention material/gift occasion...", "tags": ["...13 tags, each tag <20 characters..."]}`,
           }],
         }),
       });
@@ -57,8 +57,8 @@ Viết lại giúp tôi và trả về CHỈ JSON (không markdown): {"title": "
   return NextResponse.json({
     ok: true, source: "template",
     title: cap,
-    description: `${cap} — thiết kế độc quyền từ FUSION. ${d.personalize ? "Có thể cá nhân hoá theo tên/yêu cầu của khách. " : ""}Phù hợp làm quà tặng và sản phẩm chủ lực trên Etsy, Amazon, TikTok Shop.`,
+    description: `${cap} — thiết kế độc quyền từ FUSION. ${d.personalize ? "Can be personalized with the customer's name/request. " : ""}Phù hợp làm quà tặng và sản phẩm chủ lực trên Etsy, Amazon, TikTok Shop.`,
     tags,
-    hint: "Thêm ANTHROPIC_API_KEY vào .env để dùng AI thật.",
+    hint: "Add ANTHROPIC_API_KEY to .env to use real AI.",
   });
 }

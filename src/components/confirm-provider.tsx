@@ -1,5 +1,6 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { IconPencil, IconAlert, IconWarn, IconCheck } from "@/components/icons";
 
 type Tone = "blue" | "green" | "red";
 type InputOpt = { placeholder?: string; type?: "text" | "password"; minLength?: number; initial?: string };
@@ -56,10 +57,10 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
           <div onClick={(e) => e.stopPropagation()}
             style={{ background: "#fff", borderRadius: 18, width: 420, maxWidth: "94vw", padding: "24px 24px 20px", boxShadow: "0 18px 50px rgba(13,40,80,.28)", animation: "cf-pop .16s cubic-bezier(.2,.9,.3,1.2)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: 20, background: T.bg, color: T.fg }}>
-                {isPrompt ? "✎" : o.info ? "ⓘ" : o.danger ? "⚠" : "✓"}
+              <div style={{ width: 40, height: 40, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: T.bg, color: T.fg }}>
+                {isPrompt ? <IconPencil width={20} height={20} /> : o.info ? <IconAlert width={20} height={20} /> : o.danger ? <IconWarn width={20} height={20} /> : <IconCheck width={20} height={20} />}
               </div>
-              <b style={{ fontSize: 16, lineHeight: 1.3 }}>{o.title ?? (isPrompt ? "Nhập thông tin" : o.info ? "Thông báo" : o.danger ? "Xác nhận xóa" : "Xác nhận")}</b>
+              <b style={{ fontSize: 16, lineHeight: 1.3 }}>{o.title ?? (isPrompt ? "Enter information" : o.info ? "Notice" : o.danger ? "Confirm delete" : "Confirm")}</b>
             </div>
             <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: isPrompt ? 12 : 20, paddingLeft: 52 }}>{o.message}</div>
             {isPrompt && (
@@ -68,14 +69,14 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
                   onChange={(e) => { setVal(e.target.value); if (errr) setErrr(false); }}
                   onKeyDown={(e) => { if (e.key === "Enter") done(true); if (e.key === "Escape") done(false); }}
                   style={{ width: "100%", padding: "11px 13px", border: `1px solid ${errr ? "#D14343" : "var(--line)"}`, borderRadius: 11, font: "inherit", fontSize: 14, outline: "none" }} />
-                {errr && <div style={{ color: "#D14343", fontSize: 12, fontWeight: 700, marginTop: 6 }}>Cần tối thiểu {o.input?.minLength} ký tự</div>}
+                {errr && <div style={{ color: "#D14343", fontSize: 12, fontWeight: 700, marginTop: 6 }}>Minimum {o.input?.minLength} characters</div>}
               </div>
             )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               {(!o.info || isPrompt) && <button onClick={() => done(false)}
-                style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 11, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{o.cancelText ?? "Hủy"}</button>}
+                style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 11, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>{o.cancelText ?? "Cancel"}</button>}
               <button onClick={() => done(true)}
-                style={{ border: 0, borderRadius: 11, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13, color: "#fff", background: T.btn }}>{o.confirmText ?? (isPrompt ? "Xác nhận" : o.info ? "OK" : o.danger ? "Xóa" : "Đồng ý")}</button>
+                style={{ border: 0, borderRadius: 11, padding: "9px 20px", fontWeight: 800, cursor: "pointer", fontSize: 13, color: "#fff", background: T.btn }}>{o.confirmText ?? (isPrompt ? "Confirm" : o.info ? "OK" : o.danger ? "Delete" : "OK")}</button>
             </div>
           </div>
         </div>

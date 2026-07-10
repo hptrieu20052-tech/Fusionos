@@ -32,7 +32,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       await db.update(schema.orderItems).set({ designId: null }).where(eq(schema.orderItems.id, params.id));
     } else {
       const sku = Number(b.skuCode);
-      if (!Number.isInteger(sku) || sku <= 0) return NextResponse.json({ ok: false, error: "Design ID phải là số" }, { status: 400 });
+      if (!Number.isInteger(sku) || sku <= 0) return NextResponse.json({ ok: false, error: "Design ID must be a number" }, { status: 400 });
       design = (await db.execute(sql`SELECT id, sku_code, title FROM designs WHERE sku_code = ${sku}`)).rows[0] as unknown as D | undefined ?? null;
       if (!design) return NextResponse.json({ ok: false, error: `Không tìm thấy design #${sku}` }, { status: 404 });
       await db.update(schema.orderItems).set({ designId: design.id }).where(eq(schema.orderItems.id, params.id));

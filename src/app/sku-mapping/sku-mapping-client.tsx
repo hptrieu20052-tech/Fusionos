@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { SupplierLogo } from "@/components/supplier-logo";
 import { useConfirm } from "@/components/confirm-provider";
+import { IconTrash, IconRefresh, IconPlus, IconPin, IconPrinter } from "@/components/icons";
 
 type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null; mapCount?: number; pinnedCount?: number };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean; pinned?: boolean; pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null };
@@ -298,19 +299,19 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
           {/* Thanh công cụ supplier */}
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
             <input placeholder={t("sk.searchSkuNameVar")} value={q} onChange={(e) => setQ(e.target.value)} style={{ ...inp, width: 260 }} />
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>{total.toLocaleString()} {t("sk.rowsWord")}{qDeb ? t("sk.filterSuffix") : ""}{rowsLoading ? " · …" : ""}{pinnedCount > 0 ? <span style={{ color: "#9A6B00", fontWeight: 700 }}> · ⭐ {pinnedCount} ghim</span> : ""}</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>{total.toLocaleString()} {t("sk.rowsWord")}{qDeb ? t("sk.filterSuffix") : ""}{rowsLoading ? " · …" : ""}{pinnedCount > 0 ? <span style={{ color: "#9A6B00", fontWeight: 700 }}> · <IconPin width={11} height={11} style={{ verticalAlign: "-1px" }} /> {pinnedCount} pinned</span> : ""}</span>
             <div style={{ flex: 1 }} />
             {ff.method === "api" && canEdit && countBy(active) > 0 && (
-              <button onClick={openPinPicker} title={t("sk.pickExistingProduct")} style={{ background: "#FFF6E5", border: "1px solid #F3D08A", color: "#9A6B00", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.pickForForm")}</button>
+              <button onClick={openPinPicker} title={t("sk.pickExistingProduct")} style={{ background: "#FFF6E5", border: "1px solid #F3D08A", color: "#9A6B00", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconPin width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.pickForForm")}</button>
             )}
             {ff.method === "api" && canEdit && countBy(active) > 0 && (
-              <button onClick={openDelPicker} title={t("sk.removeHeavyProducts")} style={{ background: "#FBECEC", border: "1px solid #F3C6C0", color: "var(--red)", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.removeProductsBtn")}</button>
+              <button onClick={openDelPicker} title={t("sk.removeHeavyProducts")} style={{ background: "#FBECEC", border: "1px solid #F3C6C0", color: "var(--red)", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconTrash width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.removeProductsBtn")}</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("printify") && canEdit && (
-              <button onClick={openAddProduct} title={t("sk.printifyHint")} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.addPrintifyProduct")}</button>
+              <button onClick={openAddProduct} title={t("sk.printifyHint")} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconPlus width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.addPrintifyProduct")}</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("merchize") && canEdit && (
-              <button onClick={getSkuMerchize} title={t("sk.pullNewLabels")} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("sk.updateSkuBtn")}</button>
+              <button onClick={getSkuMerchize} title={t("sk.pullNewLabels")} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
             )}
           </div>
 
@@ -352,8 +353,8 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                         <td style={{ ...td, textAlign: "right" }}>{money(m.shipCost)}</td>
                         <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{money(Number(m.baseCost) + Number(m.shipCost))}</td>
                         {canEdit && <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
-                          <button onClick={() => togglePinProduct(m.fulfillerProduct, !m.pinned)} title={m.pinned ? t("sk.unpinFromForm") : t("sk.pinToForm")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: m.pinned ? "#E0A000" : "var(--faint)" }}>{m.pinned ? "⭐" : "☆"}</button>
-                          {ff.name.toLowerCase().includes("printify") && <button onClick={() => openRecipe(m)} title={t("sk.pickBpProvVar")} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 12 }}>⚙ In</button>}
+                          <button onClick={() => togglePinProduct(m.fulfillerProduct, !m.pinned)} title={m.pinned ? t("sk.unpinFromForm") : t("sk.pinToForm")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 15, color: m.pinned ? "#E0A000" : "var(--faint)" }}><IconPin width={14} height={14} /></button>
+                          {ff.name.toLowerCase().includes("printify") && <button onClick={() => openRecipe(m)} title={t("sk.pickBpProvVar")} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 12, display: "inline-flex", alignItems: "center", gap: 3 }}><IconPrinter width={12} height={12} /> In</button>}
                           <button onClick={() => setEditRow((p) => ({ ...p, [m.id]: {} }))} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--blue)", fontWeight: 700, fontSize: 12 }}>{t("c.edit")}</button>
                           <button onClick={() => delRow(m.id)} style={{ marginLeft: 8, background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontWeight: 700, fontSize: 12 }}>{t("c.delete")}</button>
                         </td>}
@@ -453,7 +454,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               <input placeholder={t("sk.searchNameSku")} value={pinQ} onChange={(e) => setPinQ(e.target.value)} style={{ ...inp, width: 240 }} />
               <button onClick={() => setPinSel((s) => new Set([...Array.from(s), ...(pinPicker ?? []).map((p) => p.product)]))} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.selectAll")}</button>
               <button onClick={() => setPinSel((s) => { const n = new Set(s); for (const p of pinPicker ?? []) n.delete(p.product); return n; })} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.deselectAll")}</button>
-              <button onClick={() => setPinOnlySel((v) => !v)} style={{ background: pinOnlySel ? "#FFF6E5" : "var(--card)", border: `1px solid ${pinOnlySel ? "#F3D08A" : "var(--line)"}`, color: pinOnlySel ? "#9A6B00" : "var(--ink)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>{t("sk.onlyPinned")} ({pinSel.size})</button>
+              <button onClick={() => setPinOnlySel((v) => !v)} style={{ background: pinOnlySel ? "#FFF6E5" : "var(--card)", border: `1px solid ${pinOnlySel ? "#F3D08A" : "var(--line)"}`, color: pinOnlySel ? "#9A6B00" : "var(--ink)", borderRadius: 8, padding: "6px 11px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}><IconPin width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.onlyPinned")} ({pinSel.size})</button>
               <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)" }}>{t("sk.pinnedWord")} {pinSel.size} {t("sk.productsAbbr")}{(pinQ || pinOnlySel) ? t("sk.pinShown").replace("{n}", String(pinShown.length)) : ""}</span>
             </div>
             <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 12, flex: 1 }}>
@@ -480,7 +481,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !delBusy && setDelPicker(null)}>
           <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <b style={{ fontSize: 16 }}>{t("sk.removeProductsTitle")}{ff?.name}</b>
+              <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 6 }}><IconTrash width={16} height={16} />{t("sk.removeProductsTitle")}{ff?.name}</b>
               <button onClick={() => !delBusy && setDelPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
             <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "6px 0 12px" }}>{t("sk.tickToDelete")} <b>{t("sk.allVariantsSku")}</b> {t("sk.deleteProductDesc")}</div>
@@ -517,7 +518,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { if (!importing) setAddProd(false); }}>
           <div style={{ background: "#fff", borderRadius: 18, width: 680, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <b style={{ fontSize: 16 }}>{t("sk.addPrintifyProduct")}</b>
+              <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 6 }}><IconPlus width={16} height={16} />{t("sk.addPrintifyProduct")}</b>
               <button onClick={() => !importing && setAddProd(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
             <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "4px 0 12px" }}>{t("sk.pickBpProviderPull")} <b>{t("sk.pullVariantMid")}</b> {t("sk.pullVariantDesc")}</div>
@@ -527,7 +528,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                   <span style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)" }}>{t("sk.step1Product")} {bps.length > 0 && <span style={{ color: "var(--faint)" }}>· {bps.length}</span>}</span>
-                  <button onClick={reloadBlueprints} title={t("sk.reloadPrintify")} style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "3px 9px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>{t("sk.refresh")}</button>
+                  <button onClick={reloadBlueprints} title={t("sk.reloadPrintify")} style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 8, padding: "3px 9px", cursor: "pointer", fontSize: 11, fontWeight: 700 }}><IconRefresh width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.refresh")}</button>
                 </div>
                 <input placeholder={t("sk.searchProduct")} value={bpQ} onChange={(e) => setBpQ(e.target.value)} style={{ ...inp, marginBottom: 6 }} />
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1 }}>
@@ -542,7 +543,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
                 <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", color: "var(--muted)", marginBottom: 5 }}>{t("sk.step2Provider")}</div>
                 <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, fontWeight: 700, marginBottom: 6, cursor: "pointer", color: importAllPv ? "#2E7D46" : "var(--ink)" }}>
                   <input type="checkbox" checked={importAllPv} onChange={(e) => setImportAllPv(e.target.checked)} style={{ width: 15, height: 15 }} />
-                  {t("sk.pullAllForProduct")}
+                  <IconPin width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.pullAllForProduct")}
                 </label>
                 <div style={{ overflowY: "auto", border: "1px solid var(--line)", borderRadius: 8, flex: 1, opacity: importAllPv ? 0.45 : 1, pointerEvents: importAllPv ? "none" : "auto" }}>
                   {provs.map((p) => (

@@ -32,7 +32,7 @@ export async function PATCH(req: NextRequest) {
   if (!(await requireAdmin())) return NextResponse.json({ ok: false }, { status: 403 });
   const b = await req.json().catch(() => null);
   if (!b || !ROLES.includes(b.role)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
-  if (b.role === "admin") return NextResponse.json({ ok: false, error: "admin luôn toàn quyền" }, { status: 400 });
+  if (b.role === "admin") return NextResponse.json({ ok: false, error: "admin always has full access" }, { status: 400 });
 
   // Hành động chi tiết
   if (b.action !== undefined) {

@@ -12,9 +12,9 @@ export const maxDuration = 30;
 // KHÔNG lộ secret: chỉ báo biến môi trường CÓ hay KHÔNG, và URL public (không phải bí mật).
 export async function GET() {
   const session = await getSession();
-  if (!session) return NextResponse.json({ ok: false, error: "Chưa đăng nhập" }, { status: 401 });
+  if (!session) return NextResponse.json({ ok: false, error: "Not signed in" }, { status: 401 });
   if ((await levelOf(session, "designs")) < 2)
-    return NextResponse.json({ ok: false, error: "Cần quyền admin designs" }, { status: 403 });
+    return NextResponse.json({ ok: false, error: "Requires designs admin permission" }, { status: 403 });
 
   const env = {
     R2_ACCOUNT_ID: !!process.env.R2_ACCOUNT_ID,
@@ -75,12 +75,12 @@ export async function GET() {
 
   // 3) Kết luận tự động
   const notes: string[] = [];
-  if (!useR2) notes.push("useR2 = FALSE → đang dùng ổ đĩa local. Trên Vercel ổ đĩa là tạm/không ghi được → ảnh mất. Cần set đủ 4 biến R2_* trên Vercel.");
-  if (useR2 && !env.R2_PUBLIC_URL) notes.push("R2 bật nhưng CHƯA có R2_PUBLIC_URL → ảnh phục vụ qua /api/files (chậm, cần đăng nhập). Nên set R2_PUBLIC_URL trỏ tới domain public của bucket.");
-  if (write.ok && !read.ok) notes.push("Ghi được nhưng ĐỌC lại lỗi → sai quyền đọc hoặc bucket/endpoint sai.");
-  if (!write.ok) notes.push("KHÔNG ghi được vào kho → sai credential R2 hoặc bucket không tồn tại. Xem write.error.");
+  if (!useR2) notes.push("useR2 = FALSE → using local disk. On Vercel the disk is temporary/read-only → images are lost. Set all 4 R2_* variables on Vercel.");
+  if (useR2 && !env.R2_PUBLIC_URL) notes.push("R2 is enabled but R2_PUBLIC_URL is NOT set → images are served via /api/files (slow, requires login). Set R2_PUBLIC_URL to the bucket's public domain.");
+  if (write.ok && !read.ok) notes.push("Write succeeded but READ failed → wrong read permission or wrong bucket/endpoint.");
+  if (!write.ok) notes.push("CANNOT write to storage → wrong R2 credentials or bucket doesn't exist. See write.error.");
   if (latestFile && !(latestFile.realFileReadableFromStorage as { ok: boolean }).ok)
-    notes.push("File design mới nhất KHÔNG đọc được từ kho → lúc upload file không thực sự bay lên R2 (thường do CORS của bucket chặn PUT từ trình duyệt, hoặc presigned URL sai).");
+    notes.push("The latest design file CANNOT be read from storage → the file didn't actually upload to R2 (usually the bucket CORS blocks browser PUT, or the presigned URL is wrong).");
 
   return NextResponse.json({
     ok: true,
@@ -89,6 +89,6 @@ export async function GET() {
     selfTest: { key: testKey, write, read },
     latestFile,
     notes,
-    hint: "Gửi toàn bộ JSON này cho trợ lý để chẩn đoán.",
+    hint: "Send this entire JSON to the assistant for diagnosis.",
   });
 }

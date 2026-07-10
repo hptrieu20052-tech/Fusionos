@@ -58,8 +58,8 @@ export async function GET(req: NextRequest) {
   const data = rows.map((r) => ({
     "Order ID": r.external_id, "Order Label": r.order_label ?? "",
     "Platform": r.platform, "Store": r.store ?? "", "Seller": r.seller ?? "",
-    "Status": r.status, "Ngày đặt": String(r.ordered_date ?? "").slice(0, 10),
-    "Khách": r.buyer, "Addr1": r.addr1 ?? "", "Addr2": r.addr2 ?? "",
+    "Status": r.status, "Order date": String(r.ordered_date ?? "").slice(0, 10),
+    "Guest": r.buyer, "Addr1": r.addr1 ?? "", "Addr2": r.addr2 ?? "",
     "City": r.city ?? "", "State": r.state ?? "", "ZIP": r.zip ?? "", "Country": r.country,
     "Total": Number(r.total), "Fee": Number(r.platform_fee),
     ...(hideProfit ? {} : { "Base Cost": Number(r.base_cost) }),

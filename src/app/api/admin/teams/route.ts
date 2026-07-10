@@ -23,12 +23,12 @@ export async function POST(req: NextRequest) {
   if (!(await adminOnly())) return NextResponse.json({ ok: false }, { status: 403 });
   const b = await req.json().catch(() => null);
   const name = String(b?.name ?? "").trim();
-  if (!name) return NextResponse.json({ ok: false, error: "Thiếu tên team" }, { status: 400 });
+  if (!name) return NextResponse.json({ ok: false, error: "Missing team name" }, { status: 400 });
   try {
     const [t] = await db.insert(schema.teams).values({ name }).returning();
     return NextResponse.json({ ok: true, id: t.id, name: t.name });
   } catch {
-    return NextResponse.json({ ok: false, error: "Tên team đã tồn tại" }, { status: 409 });
+    return NextResponse.json({ ok: false, error: "Team name already exists" }, { status: 409 });
   }
 }
 
@@ -45,7 +45,7 @@ export async function PATCH(req: NextRequest) {
     await db.update(schema.users).set({ team: name }).where(eq(schema.users.team, old.name));
     return NextResponse.json({ ok: true });
   } catch {
-    return NextResponse.json({ ok: false, error: "Tên team đã tồn tại" }, { status: 409 });
+    return NextResponse.json({ ok: false, error: "Team name already exists" }, { status: 409 });
   }
 }
 

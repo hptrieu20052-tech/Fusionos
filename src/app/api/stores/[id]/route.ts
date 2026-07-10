@@ -105,7 +105,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const health = {
     checkedAt: new Date().toISOString(),
     ok: hasApi,
-    message: hasApi ? "Kết nối API hợp lệ" : s.connectMethod === "extension" ? "Store kéo đơn qua Extension — không cần API" : "Chưa cấu hình API credentials",
+    message: hasApi ? "API connection is valid" : s.connectMethod === "extension" ? "Store pulls orders via the Extension — no API needed" : "API credentials not configured",
   };
   await db.update(schema.stores).set({ health, lastSyncAt: new Date() }).where(eq(schema.stores.id, params.id));
   return NextResponse.json({ ok: true, health });

@@ -25,7 +25,7 @@ export default function AppShell({ user, links, children }: {
   children: React.ReactNode;
 }) {
   const path = usePathname();
-  const { t, lang, toggle } = useLang();
+  const { t } = useLang();
   const isActive = (href: string) => href === "/" ? path === "/" : path.startsWith(href);
   const initials = user.name.split(" ").map((w) => w[0]).slice(-2).join("").toUpperCase();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -70,11 +70,6 @@ export default function AppShell({ user, links, children }: {
               </div>
             )}
           </nav>
-          <button onClick={toggle} className="lang-toggle" title="Chuyển ngôn ngữ / Switch language">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={lang === "vi" ? "/flags/vn.png" : "/flags/en.png"} alt={lang === "vi" ? "VN" : "EN"} className="lang-flag" />
-            <span>{lang === "vi" ? "VI" : "EN"}</span>
-          </button>
           <div className="topnav-user">
             <Link href="/account" className="topnav-user-link" title="My account" prefetch>
               <div className="user-avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit", display: "block" }} /> : initials}</div>
