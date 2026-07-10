@@ -49,9 +49,9 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
   const delStore = async (s: Store) => {
-    if (!(await confirm({ message: `Xóa store "${s.name}"? Đơn & design của store sẽ được gỡ liên kết (không xóa), thao tác này không hoàn tác.`, danger: true }))) return;
+    if (!(await confirm({ message: t("st.deleteConfirm").replace("{name}", s.name), danger: true }))) return;
     const j = await fetch(`/api/stores/${s.id}`, { method: "DELETE" }).then((r) => r.json());
-    if (j.ok) { flash(t("st.deletedStore")); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("st.deletedStore")); load(); } else flash("✗ " + (j.error ?? t("st.error")));
   };
 
   const byMk = (mk: string) => stores.filter((s) => s.marketplace === mk);
@@ -175,8 +175,8 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
       {!isSeller && <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <L label="Tiền tệ shop"><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (f.fxRate === "1" ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
-        <L label={`Tỉ giá: 1 USD = ? ${f.currency}`}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
+        <L label={t("st.shopCurrency")}><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (f.fxRate === "1" ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={t("st.fxLabel").replace("{cur}", f.currency)}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
       </div>
       <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
       <Actions close={close} onOk={submit} busy={busy} okLabel={t("st.addStore")} disabled={!f.name.trim()} />
@@ -194,9 +194,9 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const [tok, setTok] = useState(store.ingestToken ?? "");
   const [showTok, setShowTok] = useState(false);
   const regenToken = async () => {
-    if (!(await confirm({ title: "Tạo token mới", message: "Token cũ sẽ ngừng hoạt động, Extension phải nhập lại token mới. Tiếp tục?", danger: true, confirmText: "Tạo mới" }))) return;
+    if (!(await confirm({ title: t("st.newToken"), message: t("st.newTokenConfirm"), danger: true, confirmText: t("st.create") }))) return;
     const j = await fetch(`/api/stores/${store.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ regenIngestToken: true }) }).then((r) => r.json());
-    if (j.ok && j.ingestToken) { setTok(j.ingestToken); flash("✓ Đã tạo token mới"); } else flash("✗ Lỗi tạo token");
+    if (j.ok && j.ingestToken) { setTok(j.ingestToken); flash(t("st.tokenCreated")); } else flash(t("st.tokenErr"));
   };
   const ingestUrl = typeof window !== "undefined" ? `${window.location.origin}/api/ingest/etsy` : "/api/ingest/etsy";
   const fields = CRED_FIELDS[store.marketplace] ?? CRED_FIELDS.other;
@@ -221,15 +221,15 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   };
   async function fxConvert() {
     const rate = Number(store.fxRate);
-    if (!(rate > 1)) { flash("Nhập tỉ giá > 1 rồi bấm Lưu store TRƯỚC, sau đó mới quy đổi."); return; }
+    if (!(rate > 1)) { flash(t("st.fxNeedRate")); return; }
     const already = store.health?.fxConvertedAt;
-    const warn = `Chia total + đơn giá của TẤT CẢ đơn shop "${store.name}" cho ${rate} (→ USD)?\n\nCHỈ chạy 1 LẦN cho các đơn đã import trước khi bật tỉ giá.${already ? `\n\n⚠ ĐÃ quy đổi lúc ${new Date(already).toLocaleString()} — chạy lại sẽ chia SAI!` : ""}`;
-    if (!(await confirm({ title: "Quy đổi tỉ giá", message: warn, danger: true, confirmText: "Quy đổi", cancelText: "Hủy" }))) return;
+    const warn = t("st.fxConfirmBody").replace("{name}", store.name).replace("{rate}", String(rate)) + (already ? t("st.fxConfirmRedo").replace("{time}", new Date(already).toLocaleString()) : "");
+    if (!(await confirm({ title: t("st.fxConvertTitle"), message: warn, danger: true, confirmText: t("st.fxConvert"), cancelText: t("c.cancel") }))) return;
     setBusy(true);
     const j = await fetch(`/api/stores/${store.id}/fx-convert`, { method: "POST" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setBusy(false);
-    if (j.ok) { flash(`✓ Đã quy đổi ${j.orders} đơn (÷${j.rate})`); reload(); close(); }
-    else flash("✗ " + (j.error ?? "lỗi"));
+    if (j.ok) { flash(t("st.fxConverted").replace("{n}", String(j.orders)).replace("{rate}", String(j.rate))); reload(); close(); }
+    else flash("✗ " + (j.error ?? t("st.error")));
   }
 
   return (
@@ -242,16 +242,16 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
       </div>
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <L label="Tiền tệ shop"><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (Number(f.fxRate) <= 1 ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
-        <L label={`Tỉ giá: 1 USD = ? ${f.currency}`}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
+        <L label={t("st.shopCurrency")}><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (Number(f.fxRate) <= 1 ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={t("st.fxLabel").replace("{cur}", f.currency)}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
       </div>
       {f.currency !== "USD" && (
         <div style={{ border: "1px solid #F3D08A", background: "#FFF9EC", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <button onClick={fxConvert} disabled={busy} style={{ ...btnGhost, color: "#9A6B00", borderColor: "#F3D08A", fontWeight: 700, fontSize: 12.5 }}>⤵ Quy đổi đơn đã import (÷ tỉ giá)</button>
+          <button onClick={fxConvert} disabled={busy} style={{ ...btnGhost, color: "#9A6B00", borderColor: "#F3D08A", fontWeight: 700, fontSize: 12.5 }}>{t("st.fxConvertImported")}</button>
           <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1 }}>
             {store.health?.fxConvertedAt
-              ? `✓ Đã quy đổi lúc ${new Date(store.health.fxConvertedAt).toLocaleString()} (÷${store.health.fxConvertedRate}). Đừng chạy lại.`
-              : "Chạy 1 LẦN cho đơn đã import trước đó. Nhớ bấm Lưu (lưu tỉ giá) trước khi quy đổi."}
+              ? t("st.fxDoneAt").replace("{time}", new Date(store.health.fxConvertedAt).toLocaleString()).replace("{rate}", String(store.health.fxConvertedRate))
+              : t("st.fxHint")}
           </span>
         </div>
       )}
@@ -260,22 +260,22 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
       {/* Extension: Kéo đơn Etsy về FUSION (chỉ store Etsy) */}
       {store.marketplace === "etsy" && (
         <div style={{ border: "1px solid #CDE3FA", background: "#F3F9FF", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
-          <b style={{ fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>🧩 Extension kéo đơn Etsy → FUSION</b>
-          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>Cài Extension &quot;Fusion Etsy Puller&quot;, dán 2 dòng dưới vào phần cài đặt của Extension.</div>
+          <b style={{ fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>{t("st.extTitle")}</b>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>{t("st.extDesc")}</div>
           <L label="Ingest URL">
             <div style={{ display: "flex", gap: 6 }}>
               <input readOnly value={ingestUrl} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
-              <button onClick={() => { navigator.clipboard?.writeText(ingestUrl); flash("✓ Đã copy URL"); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
+              <button onClick={() => { navigator.clipboard?.writeText(ingestUrl); flash(t("st.copiedUrl")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
             </div>
           </L>
           <L label="Store token (Bearer)">
             <div style={{ display: "flex", gap: 6 }}>
               <input readOnly type={showTok ? "text" : "password"} value={tok} style={{ ...inp, flex: 1, fontSize: 12, letterSpacing: showTok ? 0 : 2 }} onFocus={(e) => e.target.select()} />
-              <button onClick={() => setShowTok((v) => !v)} style={{ ...btnGhost, fontSize: 12 }}>{showTok ? "Ẩn" : "Hiện"}</button>
-              <button onClick={() => { navigator.clipboard?.writeText(tok); flash("✓ Đã copy token"); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
+              <button onClick={() => setShowTok((v) => !v)} style={{ ...btnGhost, fontSize: 12 }}>{showTok ? t("st.hide") : t("st.show")}</button>
+              <button onClick={() => { navigator.clipboard?.writeText(tok); flash(t("st.copiedToken")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
             </div>
           </L>
-          <button onClick={regenToken} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C0C0", fontSize: 12, marginTop: 4 }}>↻ Tạo token mới</button>
+          <button onClick={regenToken} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C0C0", fontSize: 12, marginTop: 4 }}>↻ {t("st.newToken")}</button>
         </div>
       )}
 
@@ -283,9 +283,9 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
       {f.connectMethod === "api" && (
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-            <b style={{ fontSize: 13.5 }}>Cấu hình API</b>
+            <b style={{ fontSize: 13.5 }}>{t("st.apiConfig")}</b>
             {store.hasCredentials && <span style={{ fontSize: 11, color: "var(--green)", fontWeight: 700 }}>`🔑 ${t("st.apiHas")}:` {store.credentialKeys.join(", ")}</span>}
-            <button onClick={check} disabled={busy} style={{ ...btnGhost, marginLeft: "auto", fontSize: 12 }}>Check kết nối</button>
+            <button onClick={check} disabled={busy} style={{ ...btnGhost, marginLeft: "auto", fontSize: 12 }}>{t("st.checkConn")}</button>
           </div>
           {health && (
             <div style={{ fontSize: 12.5, padding: "6px 10px", borderRadius: 8, marginBottom: 8, background: health.ok ? "var(--green-soft)" : "var(--red-soft)", color: health.ok ? "var(--green)" : "var(--red)" }}>

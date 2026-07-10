@@ -28,8 +28,6 @@ export async function GET(req: NextRequest) {
   if (sp.get("storeId")) conds.push(sql`o.store_id = ${sp.get("storeId")}::uuid`);
   if (sp.get("platform")) conds.push(sql`o.platform = ${sp.get("platform")}::marketplace`);
   if (sp.get("fulfillerId")) conds.push(sql`EXISTS (SELECT 1 FROM fulfillment_orders fo WHERE fo.order_id = o.id AND fo.fulfiller_id = ${sp.get("fulfillerId")}::uuid)`);
-  const status = sp.get("status");
-  if (status && (schema.orders.status.enumValues as readonly string[]).includes(status)) conds.push(sql`o.status = ${status}::order_status`);
   const q = sp.get("q")?.trim();
   if (q) {
     const like = "%" + q + "%";
@@ -42,7 +40,13 @@ export async function GET(req: NextRequest) {
   }
   if (sp.get("from")) conds.push(sql`o.ordered_at::date >= ${sp.get("from")}::date`);
   if (sp.get("to")) conds.push(sql`o.ordered_at::date <= ${sp.get("to")}::date`);
-  const where = conds.length ? conds.reduce((a, c) => sql`${a} AND ${c}`) : sql`TRUE`;
+  // Điều kiện KHÔNG gồm status → dùng cho đếm pill (mỗi tab đếm trong cùng bộ lọc hiện tại)
+  const baseWhere = conds.length ? conds.reduce((a, c) => sql`${a} AND ${c}`) : sql`TRUE`;
+
+  const status = sp.get("status");
+  const listConds = [...conds];
+  if (status && (schema.orders.status.enumValues as readonly string[]).includes(status)) listConds.push(sql`o.status = ${status}::order_status`);
+  const where = listConds.length ? listConds.reduce((a, c) => sql`${a} AND ${c}`) : sql`TRUE`;
 
   const totalR = await db.execute(sql`SELECT count(*)::int t FROM orders o WHERE ${where}`);
   const total = (totalR.rows[0] as { t: number }).t;
@@ -129,9 +133,8 @@ export async function GET(req: NextRequest) {
     return suggestFor(String(i.product_title)); // fallback: khớp tên
   };
 
-  // Đếm theo trạng thái (áp phạm vi, KHÔNG áp filter khác để pill luôn đủ)
-  const ownCond = scopeIds ? sql` WHERE seller_id IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
-  const countRows = await db.execute(sql`SELECT status, count(*)::int c FROM orders${ownCond} GROUP BY status`);
+  // Đếm theo trạng thái — áp CÙNG bộ lọc (store/seller/marketplace/search/ngày) trừ chính status
+  const countRows = await db.execute(sql`SELECT o.status, count(*)::int c FROM orders o WHERE ${baseWhere} GROUP BY o.status`);
   const counts: Record<string, number> = {};
   for (const r of countRows.rows as { status: string; c: number }[]) counts[r.status] = r.c;
 

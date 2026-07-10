@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import { db, schema } from "@/lib/db";
 import { desc, eq, and, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
 
   // Seller tạo store → luôn là store của chính mình (bỏ qua sellerId gửi lên)
   const sellerId = session.role === "seller" ? session.sub : (b.sellerId || null);
-  const ingestToken = crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+  const ingestToken = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
   const [s] = await db.insert(schema.stores).values({
     name, marketplace: b.marketplace, connectMethod: b.connectMethod,
     sellerId, status: "active", note: b.note, ingestToken,

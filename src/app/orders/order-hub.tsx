@@ -106,7 +106,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
 
   const cloneOrder = async (id: string) => {
     const j = await fetch(`/api/orders/${id}/clone`, { method: "POST" }).then((r) => r.json());
-    if (j.ok) { flash(`✓ Đã nhân bản → #${j.order.externalId}`); load(); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("o.cloned") + j.order.externalId); load(); } else flash("✗ " + (j.error ?? t("o.errorWord")));
   };
   const toggleSel = (id: string) => {
     const n = new Set(selIds);
@@ -115,10 +115,10 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   };
   const applyBulk = async () => {
     if (!selIds.size) return;
-    if (bulkStatus === "trash" && !(await confirm({ message: `Chuyển ${selIds.size} đơn vào Trash? Giá vốn sẽ hoàn về 0.`, danger: true }))) return;
+    if (bulkStatus === "trash" && !(await confirm({ message: t("o.bulkTrashConfirm").replace("{n}", String(selIds.size)), danger: true }))) return;
     const j = await fetch("/api/orders/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(selIds), status: bulkStatus }) }).then((r) => r.json());
-    if (j.ok) { flash(`✓ Đã đổi ${j.updated} đơn → ${bulkStatus.toUpperCase()}${j.refunded ? ` · hoàn giá vốn ${j.refunded} đơn` : ""}${j.skipped ? ` · bỏ qua ${j.skipped}` : ""}`); setSelIds(new Set()); load(); }
-    else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("o.bulkChanged").replace("{n}", String(j.updated)).replace("{st}", bulkStatus.toUpperCase()) + (j.refunded ? t("o.refundedSuffix").replace("{n}", String(j.refunded)) : "") + (j.skipped ? t("o.skippedSuffix").replace("{n}", String(j.skipped)) : "")); setSelIds(new Set()); load(); }
+    else flash("✗ " + (j.error ?? t("o.errorWord")));
   };
 
   return (
@@ -136,15 +136,15 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
               <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.14)", minWidth: 300, overflow: "hidden", padding: 6 }}>
                 <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Excel</div>
                 <a href={`/api/orders/export${status ? `?status=${status}` : ""}`} onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
-                  <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>📊</span><div style={{ textAlign: "left" }}><b>Tất cả đơn</b><div style={IMPORT_SUB}>Kèm giá vốn + tracking</div></div>
+                  <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>📊</span><div style={{ textAlign: "left" }}><b>{t("o.allOrders")}</b><div style={IMPORT_SUB}>{t("o.withCostTracking")}</div></div>
                 </a>
                 <a href={`/api/orders/export?complete=1${status ? `&status=${status}` : ""}`} onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
-                  <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>✅</span><div style={{ textAlign: "left" }}><b>Chỉ đơn đủ điều kiện</b><div style={IMPORT_SUB}>Đủ design + mockup + địa chỉ — bỏ đơn thiếu</div></div>
+                  <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>✅</span><div style={{ textAlign: "left" }}><b>{t("o.onlyEligible")}</b><div style={IMPORT_SUB}>{t("o.eligibleDesc")}</div></div>
                 </a>
-                <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Nhà in (không API)</div>
+                <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>{t("o.printerNoApi")}</div>
                 {["Printway", "Wembroidery", "Flashship", "Onospod"].map((s) => (
                   <button key={s} disabled style={{ ...IMPORT_ITEM, opacity: .5, cursor: "default" }}>
-                    <SupplierLogo name={s} size={18} /><div style={{ textAlign: "left" }}><b>{s}</b><div style={IMPORT_SUB}>Mẫu file riêng — sắp có</div></div>
+                    <SupplierLogo name={s} size={18} /><div style={{ textAlign: "left" }}><b>{s}</b><div style={IMPORT_SUB}>{t("o.ownTemplateSoon")}</div></div>
                   </button>
                 ))}
               </div>
@@ -152,23 +152,23 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
           </div>
           {canEdit && (
             <div style={{ position: "relative" }}>
-              <button onClick={() => setImportMenu((v) => !v)} className="btn btn-outline">{importing ? t("c.loading") : `📥 ${t("c.import")} đơn ▾`}</button>
+              <button onClick={() => setImportMenu((v) => !v)} className="btn btn-outline">{importing ? t("c.loading") : `📥 ${t("c.import")} ${t("o.ordersWord")} ▾`}</button>
               {importMenu && (<>
                 <div onClick={() => setImportMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
                 <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.14)", minWidth: 264, overflow: "hidden", padding: 6 }}>
                   <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Marketplace</div>
                   <button onClick={() => { setImportMenu(false); setShowEtsy(true); }} style={IMPORT_ITEM}>
-                    <MarketplaceLogo mk="etsy" size={20} /><div style={{ textAlign: "left" }}><b>Etsy</b><div style={IMPORT_SUB}>Tạo đơn từ file CSV</div></div>
+                    <MarketplaceLogo mk="etsy" size={20} /><div style={{ textAlign: "left" }}><b>Etsy</b><div style={IMPORT_SUB}>{t("o.createFromCsv")}</div></div>
                   </button>
                   <button onClick={() => { setImportMenu(false); setShowTiktok(true); }} style={IMPORT_ITEM}>
-                    <MarketplaceLogo mk="tiktok" size={20} /><div style={{ textAlign: "left" }}><b>TikTok Shop</b><div style={IMPORT_SUB}>Tạo đơn từ file CSV &quot;To Ship&quot;</div></div>
+                    <MarketplaceLogo mk="tiktok" size={20} /><div style={{ textAlign: "left" }}><b>TikTok Shop</b><div style={IMPORT_SUB}>{t("o.createFromCsvToShip")}</div></div>
                   </button>
                   <button disabled style={{ ...IMPORT_ITEM, opacity: .5, cursor: "default" }}>
-                    <MarketplaceLogo mk="amazon" size={20} /><div style={{ textAlign: "left" }}><b>Amazon</b><div style={IMPORT_SUB}>Sắp có</div></div>
+                    <MarketplaceLogo mk="amazon" size={20} /><div style={{ textAlign: "left" }}><b>Amazon</b><div style={IMPORT_SUB}>{t("o.comingSoon")}</div></div>
                   </button>
-                  <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Khác</div>
+                  <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>{t("o.otherWord")}</div>
                   <button onClick={() => { setImportMenu(false); excelRef.current?.click(); }} style={IMPORT_ITEM}>
-                    <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>📊</span><div style={{ textAlign: "left" }}><b>Excel (cập nhật)</b><div style={IMPORT_SUB}>Tracking + giá vốn cho đơn đã có</div></div>
+                    <span style={{ fontSize: 19, width: 20, textAlign: "center" }}>📊</span><div style={{ textAlign: "left" }}><b>{t("o.excelUpdate")}</b><div style={IMPORT_SUB}>{t("o.trackingCostExisting")}</div></div>
                   </button>
                 </div>
               </>)}
@@ -180,8 +180,8 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
                   const j = await fetch("/api/orders/import", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
                   setImporting(false); e.target.value = "";
                   if (j.ok) {
-                    flash(`✓ ${j.rows} dòng — tracking: ${j.trackingUpdated}, base cost: ${j.costUpdated}${j.errors?.length ? ` · ${j.errors.length} lỗi` : ""}`);
-                    if (j.errors?.length) await confirm({ message: "Lỗi import:\n" + j.errors.join("\n"), info: true });
+                    flash(t("o.excelResult").replace("{rows}", String(j.rows)).replace("{t}", String(j.trackingUpdated)).replace("{c}", String(j.costUpdated)) + (j.errors?.length ? t("o.errorsSuffix").replace("{n}", String(j.errors.length)) : ""));
+                    if (j.errors?.length) await confirm({ message: t("o.importErrLines") + j.errors.join("\n"), info: true });
                     load();
                   } else flash("✗ " + (j.error ?? t("o.importError")));
                 }} />
@@ -203,7 +203,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
             <div className="field">
               <label>{t("c.seller")}</label>
               <select value={sellerId} onChange={(e) => { setSellerId(e.target.value); setPage(1); }}>
-                <option value="">Tất cả</option>
+                <option value="">{t("o.allWord")}</option>
                 {data.sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
@@ -211,21 +211,21 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
           <div className="field">
             <label>{t("c.store")}</label>
             <select value={storeId} onChange={(e) => { setStoreId(e.target.value); setPage(1); }}>
-              <option value="">Tất cả</option>
+              <option value="">{t("o.allWord")}</option>
               {data.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div className="field">
             <label>{t("c.marketplace")}</label>
             <select value={platform} onChange={(e) => { setPlatform(e.target.value); setPage(1); }}>
-              <option value="">Tất cả</option>
+              <option value="">{t("o.allWord")}</option>
               <option value="tiktok">TikTok</option><option value="amazon">Amazon</option><option value="etsy">Etsy</option>
             </select>
           </div>
           <div className="field">
             <label>{t("c.supplier")}</label>
             <select value={fulfillerId} onChange={(e) => { setFulfillerId(e.target.value); setPage(1); }}>
-              <option value="">Tất cả</option>
+              <option value="">{t("o.allWord")}</option>
               {(data.fulfillers ?? []).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
@@ -251,18 +251,18 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
       {/* Thanh bulk khi có đơn được chọn */}
       {selIds.size > 0 && canEdit && (
         <div className="card" style={{ position: "sticky", top: 8, zIndex: 40, padding: "10px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", border: "1.5px solid var(--blue)" }}>
-          <b style={{ fontSize: 13.5 }}>{selIds.size} đơn đã chọn</b>
+          <b style={{ fontSize: 13.5 }}>{t("o.ordersSelected").replace("{n}", String(selIds.size))}</b>
           {isAdmin && <>
           <span style={{ width: 1, height: 22, background: "var(--line)" }} />
-          <span style={{ fontSize: 13 }}>Chuyển trạng thái:</span>
+          <span style={{ fontSize: 13 }}>{t("o.changeStatusLabel")}</span>
           <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)} style={inp}>
             {Object.keys(STATUS_COLORS).map((st) => <option key={st} value={st}>{st.toUpperCase()}</option>)}
           </select>
-          <button onClick={applyBulk} style={btnBlue}>Áp dụng</button>
+          <button onClick={applyBulk} style={btnBlue}>{t("o.apply")}</button>
           </>}
           <span style={{ width: 1, height: 22, background: "var(--line)" }} />
-          <a href={`/api/orders/export?ids=${Array.from(selIds).join(",")}`} style={{ ...btnGhost, textDecoration: "none" }}>Export {selIds.size} đơn</a>
-          <button onClick={() => setSelIds(new Set())} style={{ ...btnGhost, marginLeft: "auto" }}>Bỏ chọn tất cả</button>
+          <a href={`/api/orders/export?ids=${Array.from(selIds).join(",")}`} style={{ ...btnGhost, textDecoration: "none" }}>{t("o.exportN").replace("{n}", String(selIds.size))}</a>
+          <button onClick={() => setSelIds(new Set())} style={{ ...btnGhost, marginLeft: "auto" }}>{t("o.deselectAll")}</button>
         </div>
       )}
 
@@ -391,14 +391,14 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: miss ? "var(--red-soft)" : "#fff", ...(miss ? { borderColor: "#F0A9A0" } : {}) }}>
       {label && <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={label}>{label}</div>}
       <div style={{ position: "relative", marginBottom: 8 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Lọc theo tên sản phẩm…"
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("o.filterByProduct")}
           style={{ ...box, paddingRight: 62 }} />
         <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "var(--faint)" }}>
           {loading ? "…" : styleList.length ? `${styleList.length} SP` : ""}
         </span>
       </div>
       {styleList.length === 0 && !loading && (
-        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 8 }}>Chưa có sản phẩm ghim cho nhà này. Vào SKU Mapping ghim SP, hoặc bấm ⭐ Chọn SP cho form đơn.</div>
+        <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 8 }}>{t("o.noPinnedProd")}</div>
       )}
       <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8 }}>
         <div className="o2-field">
@@ -642,10 +642,10 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
   const delFf = async (id: string) => {
-    if (!(await confirm({ message: "Xoá bản ghi đẩy này? Hoàn lại chi phí đã ghi; nếu đơn hết bản ghi đẩy sẽ về trạng thái New.", danger: true }))) return;
+    if (!(await confirm({ message: t("o.delPushRecConfirm"), danger: true }))) return;
     const j = await fetch(`/api/fulfillment/${id}`, { method: "DELETE" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) { flash("✓ Đã xoá bản ghi đẩy"); loadDetail(); reload(); }
-    else flash("✗ " + (j.error ?? "lỗi"));
+    if (j.ok) { flash(t("o.pushRecDeleted")); loadDetail(); reload(); }
+    else flash("✗ " + (j.error ?? t("o.errWordLow")));
   };
 
   const variants: Variant[] = ffSel && detail ? (detail.catalog[ffSel] ?? []) : [];
@@ -677,8 +677,8 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
     const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
     setBusy(false);
     if (j.ok) {
-      if (j.simulated) flash("⚠ Đẩy MÔ PHỎNG — đơn CHƯA lên nhà in. " + (j.reason ?? "Kiểm tra cấu hình nhà fulfill ở Settings."));
-      else flash("✓ Đã đẩy lên nhà in thật");
+      if (j.simulated) flash(t("o.simPushWarn") + (j.reason ?? t("o.checkFfConfig")));
+      else flash(t("o.pushedReal"));
       reload();
     } else flash("✗ " + (j.error ?? "Error"));
   };
@@ -736,21 +736,21 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                       <div className="o2-ff-head">
                         <span className="o2-track-h" style={{ margin: 0 }}>{f.fulfillerName || t("o.fulfilledBy")}</span>
                         <span style={{ background: FF_STATUS_COLORS[f.status] ?? "#8A93A6", color: "#fff", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}>{f.status}</span>
-                        {f.externalFfId?.startsWith("SIM-") && <span title="Đẩy mô phỏng — không lên nhà in thật" style={{ background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>MÔ PHỎNG</span>}
+                        {f.externalFfId?.startsWith("SIM-") && <span title={t("o.simPushLabel")} style={{ background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>MÔ PHỎNG</span>}
                         {f.supplierOrderUrl && (
                           <a href={f.supplierOrderUrl} target="_blank" rel="noreferrer" className="o2-ff-link">
                             <IconTruck width={12} height={12} /> {t("o.viewSupplierOrder")} ↗
                           </a>
                         )}
-                        {canPushFf && canEdit && <button onClick={() => delFf(f.id)} title="Xoá bản ghi đẩy này" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontSize: 13, fontWeight: 700, padding: "0 4px" }}>✕</button>}
+                        {canPushFf && canEdit && <button onClick={() => delFf(f.id)} title={t("o.delPushRec")} style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "var(--red)", fontSize: 13, fontWeight: 700, padding: "0 4px" }}>✕</button>}
                       </div>
                       {/* Mã đơn nhà in + thời điểm đẩy */}
                       {(f.externalFfId || f.pushedAt) && (
                         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", margin: "2px 0" }}>
                           {f.externalFfId && <>
-                            <span>Mã:</span>
+                            <span>{t("o.codeLabel")}</span>
                             <b style={{ fontFamily: "ui-monospace,monospace", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>{f.externalFfId}</b>
-                            <button className="icon-btn" title="Copy mã đơn nhà in" onClick={() => copyText(f.externalFfId!)}><IconCopy width={11} height={11} /></button>
+                            <button className="icon-btn" title={t("o.copyFfCode")} onClick={() => copyText(f.externalFfId!)}><IconCopy width={11} height={11} /></button>
                           </>}
                           {f.pushedAt && <span style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>{fmtDateTime(f.pushedAt)}</span>}
                         </div>
@@ -772,7 +772,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                         <div className="o2-supcost">
                           <span>{t("o.baseCost")}: <b>{money(f.baseCost ?? 0)}</b></span>
                           <span>{t("o.shipFee")}: <b>{money(f.shipCost ?? 0)}</b></span>
-                          {Number(f.extraFee ?? 0) !== 0 && <span>Tax/phí: <b>{money(f.extraFee ?? 0)}</b></span>}
+                          {Number(f.extraFee ?? 0) !== 0 && <span>{t("o.taxFee")}: <b>{money(f.extraFee ?? 0)}</b></span>}
                           <span className="tot">{t("o.total")}: <b>{money(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0) + Number(f.extraFee ?? 0)))}</b></span>
                         </div>
                       )}
@@ -850,11 +850,11 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                     </select>
                   </div>
                   {/* Chọn variant nằm ở TỪNG sản phẩm bên dưới; nút Create cũng ở cuối cho liền mạch */}
-                  {ffSel && <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>↓ Chọn <b>variant + số lượng</b> ở từng sản phẩm, rồi bấm <b>Create order</b> ở cuối</div>}
+                  {ffSel && <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>↓ Chọn <b>{t("o.variantQty")}</b> ở từng sản phẩm, rồi bấm <b>Create order</b> ở cuối</div>}
                   </>
                   ) : (
                     <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--card)", border: "1px dashed var(--line)", borderRadius: 10, padding: "10px 12px" }}>
-                      Đơn đã <b style={{ color: STATUS_COLORS[o.status] ?? "var(--ink)" }}>{o.status.toUpperCase()}</b> — xem bản ghi đẩy ở cột trái. Chỉ đơn <b>NEW</b> mới tạo đơn fulfill.
+                      {t("o.pushNotePre")}<b style={{ color: STATUS_COLORS[o.status] ?? "var(--ink)" }}>{o.status.toUpperCase()}</b>{t("o.pushNoteMid")}<b>NEW</b>{t("o.pushNotePost")}
                     </div>
                   )}
                 </div>
@@ -924,7 +924,7 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
   const mockRef = useRef<HTMLInputElement>(null);
   const [upBusy, setUpBusy] = useState(false);
   const uploadMockup = async (file: File) => {
-    if (!file.type.startsWith("image/")) return flash("✗ Chỉ nhận file ảnh");
+    if (!file.type.startsWith("image/")) return flash(t("o.onlyImageFiles"));
     setUpBusy(true);
     try {
       const tk = await fetch("/api/order-issues/upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, contentType: file.type }) }).then((r) => r.json());
@@ -933,7 +933,7 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
       if (!put.ok) throw new Error(`R2 ${put.status}`);
       const s = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mockupKey: tk.storageKey }) }).then((r) => r.json());
       if (!s.ok) throw new Error(s.error ?? "save");
-      flash("✓ Đã tải mockup"); onSaved();
+      flash(t("o.mockupUploaded")); onSaved();
     } catch (e) { flash("✗ " + (e as Error).message); }
     setUpBusy(false);
   };
@@ -944,13 +944,13 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
       {zoom && <Lightbox src={zoom} onClose={() => setZoom(null)} />}
       <div className="o2-thumb" style={{ position: "relative", ...(img ? { cursor: "zoom-in" } : (canEdit ? { cursor: "pointer" } : {})) }}
         onClick={() => { if (img) setZoom(img); else if (canEdit) mockRef.current?.click(); }}
-        title={img ? t("o.clickEnlarge") : (canEdit ? "Bấm để tải mockup" : undefined)}>
+        title={img ? t("o.clickEnlarge") : (canEdit ? t("o.clickUploadMockup") : undefined)}>
         {img
           ? <img src={img} alt="" loading="lazy" />
-          : <span style={{ fontSize: 10.5, color: "var(--muted)", textAlign: "center", lineHeight: 1.3, padding: 4 }}>{upBusy ? "Đang tải…" : (canEdit ? "＋ Mockup" : t("o.noImg"))}</span>}
+          : <span style={{ fontSize: 10.5, color: "var(--muted)", textAlign: "center", lineHeight: 1.3, padding: 4 }}>{upBusy ? t("o.loadingShort") : (canEdit ? "＋ Mockup" : t("o.noImg"))}</span>}
         {canEdit && <>
           <input ref={mockRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMockup(f); e.target.value = ""; }} />
-          {img && <button onClick={(e) => { e.stopPropagation(); mockRef.current?.click(); }} title="Đổi / thêm mockup" style={{ position: "absolute", bottom: 3, right: 3, width: 20, height: 20, borderRadius: 6, border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>{upBusy ? "…" : "✎"}</button>}
+          {img && <button onClick={(e) => { e.stopPropagation(); mockRef.current?.click(); }} title={t("o.changeMockup")} style={{ position: "absolute", bottom: 3, right: 3, width: 20, height: 20, borderRadius: 6, border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>{upBusy ? "…" : "✎"}</button>}
         </>}
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
@@ -1011,8 +1011,8 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
             <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
               {t("o.suggestDesigns")}
               {it.suggest.reason === "listing"
-                ? <span style={{ background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "none", letterSpacing: 0 }}>✓ đã dùng cho listing này</span>
-                : <span style={{ background: "var(--line)", color: "var(--muted)", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>khớp tên</span>}
+                ? <span style={{ background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "none", letterSpacing: 0 }}>{t("o.usedForListing")}</span>
+                : <span style={{ background: "var(--line)", color: "var(--muted)", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>{t("o.matchNameBadge")}</span>}
             </div>
             {it.suggest.thumb && (
               <div className="o2-dpreview checker" onClick={() => setZoom(it.suggest!.thumb)} title={t("o.clickEnlarge")}>
@@ -1025,7 +1025,7 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
       </div>
       {showPicker && fulfillerId && (
         <div style={{ flex: "1 1 300px", minWidth: 260, background: "#FFF6F4", border: "1px solid #F6D9D0", borderRadius: 12, padding: "12px 14px" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 8 }}>Chọn variant để đẩy</div>
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 8 }}>{t("o.chooseVariantPush")}</div>
           <VariantPicker fulfillerId={fulfillerId} seed={pickerSeed}
             line={line ?? { mappingId: "", qty: it.qty }}
             setLine={setLine ?? (() => {})} />
@@ -1055,8 +1055,8 @@ function TikTokImportModal({ close, reload, flash, sellers, stores }: {
     const j = await fetch("/api/orders/import-tiktok", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
     setBusy(false);
     if (j.ok) {
-      flash(`✓ ${j.orders} đơn — tạo mới ${j.created}, bỏ qua ${j.skipped}${j.errors?.length ? ` · ${j.errors.length} lỗi` : ""}`);
-      if (j.errors?.length) await confirm({ message: "Lỗi:\n" + j.errors.join("\n"), info: true });
+      flash(t("o.importResult").replace("{o}", String(j.orders)).replace("{c}", String(j.created)).replace("{s}", String(j.skipped)) + (j.errors?.length ? t("o.errorsSuffix").replace("{n}", String(j.errors.length)) : ""));
+      if (j.errors?.length) await confirm({ message: t("o.errorsLines") + j.errors.join("\n"), info: true });
       reload(); close();
     } else flash("✗ " + (j.error ?? t("o.importError")));
   };
@@ -1065,11 +1065,11 @@ function TikTokImportModal({ close, reload, flash, sellers, stores }: {
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
       <div style={{ background: "#fff", borderRadius: 18, width: 460, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-          <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk="tiktok" size={20} /> Import đơn TikTok Shop</b>
+          <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk="tiktok" size={20} /> {t("o.importTiktokTitle")}</b>
           {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
         </div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 16 }}>
-          Xuất file đơn ở TikTok Seller Center (Orders → To Ship → Export), rồi tải file CSV lên đây. Nhiều dòng cùng Order ID sẽ gộp thành 1 đơn.
+          {t("o.tiktokGuide")}
         </div>
 
         <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.etsyStore")}
@@ -1119,11 +1119,11 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
     setBusy(false);
     if (j.ok) {
       if (j.mode === "payments") {
-        flash(`✓ Cập nhật phí sàn: ${j.updated} đơn${j.notFound ? ` · ${j.notFound} đơn chưa import` : ""}`);
+        flash(t("o.feeUpdated").replace("{n}", String(j.updated)) + (j.notFound ? t("o.notImportedSuffix").replace("{n}", String(j.notFound)) : ""));
       } else {
         flash(`✓ ${j.orders} ${t("o.etsyResult")} ${j.created}, ${t("o.etsySkipped")} ${j.skipped}${j.errors?.length ? ` · ${j.errors.length} ${t("o.errors")}` : ""}`);
       }
-      if (j.errors?.length) await confirm({ message: "Lỗi:\n" + j.errors.join("\n"), info: true });
+      if (j.errors?.length) await confirm({ message: t("o.errorsLines") + j.errors.join("\n"), info: true });
       reload(); close();
     } else flash("✗ " + (j.error ?? t("o.importError")));
   };
@@ -1162,10 +1162,10 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
         <div style={{ borderTop: "1px solid var(--line)", marginTop: 14, paddingTop: 12 }}>
           <button onClick={async () => {
             const j = await fetch("/api/orders/reparse-etsy-items", { method: "POST" }).then((r) => r.json()).catch(() => ({ ok: false }));
-            flash(j.ok ? `✓ Dọn ${j.updated}/${j.scanned} đơn cũ (tách variant/personalization)` : "✗ lỗi dọn đơn");
+            flash(j.ok ? t("o.cleanupResult").replace("{u}", String(j.updated)).replace("{s}", String(j.scanned)) : t("o.cleanupErr"));
             if (j.ok) reload();
           }} disabled={busy} style={{ background: "none", border: "none", color: "var(--blue)", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 }}>
-            🧹 Dọn lại đơn Etsy cũ (tách variant &amp; personalization ra khỏi tên)
+            {t("o.cleanupEtsyBtn")}
           </button>
         </div>
       </div>
@@ -1196,7 +1196,7 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
         items: items.filter((x) => x.productTitle.trim()).map((x) => ({ ...x, qty: Number(x.qty) || 1, unitPrice: Number(x.unitPrice || 0) })) }),
     }).then((r) => r.json());
     setBusy(false);
-    if (j.ok) { flash(`✓ Đã tạo đơn #${j.order.externalId}`); reload(); close(); } else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { flash(t("o.orderCreated") + j.order.externalId); reload(); close(); } else flash("✗ " + (j.error ?? t("o.errorWord")));
   };
 
   const I = (k: keyof typeof f, ph: string) => (
@@ -1207,7 +1207,7 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
     <div style={{ position: "fixed", inset: 0, background: "rgba(42,48,60,.45)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
       <div style={{ background: "#fff", borderRadius: 16, width: 760, maxWidth: "96vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-          <b style={{ fontSize: 15 }}>Tạo đơn tay</b>
+          <b style={{ fontSize: 15 }}>{t("o.createManual")}</b>
           <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
@@ -1228,13 +1228,13 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
           {I("total", "Total ($)")}
           {I("platformFee", t("co.platformFee"))}
         </div>
-        <div style={{ fontSize: 13, fontWeight: 700, margin: "14px 0 8px" }}>Người nhận</div>
+        <div style={{ fontSize: 13, fontWeight: 700, margin: "14px 0 8px" }}>{t("o.recipientWord")}</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
           {I("buyerFirst", t("co.first"))}{I("buyerLast", t("co.last"))}{I("addr1", t("co.addr1"))}
           {I("addr2", t("co.addr2"))}{I("city", t("co.city"))}{I("state", t("co.state"))}
           {I("zip", t("co.zip"))}{I("country", t("co.country"))}
         </div>
-        <div style={{ fontSize: 13, fontWeight: 700, margin: "14px 0 8px" }}>Sản phẩm</div>
+        <div style={{ fontSize: 13, fontWeight: 700, margin: "14px 0 8px" }}>{t("o.productsHeader")}</div>
         {items.map((it, i) => (
           <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 70px 90px 34px", gap: 8, marginBottom: 8 }}>
             <input value={it.productTitle} placeholder={t("co.productTitle")} onChange={(e) => setIt(i, "productTitle", e.target.value)} style={inp} />
@@ -1245,9 +1245,9 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
               style={{ ...btnGhost, padding: "4px 0", opacity: items.length === 1 ? 0.4 : 1 }}>✕</button>
           </div>
         ))}
-        <button onClick={() => setItems([...items, { productTitle: "", internalSku: "", qty: 1, unitPrice: "" }])} style={btnGhost}>+ Thêm sản phẩm</button>
+        <button onClick={() => setItems([...items, { productTitle: "", internalSku: "", qty: 1, unitPrice: "" }])} style={btnGhost}>{t("o.addProduct")}</button>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-          <button onClick={close} style={btnGhost}>Huỷ</button>
+          <button onClick={close} style={btnGhost}>{t("c.cancel")}</button>
           <button onClick={submit} disabled={busy || !items.some((x) => x.productTitle.trim())}
             style={{ ...btnBlue, opacity: busy || !items.some((x) => x.productTitle.trim()) ? 0.6 : 1 }}>{busy ? t("co.creating") : t("co.createOrder")}</button>
         </div>
@@ -1323,6 +1323,7 @@ function Pill({ label, color, active, onClick }: { label: string; color: string;
 }
 
 function Pager({ page, pages, setPage, show, setShow, total }: { page: number; pages: number; setPage: (n: number) => void; show: number; setShow: (n: number) => void; total: number }) {
+  const { t } = useLang();
   const nums: (number | "…")[] = [];
   for (let i = 1; i <= pages; i++) {
     if (i === 1 || i === pages || Math.abs(i - page) <= 2) nums.push(i);
@@ -1339,7 +1340,7 @@ function Pager({ page, pages, setPage, show, setShow, total }: { page: number; p
         <button key={i} onClick={() => setPage(n)} style={{ ...btnGhost, background: n === page ? "var(--blue)" : "#fff", color: n === page ? "#fff" : "var(--ink)", fontWeight: 700 }}>{n}</button>
       ))}
       <button onClick={() => setPage(Math.min(pages, page + 1))} style={btnGhost}>›</button>
-      <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{total.toLocaleString()} đơn</span>
+      <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{total.toLocaleString()} {t("o.ordersWord")}</span>
     </div>
   );
 }
