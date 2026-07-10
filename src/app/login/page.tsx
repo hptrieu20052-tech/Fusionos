@@ -1,19 +1,20 @@
 "use client";
 import { useState } from "react";
+import { JOURNEY_IMG } from "./journey-images";
 
-// Hành trình phát triển — chỉnh năm/tiêu đề tùy ý; ảnh đặt trong /public/journey/<tên file>.
-// Nếu chưa có ảnh, ô sẽ hiện nền gradient kèm năm (không bị vỡ ảnh).
+// Hành trình phát triển — ảnh nhúng sẵn (base64) trong ./journey-images.ts nên luôn hiển thị.
 const JOURNEY = [
-  { year: "2021", title: "Những bước đi đầu tiên", img: "/journey/2021.jpg" },
-  { year: "2022", title: "Mở rộng đội ngũ & thị trường", img: "/journey/2022.jpg" },
-  { year: "2023", title: "Tăng trưởng bứt phá", img: "/journey/2023.jpg" },
-  { year: "2024", title: "Vươn tầm đa nền tảng", img: "/journey/2024.jpg" },
-  { year: "2025", title: "Chuẩn hoá vận hành với Fusion OS", img: "/journey/2025.jpg" },
+  { year: "2021", title: "Những bước đi đầu tiên" },
+  { year: "2022", title: "Mở rộng đội ngũ & thị trường" },
+  { year: "2023", title: "Tăng trưởng bứt phá" },
+  { year: "2024", title: "Vươn tầm đa nền tảng" },
+  { year: "2025", title: "Chuẩn hoá vận hành với Fusion OS" },
 ];
 
-function JImg({ src, year }: { src: string; year: string }) {
+function JImg({ year }: { year: string }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return <div className="lg-jimg lg-jimg-fallback"><span>{year}</span></div>;
+  const src = JOURNEY_IMG[year];
+  if (failed || !src) return <div className="lg-jimg lg-jimg-fallback"><span>{year}</span></div>;
   // eslint-disable-next-line @next/next/no-img-element
   return <img className="lg-jimg" src={src} alt={year} onError={() => setFailed(true)} />;
 }
@@ -49,28 +50,28 @@ export default function LoginPage() {
         .lg-root{position:fixed;inset:0;display:flex;background:#fff;overflow:hidden;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
         .lg-left{flex:1.05;position:relative;overflow:hidden;color:#fff;display:flex;flex-direction:column;justify-content:center;
           background:linear-gradient(150deg,#003c84 0%,#0a3f8f 42%,#3b2f8f 78%,#5b2f8f 100%)}
-        .lg-left-inner{padding:44px 56px;max-width:640px;width:100%}
+        .lg-left-inner{padding:34px 56px;max-width:640px;width:100%}
         .lg-right{flex:.95;display:flex;align-items:center;justify-content:center;padding:32px;overflow:hidden}
         .lg-form{width:100%;max-width:400px}
-        .lg-brand{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+        .lg-brand{display:flex;align-items:center;gap:12px;margin-bottom:14px}
         .lg-brand-chip{width:50px;height:50px;border-radius:14px;background:#fff;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(0,0,0,.18);flex-shrink:0}
         .lg-brand-chip img{width:32px;height:32px;object-fit:contain}
         .lg-brand-name{font-size:21px;font-weight:800;letter-spacing:.5px;line-height:1}
         .lg-brand-tag{font-size:11px;opacity:.8;margin-top:3px}
-        .lg-sub{font-size:11.5px;letter-spacing:2px;text-transform:uppercase;opacity:.7;margin-bottom:8px;font-weight:700}
-        .lg-h1{font-size:27px;font-weight:800;line-height:1.15;margin-bottom:12px}
-        .lg-p{font-size:13.5px;line-height:1.65;opacity:.9;margin-bottom:6px}
+        .lg-sub{font-size:11.5px;letter-spacing:2px;text-transform:uppercase;opacity:.7;margin-bottom:7px;font-weight:700}
+        .lg-h1{font-size:26px;font-weight:800;line-height:1.15;margin-bottom:9px}
+        .lg-p{font-size:13.5px;line-height:1.6;opacity:.9;margin-bottom:6px}
         .lg-p b{font-weight:700;color:#bfe3ff}
-        .lg-hr{height:1px;background:rgba(255,255,255,.18);margin:20px 0 18px}
-        .lg-jtitle{font-weight:800;font-size:15px;margin-bottom:16px}
-        .lg-timeline{display:flex;flex-direction:column;gap:14px;position:relative}
-        .lg-jrow{display:flex;align-items:center;gap:16px;position:relative}
-        .lg-jimg{width:58px;height:58px;border-radius:13px;object-fit:cover;flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,.22);border:2px solid rgba(255,255,255,.35)}
+        .lg-hr{height:1px;background:rgba(255,255,255,.18);margin:15px 0 13px}
+        .lg-jtitle{font-weight:800;font-size:15px;margin-bottom:12px}
+        .lg-timeline{display:flex;flex-direction:column;gap:11px;position:relative}
+        .lg-jrow{display:flex;align-items:center;gap:15px;position:relative}
+        .lg-jimg{width:52px;height:52px;border-radius:12px;object-fit:cover;flex-shrink:0;box-shadow:0 4px 12px rgba(0,0,0,.22);border:2px solid rgba(255,255,255,.35)}
         .lg-jimg-fallback{display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(255,255,255,.28),rgba(255,255,255,.08))}
         .lg-jimg-fallback span{font-size:13px;font-weight:800;color:#fff;opacity:.95}
         .lg-jyear{font-size:16px;font-weight:800;color:#bfe3ff;line-height:1.1}
         .lg-jdesc{font-size:13px;opacity:.9;line-height:1.35;margin-top:2px}
-        .lg-copy{font-size:11.5px;opacity:.6;margin-top:22px}
+        .lg-copy{font-size:11.5px;opacity:.6;margin-top:16px}
         .lg-ftitle{font-size:26px;font-weight:800;margin-bottom:4px}
         .lg-fsub{color:var(--muted,#4a5a6a);font-size:13.5px;margin-bottom:26px}
         .lg-label{display:block;font-size:12.5px;font-weight:700;color:#33445a;margin:0 0 6px}
@@ -125,7 +126,7 @@ export default function LoginPage() {
           <div className="lg-timeline">
             {JOURNEY.map((j) => (
               <div className="lg-jrow" key={j.year}>
-                <JImg src={j.img} year={j.year} />
+                <JImg year={j.year} />
                 <div>
                   <div className="lg-jyear">{j.year}</div>
                   <div className="lg-jdesc">{j.title}</div>
