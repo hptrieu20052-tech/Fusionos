@@ -79,10 +79,16 @@ export async function POST(req: NextRequest) {
   if (!b?.name || !schema.stores.marketplace.enumValues.includes(b.marketplace) || !schema.stores.connectMethod.enumValues.includes(b.connectMethod)) {
     return NextResponse.json({ ok: false, error: "Thiếu tên / sàn / phương thức kết nối" }, { status: 400 });
   }
+  // Chặn trùng tên store (không phân biệt hoa/thường) — tránh nhầm lẫn khi khớp đơn về sau
+  const name = String(b.name).trim();
+  const [dupName] = await db.select({ id: schema.stores.id })
+    .from(schema.stores).where(sql`lower(${schema.stores.name}) = lower(${name})`).limit(1);
+  if (dupName) return NextResponse.json({ ok: false, error: `Tên store "${name}" đã tồn tại — hãy dùng tên khác` }, { status: 409 });
+
   // Seller tạo store → luôn là store của chính mình (bỏ qua sellerId gửi lên)
   const sellerId = session.role === "seller" ? session.sub : (b.sellerId || null);
   const [s] = await db.insert(schema.stores).values({
-    name: String(b.name).trim(), marketplace: b.marketplace, connectMethod: b.connectMethod,
+    name, marketplace: b.marketplace, connectMethod: b.connectMethod,
     sellerId, status: "active", note: b.note,
     storeUrl: (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null,
     currency: (typeof b.currency === "string" && b.currency.trim()) ? b.currency.trim().toUpperCase() : "USD",

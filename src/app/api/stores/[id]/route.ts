@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, and, ne, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 
@@ -39,7 +39,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   }
 
   const patch: Record<string, unknown> = {};
-  if (typeof b.name === "string" && b.name.trim()) patch.name = b.name.trim();
+  if (typeof b.name === "string" && b.name.trim()) {
+    const nm = b.name.trim();
+    const [dupName] = await db.select({ id: schema.stores.id })
+      .from(schema.stores).where(and(sql`lower(${schema.stores.name}) = lower(${nm})`, ne(schema.stores.id, params.id))).limit(1);
+    if (dupName) return NextResponse.json({ ok: false, error: `Tên store "${nm}" đã tồn tại — hãy dùng tên khác` }, { status: 409 });
+    patch.name = nm;
+  }
   if ("storeUrl" in b) patch.storeUrl = (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null;
   if ("sellerId" in b) patch.sellerId = b.sellerId || null;
   if ("note" in b) patch.note = b.note || null;
