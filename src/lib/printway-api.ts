@@ -166,7 +166,11 @@ function pwRowOf(o: Record<string, unknown>, productName: string): PwSkuRow {
   const sku = pickS(o, "item_sku", "sku", "sku_code", "skuCode", "code");
   const variantId = pickS(o, "variant_id", "variantId", "id", "_id");
   const size = pickS(o, "size", "size_name"); const color = pickS(o, "color", "color_name");
-  const variant = pickS(o, "variant_name", "variant_title", "variant", "option", "option_name") || [color, size].filter(Boolean).join(" / ");
+  // Cấu trúc thật: variant lồng trong product có { sku, title: "ORANGE/2XL/BACK", variant_id }
+  // → "title" là tên variant KHI ở trong product (productName có sẵn); ở dòng phẳng "title" là tên sản phẩm.
+  const variant = pickS(o, "variant_name", "variant_title", "variant", "option", "option_name")
+    || (productName ? pickS(o, "title") : "")
+    || [color, size].filter(Boolean).join(" / ");
   const product = productName || pickS(o, "product_name", "product_title", "productName", "title", "name", "product");
   return { sku, variantId, product, variant, cost: pickCost(o), ship: pickShip(o) };
 }

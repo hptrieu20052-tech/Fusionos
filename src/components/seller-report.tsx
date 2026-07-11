@@ -104,7 +104,6 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "3px 4px" }}># Seller</th>
-                  {data.showMoney && <th style={{ textAlign: "left", padding: "3px 4px" }}>Marketplace</th>}
                   <th style={{ padding: "3px 4px" }}>Orders</th>
                   {data.showMoney ? (
                     <>
@@ -124,16 +123,18 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
                   const pct = tot ? (v / tot) * 100 : 0;
                   return (
                     <tr key={si} style={{ borderTop: "1px solid var(--line)", textAlign: "right" }}>
-                      <td style={{ textAlign: "left", padding: "5px 4px", whiteSpace: "nowrap", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>
-                        <span style={{ fontWeight: 800, color: si < 3 ? "var(--blue)" : "var(--muted)", marginRight: 6 }}>{si + 1}</span>
-                        <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block", marginRight: 5 }} />
-                        <b style={{ fontWeight: si < 3 ? 700 : 500 }}>{s.name}</b>
+                      <td style={{ textAlign: "left", padding: "5px 4px", maxWidth: 150, overflow: "hidden" }}>
+                        <div style={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                          <span style={{ fontWeight: 800, color: si < 3 ? "var(--blue)" : "var(--muted)", marginRight: 6 }}>{si + 1}</span>
+                          <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block", marginRight: 5 }} />
+                          <b style={{ fontWeight: si < 3 ? 700 : 500 }}>{s.name}</b>
+                        </div>
+                        {data.showMoney && s.platforms && s.platforms.length > 0 && (
+                          <div style={{ color: "var(--muted)", fontSize: 10.5, marginLeft: 20, whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                            {s.platforms.map((p) => MK[p] ?? p).join(", ")}
+                          </div>
+                        )}
                       </td>
-                      {data.showMoney && (
-                        <td style={{ textAlign: "left", padding: "5px 4px", color: "var(--muted)", fontSize: 11, whiteSpace: "nowrap", maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {s.platforms && s.platforms.length > 0 ? s.platforms.map((p) => MK[p] ?? p).join(", ") : "—"}
-                        </td>
-                      )}
                       <td style={{ padding: "5px 4px", whiteSpace: "nowrap" }}><b>{s.orders.toLocaleString()}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.items.toLocaleString()})</span></td>
                       {data.showMoney ? (
                         <>

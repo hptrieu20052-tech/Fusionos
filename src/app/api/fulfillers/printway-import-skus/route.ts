@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     }
   } catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300), rawSample }, { status: 502 }); }
 
-  // ---- 2. UPSERT ----
+  // ---- 2. UPSERT theo LÔ (catalog ~1000 product × hàng chục variant → vài chục nghìn dòng) ----
   const existing = await db.select({
     id: schema.skuMappings.id, sku: schema.skuMappings.internalSku,
     base: schema.skuMappings.baseCost, ship: schema.skuMappings.shipCost,
@@ -79,39 +79,49 @@ export async function POST(req: NextRequest) {
   }).from(schema.skuMappings).where(eq(schema.skuMappings.fulfillerId, ff.id));
   const byKey = new Map(existing.map((x) => [x.sku, x]));
 
-  // Trùng SKU trong catalog: ưu tiên dòng CÓ variant/giá
+  // Trùng SKU trong catalog: ưu tiên dòng CÓ variant/giá; dedupe
   rows.sort((a, b) => ((b.variant ? 1 : 0) + (b.cost > 0 ? 1 : 0)) - ((a.variant ? 1 : 0) + (a.cost > 0 ? 1 : 0)));
   let created = 0, updated = 0, skipped = 0;
   const seen = new Set<string>();
   const variantIdBySku = new Map<string, string>(); // cho bước enrich ship
+  const toInsert: (typeof schema.skuMappings.$inferInsert)[] = [];
   for (const it of rows) {
     const sku = it.sku || it.variantId;
     if (!sku || seen.has(sku)) { skipped++; continue; }
     seen.add(sku);
     if (it.variantId) variantIdBySku.set(sku, it.variantId);
     const ex = byKey.get(sku);
+    if (!ex) {
+      toInsert.push({
+        internalSku: sku, fulfillerId: ff.id, fulfillerSku: sku,
+        productType: it.product?.slice(0, 120) || null,
+        fulfillerProduct: it.product?.slice(0, 200) || null,
+        variant: it.variant?.slice(0, 120) || null,
+        fulfillerProductId: it.variantId || null,
+        baseCost: it.cost.toFixed(2), shipCost: it.ship.toFixed(2),
+      });
+    } else {
+      // Chỉ update dòng ĐÃ có (điền variant/variant_id còn thiếu; giá chỉ đè khi đang = 0)
+      const patch: Record<string, unknown> = {};
+      if (it.product) { patch.productType = it.product.slice(0, 120); patch.fulfillerProduct = it.product.slice(0, 200); }
+      if (it.variant && it.variant !== ex.variant) patch.variant = it.variant.slice(0, 120);
+      if (it.variantId && it.variantId !== ex.pid) patch.fulfillerProductId = it.variantId;
+      if (it.cost > 0 && pwNum(ex.base) === 0) patch.baseCost = it.cost.toFixed(2);
+      if (it.ship > 0 && pwNum(ex.ship) === 0) patch.shipCost = it.ship.toFixed(2);
+      if (Object.keys(patch).length) {
+        try { await db.update(schema.skuMappings).set(patch).where(eq(schema.skuMappings.id, ex.id)); updated++; } catch { skipped++; }
+      } else skipped++;
+    }
+  }
+  // Insert theo lô 1000 — trùng (unique internalSku+fulfillerId) thì bỏ qua
+  for (let i = 0; i < toInsert.length; i += 1000) {
+    if (Date.now() - start > 50000) { skipped += toInsert.length - i; break; }
+    const chunk = toInsert.slice(i, i + 1000);
     try {
-      if (!ex) {
-        await db.insert(schema.skuMappings).values({
-          internalSku: sku, fulfillerId: ff.id, fulfillerSku: sku,
-          productType: it.product?.slice(0, 120) || null,
-          fulfillerProduct: it.product?.slice(0, 200) || null,
-          variant: it.variant?.slice(0, 120) || null,
-          fulfillerProductId: it.variantId || null,
-          baseCost: it.cost.toFixed(2), shipCost: it.ship.toFixed(2),
-        });
-        created++;
-      } else {
-        const patch: Record<string, unknown> = {};
-        if (it.product) { patch.productType = it.product.slice(0, 120); patch.fulfillerProduct = it.product.slice(0, 200); }
-        if (it.variant && it.variant !== ex.variant) patch.variant = it.variant.slice(0, 120);
-        if (it.variantId && it.variantId !== ex.pid) patch.fulfillerProductId = it.variantId;
-        if (it.cost > 0 && pwNum(ex.base) === 0) patch.baseCost = it.cost.toFixed(2); // không phá giá sửa tay
-        if (it.ship > 0 && pwNum(ex.ship) === 0) patch.shipCost = it.ship.toFixed(2);
-        if (Object.keys(patch).length) { await db.update(schema.skuMappings).set(patch).where(eq(schema.skuMappings.id, ex.id)); updated++; }
-        else skipped++;
-      }
-    } catch { skipped++; }
+      const r = await db.insert(schema.skuMappings).values(chunk).onConflictDoNothing().returning({ id: schema.skuMappings.id });
+      created += r.length;
+      skipped += chunk.length - r.length;
+    } catch { skipped += chunk.length; }
   }
 
   // ---- 3. Enrich ship cost (best-effort, budget 15s): các dòng ship = 0 có variant_id ----
