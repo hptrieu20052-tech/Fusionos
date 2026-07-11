@@ -10,8 +10,8 @@
 const FS_API = "https://api.flashship.net/seller-api-v2";
 
 type Cred = { accessToken: string; endpoint?: string | null };
-// Timeout 20s: FlashShip chặn IP chưa whitelist → request treo; cắt sớm để báo lỗi rõ.
-const FT = { signal: AbortSignal.timeout(20000) } as const;
+// Timeout 20s, signal tạo MỚI mỗi lần gọi (module-level sẽ hết hạn 1 lần rồi abort mọi call sau).
+const ft = () => ({ signal: AbortSignal.timeout(20000) });
 const base = (c: Cred) => (c.endpoint && c.endpoint.trim() ? c.endpoint.trim().replace(/\/+$/, "") : FS_API);
 const headers = (c: Cred) => ({ Authorization: `Bearer ${c.accessToken}`, "Content-Type": "application/json" }) as Record<string, string>;
 
@@ -22,7 +22,7 @@ const isBalancePending = (code?: string) => !!code && /406/.test(code);
 // ---- Variants: GET /orders/list-variant-sku → data: [{variant_id, product_type, brand, style, size, color}] ----
 export type FsVariant = { variant_id: number; product_type: string; brand: string; style: string; size: string; color: string };
 export async function listFlashshipVariants(c: Cred): Promise<FsVariant[]> {
-  const r = await fetch(`${base(c)}/orders/list-variant-sku`, { headers: headers(c), ...FT });
+  const r = await fetch(`${base(c)}/orders/list-variant-sku`, { headers: headers(c), ...ft() });
   const j = (await r.json().catch(() => ({}))) as FsEnvelope;
   if (!r.ok || !okCode(j.code)) throw new Error(`FlashShip list variants failed: ${j.code ?? r.status} ${j.msg ?? ""} ${JSON.stringify(j.err ?? "").slice(0, 120)}`.trim());
   return (Array.isArray(j.data) ? j.data : []) as FsVariant[];
@@ -70,7 +70,7 @@ export type FsCreateOrder = {
 export async function createFlashshipOrder(
   c: Cred, payload: FsCreateOrder, kind: "shirt" | "ornament" = "shirt",
 ): Promise<{ orderCode: string; paymentPending: boolean; raw: unknown }> {
-  const r = await fetch(`${base(c)}/orders/${kind}-add`, { method: "POST", headers: headers(c), body: JSON.stringify(payload), ...FT });
+  const r = await fetch(`${base(c)}/orders/${kind}-add`, { method: "POST", headers: headers(c), body: JSON.stringify(payload), ...ft() });
   const j = (await r.json().catch(() => ({}))) as FsEnvelope;
   const pending = isBalancePending(j.code);
   if (!okCode(j.code) && !pending) {
@@ -85,7 +85,7 @@ export async function cancelFlashshipOrders(c: Cred, orderCodes: string[], note 
   const r = await fetch(`${base(c)}/orders/seller-reject`, {
     method: "POST", headers: headers(c),
     body: JSON.stringify({ order_code_list: orderCodes, reject_note: note }),
-    ...FT,
+    ...ft(),
   });
   const j = (await r.json().catch(() => ({}))) as FsEnvelope;
   return { ok: r.ok && okCode(j.code), message: `${j.code ?? r.status} ${j.msg ?? ""}`.trim() };
@@ -101,7 +101,7 @@ export async function getFlashshipOrdersByCodes(c: Cred, codes: string[]): Promi
   const r = await fetch(`${base(c)}/orders/list-order-code`, {
     method: "POST", headers: headers(c),
     body: JSON.stringify({ list_order_code: codes.slice(0, 20) }),
-    ...FT,
+    ...ft(),
   });
   const j = (await r.json().catch(() => ({}))) as FsEnvelope;
   if (!r.ok || (j.code && !okCode(j.code))) throw new Error(`FlashShip list-order-code failed: ${j.code ?? r.status} ${j.msg ?? ""}`.trim());

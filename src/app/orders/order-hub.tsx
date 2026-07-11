@@ -690,6 +690,24 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
   const estCost = complete && detail
     ? detail.items.reduce((tot, it) => { const l = lines[it.id]; const uc = l.unitCost ?? variants.find((x) => x.id === l.mappingId)?.unitCost ?? 0; return tot + uc * l.qty; }, 0)
     : null;
+  // Printway: gọi calculate-price lấy GIÁ THẬT (mapping không có giá) — debounce, huỷ khi đổi lựa chọn
+  const [pwEst, setPwEst] = useState<number | null>(null);
+  const isPwFf = !!ffSel && (detail?.fulfillerOptions.find((f) => f.fulfillerId === ffSel)?.name ?? "").toLowerCase().includes("printway");
+  useEffect(() => {
+    setPwEst(null);
+    if (!complete || !detail || !isPwFf) return;
+    const payload = {
+      fulfillerId: ffSel, country: ship.country, state: ship.state,
+      lines: detail.items.map((it) => ({ mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })),
+    };
+    const ctl = new AbortController();
+    const tm = setTimeout(() => {
+      fetch("/api/fulfillers/printway-calc-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: ctl.signal })
+        .then((r) => r.json()).then((j) => { if (j.ok && j.total > 0) setPwEst(j.total); }).catch(() => {});
+    }, 700);
+    return () => { clearTimeout(tm); ctl.abort(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complete, isPwFf, ffSel, JSON.stringify(lines), ship.country, ship.state]);
 
   const createOrder = async () => {
     if (!complete || !detail) return;
@@ -699,12 +717,20 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
       if (!s1.ok) { setBusy(false); return flash("✗ " + (s1.error ?? "")); }
     }
     const body = { orderId: o.id, fulfillerId: ffSel, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })) };
-    const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+    // 5xx/non-JSON (Cloudflare 502, Vercel rollout...) → retry 1 lần sau 2.5s.
+    // An toàn: adapter Printway check đơn đã tồn tại theo order_name trước khi tạo → không double.
+    const doPush = () => fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(async (r) => {
         const txt = await r.text();
-        try { return JSON.parse(txt); } catch { return { ok: false, error: `HTTP ${r.status} — server trả non-JSON: ${txt.replace(/<[^>]*>/g, " ").trim().slice(0, 160)}` }; }
+        try { return { ...JSON.parse(txt), _status: r.status }; } catch { return { ok: false, _retryable: r.status >= 500, error: `HTTP ${r.status} — server trả non-JSON: ${txt.replace(/<[^>]*>/g, " ").trim().slice(0, 160)}` }; }
       })
-      .catch((e) => ({ ok: false, error: "Request failed/timeout: " + String(e?.message ?? e) }));
+      .catch((e) => ({ ok: false, _retryable: true, error: "Request failed/timeout: " + String(e?.message ?? e) }));
+    let j = await doPush();
+    if (!j.ok && j._retryable) {
+      flash("⏳ Server lỗi tạm — thử lại sau 2.5s…");
+      await new Promise((r) => setTimeout(r, 2500));
+      j = await doPush();
+    }
     setBusy(false);
     if (j.ok) {
       if (j.simulated) flash(t("o.simPushWarn") + (j.reason ?? t("o.checkFfConfig")));
@@ -908,7 +934,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
       {canPushFf && detail && canCreate && ffSel && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px dashed var(--line)", flexWrap: "wrap" }}>
           {complete
-            ? <span style={{ fontSize: 13.5 }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(estCost!)}</b></span>
+            ? <span style={{ fontSize: 13.5 }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(pwEst ?? estCost!)}</b>{pwEst != null && <span style={{ fontSize: 10.5, color: "var(--muted)", marginLeft: 5 }}>(Printway live)</span>}</span>
             : <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{t("o.needComplete").replace("{n}", String(detail.items.length))}</span>}
           <button onClick={createOrder} disabled={!complete || busy} style={{ ...btnBlue, padding: "12px 34px", fontSize: 14.5, opacity: !complete || busy ? 0.5 : 1 }}>
             {busy ? t("o.creating") : t("o.pushFfOrder")}

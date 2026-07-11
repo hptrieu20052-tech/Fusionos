@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       if (products.length < LIMIT) { done = true; break; }
     }
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 });
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, updated, pages, done, nextPage: done ? null : page });

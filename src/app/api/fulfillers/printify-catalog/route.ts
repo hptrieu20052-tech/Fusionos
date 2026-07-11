@@ -47,6 +47,6 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json({ ok: false, error: "invalid level" }, { status: 400 });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 });
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
 }

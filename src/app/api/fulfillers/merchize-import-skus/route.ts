@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
       products.push(...ps);
       if (pageProducts.length < 50) { catalogDone = true; break; } // hết trang
     }
-  } catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 }); }
+  } catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 }); }
 
   // ---- 2. Bỏ qua product ĐÃ kéo (theo product_id) → khỏi gọi all-variants lại; kéo tăng dần ----
   const existingMaps = await db.select({ sku: schema.skuMappings.internalSku, pid: schema.skuMappings.fulfillerProductId }).from(schema.skuMappings).where(eq(schema.skuMappings.fulfillerId, ff.id));

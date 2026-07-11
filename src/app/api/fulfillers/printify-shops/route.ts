@@ -29,6 +29,6 @@ export async function POST(req: NextRequest) {
     const shops = await listPrintifyShops(token);
     return NextResponse.json({ ok: true, shops: shops.map((s) => ({ id: s.id, title: s.title, channel: s.sales_channel })) });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 });
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
 }

@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     providers = allProviders ? all : all.filter((p) => p.id === pv);
     if (!providers.length && !allProviders) providers = [{ id: pv, title: `Nhà in ${pv}` }];
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 });
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
   if (!providers.length) return NextResponse.json({ ok: false, error: "Blueprint has no providers" }, { status: 400 });
 

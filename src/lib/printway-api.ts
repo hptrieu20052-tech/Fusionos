@@ -18,7 +18,8 @@ function headers(c: Cred) {
     "Content-Type": "application/json",
   } as Record<string, string>;
 }
-const FETCH_TIMEOUT = { signal: AbortSignal.timeout(25000) } as const;
+// Signal tạo MỚI mỗi lần gọi — signal module-level sẽ hết hạn sau 25s làm mọi call sau abort ngay
+const ft = () => ({ signal: AbortSignal.timeout(25000) });
 const base = (c: Cred) => (c.endpoint && c.endpoint.trim() ? c.endpoint.trim().replace(/\/+$/, "") : PW_API);
 
 // Đủ 16 vị trí artwork theo doc create-new-order (URL lấy từ list of products / R2 của FUSION)
@@ -78,7 +79,7 @@ export async function createPrintwayOrder(c: Cred, payload: PwCreateOrder): Prom
     method: "POST",
     headers: headers(c),
     body: JSON.stringify(payload),
-    ...FETCH_TIMEOUT,
+    ...ft(),
   });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   const ok = r.ok && (j.success === undefined || j.success === true) && (j.status === undefined || Number(j.status) < 400 || j.status === "success");
@@ -103,7 +104,7 @@ export async function listPrintwayOrders(c: Cred, p: PwListParams = {}): Promise
     pw_order_id: p.pwOrderId ?? "",
     order_name: p.orderName ?? "",
   });
-  const r = await fetch(`${base(c)}/transaction/order-list?${q}`, { headers: headers(c), ...FETCH_TIMEOUT });
+  const r = await fetch(`${base(c)}/transaction/order-list?${q}`, { headers: headers(c), ...ft() });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (!r.ok) throw new Error(`Printway order-list failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
   return { items: extractArray(j), raw: j };
@@ -126,7 +127,7 @@ export function extractArray(j: unknown): Record<string, unknown>[] {
 // ---- Catalog SKU: GET /products/list-sku-catalogs ----
 // Doc không nêu params → thử phân trang ?page&limit, nếu server bỏ qua thì tự dừng khi trùng dữ liệu.
 export async function listPrintwaySkuCatalogs(c: Cred, page = 1, limit = 100): Promise<{ items: Record<string, unknown>[]; raw: unknown }> {
-  const r = await fetch(`${base(c)}/products/list-sku-catalogs?page=${page}&limit=${limit}`, { headers: headers(c), ...FETCH_TIMEOUT });
+  const r = await fetch(`${base(c)}/products/list-sku-catalogs?page=${page}&limit=${limit}`, { headers: headers(c), ...ft() });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (!r.ok) throw new Error(`Printway list-sku-catalogs failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
   return { items: extractArray(j), raw: j };
@@ -202,7 +203,7 @@ export async function getPrintwayShippingMethods(c: Cred, p: { variantIds?: stri
     method: "POST",
     headers: headers(c),
     body: JSON.stringify({ variant_id: p.variantIds ?? [], sku: p.skus ?? [] }),
-    ...FETCH_TIMEOUT,
+    ...ft(),
   });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (!r.ok) throw new Error(`Printway shipping-methods failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
@@ -218,14 +219,14 @@ export async function registerPrintwayWebhook(c: Cred, type: PwWebhookType, p: {
     method: "POST",
     headers: headers(c),
     body: JSON.stringify({ access_key: p.accessKey, access_token: p.accessToken, endpoint: p.endpoint }),
-    ...FETCH_TIMEOUT,
+    ...ft(),
   });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (!r.ok || j.success === false) throw new Error(`Printway register webhook(${type}) failed: HTTP ${r.status} ${(j.message as string) ?? JSON.stringify(j).slice(0, 160)}`.trim());
   return j;
 }
 export async function getPrintwayWebhooks(c: Cred, type: PwWebhookType): Promise<unknown> {
-  const r = await fetch(`${base(c)}/webhooks?type=${type}`, { headers: headers(c), ...FETCH_TIMEOUT });
+  const r = await fetch(`${base(c)}/webhooks?type=${type}`, { headers: headers(c), ...ft() });
   return (await r.json().catch(() => ({}))) as unknown;
 }
 
@@ -236,7 +237,7 @@ export async function payPrintwayOrder(c: Cred, orderId: string): Promise<{ ok: 
     method: "POST",
     headers: headers(c),
     body: JSON.stringify({ order_id: orderId }),
-    ...FETCH_TIMEOUT,
+    ...ft(),
   });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   const ok = r.ok && j.success !== false && !(typeof j.status === "number" && j.status >= 400);
@@ -249,7 +250,7 @@ export async function cancelPrintwayOrder(c: Cred, p: { pwOrderId?: string; orde
   const body: Record<string, string> = {};
   if (p.pwOrderId) body.pw_order_id = p.pwOrderId;
   if (p.orderName) body.order_name = p.orderName;
-  const r = await fetch(`${base(c)}/order/cancel-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body), ...FETCH_TIMEOUT });
+  const r = await fetch(`${base(c)}/order/cancel-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body), ...ft() });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   return { ok: r.ok && j.success !== false, message: (j.message as string) || (j.error as string) || `HTTP ${r.status}` };
 }
@@ -259,7 +260,7 @@ export async function deletePrintwayOrder(c: Cred, p: { pwOrderId?: string; orde
   const body: Record<string, string> = {};
   if (p.pwOrderId) body.pw_order_id = p.pwOrderId;
   if (p.orderName) body.order_name = p.orderName;
-  const r = await fetch(`${base(c)}/order/delete-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body), ...FETCH_TIMEOUT });
+  const r = await fetch(`${base(c)}/order/delete-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body), ...ft() });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   return { ok: r.ok && j.success !== false, message: (j.message as string) || (j.error as string) || `HTTP ${r.status}` };
 }
@@ -285,4 +286,41 @@ export function mapPwStatus(statusRaw: string, hasTracking = false): string {
   if (hasTracking || /ship|fulfil|transit|dispatch/.test(s)) return "shipped";
   if (/production|process|printing|printed|pending|paid|confirm|hold|approv/.test(s)) return "in_production";
   return "";
+}
+
+// ---- Tính giá: POST /order/calculate-price (doc không có response mẫu → parse phòng thủ) ----
+export async function calcPrintwayPrice(
+  c: Cred,
+  p: { countryCode: string; provinceCode: string; service?: string; items: { item_sku?: string; variant_id?: string; quantity: number }[] },
+): Promise<{ total: number; base: number; ship: number; raw: unknown }> {
+  const r = await fetch(`${base(c)}/order/calculate-price`, {
+    method: "POST",
+    headers: headers(c),
+    body: JSON.stringify({
+      discount_code: [],
+      shipping_country_code: p.countryCode,
+      shipping_province_code: p.provinceCode,
+      shipping_service: p.service ?? "",
+      order_items: p.items,
+    }),
+    ...ft(),
+  });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!r.ok || j.success === false) throw new Error(`Printway calculate-price failed: HTTP ${r.status} ${(j.message as string) ?? JSON.stringify(j).slice(0, 160)}`.trim());
+  const d = (j.data && typeof j.data === "object" ? j.data : j) as Record<string, unknown>;
+  const pickN = (o: Record<string, unknown>, ...keys: string[]) => { for (const k of keys) { if (o[k] !== undefined && o[k] !== null && o[k] !== "") { const n = pwNum(o[k]); if (n > 0) return n; } } return 0; };
+  let base_ = pickN(d, "base_cost", "base_price", "product_price", "product_cost", "subtotal", "sub_total", "items_price");
+  let ship_ = pickN(d, "ship_cost", "shipping_cost", "shipping_fee", "ship_fee", "shipping_price");
+  let total = pickN(d, "total", "total_price", "total_cost", "grand_total", "amount", "price");
+  // Nếu chỉ có tổng trong items lồng → cộng dồn
+  if (!total && !base_) {
+    const arr = extractArray(d);
+    for (const it of arr) {
+      base_ += pickN(it as Record<string, unknown>, "base_cost", "base_price", "price", "product_price", "amount");
+      ship_ += pickN(it as Record<string, unknown>, "ship_cost", "shipping_cost", "shipping_fee");
+    }
+  }
+  if (!total) total = base_ + ship_;
+  if (total && !base_) base_ = total - ship_;
+  return { total, base: base_, ship: ship_, raw: j };
 }

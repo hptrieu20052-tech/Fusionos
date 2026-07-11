@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
   let products;
   try { products = await listPrintifyProducts(token, c.shopId); }
-  catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 }); }
+  catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 }); }
 
   const selected = new Set<string>(b.selectedProductIds);
   // SKU mong muốn (từ sản phẩm được chọn) + toàn bộ SKU Printify (để biết cái nào do Printify tạo)

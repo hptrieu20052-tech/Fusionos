@@ -1,6 +1,6 @@
 import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPrintAreas } from "@/lib/printify";
 import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
-import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, type PwOrderItem } from "@/lib/printway-api";
+import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, calcPrintwayPrice, type PwOrderItem } from "@/lib/printway-api";
 import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
@@ -219,9 +219,20 @@ function printwayAdapter(): FulfillerAdapter {
         order_items: items,
       });
 
+      // Giá THẬT từ calculate-price (mapping Printway không có giá) — fail thì giữ giá mapping
+      let realBase: number | undefined, realShip: number | undefined;
+      try {
+        const price = await calcPrintwayPrice({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
+          countryCode: toISO2(o.country || "United States"),
+          provinceCode: usStateAbbr(state),
+          items: items.map((i) => ({ item_sku: i.item_sku, variant_id: i.variant_id, quantity: i.quantity })),
+        });
+        if (price.total > 0) { realBase = price.base || price.total - price.ship; realShip = price.ship; }
+      } catch { /* không chặn đẩy đơn */ }
+
       // KHÔNG auto-pay: đơn tạo xong nằm ở trạng thái unpaid trên Printway —
       // người dùng kiểm tra rồi tự thanh toán bên đó, webhook/poll sẽ kéo trạng thái về.
-      return { externalFfId: res.orderId, simulated: false, raw: res.raw };
+      return { externalFfId: res.orderId, simulated: false, raw: res.raw, baseCost: realBase, shipCost: realShip };
     },
   };
 }

@@ -155,7 +155,7 @@ async function handlePush(req: NextRequest) {
     });
   } catch (e) {
     console.error(`[push] ${ff.name} adapter FAILED after ${Date.now() - t0}ms:`, e);
-    return NextResponse.json({ ok: false, error: `Đẩy đơn ${ff.name} thất bại: ${String((e as Error)?.message ?? e).slice(0, 400)}` }, { status: 502 });
+    return NextResponse.json({ ok: false, error: `Đẩy đơn ${ff.name} thất bại: ${String((e as Error)?.message ?? e).slice(0, 400)}` }, { status: 500 });
   }
   console.log(`[push] ${ff.name} adapter OK in ${Date.now() - t0}ms → ${pushRes.externalFfId}`);
   const externalFfId = pushRes.externalFfId;

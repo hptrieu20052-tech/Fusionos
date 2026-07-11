@@ -25,7 +25,7 @@ export async function GET() {
     const { items, raw } = await listPrintwaySkuCatalogs({ accessToken, endpoint: ff.apiEndpoint }, 1, 5);
     return NextResponse.json({ ok: true, itemCount: items.length, firstItems: items.slice(0, 3), raw });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 502 });
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 500 });
   }
 }
 
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       if (items.length < 100) break;
       await new Promise((r) => setTimeout(r, 120)); // rate limit 50 req/3s
     }
-  } catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300), rawSample }, { status: 502 }); }
+  } catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300), rawSample }, { status: 500 }); }
 
   // ---- 2. UPSERT theo LÔ (catalog ~1000 product × hàng chục variant → vài chục nghìn dòng) ----
   const existing = await db.select({

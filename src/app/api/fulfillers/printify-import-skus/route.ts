@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   let products;
   try { products = await listPrintifyProducts(token, c.shopId); }
-  catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 }); }
+  catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 }); }
 
   // Lấy các mapping đã có để bỏ qua trùng
   const existing = await db.select({ sku: schema.skuMappings.internalSku }).from(schema.skuMappings).where(eq(schema.skuMappings.fulfillerId, ff.id));
