@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import * as XLSX from "xlsx";
+import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
       }
       if (!["completed", "trash"].includes(order.status)) {
         await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
+        await autoPushEtsyTracking(order.id);
       }
       trackingUpdated++;
     }

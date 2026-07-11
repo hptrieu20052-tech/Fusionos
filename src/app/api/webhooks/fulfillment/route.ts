@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { markShippedOnTracking } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     status: newStatus,
     trackingSyncedAt: b.trackingNumber ? new Date() : ffo.trackingSyncedAt,
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
-  if (b.trackingNumber) await autoPushEtsyTracking(ffo.orderId); // tự đẩy tracking lên Etsy
+  if (b.trackingNumber) await autoPushEtsyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); // tự đẩy tracking lên Etsy
 
   if (b.trackingNumber || newStatus === "shipped") {
     await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));

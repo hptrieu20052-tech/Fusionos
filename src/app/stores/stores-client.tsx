@@ -181,7 +181,6 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
       <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: gymwear.us" style={inp} /></L>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => setF({ ...f, marketplace: e.target.value })} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
-        <L label={t("st.connect")}><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       {!isSeller && <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
@@ -214,6 +213,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const [etsyKey, setEtsyKey] = useState(store.etsy?.keystring ?? "");
   const [etsySecret, setEtsySecret] = useState("");
   const [etsyBusy, setEtsyBusy] = useState(false);
+  const [roEtsy, setRoEtsy] = useState(true); // readonly lúc mở để chặn Chrome autofill, bỏ khi focus
   const saveEtsyApi = async () => {
     if (!etsyKey.trim() || !etsySecret.trim()) { flash("✗ Enter Keystring + Shared Secret"); return; }
     setEtsyBusy(true);
@@ -267,7 +267,6 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={inp} /></L>
         <L label={t("st.status")}><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}><option value="active">Active</option><option value="warning">Warning</option><option value="suspended">Suspended</option><option value="pending">Pending</option></select></L>
         {!isSeller && <L label="Seller"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
-        <L label={t("st.connect")}><select value={f.connectMethod} onChange={(e) => setF({ ...f, connectMethod: e.target.value })} style={inp}>{CONNECT.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -300,8 +299,8 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
             </div>
           </L>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            <L label="Keystring (App API Key)"><input value={etsyKey} onChange={(e) => setEtsyKey(e.target.value)} placeholder="e.g. 1aa2bb33c44d55…" style={inp} autoComplete="off" /></L>
-            <L label="Shared Secret"><input type="password" value={etsySecret} onChange={(e) => setEtsySecret(e.target.value)} placeholder={store.etsy?.hasKeystring ? "••• (saved, leave blank to keep)" : "shared secret"} style={inp} autoComplete="off" /></L>
+            <L label="Keystring (App API Key)"><input value={etsyKey} onChange={(e) => setEtsyKey(e.target.value)} onFocus={() => setRoEtsy(false)} readOnly={roEtsy} placeholder="e.g. 1aa2bb33c44d55…" style={inp} name="fusion-etsy-key" autoComplete="off" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
+            <L label="Shared Secret"><input type="password" value={etsySecret} onChange={(e) => setEtsySecret(e.target.value)} onFocus={() => setRoEtsy(false)} readOnly={roEtsy} placeholder={store.etsy?.hasKeystring ? "••• (saved, leave blank to keep)" : "shared secret"} style={inp} name="fusion-etsy-secret" autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
             <button onClick={saveEtsyApi} disabled={etsyBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
@@ -339,7 +338,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
       )}
 
       {/* Setup API */}
-      {f.connectMethod === "api" && (
+      {store.marketplace !== "etsy" && (
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <b style={{ fontSize: 13.5 }}>{t("st.apiConfig")}</b>
@@ -355,7 +354,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
             {fields.map(([k, label]) => (
               <L key={k} label={label}>
                 <input type="password" placeholder={store.credentialKeys.includes(k) ? t("st.savedKept") : t("st.enterValue")}
-                  onChange={(e) => setCred({ ...cred, [k]: e.target.value })} style={inp} autoComplete="off" />
+                  onChange={(e) => setCred({ ...cred, [k]: e.target.value })} style={inp} autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" />
               </L>
             ))}
           </div>

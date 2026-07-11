@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  // Đổi trạng thái hàng loạt chỉ dành cho admin (staff/seller đã ẩn ở UI)
-  if (session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // Đổi trạng thái hàng loạt: admin hoặc support (staff phụ trách xử lý đơn)
+  if (session.role !== "admin" && session.role !== "support") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const b = await req.json().catch(() => null);
   const ids: string[] = Array.isArray(b?.ids) ? b.ids.slice(0, 500) : [];

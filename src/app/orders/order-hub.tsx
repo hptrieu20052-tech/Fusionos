@@ -53,7 +53,7 @@ function trackingUrl(carrier: string | null, num: string): string {
   return `https://parcelsapp.com/en/tracking/${num}`;
 }
 
-export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean }) {
+export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false, canChangeStatus = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean; canChangeStatus?: boolean }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: { id: string; name: string }[]; fulfillers: { id: string; name: string }[] } | null>(null);
   // Khởi tạo trạng thái ngay từ URL (?status=new) để chỉ gọi API 1 lần đúng bộ lọc, tránh race đè dữ liệu
@@ -249,10 +249,10 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
       </div>
 
       {/* Thanh bulk khi có đơn được chọn */}
-      {selIds.size > 0 && canEdit && (
+      {selIds.size > 0 && (canEdit || canChangeStatus) && (
         <div className="card" style={{ position: "sticky", top: 8, zIndex: 40, padding: "10px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", border: "1.5px solid var(--blue)" }}>
           <b style={{ fontSize: 13.5 }}>{t("o.ordersSelected").replace("{n}", String(selIds.size))}</b>
-          {isAdmin && <>
+          {canChangeStatus && <>
           <span style={{ width: 1, height: 22, background: "var(--line)" }} />
           <span style={{ fontSize: 13 }}>{t("o.changeStatusLabel")}</span>
           <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)} style={inp}>

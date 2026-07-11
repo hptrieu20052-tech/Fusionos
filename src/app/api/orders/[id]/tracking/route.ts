@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { markShippedOnTracking } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       cost,
       trackingSyncedAt: patch.trackingNumber ? new Date() : ffo.trackingSyncedAt,
     }).where(eq(schema.fulfillmentOrders.id, ffo.id));
-    if (patch.trackingNumber) await autoPushEtsyTracking(params.id);
+    if (patch.trackingNumber) await autoPushEtsyTracking(params.id); await markShippedOnTracking(params.id);
     return NextResponse.json({ ok: true, id: ffo.id, updated: true });
   }
 
@@ -60,7 +61,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     ...patch, cost, pushedAt: new Date(),
     trackingSyncedAt: patch.trackingNumber ? new Date() : null,
   }).returning();
-  if (patch.trackingNumber) await autoPushEtsyTracking(params.id);
+  if (patch.trackingNumber) await autoPushEtsyTracking(params.id); await markShippedOnTracking(params.id);
   return NextResponse.json({ ok: true, id: row.id, created: true });
 }
 
