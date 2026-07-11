@@ -36,7 +36,7 @@ async function handlePush(req: NextRequest) {
   const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, b.orderId)).limit(1);
   if (!order) return NextResponse.json({ ok: false, error: "order not found" }, { status: 404 });
   if (!["new", "has_issues"].includes(order.status)) {
-    return NextResponse.json({ ok: false, error: `đơn đang ở trạng thái ${order.status}, không đẩy được` }, { status: 409 });
+    return NextResponse.json({ ok: false, error: `order is in ${order.status} status — cannot push` }, { status: 409 });
   }
   if (!order.addr1 || !order.buyerLast) {
     return NextResponse.json({ ok: false, error: "missing recipient address — edit Shipping Info first" }, { status: 400 });
@@ -155,7 +155,7 @@ async function handlePush(req: NextRequest) {
     });
   } catch (e) {
     console.error(`[push] ${ff.name} adapter FAILED after ${Date.now() - t0}ms:`, e);
-    return NextResponse.json({ ok: false, error: `Đẩy đơn ${ff.name} thất bại: ${String((e as Error)?.message ?? e).slice(0, 400)}` }, { status: 500 });
+    return NextResponse.json({ ok: false, error: `Push to ${ff.name} failed: ${String((e as Error)?.message ?? e).slice(0, 400)}` }, { status: 500 });
   }
   console.log(`[push] ${ff.name} adapter OK in ${Date.now() - t0}ms → ${pushRes.externalFfId}`);
   const externalFfId = pushRes.externalFfId;

@@ -102,7 +102,7 @@ function flashshipAdapter(): FulfillerAdapter {
     async push(ctx) {
       const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
       const accessToken = cred.apiKey || cred.accessToken || cred.apiToken || "";
-      if (!accessToken) return { ...simulate("flashship"), reason: "FlashShip chưa có API token (Settings → API Key) → đơn KHÔNG lên nhà in" };
+      if (!accessToken) return { ...simulate("flashship"), reason: "FlashShip API token missing (Settings → API Key) → order NOT sent to the printer" };
 
       const o = ctx.order;
       const printType = (Number(cred.printType) === 2 ? 2 : 1) as 1 | 2;
@@ -118,7 +118,7 @@ function flashshipAdapter(): FulfillerAdapter {
         return p;
       });
       const bad = products.find((p) => !p.variant_id);
-      if (bad) throw new Error("FlashShip cần variant_id dạng SỐ trong SKU mapping (kéo bằng nút Update SKU ở tab Flashship)");
+      if (bad) throw new Error("FlashShip needs a NUMERIC variant_id in SKU mapping (pull via Update SKU on the Flashship tab)");
 
       const res = await createFlashshipOrder({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
         order_id: orderExtNumber(o),
@@ -256,7 +256,7 @@ function printwayAdapter(): FulfillerAdapter {
       return {
         externalFfId: res.orderId, simulated: false, raw: res.raw,
         baseCost: realBase, shipCost: realShip,
-        reason: reused ? "Đơn đã tồn tại sẵn trên Printway (từ lần đẩy lỗi trước) — đã link vào đơn cũ, không tạo trùng" : undefined,
+        reason: reused ? "Order already existed on Printway (from a previous failed push) — linked to it, no duplicate created" : undefined,
       };
     },
   };

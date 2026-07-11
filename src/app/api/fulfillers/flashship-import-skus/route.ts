@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
     const friendly = /abort|timeout|fetch failed|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|UND_ERR|socket/i.test(msg)
-      ? "Không kết nối được tới FlashShip (connect bị drop) — xác nhận IP server chưa được FlashShip whitelist. Liên hệ FlashShip whitelist IP, hoặc thử endpoint UAT https://uat-api.flashship.net/seller-api-v2 với token UAT."
+      ? "Cannot reach FlashShip (connection dropped) — server IP is not whitelisted by FlashShip. Ask FlashShip to whitelist, or try the UAT endpoint https://uat-api.flashship.net/seller-api-v2 with a UAT token."
       : msg.slice(0, 300);
     return NextResponse.json({ ok: false, error: friendly }, { status: 500 });
   }

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
   IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid,
@@ -84,6 +84,33 @@ export default function AppShell({ user, links, children }: {
         </div>
       </header>
       <main className="app-content">{children}</main>
+      <BackToTop />
     </div>
+  );
+}
+
+// Nút kéo lên đầu trang — hiện khi cuộn xuống >400px (Design Studio / Orders dài lướt mỏi tay)
+function BackToTop() {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setShow(window.scrollY > 400);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  if (!show) return null;
+  return (
+    <button type="button" aria-label="Back to top" title="Back to top"
+      onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+      style={{
+        position: "fixed", right: 22, bottom: 24, zIndex: 90,
+        width: 44, height: 44, borderRadius: "50%", border: "none", cursor: "pointer",
+        background: "var(--blue)", color: "#fff", boxShadow: "0 4px 14px rgba(0,0,0,.22)",
+        display: "grid", placeItems: "center",
+      }}>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6 14l6-6 6 6" />
+      </svg>
+    </button>
   );
 }

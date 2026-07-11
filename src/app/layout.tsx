@@ -11,6 +11,8 @@ import { ConfirmProvider } from "@/components/confirm-provider";
 import { cookies } from "next/headers";
 import { Lang } from "@/lib/i18n";
 
+export const viewport = { width: "device-width", initialScale: 1 };
+
 export const metadata: Metadata = {
   title: "FUSION OS",
   description: "FUSION CO., LTD e-commerce management system",

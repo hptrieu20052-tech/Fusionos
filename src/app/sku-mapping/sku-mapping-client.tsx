@@ -275,7 +275,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     const imp = await fetch("/api/fulfillers/printway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
-    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} SKU tìm thấy, ${imp.skipped} bỏ qua`);
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped`);
   }
 
   // Kéo variant FlashShip (GET /orders/list-variant-sku) → upsert mapping (API không trả giá)
@@ -284,7 +284,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     const imp = await fetch("/api/fulfillers/flashship-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
-    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.updated} updated · FlashShip không trả giá qua API — nhập Base/Ship tay`);
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.updated} updated · FlashShip API has no prices — enter Base/Ship manually`);
   }
 
   const th = { textAlign: "left" as const, fontSize: 11, color: "var(--faint)", fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: ".3px", padding: "8px 10px", borderBottom: "1px solid var(--line)" };

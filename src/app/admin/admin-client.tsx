@@ -2,7 +2,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Flash } from "@/components/flash";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
-import { IconKey, IconLock, IconLockOpen, IconTrash } from "@/components/icons";
+import { IconKey, IconLock, IconLockOpen, IconTrash, IconSparkle, IconCopy, IconUpload, IconDownload, IconReport } from "@/components/icons";
+import { DateInput } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { UserFunctionPermission } from "./user-function-permission";
 
@@ -171,12 +172,12 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
     const suggested = genStrongPw();
     const pw = await askPassword({
       title: t("adm.resetPassword"),
-      message: t("adm.newPwFor").replace("{name}", u.fullName) + " · Đã gợi ý sẵn mật khẩu mạnh, sửa tuỳ ý:",
+      message: t("adm.newPwFor").replace("{name}", u.fullName) + " · A strong password is pre-filled, edit as needed:",
       confirmText: t("adm.resetWord"),
       input: { type: "text", placeholder: t("adm.newPassword"), minLength: 6, initial: suggested },
     });
     if (!pw) return;
-    await patchUser(u.id, { password: pw }, `✓ Mật khẩu mới của ${u.fullName}: ${pw} — copy gửi ngay, hệ thống không xem lại được`);
+    await patchUser(u.id, { password: pw }, `✓ New password for ${u.fullName}: ${pw} — copied to clipboard, it cannot be viewed again`);
     try { await navigator.clipboard.writeText(pw); } catch { /* clipboard bị chặn thì thôi */ }
   }
   async function toggleStatus(u: User) {
@@ -187,7 +188,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
     let j = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id }) }).then((r) => r.json());
     if (!j.ok && j.linked) {
       // User dính orders/designs → hỏi xoá cưỡng bức (gỡ liên kết, dữ liệu giữ nguyên nhưng trống người phụ trách)
-      if (await confirm({ message: `${u.fullName} đang gắn với orders/designs. XOÁ CƯỠNG BỨC? Dữ liệu giữ nguyên nhưng cột seller/designer sẽ trống và review design của user này bị xoá.`, danger: true, confirmText: "Force delete" })) {
+      if (await confirm({ message: `${u.fullName} is linked to orders/designs. FORCE DELETE? Data stays but seller/designer fields become empty and this user's design reviews are removed.`, danger: true, confirmText: "Force delete" })) {
         j = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id, force: true }) }).then((r) => r.json());
       } else return;
     }
@@ -233,8 +234,8 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
           <input required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ ...inp, flex: 1, minWidth: 180 }} />
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
             <input required placeholder={t("adm.tempPw")} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} style={{ ...inp, width: 140 }} />
-            <button type="button" title="Gợi ý mật khẩu mạnh" onClick={() => setForm({ ...form, password: genStrongPw() })} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "7px 9px", cursor: "pointer", fontSize: 13 }}>🎲</button>
-            <button type="button" title="Copy mật khẩu" onClick={async () => { try { await navigator.clipboard.writeText(form.password); setMsg("✓ Đã copy mật khẩu"); } catch { setMsg("⚠ Copy bị chặn"); } }} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "7px 9px", cursor: "pointer", fontSize: 13 }}>📋</button>
+            <button type="button" title="Suggest strong password" onClick={() => setForm({ ...form, password: genStrongPw() })} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "8px 9px", cursor: "pointer", display: "inline-flex" }}><IconSparkle width={14} height={14} /></button>
+            <button type="button" title="Copy password" onClick={async () => { try { await navigator.clipboard.writeText(form.password); setMsg("✓ Password copied"); } catch { setMsg("⚠ Clipboard blocked"); } }} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "8px 9px", cursor: "pointer", display: "inline-flex" }}><IconCopy width={14} height={14} /></button>
           </span>
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inp}>
             {ROLES.map((r) => <option key={r}>{r}</option>)}
@@ -243,8 +244,8 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
             <option value="">— team —</option>
             {teamList.map((tm) => <option key={tm.id} value={tm.name}>{tm.name}</option>)}
           </select>
-          <input type="date" title="Ngày bắt đầu làm việc" value={form.startedAt} onChange={(e) => setForm({ ...form, startedAt: e.target.value })} style={{ ...inp, width: 150 }} />
-          <input type="date" title="Ngày sinh nhật" value={form.dateOfBirth} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} style={{ ...inp, width: 150 }} />
+          <DateInput value={form.startedAt} onChange={(v) => setForm({ ...form, startedAt: v })} placeholder="Start date" />
+          <DateInput value={form.dateOfBirth} onChange={(v) => setForm({ ...form, dateOfBirth: v })} placeholder="Birthday" />
           <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 11, padding: "9px 18px", fontWeight: 800, cursor: "pointer" }}>{t("adm.create")}</button>
         </form>
         <Flash msg={msg} />
@@ -284,7 +285,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   <button onClick={() => resetPass(u)} style={actBtn} title={t("adm.resetPwTitle")}><IconKey width={13} height={13} /> {t("adm.reset")}</button>
                   <button onClick={() => toggleStatus(u)} style={{ ...actBtn, color: u.status === "active" ? "var(--amber)" : "var(--green)" }}>{u.status === "active" ? <><IconLock width={13} height={13} /> {t("adm.lock")}</> : <><IconLockOpen width={13} height={13} /> {t("adm.unlock")}</>}</button>
-                  <button onClick={() => setHrOpen((p) => { const n = new Set(p); if (n.has(u.id)) n.delete(u.id); else n.add(u.id); return n; })} style={{ ...actBtn, ...(hrOpen.has(u.id) ? { background: "var(--blue-soft)", borderColor: "var(--blue)", color: "var(--blue)" } : {}) }} title="Hồ sơ nhân sự">📄 HR</button>
+                  <button onClick={() => setHrOpen((p) => { const n = new Set(p); if (n.has(u.id)) n.delete(u.id); else n.add(u.id); return n; })} style={{ ...actBtn, ...(hrOpen.has(u.id) ? { background: "var(--blue-soft)", borderColor: "var(--blue)", color: "var(--blue)" } : {}) }} title="HR profile"><IconReport width={13} height={13} /> HR</button>
                   <button onClick={() => deleteUser(u)} style={{ ...actBtn, color: "var(--red)" }}><IconTrash width={13} height={13} /> {t("adm.delete")}</button>
                 </td>
               </tr>
@@ -293,31 +294,31 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                   <td></td>
                   <td colSpan={6} style={{ padding: "8px 10px 14px" }}>
                     <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap", background: "var(--blue-soft)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 14px", fontSize: 12.5 }}>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Ngày vào làm
-                        <input type="date" defaultValue={u.startedAt ?? ""} onBlur={(e) => { if ((e.target.value || null) !== (u.startedAt ?? null)) patchUser(u.id, { startedAt: e.target.value }, "✓ Đã lưu ngày vào làm"); }} style={{ ...inp, width: 150, fontWeight: 500 }} />
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Start date
+                        <DateInput value={u.startedAt ?? ""} onChange={(v) => { if ((v || null) !== (u.startedAt ?? null)) patchUser(u.id, { startedAt: v }, "✓ Start date saved"); }} placeholder="Pick date" />
+                      </span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Birthday
+                        <DateInput value={u.dateOfBirth ?? ""} onChange={(v) => { if ((v || null) !== (u.dateOfBirth ?? null)) patchUser(u.id, { dateOfBirth: v }, "✓ Birthday saved"); }} placeholder="Pick date" />
+                      </span>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Phone
+                        <input type="tel" defaultValue={u.phone ?? ""} placeholder="Phone…" onBlur={(e) => { if ((e.target.value.trim() || null) !== (u.phone ?? null)) patchUser(u.id, { phone: e.target.value }, "✓ Phone saved"); }} style={{ ...inp, width: 130, fontWeight: 500 }} />
                       </label>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Sinh nhật
-                        <input type="date" defaultValue={u.dateOfBirth ?? ""} onBlur={(e) => { if ((e.target.value || null) !== (u.dateOfBirth ?? null)) patchUser(u.id, { dateOfBirth: e.target.value }, "✓ Đã lưu sinh nhật"); }} style={{ ...inp, width: 150, fontWeight: 500 }} />
-                      </label>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>SĐT
-                        <input type="tel" defaultValue={u.phone ?? ""} placeholder="09xx…" onBlur={(e) => { if ((e.target.value.trim() || null) !== (u.phone ?? null)) patchUser(u.id, { phone: e.target.value }, "✓ Đã lưu SĐT"); }} style={{ ...inp, width: 130, fontWeight: 500 }} />
-                      </label>
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Hợp đồng
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Contract
                         {u.contractUrl
-                          ? <a href={u.contractUrl} target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>📄 Xem file</a>
-                          : <span style={{ color: "var(--muted)", fontWeight: 500 }}>chưa có</span>}
-                        <button type="button" onClick={() => hrFileRefs.current[u.id]?.click()} style={{ ...actBtn, marginLeft: 0 }}>⬆ Upload (Word/PDF)</button>
+                          ? <a href={u.contractUrl} target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}><IconDownload width={13} height={13} /> View file</a>
+                          : <span style={{ color: "var(--muted)", fontWeight: 500 }}>none</span>}
+                        <button type="button" onClick={() => hrFileRefs.current[u.id]?.click()} style={{ ...actBtn, marginLeft: 0 }}><IconUpload width={13} height={13} /> Upload (Word/PDF)</button>
                         <input ref={(el) => { hrFileRefs.current[u.id] = el; }} type="file" accept=".doc,.docx,.pdf" style={{ display: "none" }}
                           onChange={async (e) => {
                             const f = e.target.files?.[0]; e.target.value = "";
                             if (!f) return;
-                            setMsg("⏳ Đang upload hợp đồng…");
+                            setMsg("⏳ Uploading contract…");
                             try {
                               const tk = await fetch("/api/admin/users/contract-upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, contentType: f.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }) }).then((r) => r.json());
                               if (!tk.ok) throw new Error(tk.error ?? "upload-url");
                               const put = await fetch(tk.url, { method: tk.method ?? "PUT", headers: tk.headers ?? {}, body: f });
                               if (!put.ok) throw new Error(`R2 ${put.status}`);
-                              await patchUser(u.id, { contractKey: tk.storageKey }, "✓ Đã lưu hợp đồng");
+                              await patchUser(u.id, { contractKey: tk.storageKey }, "✓ Contract saved");
                               fetch("/api/admin/users").then((r) => r.json()).then((jj) => { if (jj.ok) setUsers(jj.users); });
                             } catch (err) { setMsg("⚠ " + (err as Error).message); }
                           }} />

@@ -7,7 +7,7 @@ import { useLang } from "@/components/lang-provider";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { SupplierLogo } from "@/components/supplier-logo";
-import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn, IconDownload, IconReport, IconCheck, IconPencil, IconRefresh, IconSend } from "@/components/icons";
+import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn, IconDownload, IconReport, IconCheck, IconPencil, IconRefresh, IconSend, IconLink } from "@/components/icons";
 
 type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
@@ -722,12 +722,12 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
     const doPush = () => fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(async (r) => {
         const txt = await r.text();
-        try { return { ...JSON.parse(txt), _status: r.status }; } catch { return { ok: false, _retryable: r.status >= 500, error: `HTTP ${r.status} — server trả non-JSON: ${txt.replace(/<[^>]*>/g, " ").trim().slice(0, 160)}` }; }
+        try { return { ...JSON.parse(txt), _status: r.status }; } catch { return { ok: false, _retryable: r.status >= 500, error: `HTTP ${r.status} — non-JSON response: ${txt.replace(/<[^>]*>/g, " ").trim().slice(0, 160)}` }; }
       })
       .catch((e) => ({ ok: false, _retryable: true, error: "Request failed/timeout: " + String(e?.message ?? e) }));
     let j = await doPush();
     if (!j.ok && j._retryable) {
-      flash("⏳ Server lỗi tạm — thử lại sau 2.5s…");
+      flash("⏳ Temporary server error — retrying in 2.5s…");
       await new Promise((r) => setTimeout(r, 2500));
       j = await doPush();
     }
@@ -997,9 +997,9 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
   const promptApi = usePrompt();
   // Import mockup bằng link ảnh (dán URL) — lưu nguyên URL vào mockupKey, fileUrl trả thẳng
   const importMockupLink = async () => {
-    const url = await promptApi({ title: "Import mockup link", message: "Dán URL ảnh mockup (http/https):", confirmText: "Save" });
+    const url = await promptApi({ title: "Import mockup link", message: "Paste mockup image URL (http/https):", confirmText: "Save" });
     if (!url) return;
-    if (!/^https?:\/\//i.test(url.trim())) { flash("✗ URL phải bắt đầu bằng http(s)://"); return; }
+    if (!/^https?:\/\//i.test(url.trim())) { flash("✗ URL must start with http(s)://"); return; }
     const s = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mockupKey: url.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (s.ok) { flash(t("o.mockupUploaded")); onSaved(); } else flash("✗ " + (s.error ?? ""));
   };
@@ -1017,7 +1017,7 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
           <input ref={mockRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMockup(f); e.target.value = ""; }} />
           {img && <button onClick={(e) => { e.stopPropagation(); mockRef.current?.click(); }} title={t("o.changeMockup")} style={{ position: "absolute", bottom: 3, right: 3, width: 20, height: 20, borderRadius: 6, border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>{upBusy ? "…" : <IconPencil width={12} height={12} />}</button>}
           <button onClick={(e) => { e.stopPropagation(); importMockupLink(); }} title="Import mockup link"
-            style={{ position: "absolute", bottom: 3, left: 3, width: 20, height: 20, borderRadius: 6, border: img ? "none" : "1px solid var(--line)", background: img ? "rgba(0,0,0,.55)" : "var(--card)", color: img ? "#fff" : "var(--muted)", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>🔗</button>
+            style={{ position: "absolute", bottom: 3, left: 3, width: 20, height: 20, borderRadius: 6, border: img ? "none" : "1px solid var(--line)", background: img ? "rgba(0,0,0,.55)" : "var(--card)", color: img ? "#fff" : "var(--muted)", cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}><IconLink width={11} height={11} /></button>
         </>}
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>

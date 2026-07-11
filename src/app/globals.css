@@ -379,3 +379,39 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 /* Spinner nhỏ cho card đang tải file */
 @keyframes fspin { to { transform: rotate(360deg); } }
 .mini-spinner { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: fspin .7s linear infinite; }
+
+/* ===== PERF: bỏ render card ngoài màn hình khi cuộn grid design dài ===== */
+.design-card{content-visibility:auto;contain-intrinsic-size:auto 300px}
+
+/* ===== MOBILE (nhân sự check sold trên điện thoại) ===== */
+@media (max-width:720px){
+  .app-content{padding:12px 10px 84px}
+  .topnav-inner{padding:0 12px;gap:10px;height:54px}
+  .topnav-brand img{height:28px}
+  .tb-user-txt{display:none}
+  .topnav-item{padding:8px 10px;font-size:12.5px}
+
+  /* Order card: 3 cột → 1 cột dọc, gọn gàng */
+  .o2{padding:12px}
+  .o2-top{grid-template-columns:1fr;gap:14px}
+  .o2-item{gap:12px}
+  .o2-thumb{width:76px;height:76px}
+  .o2 input,.o2 select,.o2 textarea{max-width:100%}
+
+  /* Pills trạng thái: 1 hàng vuốt ngang thay vì xuống dòng chiếm nửa màn hình */
+  .otabs{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}
+  .otabs::-webkit-scrollbar{display:none}
+
+  /* Bảng report/admin: cuộn ngang trong panel, trang không vỡ */
+  .panel{overflow-x:auto}
+  .panel table{font-size:12px}
+
+  /* Date picker popup canh giữa màn hình nhỏ */
+  .dp-pop{left:50%;right:auto;transform:translateX(-50%)}
+  .dp-pop.right{left:50%;right:auto}
+}
+@media (max-width:560px){
+  .filters{grid-template-columns:1fr 1fr}
+  .kpis{gap:8px}
+  .pipe-cards{grid-template-columns:repeat(2,1fr);gap:8px}
+}

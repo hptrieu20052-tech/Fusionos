@@ -126,3 +126,52 @@ export default function DateRangePicker({ value, onChange, align = "left", allow
     </div>
   );
 }
+
+// ===== DateInput: chọn MỘT ngày, cùng phong cách dp — dùng cho Admin HR (start date / birthday) =====
+const M_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function DateInput({ value, onChange, placeholder = "Pick date", width = 150 }: {
+  value: string | null | undefined; onChange: (v: string) => void; placeholder?: string; width?: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [base, setBase] = useState(() => som(value ? parseISO(value) : new Date()));
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    if (open) document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [open]);
+  useEffect(() => { if (value) setBase(som(parseISO(value))); }, [value]);
+  return (
+    <div className="dp" ref={ref} style={{ display: "inline-block" }}>
+      <button type="button" className="dp-trigger" style={{ minWidth: width, justifyContent: "flex-start" }} onClick={() => setOpen((v) => !v)}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="5" width="18" height="16" rx="3" /><path d="M3 10h18M8 3v4M16 3v4" />
+        </svg>
+        {value ? disp(value) : <span style={{ color: "var(--muted)", fontWeight: 500 }}>{placeholder}</span>}
+      </button>
+      {open && (
+        <div className="dp-pop" style={{ minWidth: 258, padding: 12 }}>
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 6, position: "relative", height: 30, marginBottom: 4 }}>
+            <button type="button" className="dp-nav" style={{ position: "static" }} title="Prev year" onClick={() => setBase((b) => addMonths(b, -12))}>«</button>
+            <button type="button" className="dp-nav" style={{ position: "static" }} onClick={() => setBase((b) => addMonths(b, -1))}>‹</button>
+            <b style={{ fontSize: 12.5, minWidth: 78, textAlign: "center" }}>{M_EN[base.getMonth()]} {base.getFullYear()}</b>
+            <button type="button" className="dp-nav" style={{ position: "static" }} onClick={() => setBase((b) => addMonths(b, 1))}>›</button>
+            <button type="button" className="dp-nav" style={{ position: "static" }} title="Next year" onClick={() => setBase((b) => addMonths(b, 12))}>»</button>
+          </div>
+          <div className="dp-grid">
+            {matrix(base.getFullYear(), base.getMonth()).map((d, i) => {
+              const out = d.getMonth() !== base.getMonth();
+              const sel = value === iso(d);
+              return (
+                <button key={i} type="button" disabled={out}
+                  className={`dp-day${out ? " out" : ""}${sel ? " sel" : ""}`}
+                  onClick={() => { onChange(iso(d)); setOpen(false); }}>{d.getDate()}</button>
+              );
+            })}
+          </div>
+          {value ? <button type="button" onClick={() => { onChange(""); setOpen(false); }} style={{ marginTop: 8, width: "100%", border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "5px 0", fontSize: 12, cursor: "pointer", color: "var(--muted)", fontWeight: 600 }}>Clear</button> : null}
+        </div>
+      )}
+    </div>
+  );
+}
