@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Flash } from "@/components/flash";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import { IconKey, IconLock, IconLockOpen, IconTrash } from "@/components/icons";
@@ -31,7 +31,7 @@ type RoleAction = { role: string; actionKey: string; enabled: boolean };
 const scopeResources = (t: (k: string) => string): { key: string; label: string }[] => [{ key: "orders", label: t("adm.ordersWord") }, { key: "designs", label: "Design" }];
 const scopeOpts = (t: (k: string) => string): { v: string; label: string }[] => [{ v: "all", label: t("adm.allWord") }, { v: "team", label: t("adm.wholeTeam") }, { v: "own", label: t("adm.ownOnly") }];
 const ACTION_MODULE_LABEL: Record<string, string> = { orders: "Orders", designs: "Design Studio", fulfillment: "Fulfillment", stores: "Stores", finance: "Finance" };
-type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string; avatarUrl?: string | null };
+type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string; avatarUrl?: string | null; dateOfBirth?: string | null; startedAt?: string | null; phone?: string | null; contractKey?: string | null; contractUrl?: string | null };
 
 // Ô sửa trực tiếp (Full name / Email): trông như text, click là gõ được, Enter/blur để lưu, Esc để huỷ.
 function EditableCell({ value, onSave, bold, type = "text" }: { value: string; onSave: (v: string) => void; bold?: boolean; type?: string }) {
@@ -73,11 +73,22 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
     new Set(roleActions.filter((a) => !a.enabled).map((a) => `${a.role}:${a.actionKey}`))
   );
   const [actRole, setActRole] = useState("seller");
-  const [form, setForm] = useState({ fullName: "", email: "", password: "", role: "seller", team: "" });
+  const [form, setForm] = useState({ fullName: "", email: "", password: "", role: "seller", team: "", startedAt: "", dateOfBirth: "" });
   const [msg, setMsg] = useState("");
+  const [hrOpen, setHrOpen] = useState<Set<string>>(new Set());
+  const hrFileRefs = useRef<Record<string, HTMLInputElement | null>>({});
   const { t } = useLang();
   const confirm = useConfirm();
   const askPassword = usePrompt();
+  // Mật khẩu mạnh 12 ký tự: đủ hoa/thường/số/ký hiệu, tránh ký tự dễ nhầm (l/I/1, O/0)
+  function genStrongPw(): string {
+    const U = "ABCDEFGHJKMNPQRSTUVWXYZ", L = "abcdefghjkmnpqrstuvwxyz", D = "23456789", S = "!@#$%&*?";
+    const all = U + L + D + S;
+    const pick = (set: string) => set[Math.floor(Math.random() * set.length)];
+    const arr = [pick(U), pick(L), pick(D), pick(S), ...Array.from({ length: 8 }, () => pick(all))];
+    for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    return arr.join("");
+  }
 
   function levelOf(role: string, module: string) {
     if (role === "admin") return 2;
@@ -142,7 +153,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
     const j = await res.json();
     if (j.ok) {
       setUsers([...users, { id: j.id, fullName: form.fullName, email: form.email, role: form.role, team: form.team, status: "active" }]);
-      setForm({ fullName: "", email: "", password: "", role: "seller", team: "" });
+      setForm({ fullName: "", email: "", password: "", role: "seller", team: "", startedAt: "", dateOfBirth: "" });
       setMsg(t("adm.accountCreated") + (form.role === "seller" ? t("adm.sellerAutoNote") : ""));
     } else setMsg("⚠ " + (j.error ?? "Error"));
   }
@@ -152,26 +163,34 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   async function patchUser(id: string, body: Record<string, unknown>, okMsg?: string) {
     const j = await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: id, ...body }) }).then((r) => r.json());
     if (j.ok) {
-      setUsers((us) => us.map((u) => u.id === id ? { ...u, ...(body.role ? { role: body.role as string } : {}), ...(body.team !== undefined ? { team: (body.team as string) || null } : {}), ...(body.status ? { status: body.status as string } : {}), ...(body.fullName ? { fullName: body.fullName as string } : {}), ...(body.email ? { email: body.email as string } : {}) } : u));
+      setUsers((us) => us.map((u) => u.id === id ? { ...u, ...(body.role ? { role: body.role as string } : {}), ...(body.team !== undefined ? { team: (body.team as string) || null } : {}), ...(body.status ? { status: body.status as string } : {}), ...(body.fullName ? { fullName: body.fullName as string } : {}), ...(body.email ? { email: body.email as string } : {}), ...("startedAt" in body ? { startedAt: (body.startedAt as string) || null } : {}), ...("dateOfBirth" in body ? { dateOfBirth: (body.dateOfBirth as string) || null } : {}), ...("phone" in body ? { phone: (body.phone as string) || null } : {}), ...("contractKey" in body ? { contractKey: (body.contractKey as string) || null } : {}) } : u));
       if (okMsg) setMsg(okMsg);
     } else setMsg("⚠ " + (j.error ?? "Error"));
   }
   async function resetPass(u: User) {
+    const suggested = genStrongPw();
     const pw = await askPassword({
       title: t("adm.resetPassword"),
-      message: t("adm.newPwFor").replace("{name}", u.fullName),
+      message: t("adm.newPwFor").replace("{name}", u.fullName) + " · Đã gợi ý sẵn mật khẩu mạnh, sửa tuỳ ý:",
       confirmText: t("adm.resetWord"),
-      input: { type: "password", placeholder: t("adm.newPassword"), minLength: 6 },
+      input: { type: "text", placeholder: t("adm.newPassword"), minLength: 6, initial: suggested },
     });
     if (!pw) return;
-    await patchUser(u.id, { password: pw }, t("adm.pwResetFor").replace("{name}", u.fullName));
+    await patchUser(u.id, { password: pw }, `✓ Mật khẩu mới của ${u.fullName}: ${pw} — copy gửi ngay, hệ thống không xem lại được`);
+    try { await navigator.clipboard.writeText(pw); } catch { /* clipboard bị chặn thì thôi */ }
   }
   async function toggleStatus(u: User) {
     await patchUser(u.id, { status: u.status === "active" ? "disabled" : "active" }, `✓ ${u.status === "active" ? t("adm.didLock") : t("adm.didUnlock")} ${u.fullName}`);
   }
   async function deleteUser(u: User) {
     if (!(await confirm({ message: t("adm.confirmDeleteUser").replace("{name}", u.fullName), danger: true }))) return;
-    const j = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id }) }).then((r) => r.json());
+    let j = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id }) }).then((r) => r.json());
+    if (!j.ok && j.linked) {
+      // User dính orders/designs → hỏi xoá cưỡng bức (gỡ liên kết, dữ liệu giữ nguyên nhưng trống người phụ trách)
+      if (await confirm({ message: `${u.fullName} đang gắn với orders/designs. XOÁ CƯỠNG BỨC? Dữ liệu giữ nguyên nhưng cột seller/designer sẽ trống và review design của user này bị xoá.`, danger: true, confirmText: "Force delete" })) {
+        j = await fetch("/api/admin/users", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: u.id, force: true }) }).then((r) => r.json());
+      } else return;
+    }
     if (j.ok) { setUsers((us) => us.filter((x) => x.id !== u.id)); setMsg(t("adm.deletedUser").replace("{name}", u.fullName)); }
     else setMsg("⚠ " + (j.error ?? "Error"));
   }
@@ -212,7 +231,11 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
         <form onSubmit={createUser} style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
           <input required placeholder={t("adm.colName")} value={form.fullName} onChange={(e) => setForm({ ...form, fullName: e.target.value })} style={{ ...inp, flex: 1, minWidth: 150 }} />
           <input required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={{ ...inp, flex: 1, minWidth: 180 }} />
-          <input required placeholder={t("adm.tempPw")} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} style={{ ...inp, width: 140 }} />
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <input required placeholder={t("adm.tempPw")} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} style={{ ...inp, width: 140 }} />
+            <button type="button" title="Gợi ý mật khẩu mạnh" onClick={() => setForm({ ...form, password: genStrongPw() })} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "7px 9px", cursor: "pointer", fontSize: 13 }}>🎲</button>
+            <button type="button" title="Copy mật khẩu" onClick={async () => { try { await navigator.clipboard.writeText(form.password); setMsg("✓ Đã copy mật khẩu"); } catch { setMsg("⚠ Copy bị chặn"); } }} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "7px 9px", cursor: "pointer", fontSize: 13 }}>📋</button>
+          </span>
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inp}>
             {ROLES.map((r) => <option key={r}>{r}</option>)}
           </select>
@@ -220,6 +243,8 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
             <option value="">— team —</option>
             {teamList.map((tm) => <option key={tm.id} value={tm.name}>{tm.name}</option>)}
           </select>
+          <input type="date" title="Ngày bắt đầu làm việc" value={form.startedAt} onChange={(e) => setForm({ ...form, startedAt: e.target.value })} style={{ ...inp, width: 150 }} />
+          <input type="date" title="Ngày sinh nhật" value={form.dateOfBirth} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} style={{ ...inp, width: 150 }} />
           <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 11, padding: "9px 18px", fontWeight: 800, cursor: "pointer" }}>{t("adm.create")}</button>
         </form>
         <Flash msg={msg} />
@@ -232,7 +257,8 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
           <thead><tr><th style={{ width: 44 }}></th><th>{t("adm.colName")}</th><th>Email</th><th>{t("adm.colRole")}</th><th>Team</th><th>{t("adm.colStatus")}</th><th style={{ textAlign: "right" }}>{t("adm.colActions")}</th></tr></thead>
           <tbody>
             {users.map((u) => (
-              <tr key={u.id} style={{ opacity: u.status === "active" ? 1 : 0.55 }}>
+              <React.Fragment key={u.id}>
+              <tr style={{ opacity: u.status === "active" ? 1 : 0.55 }}>
                 <td>
                   <div style={{ width: 34, height: 34, borderRadius: "50%", overflow: "hidden", background: "var(--blue-soft)", color: "var(--blue)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 12.5 }}>
                     {u.avatarUrl
@@ -258,9 +284,49 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                   <button onClick={() => resetPass(u)} style={actBtn} title={t("adm.resetPwTitle")}><IconKey width={13} height={13} /> {t("adm.reset")}</button>
                   <button onClick={() => toggleStatus(u)} style={{ ...actBtn, color: u.status === "active" ? "var(--amber)" : "var(--green)" }}>{u.status === "active" ? <><IconLock width={13} height={13} /> {t("adm.lock")}</> : <><IconLockOpen width={13} height={13} /> {t("adm.unlock")}</>}</button>
+                  <button onClick={() => setHrOpen((p) => { const n = new Set(p); if (n.has(u.id)) n.delete(u.id); else n.add(u.id); return n; })} style={{ ...actBtn, ...(hrOpen.has(u.id) ? { background: "var(--blue-soft)", borderColor: "var(--blue)", color: "var(--blue)" } : {}) }} title="Hồ sơ nhân sự">📄 HR</button>
                   <button onClick={() => deleteUser(u)} style={{ ...actBtn, color: "var(--red)" }}><IconTrash width={13} height={13} /> {t("adm.delete")}</button>
                 </td>
               </tr>
+              {hrOpen.has(u.id) && (
+                <tr>
+                  <td></td>
+                  <td colSpan={6} style={{ padding: "8px 10px 14px" }}>
+                    <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap", background: "var(--blue-soft)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 14px", fontSize: 12.5 }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Ngày vào làm
+                        <input type="date" defaultValue={u.startedAt ?? ""} onBlur={(e) => { if ((e.target.value || null) !== (u.startedAt ?? null)) patchUser(u.id, { startedAt: e.target.value }, "✓ Đã lưu ngày vào làm"); }} style={{ ...inp, width: 150, fontWeight: 500 }} />
+                      </label>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Sinh nhật
+                        <input type="date" defaultValue={u.dateOfBirth ?? ""} onBlur={(e) => { if ((e.target.value || null) !== (u.dateOfBirth ?? null)) patchUser(u.id, { dateOfBirth: e.target.value }, "✓ Đã lưu sinh nhật"); }} style={{ ...inp, width: 150, fontWeight: 500 }} />
+                      </label>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>SĐT
+                        <input type="tel" defaultValue={u.phone ?? ""} placeholder="09xx…" onBlur={(e) => { if ((e.target.value.trim() || null) !== (u.phone ?? null)) patchUser(u.id, { phone: e.target.value }, "✓ Đã lưu SĐT"); }} style={{ ...inp, width: 130, fontWeight: 500 }} />
+                      </label>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, fontWeight: 700 }}>Hợp đồng
+                        {u.contractUrl
+                          ? <a href={u.contractUrl} target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>📄 Xem file</a>
+                          : <span style={{ color: "var(--muted)", fontWeight: 500 }}>chưa có</span>}
+                        <button type="button" onClick={() => hrFileRefs.current[u.id]?.click()} style={{ ...actBtn, marginLeft: 0 }}>⬆ Upload (Word/PDF)</button>
+                        <input ref={(el) => { hrFileRefs.current[u.id] = el; }} type="file" accept=".doc,.docx,.pdf" style={{ display: "none" }}
+                          onChange={async (e) => {
+                            const f = e.target.files?.[0]; e.target.value = "";
+                            if (!f) return;
+                            setMsg("⏳ Đang upload hợp đồng…");
+                            try {
+                              const tk = await fetch("/api/admin/users/contract-upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, contentType: f.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }) }).then((r) => r.json());
+                              if (!tk.ok) throw new Error(tk.error ?? "upload-url");
+                              const put = await fetch(tk.url, { method: tk.method ?? "PUT", headers: tk.headers ?? {}, body: f });
+                              if (!put.ok) throw new Error(`R2 ${put.status}`);
+                              await patchUser(u.id, { contractKey: tk.storageKey }, "✓ Đã lưu hợp đồng");
+                              fetch("/api/admin/users").then((r) => r.json()).then((jj) => { if (jj.ok) setUsers(jj.users); });
+                            } catch (err) { setMsg("⚠ " + (err as Error).message); }
+                          }} />
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>

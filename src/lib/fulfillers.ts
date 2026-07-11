@@ -161,6 +161,14 @@ export function usStateAbbr(state: string): string {
   return US_STATES[s.toLowerCase()] ?? s;
 }
 
+// Printway BẮT BUỘC email hợp lệ (dù doc ghi optional). Etsy không cho email người mua
+// → thiếu thì dùng hộp thư chung của FUSION (chỉ để nhà in liên hệ khi cần).
+function pushEmail(raw: string | null | undefined): string {
+  const v = (raw ?? "").trim();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v)) return v;
+  return "orders@fusiondn.com";
+}
+
 // Printway BẮT BUỘC phone 8–15 chữ số (dù doc ghi optional). Etsy không cho SĐT người mua
 // → sanitize về chỉ-chữ-số; thiếu/không hợp lệ thì dùng placeholder 10 số (thực tế POD phổ biến).
 function pushPhone(raw: string | null | undefined): string {
@@ -209,7 +217,7 @@ function printwayAdapter(): FulfillerAdapter {
         tiktok_order_type: "seller",
         firstName: first,
         lastName: last,
-        shipping_email: o.email || undefined,
+        shipping_email: pushEmail(o.email),
         shipping_phone: pushPhone(o.phone),
         shipping_address1: o.addr1 || "",
         shipping_address2: o.addr2 || undefined,

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import bcrypt from "bcryptjs";
+import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -15,9 +16,11 @@ export async function GET() {
       id: schema.users.id, fullName: schema.users.fullName, email: schema.users.email,
       role: schema.users.role, team: schema.users.team, status: schema.users.status,
       lastActiveAt: schema.users.lastActiveAt,
+      dateOfBirth: schema.users.dateOfBirth, startedAt: schema.users.startedAt, contractKey: schema.users.contractKey,
+      avatarKey: schema.users.avatarKey, phone: schema.users.phone,
     })
     .from(schema.users);
-  return NextResponse.json({ ok: true, users });
+  return NextResponse.json({ ok: true, users: users.map((u) => ({ ...u, contractUrl: fileUrl(u.contractKey), avatarUrl: fileUrl(u.avatarKey) })) });
 }
 
 export async function POST(req: NextRequest) {
@@ -31,7 +34,11 @@ export async function POST(req: NextRequest) {
   try {
     const [u] = await db
       .insert(schema.users)
-      .values({ fullName: b.fullName, email: String(b.email).toLowerCase(), passwordHash, role: b.role, team: b.team, status: "active" })
+      .values({
+        fullName: b.fullName, email: String(b.email).toLowerCase(), passwordHash, role: b.role, team: b.team, status: "active",
+        dateOfBirth: (typeof b.dateOfBirth === "string" && b.dateOfBirth) ? b.dateOfBirth : null,
+        startedAt: (typeof b.startedAt === "string" && b.startedAt) ? b.startedAt : null,
+      })
       .returning({ id: schema.users.id });
     // restriction mặc định cho seller
     if (b.role === "seller") {
@@ -62,6 +69,10 @@ export async function PATCH(req: NextRequest) {
   if (typeof b.role === "string" && schema.users.role.enumValues.includes(b.role)) patch.role = b.role;
   if (typeof b.team === "string") patch.team = b.team.trim() || null;
   if (typeof b.fullName === "string" && b.fullName.trim()) patch.fullName = b.fullName.trim();
+  if ("phone" in b) patch.phone = (typeof b.phone === "string" && b.phone.trim()) ? b.phone.trim().slice(0, 30) : null;
+  if ("dateOfBirth" in b) patch.dateOfBirth = (typeof b.dateOfBirth === "string" && b.dateOfBirth) ? b.dateOfBirth : null;
+  if ("startedAt" in b) patch.startedAt = (typeof b.startedAt === "string" && b.startedAt) ? b.startedAt : null;
+  if ("contractKey" in b) patch.contractKey = (typeof b.contractKey === "string" && b.contractKey.trim()) ? b.contractKey.trim() : null;
   if (typeof b.email === "string" && b.email.trim()) {
     const em = b.email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return NextResponse.json({ ok: false, error: "invalid email" }, { status: 400 });
@@ -96,9 +107,26 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "Can't delete the last admin" }, { status: 400 });
   }
   try {
+    if (b.force === true) {
+      // XOÁ CƯỠNG BỨC: gỡ mọi liên kết trước (giữ orders/designs, chỉ trống người phụ trách).
+      // Bảng quyền (user_permissions/scopes/actions/sessions) đã cascade theo FK.
+      const uid = b.userId;
+      await db.execute(sql`UPDATE stores SET seller_id = NULL WHERE seller_id = ${uid}::uuid`);
+      await db.execute(sql`UPDATE orders SET seller_id = NULL WHERE seller_id = ${uid}::uuid`);
+      await db.execute(sql`UPDATE designs SET seller_id = NULL WHERE seller_id = ${uid}::uuid`);
+      await db.execute(sql`UPDATE designs SET designer_id = NULL WHERE designer_id = ${uid}::uuid`);
+      await db.execute(sql`UPDATE designs SET creator_id = NULL WHERE creator_id = ${uid}::uuid`);
+      await db.execute(sql`UPDATE design_files SET uploaded_by = NULL WHERE uploaded_by = ${uid}::uuid`);
+      await db.execute(sql`UPDATE order_issues SET reporter_id = NULL WHERE reporter_id = ${uid}::uuid`);
+      await db.execute(sql`DELETE FROM design_reviews WHERE reviewer_id = ${uid}::uuid`); // reviewer NOT NULL → xoá review của user này
+    }
     await db.delete(schema.users).where(eq(schema.users.id, b.userId));
     return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ ok: false, error: "This user is linked to designs/orders — LOCK instead of deleting to keep history." }, { status: 409 });
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    if (/foreign key|violates/i.test(msg)) {
+      return NextResponse.json({ ok: false, linked: true, error: "This user is linked to designs/orders. Force-delete to unlink and remove." }, { status: 409 });
+    }
+    return NextResponse.json({ ok: false, error: msg.slice(0, 200) }, { status: 500 });
   }
 }

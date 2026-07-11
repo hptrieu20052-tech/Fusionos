@@ -66,7 +66,7 @@ async function handlePush(req: NextRequest) {
       internalSku: m.internalSku, productId: m.fulfillerProductId ?? null,
       price: Number(it.unitPrice) || undefined, currency: "USD",
       // Merchize image = mockup của ĐƠN (upload theo order), KHÔNG lấy từ card design.
-      image: fileUrl(it.mockupKey) ?? null,
+      image: fileUrl(it.mockupKey) ?? it.imageUrl ?? null, // mockup gửi nhà in = đúng ảnh hiển thị trên đơn (mockup tay/link → ảnh listing Etsy)
       designFront: s.front ?? null, designBack: s.back ?? null,
       designFrontW: s.frontW, designFrontH: s.frontH, designBackW: s.backW, designBackH: s.backH,
       pfBlueprintId: m.pfBlueprintId ?? null, pfProviderId: m.pfProviderId ?? null, pfVariantId: m.pfVariantId ?? null,

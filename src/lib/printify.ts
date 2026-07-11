@@ -25,7 +25,25 @@ const ISO2: Record<string, string> = {
 export function toISO2(country: string | null): string {
   const c = (country ?? "").trim();
   if (/^[A-Za-z]{2}$/.test(c)) return c.toUpperCase();
-  return ISO2[c.toLowerCase()] ?? c;
+  return ISO2[c.toLowerCase()] ?? countryNameToCode()[c.toLowerCase()] ?? c;
+}
+
+// Map ngược ĐỦ 249 nước từ Intl.DisplayNames (tên tiếng Anh — Etsy xuất tên tiếng Anh).
+// Map tay ISO2 ở trên giữ vai trò alias ("UK", "USA"...). Build 1 lần khi cần.
+let COUNTRY_REV: Record<string, string> | null = null;
+function countryNameToCode(): Record<string, string> {
+  if (COUNTRY_REV) return COUNTRY_REV;
+  COUNTRY_REV = {};
+  try {
+    const dn = new Intl.DisplayNames(["en"], { type: "region" });
+    const A = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    for (const a of A) for (const b of A) {
+      const code = a + b;
+      const name = dn.of(code);
+      if (name && name !== code) COUNTRY_REV[name.toLowerCase()] = code;
+    }
+  } catch { /* ICU thiếu → còn map tay */ }
+  return COUNTRY_REV;
 }
 
 export type PrintifyShop = { id: number; title: string; sales_channel: string };

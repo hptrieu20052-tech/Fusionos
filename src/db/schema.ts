@@ -35,6 +35,8 @@ export const users = pgTable("users", {
   phone: text("phone"),
   gender: text("gender"),
   dateOfBirth: date("date_of_birth"),
+  startedAt: date("started_at"),        // ngày bắt đầu làm việc
+  contractKey: text("contract_key"),    // file hợp đồng trên R2 (docx/pdf)
   avatarKey: text("avatar_key"),
   status: userStatusEnum("status").notNull().default("pending"),
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
