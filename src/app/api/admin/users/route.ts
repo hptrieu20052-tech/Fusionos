@@ -61,9 +61,21 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof b.role === "string" && schema.users.role.enumValues.includes(b.role)) patch.role = b.role;
   if (typeof b.team === "string") patch.team = b.team.trim() || null;
+  if (typeof b.fullName === "string" && b.fullName.trim()) patch.fullName = b.fullName.trim();
+  if (typeof b.email === "string" && b.email.trim()) {
+    const em = b.email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return NextResponse.json({ ok: false, error: "invalid email" }, { status: 400 });
+    patch.email = em;
+  }
   if (!Object.keys(patch).length) return NextResponse.json({ ok: false, error: "no changes" }, { status: 400 });
 
-  await db.update(schema.users).set(patch).where(eq(schema.users.id, b.userId));
+  try {
+    await db.update(schema.users).set(patch).where(eq(schema.users.id, b.userId));
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    if (/unique|duplicate/i.test(msg)) return NextResponse.json({ ok: false, error: "email already exists" }, { status: 409 });
+    return NextResponse.json({ ok: false, error: "update failed" }, { status: 500 });
+  }
 
   // Nếu chuyển role sang seller → tự thêm restriction own_orders_only
   if (patch.role === "seller") {

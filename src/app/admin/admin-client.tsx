@@ -32,6 +32,30 @@ const scopeOpts = (t: (k: string) => string): { v: string; label: string }[] => 
 const ACTION_MODULE_LABEL: Record<string, string> = { orders: "Orders", designs: "Design Studio", fulfillment: "Fulfillment", stores: "Stores", finance: "Finance" };
 type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string; avatarUrl?: string | null };
 
+// Ô sửa trực tiếp (Full name / Email): trông như text, click là gõ được, Enter/blur để lưu, Esc để huỷ.
+function EditableCell({ value, onSave, bold, type = "text" }: { value: string; onSave: (v: string) => void; bold?: boolean; type?: string }) {
+  const [v, setV] = useState(value);
+  useEffect(() => { setV(value); }, [value]);
+  return (
+    <input
+      value={v} type={type} autoComplete="off"
+      onChange={(e) => setV(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") { setV(value); (e.target as HTMLInputElement).blur(); }
+      }}
+      onFocus={(e) => { e.currentTarget.style.borderColor = "var(--blue)"; e.currentTarget.style.background = "#fff"; }}
+      onBlur={(e) => {
+        e.currentTarget.style.borderColor = "transparent"; e.currentTarget.style.background = "transparent";
+        const nv = v.trim();
+        if (nv && nv !== value) onSave(nv); else setV(value);
+      }}
+      style={{ width: "100%", boxSizing: "border-box", border: "1px solid transparent", borderRadius: 7, padding: "5px 7px", font: "inherit", fontWeight: bold ? 700 : 400, background: "transparent", cursor: "text" }}
+      title="Click to edit"
+    />
+  );
+}
+
 export function AdminClient({ users: initialUsers, permissions, roleRestrictions, dataScopes, actions, roleActions }: { users: User[]; permissions: Perm[]; roleRestrictions: RoleRestr[]; dataScopes: DataScope[]; actions: Action[]; roleActions: RoleAction[] }) {
   const [users, setUsers] = useState(initialUsers);
   const [perms, setPerms] = useState<Map<string, number>>(
@@ -127,7 +151,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   async function patchUser(id: string, body: Record<string, unknown>, okMsg?: string) {
     const j = await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: id, ...body }) }).then((r) => r.json());
     if (j.ok) {
-      setUsers((us) => us.map((u) => u.id === id ? { ...u, ...(body.role ? { role: body.role as string } : {}), ...(body.team !== undefined ? { team: (body.team as string) || null } : {}), ...(body.status ? { status: body.status as string } : {}) } : u));
+      setUsers((us) => us.map((u) => u.id === id ? { ...u, ...(body.role ? { role: body.role as string } : {}), ...(body.team !== undefined ? { team: (body.team as string) || null } : {}), ...(body.status ? { status: body.status as string } : {}), ...(body.fullName ? { fullName: body.fullName as string } : {}), ...(body.email ? { email: body.email as string } : {}) } : u));
       if (okMsg) setMsg(okMsg);
     } else setMsg("⚠ " + (j.error ?? "Error"));
   }
@@ -216,8 +240,8 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                       : u.fullName.trim().split(/\s+/).slice(-2).map((w) => w[0]).join("").toUpperCase()}
                   </div>
                 </td>
-                <td><b>{u.fullName}</b></td>
-                <td>{u.email}</td>
+                <td><EditableCell value={u.fullName} bold onSave={(v) => patchUser(u.id, { fullName: v }, `✓ Updated name → ${v}`)} /></td>
+                <td><EditableCell value={u.email} type="email" onSave={(v) => patchUser(u.id, { email: v }, `✓ Updated email → ${v}`)} /></td>
                 <td>
                   <select value={u.role} onChange={(e) => patchUser(u.id, { role: e.target.value })} style={{ ...inp, padding: "5px 8px", fontSize: 12.5 }}>
                     {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
