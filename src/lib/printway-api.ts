@@ -130,21 +130,64 @@ export async function listPrintwaySkuCatalogs(c: Cred, page = 1, limit = 100): P
   return { items: extractArray(j), raw: j };
 }
 
-// Chuẩn hoá 1 dòng catalog → { sku, variantId, product, variant, cost, ship } (dò field phòng thủ)
+// Chuẩn hoá số phòng thủ: nhận number, chuỗi "$4.50", hoặc object { amount/value/usd/price }
+export function pwNum(v: unknown): number {
+  if (typeof v === "number") return isNaN(v) ? 0 : v;
+  if (typeof v === "string") { const n = Number(v.replace(/[^0-9.\-]/g, "")); return isNaN(n) ? 0 : n; }
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    for (const k of ["amount", "value", "usd", "price"]) if (o[k] !== undefined) return pwNum(o[k]);
+  }
+  return 0;
+}
+
+export type PwSkuRow = { sku: string; variantId: string; product: string; variant: string; cost: number; ship: number };
+
+const pickS = (o: Record<string, unknown>, ...keys: string[]) => {
+  for (const k of keys) { const v = o[k]; if (typeof v === "string" && v) return v; if (typeof v === "number") return String(v); }
+  return "";
+};
+const pickCost = (o: Record<string, unknown>) => {
+  for (const k of ["base_cost", "base_price", "seller_price", "price_us", "price_usd", "us_price", "price", "cost", "amount", "sale_price", "base"]) {
+    if (o[k] !== undefined && o[k] !== null && o[k] !== "") { const n = pwNum(o[k]); if (n > 0) return n; }
+  }
+  return 0;
+};
+const pickShip = (o: Record<string, unknown>) => {
+  for (const k of ["ship_cost", "shipping_cost", "shipping_fee", "ship_fee", "ship_price", "shipping_price"]) {
+    if (o[k] !== undefined && o[k] !== null && o[k] !== "") { const n = pwNum(o[k]); if (n > 0) return n; }
+  }
+  return 0;
+};
+
+function pwRowOf(o: Record<string, unknown>, productName: string): PwSkuRow {
+  const sku = pickS(o, "item_sku", "sku", "sku_code", "skuCode", "code");
+  const variantId = pickS(o, "variant_id", "variantId", "id", "_id");
+  const size = pickS(o, "size", "size_name"); const color = pickS(o, "color", "color_name");
+  const variant = pickS(o, "variant_name", "variant_title", "variant", "option", "option_name") || [color, size].filter(Boolean).join(" / ");
+  const product = productName || pickS(o, "product_name", "product_title", "productName", "title", "name", "product");
+  return { sku, variantId, product, variant, cost: pickCost(o), ship: pickShip(o) };
+}
+
+// 1 item catalog có thể là DÒNG PHẲNG (variant sẵn) hoặc PRODUCT chứa mảng variants lồng bên trong
+// → đào các key mảng con; không có thì đọc phẳng như cũ.
+export function flattenPwCatalogItem(it: Record<string, unknown>): PwSkuRow[] {
+  const product = pickS(it, "product_name", "product_title", "productName", "title", "name", "product");
+  const VKEYS = ["variants", "variant", "skus", "sku_list", "list_variant", "list_variants", "list_sku", "options", "children", "sizes", "items", "data", "catalogs"];
+  for (const k of VKEYS) {
+    const v = it[k];
+    if (Array.isArray(v) && v.length && v[0] && typeof v[0] === "object") {
+      const rows = (v as Record<string, unknown>[]).map((s) => pwRowOf(s, product)).filter((r) => r.sku || r.variantId);
+      if (rows.length) return rows;
+    }
+  }
+  const r = pwRowOf(it, product);
+  return r.sku || r.variantId ? [r] : [];
+}
+
+// Chuẩn hoá 1 dòng catalog → { sku, variantId, product, variant, cost, ship } (giữ cho tương thích cũ)
 export function normalizePwSkuRow(it: Record<string, unknown>) {
-  const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
-  const N = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
-  const pick = (...keys: string[]) => { for (const k of keys) { const v = S(it[k]); if (v) return v; } return ""; };
-  const pickN = (...keys: string[]) => { for (const k of keys) { if (it[k] !== undefined && it[k] !== null && it[k] !== "") return N(it[k]); } return 0; };
-  const sku = pick("item_sku", "sku", "sku_code", "skuCode", "code");
-  const variantId = pick("variant_id", "variantId", "id", "_id");
-  const product = pick("product_name", "product_title", "productName", "title", "name", "product");
-  // Variant: ghép size/color nếu có, else các field variant
-  const size = pick("size", "size_name"); const color = pick("color", "color_name");
-  const variant = pick("variant_name", "variant_title", "variant", "option") || [color, size].filter(Boolean).join(" / ");
-  const cost = pickN("base_cost", "base_price", "price", "cost", "amount", "sale_price");
-  const ship = pickN("ship_cost", "shipping_cost", "shipping_fee", "ship_fee");
-  return { sku, variantId, product, variant, cost, ship };
+  return pwRowOf(it, "");
 }
 
 // ---- Shipping methods: POST /products/retrieved-shipping-methods { variant_id: [], sku: [] } ----
