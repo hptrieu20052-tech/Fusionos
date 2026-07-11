@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, like, or, desc } from "drizzle-orm";
 import { getPrintifyOrder } from "@/lib/printify";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
-import { markShippedOnTracking, syncOrderFromFf } from "@/lib/order-status";
+import {markShippedOnTracking, syncOrderFromFf, refundOrderCost } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +89,8 @@ export async function POST(req: NextRequest) {
       like(schema.transactions.note, `%${printifyOrderId}%`),
     ));
     await db.update(schema.fulfillmentOrders).set({ baseCost: "0", shipCost: "0", extraFee: "0", cost: "0" }).where(eq(schema.fulfillmentOrders.id, ffo.id));
-    await db.update(schema.orders).set({ status: "trash", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+    await db.update(schema.orders).set({ status: "cancel", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+    await refundOrderCost(ffo.orderId, "Refund cost — cancelled by Printify");
     return NextResponse.json({ ok: true, updated: ffo.id, status: "cancelled", trashed: true });
   }
 

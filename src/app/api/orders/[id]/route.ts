@@ -4,6 +4,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
 import { inScope } from "@/lib/scope";
+import { refundOrderCost, cancelAtPrinters } from "@/lib/order-status";
 import { parseVariant } from "@/lib/variant";
 import { fileUrl } from "@/lib/storage";
 
@@ -116,29 +117,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (addrLocked && addrKeys.includes(k)) continue;
     if (typeof b[k] === "string") patch[k] = b[k];
   }
-  // Workflow mới: không dùng cancel / out_of_stock nữa
-  if (b.status === "cancel" || b.status === "out_of_stock") {
-    return NextResponse.json({ ok: false, error: "This status is deprecated — cancelled orders go to Trash, problem orders use Has Issues" }, { status: 400 });
+  // Workflow: trash cũ = cancel mới (đồng bộ tên với nhà in); out_of_stock bỏ
+  if (b.status === "trash") b.status = "cancel";
+  if (b.status === "out_of_stock") {
+    return NextResponse.json({ ok: false, error: "This status is deprecated — use Cancel / Has Issues" }, { status: 400 });
   }
   if (b.status && (schema.orders.status.enumValues as readonly string[]).includes(b.status)) patch.status = b.status;
 
   await db.update(schema.orders).set(patch).where(eq(schema.orders.id, params.id));
 
-  // Vào Trash → hoàn giá vốn (base_cost về 0) để không trừ chi phí của seller
-  if (b.status === "trash") {
-    const sum = (await db.execute(sql`
-      SELECT coalesce(sum(amount),0)::numeric s FROM transactions WHERE order_id = ${params.id}::uuid AND type = 'base_cost'
-    `)).rows[0] as { s: string };
-    const bal = Number(sum.s);
-    if (bal < 0) {
-      const [ord] = await db.select().from(schema.orders).where(eq(schema.orders.id, params.id)).limit(1);
-      await db.insert(schema.transactions).values({
-        type: "base_cost", amount: (-bal).toFixed(2),
-        orderId: params.id, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
-        note: "Refund cost — order moved to Trash",
-        occurredAt: new Date().toISOString().slice(0, 10),
-      });
-    }
+  // Cancel → hoàn giá vốn về 0 + best-effort huỷ luôn bên nhà in
+  let remoteCancel: string[] = [];
+  if (b.status === "cancel") {
+    await refundOrderCost(params.id, "Refund cost — order cancelled");
+    remoteCancel = await cancelAtPrinters(params.id);
   }
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, remoteCancel });
 }

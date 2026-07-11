@@ -140,6 +140,8 @@ async function handlePush(req: NextRequest) {
   // --- Gọi API fulfiller qua adapter theo từng nhà ---
   const adapter = getAdapter(ff.name);
   let pushRes;
+  console.log(`[push] ${ff.name} order=${order.externalId} adapter start`);
+  const t0 = Date.now();
   try {
     pushRes = await adapter.push({
       fulfiller: { id: ff.id, name: ff.name, apiEndpoint: ff.apiEndpoint, credentials: ff.credentials },
@@ -152,8 +154,10 @@ async function handlePush(req: NextRequest) {
       lines: pushLines,
     });
   } catch (e) {
+    console.error(`[push] ${ff.name} adapter FAILED after ${Date.now() - t0}ms:`, e);
     return NextResponse.json({ ok: false, error: `Đẩy đơn ${ff.name} thất bại: ${String((e as Error)?.message ?? e).slice(0, 400)}` }, { status: 502 });
   }
+  console.log(`[push] ${ff.name} adapter OK in ${Date.now() - t0}ms → ${pushRes.externalFfId}`);
   const externalFfId = pushRes.externalFfId;
 
   // Chi phí: ưu tiên giá THẬT nhà in trả về (Printify); else giá vốn từ SKU mapping

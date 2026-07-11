@@ -1,5 +1,5 @@
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray } from "drizzle-orm";
+import {and, eq, inArray, sql } from "drizzle-orm";
 
 // Khi đơn có tracking (webhook fulfiller trả về / nhập tay / import) → tự chuyển sang "shipped".
 // Chỉ nâng từ các trạng thái trước đó; KHÔNG đụng đơn đã shipped/delivered/trash/cancel.
@@ -31,11 +31,74 @@ export async function syncOrderFromFf(orderId: string, ffStatus: string) {
     in_production: { target: "in_production", prev: ["new", "created", "has_issues"] },
     shipped: { target: "shipped", prev: ["new", "created", "in_production", "has_issues"] },
     delivered: { target: "delivered", prev: ["new", "created", "in_production", "shipped", "has_issues"] },
+    // Nhà in huỷ đơn → đơn FUSION nhảy Cancel + hoàn cost = 0 (không đụng đơn đã shipped/delivered)
+    cancelled: { target: "cancel", prev: ["new", "created", "in_production", "has_issues"] },
   };
   const m = map[ffStatus];
   if (!m) return;
   try {
     await db.update(schema.orders).set({ status: m.target as never })
       .where(and(eq(schema.orders.id, orderId), inArray(schema.orders.status, m.prev as never)));
+    if (ffStatus === "cancelled") await refundOrderCost(orderId, "Refund cost — cancelled by fulfiller");
   } catch { /* best-effort */ }
+}
+
+/**
+ * Hoàn giá vốn về 0 cho đơn cancel (idempotent: chỉ hoàn phần base_cost còn âm).
+ * Dùng chung cho: cancel từ FUSION, webhook nhà in báo cancel, poll thấy cancel.
+ */
+export async function refundOrderCost(orderId: string, note: string) {
+  try {
+    const sum = (await db.execute(sql`
+      SELECT coalesce(sum(amount),0)::numeric s FROM transactions WHERE order_id = ${orderId}::uuid AND type = 'base_cost'
+    `)).rows[0] as { s: string };
+    const bal = Number(sum.s);
+    if (bal >= 0) return false;
+    const [ord] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
+    await db.insert(schema.transactions).values({
+      type: "base_cost", amount: (-bal).toFixed(2),
+      orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
+      note, occurredAt: new Date().toISOString().slice(0, 10),
+    });
+    return true;
+  } catch { return false; }
+}
+
+/**
+ * Cancel từ FUSION → best-effort huỷ luôn bên nhà in (Printway cancel/delete, FlashShip seller-reject)
+ * cho các bản ghi đẩy THẬT chưa kết thúc, và đánh dấu ffo = cancelled. Fail không chặn.
+ */
+export async function cancelAtPrinters(orderId: string): Promise<string[]> {
+  const notes: string[] = [];
+  try {
+    const ffos = await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, orderId));
+    for (const ffo of ffos) {
+      if (!ffo.externalFfId || ffo.externalFfId.startsWith("SIM-")) continue;
+      if (["cancelled", "delivered"].includes(ffo.status)) continue;
+      const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, ffo.fulfillerId)).limit(1);
+      const name = (ff?.name ?? "").toLowerCase();
+      const c = (ff?.credentials ?? {}) as Record<string, string>;
+      const accessToken = c.apiKey || c.accessToken || c.apiToken;
+      if (!ff || !accessToken) continue;
+      try {
+        if (name.includes("printway")) {
+          const { cancelPrintwayOrder, deletePrintwayOrder } = await import("@/lib/printway-api");
+          const isPwId = /^PW/i.test(ffo.externalFfId);
+          const [ord] = await db.select({ externalId: schema.orders.externalId, orderLabel: schema.orders.orderLabel }).from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
+          const p = { pwOrderId: isPwId ? ffo.externalFfId : undefined, orderName: (ord?.orderLabel || ord?.externalId || (!isPwId ? ffo.externalFfId : "")) || undefined };
+          let r = await cancelPrintwayOrder({ accessToken, endpoint: ff.apiEndpoint }, p);
+          if (!r.ok) r = await deletePrintwayOrder({ accessToken, endpoint: ff.apiEndpoint }, p);
+          notes.push(`${ff.name}: ${r.ok ? "cancelled" : r.message}`);
+        } else if (name.includes("flashship")) {
+          const { cancelFlashshipOrders } = await import("@/lib/flashship");
+          const r = await cancelFlashshipOrders({ accessToken, endpoint: ff.apiEndpoint }, [ffo.externalFfId], "Cancelled from FUSION OS");
+          notes.push(`${ff.name}: ${r.ok ? "cancelled" : r.message}`);
+        } else continue; // nhà khác chưa có API cancel → chỉ đánh dấu local
+      } catch (e) {
+        notes.push(`${ff.name}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
+      }
+      try { await db.update(schema.fulfillmentOrders).set({ status: "cancelled" }).where(eq(schema.fulfillmentOrders.id, ffo.id)); } catch { /* */ }
+    }
+  } catch { /* best-effort */ }
+  return notes;
 }

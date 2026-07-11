@@ -45,7 +45,8 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         total: (total / fx).toFixed(2), platformFee: (num(o.fee) / fx).toFixed(2),
         note: s(o.note),
         orderedAt: new Date(),
-      }).returning();
+      }).onConflictDoNothing().returning();
+      if (!order) { skipped++; continue; } // request song song đã insert trước → coi như trùng
 
       const rows = items.length ? items : [{ title: `Etsy order ${ext}`, qty: 1, price: total } as InItem];
       for (const it of rows) {

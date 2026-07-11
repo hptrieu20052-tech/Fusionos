@@ -95,9 +95,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Map trạng thái TikTok → trạng thái nội bộ
-  const mapStatus = (s: string): "new" | "shipped" | "delivered" | "trash" => {
+  const mapStatus = (s: string): "new" | "shipped" | "delivered" | "cancel" => {
     const x = s.toLowerCase();
-    if (x.includes("cancel")) return "trash";
+    if (x.includes("cancel")) return "cancel";
     if (x.includes("complet") || x.includes("deliver")) return "delivered";
     if (x.includes("ship") && !x.includes("to ship")) return "shipped";
     if (x.includes("transit")) return "shipped";

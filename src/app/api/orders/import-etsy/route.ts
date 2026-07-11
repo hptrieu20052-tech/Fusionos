@@ -182,7 +182,8 @@ export async function POST(req: NextRequest) {
         state: g.state || null, zip: g.zip || null, country: g.country,
         total: (total / fxRate).toFixed(2), platformFee: "0.00",
         orderedAt: new Date(),
-      }).returning();
+      }).onConflictDoNothing().returning();
+      if (!order) { skipped++; continue; } // request song song đã insert trước → coi như trùng
       const lines = g.lines.length ? g.lines : [{ title: `Đơn Etsy ${g.ext}`, sku: "", qty: 1, price: total, personalization: "", variant: "", listingId: "" }];
       for (const l of lines) {
         await db.insert(schema.orderItems).values({

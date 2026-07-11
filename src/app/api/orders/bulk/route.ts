@@ -4,6 +4,7 @@ import { sql, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { hasAction } from "@/lib/actions";
 import { scopeOwnerIds } from "@/lib/scope";
+import { refundOrderCost, cancelAtPrinters } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +18,16 @@ export async function POST(req: NextRequest) {
 
   const b = await req.json().catch(() => null);
   const ids: string[] = Array.isArray(b?.ids) ? b.ids.slice(0, 500) : [];
-  const status: string = b?.status;
+  let status: string = b?.status;
+  if (status === "trash") status = "cancel"; // alias cũ — Trash nay là Cancel
   if (!ids.length) return NextResponse.json({ ok: false, error: "no orders selected" }, { status: 400 });
-  if (status === "cancel" || status === "out_of_stock") {
-    return NextResponse.json({ ok: false, error: "This status is deprecated — use Trash / Has Issues" }, { status: 400 });
+  if (status === "out_of_stock") {
+    return NextResponse.json({ ok: false, error: "This status is deprecated — use Cancel / Has Issues" }, { status: 400 });
   }
   if (!(schema.orders.status.enumValues as readonly string[]).includes(status)) {
     return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
   }
-  if (status === "trash" && !(await hasAction(session, "orders.trash"))) {
+  if (status === "cancel" && !(await hasAction(session, "orders.trash"))) {
     return NextResponse.json({ ok: false, error: "forbidden: trash" }, { status: 403 });
   }
 
@@ -39,22 +41,12 @@ export async function POST(req: NextRequest) {
     .set({ status: status as never, updatedAt: new Date() })
     .where(inArray(schema.orders.id, allowed.map((o) => o.id)));
 
-  // Trash → hoàn base cost từng đơn (idempotent: chỉ hoàn phần còn âm)
+  // Cancel → hoàn base cost từng đơn (idempotent) + best-effort huỷ luôn bên nhà in
   let refunded = 0;
-  if (status === "trash") {
+  if (status === "cancel") {
     for (const o of allowed) {
-      const bal = Number(((await db.execute(sql`
-        SELECT coalesce(sum(amount),0)::numeric s FROM transactions WHERE order_id = ${o.id}::uuid AND type='base_cost'
-      `)).rows[0] as { s: string }).s);
-      if (bal < 0) {
-        await db.insert(schema.transactions).values({
-          type: "base_cost", amount: (-bal).toFixed(2),
-          orderId: o.id, storeId: o.storeId, sellerId: o.sellerId,
-          note: "Refund cost — order moved to Trash (bulk)",
-          occurredAt: new Date().toISOString().slice(0, 10),
-        });
-        refunded++;
-      }
+      if (await refundOrderCost(o.id, "Refund cost — order cancelled (bulk)")) refunded++;
+      await cancelAtPrinters(o.id);
     }
   }
   return NextResponse.json({ ok: true, updated: allowed.length, skipped: ids.length - allowed.length, refunded });

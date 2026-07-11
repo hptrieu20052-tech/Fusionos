@@ -32,7 +32,7 @@ type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
-  delivered: "#7C6FC0", has_issues: "#C06B82", trash: "#BBA054",
+  delivered: "#7C6FC0", has_issues: "#C06B82", cancel: "#BBA054",
 };
 const FF_STATUS_COLORS: Record<string, string> = {
   pending: "#8A93A6", pushed: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -122,7 +122,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   };
   const applyBulk = async () => {
     if (!selIds.size) return;
-    if (bulkStatus === "trash" && !(await confirm({ message: t("o.bulkTrashConfirm").replace("{n}", String(selIds.size)), danger: true }))) return;
+    if (bulkStatus === "cancel" && !(await confirm({ message: t("o.bulkTrashConfirm").replace("{n}", String(selIds.size)), danger: true }))) return;
     const j = await fetch("/api/orders/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(selIds), status: bulkStatus }) }).then((r) => r.json());
     if (j.ok) { flash(t("o.bulkChanged").replace("{n}", String(j.updated)).replace("{st}", bulkStatus.toUpperCase()) + (j.refunded ? t("o.refundedSuffix").replace("{n}", String(j.refunded)) : "") + (j.skipped ? t("o.skippedSuffix").replace("{n}", String(j.skipped)) : "")); setSelIds(new Set()); load(); }
     else flash("✗ " + (j.error ?? t("o.errorWord")));
@@ -699,7 +699,12 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
       if (!s1.ok) { setBusy(false); return flash("✗ " + (s1.error ?? "")); }
     }
     const body = { orderId: o.id, fulfillerId: ffSel, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })) };
-    const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch((e) => ({ ok: false, error: "Request failed/timeout: " + String(e?.message ?? e) }));
+    const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(async (r) => {
+        const txt = await r.text();
+        try { return JSON.parse(txt); } catch { return { ok: false, error: `HTTP ${r.status} — server trả non-JSON: ${txt.replace(/<[^>]*>/g, " ").trim().slice(0, 160)}` }; }
+      })
+      .catch((e) => ({ ok: false, error: "Request failed/timeout: " + String(e?.message ?? e) }));
     setBusy(false);
     if (j.ok) {
       if (j.simulated) flash(t("o.simPushWarn") + (j.reason ?? t("o.checkFfConfig")));

@@ -1,6 +1,6 @@
 import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPrintAreas } from "@/lib/printify";
 import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
-import { createPrintwayOrder, type PwOrderItem } from "@/lib/printway-api";
+import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, type PwOrderItem } from "@/lib/printway-api";
 import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
@@ -190,6 +190,16 @@ function printwayAdapter(): FulfillerAdapter {
         if (l.designSleeve) { it.artwork_right_upper_sleeves = l.designSleeve; it.artwork_left_upper_sleeves = l.designSleeve; }
         return it;
       });
+
+      // CHỐNG TRÙNG: lần đẩy trước có thể đã tạo đơn bên Printway nhưng FUSION không nhận được
+      // response (timeout) → check theo order_name trước, có rồi thì DÙNG LẠI thay vì tạo double.
+      try {
+        const found = await listPrintwayOrders({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, { orderName: orderExtNumber(o), limit: 5 });
+        const hit = found.items.map((x) => normalizePwOrder(x)).find((x) => x.orderName === orderExtNumber(o) || x.pwId);
+        if (hit && (hit.orderName === orderExtNumber(o))) {
+          return { externalFfId: hit.pwId || hit.orderName, simulated: false, raw: found.raw, reason: "Order already existed on Printway (from a previous timed-out push) — reused, no duplicate created" };
+        }
+      } catch { /* check fail → cứ tạo bình thường */ }
 
       const res = await createPrintwayOrder({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
         order_id: orderExtNumber(o),

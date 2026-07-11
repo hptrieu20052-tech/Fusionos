@@ -293,7 +293,7 @@ export const roleDataScopes = pgTable("role_data_scopes", {
 export const ACTIONS: { key: string; module: string; label: string }[] = [
   { key: "orders.import", module: "orders", label: "Import đơn" },
   { key: "orders.export", module: "orders", label: "Export đơn" },
-  { key: "orders.trash", module: "orders", label: "Xoá / cho vào Trash" },
+  { key: "orders.trash", module: "orders", label: "Xoá / Cancel đơn" },
   { key: "orders.manual_cost", module: "orders", label: "Nhập tracking / cost tay" },
   { key: "designs.ai", module: "designs", label: "Sinh info bằng AI" },
   { key: "designs.delete", module: "designs", label: "Xoá design / file" },

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { and, eq, inArray, like, or } from "drizzle-orm";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
-import { syncOrderFromFf } from "@/lib/order-status";
+import { syncOrderFromFf, refundOrderCost } from "@/lib/order-status";
 import { markShippedOnTracking } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
@@ -126,7 +126,8 @@ export async function POST(req: NextRequest) {
       ));
     }
     await db.update(schema.fulfillmentOrders).set({ baseCost: "0", shipCost: "0", extraFee: "0", cost: "0", costEvents: {} }).where(eq(schema.fulfillmentOrders.id, ffo.id));
-    await db.update(schema.orders).set({ status: "trash", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+    await db.update(schema.orders).set({ status: "cancel", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+    await refundOrderCost(ffo.orderId, "Refund cost — cancelled by Merchize");
     return NextResponse.json({ ok: true, matched: ffo.id, status, trashed: true });
   }
   if (trackingNumber || status === "shipped") {
