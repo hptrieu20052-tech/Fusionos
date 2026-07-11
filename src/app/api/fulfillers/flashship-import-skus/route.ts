@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
     variants = await listFlashshipVariants({ accessToken, endpoint: ff.apiEndpoint });
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
-    const friendly = /abort|timeout/i.test(msg)
-      ? "FlashShip không phản hồi (timeout 20s) — khả năng cao IP server chưa được FlashShip whitelist. Liên hệ FlashShip whitelist IP, hoặc thử endpoint UAT https://uat-api.flashship.net/seller-api-v2 với token UAT."
+    const friendly = /abort|timeout|fetch failed|ETIMEDOUT|ECONNREFUSED|ENOTFOUND|UND_ERR|socket/i.test(msg)
+      ? "Không kết nối được tới FlashShip (connect bị drop) — xác nhận IP server chưa được FlashShip whitelist. Liên hệ FlashShip whitelist IP, hoặc thử endpoint UAT https://uat-api.flashship.net/seller-api-v2 với token UAT."
       : msg.slice(0, 300);
     return NextResponse.json({ ok: false, error: friendly }, { status: 500 });
   }

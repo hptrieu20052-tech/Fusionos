@@ -161,6 +161,14 @@ export function usStateAbbr(state: string): string {
   return US_STATES[s.toLowerCase()] ?? s;
 }
 
+// Printway BẮT BUỘC phone 8–15 chữ số (dù doc ghi optional). Etsy không cho SĐT người mua
+// → sanitize về chỉ-chữ-số; thiếu/không hợp lệ thì dùng placeholder 10 số (thực tế POD phổ biến).
+function pushPhone(raw: string | null | undefined): string {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  if (digits.length >= 8 && digits.length <= 15) return digits;
+  return "0000000000";
+}
+
 /**
  * Adapter Printway THẬT — POST /order/create-new-order (Open API v3).
  * credentials = { apiKey: <pw access token> } (dán Access Token vào ô API Key ở Settings).
@@ -192,22 +200,17 @@ function printwayAdapter(): FulfillerAdapter {
       });
 
       // CHỐNG TRÙNG: lần đẩy trước có thể đã tạo đơn bên Printway nhưng FUSION không nhận được
-      // response (timeout) → check theo order_name trước, có rồi thì DÙNG LẠI thay vì tạo double.
+      // response. LƯU Ý: /transaction/order-list chỉ chứa đơn ĐÃ THANH TOÁN nên không dùng
+      // pre-check được → bắt thẳng lỗi "has been existed" của create và coi là thành công.
+      let res: Awaited<ReturnType<typeof createPrintwayOrder>>;
       try {
-        const found = await listPrintwayOrders({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, { orderName: orderExtNumber(o), limit: 5 });
-        const hit = found.items.map((x) => normalizePwOrder(x)).find((x) => x.orderName === orderExtNumber(o) || x.pwId);
-        if (hit && (hit.orderName === orderExtNumber(o))) {
-          return { externalFfId: hit.pwId || hit.orderName, simulated: false, raw: found.raw, reason: "Order already existed on Printway (from a previous timed-out push) — reused, no duplicate created" };
-        }
-      } catch { /* check fail → cứ tạo bình thường */ }
-
-      const res = await createPrintwayOrder({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
+        res = await createPrintwayOrder({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
         order_id: orderExtNumber(o),
         tiktok_order_type: "seller",
         firstName: first,
         lastName: last,
         shipping_email: o.email || undefined,
-        shipping_phone: o.phone || undefined,
+        shipping_phone: pushPhone(o.phone),
         shipping_address1: o.addr1 || "",
         shipping_address2: o.addr2 || undefined,
         shipping_city: o.city || "",
@@ -218,6 +221,14 @@ function printwayAdapter(): FulfillerAdapter {
         shipping_country_code: toISO2(o.country || "United States"),
         order_items: items,
       });
+      } catch (e) {
+        const msg = String((e as Error)?.message ?? e);
+        if (/has been existed|already exist/i.test(msg)) {
+          // Đơn đã có bên Printway (từ lần đẩy timeout trước) → link vào đơn cũ, KHÔNG double.
+          // externalFfId = order_id mình gửi; webhook/poll dual-match theo order_name nên vẫn sync đủ.
+          res = { orderId: orderExtNumber(o), raw: { reused: true, message: msg } };
+        } else throw e;
+      }
 
       // Giá THẬT từ calculate-price (mapping Printway không có giá) — fail thì giữ giá mapping
       let realBase: number | undefined, realShip: number | undefined;
@@ -232,7 +243,12 @@ function printwayAdapter(): FulfillerAdapter {
 
       // KHÔNG auto-pay: đơn tạo xong nằm ở trạng thái unpaid trên Printway —
       // người dùng kiểm tra rồi tự thanh toán bên đó, webhook/poll sẽ kéo trạng thái về.
-      return { externalFfId: res.orderId, simulated: false, raw: res.raw, baseCost: realBase, shipCost: realShip };
+      const reused = !!(res.raw as Record<string, unknown>)?.reused;
+      return {
+        externalFfId: res.orderId, simulated: false, raw: res.raw,
+        baseCost: realBase, shipCost: realShip,
+        reason: reused ? "Đơn đã tồn tại sẵn trên Printway (từ lần đẩy lỗi trước) — đã link vào đơn cũ, không tạo trùng" : undefined,
+      };
     },
   };
 }
