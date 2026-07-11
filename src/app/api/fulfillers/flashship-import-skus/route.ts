@@ -28,7 +28,13 @@ export async function POST(req: NextRequest) {
   let variants;
   try {
     variants = await listFlashshipVariants({ accessToken, endpoint: ff.apiEndpoint });
-  } catch (e) { return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 502 }); }
+  } catch (e) {
+    const msg = String((e as Error)?.message ?? e);
+    const friendly = /abort|timeout/i.test(msg)
+      ? "FlashShip không phản hồi (timeout 20s) — khả năng cao IP server chưa được FlashShip whitelist. Liên hệ FlashShip whitelist IP, hoặc thử endpoint UAT https://uat-api.flashship.net/seller-api-v2 với token UAT."
+      : msg.slice(0, 300);
+    return NextResponse.json({ ok: false, error: friendly }, { status: 502 });
+  }
 
   const existing = await db.select({
     id: schema.skuMappings.id, sku: schema.skuMappings.internalSku,

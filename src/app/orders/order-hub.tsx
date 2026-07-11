@@ -4,7 +4,7 @@ import { Flash } from "@/components/flash";
 import { useSearchParams } from "next/navigation";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
-import { useConfirm } from "@/components/confirm-provider";
+import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { SupplierLogo } from "@/components/supplier-logo";
 import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn, IconDownload, IconReport, IconCheck, IconPencil, IconRefresh, IconSend } from "@/components/icons";
@@ -962,7 +962,16 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
     } catch (e) { flash("✗ " + (e as Error).message); }
     setUpBusy(false);
   };
-  const img = it.mockupUrl ?? it.designThumb ?? it.imageUrl;
+  const img = it.mockupUrl ?? it.imageUrl; // KHÔNG fallback sang ảnh design — gán DesignId không đổi mockup
+  const promptApi = usePrompt();
+  // Import mockup bằng link ảnh (dán URL) — lưu nguyên URL vào mockupKey, fileUrl trả thẳng
+  const importMockupLink = async () => {
+    const url = await promptApi({ title: "Import mockup link", message: "Dán URL ảnh mockup (http/https):", confirmText: "Save" });
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url.trim())) { flash("✗ URL phải bắt đầu bằng http(s)://"); return; }
+    const s = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mockupKey: url.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (s.ok) { flash(t("o.mockupUploaded")); onSaved(); } else flash("✗ " + (s.error ?? ""));
+  };
   const [zoom, setZoom] = useState<string | null>(null);
   return (
     <div className="o2-item">
@@ -976,6 +985,8 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
         {canEdit && <>
           <input ref={mockRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadMockup(f); e.target.value = ""; }} />
           {img && <button onClick={(e) => { e.stopPropagation(); mockRef.current?.click(); }} title={t("o.changeMockup")} style={{ position: "absolute", bottom: 3, right: 3, width: 20, height: 20, borderRadius: 6, border: "none", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>{upBusy ? "…" : <IconPencil width={12} height={12} />}</button>}
+          <button onClick={(e) => { e.stopPropagation(); importMockupLink(); }} title="Import mockup link"
+            style={{ position: "absolute", bottom: 3, left: 3, width: 20, height: 20, borderRadius: 6, border: img ? "none" : "1px solid var(--line)", background: img ? "rgba(0,0,0,.55)" : "var(--card)", color: img ? "#fff" : "var(--muted)", fontSize: 11, cursor: "pointer", display: "grid", placeItems: "center", lineHeight: 1 }}>🔗</button>
         </>}
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>

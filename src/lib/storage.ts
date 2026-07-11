@@ -69,6 +69,7 @@ export async function readFile(key: string): Promise<Buffer> {
 /** URL hiển thị file. Production: CDN public trước R2. Dev: serve qua API. */
 export function fileUrl(key: string | null | undefined): string | null {
   if (!key) return null;
+  if (/^https?:\/\//i.test(key)) return key; // mockup import bằng link ngoài — lưu nguyên URL
   const pub = process.env.R2_PUBLIC_URL || process.env.R2_PUBLIC_BASE;
   if (pub) return `${pub.replace(/\/$/, "")}/${key}`;
   return `/api/files/${key}`;

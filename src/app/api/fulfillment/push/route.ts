@@ -17,6 +17,15 @@ export const maxDuration = 60;
  * Ghi: fulfillment_orders (pushed) + transaction base_cost (âm) + order → created.
  */
 export async function POST(req: NextRequest) {
+  try {
+    return await handlePush(req);
+  } catch (e) {
+    console.error("[fulfillment/push] crashed:", e);
+    return NextResponse.json({ ok: false, error: "push crashed: " + String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
+  }
+}
+
+async function handlePush(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "fulfillment")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
