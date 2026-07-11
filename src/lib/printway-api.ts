@@ -53,7 +53,9 @@ export type PwOrderItem = {
 export type PwCreateOrder = {
   order_id: string;
   store_code?: string;
-  tiktok_order_type: "seller" | "tiktok";
+  // CHỈ gửi với đơn TikTok — Printway coi sự hiện diện của field này = đơn TikTok
+  // (TikTok chỉ ship US). Đơn Etsy/khác PHẢI bỏ hẳn field.
+  tiktok_order_type?: "seller" | "tiktok";
   tiktok_label_url?: string; // bắt buộc khi tiktok_order_type = "tiktok"
   firstName: string;
   lastName: string;

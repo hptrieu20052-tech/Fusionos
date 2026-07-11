@@ -214,7 +214,8 @@ function printwayAdapter(): FulfillerAdapter {
       try {
         res = await createPrintwayOrder({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
         order_id: orderExtNumber(o),
-        tiktok_order_type: "seller",
+        // KHÔNG gửi tiktok_order_type: Printway coi field này = đơn TikTok (chỉ ship US),
+        // đơn Etsy quốc tế sẽ bị chặn "Tiktok orders are currently available only for the US"
         firstName: first,
         lastName: last,
         shipping_email: pushEmail(o.email),
