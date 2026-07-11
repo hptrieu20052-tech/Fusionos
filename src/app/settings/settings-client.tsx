@@ -45,6 +45,13 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
     if (j.ok) setShops((p) => ({ ...p, [id]: j.shops }));
     else { setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? t("set.errLow")) })); }
   }
+  // Đăng ký webhook Printway (order + tracking) trỏ về /api/webhooks/printway
+  async function registerPwWebhook(id: string) {
+    setMsg("Registering Printway webhook…");
+    const j = await fetch("/api/fulfillers/printway-register-webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: id }) }).then((r) => r.json()).catch(() => ({ ok: false, errors: ["network"] }));
+    if (j.ok) { setMsg(`✓ Webhook registered → ${j.endpoint}`); load(); }
+    else setMsg("⚠ " + (Array.isArray(j.errors) && j.errors.length ? j.errors.join(" · ") : (j.error ?? "webhook register failed")));
+  }
   async function delFf(id: string, name: string) {
     if (!(await confirm({ message: t("set.deleteFulfillerConfirm").replace("{name}", name), danger: true }))) return;
     const j = await fetch("/api/fulfillers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
@@ -113,6 +120,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
               </div>
               {canEdit && editOpen[f.id] && (() => {
                 const isMerchize = f.name.toLowerCase().includes("merchize");
+                const isPrintway = f.name.toLowerCase().includes("printway");
                 return (
                 <div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
@@ -126,7 +134,11 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                   <input placeholder={t("s.webhookNew")} value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setE(f.id, "webhookSecret", e.target.value)} style={{ ...inp, width: 150 }} />
                   <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("c.save")}</button>
                 </div>
-                {isMerchize && <div style={{ fontSize: 11.5, color: "var(--amber)", marginTop: 6 }}>{t("set.pasteTip")} <b>API Key</b> {t("set.merchizeKeyNote")}</div>}
+                {isPrintway && (
+                  <div style={{ marginTop: 8 }}>
+                    <button type="button" onClick={() => registerPwWebhook(f.id)} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>Register webhook (order + tracking)</button>
+                  </div>
+                )}
                 </div>
                 );
               })()}

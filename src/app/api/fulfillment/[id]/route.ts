@@ -4,6 +4,7 @@ import { and, eq, like } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
+import { cancelPrintwayOrder, deletePrintwayOrder } from "@/lib/printway-api";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,31 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   const [ffo] = await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.id, params.id)).limit(1);
   if (!ffo) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+
+  // Đơn Printway THẬT (không phải SIM) → best-effort huỷ/xoá luôn bên Printway (chỉ được khi chưa vào production).
+  // Fail không chặn xoá local — ghi kèm remote result để người dùng biết cần huỷ tay.
+  let remote: { attempted: boolean; ok: boolean; message: string } = { attempted: false, ok: false, message: "" };
+  if (ffo.externalFfId && !ffo.externalFfId.startsWith("SIM-")) {
+    const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, ffo.fulfillerId)).limit(1);
+    if (ff && ff.name.toLowerCase().includes("printway")) {
+      const c = (ff.credentials ?? {}) as Record<string, string>;
+      const accessToken = c.apiKey || c.accessToken || c.apiToken;
+      if (accessToken) {
+        const cred = { accessToken, endpoint: ff.apiEndpoint };
+        const isPwId = /^PW/i.test(ffo.externalFfId);
+        const [ord] = await db.select({ externalId: schema.orders.externalId, orderLabel: schema.orders.orderLabel }).from(schema.orders).where(eq(schema.orders.id, ffo.orderId)).limit(1);
+        const orderName = (ord?.orderLabel || ord?.externalId || (!isPwId ? ffo.externalFfId : "")) || undefined;
+        const p = { pwOrderId: isPwId ? ffo.externalFfId : undefined, orderName };
+        try {
+          let r = await cancelPrintwayOrder(cred, p);
+          if (!r.ok) r = await deletePrintwayOrder(cred, p); // đơn chưa trả tiền → delete được
+          remote = { attempted: true, ok: r.ok, message: r.message };
+        } catch (e) {
+          remote = { attempted: true, ok: false, message: String((e as Error)?.message ?? e).slice(0, 160) };
+        }
+      }
+    }
+  }
 
   // Hoàn sổ: xoá bút toán base_cost có note chứa external_ff_id của bản ghi này
   if (ffo.externalFfId) {
@@ -35,5 +61,5 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       await db.update(schema.orders).set({ status: "new", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
     }
   }
-  return NextResponse.json({ ok: true, revertedToNew: !rest });
+  return NextResponse.json({ ok: true, revertedToNew: !rest, remote });
 }

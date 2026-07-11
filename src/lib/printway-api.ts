@@ -1,0 +1,236 @@
+// ===== Printway Open API v3 =====
+// Docs: https://documenter.getpostman.com/view/23929425/2sBXwqrVwZ
+// - Base: https://apis.printway.io/v3  (UAT: https://uat.printway.work/api/v3)
+// - Auth: header "pw-access-token: <ACCESS_TOKEN>" (token hạn 730 ngày, lấy ở Store → Connect APIs)
+// - Rate limit: 50 req / 3s
+
+const PW_API = "https://apis.printway.io/v3";
+
+type Cred = { accessToken: string; endpoint?: string | null };
+
+function headers(c: Cred) {
+  // Doc dùng "pw-access-token"; vài endpoint (paid/cancel/delete) ghi "pw_access_toke" (typo trong doc)
+  // và mọi endpoint đều nhận Bearer → gửi cả 3 cho chắc.
+  return {
+    "pw-access-token": c.accessToken,
+    "pw_access_toke": c.accessToken,
+    "Authorization": `Bearer ${c.accessToken}`,
+    "Content-Type": "application/json",
+  } as Record<string, string>;
+}
+const base = (c: Cred) => (c.endpoint && c.endpoint.trim() ? c.endpoint.trim().replace(/\/+$/, "") : PW_API);
+
+// Đủ 16 vị trí artwork theo doc create-new-order (URL lấy từ list of products / R2 của FUSION)
+export type PwOrderItem = {
+  item_sku?: string;      // required nếu không có variant_id
+  variant_id?: string;    // required nếu không có item_sku
+  quantity: number;
+  product_name?: string;
+  product_location?: string; // vd "PW"
+  made_in_location?: string; // vd "VN"
+  variant_note?: string;
+  mockup_url?: string;
+  artwork_front?: string;
+  artwork_back?: string;
+  artwork_right?: string;
+  artwork_left?: string;
+  artwork_hood?: string;
+  artwork_bothsides?: string;
+  artwork_right_upper_sleeves?: string;
+  artwork_right_lower_sleeves?: string;
+  artwork_left_upper_sleeves?: string;
+  artwork_left_lower_sleeves?: string;
+  artwork_left_chest?: string;
+  artwork_right_chest?: string;
+  artwork_front_bottom_right?: string;
+  artwork_center_upper_back?: string;
+  artwork_across_chest?: string;
+  artwork_across_back?: string;
+};
+
+export type PwCreateOrder = {
+  order_id: string;
+  store_code?: string;
+  tiktok_order_type: "seller" | "tiktok";
+  tiktok_label_url?: string; // bắt buộc khi tiktok_order_type = "tiktok"
+  firstName: string;
+  lastName: string;
+  shipping_email?: string;   // RFC 5322
+  shipping_phone?: string;   // E.164
+  shipping_address1: string;
+  shipping_address2?: string;
+  shipping_city: string;
+  shipping_province: string;
+  shipping_province_code: string;
+  shipping_zip: string;
+  shipping_country: string;
+  shipping_country_code: string;
+  shipping_service?: string;
+  discount_code?: string[];
+  taxNumber?: string;
+  order_items: PwOrderItem[];
+};
+
+// Tạo đơn: POST /order/create-new-order
+export async function createPrintwayOrder(c: Cred, payload: PwCreateOrder): Promise<{ orderId: string; raw: unknown }> {
+  const r = await fetch(`${base(c)}/order/create-new-order`, {
+    method: "POST",
+    headers: headers(c),
+    body: JSON.stringify(payload),
+  });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  const ok = r.ok && (j.success === undefined || j.success === true) && (j.status === undefined || Number(j.status) < 400 || j.status === "success");
+  if (!ok) {
+    const msg = (j.message as string) || (j.error as string) || JSON.stringify(j).slice(0, 200) || `HTTP ${r.status}`;
+    throw new Error(`Printway create order failed: ${msg}`);
+  }
+  // Response tuỳ phiên bản có thể trả id/order_id trong data — đọc phòng thủ; fallback = order_id mình gửi (Printway nhận diện đơn theo order_id của seller).
+  const d = (j.data ?? j) as Record<string, unknown>;
+  const orderId = String(d.pw_order_id ?? d.order_id ?? d.id ?? d.order_code ?? payload.order_id);
+  return { orderId, raw: j };
+}
+
+// Danh sách đơn: GET /transaction/order-list (lọc theo thời gian tạo / order_name / pw_order_id)
+export type PwListParams = { createdMin?: Date; createdMax?: Date; page?: number; limit?: number; orderName?: string; pwOrderId?: string };
+export async function listPrintwayOrders(c: Cred, p: PwListParams = {}): Promise<{ items: Record<string, unknown>[]; raw: unknown }> {
+  const q = new URLSearchParams({
+    created_at_min: (p.createdMin ?? new Date(Date.now() - 30 * 86400e3)).toISOString().slice(0, 23),
+    created_at_max: (p.createdMax ?? new Date()).toISOString().slice(0, 23),
+    limit: String(p.limit ?? 50),
+    page: String(p.page ?? 1),
+    pw_order_id: p.pwOrderId ?? "",
+    order_name: p.orderName ?? "",
+  });
+  const r = await fetch(`${base(c)}/transaction/order-list?${q}`, { headers: headers(c) });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!r.ok) throw new Error(`Printway order-list failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
+  return { items: extractArray(j), raw: j };
+}
+
+// Bóc mảng phòng thủ: data có thể là mảng, hoặc { orders/list/items/data/results/rows/catalogs/skus/products: [] } (lồng 2 tầng)
+export function extractArray(j: unknown): Record<string, unknown>[] {
+  const KEYS = ["orders", "list", "items", "data", "results", "rows", "catalogs", "skus", "products", "docs"];
+  const dig = (v: unknown, depth: number): Record<string, unknown>[] | null => {
+    if (Array.isArray(v)) return v as Record<string, unknown>[];
+    if (v && typeof v === "object" && depth < 3) {
+      const o = v as Record<string, unknown>;
+      for (const k of KEYS) { if (k in o) { const got = dig(o[k], depth + 1); if (got) return got; } }
+    }
+    return null;
+  };
+  return dig(j, 0) ?? [];
+}
+
+// ---- Catalog SKU: GET /products/list-sku-catalogs ----
+// Doc không nêu params → thử phân trang ?page&limit, nếu server bỏ qua thì tự dừng khi trùng dữ liệu.
+export async function listPrintwaySkuCatalogs(c: Cred, page = 1, limit = 100): Promise<{ items: Record<string, unknown>[]; raw: unknown }> {
+  const r = await fetch(`${base(c)}/products/list-sku-catalogs?page=${page}&limit=${limit}`, { headers: headers(c) });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!r.ok) throw new Error(`Printway list-sku-catalogs failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
+  return { items: extractArray(j), raw: j };
+}
+
+// Chuẩn hoá 1 dòng catalog → { sku, variantId, product, variant, cost, ship } (dò field phòng thủ)
+export function normalizePwSkuRow(it: Record<string, unknown>) {
+  const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+  const N = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+  const pick = (...keys: string[]) => { for (const k of keys) { const v = S(it[k]); if (v) return v; } return ""; };
+  const pickN = (...keys: string[]) => { for (const k of keys) { if (it[k] !== undefined && it[k] !== null && it[k] !== "") return N(it[k]); } return 0; };
+  const sku = pick("item_sku", "sku", "sku_code", "skuCode", "code");
+  const variantId = pick("variant_id", "variantId", "id", "_id");
+  const product = pick("product_name", "product_title", "productName", "title", "name", "product");
+  // Variant: ghép size/color nếu có, else các field variant
+  const size = pick("size", "size_name"); const color = pick("color", "color_name");
+  const variant = pick("variant_name", "variant_title", "variant", "option") || [color, size].filter(Boolean).join(" / ");
+  const cost = pickN("base_cost", "base_price", "price", "cost", "amount", "sale_price");
+  const ship = pickN("ship_cost", "shipping_cost", "shipping_fee", "ship_fee");
+  return { sku, variantId, product, variant, cost, ship };
+}
+
+// ---- Shipping methods: POST /products/retrieved-shipping-methods { variant_id: [], sku: [] } ----
+export async function getPrintwayShippingMethods(c: Cred, p: { variantIds?: string[]; skus?: string[] }): Promise<{ items: Record<string, unknown>[]; raw: unknown }> {
+  const r = await fetch(`${base(c)}/products/retrieved-shipping-methods`, {
+    method: "POST",
+    headers: headers(c),
+    body: JSON.stringify({ variant_id: p.variantIds ?? [], sku: p.skus ?? [] }),
+  });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!r.ok) throw new Error(`Printway shipping-methods failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
+  return { items: extractArray(j), raw: j };
+}
+
+// ---- Webhook: POST /webhooks?type=order|tracking { access_key, access_token, endpoint } ----
+// Printway sẽ gọi endpoint của mình kèm header <access_key>: <access_token>.
+// access_key chỉ được chứa a-z A-Z 0-9 - _ ; access_token thêm được _ :;.,\/"'\''?!(){}[]@<>=-+*#$&`|~^%
+export type PwWebhookType = "order" | "tracking";
+export async function registerPrintwayWebhook(c: Cred, type: PwWebhookType, p: { accessKey: string; accessToken: string; endpoint: string }): Promise<unknown> {
+  const r = await fetch(`${base(c)}/webhooks?type=${type}`, {
+    method: "POST",
+    headers: headers(c),
+    body: JSON.stringify({ access_key: p.accessKey, access_token: p.accessToken, endpoint: p.endpoint }),
+  });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!r.ok || j.success === false) throw new Error(`Printway register webhook(${type}) failed: HTTP ${r.status} ${(j.message as string) ?? JSON.stringify(j).slice(0, 160)}`.trim());
+  return j;
+}
+export async function getPrintwayWebhooks(c: Cred, type: PwWebhookType): Promise<unknown> {
+  const r = await fetch(`${base(c)}/webhooks?type=${type}`, { headers: headers(c) });
+  return (await r.json().catch(() => ({}))) as unknown;
+}
+
+// ---- Thanh toán đơn: POST /order/paid { order_id: <PW order id> } ----
+// Printway tạo đơn xong ở trạng thái CHƯA THANH TOÁN — phải paid thì mới vào production.
+export async function payPrintwayOrder(c: Cred, orderId: string): Promise<{ ok: boolean; message: string; raw: unknown }> {
+  const r = await fetch(`${base(c)}/order/paid`, {
+    method: "POST",
+    headers: headers(c),
+    body: JSON.stringify({ order_id: orderId }),
+  });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  const ok = r.ok && j.success !== false && !(typeof j.status === "number" && j.status >= 400);
+  const message = (j.message as string) || (j.error as string) || (ok ? "paid" : `HTTP ${r.status}`);
+  return { ok, message, raw: j };
+}
+
+// ---- Huỷ đơn (chưa vào production): POST /order/cancel-order-api { pw_order_id?, order_name? } ----
+export async function cancelPrintwayOrder(c: Cred, p: { pwOrderId?: string; orderName?: string }): Promise<{ ok: boolean; message: string }> {
+  const body: Record<string, string> = {};
+  if (p.pwOrderId) body.pw_order_id = p.pwOrderId;
+  if (p.orderName) body.order_name = p.orderName;
+  const r = await fetch(`${base(c)}/order/cancel-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body) });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  return { ok: r.ok && j.success !== false, message: (j.message as string) || (j.error as string) || `HTTP ${r.status}` };
+}
+
+// ---- Xoá đơn (đang chờ + chưa trả tiền): POST /order/delete-order-api { pw_order_id?, order_name? } ----
+export async function deletePrintwayOrder(c: Cred, p: { pwOrderId?: string; orderName?: string }): Promise<{ ok: boolean; message: string }> {
+  const body: Record<string, string> = {};
+  if (p.pwOrderId) body.pw_order_id = p.pwOrderId;
+  if (p.orderName) body.order_name = p.orderName;
+  const r = await fetch(`${base(c)}/order/delete-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body) });
+  const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+  return { ok: r.ok && j.success !== false, message: (j.message as string) || (j.error as string) || `HTTP ${r.status}` };
+}
+
+// Chuẩn hoá 1 đơn Printway → { orderName, status, tracking, carrier, trackingUrl } (dò field phòng thủ)
+export function normalizePwOrder(it: Record<string, unknown>) {
+  const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+  const pick = (...keys: string[]) => { for (const k of keys) { const v = S(it[k]); if (v) return v; } return ""; };
+  const orderName = pick("order_name", "order_id", "orderName", "external_id", "name");
+  const pwId = pick("pw_order_id", "pwOrderId", "id", "code");
+  const statusRaw = pick("status", "order_status", "fulfillment_status", "state").toLowerCase();
+  const tracking = pick("tracking_number", "trackingNumber", "tracking_code", "tracking", "tracking_id");
+  const carrier = pick("carrier", "shipping_carrier", "carrier_name", "logistics");
+  const trackingUrl = pick("tracking_url", "trackingUrl", "tracking_link");
+  return { orderName, pwId, statusRaw, ffStatus: mapPwStatus(statusRaw, !!tracking), tracking, carrier, trackingUrl };
+}
+
+// Map trạng thái Printway → trạng thái ffo của FUSION (dùng chung cho poll + webhook)
+export function mapPwStatus(statusRaw: string, hasTracking = false): string {
+  const s = (statusRaw || "").toLowerCase();
+  if (/cancel|refund|reject/.test(s)) return "cancelled";
+  if (/deliver/.test(s)) return "delivered";
+  if (hasTracking || /ship|fulfil|transit|dispatch/.test(s)) return "shipped";
+  if (/production|process|printing|printed|pending|paid|confirm|hold|approv/.test(s)) return "in_production";
+  return "";
+}

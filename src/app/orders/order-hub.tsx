@@ -99,6 +99,12 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
     if (j.ok) setData(j);
   }, [page, show, status, sellerId, storeId, q, platform, fulfillerId, dr]);
   useEffect(() => { load(); }, [load]);
+  // Poll trạng thái/tracking Printway ngầm khi mở trang (server throttle 10 phút — gọi thoải mái)
+  useEffect(() => {
+    fetch("/api/fulfillment/printway-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+      .then((r) => r.json()).then((j) => { if (j?.updated > 0) load(); }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!data) return <div className="panel empty">{t("o.loadingOrders")}</div>;
   const all = Object.values(data.counts).reduce((a, b) => a + b, 0);

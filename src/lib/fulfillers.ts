@@ -1,5 +1,6 @@
 import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPrintAreas } from "@/lib/printify";
 import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
+import { createPrintwayOrder, type PwOrderItem } from "@/lib/printway-api";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
  * ------------------------------------------------------------------
@@ -78,13 +79,69 @@ function makeAdapter(slug: string, label: string): FulfillerAdapter {
 export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   printify: printifyAdapter(),
   merchize: merchizeAdapter(),
-  printway: makeAdapter("printway", "Printway"),
+  printway: printwayAdapter(),
   wembroidery: makeAdapter("wembroidery", "Wembroidery"),
   flashship: makeAdapter("flashship", "Flashship"),
   onospod: makeAdapter("onospod", "Onospod"),
   compassup: makeAdapter("compassup", "Compassup"),
   gearment: makeAdapter("gearment", "Gearment"),
 };
+
+
+/**
+ * Adapter Printway THẬT — POST /order/create-new-order (Open API v3).
+ * credentials = { apiKey: <pw access token> } (dán Access Token vào ô API Key ở Settings).
+ * lines[].fulfillerSku = item_sku bên Printway (vd "PW-2LMORM-3.54X3.54 INCHES-ONE SIDE").
+ * Thiếu token → simulate (không chặn luồng).
+ */
+function printwayAdapter(): FulfillerAdapter {
+  return {
+    slug: "printway",
+    label: "Printway",
+    async push(ctx) {
+      const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
+      const accessToken = cred.apiKey || cred.accessToken || cred.apiToken || "";
+      if (!accessToken) return { ...simulate("printway"), reason: "Printway chưa có Access Token (Settings → API Key) → đơn KHÔNG lên nhà in" };
+
+      const o = ctx.order;
+      const first = (o.buyerFirst || "").trim() || "Customer";
+      const last = (o.buyerLast || "").trim() || first;
+      const state = (o.state || "").trim();
+
+      const items: PwOrderItem[] = ctx.lines.map((l) => {
+        const it: PwOrderItem = { item_sku: l.fulfillerSku, quantity: l.qty };
+        if (l.image) it.mockup_url = l.image;
+        if (l.designFront) it.artwork_front = l.designFront;
+        if (l.designBack) it.artwork_back = l.designBack;
+        if (l.designHood) it.artwork_hood = l.designHood;
+        if (l.designSleeve) { it.artwork_right_upper_sleeves = l.designSleeve; it.artwork_left_upper_sleeves = l.designSleeve; }
+        return it;
+      });
+
+      const res = await createPrintwayOrder({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
+        order_id: orderExtNumber(o),
+        tiktok_order_type: "seller",
+        firstName: first,
+        lastName: last,
+        shipping_email: o.email || undefined,
+        shipping_phone: o.phone || undefined,
+        shipping_address1: o.addr1 || "",
+        shipping_address2: o.addr2 || undefined,
+        shipping_city: o.city || "",
+        shipping_province: state,
+        shipping_province_code: state,
+        shipping_zip: o.zip || "",
+        shipping_country: o.country || "United States",
+        shipping_country_code: toISO2(o.country || "United States"),
+        order_items: items,
+      });
+
+      // KHÔNG auto-pay: đơn tạo xong nằm ở trạng thái unpaid trên Printway —
+      // người dùng kiểm tra rồi tự thanh toán bên đó, webhook/poll sẽ kéo trạng thái về.
+      return { externalFfId: res.orderId, simulated: false, raw: res.raw };
+    },
+  };
+}
 
 /**
  * Adapter Printify THẬT — gọi API tạo đơn.
