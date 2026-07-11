@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { Flash } from "@/components/flash";
 import { useLang } from "@/components/lang-provider";
 import { IconCopy } from "@/components/icons";
 
@@ -77,7 +78,7 @@ export default function AccountClient() {
 
   return (
     <>
-      {msg && <div style={{ position: "fixed", top: 16, right: 16, zIndex: 100, background: "#111827", color: "#fff", padding: "10px 18px", borderRadius: 12, fontSize: 13.5 }}>{msg}</div>}
+      <Flash msg={msg} />
 
       <h2 style={{ fontSize: 20, fontWeight: 800, margin: "6px 0 2px" }}>{t("a.myAccount")}</h2>
 

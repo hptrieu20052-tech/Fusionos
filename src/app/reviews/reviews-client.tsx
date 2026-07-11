@@ -1,5 +1,6 @@
 "use client";
 import { useLang } from "@/components/lang-provider";
+import { Flash } from "@/components/flash";
 import { useEffect, useState } from "react";
 
 type D = { id: string; sku_code: number; title: string; points: number; designer: string | null; thumb: string | null; biz_items: number; reviewed: number };
@@ -86,7 +87,7 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
             </div>
             <textarea placeholder={t("rev.commentPh")} value={comment} onChange={(e) => setComment(e.target.value)}
               style={{ width: "100%", marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5, minHeight: 70 }} />
-            {msg && <div style={{ marginTop: 8, fontWeight: 700, fontSize: 12.5 }}>{msg}</div>}
+            <Flash msg={msg} />
             <div style={{ display: "flex", gap: 8, marginTop: 14, justifyContent: "flex-end" }}>
               <button onClick={() => submit("reject")} style={{ background: "var(--red-soft)", color: "var(--red)", border: 0, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer" }}>Reject</button>
               <button onClick={() => submit("request_fix")} style={{ background: "var(--amber-soft)", color: "var(--amber)", border: 0, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer" }}>{t("rev.needFix")}</button>

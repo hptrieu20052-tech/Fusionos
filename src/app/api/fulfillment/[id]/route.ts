@@ -31,7 +31,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const [rest] = await db.select({ id: schema.fulfillmentOrders.id }).from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, ffo.orderId)).limit(1);
   if (!rest) {
     const [ord] = await db.select({ status: schema.orders.status }).from(schema.orders).where(eq(schema.orders.id, ffo.orderId)).limit(1);
-    if (ord && ["created", "in_production", "shipped"].includes(ord.status)) {
+    if (ord && ["created", "in_production", "shipped", "delivered"].includes(ord.status)) {
       await db.update(schema.orders).set({ status: "new", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
     }
   }

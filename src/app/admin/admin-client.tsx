@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Flash } from "@/components/flash";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import { IconKey, IconLock, IconLockOpen, IconTrash } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
@@ -221,7 +222,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
           </select>
           <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 11, padding: "9px 18px", fontWeight: 800, cursor: "pointer" }}>{t("adm.create")}</button>
         </form>
-        {msg && <div style={{ marginTop: 10, fontWeight: 700, fontSize: 12.5 }}>{msg}</div>}
+        <Flash msg={msg} />
       </div>
 
       <div className="panel">

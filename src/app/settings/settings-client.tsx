@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Flash } from "@/components/flash";
 import { IconTrash, IconPencil } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 import { SkuMappingClient } from "@/app/sku-mapping/sku-mapping-client";
@@ -65,7 +66,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
       <div className="panel">
         <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("s.title")}</h3>
         <div className="sub">{t("s.sub1")} <a href="/admin" style={{ color: "var(--blue)", fontWeight: 700 }}>{t("s.adminPage")}</a>.</div>
-        {msg && <div style={{ marginTop: 8, fontWeight: 700, fontSize: 12.5 }}>{msg}</div>}
+        <Flash msg={msg} />
         {/* 2 tab: Fulfillment API · SKU mapping */}
         <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
           {([["api", t("s.tabApi")], ["sku", t("s.tabSku")]] as const).map(([k, label]) => (

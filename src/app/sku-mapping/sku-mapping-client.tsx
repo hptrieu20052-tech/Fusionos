@@ -1,5 +1,6 @@
 "use client";
 import { useLang } from "@/components/lang-provider";
+import { Flash } from "@/components/flash";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { SupplierLogo } from "@/components/supplier-logo";
@@ -278,7 +279,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
           <h3 style={{ fontWeight: 800, fontSize: 16 }}>SKU Mapping</h3>
           <div className="sub">{t("sk.mapDesc")}</div>
         </div>
-        {msg && <div style={{ fontWeight: 700, fontSize: 12.5, alignSelf: "center" }}>{msg}</div>}
+        <Flash msg={msg} />
       </div>
 
       {/* Tabs supplier */}

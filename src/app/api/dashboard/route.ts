@@ -78,13 +78,13 @@ export async function GET(req: NextRequest) {
   // nhãn kỳ so sánh theo range
   const prevLabel = ({ today: "yesterday", yesterday: "day before yesterday", "3d": "3 days ago", "7d": "last week", "30d": "30 days ago", this_month: "last month", last_month: "the previous month", this_year: "last year" } as Record<string, string>)[range] ?? "previous period";
 
-  // Pipeline theo trạng thái trong kỳ: In production / In Transit (shipped) / Delivered (completed)
+  // Pipeline theo trạng thái trong kỳ: In production / In Transit (shipped) / Delivered
   const pipeRows = (await db.execute(sql`
     SELECT o.status,
       count(DISTINCT o.id)::int c,
       coalesce(sum(oi.qty),0)::int q
     FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id
-    WHERE ${sql.raw(cond)} AND o.status IN ('in_production','shipped','completed')${own}
+    WHERE ${sql.raw(cond)} AND o.status IN ('in_production','shipped','delivered')${own}
     GROUP BY o.status
   `)).rows as { status: string; c: number; q: number }[];
   const pick = (s: string) => { const r = pipeRows.find((x) => x.status === s); return { c: r?.c ?? 0, q: r?.q ?? 0 }; };
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
     order: { c: cur.o, q: cur.items, prev: prev ? prev.o : null },
     in_production: pick("in_production"),
     in_transit: pick("shipped"),
-    delivered: pick("completed"),
+    delivered: pick("delivered"),
   };
 
   return NextResponse.json({

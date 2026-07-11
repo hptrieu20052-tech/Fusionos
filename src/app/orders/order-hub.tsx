@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { Flash } from "@/components/flash";
 import { useSearchParams } from "next/navigation";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
@@ -31,7 +32,7 @@ type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
-  completed: "#5E86C9", has_issues: "#C06B82", trash: "#BBA054",
+  delivered: "#7C6FC0", has_issues: "#C06B82", trash: "#BBA054",
 };
 const FF_STATUS_COLORS: Record<string, string> = {
   pending: "#8A93A6", pushed: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -123,7 +124,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
 
   return (
     <>
-      {msg && <div style={{ position: "fixed", top: 16, right: 16, zIndex: 100, background: "#111827", color: "#fff", padding: "10px 18px", borderRadius: 12, fontSize: 13.5 }}>{msg}</div>}
+      <Flash msg={msg} />
 
       {/* Page head: tiêu đề + hàng nút (theo FusionDNPrint) */}
       <div className="page-head">
@@ -234,7 +235,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
         {/* Pills trạng thái — mỗi status một màu */}
         <div className="otabs">
           <button className={`otab${!status ? " on" : ""}`} onClick={() => { setStatus(""); setPage(1); }}>All ({all})</button>
-          {Object.keys(STATUS_COLORS).filter((st) => st !== "completed").map((st) => {
+          {Object.keys(STATUS_COLORS).map((st) => {
             const c = STATUS_COLORS[st];
             const on = status === st;
             return (
@@ -754,7 +755,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                       <div className="o2-ff-head">
                         <span className="o2-track-h" style={{ margin: 0 }}>{f.fulfillerName || t("o.fulfilledBy")}</span>
                         <span style={{ background: FF_STATUS_COLORS[f.status] ?? "#8A93A6", color: "#fff", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}>{f.status}</span>
-                        {f.externalFfId?.startsWith("SIM-") && <span title={t("o.simPushLabel")} style={{ background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>MÔ PHỎNG</span>}
+                        {f.externalFfId?.startsWith("SIM-") && <span title={t("o.simPushLabel")} style={{ background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>{t("o.notSentBadge")}</span>}
                         {f.supplierOrderUrl && (
                           <a href={f.supplierOrderUrl} target="_blank" rel="noreferrer" className="o2-ff-link">
                             <IconTruck width={12} height={12} /> {t("o.viewSupplierOrder")} ↗

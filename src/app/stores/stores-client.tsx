@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { Flash } from "@/components/flash";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm } from "@/components/confirm-provider";
 import { useLang } from "@/components/lang-provider";
@@ -70,7 +71,7 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
 
   return (
     <>
-      {msg && <div style={{ position: "fixed", top: 16, right: 16, zIndex: 100, background: "#2A303C", color: "#fff", padding: "10px 18px", borderRadius: 12, fontSize: 13.5 }}>{msg}</div>}
+      <Flash msg={msg} />
 
       {/* Page head */}
       <div className="page-head">

@@ -91,7 +91,7 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
             <div className="pipe-l">{tr("db.pipeInTransit")}</div>
             <div className="pipe-v">{kpi.pipeline.in_transit.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.in_transit.q.toLocaleString()})</span></div>
           </Link>
-          <Link href="/orders?status=completed" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#5E86C9" }}>
+          <Link href="/orders?status=delivered" className="pipe-card" style={{ ...kpiLink, borderTopColor: "#5E86C9" }}>
             <div className="pipe-l">{tr("db.pipeDelivered")}</div>
             <div className="pipe-v">{kpi.pipeline.delivered.c.toLocaleString()} <span className="pipe-q">({tr("db.quantity")} {kpi.pipeline.delivered.q.toLocaleString()})</span></div>
           </Link>

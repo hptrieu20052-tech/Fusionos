@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Flash } from "@/components/flash";
 import { useConfirm } from "@/components/confirm-provider";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
@@ -123,7 +124,7 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
 
   return (
     <>
-      {msg && <div style={{ position: "fixed", top: 16, right: 16, zIndex: 100, background: "#2A303C", color: "#fff", padding: "10px 18px", borderRadius: 12, fontSize: 13.5 }}>{msg}</div>}
+      <Flash msg={msg} />
 
       {/* Page head */}
       <div className="page-head">

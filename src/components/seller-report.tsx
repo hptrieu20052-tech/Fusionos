@@ -100,47 +100,55 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
         <div>
           <Donut sellers={sellers} metric={metric} total={metric === "o" ? totals.orders : totals.items} />
           <div style={{ marginTop: 14, maxHeight: 240, overflowY: "auto", paddingRight: 4 }}>
-            {data.showMoney && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9.5, color: "var(--muted)", fontWeight: 700, padding: "0 0 5px", textTransform: "uppercase", letterSpacing: 0.3, borderBottom: "1px solid var(--line)" }}>
-                <span style={{ width: 20 }} />
-                <span style={{ flex: 1 }}>Seller / Marketplace</span>
-                <span style={{ width: 62, textAlign: "right" }}>Orders</span>
-                <span style={{ width: 56, textAlign: "right" }}>Revenue</span>
-                <span style={{ width: 42, textAlign: "right" }}>Fee</span>
-                {!data.hideProfit && <span style={{ width: 58, textAlign: "right" }}>Profit</span>}
-              </div>
-            )}
-            {sellers.map((s, si) => {
-              const v = metric === "o" ? s.orders : s.items;
-              const tot = metric === "o" ? totals.orders : totals.items;
-              const pct = tot ? (v / tot) * 100 : 0;
-              return (
-                <div key={si} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", fontSize: 12, borderBottom: "1px solid var(--line)" }}>
-                  <span style={{ width: 20, textAlign: "center", fontWeight: 800, color: si < 3 ? "var(--blue)" : "var(--muted)", fontSize: si < 3 ? 13 : 12, flexShrink: 0 }}>{si + 1}</span>
-                  <span style={{ width: 10, height: 10, borderRadius: 3, background: PALETTE[si % PALETTE.length], flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: si < 3 ? 700 : 400 }}>{s.name}</div>
-                    {data.showMoney && s.platforms && s.platforms.length > 0 && (
-                      <div style={{ fontSize: 10, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.platforms.map((p) => MK[p] ?? p).join(", ")}</div>
-                    )}
-                  </div>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ color: "var(--muted)", textAlign: "right" }}>
+                  <th style={{ textAlign: "left", padding: "3px 4px" }}># Seller</th>
+                  {data.showMoney && <th style={{ textAlign: "left", padding: "3px 4px" }}>Marketplace</th>}
+                  <th style={{ padding: "3px 4px" }}>Orders</th>
                   {data.showMoney ? (
                     <>
-                      <span style={{ width: 62, textAlign: "right", flexShrink: 0 }}><b>{s.orders.toLocaleString()}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.items.toLocaleString()})</span></span>
-                      <span style={{ width: 56, textAlign: "right", flexShrink: 0 }}>{usd(s.revenue)}</span>
-                      <span style={{ width: 42, textAlign: "right", color: "var(--muted)", flexShrink: 0 }}>{usd(s.fee)}</span>
-                      {!data.hideProfit && <span style={{ width: 58, textAlign: "right", flexShrink: 0, fontWeight: 700, color: (s.profit ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>{usd(s.profit)}</span>}
+                      <th style={{ padding: "3px 4px" }}>Revenue</th>
+                      <th style={{ padding: "3px 4px" }}>Fee</th>
+                      {!data.hideProfit && <th style={{ padding: "3px 4px" }}>Profit</th>}
                     </>
                   ) : (
-                    <>
-                      <b>{s.orders.toLocaleString()}</b>
-                      <span style={{ color: "var(--muted)" }}>({s.items.toLocaleString()})</span>
-                      <span style={{ width: 44, textAlign: "right", color: "var(--muted)", fontSize: 11.5 }}>{pct.toFixed(1)}%</span>
-                    </>
+                    <th style={{ padding: "3px 4px" }}>%</th>
                   )}
-                </div>
-              );
-            })}
+                </tr>
+              </thead>
+              <tbody>
+                {sellers.map((s, si) => {
+                  const v = metric === "o" ? s.orders : s.items;
+                  const tot = metric === "o" ? totals.orders : totals.items;
+                  const pct = tot ? (v / tot) * 100 : 0;
+                  return (
+                    <tr key={si} style={{ borderTop: "1px solid var(--line)", textAlign: "right" }}>
+                      <td style={{ textAlign: "left", padding: "5px 4px", whiteSpace: "nowrap", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <span style={{ fontWeight: 800, color: si < 3 ? "var(--blue)" : "var(--muted)", marginRight: 6 }}>{si + 1}</span>
+                        <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block", marginRight: 5 }} />
+                        <b style={{ fontWeight: si < 3 ? 700 : 500 }}>{s.name}</b>
+                      </td>
+                      {data.showMoney && (
+                        <td style={{ textAlign: "left", padding: "5px 4px", color: "var(--muted)", fontSize: 11, whiteSpace: "nowrap", maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {s.platforms && s.platforms.length > 0 ? s.platforms.map((p) => MK[p] ?? p).join(", ") : "—"}
+                        </td>
+                      )}
+                      <td style={{ padding: "5px 4px", whiteSpace: "nowrap" }}><b>{s.orders.toLocaleString()}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.items.toLocaleString()})</span></td>
+                      {data.showMoney ? (
+                        <>
+                          <td style={{ padding: "5px 4px" }}>{usd(s.revenue)}</td>
+                          <td style={{ padding: "5px 4px", color: "var(--muted)" }}>{usd(s.fee)}</td>
+                          {!data.hideProfit && <td style={{ padding: "5px 4px", color: (s.profit ?? 0) >= 0 ? "var(--green)" : "var(--red)", fontWeight: 600 }}>{usd(s.profit)}</td>}
+                        </>
+                      ) : (
+                        <td style={{ padding: "5px 4px", color: "var(--muted)", fontSize: 11.5 }}>{pct.toFixed(1)}%</td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

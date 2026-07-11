@@ -11,7 +11,7 @@ export const marketplaceEnum = pgEnum("marketplace", ["tiktok", "amazon", "etsy"
 export const connectMethodEnum = pgEnum("connect_method", ["api", "extension", "excel"]);
 export const storeStatusEnum = pgEnum("store_status", ["active", "warning", "suspended", "pending"]);
 export const orderStatusEnum = pgEnum("order_status", [
-  "new", "created", "in_production", "shipped", "completed", "cancel", "has_issues", "out_of_stock", "trash",
+  "new", "created", "in_production", "shipped", "delivered", "completed", "cancel", "has_issues", "out_of_stock", "trash",
 ]);
 export const orderSourceEnum = pgEnum("order_source", ["api", "extension", "excel", "manual"]);
 export const fileKindEnum = pgEnum("file_kind", ["mockup", "design_front", "design_back", "video"]);

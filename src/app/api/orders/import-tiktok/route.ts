@@ -95,10 +95,10 @@ export async function POST(req: NextRequest) {
   }
 
   // Map trạng thái TikTok → trạng thái nội bộ
-  const mapStatus = (s: string): "new" | "shipped" | "completed" | "trash" => {
+  const mapStatus = (s: string): "new" | "shipped" | "delivered" | "trash" => {
     const x = s.toLowerCase();
     if (x.includes("cancel")) return "trash";
-    if (x.includes("complet") || x.includes("deliver")) return "completed";
+    if (x.includes("complet") || x.includes("deliver")) return "delivered";
     if (x.includes("ship") && !x.includes("to ship")) return "shipped";
     if (x.includes("transit")) return "shipped";
     return "new"; // To ship / Awaiting shipment / mặc định

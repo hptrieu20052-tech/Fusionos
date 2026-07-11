@@ -96,7 +96,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
                   <th style={{ textAlign: "left", padding: "3px 4px" }}>#  Designer</th>
                   <th style={{ padding: "3px 4px" }}>Design</th>
                   <th style={{ padding: "3px 4px" }}>Sale</th>
-                  {!hideMoney && <th style={{ padding: "3px 4px" }}>Doanh thu</th>}
+                  {!hideMoney && <th style={{ padding: "3px 4px" }}>Revenue</th>}
                   <th style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>
                   <th style={{ padding: "3px 4px" }}>KPI</th>
                 </tr>

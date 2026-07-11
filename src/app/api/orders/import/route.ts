@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
           INSERT INTO fulfillment_orders (order_id, fulfiller_id, status, tracking_number, tracking_carrier, tracking_synced_at)
           SELECT ${order.id}::uuid, id, 'shipped', ${trk}, ${carrier || null}, NOW() FROM fulfillers LIMIT 1`);
       }
-      if (!["completed", "trash"].includes(order.status)) {
+      if (!["delivered", "trash"].includes(order.status)) {
         await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
         await autoPushEtsyTracking(order.id);
       }
