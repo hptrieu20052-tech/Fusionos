@@ -54,11 +54,19 @@ export async function GET(req: NextRequest) {
       const daysSince = lastOrder ? Math.floor((Date.now() - lastOrder.getTime()) / 86400000) : null;
       // live nếu có đơn trong 7 ngày; die nếu store active nhưng >14 ngày không đơn
       const live = (c?.c7 ?? 0) > 0;
+      const cred = (r.s.apiCredentials ?? {}) as Record<string, string>;
+      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_"));
       return {
         ...r.s,
         apiCredentials: undefined,
-        hasCredentials: !!r.s.apiCredentials,
-        credentialKeys: r.s.apiCredentials ? Object.keys(r.s.apiCredentials as object) : [],
+        hasCredentials: shownKeys.length > 0,
+        credentialKeys: shownKeys,
+        etsy: {
+          hasKeystring: !!cred.etsy_keystring,
+          keystring: cred.etsy_keystring || "",
+          connected: !!cred.etsy_refresh_token && !!cred.etsy_shop_id,
+          shopId: cred.etsy_shop_id || "",
+        },
         sellerName: r.sellerName,
         orders30d: c?.c30 ?? 0,
         orders7d: c?.c7 ?? 0,

@@ -6,7 +6,7 @@ import { useLang } from "@/components/lang-provider";
 import { useConfirm } from "@/components/confirm-provider";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { SupplierLogo } from "@/components/supplier-logo";
-import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn, IconDownload, IconReport, IconCheck, IconPencil, IconRefresh } from "@/components/icons";
+import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn, IconDownload, IconReport, IconCheck, IconPencil, IconRefresh, IconSend } from "@/components/icons";
 
 type Item = {
   id: string; product_title: string; internal_sku: string | null; qty: number; unit_price: string;
@@ -534,11 +534,21 @@ function IssueModal({ order, fulfillers, defaultFulfillerId, close, flash, onSav
   );
 }
 
-function ManualTracking({ orderId, ff, fulfillerId, fulfillers, flash, onSaved }: {
-  orderId: string; ff?: FfOrder; fulfillerId: string; fulfillers: Opt[];
+function ManualTracking({ orderId, platform, ff, fulfillerId, fulfillers, flash, onSaved }: {
+  orderId: string; platform: string; ff?: FfOrder; fulfillerId: string; fulfillers: Opt[];
   flash: (m: string) => void; onSaved: () => void;
 }) {
   const { t } = useLang();
+  const [pushing, setPushing] = useState(false);
+  const pushEtsy = async () => {
+    setPushing(true);
+    const j = await fetch("/api/etsy/push-tracking", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setPushing(false);
+    if (j.ok && j.pushed > 0) flash("\u2713 Tracking pushed to Etsy");
+    else if (j.ok && j.reason) flash("\u2713 " + j.reason);
+    else flash("\u2717 " + (j.errors?.[0] ?? j.error ?? j.reason ?? "Push failed"));
+    onSaved();
+  };
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [v, setV] = useState({
@@ -566,9 +576,17 @@ function ManualTracking({ orderId, ff, fulfillerId, fulfillers, flash, onSaved }
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} style={{ ...btnGhost, fontSize: 11.5, marginTop: 8, width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-        <IconPin width={12} height={12} /> {ff?.trackingNumber ? t("o.editTracking") : t("o.addTracking")}
-      </button>
+      <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+        <button onClick={() => setOpen(true)} style={{ ...btnGhost, fontSize: 11.5, flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <IconPin width={12} height={12} /> {ff?.trackingNumber ? t("o.editTracking") : t("o.addTracking")}
+        </button>
+        {platform === "etsy" && ff?.trackingNumber && (
+          <button onClick={pushEtsy} disabled={pushing} title="Send this tracking to Etsy (marks the order shipped & notifies the buyer)"
+            style={{ ...btnGhost, fontSize: 11.5, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, borderColor: "#CDE3FA", color: "var(--blue)", whiteSpace: "nowrap" }}>
+            <IconSend width={12} height={12} /> {pushing ? "\u2026" : "Push \u2192 Etsy"}
+          </button>
+        )}
+      </div>
     );
   }
   return (
@@ -807,7 +825,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                     );
                   })()}
 
-                  {canPushFf && <ManualTracking key={(detail.ffOrders ?? [])[0]?.id ?? "new"} orderId={o.id}
+                  {canPushFf && <ManualTracking key={(detail.ffOrders ?? [])[0]?.id ?? "new"} orderId={o.id} platform={o.platform}
                     ff={(detail.ffOrders ?? [])[0]}
                     fulfillerId={ffSel || (detail.ffOrders ?? [])[0]?.fulfillerId || ""}
                     fulfillers={fulfillers}

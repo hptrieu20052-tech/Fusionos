@@ -16,9 +16,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   const [s] = await db.select().from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
   if (!s) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const cred = (s.apiCredentials ?? {}) as Record<string, string>;
+  // Trạng thái kết nối Etsy API (không lộ secret/token)
+  const etsy = {
+    hasKeystring: !!cred.etsy_keystring,
+    keystring: cred.etsy_keystring || "",
+    connected: !!cred.etsy_refresh_token && !!cred.etsy_shop_id,
+    shopId: cred.etsy_shop_id || "",
+  };
+  // Ẩn các key etsy_* khỏi danh sách credentialKeys hiển thị (đã có mục Etsy API riêng)
+  const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_"));
   return NextResponse.json({
     ok: true,
-    store: { ...s, apiCredentials: undefined, credentialKeys: Object.keys(cred), hasCredentials: Object.keys(cred).length > 0 },
+    store: { ...s, apiCredentials: undefined, credentialKeys: shownKeys, hasCredentials: shownKeys.length > 0, etsy },
   });
 }
 

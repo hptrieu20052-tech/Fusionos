@@ -11,14 +11,17 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  // KPI tổng ở Dashboard chỉ dành cho admin (staff/seller/designer đã ẩn ở UI)
-  if (session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const sp = req.nextUrl.searchParams;
+  // scope=self: bất kỳ user nào cũng được xem KPI của CHÍNH MÌNH ("Your Report").
+  // Không có scope=self: KPI tổng công ty → chỉ admin.
+  const self = sp.get("scope") === "self";
+  if (!self && session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+
   const range = sp.get("range") ?? "today";
   const from = sp.get("from"), to = sp.get("to");
   const cond = rangeCond("o.ordered_at", range, from, to);
-  const scopeIds = await scopeOwnerIds(session, "orders");
+  const scopeIds = self ? [session.sub] : await scopeOwnerIds(session, "orders");
   const inList = scopeIds ? sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `) : null;
   const own = inList ? sql` AND o.seller_id IN (${inList})` : sql``;
   const ownItems = inList ? sql` AND o2.seller_id IN (${inList})` : sql``;

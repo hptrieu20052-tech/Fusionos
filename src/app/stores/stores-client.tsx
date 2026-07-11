@@ -11,6 +11,7 @@ type Store = {
   currency: string; fxRate: string; ingestToken?: string | null; health?: { fxConvertedAt?: string; fxConvertedRate?: number } | null;
   orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
+  etsy?: { hasKeystring: boolean; keystring: string; connected: boolean; shopId: string };
 };
 type Opt = { id: string; name: string };
 
@@ -47,6 +48,16 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
   }, [fSeller, fMk]);
   useEffect(() => { load(); }, [load]);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
+  // Kết quả OAuth Etsy chuyển hướng về ?etsy=ok/err&msg=...
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const e = q.get("etsy");
+    if (e) {
+      setMsg((e === "ok" ? "✓ " : "✗ ") + (q.get("msg") || ""));
+      setTimeout(() => setMsg(""), 4000);
+      window.history.replaceState({}, "", "/stores");
+    }
+  }, []);
 
   const delStore = async (s: Store) => {
     if (!(await confirm({ message: t("st.deleteConfirm").replace("{name}", s.name), danger: true }))) return;
@@ -199,6 +210,24 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     if (j.ok && j.ingestToken) { setTok(j.ingestToken); flash(t("st.tokenCreated")); } else flash(t("st.tokenErr"));
   };
   const ingestUrl = typeof window !== "undefined" ? `${window.location.origin}/api/ingest/etsy` : "/api/ingest/etsy";
+  const oauthCb = typeof window !== "undefined" ? `${window.location.origin}/api/etsy/oauth/callback` : "/api/etsy/oauth/callback";
+  const [etsyKey, setEtsyKey] = useState(store.etsy?.keystring ?? "");
+  const [etsySecret, setEtsySecret] = useState("");
+  const [etsyBusy, setEtsyBusy] = useState(false);
+  const saveEtsyApi = async () => {
+    if (!etsyKey.trim() || !etsySecret.trim()) { flash("✗ Enter Keystring + Shared Secret"); return; }
+    setEtsyBusy(true);
+    const j = await fetch("/api/etsy/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, keystring: etsyKey.trim(), sharedSecret: etsySecret.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setEtsyBusy(false);
+    if (j.ok) { flash("✓ Etsy app saved — now click Connect Etsy"); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+  const connectEtsy = () => { window.location.href = `/api/etsy/oauth/start?storeId=${store.id}`; };
+  const pullEtsy = async () => {
+    setEtsyBusy(true);
+    const j = await fetch("/api/etsy/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setEtsyBusy(false);
+    if (j.ok) { flash(`✓ ${j.received} orders — created ${j.created}, skipped ${j.skipped}`); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
   const fields = CRED_FIELDS[store.marketplace] ?? CRED_FIELDS.other;
 
   const save = async () => {
@@ -256,6 +285,36 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         </div>
       )}
       <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
+
+      {/* Etsy API chính thức (Open API v3) — mỗi store 1 app riêng. Khuyên dùng thay cho extension. */}
+      {store.marketplace === "etsy" && (
+        <div style={{ border: "1px solid #CDEFD8", background: "#F3FBF6", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
+          <b style={{ fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 6 }}><IconKey width={15} height={15} /> Etsy API (official)</b>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>
+            Each store uses its own Etsy app. Create one at etsy.com/developers (enable 2FA), register the callback URL below, then paste the Keystring + Shared Secret here and connect.
+          </div>
+          <L label="Callback URL — register this in your Etsy app">
+            <div style={{ display: "flex", gap: 6 }}>
+              <input readOnly value={oauthCb} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
+              <button onClick={() => { navigator.clipboard?.writeText(oauthCb); flash(t("st.copiedUrl")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
+            </div>
+          </L>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <L label="Keystring (App API Key)"><input value={etsyKey} onChange={(e) => setEtsyKey(e.target.value)} placeholder="e.g. 1aa2bb33c44d55…" style={inp} autoComplete="off" /></L>
+            <L label="Shared Secret"><input type="password" value={etsySecret} onChange={(e) => setEtsySecret(e.target.value)} placeholder={store.etsy?.hasKeystring ? "••• (saved, leave blank to keep)" : "shared secret"} style={inp} autoComplete="off" /></L>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <button onClick={saveEtsyApi} disabled={etsyBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
+            <button onClick={connectEtsy} disabled={etsyBusy || !store.etsy?.hasKeystring} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: store.etsy?.hasKeystring ? "pointer" : "default", opacity: store.etsy?.hasKeystring ? 1 : 0.5 }}>{store.etsy?.connected ? "Reconnect Etsy" : "Connect Etsy"}</button>
+            {store.etsy?.connected && <button onClick={pullEtsy} disabled={etsyBusy} style={{ background: "#2E7D46", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}><IconDownload width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Pull orders</button>}
+            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
+              {store.etsy?.connected
+                ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> Connected · shop {store.etsy?.shopId}</span>
+                : <span style={{ color: "var(--muted)" }}>Not connected</span>}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Extension: Kéo đơn Etsy về FUSION (chỉ store Etsy) */}
       {store.marketplace === "etsy" && (

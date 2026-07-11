@@ -45,8 +45,8 @@ export default function LoginPage() {
         .lg-brand{display:flex;align-items:center;margin-bottom:16px}
         .lg-logo{height:70px;width:auto;object-fit:contain;display:block}
         .lg-h1{font-size:26px;font-weight:800;line-height:1.15;margin-bottom:9px}
-        .lg-p{font-size:13.5px;line-height:1.6;opacity:.9;max-width:640px}
-        .lg-p b{font-weight:700;color:#bfe3ff}
+        .lg-p{font-size:13.5px;line-height:1.6;opacity:1;color:#dbeafe;max-width:640px}
+        .lg-p b{font-weight:700;color:#ffffff}
         .lg-hr{height:1px;background:rgba(255,255,255,.18);margin:16px 0 14px}
         .lg-jtitle{font-weight:800;font-size:15px;margin-bottom:14px}
 
@@ -101,7 +101,7 @@ export default function LoginPage() {
             <img className="lg-logo" src={LOGO_WHITE} alt="Fusion — together we grow" />
           </div>
           <h1 className="lg-h1">Welcome to FUSION</h1>
-          <p className="lg-p">A <b>Print-on-Demand &amp; cross-border e-commerce</b>, serving customers in <b>the US and Europe</b> via <b>Amazon, TikTok, Etsy</b>.</p>
+          <p className="lg-p">A <b>Print-on-Demand &amp; cross-border e-commerce</b>, serving customers in <b>the US and Europe</b> via <b>Amazon, TikTok, Etsy, Shopbase, Shopify…</b>.</p>
 
           <div className="lg-hr" />
           <div className="lg-jtitle">Our journey</div>

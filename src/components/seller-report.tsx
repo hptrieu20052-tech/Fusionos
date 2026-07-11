@@ -2,8 +2,11 @@
 import { useLang } from "@/components/lang-provider";
 import { useEffect, useState } from "react";
 
-type Seller = { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number }[] };
-type Data = { buckets: string[]; sellers: Seller[]; totals: { orders: number; items: number } };
+type Seller = { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number }[]; revenue?: number; fee?: number; profit?: number | null; platforms?: string[] };
+type Data = { buckets: string[]; sellers: Seller[]; totals: { orders: number; items: number }; showMoney?: boolean; hideProfit?: boolean; money?: { revenue: number; fee: number; profit: number | null } | null };
+
+const usd = (n: number | null | undefined) => n == null ? "—" : (n < 0 ? "-$" : "$") + Math.abs(Math.round(n)).toLocaleString();
+const MK: Record<string, string> = { etsy: "Etsy", tiktok: "TikTok", amazon: "Amazon", other: "Other" };
 
 // Bảng màu cố định theo thứ tự xếp hạng — đủ 24 seller, lặp lại nếu nhiều hơn
 const PALETTE = [
@@ -12,8 +15,8 @@ const PALETTE = [
   "#6BA3CE", "#AB8BD0", "#8CA860", "#DBA070", "#C1687D", "#8E7BCB", "#5A9E87", "#C983AC",
 ];
 
-type RangeProps = { range: string; from?: string; to?: string };
-export default function SellerReport({ range, from, to }: RangeProps) {
+type RangeProps = { range: string; from?: string; to?: string; title?: string };
+export default function SellerReport({ range, from, to, title }: RangeProps) {
   const { t: tr } = useLang();
   const [metric, setMetric] = useState<"o" | "i">("o");
   const [data, setData] = useState<Data | null>(null);
@@ -39,7 +42,7 @@ export default function SellerReport({ range, from, to }: RangeProps) {
   return (
     <div className="card" style={{ padding: "20px 22px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-        <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>Seller Report <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
+        <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Seller Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
           {([["o", tr("rep.ordersTab")], ["i", "Items"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
@@ -48,8 +51,15 @@ export default function SellerReport({ range, from, to }: RangeProps) {
             }}>{label}</button>
           ))}
         </div>
-        <div style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14 }}>
+        <div style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14, textAlign: "right" }}>
           {tr("rep.totalColon")} {totals.orders.toLocaleString()} <span style={{ color: "var(--muted)", fontWeight: 400 }}>({totals.items.toLocaleString()} items)</span>
+          {data.money && (
+            <div style={{ fontSize: 12, fontWeight: 500, marginTop: 2 }}>
+              <span style={{ color: "var(--muted)" }}>Rev </span><b>{usd(data.money.revenue)}</b>
+              <span style={{ color: "var(--muted)" }}> · Fee </span>{usd(data.money.fee)}
+              {!data.hideProfit && <><span style={{ color: "var(--muted)" }}> · Profit </span><b style={{ color: (data.money.profit ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>{usd(data.money.profit)}</b></>}
+            </div>
+          )}
         </div>
       </div>
 
@@ -89,19 +99,45 @@ export default function SellerReport({ range, from, to }: RangeProps) {
         {/* Donut tỉ trọng + xếp hạng */}
         <div>
           <Donut sellers={sellers} metric={metric} total={metric === "o" ? totals.orders : totals.items} />
-          <div style={{ marginTop: 14, maxHeight: 220, overflowY: "auto", paddingRight: 4 }}>
+          <div style={{ marginTop: 14, maxHeight: 240, overflowY: "auto", paddingRight: 4 }}>
+            {data.showMoney && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9.5, color: "var(--muted)", fontWeight: 700, padding: "0 0 5px", textTransform: "uppercase", letterSpacing: 0.3, borderBottom: "1px solid var(--line)" }}>
+                <span style={{ width: 20 }} />
+                <span style={{ flex: 1 }}>Seller / Marketplace</span>
+                <span style={{ width: 62, textAlign: "right" }}>Orders</span>
+                <span style={{ width: 56, textAlign: "right" }}>Revenue</span>
+                <span style={{ width: 42, textAlign: "right" }}>Fee</span>
+                {!data.hideProfit && <span style={{ width: 58, textAlign: "right" }}>Profit</span>}
+              </div>
+            )}
             {sellers.map((s, si) => {
               const v = metric === "o" ? s.orders : s.items;
               const tot = metric === "o" ? totals.orders : totals.items;
               const pct = tot ? (v / tot) * 100 : 0;
               return (
-                <div key={si} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12.5, borderBottom: "1px solid var(--line)" }}>
-                  <span style={{ width: 20, textAlign: "center", fontWeight: 800, color: si < 3 ? "var(--blue)" : "var(--muted)", fontSize: si < 3 ? 13 : 12 }}>{si + 1}</span>
+                <div key={si} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 0", fontSize: 12, borderBottom: "1px solid var(--line)" }}>
+                  <span style={{ width: 20, textAlign: "center", fontWeight: 800, color: si < 3 ? "var(--blue)" : "var(--muted)", fontSize: si < 3 ? 13 : 12, flexShrink: 0 }}>{si + 1}</span>
                   <span style={{ width: 10, height: 10, borderRadius: 3, background: PALETTE[si % PALETTE.length], flexShrink: 0 }} />
-                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: si < 3 ? 700 : 400 }}>{s.name}</span>
-                  <b>{s.orders.toLocaleString()}</b>
-                  <span style={{ color: "var(--muted)" }}>({s.items.toLocaleString()})</span>
-                  <span style={{ width: 44, textAlign: "right", color: "var(--muted)", fontSize: 11.5 }}>{pct.toFixed(1)}%</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontWeight: si < 3 ? 700 : 400 }}>{s.name}</div>
+                    {data.showMoney && s.platforms && s.platforms.length > 0 && (
+                      <div style={{ fontSize: 10, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.platforms.map((p) => MK[p] ?? p).join(", ")}</div>
+                    )}
+                  </div>
+                  {data.showMoney ? (
+                    <>
+                      <span style={{ width: 62, textAlign: "right", flexShrink: 0 }}><b>{s.orders.toLocaleString()}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.items.toLocaleString()})</span></span>
+                      <span style={{ width: 56, textAlign: "right", flexShrink: 0 }}>{usd(s.revenue)}</span>
+                      <span style={{ width: 42, textAlign: "right", color: "var(--muted)", flexShrink: 0 }}>{usd(s.fee)}</span>
+                      {!data.hideProfit && <span style={{ width: 58, textAlign: "right", flexShrink: 0, fontWeight: 700, color: (s.profit ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>{usd(s.profit)}</span>}
+                    </>
+                  ) : (
+                    <>
+                      <b>{s.orders.toLocaleString()}</b>
+                      <span style={{ color: "var(--muted)" }}>({s.items.toLocaleString()})</span>
+                      <span style={{ width: 44, textAlign: "right", color: "var(--muted)", fontSize: 11.5 }}>{pct.toFixed(1)}%</span>
+                    </>
+                  )}
                 </div>
               );
             })}

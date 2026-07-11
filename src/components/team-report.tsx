@@ -9,8 +9,8 @@ const PALETTE = ["#1D5FAE", "#E0A45E", "#5FAE87", "#D583AB", "#9D89D4", "#CE7B7B
 
 const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-type RangeProps = { range: string; from?: string; to?: string };
-export default function TeamReport({ range, from, to }: RangeProps) {
+type RangeProps = { range: string; from?: string; to?: string; title?: string };
+export default function TeamReport({ range, from, to, title }: RangeProps) {
   const { t: tr } = useLang();
   const [metric, setMetric] = useState<"r" | "o">("r"); // r = doanh thu, o = đơn
   const [data, setData] = useState<Data | null>(null);
@@ -33,7 +33,7 @@ export default function TeamReport({ range, from, to }: RangeProps) {
   return (
     <div className="card" style={{ padding: "20px 22px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
-        <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>Team Report <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
+        <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Team Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
           {([["r", tr("rep.revenueTab")], ["o", tr("rep.ordersTab")]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{

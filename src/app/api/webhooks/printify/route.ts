@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { and, eq, inArray, like, or, desc } from "drizzle-orm";
 import { getPrintifyOrder } from "@/lib/printify";
+import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 
 export const dynamic = "force-dynamic";
 
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
     patch.trackingSyncedAt = new Date();
   }
   await db.update(schema.fulfillmentOrders).set(patch).where(eq(schema.fulfillmentOrders.id, ffo.id));
+  if (trackingNumber) await autoPushEtsyTracking(ffo.orderId); // tự đẩy tracking lên Etsy nếu là đơn Etsy đã nối API
 
   // ĐƠN BỊ HUỶ bên Printify → đưa đơn vào TRASH + XOÁ chi phí (seller không phải chịu)
   if (isCancel) {

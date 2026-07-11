@@ -23,12 +23,15 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
   const f = range === "custom" ? dr.from : undefined;
   const t = range === "custom" ? dr.to : undefined;
 
+  // Seller (non-admin có quyền orders) xem KPI của RIÊNG mình ("Your Report").
+  const showSelf = !isAdmin && canOrders;
   useEffect(() => {
-    if (!ready || !isAdmin) return; // KPI chỉ dành cho admin — không tải với staff
+    if (!ready || (!isAdmin && !showSelf)) return;
     const p = new URLSearchParams({ range });
+    if (!isAdmin) p.set("scope", "self");
     if (f) p.set("from", f); if (t) p.set("to", t);
     fetch(`/api/dashboard?${p}`).then((r) => r.json()).then((j) => { if (j.ok) setKpi(j); });
-  }, [range, f, t, ready, isAdmin]);
+  }, [range, f, t, ready, isAdmin, showSelf]);
 
   const delta = (cur: number, prev: number | null, label = tr("db.prevPeriod")) => {
     if (prev === null) return <div className="d" style={{ color: "var(--faint)" }}>{tr("db.noPrevData").replace("{label}", String(label))}</div>;
@@ -48,8 +51,9 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
         <DateRangePicker value={dr} onChange={setDr} align="right" />
       </div>
 
-      {/* Khối KPI (đơn/tài chính) — chỉ admin xem, staff/seller/designer ẩn */}
-      {isAdmin && <>
+      {/* Khối KPI (đơn/tài chính) — admin xem toàn công ty; seller xem "Your Report" (của riêng mình) */}
+      {(isAdmin || showSelf) && <>
+      {showSelf && <div style={{ fontWeight: 800, fontSize: 15, margin: "2px 0 10px" }}>Your Report <span style={{ color: "var(--muted)", fontWeight: 500, fontSize: 12.5 }}>· your own numbers</span></div>}
       {/* Hàng 1 — Số lượng đơn */}
       {kpi?.pipeline && (
         <div className="dash-row">
@@ -119,9 +123,9 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
       {/* Thứ tự: Team → Seller → Designer, cùng ăn theo range */}
       {ready && (
         <>
-          {isAdmin && <div className="section"><TeamReport range={range} from={f} to={t} /></div>}
-          {(canOrders || canDesigns) && <div className="section"><SellerReport range={range} from={f} to={t} /></div>}
-          {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} /></div>}
+          {isAdmin && <div className="section"><TeamReport range={range} from={f} to={t} title="All Team Report" /></div>}
+          {(canOrders || canDesigns) && <div className="section"><SellerReport range={range} from={f} to={t} title={isAdmin ? "All Seller Report" : "Team Seller Report"} /></div>}
+          {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Designer Report" : "Team Designer Report"} /></div>}
         </>
       )}
       {!ready && <div className="panel empty">{tr("rep.chooseDates")}</div>}
