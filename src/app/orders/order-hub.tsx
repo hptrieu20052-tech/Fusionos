@@ -699,7 +699,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
       if (!s1.ok) { setBusy(false); return flash("✗ " + (s1.error ?? "")); }
     }
     const body = { orderId: o.id, fulfillerId: ffSel, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })) };
-    const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+    const j = await fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch((e) => ({ ok: false, error: "Request failed/timeout: " + String(e?.message ?? e) }));
     setBusy(false);
     if (j.ok) {
       if (j.simulated) flash(t("o.simPushWarn") + (j.reason ?? t("o.checkFfConfig")));

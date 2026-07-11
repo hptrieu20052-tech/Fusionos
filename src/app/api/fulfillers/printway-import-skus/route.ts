@@ -9,6 +9,27 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
+ * GET — DEBUG: trả raw JSON trang 1 catalog Printway (mở trực tiếp trên browser khi đã đăng nhập).
+ * Tự tìm fulfiller tên chứa "printway". Dùng để soi cấu trúc thật khi parser lệch.
+ */
+export async function GET() {
+  const session = await getSession();
+  if (!session || (await levelOf(session, "settings")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const fulfillers = await db.select().from(schema.fulfillers);
+  const ff = fulfillers.find((f) => f.name.toLowerCase().includes("printway"));
+  if (!ff) return NextResponse.json({ ok: false, error: "no printway fulfiller" }, { status: 404 });
+  const c = (ff.credentials ?? {}) as { apiKey?: string; accessToken?: string; apiToken?: string };
+  const accessToken = c.apiKey || c.accessToken || c.apiToken;
+  if (!accessToken) return NextResponse.json({ ok: false, error: "no token" }, { status: 400 });
+  try {
+    const { items, raw } = await listPrintwaySkuCatalogs({ accessToken, endpoint: ff.apiEndpoint }, 1, 5);
+    return NextResponse.json({ ok: true, itemCount: items.length, firstItems: items.slice(0, 3), raw });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 502 });
+  }
+}
+
+/**
  * POST { fulfillerId } — kéo catalog SKU Printway → UPSERT vào skuMappings:
  * - SKU mới → insert (fulfiller_product_id = variant_id, base = giá catalog).
  * - SKU đã có → cập nhật product/variant/variant_id; base/ship chỉ ghi đè khi đang = 0

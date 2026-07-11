@@ -8,6 +8,7 @@ import { ensureWebhooks } from "@/lib/printify";
 import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /**
  * POST { orderId, fulfillerId } — đẩy đơn sang fulfiller.

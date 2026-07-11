@@ -542,6 +542,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "sk.importingVariant": { vi: "Đang import variant…", en: "Importing variants…" },
   "sk.importingShort": { vi: "Đang import…", en: "Importing…" },
   "sk.pullingMerchize": { vi: "Đang kéo SKU mới từ Merchize…", en: "Pulling new SKUs from Merchize…" },
+  "sk.pullingFrom": { vi: "Đang kéo SKU mới từ {name}…", en: "Pulling new SKUs from {name}…" },
   "sk.pullingAll": { vi: "Đang kéo tất cả nhà in… (có thể lâu)", en: "Pulling all providers… (may take a while)" },
   "sk.refreshingProducts": { vi: "Đang làm mới danh sách sản phẩm…", en: "Refreshing product list…" },
   "sk.savingPin": { vi: "Đang lưu ghim…", en: "Saving pin…" },

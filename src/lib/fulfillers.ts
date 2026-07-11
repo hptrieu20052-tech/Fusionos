@@ -1,6 +1,7 @@
 import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPrintAreas } from "@/lib/printify";
 import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
 import { createPrintwayOrder, type PwOrderItem } from "@/lib/printway-api";
+import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
  * ------------------------------------------------------------------
@@ -81,12 +82,84 @@ export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   merchize: merchizeAdapter(),
   printway: printwayAdapter(),
   wembroidery: makeAdapter("wembroidery", "Wembroidery"),
-  flashship: makeAdapter("flashship", "Flashship"),
+  flashship: flashshipAdapter(),
   onospod: makeAdapter("onospod", "Onospod"),
   compassup: makeAdapter("compassup", "Compassup"),
   gearment: makeAdapter("gearment", "Gearment"),
 };
 
+
+/**
+ * Adapter FlashShip THẬT — POST /orders/shirt-add (seller-api-v2).
+ * credentials = { apiKey: <API token 1 năm từ web FlashShip> }; tuỳ chọn { printType: 1|2, shipment: 1|2|3|4|6 }.
+ * lines[].fulfillerSku = variant_id FlashShip (số — kéo từ nút Update SKU).
+ * FLS-406 (hết balance) → đơn VẪN TẠO, payment PENDING → ghi reason nhắc trả tiền trên FlashShip admin.
+ */
+function flashshipAdapter(): FulfillerAdapter {
+  return {
+    slug: "flashship",
+    label: "Flashship",
+    async push(ctx) {
+      const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
+      const accessToken = cred.apiKey || cred.accessToken || cred.apiToken || "";
+      if (!accessToken) return { ...simulate("flashship"), reason: "FlashShip chưa có API token (Settings → API Key) → đơn KHÔNG lên nhà in" };
+
+      const o = ctx.order;
+      const printType = (Number(cred.printType) === 2 ? 2 : 1) as 1 | 2;
+      const shipment = [1, 2, 3, 4, 6].includes(Number(cred.shipment)) ? Number(cred.shipment) : 1;
+
+      const products: FsProduct[] = ctx.lines.map((l) => {
+        const p: FsProduct = { variant_id: Number(l.fulfillerSku) || 0, quantity: l.qty, printType };
+        if (l.designFront) p.printer_design_front_url = l.designFront;
+        if (l.designBack) p.printer_design_back_url = l.designBack;
+        if (l.designHood) p.printer_design_hood_url = l.designHood;
+        if (l.designSleeve) { p.printer_design_left_url = l.designSleeve; p.printer_design_right_url = l.designSleeve; }
+        if (l.image) p.mockup_front_url = l.image;
+        return p;
+      });
+      const bad = products.find((p) => !p.variant_id);
+      if (bad) throw new Error("FlashShip cần variant_id dạng SỐ trong SKU mapping (kéo bằng nút Update SKU ở tab Flashship)");
+
+      const res = await createFlashshipOrder({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
+        order_id: orderExtNumber(o),
+        buyer_first_name: (o.buyerFirst || "").trim() || "Customer",
+        buyer_last_name: (o.buyerLast || "").trim() || undefined,
+        buyer_email: o.email || undefined,
+        buyer_phone: o.phone || undefined,
+        buyer_address1: o.addr1 || "",
+        buyer_address2: o.addr2 || undefined,
+        buyer_city: o.city || "",
+        buyer_province_code: usStateAbbr(o.state || ""),
+        buyer_zip: o.zip || "",
+        buyer_country_code: toISO2(o.country || "United States"),
+        shipment,
+        products,
+      });
+      return {
+        externalFfId: res.orderCode, simulated: false, raw: res.raw,
+        reason: res.paymentPending ? "FLS-406: insufficient balance → payment PENDING, repay on FlashShip web admin" : undefined,
+      };
+    },
+  };
+}
+
+// FlashShip yêu cầu mã bang US viết tắt (IN, CA...). Nhận cả tên đầy đủ lẫn mã sẵn.
+const US_STATES: Record<string, string> = {
+  "alabama": "AL", "alaska": "AK", "arizona": "AZ", "arkansas": "AR", "california": "CA", "colorado": "CO",
+  "connecticut": "CT", "delaware": "DE", "florida": "FL", "georgia": "GA", "hawaii": "HI", "idaho": "ID",
+  "illinois": "IL", "indiana": "IN", "iowa": "IA", "kansas": "KS", "kentucky": "KY", "louisiana": "LA",
+  "maine": "ME", "maryland": "MD", "massachusetts": "MA", "michigan": "MI", "minnesota": "MN", "mississippi": "MS",
+  "missouri": "MO", "montana": "MT", "nebraska": "NE", "nevada": "NV", "new hampshire": "NH", "new jersey": "NJ",
+  "new mexico": "NM", "new york": "NY", "north carolina": "NC", "north dakota": "ND", "ohio": "OH", "oklahoma": "OK",
+  "oregon": "OR", "pennsylvania": "PA", "rhode island": "RI", "south carolina": "SC", "south dakota": "SD",
+  "tennessee": "TN", "texas": "TX", "utah": "UT", "vermont": "VT", "virginia": "VA", "washington": "WA",
+  "west virginia": "WV", "wisconsin": "WI", "wyoming": "WY", "district of columbia": "DC", "puerto rico": "PR",
+};
+export function usStateAbbr(state: string): string {
+  const s = state.trim();
+  if (/^[A-Za-z]{2}$/.test(s)) return s.toUpperCase();
+  return US_STATES[s.toLowerCase()] ?? s;
+}
 
 /**
  * Adapter Printway THẬT — POST /order/create-new-order (Open API v3).

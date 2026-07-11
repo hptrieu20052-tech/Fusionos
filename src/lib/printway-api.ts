@@ -18,6 +18,7 @@ function headers(c: Cred) {
     "Content-Type": "application/json",
   } as Record<string, string>;
 }
+const FETCH_TIMEOUT = { signal: AbortSignal.timeout(25000) } as const;
 const base = (c: Cred) => (c.endpoint && c.endpoint.trim() ? c.endpoint.trim().replace(/\/+$/, "") : PW_API);
 
 // Đủ 16 vị trí artwork theo doc create-new-order (URL lấy từ list of products / R2 của FUSION)
@@ -77,6 +78,7 @@ export async function createPrintwayOrder(c: Cred, payload: PwCreateOrder): Prom
     method: "POST",
     headers: headers(c),
     body: JSON.stringify(payload),
+    ...FETCH_TIMEOUT,
   });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   const ok = r.ok && (j.success === undefined || j.success === true) && (j.status === undefined || Number(j.status) < 400 || j.status === "success");
@@ -101,7 +103,7 @@ export async function listPrintwayOrders(c: Cred, p: PwListParams = {}): Promise
     pw_order_id: p.pwOrderId ?? "",
     order_name: p.orderName ?? "",
   });
-  const r = await fetch(`${base(c)}/transaction/order-list?${q}`, { headers: headers(c) });
+  const r = await fetch(`${base(c)}/transaction/order-list?${q}`, { headers: headers(c), ...FETCH_TIMEOUT });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (!r.ok) throw new Error(`Printway order-list failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
   return { items: extractArray(j), raw: j };
@@ -124,7 +126,7 @@ export function extractArray(j: unknown): Record<string, unknown>[] {
 // ---- Catalog SKU: GET /products/list-sku-catalogs ----
 // Doc không nêu params → thử phân trang ?page&limit, nếu server bỏ qua thì tự dừng khi trùng dữ liệu.
 export async function listPrintwaySkuCatalogs(c: Cred, page = 1, limit = 100): Promise<{ items: Record<string, unknown>[]; raw: unknown }> {
-  const r = await fetch(`${base(c)}/products/list-sku-catalogs?page=${page}&limit=${limit}`, { headers: headers(c) });
+  const r = await fetch(`${base(c)}/products/list-sku-catalogs?page=${page}&limit=${limit}`, { headers: headers(c), ...FETCH_TIMEOUT });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (!r.ok) throw new Error(`Printway list-sku-catalogs failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
   return { items: extractArray(j), raw: j };
@@ -196,6 +198,7 @@ export async function getPrintwayShippingMethods(c: Cred, p: { variantIds?: stri
     method: "POST",
     headers: headers(c),
     body: JSON.stringify({ variant_id: p.variantIds ?? [], sku: p.skus ?? [] }),
+    ...FETCH_TIMEOUT,
   });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (!r.ok) throw new Error(`Printway shipping-methods failed: HTTP ${r.status} ${(j.message as string) ?? ""}`.trim());
@@ -211,13 +214,14 @@ export async function registerPrintwayWebhook(c: Cred, type: PwWebhookType, p: {
     method: "POST",
     headers: headers(c),
     body: JSON.stringify({ access_key: p.accessKey, access_token: p.accessToken, endpoint: p.endpoint }),
+    ...FETCH_TIMEOUT,
   });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   if (!r.ok || j.success === false) throw new Error(`Printway register webhook(${type}) failed: HTTP ${r.status} ${(j.message as string) ?? JSON.stringify(j).slice(0, 160)}`.trim());
   return j;
 }
 export async function getPrintwayWebhooks(c: Cred, type: PwWebhookType): Promise<unknown> {
-  const r = await fetch(`${base(c)}/webhooks?type=${type}`, { headers: headers(c) });
+  const r = await fetch(`${base(c)}/webhooks?type=${type}`, { headers: headers(c), ...FETCH_TIMEOUT });
   return (await r.json().catch(() => ({}))) as unknown;
 }
 
@@ -228,6 +232,7 @@ export async function payPrintwayOrder(c: Cred, orderId: string): Promise<{ ok: 
     method: "POST",
     headers: headers(c),
     body: JSON.stringify({ order_id: orderId }),
+    ...FETCH_TIMEOUT,
   });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   const ok = r.ok && j.success !== false && !(typeof j.status === "number" && j.status >= 400);
@@ -240,7 +245,7 @@ export async function cancelPrintwayOrder(c: Cred, p: { pwOrderId?: string; orde
   const body: Record<string, string> = {};
   if (p.pwOrderId) body.pw_order_id = p.pwOrderId;
   if (p.orderName) body.order_name = p.orderName;
-  const r = await fetch(`${base(c)}/order/cancel-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body) });
+  const r = await fetch(`${base(c)}/order/cancel-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body), ...FETCH_TIMEOUT });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   return { ok: r.ok && j.success !== false, message: (j.message as string) || (j.error as string) || `HTTP ${r.status}` };
 }
@@ -250,7 +255,7 @@ export async function deletePrintwayOrder(c: Cred, p: { pwOrderId?: string; orde
   const body: Record<string, string> = {};
   if (p.pwOrderId) body.pw_order_id = p.pwOrderId;
   if (p.orderName) body.order_name = p.orderName;
-  const r = await fetch(`${base(c)}/order/delete-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body) });
+  const r = await fetch(`${base(c)}/order/delete-order-api`, { method: "POST", headers: headers(c), body: JSON.stringify(body), ...FETCH_TIMEOUT });
   const j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
   return { ok: r.ok && j.success !== false, message: (j.message as string) || (j.error as string) || `HTTP ${r.status}` };
 }

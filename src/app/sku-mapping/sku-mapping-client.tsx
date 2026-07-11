@@ -271,11 +271,20 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
 
   // Kéo catalog SKU Printway (GET /products/list-sku-catalogs) → thêm mapping mới
   async function getSkuPrintway() {
-    setMsg(t("sk.pullingMerchize"));
+    setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Printway"));
     const imp = await fetch("/api/fulfillers/printway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} SKU tìm thấy, ${imp.skipped} bỏ qua`);
+  }
+
+  // Kéo variant FlashShip (GET /orders/list-variant-sku) → upsert mapping (API không trả giá)
+  async function getSkuFlashship() {
+    setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "FlashShip"));
+    const imp = await fetch("/api/fulfillers/flashship-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
+    refresh();
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.updated} updated · FlashShip không trả giá qua API — nhập Base/Ship tay`);
   }
 
   const th = { textAlign: "left" as const, fontSize: 11, color: "var(--faint)", fontWeight: 800, textTransform: "uppercase" as const, letterSpacing: ".3px", padding: "8px 10px", borderBottom: "1px solid var(--line)" };
@@ -325,6 +334,9 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("printway") && canEdit && (
               <button onClick={getSkuPrintway} title="Pull SKU catalog from Printway" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
+            )}
+            {ff.method === "api" && ff.name.toLowerCase().includes("flashship") && canEdit && (
+              <button onClick={getSkuFlashship} title="Pull variant list from FlashShip" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
             )}
           </div>
 
