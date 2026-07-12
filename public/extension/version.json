@@ -1,5 +1,5 @@
 {
-  "version": "1.1.8",
+  "version": "1.1.9",
   "url": "/api/extension/download",
-  "notes": "Renamed to FUSION ETSY EXTENSION"
+  "notes": "Detect shipped orders \u2014 server rejects them (safe on Shipped tab)"
 }

@@ -130,6 +130,7 @@ function extractReceipt(o) {
     })(),
     note: (pick(o, "message_from_buyer", "buyer_message", "note_from_buyer", "note", "gift_message")
       || pick(firstObj(o, "fulfillment", "shipment") || {}, "note_from_buyer", "buyer_note", "gift_message")) || undefined,
+    platformStatus: detectStatus(o),
     items: extractItems(o),
   };
   if (!order.items.length) order.items = [{ title: "Etsy order " + id, qty: 1 }];
@@ -144,11 +145,23 @@ function hasAddr(o) {
 }
 function mergeInto(prev, o) {
   const out = Object.assign({}, prev);
-  for (const k of ["buyerFirst","buyerLast","addr1","addr2","city","state","zip","country","note"]) if (!out[k] && o[k]) out[k] = o[k];
+  for (const k of ["buyerFirst","buyerLast","addr1","addr2","city","state","zip","country","note","platformStatus"]) if (!out[k] && o[k]) out[k] = o[k];
   if ((!out.total || out.total === 0) && o.total) out.total = o.total;
   if ((o.items || []).length > (out.items || []).length) out.items = o.items;
   return out;
 }
+// Nhận diện đơn ĐÃ SHIP/HUỶ trên Etsy — server sẽ chặn không tạo đơn mới (chống kéo nhầm tab Shipped)
+function detectStatus(o) {
+  const st = pick(o, "order_status", "status", "state", "order_state", "fulfillment_status", "shipping_status");
+  if (st && /ship|transit|deliver|complete|cancel|refund/i.test(st)) return st;
+  if (o.was_shipped === true || o.is_shipped === true || o.shipped === true) return "shipped";
+  const sh = o.shipments || o.shipment || o.fulfillments;
+  if (Array.isArray(sh) && sh.length > 0) return "shipped";
+  const tn = pick(o, "tracking_number", "tracking_code") || (sh && !Array.isArray(sh) && typeof sh === "object" ? pick(sh, "tracking_number", "tracking_code") : "");
+  if (tn) return "shipped";
+  return st || undefined;
+}
+
 function harvest(data) {
   let added = 0;
   (function walk(node, depth, ctxId) {
@@ -189,7 +202,7 @@ function saveDebugPaths(node) {
       if (Array.isArray(n)) { if (n.length) walk(n[0], path + "[]", d + 1); return; }
       if (typeof n === "object") { for (const k in n) walk(n[k], path ? path + "." + k : k, d + 1); return; }
       if (seen.has(path)) return; seen.add(path);
-      const KW = /(^|[._[])(order_id|receipt_id|id)($|[._[])|name|address|first_line|second_line|line1|line2|city|state|province|region|zip|postal|country|title|product|listing|price|amount|divisor|total|subtotal|quantity|qty|image|img|photo|thumb|url|personal|variation|variant|sku|buyer|recipient|ship|formatted|payment|grand|message|note|gift/i;
+      const KW = /(^|[._[])(order_id|receipt_id|id)($|[._[])|name|address|first_line|second_line|line1|line2|city|state|province|region|zip|postal|country|title|product|listing|price|amount|divisor|total|subtotal|quantity|qty|image|img|photo|thumb|url|personal|variation|variant|sku|buyer|recipient|ship|formatted|payment|grand|message|note|gift|status|state|shipment|shipped|tracking/i;
       if (!KW.test(path)) return;
       const val = (typeof n === "number" || typeof n === "boolean") ? n : "str";
       lines.push(path + " = " + val);
