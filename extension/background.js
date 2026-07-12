@@ -49,19 +49,24 @@ function looksLikeReceipt(o) {
   if (!o || typeof o !== "object" || Array.isArray(o)) return false;
   const id = o.receipt_id ?? o.receiptId ?? o.order_id ?? o.orderId;
   if (id == null || !/^\d{6,15}$/.test(String(id))) return false;
-  return !!(o.transactions || o.first_line || o.address_first_line || o.name || o.buyer || o.grandtotal || o.formatted_grandtotal || o.total_price);
+  return !!(o.transactions || o.line_items || o.first_line || o.address_first_line || o.name || o.buyer ||
+    o.grandtotal || o.grand_total || o.formatted_grandtotal || o.total_price ||
+    o.shipping_address || o.to_address || o.payment);
 }
 function extractItems(o) {
   const txs = Array.isArray(o.transactions) ? o.transactions : (Array.isArray(o.line_items) ? o.line_items : []);
   const items = [];
   for (const t of txs) {
     if (!t || typeof t !== "object") continue;
+    const L = (t.listing && typeof t.listing === "object") ? t.listing : {};
+    const priceInt = (t.price_int != null && !isNaN(Number(t.price_int))) ? Number(t.price_int) / 100 : 0;
     const it = {
-      title: pick(t, "title", "product_name", "name") || "Etsy item",
+      title: pick(t, "title", "listing_title", "product_title", "product_name", "name")
+        || pick(L, "title", "name") || "Etsy item",
       qty: Number(t.quantity ?? t.qty ?? 1) || 1,
-      price: money(t.price ?? t.unit_price ?? t.subtotal),
+      price: money(t.price ?? t.unit_price ?? t.subtotal ?? t.total) || priceInt,
       sku: pick(t, "sku", "product_sku") || undefined,
-      listingId: S(t.listing_id ?? t.listingId) || undefined,
+      listingId: S(t.listing_id ?? t.listingId ?? L.listing_id ?? L.id) || undefined,
     };
     const vars = Array.isArray(t.variations) ? t.variations : [];
     const vparts = [], pparts = [];
@@ -82,21 +87,36 @@ function extractItems(o) {
   }
   return items;
 }
+function firstObj(o) {
+  for (var i = 1; i < arguments.length; i++) {
+    var v = o && o[arguments[i]];
+    if (v && typeof v === "object" && !Array.isArray(v)) return v;
+  }
+  return null;
+}
 function extractReceipt(o) {
   const id = String(o.receipt_id ?? o.receiptId ?? o.order_id ?? o.orderId);
-  const fullName = pick(o, "name", "buyer_name", "recipient_name");
+  // Địa chỉ/buyer/total có thể nằm ở gốc HOẶC lồng trong object con
+  const A = firstObj(o, "shipping_address", "to_address", "shipment_address", "address", "shipping_details") || {};
+  const B = firstObj(o, "buyer", "buyer_user", "customer") || {};
+  const P = firstObj(o, "payment", "totals", "pricing") || {};
+  const pick2 = (k1, k2) => pick(o, ...k1) || pick(A, ...k2 || k1) || "";
+  const fullName = pick(o, "name", "buyer_name", "recipient_name", "to_name")
+    || pick(A, "name", "to_name", "recipient_name", "full_name")
+    || pick(B, "name", "display_name", "full_name", "login_name");
   const sp = fullName.split(/\s+/);
   const order = {
     externalId: id,
     buyerFirst: sp.slice(0, -1).join(" ") || sp[0] || undefined,
     buyerLast: sp.length > 1 ? sp[sp.length - 1] : undefined,
-    addr1: pick(o, "first_line", "address_first_line", "line1") || undefined,
-    addr2: pick(o, "second_line", "address_second_line", "line2") || undefined,
-    city: pick(o, "city", "address_city") || undefined,
-    state: pick(o, "state", "address_state", "region") || undefined,
-    zip: pick(o, "zip", "address_zip", "postal_code") || undefined,
-    country: pick(o, "country_name", "address_country_name", "country") || undefined,
-    total: money(o.grandtotal ?? o.formatted_grandtotal ?? o.total_price ?? o.total) || undefined,
+    addr1: pick2(["first_line", "address_first_line", "line1", "street1"]) || undefined,
+    addr2: pick2(["second_line", "address_second_line", "line2", "street2"]) || undefined,
+    city: pick2(["city", "address_city"]) || undefined,
+    state: pick2(["state", "address_state", "region", "province"]) || undefined,
+    zip: pick2(["zip", "address_zip", "postal_code", "zip_code"]) || undefined,
+    country: pick2(["country_name", "address_country_name", "country", "country_iso"]) || undefined,
+    total: money(o.grandtotal ?? o.grand_total ?? o.formatted_grandtotal ?? o.total_price ?? o.total
+      ?? P.grand_total ?? P.grandtotal ?? P.total ?? P.total_price) || undefined,
     note: pick(o, "message_from_buyer", "buyer_message", "note_from_buyer") || undefined,
     items: extractItems(o),
   };
@@ -110,6 +130,7 @@ function harvest(data) {
     if (Array.isArray(node)) { for (const x of node) walk(x, depth + 1); return; }
     if (typeof node !== "object") return;
     if (looksLikeReceipt(node)) {
+      saveDebugPaths(node);
       const o = extractReceipt(node);
       const prev = BUF.get(o.externalId);
       if (!prev) { BUF.set(o.externalId, o); added++; }
@@ -118,6 +139,27 @@ function harvest(data) {
     for (const k in node) walk(node[k], depth + 1);
   })(data, 0);
   return added;
+}
+
+// ===== Debug: flatten key-paths của 1 receipt node thô (để chỉnh map khi Etsy đổi cấu trúc) =====
+let debugSaved = false;
+function saveDebugPaths(node) {
+  if (debugSaved) return;
+  debugSaved = true;
+  try {
+    const lines = [], seen = new Set();
+    (function walk(n, path, d) {
+      if (d > 6 || n == null || lines.length > 150) return;
+      if (Array.isArray(n)) { if (n.length) walk(n[0], path + "[]", d + 1); return; }
+      if (typeof n === "object") { for (const k in n) walk(n[k], path ? path + "." + k : k, d + 1); return; }
+      if (seen.has(path)) return; seen.add(path);
+      const KW = /(^|[._[])(order_id|receipt_id|id)($|[._[])|name|address|first_line|second_line|line1|line2|city|state|province|region|zip|postal|country|title|product|listing|price|amount|divisor|total|subtotal|quantity|qty|image|img|photo|thumb|url|personal|variation|variant|sku|buyer|recipient|ship|formatted|payment|grand/i;
+      if (!KW.test(path)) return;
+      const val = (typeof n === "number" || typeof n === "boolean") ? n : "str";
+      lines.push(path + " = " + val);
+    })(node, "", 0);
+    chrome.storage.local.set({ fp_lastpaths: "# ETSY RECEIPT FIELD MAP (send to dev)\n" + lines.join("\n") });
+  } catch (_) {}
 }
 
 // ===== Badge: ưu tiên NEW (update) > số đơn buffer =====

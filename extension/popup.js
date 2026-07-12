@@ -28,3 +28,16 @@ chrome.storage.local.get("updateAvailable", ({ updateAvailable }) => {
   d.innerHTML = 'New version ' + updateAvailable + ' — <a href="https://os.fusiondn.com/extension/" target="_blank" style="color:#0D4C9B">download & reload</a>';
   document.body.appendChild(d);
 });
+
+// Copy field-map debug (gửi dev khi đơn kéo về thiếu field)
+(function () {
+  const b = document.createElement("button");
+  b.textContent = "Copy debug map";
+  b.style.cssText = "margin-top:10px;width:100%;border:1px solid #dbe1e8;border-radius:8px;background:#fff;color:#33445a;font-weight:700;font-size:12px;padding:8px;cursor:pointer";
+  b.onclick = async () => {
+    const { fp_lastpaths } = await chrome.storage.local.get("fp_lastpaths");
+    if (!fp_lastpaths) { msg("No sample captured yet — open the Etsy Orders page first.", false); return; }
+    try { await navigator.clipboard.writeText(fp_lastpaths); msg("✓ Debug map copied — paste it to the dev.", true); } catch (_) { msg("Clipboard blocked.", false); }
+  };
+  document.body.appendChild(b);
+})();
