@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { Flash } from "@/components/flash";
-import { IconTrash, IconPencil } from "@/components/icons";
+import { IconTrash, IconPencil, IconUpload } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 import { SkuMappingClient } from "@/app/sku-mapping/sku-mapping-client";
 import { useConfirm } from "@/components/confirm-provider";
@@ -190,6 +190,7 @@ function ExtensionPublishCard({ setMsg }: { setMsg: (m: string) => void }) {
   const [version, setVersion] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
+  const [fileName, setFileName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => { fetch("/api/extension/version").then((r) => r.json()).then((j) => setCur(j.version ?? "?")).catch(() => setCur("?")); }, []);
   async function publish(e: React.FormEvent) {
@@ -201,14 +202,14 @@ function ExtensionPublishCard({ setMsg }: { setMsg: (m: string) => void }) {
     fd.set("version", version.trim()); fd.set("notes", notes.trim()); fd.set("file", f);
     const j = await fetch("/api/extension/publish", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setBusy(false);
-    if (j.ok) { setMsg(`✓ Extension v${j.version} published — sellers will see the NEW badge within 6h`); setCur(j.version); setVersion(""); setNotes(""); if (fileRef.current) fileRef.current.value = ""; }
+    if (j.ok) { setMsg(`✓ Extension v${j.version} published — sellers will see the NEW badge within 6h`); setCur(j.version); setVersion(""); setNotes(""); if (fileRef.current) fileRef.current.value = ""; setFileName(""); }
     else setMsg("⚠ " + (j.error ?? "publish failed"));
   }
   return (
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div>
-          <b style={{ fontSize: 14.5 }}>Order Sync extension (Chrome)</b>
+          <b style={{ fontSize: 14.5 }}>Fusion Etsy Extension</b>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
             Current version: <b>{cur}</b> · Sellers download at{" "}
             <a href="/extension/" target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>/extension/</a>
@@ -218,8 +219,12 @@ function ExtensionPublishCard({ setMsg }: { setMsg: (m: string) => void }) {
       <form onSubmit={publish} style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
         <input required placeholder="Version x.y.z (must match manifest.json)" value={version} onChange={(e) => setVersion(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, width: 230 }} />
         <input placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, flex: 1, minWidth: 160 }} />
-        <input ref={fileRef} required type="file" accept=".zip" style={{ fontSize: 12 }} />
-        <button disabled={busy} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5, opacity: busy ? 0.6 : 1 }}>{busy ? "Publishing…" : "Publish"}</button>
+        <input ref={fileRef} required type="file" accept=".zip" style={{ display: "none" }} onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")} />
+        <button type="button" onClick={() => fileRef.current?.click()} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--line)", background: "#fff", color: "var(--ink)", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", fontSize: 12.5, maxWidth: 260, overflow: "hidden" }}>
+          <IconUpload width={13} height={13} />
+          <span style={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>{fileName || "Choose .zip"}</span>
+        </button>
+        <button disabled={busy} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 18px", fontWeight: 800, cursor: "pointer", fontSize: 12.5, opacity: busy ? 0.6 : 1 }}>{busy ? "Publishing…" : "Publish"}</button>
       </form>
     </div>
   );

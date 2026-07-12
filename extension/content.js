@@ -258,10 +258,21 @@
     } catch (_) {}
   }
   function badgeStyle(st) {
-    if (st.pushedToEtsy) return { t: "On Etsy \u2713", bg: "#E7F6EC", fg: "#15803d" };
-    if (st.hasTracking) return { t: "Tracking ready", bg: "#FFF4E5", fg: "#B45309" };
-    var map = { new: "New", created: "Created", in_production: "In production", shipped: "Shipped", completed: "Completed", has_issues: "Issue", trash: "Trash" };
-    return { t: (map[st.status] || st.status), bg: "#EEF2F7", fg: "#5A6272" };
+    // Bảng màu + nhãn đồng bộ với pill trạng thái trên FUSION OS (Shipped = đơn đã có tracking)
+    var MAP = {
+      new:           { t: "New",           bg: "#E3ECF7", fg: "#1D5FAE" },
+      created:       { t: "Created",       bg: "#F9EDE2", fg: "#B36A2D" },
+      in_production: { t: "In Production", bg: "#E2F0EE", fg: "#2F7D72" },
+      shipped:       { t: "Shipped",       bg: "#EEF4E3", fg: "#6E8B3D" },
+      delivered:     { t: "Delivered",     bg: "#ECEAF7", fg: "#5E51A8" },
+      completed:     { t: "Completed",     bg: "#E8F1EA", fg: "#3F7D53" },
+      has_issues:    { t: "Has Issues",    bg: "#F7E7EC", fg: "#B0526C" },
+      cancel:        { t: "Cancel",        bg: "#F5EFDD", fg: "#9A8340" },
+      trash:         { t: "Cancel",        bg: "#F5EFDD", fg: "#9A8340" },
+      out_of_stock:  { t: "Out of stock",  bg: "#F1E9E1", fg: "#8A6D4A" }
+    };
+    var m = MAP[st.status];
+    return m ? { t: m.t, bg: m.bg, fg: m.fg } : { t: st.status, bg: "#EEF2F7", fg: "#5A6272" };
   }
   function findOrderEl(id) {
     var els = document.querySelectorAll("a,span,h1,h2,h3,p");
@@ -276,12 +287,10 @@
       if (el.parentNode && el.parentNode.querySelector('[data-fp="' + id + '"]')) return;
       var b = badgeStyle(st);
       var span = document.createElement("span");
-      var ready = st.hasTracking && !st.pushedToEtsy;
-      span.className = "fp-badge" + (ready ? " copy" : "");
+      span.className = "fp-badge";
       span.setAttribute("data-fp", id);
       span.style.background = b.bg; span.style.color = b.fg;
-      span.textContent = b.t + (ready ? (" \u00b7 " + ((st.carrier || "") + " " + st.tracking).trim()) : "");
-      if (ready) { span.title = "Click to copy tracking"; span.onclick = function () { try { navigator.clipboard.writeText(st.tracking); span.textContent = "Copied \u2713"; setTimeout(function(){ renderBadges(); }, 1000); } catch (_) {} }; }
+      span.textContent = b.t;
       el.insertAdjacentElement("afterend", span);
     });
   }

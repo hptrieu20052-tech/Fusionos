@@ -4,7 +4,7 @@ import { readFile } from "@/lib/storage";
 export const dynamic = "force-dynamic";
 
 // Phiên bản extension đóng gói sẵn trong repo — fallback khi admin chưa publish bản nào lên R2
-const BUNDLED = { version: "1.1.0", url: "/api/extension/download", notes: "bundled" };
+const BUNDLED = { version: "1.1.2", url: "/api/extension/download", notes: "bundled" };
 
 // GET /api/extension/version — extension check update + landing page đọc.
 // Ưu tiên bản admin publish trên R2 (extensions/version.json), fallback bản bundled.

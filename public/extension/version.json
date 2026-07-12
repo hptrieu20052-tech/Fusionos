@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.2",
   "url": "/api/extension/download",
-  "notes": "Rebuilt brain (capture/sync/status) + update checker"
+  "notes": "Badges = FUSION status colors only"
 }
