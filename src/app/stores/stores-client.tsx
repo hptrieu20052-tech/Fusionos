@@ -4,7 +4,7 @@ import { Flash } from "@/components/flash";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm } from "@/components/confirm-provider";
 import { useLang } from "@/components/lang-provider";
-import { IconSettings, IconTrash, IconLink, IconPuzzle, IconRefresh, IconKey, IconDownload, IconWarn } from "@/components/icons";
+import { IconSettings, IconTrash, IconLink, IconPuzzle, IconRefresh, IconKey, IconDownload, IconWarn, IconCopy } from "@/components/icons";
 
 type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
@@ -224,13 +224,14 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const [etsyKey, setEtsyKey] = useState(store.etsy?.keystring ?? "");
   const [etsySecret, setEtsySecret] = useState("");
   const [etsyBusy, setEtsyBusy] = useState(false);
+  const [etsySaved, setEtsySaved] = useState(false);
   const [roEtsy, setRoEtsy] = useState(true); // readonly lúc mở để chặn Chrome autofill, bỏ khi focus
   const saveEtsyApi = async () => {
     if (!etsyKey.trim() || !etsySecret.trim()) { flash("✗ Enter Keystring + Shared Secret"); return; }
     setEtsyBusy(true);
     const j = await fetch("/api/etsy/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, keystring: etsyKey.trim(), sharedSecret: etsySecret.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setEtsyBusy(false);
-    if (j.ok) { flash("✓ Etsy app saved — now click Connect Etsy"); reload(); } else flash("✗ " + (j.error ?? "Error"));
+    if (j.ok) { flash("✓ Etsy app saved — now click Connect Etsy"); setEtsySaved(true); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
   const connectEtsy = () => { window.location.href = `/api/etsy/oauth/start?storeId=${store.id}`; };
   // ===== TikTok Shop API =====
@@ -238,14 +239,23 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const [ttSecret, setTtSecret] = useState("");
   const [ttAuthLink, setTtAuthLink] = useState(store.tiktok?.authLink ?? "");
   const [ttBusy, setTtBusy] = useState(false);
+  const [ttSaved, setTtSaved] = useState(false); // Connect sáng ngay sau Save app, khỏi mở lại modal
   const saveTtApi = async () => {
     if (!ttKey.trim() || !ttSecret.trim()) { flash("✗ Enter App Key + App Secret"); return; }
     setTtBusy(true);
     const j = await fetch("/api/tiktok/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, appKey: ttKey.trim(), appSecret: ttSecret.trim(), authLink: ttAuthLink.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setTtBusy(false);
-    if (j.ok) { flash("✓ TikTok app saved — now click Connect TikTok"); reload(); } else flash("✗ " + (j.error ?? "Error"));
+    if (j.ok) { flash("✓ TikTok app saved — now click Connect TikTok"); setTtSaved(true); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
   const connectTt = () => { window.location.href = `/api/tiktok/oauth/start?storeId=${store.id}`; };
+  // Link authorize tĩnh (TikTok không PKCE) → copy dán vào browser AdsPower của shop là đúng bài
+  const ttConnectLink = () => {
+    const base = ttAuthLink.trim() || store.tiktok?.authLink || "";
+    if (!base) { flash("✗ Save the Authorization link first"); return; }
+    const link = `${base}${base.includes("?") ? "&" : "?"}state=${store.id}`;
+    navigator.clipboard?.writeText(link);
+    flash("✓ Connect link copied — paste it into the shop's AdsPower browser and Authorize");
+  };
   const pullTt = async () => {
     setTtBusy(true);
     const j = await fetch("/api/tiktok/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
@@ -334,7 +344,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
             <button onClick={saveEtsyApi} disabled={etsyBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
-            <button onClick={connectEtsy} disabled={etsyBusy || !store.etsy?.hasKeystring} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: store.etsy?.hasKeystring ? "pointer" : "default", opacity: store.etsy?.hasKeystring ? 1 : 0.5 }} title={store.etsy?.hasKeystring ? "" : "Enter Keystring + Shared Secret and click Save app first"}>{store.etsy?.connected ? "Reconnect Etsy" : "Connect Etsy"}</button>
+            <button onClick={connectEtsy} disabled={etsyBusy || !(store.etsy?.hasKeystring || etsySaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.etsy?.hasKeystring || etsySaved) ? "pointer" : "default", opacity: (store.etsy?.hasKeystring || etsySaved) ? 1 : 0.5 }} title={(store.etsy?.hasKeystring || etsySaved) ? "" : "Enter Keystring + Shared Secret and click Save app first"}>{store.etsy?.connected ? "Reconnect Etsy" : "Connect Etsy"}</button>
             {store.etsy?.connected && <button onClick={pullEtsy} disabled={etsyBusy} style={{ background: "#2E7D46", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}><IconDownload width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Pull orders</button>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
               {store.etsy?.connected
@@ -367,7 +377,8 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           </L>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
             <button onClick={saveTtApi} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
-            <button onClick={connectTt} disabled={ttBusy || !store.tiktok?.hasApp} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: store.tiktok?.hasApp ? "pointer" : "default", opacity: store.tiktok?.hasApp ? 1 : 0.5 }} title={store.tiktok?.hasApp ? "" : "Enter App Key + Secret and click Save app first"}>{store.tiktok?.connected ? "Reconnect TikTok" : "Connect TikTok"}</button>
+            <button onClick={connectTt} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.tiktok?.hasApp || ttSaved) ? "pointer" : "default", opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title={(store.tiktok?.hasApp || ttSaved) ? "" : "Enter App Key + Secret and click Save app first"}>{store.tiktok?.connected ? "Reconnect TikTok" : "Connect TikTok"}</button>
+            <button onClick={ttConnectLink} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ ...btnGhost, fontSize: 12.5, opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title="Copy the authorize link to open in the shop's AdsPower profile"><IconCopy width={12} height={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />Copy connect link</button>
             {store.tiktok?.connected && <button onClick={pullTt} disabled={ttBusy} style={{ background: "#2E7D46", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}><IconDownload width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Pull orders</button>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
               {store.tiktok?.connected
