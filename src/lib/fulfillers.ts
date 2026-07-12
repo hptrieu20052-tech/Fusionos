@@ -395,12 +395,18 @@ function merchizeAdapter(): FulfillerAdapter {
           };
         }),
       });
-      // Bước 2: push (confirm) đơn đi sản xuất
-      if (res.orderCode) {
+      // KHÔNG AUTO-PAY (mặc định): bước push = CONFIRM đi sản xuất → Merchize trừ balance ngay.
+      // Đơn giờ chỉ TẠO Ở DRAFT — người phụ trách kiểm tra rồi tự confirm trên web Merchize.
+      // Muốn khôi phục auto-confirm như cũ: thêm credentials { "autoConfirm": "true" }.
+      const autoConfirm = String((c as Record<string, unknown>).autoConfirm ?? "") === "true" || String((c as Record<string, unknown>).autoConfirm ?? "") === "1";
+      if (res.orderCode && autoConfirm) {
         try { await pushMerchizeOrder(baseUrl, apiKey, { code: res.orderCode, external_number: extNumber, identifier }); }
         catch (e) { throw new Error(`Đã tạo đơn ${res.orderCode} nhưng push (confirm) lỗi: ${String((e as Error)?.message ?? e)}`); }
       }
-      return { externalFfId: res.orderCode, simulated: false, raw: res.raw };
+      return {
+        externalFfId: res.orderCode, simulated: false, raw: res.raw,
+        reason: autoConfirm ? undefined : "Created as DRAFT on Merchize — review & confirm (pay) it on Merchize web. Set credentials autoConfirm=true to restore auto-confirm.",
+      };
     },
   };
 }

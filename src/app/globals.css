@@ -457,7 +457,9 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 }
 
 /* ===== MOBILE NAV DRAWER (hamburger) ===== */
-.topnav-burger{display:none;align-items:center;justify-content:center;width:38px;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer;flex:0 0 auto}
+.topnav-burger{align-items:center;justify-content:center;width:38px;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer;flex:0 0 auto}
+@media(min-width:721px){.topnav-burger{display:none}}
+@media(max-width:720px){.topnav-burger{display:inline-flex}}
 .mobile-nav-overlay{position:fixed;inset:0;top:54px;background:rgba(24,30,42,.42);z-index:80;animation:mnv-fade .14s ease}
 .mobile-nav{background:#fff;max-height:calc(100dvh - 54px);overflow-y:auto;padding:8px 12px 24px;border-radius:0 0 16px 16px;box-shadow:0 16px 40px rgba(13,40,80,.22);animation:mnv-slide .18s cubic-bezier(.2,.9,.3,1)}
 .mobile-nav-section{padding:8px 0 2px;border-bottom:1px solid var(--line)}

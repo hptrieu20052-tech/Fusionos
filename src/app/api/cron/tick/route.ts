@@ -4,6 +4,7 @@ import { getValidCfg, readEtsyCfg, fetchReceipts, normalizeReceipt } from "@/lib
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
 import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/lib/tiktok-shop";
 import { syncPrintway } from "@/lib/printway-sync";
+import { syncOnosWem } from "@/lib/onos-wem-sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -78,7 +79,14 @@ async function tick(req: NextRequest) {
     catch (e) { printway = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, printway };
+  // ---- 3. ONOS + Wembroidery poll backup (webhook 2 nhà này là kênh chính, poll chống lỡ) ----
+  let onosWem: unknown = null;
+  if (Date.now() < deadline) {
+    try { onosWem = await syncOnosWem({ force: false }); }
+    catch (e) { onosWem = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+  }
+
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, printway, onosWem };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }
