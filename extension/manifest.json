@@ -1,15 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "FUSION Order Sync",
-  "version": "1.0.0",
-  "description": "Pull Etsy/Amazon orders into FUSION OS",
+  "name": "Fusion Etsy Puller",
+  "version": "1.1.0",
+  "description": "Pull Etsy orders into FUSION OS (read-only, safe) + status overlay + tracking autofill",
   "permissions": [
     "storage",
-    "activeTab",
     "alarms"
   ],
   "host_permissions": [
-    "https://sellercentral.amazon.com/*",
     "https://www.etsy.com/*",
     "https://os.fusiondn.com/*"
   ],
@@ -19,22 +17,38 @@
   "content_scripts": [
     {
       "matches": [
-        "https://sellercentral.amazon.com/orders-v3*"
+        "https://www.etsy.com/your/*"
       ],
       "js": [
-        "content-amazon.js"
-      ]
-    },
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
     {
-      "matches": [
-        "https://www.etsy.com/your/orders/*"
+      "resources": [
+        "injected.js",
+        "icon32.png"
       ],
-      "js": [
-        "content-etsy.js"
+      "matches": [
+        "https://www.etsy.com/*"
       ]
     }
   ],
   "action": {
-    "default_title": "FUSION Order Sync"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png"
+    }
+  },
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
   }
 }

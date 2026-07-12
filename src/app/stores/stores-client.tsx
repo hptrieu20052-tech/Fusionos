@@ -76,7 +76,6 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
       {/* Page head */}
       <div className="page-head">
         <div className="page-actions">
-          <a href="/extension/" target="_blank" rel="noreferrer" className="btn" style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", fontWeight: 800, textDecoration: "none" }}><IconDownload width={14} height={14} /> Get extension</a>
           {canAdd && <button onClick={() => setShowAdd(true)} className="btn btn-primary">{t("s.addStore")}</button>}
         </div>
       </div>
@@ -313,7 +312,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
             <button onClick={saveEtsyApi} disabled={etsyBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
-            <button onClick={connectEtsy} disabled={etsyBusy || !store.etsy?.hasKeystring} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: store.etsy?.hasKeystring ? "pointer" : "default", opacity: store.etsy?.hasKeystring ? 1 : 0.5 }}>{store.etsy?.connected ? "Reconnect Etsy" : "Connect Etsy"}</button>
+            <button onClick={connectEtsy} disabled={etsyBusy || !store.etsy?.hasKeystring} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: store.etsy?.hasKeystring ? "pointer" : "default", opacity: store.etsy?.hasKeystring ? 1 : 0.5 }} title={store.etsy?.hasKeystring ? "" : "Enter Keystring + Shared Secret and click Save app first"}>{store.etsy?.connected ? "Reconnect Etsy" : "Connect Etsy"}</button>
             {store.etsy?.connected && <button onClick={pullEtsy} disabled={etsyBusy} style={{ background: "#2E7D46", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}><IconDownload width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Pull orders</button>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
               {store.etsy?.connected
@@ -328,7 +327,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
       {store.marketplace === "etsy" && (
         <div style={{ border: "1px solid #CDE3FA", background: "#F3F9FF", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
           <b style={{ fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}><IconPuzzle width={16} height={16} />{t("st.extTitle")}</b>
-          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>{t("st.extDesc")}</div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>{t("st.extDesc")}{" "}<a href="/extension/" target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 800 }}>Download extension ↗</a></div>
           <L label="Ingest URL">
             <div style={{ display: "flex", gap: 6 }}>
               <input readOnly value={ingestUrl} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />

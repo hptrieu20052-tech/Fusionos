@@ -18,7 +18,7 @@
 <div class="box">
   <h1>FUSION Order Sync</h1>
   <div class="v">Chrome extension · version <b id="v">…</b></div>
-  <a class="btn" href="/extension/fusion-order-sync.zip" download>⬇ Download extension</a>
+  <a class="btn" href="/api/extension/download" download>⬇ Download extension</a>
   <ol>
     <li>Unzip the downloaded file into a folder (keep the folder — don't delete it after installing).</li>
     <li>Open Chrome → <code>chrome://extensions</code> → turn on <b>Developer mode</b> (top right).</li>
@@ -30,6 +30,6 @@
     click it to come back here, download, unzip <b>over the same folder</b>, then hit ⟳ Reload on <code>chrome://extensions</code>.
   </div>
 </div>
-<script>fetch("/extension/version.json").then(r=>r.json()).then(j=>{document.getElementById("v").textContent=j.version});</script>
+<script>fetch("/api/extension/version").then(r=>r.json()).then(j=>{document.getElementById("v").textContent=j.version});</script>
 </body>
 </html>
