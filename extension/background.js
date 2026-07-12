@@ -135,30 +135,53 @@ function extractReceipt(o) {
   if (!order.items.length) order.items = [{ title: "Etsy order " + id, qty: 1 }];
   return order;
 }
+function nodeId(o) {
+  const id = o && (o.receipt_id ?? o.receiptId ?? o.order_id ?? o.orderId);
+  return (id != null && /^\d{6,15}$/.test(String(id))) ? String(id) : "";
+}
+function hasAddr(o) {
+  return !!(o && (o.first_line || o.address_first_line || o.line1 || o.street1));
+}
+function mergeInto(prev, o) {
+  const out = Object.assign({}, prev);
+  for (const k of ["buyerFirst","buyerLast","addr1","addr2","city","state","zip","country","note"]) if (!out[k] && o[k]) out[k] = o[k];
+  if ((!out.total || out.total === 0) && o.total) out.total = o.total;
+  if ((o.items || []).length > (out.items || []).length) out.items = o.items;
+  return out;
+}
 function harvest(data) {
   let added = 0;
-  (function walk(node, depth) {
-    if (!node || depth > 9) return;
-    if (Array.isArray(node)) { for (const x of node) walk(x, depth + 1); return; }
+  (function walk(node, depth, ctxId) {
+    if (!node || depth > 10) return;
+    if (Array.isArray(node)) { for (const x of node) walk(x, depth + 1, ctxId); return; }
     if (typeof node !== "object") return;
+    const myId = nodeId(node) || ctxId;
     if (looksLikeReceipt(node)) {
       saveDebugPaths(node);
       const o = extractReceipt(node);
       const prev = BUF.get(o.externalId);
       if (!prev) { BUF.set(o.externalId, o); added++; }
-      else if ((o.addr1 && !prev.addr1) || (o.items.length > (prev.items || []).length)) { BUF.set(o.externalId, o); added++; }
+      else { const m = mergeInto(prev, o); if (JSON.stringify(m) !== JSON.stringify(prev)) { BUF.set(o.externalId, m); added++; } }
+    } else if (hasAddr(node) && myId) {
+      // Node địa chỉ mồ côi (payload chi tiết đơn) → gắn vào đơn theo id kế thừa từ node cha
+      saveDebugPaths(node);
+      const a = extractReceipt(Object.assign({ receipt_id: myId }, node));
+      a.items = [];
+      const prev = BUF.get(myId);
+      const m = prev ? mergeInto(prev, a) : a;
+      if (!prev || JSON.stringify(m) !== JSON.stringify(prev)) { BUF.set(myId, m); added++; }
     }
-    for (const k in node) walk(node[k], depth + 1);
-  })(data, 0);
+    for (const k in node) walk(node[k], depth + 1, myId);
+  })(data, 0, "");
   return added;
 }
 
 // ===== Debug: flatten key-paths của 1 receipt node thô (để chỉnh map khi Etsy đổi cấu trúc) =====
 let debugSaved = 0; // 0=chưa, 1=đã lưu node thường, 2=đã lưu node có địa chỉ (ưu tiên)
 function saveDebugPaths(node) {
-  const hasAddr = !!(node.first_line || node.address_first_line || node.shipping_address || node.to_address);
-  if (debugSaved >= 2 || (debugSaved === 1 && !hasAddr)) return;
-  debugSaved = hasAddr ? 2 : 1;
+  const withAddr = !!(node.first_line || node.address_first_line || node.line1 || node.street1 || node.shipping_address || node.to_address);
+  if (debugSaved >= 2 || (debugSaved === 1 && !withAddr)) return;
+  debugSaved = withAddr ? 2 : 1;
   try {
     const lines = [], seen = new Set();
     (function walk(n, path, d) {
@@ -213,7 +236,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           body: JSON.stringify({ orders }),
         });
         const j = await r.json().catch(() => ({}));
-        if (r.ok && j.ok) { BUF.clear(); saveBuf(); broadcastCount(); sendResponse({ ok: true, received: j.received, created: j.created, skipped: j.skipped, errors: j.errors }); }
+        if (r.ok && j.ok) { BUF.clear(); saveBuf(); broadcastCount(); sendResponse({ ok: true, received: j.received, created: j.created, updated: j.updated || 0, skipped: j.skipped, errors: j.errors }); }
         else sendResponse({ ok: false, error: j.error || ("HTTP " + r.status) });
       } catch (e) { sendResponse({ ok: false, error: String((e && e.message) || e) }); }
       return;

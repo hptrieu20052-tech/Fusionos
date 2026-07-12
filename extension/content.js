@@ -330,7 +330,7 @@
       msg("Pushing…", true);
       chrome.runtime.sendMessage({ type: "sync" }, (r) => {
         if (!r) return msg("No response.", false);
-        if (r.ok) { msg(`✓ Received ${r.received} — created ${r.created}, skipped ${r.skipped}`, true); refresh(); }
+        if (r.ok) { msg(`✓ Received ${r.received} — created ${r.created}, updated ${r.updated || 0}, skipped ${r.skipped}`, true); refresh(); }
         else msg("✗ " + r.error, false);
       });
     };

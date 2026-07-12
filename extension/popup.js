@@ -14,7 +14,7 @@ $("sync").onclick = () => {
   msg("Pushing…", true);
   chrome.runtime.sendMessage({ type: "sync" }, (r) => {
     if (!r) return msg("No response.", false);
-    if (r.ok) { msg(`✓ Received ${r.received} — created ${r.created}, skipped ${r.skipped}` + (r.errors && r.errors.length ? ` · ${r.errors.length} errors` : ""), true); $("cnt").textContent = "Captured: 0 orders"; }
+    if (r.ok) { msg(`✓ Received ${r.received} — created ${r.created}, updated ${r.updated || 0}, skipped ${r.skipped}` + (r.errors && r.errors.length ? ` · ${r.errors.length} errors` : ""), true); $("cnt").textContent = "Captured: 0 orders"; }
     else msg("✗ " + r.error, false);
   });
 };

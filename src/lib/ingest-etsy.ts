@@ -22,14 +22,38 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
   const fx = Number(store.fx) > 0 ? Number(store.fx) : 1;
   let created = 0, skipped = 0;
   const errors: string[] = [];
+  let updated = 0;
 
   for (const o of orders.slice(0, 500)) {
     const ext = s(o.externalId);
     if (!ext) { skipped++; continue; }
     try {
-      const [dup] = await db.select({ id: schema.orders.id }).from(schema.orders)
+      const [dup] = await db.select().from(schema.orders)
         .where(and(eq(schema.orders.platform, "etsy" as never), eq(schema.orders.externalId, ext))).limit(1);
-      if (dup) { skipped++; continue; }
+      if (dup) {
+        // MERGE: đơn đã có → chỉ điền field còn TRỐNG (đơn kéo lần đầu từ list thiếu địa chỉ,
+        // mở chi tiết trên Etsy rồi Push lại là địa chỉ/total/note tự vào — không đè dữ liệu đã sửa tay).
+        const patch: Record<string, unknown> = {};
+        const fillIf = (col: string, cur: unknown, val: string | null) => { if (val && (!cur || String(cur).trim() === "")) patch[col] = val; };
+        fillIf("buyerFirst", dup.buyerFirst, s(o.buyerFirst));
+        fillIf("buyerLast", dup.buyerLast, s(o.buyerLast));
+        fillIf("addr1", dup.addr1, s(o.addr1));
+        fillIf("addr2", dup.addr2, s(o.addr2));
+        fillIf("city", dup.city, s(o.city));
+        fillIf("state", dup.state, s(o.state));
+        fillIf("zip", dup.zip, s(o.zip));
+        fillIf("note", dup.note, s(o.note));
+        if (s(o.country) && (!dup.country || dup.country === "United States")) {
+          if (s(o.country) !== dup.country) patch.country = s(o.country);
+        }
+        const inTotal = num(o.total);
+        if (inTotal > 0 && (!dup.total || Number(dup.total) === 0)) patch.total = (inTotal / fx).toFixed(2);
+        if (Object.keys(patch).length) {
+          await db.update(schema.orders).set(patch).where(eq(schema.orders.id, dup.id));
+          updated++;
+        } else skipped++;
+        continue;
+      }
 
       const items = Array.isArray(o.items) ? o.items : [];
       const subtotal = items.reduce((a, it) => a + num(it.price) * (num(it.qty) || 1), 0);
@@ -70,5 +94,5 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
   }
 
   await db.update(schema.stores).set({ lastSyncAt: new Date() }).where(eq(schema.stores.id, store.id));
-  return { created, skipped, errors: errors.slice(0, 20) };
+  return { created, updated, skipped, errors: errors.slice(0, 20) };
 }
