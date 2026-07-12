@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
-const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks"];
+// /api/ping: chỉ SELECT 1 để hâm nóng — an toàn public. /api/cron: tự xác thực bằng CRON_SECRET trong route.
+const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/api/ping", "/api/cron"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
