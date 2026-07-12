@@ -180,6 +180,8 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "o.pickStore": { vi: "— chọn store —", en: "— pick store —" },
   "o.sellerOptional": { vi: "Seller phụ trách (tùy chọn)", en: "Assigned seller (optional)" },
   "o.pickCsvImport": { vi: "Chọn file CSV Etsy & Import", en: "Choose Etsy CSV & Import" },
+  "o.tiktokStore": { vi: "Store TikTok", en: "TikTok store" },
+  "o.pickTiktokCsvImport": { vi: "Chọn file CSV TikTok & Import", en: "Choose TikTok CSV & Import" },
   "o.importing": { vi: "Đang import…", en: "Importing…" },
   "o.dupSkipNote": { vi: "Đơn trùng (đã có cùng Order ID) sẽ tự bỏ qua, không tạo lặp.", en: "Duplicate orders (same Order ID) are skipped automatically." },
   "o.viewOnEtsy": { vi: "Xem trên Etsy", en: "View on Etsy" },

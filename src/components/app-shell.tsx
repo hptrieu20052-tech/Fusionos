@@ -30,6 +30,25 @@ export default function AppShell({ user, links, children }: {
   const initials = user.name.split(" ").map((w) => w[0]).slice(-2).join("").toUpperCase();
   const [moreOpen, setMoreOpen] = useState(false);
 
+  // HÂM NÓNG sau idle: Vercel Hobby cho lambda ngủ sau vài phút không có request →
+  // click đầu tiên khi quay lại bị cold start 2–5s. Khi tab visible trở lại (hoặc window focus),
+  // bắn 1 GET /api/ping chạy nền để dựng function + mở lại connection Supabase TRƯỚC khi user kịp click.
+  // Throttle 60s để không spam.
+  useEffect(() => {
+    let last = 0;
+    const warm = () => {
+      const now = Date.now();
+      if (now - last < 60_000) return;
+      last = now;
+      fetch("/api/ping", { cache: "no-store", keepalive: true }).catch(() => {});
+    };
+    const onVisible = () => { if (document.visibilityState === "visible") warm(); };
+    warm(); // lần load đầu cũng hâm luôn
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", warm);
+    return () => { document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", warm); };
+  }, []);
+
   return (
     <div className="app">
       <header className="topnav">

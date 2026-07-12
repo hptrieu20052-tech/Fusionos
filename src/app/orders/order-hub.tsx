@@ -1144,7 +1144,7 @@ function TikTokImportModal({ close, reload, flash, sellers, stores }: {
           {t("o.tiktokGuide")}
         </div>
 
-        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.etsyStore")}
+        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.tiktokStore")}
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
             <option value="">{t("o.pickStore")}</option>
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1161,7 +1161,7 @@ function TikTokImportModal({ close, reload, flash, sellers, stores }: {
           onChange={(e) => { const f = e.target.files?.[0]; if (f) doImport(f); e.target.value = ""; }} />
         <button onClick={() => fileRef.current?.click()} disabled={busy}
           style={{ ...btnBlue, width: "100%", padding: "12px", fontSize: 14, opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-          <IconUpload width={16} height={16} /> {busy ? t("o.importing") : t("o.pickCsvImport")}
+          <IconUpload width={16} height={16} /> {busy ? t("o.importing") : t("o.pickTiktokCsvImport")}
         </button>
         <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10 }}>{t("o.dupSkipNote")}</div>
       </div>
