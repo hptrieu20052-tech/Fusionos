@@ -13,6 +13,7 @@ type Store = {
   orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
   etsy?: { hasKeystring: boolean; keystring: string; connected: boolean; shopId: string };
+  tiktok?: { hasApp: boolean; appKey: string; authLink: string; connected: boolean; shopId: string; shopName: string };
 };
 type Opt = { id: string; name: string };
 
@@ -230,6 +231,25 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     if (j.ok) { flash("✓ Etsy app saved — now click Connect Etsy"); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
   const connectEtsy = () => { window.location.href = `/api/etsy/oauth/start?storeId=${store.id}`; };
+  // ===== TikTok Shop API =====
+  const [ttKey, setTtKey] = useState(store.tiktok?.appKey ?? "");
+  const [ttSecret, setTtSecret] = useState("");
+  const [ttAuthLink, setTtAuthLink] = useState(store.tiktok?.authLink ?? "");
+  const [ttBusy, setTtBusy] = useState(false);
+  const saveTtApi = async () => {
+    if (!ttKey.trim() || !ttSecret.trim()) { flash("✗ Enter App Key + App Secret"); return; }
+    setTtBusy(true);
+    const j = await fetch("/api/tiktok/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, appKey: ttKey.trim(), appSecret: ttSecret.trim(), authLink: ttAuthLink.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setTtBusy(false);
+    if (j.ok) { flash("✓ TikTok app saved — now click Connect TikTok"); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+  const connectTt = () => { window.location.href = `/api/tiktok/oauth/start?storeId=${store.id}`; };
+  const pullTt = async () => {
+    setTtBusy(true);
+    const j = await fetch("/api/tiktok/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setTtBusy(false);
+    if (j.ok) { flash(`✓ ${j.received} orders — created ${j.created}, updated ${j.updated ?? 0}, skipped ${j.skipped}`); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
   const pullEtsy = async () => {
     setEtsyBusy(true);
     const j = await fetch("/api/etsy/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
@@ -317,6 +337,39 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
               {store.etsy?.connected
                 ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> Connected · shop {store.etsy?.shopId}</span>
+                : <span style={{ color: "var(--muted)" }}>Not connected</span>}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {store.marketplace === "tiktok" && (
+        <div style={{ border: "1px solid #E8D9F5", background: "#FBF7FF", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
+          <b style={{ fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 6 }}><IconKey width={15} height={15} /> TikTok Shop API (official)</b>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>
+            Create a <b>Custom app</b> on TikTok Shop Partner Center (target market US), register the Redirect URL below,
+            apply Order scopes, then paste App Key + App Secret + the app&apos;s Authorization link here. One app can serve every shop.
+          </div>
+          <L label="Redirect URL — register this in your TikTok app">
+            <div style={{ display: "flex", gap: 6 }}>
+              <input readOnly value={`${typeof window !== "undefined" ? window.location.origin : ""}/api/tiktok/oauth/callback`} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
+              <button onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/api/tiktok/oauth/callback`); flash(t("st.copiedUrl")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
+            </div>
+          </L>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <L label="App Key"><input value={ttKey} onChange={(e) => setTtKey(e.target.value)} placeholder="e.g. 6h2k4…" style={inp} autoComplete="off" data-lpignore="true" data-1p-ignore /></L>
+            <L label="App Secret"><input type="password" value={ttSecret} onChange={(e) => setTtSecret(e.target.value)} placeholder={store.tiktok?.hasApp ? "••• (saved, leave blank to keep)" : "app secret"} style={inp} autoComplete="new-password" data-lpignore="true" data-1p-ignore /></L>
+          </div>
+          <L label="Authorization link (Partner Center → app detail → copy authorize URL)">
+            <input value={ttAuthLink} onChange={(e) => setTtAuthLink(e.target.value)} placeholder="https://services.tiktokshop.com/open/authorize?service_id=…" style={{ ...inp, fontSize: 12 }} autoComplete="off" />
+          </L>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <button onClick={saveTtApi} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
+            <button onClick={connectTt} disabled={ttBusy || !store.tiktok?.hasApp} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: store.tiktok?.hasApp ? "pointer" : "default", opacity: store.tiktok?.hasApp ? 1 : 0.5 }} title={store.tiktok?.hasApp ? "" : "Enter App Key + Secret and click Save app first"}>{store.tiktok?.connected ? "Reconnect TikTok" : "Connect TikTok"}</button>
+            {store.tiktok?.connected && <button onClick={pullTt} disabled={ttBusy} style={{ background: "#2E7D46", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}><IconDownload width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Pull orders</button>}
+            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
+              {store.tiktok?.connected
+                ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> Connected · {store.tiktok?.shopName || store.tiktok?.shopId}</span>
                 : <span style={{ color: "var(--muted)" }}>Not connected</span>}
             </span>
           </div>

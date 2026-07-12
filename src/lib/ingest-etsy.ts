@@ -18,7 +18,7 @@ const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 
 // Ghi đơn Etsy đã chuẩn hoá vào DB. Dedup theo (platform=etsy, external_id).
 // orderedAt = NGÀY KÉO ĐƠN (thời điểm ingest) để mọi thống kê tính theo ngày kéo.
-export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], source: "extension" | "api" = "api") {
+export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], source: "extension" | "api" = "api", platform: "etsy" | "tiktok" = "etsy") {
   const fx = Number(store.fx) > 0 ? Number(store.fx) : 1;
   let created = 0, skipped = 0;
   const errors: string[] = [];
@@ -29,7 +29,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
     if (!ext) { skipped++; continue; }
     try {
       const [dup] = await db.select().from(schema.orders)
-        .where(and(eq(schema.orders.platform, "etsy" as never), eq(schema.orders.externalId, ext))).limit(1);
+        .where(and(eq(schema.orders.platform, platform as never), eq(schema.orders.externalId, ext))).limit(1);
       if (dup) {
         // MERGE: đơn đã có → chỉ điền field còn TRỐNG (đơn kéo lần đầu từ list thiếu địa chỉ,
         // mở chi tiết trên Etsy rồi Push lại là địa chỉ/total/note tự vào — không đè dữ liệu đã sửa tay).
@@ -60,7 +60,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
       const total = num(o.total) || subtotal;
 
       const [order] = await db.insert(schema.orders).values({
-        externalId: ext, platform: "etsy" as never,
+        externalId: ext, platform: platform as never,
         storeId: store.id, sellerId: store.sellerId, source: source as never, status: "new",
         platformStatus: s(o.platformStatus),
         buyerFirst: s(o.buyerFirst), buyerLast: s(o.buyerLast),

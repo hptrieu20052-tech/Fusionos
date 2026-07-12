@@ -23,11 +23,20 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     connected: !!cred.etsy_refresh_token && !!cred.etsy_shop_id,
     shopId: cred.etsy_shop_id || "",
   };
-  // Ẩn các key etsy_* khỏi danh sách credentialKeys hiển thị (đã có mục Etsy API riêng)
-  const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_"));
+  // Trạng thái kết nối TikTok Shop API
+  const tiktok = {
+    hasApp: !!cred.tiktok_app_key,
+    appKey: cred.tiktok_app_key || "",
+    authLink: cred.tiktok_auth_link || "",
+    connected: !!cred.tiktok_refresh_token && !!cred.tiktok_shop_cipher,
+    shopId: cred.tiktok_shop_id || "",
+    shopName: cred.tiktok_shop_name || "",
+  };
+  // Ẩn các key etsy_*/tiktok_* khỏi credentialKeys hiển thị (đã có mục API riêng)
+  const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_"));
   return NextResponse.json({
     ok: true,
-    store: { ...s, apiCredentials: undefined, credentialKeys: shownKeys, hasCredentials: shownKeys.length > 0, etsy },
+    store: { ...s, apiCredentials: undefined, credentialKeys: shownKeys, hasCredentials: shownKeys.length > 0, etsy, tiktok },
   });
 }
 

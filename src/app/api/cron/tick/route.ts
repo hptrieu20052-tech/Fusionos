@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { getValidCfg, readEtsyCfg, fetchReceipts, normalizeReceipt } from "@/lib/etsy";
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
+import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/lib/tiktok-shop";
 import { syncPrintway } from "@/lib/printway-sync";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,23 @@ async function tick(req: NextRequest) {
     }
   }
 
+  // ---- 1b. TikTok: kéo đơn mới cho mọi store đã connect ----
+  const tiktok: { store: string; ok: boolean; received?: number; created?: number; updated?: number; skipped?: number; error?: string }[] = [];
+  for (const st of stores) {
+    if (Date.now() > deadline) { tiktok.push({ store: st.name, ok: false, error: "skipped (time budget)" }); continue; }
+    const cred = st.c as Record<string, string> | null;
+    if (!readTtCfg(cred).refreshToken) continue;
+    try {
+      const cfg = await ttGetValidCfg(st.id, cred);
+      const raw = await ttSearchOrders(cfg, { pageSize: 50 });
+      const orders = raw.map(ttNormalizeOrder).filter((o) => o.externalId);
+      const r = await insertEtsyOrders({ id: st.id, sellerId: st.sellerId, fx: st.fx, name: st.name }, orders, "api", "tiktok");
+      tiktok.push({ store: st.name, ok: true, received: orders.length, ...r });
+    } catch (e) {
+      tiktok.push({ store: st.name, ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) });
+    }
+  }
+
   // ---- 2. Printway poll backup (throttle 10' nội bộ — gọi dày cũng không spam API) ----
   let printway: unknown = null;
   if (Date.now() < deadline) {
@@ -60,7 +78,7 @@ async function tick(req: NextRequest) {
     catch (e) { printway = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
-  const summary = { ok: true, ms: Date.now() - started, etsyStores: etsy.length, etsy, printway };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, printway };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }
