@@ -207,14 +207,16 @@ function ExtensionPublishCard({ setMsg }: { setMsg: (m: string) => void }) {
   }
   return (
     <div className="card" style={{ marginTop: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-        <div>
-          <b style={{ fontSize: 14.5 }}>FUSION ETSY EXTENSION</b>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
-            Current version: <b>{cur}</b> · Sellers download at{" "}
-            <a href="/extension/" target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>/extension/</a>
-          </div>
-        </div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <b style={{ fontSize: 14.5, display: "inline-flex", alignItems: "center", gap: 8 }}>
+          <img src="/logomark.png" alt="" style={{ width: 22, height: 22 }} />
+          FUSION ETSY EXTENSION
+        </b>
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>
+          Current version: <b style={{ color: "var(--ink)" }}>{cur}</b>
+          {" · "}
+          <a href="/extension/" target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>Seller download page ↗</a>
+        </span>
       </div>
       <form onSubmit={publish} style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
         <input required placeholder="Version x.y.z (must match manifest.json)" value={version} onChange={(e) => setVersion(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, width: 230 }} />

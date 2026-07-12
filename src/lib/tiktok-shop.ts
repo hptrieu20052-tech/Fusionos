@@ -132,7 +132,7 @@ export async function ttGetValidCfg(storeId: string, cred: Record<string, string
 }
 
 // ===== Đơn hàng =====
-export async function ttSearchOrders(cfg: TtCfg, p?: { createdAfter?: number; pageSize?: number }) {
+export async function ttSearchOrders(cfg: TtCfg, p?: { createdAfter?: number; pageSize?: number; status?: string | null }) {
   const orders: Record<string, unknown>[] = [];
   let pageToken = "";
   for (let i = 0; i < 5; i++) {
@@ -140,8 +140,9 @@ export async function ttSearchOrders(cfg: TtCfg, p?: { createdAfter?: number; pa
       { page_size: String(p?.pageSize ?? 50), ...(pageToken ? { page_token: pageToken } : {}), sort_order: "DESC", sort_field: "create_time" },
       {
         create_time_ge: p?.createdAfter ?? Math.floor(Date.now() / 1000) - 7 * 86400,
-        // Chỉ đơn chờ fulfill — đơn đã ship/hoàn tất ở hệ cũ không bị kéo về
-        order_status: "AWAITING_SHIPMENT",
+        // Mặc định chỉ đơn chờ fulfill — đơn đã ship/hoàn tất ở hệ cũ không bị kéo về.
+        // status: null = lấy mọi trạng thái (dùng để chẩn đoán).
+        ...(p?.status === null ? {} : { order_status: p?.status ?? "AWAITING_SHIPMENT" }),
       });
     const batch = (d?.orders as Record<string, unknown>[] | undefined) ?? [];
     orders.push(...batch);

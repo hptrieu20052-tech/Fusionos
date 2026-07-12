@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Flash } from "@/components/flash";
 import { useLang } from "@/components/lang-provider";
-import { IconCopy } from "@/components/icons";
+import { IconCopy, IconUpload } from "@/components/icons";
 
 type Profile = {
   fullName: string; email: string; role: string; team: string | null;
@@ -94,9 +94,11 @@ export default function AccountClient() {
             </button>
             <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }}
               onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickAvatar(f); e.target.value = ""; }} />
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 8, cursor: "pointer" }} onClick={() => fileRef.current?.click()}>
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={uploading}
+              style={{ marginTop: 10, display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--line)", background: "#fff", color: "var(--ink)", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: uploading ? 0.6 : 1 }}>
+              <IconUpload width={13} height={13} />
               {uploading ? t("a.uploading") : t("a.uploadAvatar")}
-            </div>
+            </button>
           </div>
           {/* Cột 1 */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>

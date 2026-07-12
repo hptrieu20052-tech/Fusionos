@@ -21,10 +21,24 @@ export async function POST(req: NextRequest) {
 
   try {
     const cfg = await ttGetValidCfg(st.id, st.apiCredentials as Record<string, string> | null);
-    const raw = await ttSearchOrders(cfg, { pageSize: 50 });
+    const since = Math.floor(Date.now() / 1000) - 30 * 86400;
+    const raw = await ttSearchOrders(cfg, { pageSize: 50, createdAfter: since });
     const orders = raw.map(ttNormalizeOrder).filter((o) => o.externalId);
     const r = await insertEtsyOrders({ id: st.id, sellerId: st.sellerId, fx: st.fxRate, name: st.name }, orders, "api", "tiktok");
-    return NextResponse.json({ ok: true, received: orders.length, ...r });
+    // 0 đơn to-ship → soi mọi trạng thái để báo cho rõ (shop trống hay chỉ là hết đơn chờ ship)
+    let hint: string | undefined;
+    if (!orders.length) {
+      const all = await ttSearchOrders(cfg, { pageSize: 50, createdAfter: since, status: null });
+      if (!all.length) hint = "Shop has no orders in the last 30 days.";
+      else {
+        const byStatus: Record<string, number> = {};
+        for (const o of all) { const k = String(o.status ?? "?"); byStatus[k] = (byStatus[k] ?? 0) + 1; }
+        hint = `No AWAITING_SHIPMENT orders — found ${all.length} in other statuses: ` +
+          Object.entries(byStatus).map(([k, v]) => `${k}: ${v}`).join(", ") +
+          ". Shipped/completed orders are intentionally filtered out (old-system cutover).";
+      }
+    }
+    return NextResponse.json({ ok: true, received: orders.length, ...r, hint });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
