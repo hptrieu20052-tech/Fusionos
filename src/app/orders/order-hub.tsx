@@ -150,7 +150,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
                 </a>
                 <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>TikTok Shop</div>
                 <a href="/api/orders/export-tiktok-tracking" onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
-                  <span style={{ width: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IconTruck width={17} height={17} /></span>
+                  <MarketplaceLogo mk="tiktok" size={20} />
                   <div style={{ textAlign: "left" }}><b>Tracking upload template</b><div style={IMPORT_SUB}>Shipment info file — bulk upload in Seller Center</div></div>
                 </a>
                 <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>{t("o.printerNoApi")}</div>

@@ -175,9 +175,6 @@ export default function LoginPage() {
             <button className="lg-btn" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
             {err && <div className="lg-err">{err}</div>}
           </form>
-
-          <div className="lg-terms">By signing in, you agree to the <b>Fusion internal policy</b>.</div>
-          <div className="lg-dev">✦ Built in-house · <b>Fusion OS</b></div>
         </div>
       </div>
     </div>

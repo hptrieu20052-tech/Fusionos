@@ -130,7 +130,7 @@ export default function DateRangePicker({ value, onChange, align = "left", allow
 // ===== DateInput: chọn MỘT ngày, cùng phong cách dp — dùng cho Admin HR (start date / birthday) =====
 const M_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 export function DateInput({ value, onChange, placeholder = "Pick date", width = 150 }: {
-  value: string | null | undefined; onChange: (v: string) => void; placeholder?: string; width?: number;
+  value: string | null | undefined; onChange: (v: string) => void; placeholder?: string; width?: number | string;
 }) {
   const [open, setOpen] = useState(false);
   const [base, setBase] = useState(() => som(value ? parseISO(value) : new Date()));
@@ -142,8 +142,8 @@ export function DateInput({ value, onChange, placeholder = "Pick date", width = 
   }, [open]);
   useEffect(() => { if (value) setBase(som(parseISO(value))); }, [value]);
   return (
-    <div className="dp" ref={ref} style={{ display: "inline-block" }}>
-      <button type="button" className="dp-trigger" style={{ minWidth: width, justifyContent: "flex-start" }} onClick={() => setOpen((v) => !v)}>
+    <div className="dp" ref={ref} style={{ display: "inline-block", ...(width === "100%" ? { width: "100%" } : {}) }}>
+      <button type="button" className="dp-trigger" style={{ ...(width === "100%" ? { width: "100%" } : { minWidth: width }), justifyContent: "flex-start" }} onClick={() => setOpen((v) => !v)}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="5" width="18" height="16" rx="3" /><path d="M3 10h18M8 3v4M16 3v4" />
         </svg>

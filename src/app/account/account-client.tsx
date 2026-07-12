@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Flash } from "@/components/flash";
 import { useLang } from "@/components/lang-provider";
+import { DateInput } from "@/components/date-range";
 import { IconCopy, IconUpload } from "@/components/icons";
 
 type Profile = {
@@ -123,7 +124,7 @@ export default function AccountClient() {
           {/* Cột 2 */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div><label style={lbl}>{t("a.phone")}</label><input value={p.phone} onChange={(e) => set("phone", e.target.value)} placeholder="0xxxxxxxxx" style={inp} /></div>
-            <div><label style={lbl}>{t("a.dob")}</label><input type="date" value={p.dateOfBirth ? String(p.dateOfBirth).slice(0, 10) : ""} onChange={(e) => set("dateOfBirth", e.target.value)} style={inp} /></div>
+            <div><label style={lbl}>{t("a.dob")}</label><div style={{ marginTop: 0 }}><DateInput value={p.dateOfBirth ? String(p.dateOfBirth).slice(0, 10) : ""} onChange={(v) => set("dateOfBirth", v)} placeholder="Pick date" width="100%" /></div></div>
             <div style={{ display: "flex", gap: 14 }}>
               <div style={{ flex: 1 }}><label style={lbl}>{t("a.role")}</label><input value={p.role} readOnly style={{ ...inp, background: "#EDEFF4", color: "var(--muted)" }} /></div>
               <div style={{ flex: 1 }}><label style={lbl}>{t("a.team")}</label><input value={p.team ?? "—"} readOnly style={{ ...inp, background: "#EDEFF4", color: "var(--muted)" }} /></div>

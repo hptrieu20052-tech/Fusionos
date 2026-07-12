@@ -34,24 +34,25 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       ])
     : [false, false, false, false, false, false];
 
+  const isAdmin = session?.role === "admin";
   const links: NavLink[] = session ? [
     { href: "/", label: "nav.dashboard", icon: "dashboard", section: "Operations" },
     ...(orders ? [{ href: "/orders", label: "nav.orders", icon: "orders", section: "Operations" }] : []),
     ...(designs ? [{ href: "/designs", label: "nav.designs", icon: "designs", section: "Operations" }] : []),
-    // Tạm ẩn — bật lại sau khi lên plan:
-    ...(ff ? [{ href: "/fulfillment", label: "nav.fulfillment", icon: "fulfillment", section: "Operations", more: true }] : []),
-    ...(designs ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Operations", more: true }] : []),
-    ...(orders ? [{ href: "/stats/orders", label: "nav.statsOrders", icon: "statsOrders", section: "Reports", more: true }] : []),
-    ...(designs ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Reports", more: true }] : []),
-    ...(finance ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Reports", more: true }] : []),
-    ...(orders ? [{ href: "/supplier-report", label: "nav.supplierReport", icon: "statsOrders", section: "Reports", more: true }] : []),
+    // Nhóm "More" (đang chờ lên plan): ADMIN luôn thấy đủ để review, bất kể cờ module:
+    ...(ff || isAdmin ? [{ href: "/fulfillment", label: "nav.fulfillment", icon: "fulfillment", section: "Operations", more: true }] : []),
+    ...(designs || isAdmin ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Operations", more: true }] : []),
+    ...(orders || isAdmin ? [{ href: "/stats/orders", label: "nav.statsOrders", icon: "statsOrders", section: "Reports", more: true }] : []),
+    ...(designs || isAdmin ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Reports", more: true }] : []),
+    ...(finance || isAdmin ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Reports", more: true }] : []),
+    ...(orders || isAdmin ? [{ href: "/supplier-report", label: "nav.supplierReport", icon: "statsOrders", section: "Reports", more: true }] : []),
     ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "System" }] : []),
     ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "System" }] : []),
-    ...(session.role === "admin" ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "System" }] : []),
+    ...(isAdmin ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "System" }] : []),
   ] : [];
 
   // "More" (các trang đang chờ lên plan) tạm thời chỉ admin thấy; seller/staff/designer đều ẩn.
-  const showMore = session?.role === "admin";
+  const showMore = isAdmin;
   const navLinks = showMore ? links : links.filter((l) => !l.more);
 
   return (
