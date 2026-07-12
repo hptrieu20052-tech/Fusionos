@@ -52,6 +52,13 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
     if (j.ok) { setMsg(`✓ Webhook registered → ${j.endpoint}`); load(); }
     else setMsg("⚠ " + (Array.isArray(j.errors) && j.errors.length ? j.errors.join(" · ") : (j.error ?? "webhook register failed")));
   }
+  // Đăng ký webhook ONOS (order.updated + shipment.events) trỏ về /api/webhooks/onos
+  async function registerOnosWebhook(id: string) {
+    setMsg("Registering ONOS webhook…");
+    const j = await fetch("/api/fulfillers/onos-register-webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: id }) }).then((r) => r.json()).catch(() => ({ ok: false, errors: ["network"] }));
+    if (j.ok) { setMsg(`✓ Webhook registered → ${j.endpoint}` + (Array.isArray(j.errors) && j.errors.length ? ` · partial: ${j.errors.join(" · ")}` : "")); load(); }
+    else setMsg("⚠ " + (Array.isArray(j.errors) && j.errors.length ? j.errors.join(" · ") : (j.error ?? "webhook register failed")));
+  }
   async function delFf(id: string, name: string) {
     if (!(await confirm({ message: t("set.deleteFulfillerConfirm").replace("{name}", name), danger: true }))) return;
     const j = await fetch("/api/fulfillers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json());
@@ -121,6 +128,7 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
               {canEdit && editOpen[f.id] && (() => {
                 const isMerchize = f.name.toLowerCase().includes("merchize");
                 const isPrintway = f.name.toLowerCase().includes("printway");
+                const isOnos = f.name.toLowerCase().includes("onos");
                 return (
                 <div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
@@ -137,6 +145,11 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
                 {isPrintway && (
                   <div style={{ marginTop: 8 }}>
                     <button type="button" onClick={() => registerPwWebhook(f.id)} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>Register webhook (order + tracking)</button>
+                  </div>
+                )}
+                {isOnos && (
+                  <div style={{ marginTop: 8 }}>
+                    <button type="button" onClick={() => registerOnosWebhook(f.id)} style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12 }}>Register webhook (order + shipment)</button>
                   </div>
                 )}
                 </div>
@@ -219,8 +232,8 @@ function ExtensionPublishCard({ setMsg }: { setMsg: (m: string) => void }) {
         </span>
       </div>
       <form onSubmit={publish} style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-        <input required placeholder="Version x.y.z (must match manifest.json)" value={version} onChange={(e) => setVersion(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, width: 230 }} />
-        <input placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, flex: 1, minWidth: 160 }} />
+        <input required placeholder="Version x.y.z (must match manifest.json)" value={version} onChange={(e) => setVersion(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, flex: 1, minWidth: 260 }} />
+        <input placeholder="Notes (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, flex: 1, minWidth: 200 }} />
         <input ref={fileRef} required type="file" accept=".zip" style={{ display: "none" }} onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")} />
         <button type="button" onClick={() => fileRef.current?.click()} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--line)", background: "#fff", color: "var(--ink)", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", fontSize: 12.5, maxWidth: 260, overflow: "hidden" }}>
           <IconUpload width={13} height={13} />

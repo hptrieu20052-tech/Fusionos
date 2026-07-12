@@ -64,6 +64,7 @@ async function handlePush(req: NextRequest) {
     const s = it.designId ? sideUrls.get(it.designId) ?? {} : {};
     return {
       internalSku: m.internalSku, productId: m.fulfillerProductId ?? null,
+      variant: m.variant ?? null, fulfillerProduct: m.fulfillerProduct ?? m.productType ?? null,
       price: Number(it.unitPrice) || undefined, currency: "USD",
       // Merchize image = mockup của ĐƠN (upload theo order), KHÔNG lấy từ card design.
       image: fileUrl(it.mockupKey) ?? it.imageUrl ?? null, // mockup gửi nhà in = đúng ảnh hiển thị trên đơn (mockup tay/link → ảnh listing Etsy)

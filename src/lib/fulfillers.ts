@@ -2,6 +2,8 @@ import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPr
 import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
 import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, calcPrintwayPrice, type PwOrderItem } from "@/lib/printway-api";
 import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
+import { createOnosOrder, type OnosItem } from "@/lib/onos";
+import { createWembroideryOrder, type WemItem, type WemDesign } from "@/lib/wembroidery";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
  * ------------------------------------------------------------------
@@ -19,6 +21,10 @@ import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
 export type PushLine = {
   fulfillerSku: string; qty: number;
   internalSku?: string | null; productId?: string | null;
+  /** Nhãn variant từ mapping (vd "Black / L") — ONOS cần Color+Size, Wembroidery cần size+color */
+  variant?: string | null;
+  /** Tên sản phẩm bên nhà fulfill (fulfiller_product) — ONOS cần attribute "product" */
+  fulfillerProduct?: string | null;
   price?: number; currency?: string;
   image?: string | null;
   designFront?: string | null; designBack?: string | null; designSleeve?: string | null; designHood?: string | null;
@@ -81,9 +87,10 @@ export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   printify: printifyAdapter(),
   merchize: merchizeAdapter(),
   printway: printwayAdapter(),
-  wembroidery: makeAdapter("wembroidery", "Wembroidery"),
+  wembroidery: wembroideryAdapter(),
   flashship: flashshipAdapter(),
-  onospod: makeAdapter("onospod", "Onospod"),
+  onospod: onosAdapter(),
+  onos: onosAdapter(),
   compassup: makeAdapter("compassup", "Compassup"),
   gearment: makeAdapter("gearment", "Gearment"),
 };
@@ -394,6 +401,164 @@ function merchizeAdapter(): FulfillerAdapter {
         catch (e) { throw new Error(`Đã tạo đơn ${res.orderCode} nhưng push (confirm) lỗi: ${String((e as Error)?.message ?? e)}`); }
       }
       return { externalFfId: res.orderCode, simulated: false, raw: res.raw };
+    },
+  };
+}
+
+// ---- Tách Color / Size từ nhãn variant của mapping (vd "Black / L", "L / Black", "As Design / XL") ----
+const SIZE_RX = /^(xs|s|m|l|xl|2xl|3xl|4xl|5xl|xxl|xxxl|xxxxl|xxxxxl|one size|os|\d+(\.\d+)?\s*(x\s*\d+(\.\d+)?)?\s*(inch|inches|in|cm|oz)?)$/i;
+export function splitColorSize(variant: string | null | undefined): { color: string; size: string } {
+  const parts = (variant ?? "").split("/").map((s) => s.trim()).filter(Boolean);
+  if (!parts.length) return { color: "", size: "" };
+  if (parts.length === 1) return SIZE_RX.test(parts[0]) ? { color: "", size: parts[0] } : { color: parts[0], size: "" };
+  // 2+ phần: phần khớp regex size là size, còn lại là color (mặc định [color, size])
+  const sizeIdx = parts.findIndex((p) => SIZE_RX.test(p));
+  if (sizeIdx >= 0) {
+    const size = parts[sizeIdx];
+    const color = parts.filter((_, i) => i !== sizeIdx).join(" / ");
+    return { color, size };
+  }
+  return { color: parts[0], size: parts[parts.length - 1] };
+}
+
+/**
+ * Adapter ONOS (OnosPOD) THẬT — POST /order/create (Bearer token).
+ * credentials = { apiKey: <token HOẶC "email:password"> }; tuỳ chọn { identifier, shippingMethod, testMode }.
+ * lines[].fulfillerSku = SKU variant ONOS; fulfillerProductId = product_id; variant = "Color / Size".
+ * (order_id + identifier) là khoá duy nhất phía ONOS → identifier cố định để dedupe hoạt động.
+ */
+function onosAdapter(): FulfillerAdapter {
+  return {
+    slug: "onospod",
+    label: "Onospod",
+    async push(ctx) {
+      const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
+      const apiKey = cred.apiKey || cred.accessToken || cred.apiToken || "";
+      if (!apiKey) return { ...simulate("onospod"), reason: "ONOS token missing (Settings → API Key: paste token or email:password) → order NOT sent to the printer" };
+
+      const o = ctx.order;
+      const url = (u?: string | null) => (typeof u === "string" && /^https?:\/\//i.test(u.trim())) ? u.trim() : undefined;
+      const items: OnosItem[] = ctx.lines.map((l) => {
+        const { color, size } = splitColorSize(l.variant);
+        const it: OnosItem = {
+          sku: l.fulfillerSku,
+          quantity: l.qty,
+          name: l.fulfillerProduct || l.fulfillerSku,
+          product_id: l.productId || undefined,
+          price: l.price,
+          currency: l.currency || "USD",
+          image: url(l.image),
+          // attributes tối thiểu cần product + Color + Size (docs ONOS)
+          attributes: [
+            { name: "product", option: l.fulfillerProduct || l.fulfillerSku },
+            { name: "Color", option: color || "As Design" },
+            { name: "Size", option: size || "One Size" },
+          ],
+        };
+        if (url(l.designFront)) it.design_front = url(l.designFront);
+        if (url(l.designBack)) it.design_back = url(l.designBack);
+        if (url(l.designHood)) it.design_hood = url(l.designHood);
+        return it;
+      });
+
+      const method = ["ONOSEXPRESS", "SBTT", "COD"].includes(cred.shippingMethod) ? cred.shippingMethod as "ONOSEXPRESS" | "SBTT" | "COD" : "ONOSEXPRESS";
+      const res = await createOnosOrder({ apiKey, endpoint: ctx.fulfiller.apiEndpoint }, {
+        order_id: orderExtNumber(o),
+        identifier: cred.identifier || "FUSION",
+        reference_id: o.externalId,
+        items,
+        shipping_info: {
+          full_name: [o.buyerFirst, o.buyerLast].filter(Boolean).join(" ") || "Customer",
+          address_1: o.addr1 || "",
+          address_2: o.addr2 || undefined,
+          city: o.city || "",
+          state: o.state || "",
+          postcode: o.zip || "",
+          country: toISO2(o.country || "United States"),
+          email: o.email || undefined,
+          phone: o.phone || undefined,
+        },
+        shipping_method: method,
+      }, cred.testMode === "true" || cred.testMode === "1");
+      return {
+        externalFfId: res.onosId, simulated: false, raw: res.raw,
+        reason: res.dedup ? "Order already existed on ONOS (from a previous failed push) — linked to it, no duplicate created" : undefined,
+      };
+    },
+  };
+}
+
+/**
+ * Adapter Wembroidery THẬT — POST /orders (token query param).
+ * credentials = { apiKey: <store token> }; tuỳ chọn { shippingMethod ("standard"), ioss }.
+ * lines[].fulfillerProductId = catalogId; variant = "Color / Size" (color snake_case theo catalog).
+ * Design: imageUrl = ảnh design; nếu URL là file thêu (.emb/.dst/.pes...) thì gửi embUrl.
+ */
+function wembroideryAdapter(): FulfillerAdapter {
+  return {
+    slug: "wembroidery",
+    label: "Wembroidery",
+    async push(ctx) {
+      const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
+      const apiKey = cred.apiKey || cred.accessToken || cred.apiToken || "";
+      if (!apiKey) return { ...simulate("wembroidery"), reason: "Wembroidery token missing (Settings → API Key: paste store token) → order NOT sent to the printer" };
+
+      const o = ctx.order;
+      const url = (u?: string | null) => (typeof u === "string" && /^https?:\/\//i.test(u.trim())) ? u.trim() : undefined;
+      const EMB_RX = /\.(emb|dst|pes|exp|jef|vp3|xxx)(\?|#|$)/i;
+      const design = (location: string, u?: string | null, mockup?: string | null): WemDesign | null => {
+        const link = url(u);
+        if (!link) return null;
+        const d: WemDesign = { location };
+        if (EMB_RX.test(link)) d.embUrl = link; else d.imageUrl = link;
+        if (url(mockup)) d.mockup = url(mockup);
+        return d;
+      };
+      // Chuẩn hoá color về snake_case theo catalog Wembroidery (black, sport_grey...)
+      const snake = (s: string) => s.trim().toLowerCase().replace(/\s+/g, "_");
+
+      const badLine = ctx.lines.find((l) => !Number(l.productId));
+      if (badLine) throw new Error(`Wembroidery needs a numeric catalogId in SKU mapping for "${badLine.fulfillerSku}" (pull via Update SKU on the Wembroidery tab)`);
+
+      const items: WemItem[] = ctx.lines.map((l) => {
+        const { color, size } = splitColorSize(l.variant);
+        const designs = [
+          design("front", l.designFront, l.image),
+          design("back", l.designBack),
+        ].filter(Boolean) as WemDesign[];
+        if (!designs.length && url(l.image)) designs.push({ location: "front", imageUrl: url(l.image)! });
+        return {
+          catalogId: Number(l.productId),
+          designs,
+          quantity: l.qty,
+          size: size.toLowerCase() || "m",
+          color: snake(color) || "black",
+        };
+      });
+
+      const res = await createWembroideryOrder({ apiKey, endpoint: ctx.fulfiller.apiEndpoint }, {
+        address: {
+          firstName: (o.buyerFirst || "").trim() || "Customer",
+          lastName: (o.buyerLast || "").trim() || ".",
+          address1: o.addr1 || "",
+          address2: o.addr2 || undefined,
+          city: o.city || "",
+          state: usStateAbbr(o.state || ""),
+          zip: o.zip || "",
+          country: toISO2(o.country || "United States"),
+          email: o.email || undefined,
+          phone: o.phone || undefined,
+        },
+        sellerOrderId: orderExtNumber(o),
+        shippingMethod: cred.shippingMethod || "standard",
+        ioss: cred.ioss || undefined,
+        items,
+      });
+      return {
+        externalFfId: res.wemId, simulated: false, raw: res.raw,
+        baseCost: res.baseCost, shipCost: res.shipCost,
+        reason: res.dedup ? "Order already existed on Wembroidery (from a previous failed push) — linked to it, no duplicate created" : undefined,
+      };
     },
   };
 }

@@ -93,6 +93,14 @@ export async function cancelAtPrinters(orderId: string): Promise<string[]> {
           const { cancelFlashshipOrders } = await import("@/lib/flashship");
           const r = await cancelFlashshipOrders({ accessToken, endpoint: ff.apiEndpoint }, [ffo.externalFfId], "Cancelled from FUSION OS");
           notes.push(`${ff.name}: ${r.ok ? "cancelled" : r.message}`);
+        } else if (name.includes("onos")) {
+          const { cancelOnosOrder } = await import("@/lib/onos");
+          const r = await cancelOnosOrder({ apiKey: accessToken, endpoint: ff.apiEndpoint }, ffo.externalFfId);
+          notes.push(`${ff.name}: ${r.ok ? "cancelled" : r.message}`);
+        } else if (name.includes("wembroidery")) {
+          const { cancelWembroideryOrder } = await import("@/lib/wembroidery");
+          await cancelWembroideryOrder({ apiKey: accessToken, endpoint: ff.apiEndpoint }, ffo.externalFfId, "Cancelled from FUSION OS");
+          notes.push(`${ff.name}: cancelled`);
         } else continue; // nhà khác chưa có API cancel → chỉ đánh dấu local
       } catch (e) {
         notes.push(`${ff.name}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);

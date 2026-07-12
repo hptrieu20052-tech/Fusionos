@@ -278,6 +278,24 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped`);
   }
 
+  // Kéo catalog ONOS (GET /products) → thêm mapping mới (variant = Color / Size)
+  async function getSkuOnos() {
+    setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "ONOS"));
+    const imp = await fetch("/api/fulfillers/onos-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
+    refresh();
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped` + (imp.done === false ? t("sk.moreClickAgain") : ""));
+  }
+
+  // Kéo catalog Wembroidery (GET /public/catalog) → dựng SKU WEM-{catalogId}-{COLOR}-{SIZE}
+  async function getSkuWembroidery() {
+    setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Wembroidery"));
+    const imp = await fetch("/api/fulfillers/wembroidery-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
+    refresh();
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped`);
+  }
+
   // Kéo variant FlashShip (GET /orders/list-variant-sku) → upsert mapping (API không trả giá)
   async function getSkuFlashship() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "FlashShip"));
@@ -337,6 +355,12 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("flashship") && canEdit && (
               <button onClick={getSkuFlashship} title="Pull variant list from FlashShip" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
+            )}
+            {ff.method === "api" && ff.name.toLowerCase().includes("onos") && canEdit && (
+              <button onClick={getSkuOnos} title="Pull product catalog from ONOS" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
+            )}
+            {ff.method === "api" && ff.name.toLowerCase().includes("wembroidery") && canEdit && (
+              <button onClick={getSkuWembroidery} title="Pull catalog from Wembroidery" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
             )}
           </div>
 
