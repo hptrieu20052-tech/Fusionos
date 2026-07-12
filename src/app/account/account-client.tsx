@@ -85,7 +85,7 @@ export default function AccountClient() {
       {/* HỒ SƠ */}
       <div className="panel">
         <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 16 }}>{t("a.profile")}</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 1fr", gap: 22, alignItems: "start" }}>
+        <div className="m-stack" style={{ display: "grid", gridTemplateColumns: "140px 1fr 1fr", gap: 22, alignItems: "start" }}>
           {/* Avatar */}
           <div style={{ textAlign: "center" }}>
             <button onClick={() => fileRef.current?.click()} disabled={uploading}
@@ -139,7 +139,7 @@ export default function AccountClient() {
       {/* ĐỔI MẬT KHẨU */}
       <div className="panel">
         <h3 style={{ fontSize: 15, fontWeight: 800, marginBottom: 16 }}>{t("a.changePassword")}</h3>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 26, alignItems: "start" }}>
+        <div className="m-stack" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 26, alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 420 }}>
             <div><label style={lbl}>{t("a.currentPassword")}</label><input type="password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} style={inp} /></div>
             <div><label style={lbl}>{t("a.newPassword")}</label><input type="password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} style={inp} /></div>

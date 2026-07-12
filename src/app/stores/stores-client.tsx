@@ -76,6 +76,7 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
       {/* Page head */}
       <div className="page-head">
         <div className="page-actions">
+          <a href="/extension/" target="_blank" rel="noreferrer" className="btn" style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", fontWeight: 800, textDecoration: "none" }}><IconDownload width={14} height={14} /> Get extension</a>
           {canAdd && <button onClick={() => setShowAdd(true)} className="btn btn-primary">{t("s.addStore")}</button>}
         </div>
       </div>
@@ -185,6 +186,13 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
       </div>
       {!isSeller && <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
+      {f.marketplace === "etsy" && (
+        <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--blue-soft)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", margin: "2px 0 4px", lineHeight: 1.55 }}>
+          New Etsy shops (0–100 sales) usually can&apos;t get an API key yet — pull orders with the{" "}
+          <a href="/extension/" target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>FUSION Order Sync extension</a>{" "}
+          instead. Once the shop has its own Etsy API approved, hit Connect Etsy and orders switch to the official API.
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label={t("st.shopCurrency")}><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (f.fxRate === "1" ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
         <L label={t("st.fxLabel").replace("{cur}", f.currency)}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>

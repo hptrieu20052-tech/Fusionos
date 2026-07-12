@@ -1,13 +1,14 @@
 // ===== FlashShip POD API v2 (seller) =====
 // Docs: https://docs.flashship.net/
-// - Base: https://api.flashship.net/seller-api-v2 (UAT: https://uat-api.flashship.net/seller-api-v2)
+// - Base MẶC ĐỊNH: https://api2.flashship.net/seller-api-v2 — endpoint KHÔNG cần whitelist IP
+//   (FlashShip support xác nhận 07/2026; api.flashship.net yêu cầu whitelist IP tĩnh, Vercel không có).
+// - UAT: https://uat-api.flashship.net/seller-api-v2
 // - Auth: "Authorization: Bearer <token>" — dùng API token sinh trên web (hạn 1 năm),
 //   hoặc POST /token {username,password} → data.access_token (expires_in 18000s).
 // - Response chung: { code: "FLS_200"|"FLS-406"|..., msg, data, err }
 //   FLS-406 = hết balance → ĐƠN VẪN TẠO, payment PENDING, trả tiền trên web admin.
-// - LƯU Ý: production yêu cầu whitelist IP server (Vercel IP động — xác nhận với FlashShip).
 
-const FS_API = "https://api.flashship.net/seller-api-v2";
+const FS_API = "https://api2.flashship.net/seller-api-v2";
 
 type Cred = { accessToken: string; endpoint?: string | null };
 // Timeout 20s, signal tạo MỚI mỗi lần gọi (module-level sẽ hết hạn 1 lần rồi abort mọi call sau).

@@ -415,3 +415,15 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
   .kpis{gap:8px}
   .pipe-cards{grid-template-columns:repeat(2,1fr);gap:8px}
 }
+
+/* ===== MOBILE: gia cố toàn trang (mọi page) ===== */
+@media (max-width:720px){
+  input,select,textarea{max-width:100%}
+  h1{font-size:20px}
+  .card{padding:14px 12px}
+  .ord-addr{max-width:100%}
+  /* Bảng mọi trang (Admin/SKU/Finance/Report/Settings): cuộn ngang gọn trong khung */
+  table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
+  /* Utility: ép grid inline về 1 cột (đè inline style) */
+  .m-stack{grid-template-columns:1fr !important}
+}

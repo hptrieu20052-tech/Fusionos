@@ -375,7 +375,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
           <button onClick={close} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)", lineHeight: 1 }}>✕</button>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20, padding: "12px 22px 16px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+        <div className="m-stack" style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: 20, padding: "12px 22px 16px", overflowY: "auto", flex: 1, minHeight: 0 }}>
           {/* CỘT TRÁI */}
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
