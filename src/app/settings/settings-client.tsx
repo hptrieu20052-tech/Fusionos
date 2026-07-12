@@ -209,7 +209,7 @@ function ExtensionPublishCard({ setMsg }: { setMsg: (m: string) => void }) {
     <div className="card" style={{ marginTop: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div>
-          <b style={{ fontSize: 14.5 }}>Fusion Etsy Extension</b>
+          <b style={{ fontSize: 14.5 }}>FUSION ETSY EXTENSION</b>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>
             Current version: <b>{cur}</b> · Sellers download at{" "}
             <a href="/extension/" target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>/extension/</a>

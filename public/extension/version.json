@@ -1,5 +1,5 @@
 {
-  "version": "1.1.6",
+  "version": "1.1.8",
   "url": "/api/extension/download",
-  "notes": "Revenue = Etsy Order total (adjusted_total_cost) with top priority"
+  "notes": "Renamed to FUSION ETSY EXTENSION"
 }

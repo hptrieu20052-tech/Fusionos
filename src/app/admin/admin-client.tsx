@@ -314,11 +314,12 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                             if (!f) return;
                             setMsg("⏳ Uploading contract…");
                             try {
-                              const tk = await fetch("/api/admin/users/contract-upload-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, contentType: f.type || "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }) }).then((r) => r.json());
-                              if (!tk.ok) throw new Error(tk.error ?? "upload-url");
-                              const put = await fetch(tk.url, { method: tk.method ?? "PUT", headers: tk.headers ?? {}, body: f });
-                              if (!put.ok) throw new Error(`R2 ${put.status}`);
-                              await patchUser(u.id, { contractKey: tk.storageKey }, "✓ Contract saved");
+                              // Upload qua server — tránh CORS khi PUT thẳng R2
+                              const fd = new FormData();
+                              fd.set("userId", u.id); fd.set("file", f);
+                              const j = await fetch("/api/admin/users/contract", { method: "POST", body: fd }).then((r) => r.json());
+                              if (!j.ok) throw new Error(j.error ?? "upload failed");
+                              setMsg("✓ Contract saved");
                               fetch("/api/admin/users").then((r) => r.json()).then((jj) => { if (jj.ok) setUsers(jj.users); });
                             } catch (err) { setMsg("⚠ " + (err as Error).message); }
                           }} />

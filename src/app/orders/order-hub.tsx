@@ -698,7 +698,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
     if (!complete || !detail || !isPwFf) return;
     const payload = {
       fulfillerId: ffSel, country: ship.country, state: ship.state,
-      lines: detail.items.map((it) => ({ mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })),
+      lines: detail.items.map((it) => ({ mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })),
     };
     const ctl = new AbortController();
     const tm = setTimeout(() => {
@@ -716,7 +716,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
       const s1 = await fetch(`/api/orders/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ship) }).then((r) => r.json());
       if (!s1.ok) { setBusy(false); return flash("✗ " + (s1.error ?? "")); }
     }
-    const body = { orderId: o.id, fulfillerId: ffSel, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id].qty })) };
+    const body = { orderId: o.id, fulfillerId: ffSel, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })) };
     // 5xx/non-JSON (Cloudflare 502, Vercel rollout...) → retry 1 lần sau 2.5s.
     // An toàn: adapter Printway check đơn đã tồn tại theo order_name trước khi tạo → không double.
     const doPush = () => fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -1022,7 +1022,7 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
         <b>{it.product_title}</b>
-        {it.variant && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.4 }}>{it.variant.replace(/,/g, " · ")}</div>}
+        {it.variant && <div style={{ fontSize: 12.5, color: "var(--ink)", fontWeight: 700, marginTop: 3, lineHeight: 1.4 }}>{it.variant.replace(/,/g, " · ")}</div>}
         {it.productUrl && (
           <a href={it.productUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#E0913C", fontWeight: 700, textDecoration: "none", marginTop: 3 }}>
             {t("o.viewOnEtsy")} ↗

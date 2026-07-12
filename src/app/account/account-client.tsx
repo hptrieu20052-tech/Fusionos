@@ -36,14 +36,12 @@ export default function AccountClient() {
     setPreview(URL.createObjectURL(file));
     setUploading(true);
     try {
-      const tk = await fetch("/api/account/avatar-url", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type }),
-      }).then((r) => r.json());
-      if (!tk.ok) throw new Error(tk.error ?? "avatar-url error");
-      const put = await fetch(tk.url, { method: tk.method ?? "PUT", headers: tk.headers ?? {}, body: file });
-      if (!put.ok) throw new Error(`R2 ${put.status}`);
-      setAvatarKey(tk.storageKey);
+      // Upload QUA SERVER — PUT thẳng lên R2 dính CORS ("Failed to fetch") trên máy seller
+      const fd = new FormData();
+      fd.set("file", file);
+      const j = await fetch("/api/account/avatar", { method: "POST", body: fd }).then((r) => r.json());
+      if (!j.ok) throw new Error(j.error ?? "upload error");
+      setAvatarKey(j.avatarKey); // server đã lưu vào user, giữ state để Save không ghi đè rỗng
       flash(t("a.savedProfile"));
     } catch (e) { flash("✗ " + (e as Error).message); setPreview(null); }
     setUploading(false);
