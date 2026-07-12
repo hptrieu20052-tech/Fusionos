@@ -138,7 +138,11 @@ export async function ttSearchOrders(cfg: TtCfg, p?: { createdAfter?: number; pa
   for (let i = 0; i < 5; i++) {
     const d = await ttFetch(cfg, "POST", "/order/202309/orders/search",
       { page_size: String(p?.pageSize ?? 50), ...(pageToken ? { page_token: pageToken } : {}), sort_order: "DESC", sort_field: "create_time" },
-      { create_time_ge: p?.createdAfter ?? Math.floor(Date.now() / 1000) - 7 * 86400 });
+      {
+        create_time_ge: p?.createdAfter ?? Math.floor(Date.now() / 1000) - 7 * 86400,
+        // Chỉ đơn chờ fulfill — đơn đã ship/hoàn tất ở hệ cũ không bị kéo về
+        order_status: "AWAITING_SHIPMENT",
+      });
     const batch = (d?.orders as Record<string, unknown>[] | undefined) ?? [];
     orders.push(...batch);
     pageToken = String(d?.next_page_token ?? "");

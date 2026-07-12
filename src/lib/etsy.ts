@@ -144,7 +144,8 @@ export async function fetchReceipts(cfg: EtsyCfg, maxOrders = 250): Promise<Etsy
   // Chỉ lấy đơn ~45 ngày gần đây (đủ cho vận hành, tránh kéo hết lịch sử cũ).
   const minCreated = Math.floor(Date.now() / 1000) - 45 * 86400;
   for (let offset = 0; offset < maxOrders; offset += limit) {
-    const url = `${ETSY_API}/shops/${cfg.shopId}/receipts?limit=${limit}&offset=${offset}&min_created=${minCreated}`;
+    // was_paid=true & was_shipped=false: chỉ đơn MỚI cần fulfill — đơn đã ship ở hệ cũ không bị kéo về
+    const url = `${ETSY_API}/shops/${cfg.shopId}/receipts?limit=${limit}&offset=${offset}&min_created=${minCreated}&was_paid=true&was_shipped=false`;
     const r = await fetch(url, { headers: { "x-api-key": apiKey(cfg), Authorization: `Bearer ${cfg.accessToken}` } });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || `getShopReceipts failed (${r.status})`);

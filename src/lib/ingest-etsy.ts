@@ -24,6 +24,9 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
   const errors: string[] = [];
   let updated = 0;
 
+  // Đơn đã ship/hoàn tất/huỷ trên sàn → KHÔNG tạo mới (đơn cũ hệ thống trước); đơn đã có vẫn merge bình thường
+  const SHIPPED_LIKE = /shipped|in_transit|delivered|completed|cancel/i;
+
   for (const o of orders.slice(0, 500)) {
     const ext = s(o.externalId);
     if (!ext) { skipped++; continue; }
@@ -54,6 +57,8 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         } else skipped++;
         continue;
       }
+
+      if (o.platformStatus && SHIPPED_LIKE.test(String(o.platformStatus))) { skipped++; continue; }
 
       const items = Array.isArray(o.items) ? o.items : [];
       const subtotal = items.reduce((a, it) => a + num(it.price) * (num(it.qty) || 1), 0);
