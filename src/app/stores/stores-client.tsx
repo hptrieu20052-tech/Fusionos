@@ -256,6 +256,21 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     navigator.clipboard?.writeText(link);
     flash("✓ Connect link copied — paste it into the shop's AdsPower browser and Authorize");
   };
+  const [ttCode, setTtCode] = useState("");
+  const manualTt = async () => {
+    if (!ttCode.trim()) { flash("✗ Paste the auth code (TTP_...)"); return; }
+    setTtBusy(true);
+    const j = await fetch("/api/tiktok/manual-connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, authCode: ttCode.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setTtBusy(false);
+    if (j.ok) { flash(`✓ Connected: ${j.shopName || j.shopId}`); setTtCode(""); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+  const checkTt = async () => {
+    setTtBusy(true);
+    const j = await fetch("/api/tiktok/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setTtBusy(false);
+    if (j.ok) flash(`✓ Connection OK — ${(j.shops ?? []).map((x: { name: string }) => x.name).join(", ") || "authorized"}`);
+    else flash("✗ " + (j.error ?? "Error"));
+  };
   const pullTt = async () => {
     setTtBusy(true);
     const j = await fetch("/api/tiktok/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
@@ -379,6 +394,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
             <button onClick={saveTtApi} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
             <button onClick={connectTt} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.tiktok?.hasApp || ttSaved) ? "pointer" : "default", opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title={(store.tiktok?.hasApp || ttSaved) ? "" : "Enter App Key + Secret and click Save app first"}>{store.tiktok?.connected ? "Reconnect TikTok" : "Connect TikTok"}</button>
             <button onClick={ttConnectLink} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ ...btnGhost, fontSize: 12.5, opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title="Copy the authorize link to open in the shop's AdsPower profile"><IconCopy width={12} height={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />Copy connect link</button>
+            {store.tiktok?.connected && <button onClick={checkTt} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Check connection</button>}
             {store.tiktok?.connected && <button onClick={pullTt} disabled={ttBusy} style={{ background: "#2E7D46", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}><IconDownload width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Pull orders</button>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
               {store.tiktok?.connected
@@ -386,6 +402,12 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
                 : <span style={{ color: "var(--muted)" }}>Not connected</span>}
             </span>
           </div>
+          {!store.tiktok?.connected && (
+            <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+              <input value={ttCode} onChange={(e) => setTtCode(e.target.value)} placeholder="Manual: paste auth code TTP_… (if the app redirects to another domain)" style={{ ...inp, flex: 1, fontSize: 12 }} autoComplete="off" />
+              <button onClick={manualTt} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12, whiteSpace: "nowrap" }}>Connect by code</button>
+            </div>
+          )}
         </div>
       )}
 

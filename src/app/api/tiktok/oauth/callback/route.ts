@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
     // Lấy shop authorize (thường 1 shop/lần authorize) → shop_id + cipher cho mọi call sau
     const shops = await ttGetAuthorizedShops(readTtCfg(next));
     if (shops.length) next = writeTtCfg(next, { shopId: shops[0].id, shopCipher: shops[0].cipher, shopName: shops[0].name });
-    await db.update(schema.stores).set({ apiCredentials: next }).where(eq(schema.stores.id, storeId));
+    await db.update(schema.stores).set({ apiCredentials: next, connectMethod: "api" }).where(eq(schema.stores.id, storeId));
     return back(shops[0]?.name ? `connected: ${shops[0].name}` : "connected", true);
   } catch (e) {
     return back(String((e as Error)?.message ?? e).slice(0, 180));
