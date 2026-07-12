@@ -35,6 +35,8 @@ function money(v) {
   if (typeof v === "string") { const n = Number(v.replace(/[^0-9.\-]/g, "")); return isNaN(n) ? 0 : n; }
   if (typeof v === "object") {
     if (v.amount != null && v.divisor) return Number(v.amount) / Number(v.divisor);
+    if (typeof v.formatted_value === "string") return money(v.formatted_value); // "$47.08"
+    if (v.currency_code != null && typeof v.value === "number") return v.value / 100; // Mission Control: cents
     if (v.amount != null) return money(v.amount);
     if (v.value != null) return money(v.value);
     if (v.formatted != null) return money(v.formatted);
@@ -59,20 +61,23 @@ function extractItems(o) {
   for (const t of txs) {
     if (!t || typeof t !== "object") continue;
     const L = (t.listing && typeof t.listing === "object") ? t.listing : {};
+    const PR = (t.product && typeof t.product === "object") ? t.product : {};
     const priceInt = (t.price_int != null && !isNaN(Number(t.price_int))) ? Number(t.price_int) / 100 : 0;
+    const usd = (typeof t.usd_price === "number") ? t.usd_price / 100 : 0; // Mission Control: cents
     const it = {
-      title: pick(t, "title", "listing_title", "product_title", "product_name", "name")
+      title: pick(PR, "title", "name")
+        || pick(t, "title", "listing_title", "product_title", "product_name", "name")
         || pick(L, "title", "name") || "Etsy item",
       qty: Number(t.quantity ?? t.qty ?? 1) || 1,
-      price: money(t.price ?? t.unit_price ?? t.subtotal ?? t.total) || priceInt,
-      sku: pick(t, "sku", "product_sku") || undefined,
+      price: money(t.price ?? t.unit_price ?? t.subtotal ?? t.total) || usd || priceInt,
+      sku: pick(t, "sku", "product_sku") || pick(PR, "product_identifier", "sku") || undefined,
       listingId: S(t.listing_id ?? t.listingId ?? L.listing_id ?? L.id) || undefined,
     };
     const vars = Array.isArray(t.variations) ? t.variations : [];
     const vparts = [], pparts = [];
     for (const v of vars) {
-      const n = pick(v, "formatted_name", "property_name", "name");
-      const val = pick(v, "formatted_value", "value");
+      const n = pick(v, "property", "formatted_name", "property_name", "name");
+      const val = pick(v, "value", "formatted_value");
       if (!n && !val) continue;
       if (/personal/i.test(n)) pparts.push(val || n);
       else vparts.push(n && val ? `${n}: ${val}` : (val || n));
@@ -80,9 +85,9 @@ function extractItems(o) {
     if (vparts.length) it.variant = vparts.join(" · ").slice(0, 300);
     const pz = pparts.join(" · ") || S(t.personalization ?? t.buyer_personalization);
     if (pz) it.personalization = pz.slice(0, 800);
-    const img = t.image || t.img || (t.product && t.product.image) || {};
-    const iurl = pick(img, "url_170x135", "url_75x75", "url", "src") || S(t.image_url);
-    if (iurl) it.imageUrl = iurl;
+    const img = t.image || t.img || PR.image || {};
+    let iurl = pick(PR, "image_url_75x75", "image_url") || pick(img, "url_170x135", "url_75x75", "url", "src") || S(t.image_url);
+    if (iurl) it.imageUrl = iurl.replace(/il_\d+x\d+\./, "il_570xN.").replace(/([?&])(w|h)=\d+/g, "");
     items.push(it);
   }
   return items;
@@ -115,9 +120,16 @@ function extractReceipt(o) {
     state: pick2(["state", "address_state", "region", "province"]) || undefined,
     zip: pick2(["zip", "address_zip", "postal_code", "zip_code"]) || undefined,
     country: pick2(["country_name", "address_country_name", "country", "country_iso"]) || undefined,
-    total: money(o.grandtotal ?? o.grand_total ?? o.formatted_grandtotal ?? o.total_price ?? o.total
-      ?? P.grand_total ?? P.grandtotal ?? P.total ?? P.total_price) || undefined,
-    note: pick(o, "message_from_buyer", "buyer_message", "note_from_buyer") || undefined,
+    total: (function () {
+      const cb = (P && P.cost_breakdown) || (o.payment && o.payment.cost_breakdown) || {};
+      // Doanh thu đúng = "Order total" trên Etsy (subtotal + ship + tax, sau refund)
+      // = cost_breakdown.adjusted_total_cost — ƯU TIÊN TUYỆT ĐỐI, field gốc chỉ là fallback.
+      return money(cb.adjusted_total_cost ?? cb.total_cost ?? cb.buyer_cost
+        ?? o.grandtotal ?? o.grand_total ?? o.formatted_grandtotal ?? o.total_price ?? o.total
+        ?? P.grand_total ?? P.grandtotal ?? P.total ?? P.total_price) || undefined;
+    })(),
+    note: (pick(o, "message_from_buyer", "buyer_message", "note_from_buyer", "note", "gift_message")
+      || pick(firstObj(o, "fulfillment", "shipment") || {}, "note_from_buyer", "buyer_note", "gift_message")) || undefined,
     items: extractItems(o),
   };
   if (!order.items.length) order.items = [{ title: "Etsy order " + id, qty: 1 }];
@@ -142,10 +154,11 @@ function harvest(data) {
 }
 
 // ===== Debug: flatten key-paths của 1 receipt node thô (để chỉnh map khi Etsy đổi cấu trúc) =====
-let debugSaved = false;
+let debugSaved = 0; // 0=chưa, 1=đã lưu node thường, 2=đã lưu node có địa chỉ (ưu tiên)
 function saveDebugPaths(node) {
-  if (debugSaved) return;
-  debugSaved = true;
+  const hasAddr = !!(node.first_line || node.address_first_line || node.shipping_address || node.to_address);
+  if (debugSaved >= 2 || (debugSaved === 1 && !hasAddr)) return;
+  debugSaved = hasAddr ? 2 : 1;
   try {
     const lines = [], seen = new Set();
     (function walk(n, path, d) {
@@ -153,7 +166,7 @@ function saveDebugPaths(node) {
       if (Array.isArray(n)) { if (n.length) walk(n[0], path + "[]", d + 1); return; }
       if (typeof n === "object") { for (const k in n) walk(n[k], path ? path + "." + k : k, d + 1); return; }
       if (seen.has(path)) return; seen.add(path);
-      const KW = /(^|[._[])(order_id|receipt_id|id)($|[._[])|name|address|first_line|second_line|line1|line2|city|state|province|region|zip|postal|country|title|product|listing|price|amount|divisor|total|subtotal|quantity|qty|image|img|photo|thumb|url|personal|variation|variant|sku|buyer|recipient|ship|formatted|payment|grand/i;
+      const KW = /(^|[._[])(order_id|receipt_id|id)($|[._[])|name|address|first_line|second_line|line1|line2|city|state|province|region|zip|postal|country|title|product|listing|price|amount|divisor|total|subtotal|quantity|qty|image|img|photo|thumb|url|personal|variation|variant|sku|buyer|recipient|ship|formatted|payment|grand|message|note|gift/i;
       if (!KW.test(path)) return;
       const val = (typeof n === "number" || typeof n === "boolean") ? n : "str";
       lines.push(path + " = " + val);
