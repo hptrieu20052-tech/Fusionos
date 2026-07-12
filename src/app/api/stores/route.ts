@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
       // live nếu có đơn trong 7 ngày; die nếu store active nhưng >14 ngày không đơn
       const live = (c?.c7 ?? 0) > 0;
       const cred = (r.s.apiCredentials ?? {}) as Record<string, string>;
-      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_"));
+      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_"));
       return {
         ...r.s,
         apiCredentials: undefined,

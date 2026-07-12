@@ -218,7 +218,9 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     if (j.ok && j.ingestToken) { setTok(j.ingestToken); flash(t("st.tokenCreated")); } else flash(t("st.tokenErr"));
   };
   const ingestUrl = typeof window !== "undefined" ? `${window.location.origin}/api/ingest/etsy` : "/api/ingest/etsy";
-  const oauthCb = typeof window !== "undefined" ? `${window.location.origin}/api/etsy/oauth/callback` : "/api/etsy/oauth/callback";
+  // Domain CHUẨN cho callback — không dùng window.origin vì mở qua *.vercel.app sẽ hiện sai URL đăng ký
+  const CANONICAL = "https://os.fusiondn.com";
+  const oauthCb = `${CANONICAL}/api/etsy/oauth/callback`;
   const [etsyKey, setEtsyKey] = useState(store.etsy?.keystring ?? "");
   const [etsySecret, setEtsySecret] = useState("");
   const [etsyBusy, setEtsyBusy] = useState(false);
@@ -352,8 +354,8 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           </div>
           <L label="Redirect URL — register this in your TikTok app">
             <div style={{ display: "flex", gap: 6 }}>
-              <input readOnly value={`${typeof window !== "undefined" ? window.location.origin : ""}/api/tiktok/oauth/callback`} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
-              <button onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/api/tiktok/oauth/callback`); flash(t("st.copiedUrl")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
+              <input readOnly value={`${CANONICAL}/api/tiktok/oauth/callback`} style={{ ...inp, flex: 1, fontSize: 12 }} onFocus={(e) => e.target.select()} />
+              <button onClick={() => { navigator.clipboard?.writeText(`${CANONICAL}/api/tiktok/oauth/callback`); flash(t("st.copiedUrl")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
             </div>
           </L>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
@@ -398,8 +400,8 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         </div>
       )}
 
-      {/* Setup API */}
-      {store.marketplace !== "etsy" && (
+      {/* Setup API (generic) — Etsy/TikTok có khu riêng nên ẩn */}
+      {store.marketplace !== "etsy" && store.marketplace !== "tiktok" && (
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <b style={{ fontSize: 13.5 }}>{t("st.apiConfig")}</b>
