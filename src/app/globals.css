@@ -470,3 +470,16 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 .mobile-nav-item:active{background:var(--blue-soft)}
 @keyframes mnv-fade{from{opacity:0}to{opacity:1}}
 @keyframes mnv-slide{from{transform:translateY(-8px);opacity:.6}to{transform:translateY(0);opacity:1}}
+
+/* ===== AVATAR DROPDOWN (Account settings / Log out) ===== */
+.topnav-avatar-btn{display:flex;align-items:center;gap:10px;background:none;border:none;cursor:pointer;padding:4px 6px;border-radius:12px;font:inherit;color:var(--ink)}
+.topnav-avatar-btn:hover{background:var(--blue-soft)}
+.tb-caret{color:var(--muted);flex:0 0 auto}
+
+/* Mobile: logo canh GIỮA topnav (burger trái · avatar phải) */
+@media (max-width:720px){
+  .topnav-inner{position:relative;justify-content:space-between}
+  .topnav-brand{position:absolute;left:50%;transform:translateX(-50%);flex:0 0 auto}
+  .topnav-user{margin-left:auto}
+  .tb-caret{display:none}
+}

@@ -6,7 +6,6 @@ import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
   IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid,
 } from "@/components/icons";
-import { LogoutButton } from "@/app/logout-button";
 import { useLang } from "@/components/lang-provider";
 
 type P = { width?: number; height?: number; style?: React.CSSProperties };
@@ -30,20 +29,14 @@ export default function AppShell({ user, links, children }: {
   const initials = user.name.split(" ").map((w) => w[0]).slice(-2).join("").toUpperCase();
   const [moreOpen, setMoreOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userOpen, setUserOpen] = useState(false);
 
   // Đóng drawer khi chuyển trang + khoá scroll nền khi drawer mở
-  useEffect(() => { setMobileOpen(false); }, [path]);
+  useEffect(() => { setMobileOpen(false); setUserOpen(false); }, [path]);
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [mobileOpen]);
-
-  // Nhóm link theo section (Operations / Reports / System) cho drawer mobile
-  const sections: { name: string; items: NavLink[] }[] = [];
-  for (const l of links) {
-    const s = sections.find((x) => x.name === l.section);
-    if (s) s.items.push(l); else sections.push({ name: l.section, items: [l] });
-  }
 
   // HÂM NÓNG sau idle: Vercel Hobby cho lambda ngủ sau vài phút không có request →
   // click đầu tiên khi quay lại bị cold start 2–5s. Khi tab visible trở lại (hoặc window focus),
@@ -110,45 +103,52 @@ export default function AppShell({ user, links, children }: {
               </div>
             )}
           </nav>
-          <div className="topnav-user">
-            <Link href="/account" className="topnav-user-link" title="My account" prefetch>
+          <div className="topnav-user" style={{ position: "relative" }}>
+            <button type="button" className="topnav-avatar-btn" onClick={() => setUserOpen((v) => !v)} aria-label="Account menu">
               <div className="user-avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit", display: "block" }} /> : initials}</div>
               <div className="tb-user-txt">
                 <span className="tb-user-name">{user.name}</span>
                 <span className="tb-role">{user.role}</span>
               </div>
-            </Link>
-            <span className="tb-divider" />
-            <LogoutButton />
+              <svg className="tb-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+            </button>
+            {userOpen && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 94 }} onClick={() => setUserOpen(false)} />
+                <div className="topnav-more-menu" style={{ minWidth: 200 }} onClick={() => setUserOpen(false)}>
+                  <div style={{ padding: "8px 12px 6px", borderBottom: "1px solid var(--line)", marginBottom: 4 }}>
+                    <div style={{ fontWeight: 800, fontSize: 13 }}>{user.name}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>{user.role}</div>
+                  </div>
+                  <Link href="/account" prefetch className="topnav-more-item">
+                    <span className="topnav-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></span>
+                    Account settings
+                  </Link>
+                  <button type="button" className="topnav-more-item" style={{ width: "100%", background: "none", border: "none", cursor: "pointer", font: "inherit", textAlign: "left", color: "var(--red)" }}
+                    onClick={async () => { await fetch("/api/auth/logout", { method: "POST" }); location.href = "/login"; }}>
+                    <span className="topnav-ic" style={{ color: "var(--red)" }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg></span>
+                    Log out
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
 
-      {/* Drawer menu mobile: toàn bộ link nhóm theo section */}
+      {/* Drawer menu mobile: danh sách phẳng, gọn như desktop */}
       {mobileOpen && (
         <div className="mobile-nav-overlay" onClick={() => setMobileOpen(false)}>
           <nav className="mobile-nav" onClick={(e) => e.stopPropagation()}>
-            {sections.map((s) => (
-              <div key={s.name} className="mobile-nav-section">
-                <div className="mobile-nav-label">{s.name}</div>
-                {s.items.map((l) => {
-                  const Icon = ICONS[l.icon] ?? IconDashboard;
-                  return (
-                    <Link key={l.href} href={l.href} prefetch className={`mobile-nav-item${isActive(l.href) ? " active" : ""}`}>
-                      <span className="topnav-ic"><Icon width={18} height={18} /></span>
-                      {t(l.label)}
-                    </Link>
-                  );
-                })}
-              </div>
-            ))}
-            <div className="mobile-nav-section">
-              <div className="mobile-nav-label">Account</div>
-              <Link href="/account" prefetch className={`mobile-nav-item${isActive("/account") ? " active" : ""}`}>
-                <div className="user-avatar" style={{ width: 24, height: 24, fontSize: 10 }}>{user.avatarUrl ? <img src={user.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit", display: "block" }} /> : initials}</div>
-                {user.name}
-              </Link>
-            </div>
+            {links.map((l) => {
+              const Icon = ICONS[l.icon] ?? IconDashboard;
+              return (
+                <Link key={l.href} href={l.href} prefetch className={`mobile-nav-item${isActive(l.href) ? " active" : ""}`}>
+                  <span className="topnav-ic"><Icon width={18} height={18} /></span>
+                  {t(l.label)}
+                </Link>
+              );
+            })}
           </nav>
         </div>
       )}
