@@ -35,19 +35,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     : [false, false, false, false, false, false];
 
   const links: NavLink[] = session ? [
-    { href: "/", label: "nav.dashboard", icon: "dashboard", section: "Vận hành" },
-    ...(orders ? [{ href: "/orders", label: "nav.orders", icon: "orders", section: "Vận hành" }] : []),
-    ...(designs ? [{ href: "/designs", label: "nav.designs", icon: "designs", section: "Vận hành" }] : []),
+    { href: "/", label: "nav.dashboard", icon: "dashboard", section: "Operations" },
+    ...(orders ? [{ href: "/orders", label: "nav.orders", icon: "orders", section: "Operations" }] : []),
+    ...(designs ? [{ href: "/designs", label: "nav.designs", icon: "designs", section: "Operations" }] : []),
     // Tạm ẩn — bật lại sau khi lên plan:
-    ...(ff ? [{ href: "/fulfillment", label: "nav.fulfillment", icon: "fulfillment", section: "Vận hành", more: true }] : []),
-    ...(designs ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Vận hành", more: true }] : []),
-    ...(orders ? [{ href: "/stats/orders", label: "nav.statsOrders", icon: "statsOrders", section: "Thống kê", more: true }] : []),
-    ...(designs ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Thống kê", more: true }] : []),
-    ...(finance ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Thống kê", more: true }] : []),
-    ...(orders ? [{ href: "/supplier-report", label: "nav.supplierReport", icon: "statsOrders", section: "Thống kê", more: true }] : []),
-    ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "Hệ thống" }] : []),
-    ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "Hệ thống" }] : []),
-    ...(session.role === "admin" ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "Hệ thống" }] : []),
+    ...(ff ? [{ href: "/fulfillment", label: "nav.fulfillment", icon: "fulfillment", section: "Operations", more: true }] : []),
+    ...(designs ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Operations", more: true }] : []),
+    ...(orders ? [{ href: "/stats/orders", label: "nav.statsOrders", icon: "statsOrders", section: "Reports", more: true }] : []),
+    ...(designs ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Reports", more: true }] : []),
+    ...(finance ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Reports", more: true }] : []),
+    ...(orders ? [{ href: "/supplier-report", label: "nav.supplierReport", icon: "statsOrders", section: "Reports", more: true }] : []),
+    ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "System" }] : []),
+    ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "System" }] : []),
+    ...(session.role === "admin" ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "System" }] : []),
   ] : [];
 
   // "More" (các trang đang chờ lên plan) tạm thời chỉ admin thấy; seller/staff/designer đều ẩn.

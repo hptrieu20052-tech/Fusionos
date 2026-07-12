@@ -52,7 +52,7 @@ export default function AccountClient() {
     setSaving(true);
     const j = await fetch("/api/account", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fullName: p.fullName, phone: p.phone, gender: p.gender, dateOfBirth: p.dateOfBirth, ...(avatarKey ? { avatarKey } : {}) }),
+      body: JSON.stringify({ phone: p.phone, gender: p.gender, dateOfBirth: p.dateOfBirth, ...(avatarKey ? { avatarKey } : {}) }),
     }).then((r) => r.json());
     setSaving(false);
     if (j.ok) flash(t("a.savedProfile")); else flash("✗ " + (j.error ?? "Error"));
@@ -102,7 +102,7 @@ export default function AccountClient() {
           </div>
           {/* Cột 1 */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div><label style={lbl}>{t("a.fullName")}</label><input value={p.fullName} onChange={(e) => set("fullName", e.target.value)} style={inp} /></div>
+            <div><label style={lbl}>{t("a.fullName")}</label><input value={p.fullName} readOnly style={{ ...inp, background: "#EDEFF4", color: "var(--muted)" }} title="Full name is managed by the admin" /></div>
             <div>
               <label style={lbl}>{t("a.gender")}</label>
               <select value={p.gender} onChange={(e) => set("gender", e.target.value)} style={inp}>

@@ -284,7 +284,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     const imp = await fetch("/api/fulfillers/onos-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
-    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped` + (imp.done === false ? t("sk.moreClickAgain") : ""));
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped` + (imp.productsPending ? ` · ${imp.productsPending} products pending` : "") + (imp.done === false ? t("sk.moreClickAgain") : ""));
   }
 
   // Kéo catalog Wembroidery (GET /public/catalog) → dựng SKU WEM-{catalogId}-{COLOR}-{SIZE}
@@ -443,7 +443,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
       {/* Bộ chọn sản phẩm Printify */}
       {(picker !== null || pickerLoading) && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { if (!pickerLoading) setPicker(null); }}>
-          <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <b style={{ fontSize: 16 }}>{t("sk.pickProductToFulfill")}</b>
               {!pickerLoading && <button onClick={() => setPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
@@ -493,7 +493,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
       {/* Chọn sản phẩm ghim cho form tạo đơn */}
       {pinPicker !== null && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setPinPicker(null)}>
-          <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <b style={{ fontSize: 16 }}>{t("sk.pickForFormLong")}</b>
               <button onClick={() => setPinPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
@@ -528,7 +528,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
       {/* Xóa bớt sản phẩm (nhiều variant) */}
       {delPicker !== null && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !delBusy && setDelPicker(null)}>
-          <div style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 620, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 6 }}><IconTrash width={16} height={16} />{t("sk.removeProductsTitle")}{ff?.name}</b>
               <button onClick={() => !delBusy && setDelPicker(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
@@ -565,7 +565,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
       {/* Thêm sản phẩm Printify: blueprint → nhà in → import toàn bộ variant */}
       {addProd && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => { if (!importing) setAddProd(false); }}>
-          <div style={{ background: "#fff", borderRadius: 18, width: 680, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 680, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 6 }}><IconPlus width={16} height={16} />{t("sk.addPrintifyProduct")}</b>
               <button onClick={() => !importing && setAddProd(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
@@ -614,7 +614,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
       {/* Recipe picker Printify: blueprint → nhà in → variant */}
       {recipeFor && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setRecipeFor(null)}>
-          <div style={{ background: "#fff", borderRadius: 18, width: 640, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+          <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 640, maxWidth: "96vw", maxHeight: "88vh", display: "flex", flexDirection: "column", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <b style={{ fontSize: 16 }}>{t("sk.printConfigFor")} <span style={{ fontFamily: "ui-monospace,monospace" }}>{recipeFor.internalSku}</span></b>
               <button onClick={() => setRecipeFor(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>

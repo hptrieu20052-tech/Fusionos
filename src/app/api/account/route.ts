@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest) {
   if (!b) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
 
   const patch: Record<string, unknown> = {};
-  if (typeof b.fullName === "string" && b.fullName.trim()) patch.fullName = b.fullName.trim().slice(0, 120);
+  // fullName KHOÁ CỨNG: chỉ admin đổi được qua trang /admin — staff tự đổi tên gây loạn báo cáo/scope
   if (typeof b.phone === "string") patch.phone = b.phone.trim().slice(0, 30) || null;
   if (typeof b.gender === "string") patch.gender = ["male", "female", "other", ""].includes(b.gender) ? (b.gender || null) : undefined;
   if (typeof b.dateOfBirth === "string") patch.dateOfBirth = b.dateOfBirth || null;

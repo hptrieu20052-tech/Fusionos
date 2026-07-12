@@ -95,6 +95,52 @@ export async function listOnosProducts(c: Cred, page = 1, pageSize = 100): Promi
   return { variants: out, hasMore: products.length >= pageSize, sample: products[0] ?? json };
 }
 
+// ---- Product detail: GET /products/{id} — list thường KHÔNG kèm variants, phải gọi detail từng SP ----
+export async function getOnosProductVariants(c: Cred, productId: string): Promise<{ variants: OnosVariant[]; sample: unknown }> {
+  const { status, json } = await call<Record<string, unknown>>(c, `/products/${encodeURIComponent(productId)}`);
+  if (status >= 400) throw new Error(`ONOS product detail failed: ${status} ${errText(json)}`);
+  const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+  const arrOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
+  const p = (json.data && typeof json.data === "object" && !Array.isArray(json.data) ? (json.data as Record<string, unknown>) : json);
+  const pName = S(p.name ?? p.title ?? p.product_name);
+  const pSku = S(p.sku ?? p.code);
+  const printAreas = arrOf(p.print_areas).map((a) => S((a as Record<string, unknown>).key ?? a)).filter(Boolean);
+
+  const out: OnosVariant[] = [];
+  // 1) Variants tường minh (nhiều tên key khả dĩ)
+  const explicit = [p.variants, p.skus, p.items, p.product_skus, p.children, p.variations].map(arrOf).find((a) => a.length) ?? [];
+  for (const v of explicit) {
+    const sku = S(v.sku ?? v.code ?? v.variant_sku ?? v.id);
+    if (!sku) continue;
+    const at = (v.attributes && typeof v.attributes === "object" ? v.attributes : {}) as Record<string, unknown>;
+    const color = S(v.color ?? at.color ?? at.Color);
+    const size = S(v.size ?? at.size ?? at.Size);
+    out.push({
+      sku, product: pName || sku, productId: productId,
+      variant: [color, size].filter(Boolean).join(" / "),
+      price: Number(v.price ?? v.base_cost ?? v.cost) || undefined,
+      printAreas: printAreas.length ? printAreas : undefined,
+    });
+  }
+  // 2) Không có variants tường minh nhưng có mảng colors + sizes → tổ hợp, SKU = {productSku}-{COLOR}-{SIZE}
+  if (!out.length && pSku) {
+    const optVals = (v: unknown): string[] => arrOf(v).map((o) => S(o.name ?? o.value ?? o.option ?? o)).filter(Boolean)
+      .concat(Array.isArray(v) ? (v as unknown[]).filter((x) => typeof x === "string") as string[] : []);
+    const colors = optVals(p.colors ?? p.color);
+    const sizes = optVals(p.sizes ?? p.size);
+    const up = (s: string) => s.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    if (colors.length || sizes.length) {
+      for (const cl of (colors.length ? colors : [""])) {
+        for (const sz of (sizes.length ? sizes : [""])) {
+          const sku = [pSku, up(cl) || null, up(sz) || null].filter(Boolean).join("-");
+          out.push({ sku, product: pName || pSku, productId, variant: [cl, sz].filter(Boolean).join(" / "), price: Number(p.price ?? p.base_cost) || undefined, printAreas: printAreas.length ? printAreas : undefined });
+        }
+      }
+    }
+  }
+  return { variants: out, sample: json };
+}
+
 // ---- Create order: POST /order/create ----
 export type OnosItem = {
   sku: string; quantity: number;

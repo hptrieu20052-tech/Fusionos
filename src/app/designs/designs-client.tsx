@@ -364,7 +364,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
-      <div style={{ background: "#fff", borderRadius: 18, width: 1180, maxWidth: "97vw", maxHeight: "94vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 1180, maxWidth: "97vw", maxHeight: "94vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 24px", borderBottom: "1px solid var(--line)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -390,7 +390,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
             <input value={f.title} maxLength={140} onChange={(e) => setF({ ...f, title: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }} />
             <div style={{ fontSize: 11, color: f.title.length >= 140 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.title.length}/140</div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
+            <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
               <label style={rLbl}>{t("d.sku")}
                 <input value={d.skuCode} readOnly style={{ ...inp, width: "100%", marginTop: 4, background: "#EDEFF4", color: "var(--muted)" }} />
               </label>
@@ -419,7 +419,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               </div>
             )}
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 4 }}>
+            <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 4 }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                   <b style={{ fontSize: 13 }}>{t("d.productLink")}</b>
@@ -674,7 +674,7 @@ function BulkUploadModal({ close, reload, flash, doUpload, sellers, designers, r
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
-      <div style={{ background: "#fff", borderRadius: 18, width: 600, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 600, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <b style={{ fontSize: 15 }}>{t("d.bulkTitle")}</b>
           {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}

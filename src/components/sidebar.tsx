@@ -35,27 +35,27 @@ export default function Sidebar({ flags }: { flags: NavFlags }) {
       <div className="brand-sub">FUSION OS · v0.6</div>
 
       <div className="nav-section">
-        <div className="nav-section-label">Vận hành</div>
+        <div className="nav-section-label">Operations</div>
         <Item href="/" label="Dashboard" Icon={IconDashboard} exact />
-        <Item href="/orders" label="Đơn hàng" Icon={IconOrders} show={flags.orders} />
+        <Item href="/orders" label="Orders" Icon={IconOrders} show={flags.orders} />
         <Item href="/fulfillment" label="Fulfillment" Icon={IconTruck} show={flags.fulfillment} />
       </div>
       <div className="nav-section">
-        <div className="nav-section-label">Sản phẩm</div>
+        <div className="nav-section-label">Products</div>
         <Item href="/designs" label="Design Studio" Icon={IconArtwork} show={flags.designs} />
-        <Item href="/reviews" label="Chấm điểm" Icon={IconEye} show={flags.reviews} />
+        <Item href="/reviews" label="KPI Review" Icon={IconEye} show={flags.reviews} />
       </div>
       <div className="nav-section">
-        <div className="nav-section-label">Báo cáo</div>
-        <Item href="/stats/orders" label="TK Đơn hàng" Icon={IconReport} show={flags.statsOrders} />
-        <Item href="/stats/designers" label="TK Designer" Icon={IconReport} show={flags.statsDesigners} />
-        <Item href="/finance" label="Tài chính" Icon={IconDollar} show={flags.finance} />
+        <div className="nav-section-label">Reports</div>
+        <Item href="/stats/orders" label="Order Stats" Icon={IconReport} show={flags.statsOrders} />
+        <Item href="/stats/designers" label="Designer Stats" Icon={IconReport} show={flags.statsDesigners} />
+        <Item href="/finance" label="Finance" Icon={IconDollar} show={flags.finance} />
       </div>
       <div className="nav-section">
-        <div className="nav-section-label">Hệ thống</div>
-        <Item href="/stores" label="Cửa hàng" Icon={IconStore} show={flags.stores} />
-        <Item href="/settings" label="Cài đặt" Icon={IconSettings} show={flags.settings} />
-        <Item href="/admin" label="Quản trị" Icon={IconProducts} show={flags.admin} />
+        <div className="nav-section-label">System</div>
+        <Item href="/stores" label="Stores" Icon={IconStore} show={flags.stores} />
+        <Item href="/settings" label="Settings" Icon={IconSettings} show={flags.settings} />
+        <Item href="/admin" label="Admin" Icon={IconProducts} show={flags.admin} />
       </div>
     </aside>
   );

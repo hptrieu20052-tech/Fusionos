@@ -45,7 +45,12 @@ export async function getWembroideryCatalog(c: Cred): Promise<{ rows: WemCatalog
   if (status === 401) throw new Error("Wembroidery 401: token invalid — paste the store token into API Key");
   if (status >= 400) throw new Error(`Wembroidery catalog failed: ${status} ${errText(json)}`);
   const root = (json.data && typeof json.data === "object" && !Array.isArray(json.data) ? (json.data as Record<string, unknown>) : json);
-  const catalogs = [json.data, root.catalogs, root.items, root.data, root.list, json].map(arrOf).find((a) => a.length) ?? [];
+  let catalogs = [json.data, root.catalogs, root.catalog, root.items, root.data, root.list, root.result, root.results, json].map(arrOf).find((a) => a.length) ?? [];
+  // Shape dạng object-map { "1": {...}, "2": {...} } → lấy values
+  if (!catalogs.length) {
+    const vals = Object.values(root).filter((v) => v && typeof v === "object" && !Array.isArray(v)) as Record<string, unknown>[];
+    if (vals.length && vals.every((v) => v.name || v.title || v.id || v.catalogId)) catalogs = vals;
+  }
 
   const rows: WemCatalogRow[] = [];
   for (const p of catalogs) {

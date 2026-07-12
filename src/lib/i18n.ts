@@ -238,7 +238,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "a.savedProfile": { vi: "✓ Đã lưu hồ sơ", en: "✓ Profile saved" },
   "a.changedPassword": { vi: "✓ Đã đổi mật khẩu", en: "✓ Password changed" },
   "a.uploading": { vi: "Đang tải ảnh…", en: "Uploading…" },
-  "a.emailNote": { vi: "Email & vai trò do quản trị viên quản lý", en: "Email & role are managed by the admin" },
+  "a.emailNote": { vi: "Họ tên, email & vai trò do quản trị viên quản lý", en: "Name, email & role are managed by the admin" },
   "db.pipeOrder": { vi: "Đơn hàng", en: "Order" },
   "db.pipeInProduction": { vi: "Đang sản xuất", en: "In production" },
   "db.pipeInTransit": { vi: "Đang vận chuyển", en: "In transit" },

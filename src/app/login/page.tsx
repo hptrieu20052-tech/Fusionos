@@ -86,9 +86,8 @@ export default function LoginPage() {
         @media(max-width:900px){
           .lg-left{display:none}
           .lg-right{flex:1;overflow-y:auto}
-          .lg-mobilebrand{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:24px}
-          .lg-mobilebrand img{width:38px;height:38px;object-fit:contain}
-          .lg-mobilebrand b{font-size:20px;font-weight:800;color:#003c84}
+          .lg-mobilebrand{display:flex;align-items:center;justify-content:center;margin-bottom:24px}
+          .lg-mobilebrand img{height:44px;width:auto;object-fit:contain}
         }
         @media(max-height:760px){ .lg-left-inner{padding:24px 56px} .lg-cf{height:280px} .lg-cf-card{width:230px;height:230px} .lg-h1{font-size:22px} }
       `}</style>
@@ -147,7 +146,7 @@ export default function LoginPage() {
       {/* CỘT PHẢI — form đăng nhập */}
       <div className="lg-right">
         <div className="lg-form">
-          <div className="lg-mobilebrand"><img src="/logomark.png" alt="" /><b>FUSION</b></div>
+          <div className="lg-mobilebrand"><img src="/Logo-full.png" alt="Fusion" /></div>
           <div className="lg-ftitle">Sign in</div>
           <div className="lg-fsub">Internal accounts are provided by Admin.</div>
 

@@ -507,7 +507,7 @@ function IssueModal({ order, fulfillers, defaultFulfillerId, close, flash, onSav
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
-      <div style={{ background: "#fff", borderRadius: 18, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 480, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <b style={{ fontSize: 15, display: "inline-flex", alignItems: "center", gap: 8 }}><span style={{ color: "var(--red)", display: "inline-flex" }}><IconWarn width={16} height={16} /></span> {t("iss.reportIssue")}</b>
           {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
@@ -1135,7 +1135,7 @@ function TikTokImportModal({ close, reload, flash, sellers, stores }: {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
-      <div style={{ background: "#fff", borderRadius: 18, width: 460, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 460, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk="tiktok" size={20} /> {t("o.importTiktokTitle")}</b>
           {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
@@ -1202,7 +1202,7 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
-      <div style={{ background: "#fff", borderRadius: 18, width: 460, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 460, maxWidth: "95vw", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
           <b style={{ fontSize: 16 }}>{t("o.etsyModalTitle")}</b>
           {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
@@ -1277,7 +1277,7 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(42,48,60,.45)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
-      <div style={{ background: "#fff", borderRadius: 16, width: 760, maxWidth: "96vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ background: "#fff", borderRadius: 16, width: 760, maxWidth: "96vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
           <b style={{ fontSize: 15 }}>{t("o.createManual")}</b>
           <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>

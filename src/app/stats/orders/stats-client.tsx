@@ -42,8 +42,8 @@ export function OrderStats() {
 
       <div className="kpis">
         <div className="kpi"><div className="l">{L} today</div><div className="v">{today.toLocaleString()}</div>
-          <div className="d" style={{ color: diff >= 0 ? "var(--green)" : "var(--red)" }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff).toFixed(1)}% vs hôm qua</div></div>
-        <div className="kpi"><div className="l">Total {days} days</div><div className="v">{grand.toLocaleString()}</div><div className="d">TB {(grand / (days || 1)).toFixed(1)}/ngày</div></div>
+          <div className="d" style={{ color: diff >= 0 ? "var(--green)" : "var(--red)" }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff).toFixed(1)}% vs yesterday</div></div>
+        <div className="kpi"><div className="l">Total {days} days</div><div className="v">{grand.toLocaleString()}</div><div className="d">Avg {(grand / (days || 1)).toFixed(1)}/day</div></div>
         <div className="kpi"><div className="l">Top seller</div><div className="v" style={{ fontSize: 17 }}>{top?.name ?? "—"}</div><div className="d" style={{ color: "var(--green)" }}>{top?.total.toLocaleString() ?? 0} {L.toLowerCase()}</div></div>
         <div className="kpi"><div className="l">Sellers with orders</div><div className="v">{sellers.length}</div></div>
       </div>

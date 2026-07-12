@@ -36,10 +36,10 @@ export function DesignerStats() {
 
       <div className="kpis">
         <div className="kpi"><div className="l">Designs today</div><div className="v">{today}</div>
-          <div className="d" style={{ color: today >= yest ? "var(--green)" : "var(--red)" }}>{today >= yest ? "▲ +" : "▼ "}{today - yest} vs hôm qua</div></div>
-        <div className="kpi"><div className="l">Total {days} days</div><div className="v">{grand}</div><div className="d">TB {(grand / (days || 1)).toFixed(1)}/ngày · {designers.length} designer</div></div>
+          <div className="d" style={{ color: today >= yest ? "var(--green)" : "var(--red)" }}>{today >= yest ? "▲ +" : "▼ "}{today - yest} vs yesterday</div></div>
+        <div className="kpi"><div className="l">Total {days} days</div><div className="v">{grand}</div><div className="d">Avg {(grand / (days || 1)).toFixed(1)}/day · {designers.length} designers</div></div>
         <div className="kpi"><div className="l">Avg quality score</div><div className="v">{avgScore ? avgScore.toFixed(1) : "—"}<span style={{ fontSize: 13, color: "var(--muted)" }}>/10</span></div></div>
-        <div className="kpi"><div className="l">Top order-generating design</div><div className="v" style={{ fontSize: 17 }}>{topBiz?.name ?? "—"}</div><div className="d" style={{ color: "var(--green)" }}>{topBiz?.bizOrders ?? 0} đơn / 30 ngày</div></div>
+        <div className="kpi"><div className="l">Top order-generating design</div><div className="v" style={{ fontSize: 17 }}>{topBiz?.name ?? "—"}</div><div className="d" style={{ color: "var(--green)" }}>{topBiz?.bizOrders ?? 0} orders / 30 days</div></div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.7fr 1fr", gap: 14 }}>

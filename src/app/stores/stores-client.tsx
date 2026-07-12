@@ -181,7 +181,7 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
   return (
     <Modal title={t("st.addStoreNew")} close={close}>
       <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: gymwear.us" style={inp} /></L>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => setF({ ...f, marketplace: e.target.value })} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       {!isSeller && <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
@@ -193,7 +193,7 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
           instead. Once the shop has its own Etsy API approved, hit Connect Etsy and orders switch to the official API.
         </div>
       )}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label={t("st.shopCurrency")}><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (f.fxRate === "1" ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
         <L label={t("st.fxLabel").replace("{cur}", f.currency)}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
       </div>
@@ -304,13 +304,13 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
 
   return (
     <Modal title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk={store.marketplace} size={22} /> {store.name}</span>} close={close}>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={inp} /></L>
         <L label={t("st.status")}><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}><option value="active">Active</option><option value="warning">Warning</option><option value="suspended">Suspended</option><option value="pending">Pending</option></select></L>
         {!isSeller && <L label="Seller"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       </div>
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+      <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label={t("st.shopCurrency")}><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (Number(f.fxRate) <= 1 ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
         <L label={t("st.fxLabel").replace("{cur}", f.currency)}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
       </div>
@@ -339,7 +339,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
               <button onClick={() => { navigator.clipboard?.writeText(oauthCb); flash(t("st.copiedUrl")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
             </div>
           </L>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <L label="Keystring (App API Key)"><input value={etsyKey} onChange={(e) => setEtsyKey(e.target.value)} onFocus={() => setRoEtsy(false)} readOnly={roEtsy} placeholder="e.g. 1aa2bb33c44d55…" style={inp} name="fusion-etsy-key" autoComplete="off" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
             <L label="Shared Secret"><input type="password" value={etsySecret} onChange={(e) => setEtsySecret(e.target.value)} onFocus={() => setRoEtsy(false)} readOnly={roEtsy} placeholder={store.etsy?.hasKeystring ? "••• (saved, leave blank to keep)" : "shared secret"} style={inp} name="fusion-etsy-secret" autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
           </div>
@@ -369,7 +369,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
               <button onClick={() => { navigator.clipboard?.writeText(`${CANONICAL}/api/tiktok/oauth/callback`); flash(t("st.copiedUrl")); }} style={{ ...btnGhost, fontSize: 12 }}>Copy</button>
             </div>
           </L>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <L label="App Key"><input value={ttKey} onChange={(e) => setTtKey(e.target.value)} placeholder="e.g. 6h2k4…" style={inp} autoComplete="off" data-lpignore="true" data-1p-ignore /></L>
             <L label="App Secret"><input type="password" value={ttSecret} onChange={(e) => setTtSecret(e.target.value)} placeholder={store.tiktok?.hasApp ? "••• (saved, leave blank to keep)" : "app secret"} style={inp} autoComplete="new-password" data-lpignore="true" data-1p-ignore /></L>
           </div>
@@ -426,7 +426,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
               {health.ok ? "✓" : "✗"} {health.message}
             </div>
           )}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             {fields.map(([k, label]) => (
               <L key={k} label={label}>
                 <input type="password" placeholder={store.credentialKeys.includes(k) ? t("st.savedKept") : t("st.enterValue")}
@@ -445,7 +445,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
 function Modal({ title, close, children }: { title: React.ReactNode; close: () => void; children: React.ReactNode }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(42,48,60,.45)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
-      <div style={{ background: "#fff", borderRadius: 16, width: 560, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ background: "#fff", borderRadius: 16, width: 560, maxWidth: "95vw", maxHeight: "92vh", overflowY: "auto", padding: 24 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <b style={{ fontSize: 15 }}>{title}</b>
           <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>

@@ -55,7 +55,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
         <div onClick={() => done(false)}
           style={{ position: "fixed", inset: 0, background: "rgba(20,26,38,.46)", backdropFilter: "blur(2px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "cf-fade .12s ease" }}>
           <div onClick={(e) => e.stopPropagation()}
-            style={{ background: "#fff", borderRadius: 18, width: 420, maxWidth: "94vw", padding: "24px 24px 20px", boxShadow: "0 18px 50px rgba(13,40,80,.28)", animation: "cf-pop .16s cubic-bezier(.2,.9,.3,1.2)" }}>
+            className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 420, maxWidth: "94vw", padding: "24px 24px 20px", boxShadow: "0 18px 50px rgba(13,40,80,.28)", animation: "cf-pop .16s cubic-bezier(.2,.9,.3,1.2)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
               <div style={{ width: 40, height: 40, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, background: T.bg, color: T.fg }}>
                 {isPrompt ? <IconPencil width={20} height={20} /> : o.info ? <IconAlert width={20} height={20} /> : o.danger ? <IconWarn width={20} height={20} /> : <IconCheck width={20} height={20} />}

@@ -418,12 +418,39 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 
 /* ===== MOBILE: gia cố toàn trang (mọi page) ===== */
 @media (max-width:720px){
+  /* Không cho trang tràn ngang — mọi khối to hơn màn hình phải scroll trong khung riêng */
+  html,body{overflow-x:hidden}
+  img,video{max-width:100%;height:auto}
   input,select,textarea{max-width:100%}
+  /* iOS tự zoom khi focus input font <16px → ép 16px trên mobile (desktop giữ nguyên) */
+  input,select,textarea{font-size:16px !important}
   h1{font-size:20px}
+  h2{font-size:17px}
   .card{padding:14px 12px}
+  .panel{padding:14px 12px;border-radius:14px}
   .ord-addr{max-width:100%}
   /* Bảng mọi trang (Admin/SKU/Finance/Report/Settings): cuộn ngang gọn trong khung */
   table{display:block;overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
   /* Utility: ép grid inline về 1 cột (đè inline style) */
   .m-stack{grid-template-columns:1fr !important}
+
+  /* Topnav: 1 hàng vuốt ngang thay vì wrap chiếm nửa màn hình */
+  .topnav-inner{flex-wrap:nowrap}
+  .topnav-menu{order:0;width:auto;flex:1;min-width:0;display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .topnav-menu::-webkit-scrollbar{display:none}
+  .topnav-item{flex:0 0 auto;white-space:nowrap}
+
+  /* Nút bấm đủ vùng chạm (Apple khuyến nghị ≥44px nhưng 38 chấp nhận được với UI dày đặc) */
+  button{min-height:34px}
+  .icon-btn{min-width:34px;min-height:34px}
+}
+@media (max-width:560px){
+  .app-content{padding:10px 8px 84px}
+  /* Form grid 2 cột trong modal → 1 cột trên màn hẹp (đọc/dán dễ hơn) */
+  .m-stack-sm{grid-template-columns:1fr !important}
+  .filters{grid-template-columns:1fr 1fr}
+  .kpis{gap:8px}
+  .pipe-cards{grid-template-columns:repeat(2,1fr);gap:8px}
+  /* Modal: bớt padding cho rộng chỗ nội dung */
+  .modal-card{padding:16px 14px !important;border-radius:14px !important}
 }
