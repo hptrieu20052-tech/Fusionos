@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
         fulfillerProduct: it.product?.slice(0, 200) || null,
         variant: [it.color, it.size].filter(Boolean).join(" / ").slice(0, 120) || null,
         fulfillerProductId: it.catalogId,
-        baseCost: (it.cost || 0).toFixed(2), shipCost: "0",
+        baseCost: (it.cost || 0).toFixed(2), shipCost: (it.ship || 0).toFixed(2),
       });
       created++;
     } catch { skipped++; }

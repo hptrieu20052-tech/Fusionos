@@ -434,11 +434,12 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
   /* Utility: ép grid inline về 1 cột (đè inline style) */
   .m-stack{grid-template-columns:1fr !important}
 
-  /* Topnav: 1 hàng vuốt ngang thay vì wrap chiếm nửa màn hình */
+  /* Topnav mobile: ẨN menu ngang, dùng hamburger + drawer (menu thu gọn) */
   .topnav-inner{flex-wrap:nowrap}
-  .topnav-menu{order:0;width:auto;flex:1;min-width:0;display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
-  .topnav-menu::-webkit-scrollbar{display:none}
-  .topnav-item{flex:0 0 auto;white-space:nowrap}
+  .topnav-menu{display:none}
+  .topnav-burger{display:inline-flex}
+  .topnav-brand{flex:1;min-width:0}
+  .topnav-brand img{height:26px}
 
   /* Nút bấm đủ vùng chạm (Apple khuyến nghị ≥44px nhưng 38 chấp nhận được với UI dày đặc) */
   button{min-height:34px}
@@ -454,3 +455,16 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
   /* Modal: bớt padding cho rộng chỗ nội dung */
   .modal-card{padding:16px 14px !important;border-radius:14px !important}
 }
+
+/* ===== MOBILE NAV DRAWER (hamburger) ===== */
+.topnav-burger{display:none;align-items:center;justify-content:center;width:38px;height:38px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);cursor:pointer;flex:0 0 auto}
+.mobile-nav-overlay{position:fixed;inset:0;top:54px;background:rgba(24,30,42,.42);z-index:80;animation:mnv-fade .14s ease}
+.mobile-nav{background:#fff;max-height:calc(100dvh - 54px);overflow-y:auto;padding:8px 12px 24px;border-radius:0 0 16px 16px;box-shadow:0 16px 40px rgba(13,40,80,.22);animation:mnv-slide .18s cubic-bezier(.2,.9,.3,1)}
+.mobile-nav-section{padding:8px 0 2px;border-bottom:1px solid var(--line)}
+.mobile-nav-section:last-child{border-bottom:none}
+.mobile-nav-label{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);padding:8px 10px 4px}
+.mobile-nav-item{display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:11px;font-size:14px;font-weight:700;color:var(--ink);text-decoration:none;min-height:44px}
+.mobile-nav-item.active{background:var(--blue-soft);color:var(--blue)}
+.mobile-nav-item:active{background:var(--blue-soft)}
+@keyframes mnv-fade{from{opacity:0}to{opacity:1}}
+@keyframes mnv-slide{from{transform:translateY(-8px);opacity:.6}to{transform:translateY(0);opacity:1}}

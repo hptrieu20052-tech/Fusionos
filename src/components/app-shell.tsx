@@ -29,6 +29,21 @@ export default function AppShell({ user, links, children }: {
   const isActive = (href: string) => href === "/" ? path === "/" : path.startsWith(href);
   const initials = user.name.split(" ").map((w) => w[0]).slice(-2).join("").toUpperCase();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Đóng drawer khi chuyển trang + khoá scroll nền khi drawer mở
+  useEffect(() => { setMobileOpen(false); }, [path]);
+  useEffect(() => {
+    document.body.style.overflow = mobileOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [mobileOpen]);
+
+  // Nhóm link theo section (Operations / Reports / System) cho drawer mobile
+  const sections: { name: string; items: NavLink[] }[] = [];
+  for (const l of links) {
+    const s = sections.find((x) => x.name === l.section);
+    if (s) s.items.push(l); else sections.push({ name: l.section, items: [l] });
+  }
 
   // HÂM NÓNG sau idle: Vercel Hobby cho lambda ngủ sau vài phút không có request →
   // click đầu tiên khi quay lại bị cold start 2–5s. Khi tab visible trở lại (hoặc window focus),
@@ -53,6 +68,12 @@ export default function AppShell({ user, links, children }: {
     <div className="app">
       <header className="topnav">
         <div className="topnav-inner">
+          {/* Hamburger — chỉ hiện trên mobile */}
+          <button type="button" className="topnav-burger" aria-label="Menu" onClick={() => setMobileOpen((v) => !v)}>
+            {mobileOpen
+              ? <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>}
+          </button>
           <Link href="/" className="topnav-brand">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/Logo-full.png" alt="Fusion" />
@@ -102,6 +123,36 @@ export default function AppShell({ user, links, children }: {
           </div>
         </div>
       </header>
+
+      {/* Drawer menu mobile: toàn bộ link nhóm theo section */}
+      {mobileOpen && (
+        <div className="mobile-nav-overlay" onClick={() => setMobileOpen(false)}>
+          <nav className="mobile-nav" onClick={(e) => e.stopPropagation()}>
+            {sections.map((s) => (
+              <div key={s.name} className="mobile-nav-section">
+                <div className="mobile-nav-label">{s.name}</div>
+                {s.items.map((l) => {
+                  const Icon = ICONS[l.icon] ?? IconDashboard;
+                  return (
+                    <Link key={l.href} href={l.href} prefetch className={`mobile-nav-item${isActive(l.href) ? " active" : ""}`}>
+                      <span className="topnav-ic"><Icon width={18} height={18} /></span>
+                      {t(l.label)}
+                    </Link>
+                  );
+                })}
+              </div>
+            ))}
+            <div className="mobile-nav-section">
+              <div className="mobile-nav-label">Account</div>
+              <Link href="/account" prefetch className={`mobile-nav-item${isActive("/account") ? " active" : ""}`}>
+                <div className="user-avatar" style={{ width: 24, height: 24, fontSize: 10 }}>{user.avatarUrl ? <img src={user.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit", display: "block" }} /> : initials}</div>
+                {user.name}
+              </Link>
+            </div>
+          </nav>
+        </div>
+      )}
+
       <main className="app-content">{children}</main>
       <BackToTop />
     </div>

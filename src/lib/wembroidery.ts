@@ -38,30 +38,37 @@ const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? S
 const N = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 const arrOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
 
-// ---- Catalog: GET /public/catalog — dò phòng thủ nhiều shape ----
-export type WemCatalogRow = { catalogId: string; product: string; size: string; color: string; cost: number };
-export async function getWembroideryCatalog(c: Cred): Promise<{ rows: WemCatalogRow[]; sample: unknown }> {
+// ---- Catalog: GET /public/catalog — shape THẬT (soi 07/2026):
+//   [{ value: 7, text: "Unisex T-Shirt", type, category, code, base_cost, splitShippingCost,
+//      positions: [{value:"center_chest",text:"Center Chest"},...], sizes: ["xs","s",...], colors: ["black",...] }]
+export type WemCatalogRow = { catalogId: string; product: string; size: string; color: string; cost: number; ship: number };
+export type WemCatalogInfo = { catalogId: string; positions: string[] };
+export async function getWembroideryCatalog(c: Cred): Promise<{ rows: WemCatalogRow[]; infos: WemCatalogInfo[]; sample: unknown }> {
   const { status, json } = await call<Record<string, unknown>>(c, "/public/catalog");
   if (status === 401) throw new Error("Wembroidery 401: token invalid — paste the store token into API Key");
   if (status >= 400) throw new Error(`Wembroidery catalog failed: ${status} ${errText(json)}`);
   const root = (json.data && typeof json.data === "object" && !Array.isArray(json.data) ? (json.data as Record<string, unknown>) : json);
-  let catalogs = [json.data, root.catalogs, root.catalog, root.items, root.data, root.list, root.result, root.results, json].map(arrOf).find((a) => a.length) ?? [];
+  let catalogs = [json, json.data, root.catalogs, root.catalog, root.items, root.data, root.list, root.result, root.results].map(arrOf).find((a) => a.length) ?? [];
   // Shape dạng object-map { "1": {...}, "2": {...} } → lấy values
   if (!catalogs.length) {
     const vals = Object.values(root).filter((v) => v && typeof v === "object" && !Array.isArray(v)) as Record<string, unknown>[];
-    if (vals.length && vals.every((v) => v.name || v.title || v.id || v.catalogId)) catalogs = vals;
+    if (vals.length && vals.every((v) => v.text || v.name || v.title || v.value !== undefined)) catalogs = vals;
   }
 
   const rows: WemCatalogRow[] = [];
+  const infos: WemCatalogInfo[] = [];
   for (const p of catalogs) {
-    const id = S(p.id ?? p.catalogId ?? p.catalog_id ?? p._id);
+    // ID = "value" (số catalogId); tên = "text"
+    const id = S(p.value ?? p.id ?? p.catalogId ?? p.catalog_id ?? p._id);
     if (!id) continue;
-    const name = S(p.name ?? p.title ?? p.productName) || `Catalog ${id}`;
-    const baseCost = N(p.baseCost ?? p.base_cost ?? p.price ?? p.cost);
+    const name = S(p.text ?? p.name ?? p.title ?? p.productName) || `Catalog ${id}`;
+    const baseCost = N(p.base_cost ?? p.baseCost ?? p.price ?? p.cost);
+    const ship = N(p.splitShippingCost ?? p.split_shipping_cost ?? p.shipping_cost);
+    infos.push({ catalogId: id, positions: arrOf(p.positions).map((o) => S(o.value ?? o)).filter(Boolean) });
     // sizes/colors: mảng string HOẶC mảng object {value|code|name, price?}
     const optList = (v: unknown): { value: string; price?: number }[] =>
       arrOf(v).length
-        ? arrOf(v).map((o) => ({ value: S(o.value ?? o.code ?? o.name ?? o.text ?? o), price: Number(o.price ?? o.cost) || undefined })).filter((o) => o.value)
+        ? arrOf(v).map((o) => ({ value: S((o as Record<string, unknown>).value ?? (o as Record<string, unknown>).code ?? (o as Record<string, unknown>).name ?? (o as Record<string, unknown>).text ?? o), price: Number((o as Record<string, unknown>).price ?? (o as Record<string, unknown>).cost) || undefined })).filter((o) => o.value)
         : (Array.isArray(v) ? (v as unknown[]).map((s) => ({ value: S(s) })).filter((o) => o.value) : []);
     const sizes = optList(p.sizes ?? p.size ?? (p.config as Record<string, unknown> | undefined)?.sizes);
     const colors = optList(p.colors ?? p.color ?? (p.config as Record<string, unknown> | undefined)?.colors);
@@ -69,19 +76,40 @@ export async function getWembroideryCatalog(c: Cred): Promise<{ rows: WemCatalog
     const variants = arrOf(p.variants);
     if (variants.length) {
       for (const v of variants) {
-        rows.push({ catalogId: id, product: name, size: S(v.size), color: S(v.color), cost: N(v.price ?? v.cost) || baseCost });
+        rows.push({ catalogId: id, product: name, size: S(v.size), color: S(v.color), cost: N(v.price ?? v.cost) || baseCost, ship });
       }
     } else if (sizes.length || colors.length) {
       for (const sz of (sizes.length ? sizes : [{ value: "" }])) {
         for (const cl of (colors.length ? colors : [{ value: "" }])) {
-          rows.push({ catalogId: id, product: name, size: sz.value, color: cl.value, cost: sz.price ?? cl.price ?? baseCost });
+          rows.push({ catalogId: id, product: name, size: sz.value, color: cl.value, cost: sz.price ?? cl.price ?? baseCost, ship });
         }
       }
     } else {
-      rows.push({ catalogId: id, product: name, size: "", color: "", cost: baseCost });
+      rows.push({ catalogId: id, product: name, size: "", color: "", cost: baseCost, ship });
     }
   }
-  return { rows, sample: catalogs[0] ?? json };
+  return { rows, infos, sample: catalogs[0] ?? json };
+}
+
+// ---- Locations theo catalog (cache 10'): "front" KHÔNG tồn tại ở nhiều catalog —
+// T-shirt dùng center_chest/left_chest/back... → resolve vị trí gần nhất cho front/back khi push.
+const posCache = new Map<string, { infos: WemCatalogInfo[]; exp: number }>();
+export async function resolveWemLocations(c: Cred, catalogId: string): Promise<{ front: string; back: string }> {
+  const key = c.apiKey.slice(0, 12);
+  let hit = posCache.get(key);
+  if (!hit || hit.exp < Date.now()) {
+    try {
+      const { infos } = await getWembroideryCatalog(c);
+      hit = { infos, exp: Date.now() + 10 * 60_000 };
+      posCache.set(key, hit);
+    } catch { hit = { infos: [], exp: Date.now() + 60_000 }; posCache.set(key, hit); }
+  }
+  const positions = hit.infos.find((i) => i.catalogId === String(catalogId))?.positions ?? [];
+  const pick = (cands: string[], fallback: string) => cands.find((x) => positions.includes(x)) ?? fallback;
+  return {
+    front: pick(["front", "center_chest", "full_front", "chest"], positions[0] ?? "center_chest"),
+    back: pick(["back", "full_back"], "back"),
+  };
 }
 
 // ---- Create order: POST /orders ----

@@ -520,13 +520,17 @@ function wembroideryAdapter(): FulfillerAdapter {
       const badLine = ctx.lines.find((l) => !Number(l.productId));
       if (badLine) throw new Error(`Wembroidery needs a numeric catalogId in SKU mapping for "${badLine.fulfillerSku}" (pull via Update SKU on the Wembroidery tab)`);
 
-      const items: WemItem[] = ctx.lines.map((l) => {
+      // Locations THẬT theo catalog ("front" không tồn tại ở nhiều catalog — T-shirt dùng center_chest...)
+      const { resolveWemLocations } = await import("@/lib/wembroidery");
+      const wemCred = { apiKey, endpoint: ctx.fulfiller.apiEndpoint };
+      const items: WemItem[] = await Promise.all(ctx.lines.map(async (l) => {
         const { color, size } = splitColorSize(l.variant);
+        const loc = await resolveWemLocations(wemCred, String(l.productId));
         const designs = [
-          design("front", l.designFront, l.image),
-          design("back", l.designBack),
+          design(loc.front, l.designFront, l.image),
+          design(loc.back, l.designBack),
         ].filter(Boolean) as WemDesign[];
-        if (!designs.length && url(l.image)) designs.push({ location: "front", imageUrl: url(l.image)! });
+        if (!designs.length && url(l.image)) designs.push({ location: loc.front, imageUrl: url(l.image)! });
         return {
           catalogId: Number(l.productId),
           designs,
@@ -534,7 +538,7 @@ function wembroideryAdapter(): FulfillerAdapter {
           size: size.toLowerCase() || "m",
           color: snake(color) || "black",
         };
-      });
+      }));
 
       const res = await createWembroideryOrder({ apiKey, endpoint: ctx.fulfiller.apiEndpoint }, {
         address: {

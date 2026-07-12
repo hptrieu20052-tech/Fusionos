@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const cred = { apiKey, endpoint: ff.apiEndpoint };
   const start = Date.now();
-  type Row = { sku: string; productType: string; variant: string; cost: number; productId?: string };
+  type Row = { sku: string; productType: string; variant: string; cost: number; ship: number; productId?: string };
   const rows: Row[] = [];
   type Prod = { productId: string; title: string };
   const products: Prod[] = [];
@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
       if (!sample) sample = r.sample;
       for (const v of r.variants) {
         // Dòng list CÓ variant sẵn thì dùng luôn; dòng product trần chỉ ghi vào danh sách chờ detail
-        if (v.variant) rows.push({ sku: v.sku, productType: v.product, variant: v.variant, cost: v.price ?? 0, productId: v.productId });
+        if (v.variant) rows.push({ sku: v.sku, productType: v.product, variant: v.variant, cost: v.price ?? 0, ship: v.ship ?? 0, productId: v.productId });
         products.push({ productId: v.productId, title: v.product });
       }
       if (!r.hasMore) { listDone = true; break; }
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
       try {
         const r = await getOnosProductVariants(cred, p.productId);
         if (!detailSample) detailSample = r.sample;
-        for (const v of r.variants) rows.push({ sku: v.sku, productType: p.title || v.product, variant: v.variant, cost: v.price ?? 0, productId: p.productId });
+        for (const v of r.variants) rows.push({ sku: v.sku, productType: p.title || v.product, variant: v.variant, cost: v.price ?? 0, ship: v.ship ?? 0, productId: p.productId });
         processed++;
       } catch { /* bỏ qua product lỗi */ }
     }));
@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
         fulfillerProduct: it.productType?.slice(0, 200) || null,
         variant: it.variant?.slice(0, 120) || null,
         fulfillerProductId: it.productId ?? null,
-        baseCost: it.cost.toFixed(2), shipCost: "0",
+        baseCost: it.cost.toFixed(2), shipCost: (it.ship ?? 0).toFixed(2),
       });
       created++;
     } catch { skipped++; }

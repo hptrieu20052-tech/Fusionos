@@ -57,7 +57,7 @@ const errText = (j: unknown) => {
 };
 
 // ---- Products: GET /products (dò phòng thủ nhiều shape data/items/products + variants) ----
-export type OnosVariant = { sku: string; product: string; variant: string; productId: string; price?: number; printAreas?: string[] };
+export type OnosVariant = { sku: string; product: string; variant: string; productId: string; price?: number; ship?: number; printAreas?: string[] };
 export async function listOnosProducts(c: Cred, page = 1, pageSize = 100): Promise<{ variants: OnosVariant[]; hasMore: boolean; sample: unknown }> {
   const { status, json } = await call<Record<string, unknown>>(c, `/products?page=${page}&page_size=${pageSize}`);
   if (status === 401) throw new Error("ONOS 401: token invalid/expired — paste a new token (or email:password) into API Key");
@@ -107,8 +107,32 @@ export async function getOnosProductVariants(c: Cred, productId: string): Promis
   const printAreas = arrOf(p.print_areas).map((a) => S((a as Record<string, unknown>).key ?? a)).filter(Boolean);
 
   const out: OnosVariant[] = [];
-  // 1) Variants tường minh (nhiều tên key khả dĩ)
-  const explicit = [p.variants, p.skus, p.items, p.product_skus, p.children, p.variations].map(arrOf).find((a) => a.length) ?? [];
+  // 1) attribute_specifics — shape THẬT của ONOS (soi từ /products/{id} 07/2026):
+  //    [{ sku, price, options: {"Item Size":"S", "Color":...}, shipping_methods: [{shipping_method:"COD"|"EXPRESS_US"|"SBTT", amount}] }]
+  //    COD = return về merchant (không ship US) → amount COD ≈ GIÁ SẢN XUẤT THUẦN (base);
+  //    EXPRESS_US ≈ base + ship line ONOS → ship = EXPRESS_US − COD.
+  for (const v of arrOf(p.attribute_specifics)) {
+    const sku = S(v.sku);
+    if (!sku) continue;
+    const opts = (v.options && typeof v.options === "object" ? v.options : {}) as Record<string, unknown>;
+    const color = S(opts.Color ?? opts.color);
+    const size = S(opts["Item Size"] ?? opts.Size ?? opts.size);
+    const other = Object.entries(opts).filter(([k]) => !/^(color|size|item size)$/i.test(k)).map(([, val]) => S(val)).filter(Boolean);
+    const ships = new Map(arrOf(v.shipping_methods).map((m) => [S(m.shipping_method).toUpperCase(), Number(m.amount) || 0]));
+    const cod = ships.get("COD");
+    const express = ships.get("EXPRESS_US") ?? ships.get("ONOSEXPRESS");
+    const price = Number(v.price) || undefined;
+    const base = cod || price;
+    const ship = (cod && express && express > cod) ? Math.round((express - cod) * 100) / 100 : 0;
+    out.push({
+      sku, product: pName || sku, productId,
+      variant: [color, size, ...other].filter(Boolean).join(" / "),
+      price: base, ship,
+      printAreas: printAreas.length ? printAreas : undefined,
+    });
+  }
+  // 2) Variants tường minh (nhiều tên key khả dĩ)
+  const explicit = out.length ? [] : ([p.variants, p.skus, p.items, p.product_skus, p.children, p.variations].map(arrOf).find((a) => a.length) ?? []);
   for (const v of explicit) {
     const sku = S(v.sku ?? v.code ?? v.variant_sku ?? v.id);
     if (!sku) continue;
