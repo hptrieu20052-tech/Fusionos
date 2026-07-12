@@ -15,10 +15,19 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "settings")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const fulfillerId = req.nextUrl.searchParams.get("fulfillerId");
+  const nameQ = (req.nextUrl.searchParams.get("name") ?? "").trim().toLowerCase();
   const productId = req.nextUrl.searchParams.get("productId");
-  if (!fulfillerId) return NextResponse.json({ ok: false, error: "missing fulfillerId" }, { status: 400 });
+  if (!fulfillerId && !nameQ) return NextResponse.json({ ok: false, error: "pass ?name=onos or ?name=wembroidery (or ?fulfillerId=<uuid>)" }, { status: 400 });
 
-  const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, fulfillerId)).limit(1);
+  let ff: typeof schema.fulfillers.$inferSelect | undefined;
+  if (fulfillerId && /^[0-9a-f-]{36}$/i.test(fulfillerId)) {
+    [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, fulfillerId)).limit(1);
+  } else if (nameQ) {
+    const all = await db.select().from(schema.fulfillers);
+    ff = all.find((f) => f.name.toLowerCase().includes(nameQ));
+  } else {
+    return NextResponse.json({ ok: false, error: "invalid fulfillerId — use ?name=onos or ?name=wembroidery instead" }, { status: 400 });
+  }
   if (!ff) return NextResponse.json({ ok: false, error: "fulfiller doesn't exist" }, { status: 404 });
   const c = (ff.credentials ?? {}) as { apiKey?: string; accessToken?: string; apiToken?: string };
   const apiKey = c.apiKey || c.accessToken || c.apiToken;
