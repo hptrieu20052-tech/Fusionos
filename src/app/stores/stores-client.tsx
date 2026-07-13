@@ -4,11 +4,12 @@ import { Flash } from "@/components/flash";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm } from "@/components/confirm-provider";
 import { useLang } from "@/components/lang-provider";
-import { IconSettings, IconTrash, IconLink, IconPuzzle, IconRefresh, IconKey, IconDownload, IconWarn, IconCopy } from "@/components/icons";
+import { IconSettings, IconTrash, IconLink, IconPuzzle, IconRefresh, IconKey, IconDownload, IconWarn, IconCopy, IconStar } from "@/components/icons";
 
 type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
   sellerName: string | null; sellerId: string | null; note: string | null; storeUrl: string | null;
+  shop?: { live: boolean; sales: number | null; rating: number | null; reviews: number | null; age: string | null; checkedAt: string } | null;
   currency: string; fxRate: string; ingestToken?: string | null; health?: { fxConvertedAt?: string; fxConvertedRate?: number } | null;
   orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
@@ -125,12 +126,19 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.borderLeftColor = s.live ? "var(--green)" : "var(--red)"; }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                     <b style={{ fontSize: 14 }}>{s.name}</b>
-                    {/* Live/Die badge */}
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999,
-                      background: s.live ? "var(--green-soft)" : "var(--red-soft)", color: s.live ? "var(--green)" : "var(--red)" }}>
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: s.live ? "var(--green)" : "var(--red)" }} />
-                      {s.live ? t("s.live") : t("s.die")}
-                    </span>
+                    {/* Badge: SUSPENDED = shop thật sự chết trên Etsy (extension check trang public).
+                        LIVE/DIE = chỉ nói có đơn trong 7 ngày hay không — nhẹ hơn hẳn. */}
+                    {s.shop && !s.shop.live ? (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: "var(--red-soft)", color: "var(--red)" }} title={`Shop page unreachable — checked ${new Date(s.shop.checkedAt).toLocaleString()}`}>
+                        <IconWarn width={11} height={11} /> SUSPENDED
+                      </span>
+                    ) : (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999,
+                        background: s.live ? "var(--green-soft)" : "var(--red-soft)", color: s.live ? "var(--green)" : "var(--red)" }}>
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: s.live ? "var(--green)" : "var(--red)" }} />
+                        {s.live ? t("s.live") : t("s.die")}
+                      </span>
+                    )}
                     {canAdd && (
                       <span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
                         {s.storeUrl && <a href={s.storeUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="st-iconbtn" title={t("st.openShop")}><IconLink width={14} height={14} /></a>}
@@ -139,13 +147,23 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 3 }}>
-                    {s.sellerName ?? "—"} · {CONNECT.find(([k]) => k === s.connectMethod)?.[1] ?? s.connectMethod}
-                    {s.connectMethod === "api" && (s.hasCredentials ? <> · <IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> {t("st.apiSet")}</> : <> · <IconWarn width={11} height={11} style={{ verticalAlign: "-1px" }} /> {t("st.noApi")}</>)}
-                  </div>
-                  <div style={{ fontSize: 13 }}>
-                    <b>{s.orders30d}</b> orders · <b style={{ color: "var(--green)" }}>{money(s.revenue30d)}</b> <span style={{ color: "var(--muted)" }}>/ 30d</span>
-                    {s.orders7d > 0 && <span style={{ color: "var(--muted)", fontSize: 11.5 }}> · {s.orders7d} orders/7d</span>}
+                  {/* Hàng 1: số liệu công khai của shop (extension đọc hộ, 1 lần/ngày) */}
+                  {s.shop && (
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 3, display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+                      {s.shop.rating != null && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                          <IconStar width={12} height={12} style={{ color: "#F5A623" }} />
+                          <b style={{ color: "var(--ink)" }}>{s.shop.rating}</b>
+                          {s.shop.reviews != null && <span>({s.shop.reviews})</span>}
+                        </span>
+                      )}
+                      {s.shop.sales != null && <>·<span><b style={{ color: "var(--ink)" }}>{s.shop.sales.toLocaleString()}</b> sales</span></>}
+                      {s.shop.age && <>·<span>{s.shop.age}</span></>}
+                    </div>
+                  )}
+                  {/* Hàng 2: seller + số đơn/doanh thu 30 ngày (từ DB của mình) */}
+                  <div style={{ fontSize: 13, color: "var(--muted)" }}>
+                    {s.sellerName ?? "—"} · <b style={{ color: "var(--ink)" }}>{s.orders30d}</b> orders · <b style={{ color: "var(--green)" }}>{money(s.revenue30d)}</b> / 30d
                   </div>
                   {s.lastOrderDays != null && s.lastOrderDays > 7 && (
                     <div style={{ fontSize: 11, color: "var(--red)", marginTop: 3 }}>⚠ {s.lastOrderDays} days without orders</div>

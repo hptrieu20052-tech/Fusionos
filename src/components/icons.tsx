@@ -284,3 +284,10 @@ export const IconCheck = (p: P) => (
     <path d="M20 6 9 17l-5-5" />
   </svg>
 );
+
+// Sao đặc — dùng cho rating shop trên trang Stores
+export const IconStar = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width={14} height={14} {...p}>
+    <path d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3-5.8 3 1.1-6.5L2.6 9.4l6.5-.9L12 2.6z" />
+  </svg>
+);

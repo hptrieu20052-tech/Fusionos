@@ -68,6 +68,19 @@ export async function GET(req: NextRequest) {
           shopId: cred.etsy_shop_id || "",
         },
         sellerName: r.sellerName,
+        // Số liệu shop public do extension đọc hộ (sales / rating / reviews / tuổi shop / còn sống)
+        shop: (() => {
+          const h = (r.s.health ?? {}) as Record<string, unknown>;
+          if (!h.shopCheckedAt) return null;
+          return {
+            live: h.shopLive === true,
+            sales: h.shopSales ?? null,
+            rating: h.shopRating ?? null,
+            reviews: h.shopReviews ?? null,
+            age: h.shopAge ?? null,
+            checkedAt: h.shopCheckedAt,
+          };
+        })(),
         orders30d: c?.c30 ?? 0,
         orders7d: c?.c7 ?? 0,
         revenue30d: Number(c?.rev30 ?? 0),

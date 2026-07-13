@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   // Tiền (Doanh thu / Fee / Lợi nhuận) + Sàn — chỉ cho người có quyền orders; ẩn lợi nhuận nếu bị hạn chế hide_profit.
   const showMoney = oLvl >= 1;
   const hideProfit = showMoney ? await hasRestriction(session, "hide_profit") : true;
-  const money = { revenue: 0, fee: 0, profit: 0 };
+  const money = { revenue: 0, fee: 0, cost: 0, profit: 0 };
   if (showMoney) {
     const mr = (await db.execute(sql`
       SELECT o.seller_id,
@@ -80,11 +80,12 @@ export async function GET(req: NextRequest) {
       const profit = revenue - fee - cost;
       (s as Record<string, unknown>).revenue = revenue;
       (s as Record<string, unknown>).fee = fee;
+      (s as Record<string, unknown>).cost = cost; // chi phí fulfill (base cost + ship) gắn theo đơn
       (s as Record<string, unknown>).profit = hideProfit ? null : profit;
       (s as Record<string, unknown>).platforms = (m?.platforms ?? []).filter(Boolean);
-      money.revenue += revenue; money.fee += fee; money.profit += profit;
+      money.revenue += revenue; money.fee += fee; money.cost += cost; money.profit += profit;
     }
   }
 
-  return NextResponse.json({ ok: true, range, buckets, sellers, totals, showMoney, hideProfit, money: showMoney ? { revenue: money.revenue, fee: money.fee, profit: hideProfit ? null : money.profit } : null });
+  return NextResponse.json({ ok: true, range, buckets, sellers, totals, showMoney, hideProfit, money: showMoney ? { revenue: money.revenue, fee: money.fee, cost: money.cost, profit: hideProfit ? null : money.profit } : null });
 }
