@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { levelOf } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +8,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "finance")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // CHỈ ADMIN được ghi chi phí tay — staff (kể cả "View full" Finance) không được, tránh nhập bậy làm sai số liệu.
+  if (session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const b = await req.json().catch(() => null);
   if (!b || !schema.transactions.type.enumValues.includes(b.type) || !b.amount || isNaN(Number(b.amount))) {

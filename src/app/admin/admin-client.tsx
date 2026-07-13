@@ -198,6 +198,21 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   const actBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5, background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer", marginLeft: 6, fontWeight: 600, color: "var(--ink)" };
 
   type Team = { id: string; name: string; telegramChatId?: string; members: { id: string; fullName: string; role: string }[] };
+  // --- Lọc bảng Staff (client-side: 35 người, đã có sẵn trong state) ---
+  const [sq, setSq] = useState("");
+  const [sRole, setSRole] = useState("");
+  const [sTeam, setSTeam] = useState("");
+  const [sStatus, setSStatus] = useState("");
+  const shownUsers = users.filter((u) => {
+    const q = sq.trim().toLowerCase();
+    if (q && !u.fullName.toLowerCase().includes(q)) return false;
+    if (sRole && u.role !== sRole) return false;
+    if (sTeam === "__none") { if (u.team) return false; }
+    else if (sTeam && u.team !== sTeam) return false;
+    if (sStatus && u.status !== sStatus) return false;
+    return true;
+  });
+
   const [teamList, setTeamList] = useState<Team[]>([]);
   const [newTeam, setNewTeam] = useState("");
   const loadTeams = () => fetch("/api/admin/teams").then((r) => r.json()).then((j) => { if (j.ok) setTeamList(j.teams); });
@@ -258,12 +273,35 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
       </div>
 
       <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("adm.staff")} · {users.length}</h3>
+        <h3 style={{ fontWeight: 800, fontSize: 15 }}>
+          {t("adm.staff")} · {shownUsers.length}{shownUsers.length !== users.length ? ` / ${users.length}` : ""}
+        </h3>
         <div className="sub" style={{ marginBottom: 8 }}>{t("adm.staffHint")}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 2fr) repeat(3, minmax(120px, 1fr)) auto", gap: 8, alignItems: "center", marginBottom: 10 }}>
+          <input value={sq} onChange={(e) => setSq(e.target.value)} placeholder={t("adm.searchName")} style={{ ...inp, padding: "7px 10px", fontSize: 13 }} />
+          <select value={sRole} onChange={(e) => setSRole(e.target.value)} style={{ ...inp, padding: "7px 10px", fontSize: 13 }}>
+            <option value="">{t("adm.allRoles")}</option>
+            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+          </select>
+          <select value={sTeam} onChange={(e) => setSTeam(e.target.value)} style={{ ...inp, padding: "7px 10px", fontSize: 13 }}>
+            <option value="">{t("adm.allTeams")}</option>
+            <option value="__none">{t("adm.noTeamOpt")}</option>
+            {teamList.map((tm) => <option key={tm.id} value={tm.name}>{tm.name}</option>)}
+          </select>
+          <select value={sStatus} onChange={(e) => setSStatus(e.target.value)} style={{ ...inp, padding: "7px 10px", fontSize: 13 }}>
+            <option value="">{t("adm.allStatus")}</option>
+            <option value="active">{t("adm.active")}</option>
+            <option value="locked">{t("adm.locked")}</option>
+          </select>
+          {(sq || sRole || sTeam || sStatus) && (
+            <button onClick={() => { setSq(""); setSRole(""); setSTeam(""); setSStatus(""); }}
+              style={{ ...actBtn, whiteSpace: "nowrap" }}>{t("adm.clearFilter")}</button>
+          )}
+        </div>
         <table style={{ marginTop: 8 }}>
           <thead><tr><th style={{ width: 44 }}></th><th>{t("adm.colName")}</th><th>Email</th><th>{t("adm.colRole")}</th><th>Team</th><th>{t("adm.colStatus")}</th><th style={{ textAlign: "right" }}>{t("adm.colActions")}</th></tr></thead>
           <tbody>
-            {users.map((u) => (
+            {shownUsers.map((u) => (
               <React.Fragment key={u.id}>
               <tr style={{ opacity: u.status === "active" ? 1 : 0.55 }}>
                 <td>
