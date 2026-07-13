@@ -256,7 +256,7 @@ export const transactions = pgTable("transactions", {
 // ---------- RBAC ----------
 import { primaryKey, smallint } from "drizzle-orm/pg-core";
 
-export const MODULES = ["dashboard", "orders", "fulfillment", "designs", "finance", "hr", "stores", "settings"] as const;
+export const MODULES = ["dashboard", "orders", "fulfillment", "designs", "reviews", "statsDesigners", "finance", "hr", "stores", "settings"] as const;
 export type Module = (typeof MODULES)[number];
 
 // 0 = ẩn · 1 = chỉ xem · 2 = toàn quyền

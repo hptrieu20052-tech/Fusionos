@@ -27,12 +27,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const [u] = await db.select({ k: schema.users.avatarKey }).from(schema.users).where(eq(schema.users.id, session.sub)).limit(1);
     avatarUrl = fileUrl(u?.k ?? null);
   }
-  const [orders, stores, designs, ff, finance, settings] = session
+  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners] = session
     ? await Promise.all([
         can(session, "orders"), can(session, "stores"), can(session, "designs"),
         can(session, "fulfillment"), can(session, "finance"), can(session, "settings"),
+        can(session, "reviews"), can(session, "statsDesigners"),
       ])
-    : [false, false, false, false, false, false];
+    : [false, false, false, false, false, false, false, false];
 
   const isAdmin = session?.role === "admin";
   const links: NavLink[] = session ? [
@@ -40,10 +41,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     ...(orders ? [{ href: "/orders", label: "nav.orders", icon: "orders", section: "Operations" }] : []),
     ...(designs ? [{ href: "/designs", label: "nav.designs", icon: "designs", section: "Operations" }] : []),
     // Đã bỏ khỏi menu (route vẫn sống, vào bằng URL trực tiếp nếu cần): /fulfillment, /stats/orders, /supplier-report
-    // Scoring + Designer Stats + Finance: hiện TRỰC TIẾP (không còn nhóm More), tạm chỉ admin thấy để review
-    ...(isAdmin ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Operations" }] : []),
-    ...(isAdmin ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Reports" }] : []),
-    ...(isAdmin || session.role === "seller" ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Reports" }] : []),
+    // Scoring + Designer Stats: hiện theo QUYỀN admin set (module riêng trong Admin → Permissions)
+    ...(reviews ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Operations" }] : []),
+    ...(statsDesigners ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Reports" }] : []),
+    // Finance: hiện theo QUYỀN admin set (không hardcode role) — khớp đúng guard của /finance.
+    // Seller vẫn luôn thấy: API tự giới hạn số liệu về phần của riêng họ.
+    ...(finance || session.role === "seller" ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Reports" }] : []),
     ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "System" }] : []),
     ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "System" }] : []),
     ...(isAdmin ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "System" }] : []),

@@ -12,7 +12,7 @@ type Data = {
   uScopes: { userId: string; resource: string; scope: string }[];
 };
 
-const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", finance: "Finance", hr: "Staff", stores: "Stores", settings: "Settings" };
+const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", reviews: "Scoring", statsDesigners: "Designer Stats", finance: "Finance", hr: "Staff", stores: "Stores", settings: "Settings" };
 // 1 lựa chọn 4 mức cho mỗi trang (gộp truy cập + phạm vi)
 const accessOpts = (t: (k: string) => string) => ([
   { v: "all", label: "View full", bg: "var(--green-soft)", fg: "var(--green)" },

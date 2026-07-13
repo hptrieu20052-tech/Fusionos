@@ -7,8 +7,8 @@ import { DateInput } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { UserFunctionPermission } from "./user-function-permission";
 
-const MODULES = ["dashboard", "orders", "fulfillment", "designs", "finance", "hr", "stores", "settings"] as const;
-const MODULE_KEY: Record<string, string> = { dashboard: "adm.modDashboard", orders: "adm.modOrders", fulfillment: "adm.modFulfillment", designs: "adm.modDesigns", finance: "adm.modFinance", hr: "adm.modHr", stores: "adm.modStores", settings: "adm.modSettings" };
+const MODULES = ["dashboard", "orders", "fulfillment", "designs", "reviews", "statsDesigners", "finance", "hr", "stores", "settings"] as const;
+const MODULE_KEY: Record<string, string> = { dashboard: "adm.modDashboard", orders: "adm.modOrders", fulfillment: "adm.modFulfillment", designs: "adm.modDesigns", reviews: "adm.modReviews", statsDesigners: "adm.modStatsDesigners", finance: "adm.modFinance", hr: "adm.modHr", stores: "adm.modStores", settings: "adm.modSettings" };
 const ROLES = ["admin", "seller", "designer", "support", "content", "hiring"] as const;
 const LEVEL_KEY = ["adm.levelHide", "adm.levelView", "adm.levelFull"];
 const LEVEL_STYLE = [

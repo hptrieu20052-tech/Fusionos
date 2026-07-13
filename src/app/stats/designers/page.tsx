@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DesignerStatsPage() {
   const session = await getSession();
-  if (!session || !(await can(session, "designs"))) {
+  if (!session || !(await can(session, "statsDesigners"))) {
     return <div className="panel empty">You don't have permission to view designer statistics.</div>;
   }
   return <DesignerStats />;
