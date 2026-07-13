@@ -13,14 +13,22 @@ export async function GET(req: NextRequest) {
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "designs")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
-  const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days") ?? 7), 1), 31);
+  let days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days") ?? 7), 1), 31);
+  // Range tuỳ chọn ?from&to (DateRangePicker) — ưu tiên hơn days; giới hạn 92 ngày
+  const dOk = (x: string | null) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
+  const fromQ = dOk(req.nextUrl.searchParams.get("from"));
+  const toQ = dOk(req.nextUrl.searchParams.get("to"));
+  const useRange = !!(fromQ && toQ);
+  if (useRange) days = Math.min(Math.max(Math.round((Date.parse(toQ!) - Date.parse(fromQ!)) / 86400000) + 1, 1), 92);
+  const FROM = useRange ? sql`${fromQ}::date` : sql`CURRENT_DATE - (${days - 1})::int`;
+  const TO = useRange ? sql`${toQ}::date` : sql`CURRENT_DATE`;
   const _si = await scopeOwnerIds(session, "designs");
   const inD = _si ? sql` AND d.designer_id IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const daily = await db.execute(sql`
     SELECT u.id designer_id, u.full_name name, d.created_at::date dd, count(*)::int v, coalesce(sum(d.points),0)::int pts
     FROM designs d JOIN users u ON u.id = d.designer_id
-    WHERE d.created_at > CURRENT_DATE - (${days - 1})::int${inD}
+    WHERE d.created_at::date >= ${FROM} AND d.created_at::date <= ${TO}${inD}
     GROUP BY 1,2,3
   `);
   const scores = await db.execute(sql`
@@ -37,7 +45,8 @@ export async function GET(req: NextRequest) {
   `);
 
   const dayList: string[] = [];
-  for (let i = days - 1; i >= 0; i--) { const dt = new Date(); dt.setDate(dt.getDate() - i); dayList.push(dt.toISOString().slice(0, 10)); }
+  const anchor = useRange ? new Date(toQ! + "T00:00:00Z") : new Date();
+  for (let i = days - 1; i >= 0; i--) { const dt = new Date(anchor); dt.setDate(dt.getDate() - i); dayList.push(dt.toISOString().slice(0, 10)); }
 
   const rows = daily.rows as { designer_id: string; name: string; dd: string; v: number; pts: number }[];
   const smap = new Map((scores.rows as { designer_id: string; score: string; reviews: number }[]).map((x) => [x.designer_id, x]));

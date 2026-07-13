@@ -99,9 +99,10 @@ export async function POST(req: NextRequest) {
     const x = s.toLowerCase();
     if (x.includes("cancel")) return "cancel";
     if (x.includes("complet") || x.includes("deliver")) return "delivered";
-    if (x.includes("ship") && !x.includes("to ship")) return "shipped";
-    if (x.includes("transit")) return "shipped";
-    return "new"; // To ship / Awaiting shipment / mặc định
+    // "Awaiting shipment" / "To ship" chứa chữ "ship" nhưng là đơn CHƯA gửi → new
+    if (x.includes("awaiting") || x.includes("to ship")) return "new";
+    if (x.includes("ship") || x.includes("transit")) return "shipped";
+    return "new";
   };
 
   type Line = { title: string; sku: string; qty: number; price: number; variant: string };
@@ -123,7 +124,8 @@ export async function POST(req: NextRequest) {
       const phone = pick(r, ["phone", "phonenumber"]);
       const msg = pick(r, ["buyermessage"]);
       const sellerNote = pick(r, ["sellernote"]);
-      const noteParts = [phone && `SĐT: ${phone}`, msg && `Msg: ${msg}`, sellerNote && `Note: ${sellerNote}`].filter(Boolean);
+      // SĐT đã lưu vào cột phone riêng (hiện chip SĐT trên card) — KHÔNG nhét vào note nữa
+      const noteParts = [msg && `Msg: ${msg}`, sellerNote && `Note: ${sellerNote}`].filter(Boolean);
       g = {
         ext, first, last, phone,
         addr1: pick(r, ["addressline1", "address1"]),

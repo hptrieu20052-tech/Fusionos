@@ -795,6 +795,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                     <div key={f.id} className="o2-ff">
                       {/* Header: tên supplier + link đơn supplier cùng hàng */}
                       <div className="o2-ff-head">
+                        <SupplierLogo name={f.fulfillerName || ""} size={18} />
                         <span className="o2-track-h" style={{ margin: 0 }}>{f.fulfillerName || t("o.fulfilledBy")}</span>
                         <span style={{ background: FF_STATUS_COLORS[f.status] ?? "#8A93A6", color: "#fff", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}>{f.status}</span>
                         {f.externalFfId?.startsWith("SIM-") && <span title={t("o.simPushLabel")} style={{ background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>{t("o.notSentBadge")}</span>}

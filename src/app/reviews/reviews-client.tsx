@@ -2,6 +2,7 @@
 import { useLang } from "@/components/lang-provider";
 import { Flash } from "@/components/flash";
 import { useEffect, useState } from "react";
+import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 
 type D = { id: string; sku_code: number; title: string; points: number; designer: string | null; thumb: string | null; biz_items: number; reviewed: number };
 const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 10, font: "inherit", fontSize: 12.5, width: 64, textAlign: "center" as const };
@@ -9,13 +10,14 @@ const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius
 export function ReviewsClient({ canReview }: { canReview: boolean }) {
   const { t } = useLang();
   const [designs, setDesigns] = useState<D[]>([]);
+  const [dr, setDr] = useState<RangeValue | null>(null); // lọc theo ngày tạo design
   const [sel, setSel] = useState<D | null>(null);
   const [scores, setScores] = useState({ scoreBrief: 8, scoreAesthetic: 8, scoreTechnical: 8 });
   const [comment, setComment] = useState("");
   const [msg, setMsg] = useState("");
 
-  const load = () => fetch("/api/reviews").then((r) => r.json()).then((j) => j.ok && setDesigns(j.designs));
-  useEffect(() => { load(); }, []);
+  const load = () => fetch(`/api/reviews${dr ? (() => { const { from, to } = rangeToDates(dr); return `?from=${from}&to=${to}`; })() : ""}`).then((r) => r.json()).then((j) => j.ok && setDesigns(j.designs));
+  useEffect(() => { load(); }, [dr]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const quality = ((scores.scoreBrief + scores.scoreAesthetic + scores.scoreTechnical) / 3);
 
@@ -42,9 +44,14 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
 
   return (
     <>
-      <div className="panel">
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("rev.scoreDesign")}</h3>
-        <div className="sub">{t("rev.rubric")}</div>
+      <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("rev.scoreDesign")}</h3>
+          <div className="sub">{t("rev.rubric")}</div>
+        </div>
+        <div style={{ marginLeft: "auto" }}>
+          <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr(null)} />
+        </div>
       </div>
       <div className="panel">
         <table>

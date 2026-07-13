@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     status: newStatus,
     trackingSyncedAt: b.trackingNumber ? new Date() : ffo.trackingSyncedAt,
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
-  if (b.trackingNumber) await autoPushEtsyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); // tự đẩy tracking lên Etsy
+  if (b.trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); } // CÓ TRACKING mới nhảy Shipped + đẩy Etsy (bug cũ: thiếu {})
 
   if (b.trackingNumber || newStatus === "shipped") {
     await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));

@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
     trackingSyncedAt: trackingNumber ? new Date() : ffo.trackingSyncedAt,
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
   await syncOrderFromFf(ffo.orderId, status);
-  if (trackingNumber) await autoPushEtsyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); // tự đẩy tracking lên Etsy
+  if (trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); } // CÓ TRACKING mới ship + đẩy lên Etsy (bug cũ: thiếu {} → đơn vừa tạo đã nhảy Shipped)
 
   // Đồng bộ trạng thái đơn chính (chỉ tiến, không lùi)
   if (status === "cancelled") {

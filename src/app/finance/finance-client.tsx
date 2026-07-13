@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { HBarList } from "@/components/charts";
 import { useLang } from "@/components/lang-provider";
 
@@ -12,11 +13,15 @@ const TX_TYPES = ["revenue","base_cost","shipping","platform_fee","ads","sample"
 export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const { t: tr } = useLang();
   const [days, setDays] = useState(30);
+  const [dr, setDr] = useState<RangeValue | null>(null); // range tuỳ chọn — ưu tiên hơn preset days
   const [data, setData] = useState<{ byType: Row[]; daily: Row[]; bySeller: Row[]; byPlatform: Row[] } | null>(null);
   const [form, setForm] = useState({ type: "ads", amount: "", note: "" });
   const [msg, setMsg] = useState("");
 
-  const load = useCallback(() => { fetch(`/api/finance?days=${days}`).then((r) => r.json()).then((j) => j.ok && setData(j)); }, [days]);
+  const load = useCallback(() => {
+    const q = dr ? (() => { const { from, to } = rangeToDates(dr); return `from=${from}&to=${to}`; })() : `days=${days}`;
+    fetch(`/api/finance?${q}`).then((r) => r.json()).then((j) => j.ok && setData(j));
+  }, [days, dr]);
   useEffect(() => { load(); }, [load]);
 
   async function addTx(e: React.FormEvent) {
@@ -40,8 +45,9 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
       <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <h3 style={{ fontWeight: 800, fontSize: 15 }}>Finance</h3>
         <div className="nav" style={{ marginTop: 0, marginLeft: "auto" }}>
-          {[7, 30, 90].map((d) => <a key={d} onClick={() => setDays(d)} className={days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
+          {[7, 30, 90].map((d) => <a key={d} onClick={() => { setDays(d); setDr(null); }} className={!dr && days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
         </div>
+        <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr(null)} />
       </div>
 
       <div className="kpis">

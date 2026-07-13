@@ -1,19 +1,21 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { BarChart, Heat, HBarList } from "@/components/charts";
 
 type Designer = { id: string; name: string; values: number[]; total: number; points: number; avgScore: number; reviews: number; bizOrders: number; kpi: number };
 
 export function DesignerStats() {
   const [days, setDays] = useState(7);
+  const [dr, setDr] = useState<RangeValue | null>(null); // range tuỳ chọn — ưu tiên hơn preset days
   const [dayList, setDayList] = useState<string[]>([]);
   const [designers, setDesigners] = useState<Designer[]>([]);
 
   const load = useCallback(() => {
-    fetch(`/api/stats/designers?days=${days}`).then((r) => r.json()).then((j) => {
+    fetch(`/api/stats/designers?${dr ? (() => { const { from, to } = rangeToDates(dr); return `from=${from}&to=${to}`; })() : `days=${days}`}`).then((r) => r.json()).then((j) => {
       if (j.ok) { setDayList(j.days); setDesigners(j.designers); }
     });
-  }, [days]);
+  }, [days, dr]);
   useEffect(() => { load(); }, [load]);
 
   const totals = dayList.map((_, i) => designers.reduce((t, d) => t + d.values[i], 0));
@@ -30,8 +32,9 @@ export function DesignerStats() {
       <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <h3 style={{ fontWeight: 800, fontSize: 15 }}>Designer Statistics</h3>
         <div className="nav" style={{ marginTop: 0, marginLeft: "auto" }}>
-          {[7, 14, 30].map((d) => <a key={d} onClick={() => setDays(d)} className={days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
+          {[7, 14, 30].map((d) => <a key={d} onClick={() => { setDays(d); setDr(null); }} className={!dr && days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
         </div>
+        <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr(null)} />
       </div>
 
       <div className="kpis">

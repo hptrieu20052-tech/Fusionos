@@ -7,18 +7,23 @@ import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
-// GET — hàng chờ chấm: design chưa có review, mới nhất trước
-export async function GET() {
+// GET — hàng chờ chấm: design chưa có review, mới nhất trước. Tuỳ chọn ?from&to lọc theo ngày tạo design.
+export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "designs")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+
+  const dOk = (x: string | null) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
+  const fromQ = dOk(req.nextUrl.searchParams.get("from"));
+  const toQ = dOk(req.nextUrl.searchParams.get("to"));
+  const range = fromQ && toQ ? sql` WHERE d.created_at::date >= ${fromQ}::date AND d.created_at::date <= ${toQ}::date` : sql``;
 
   const rows = await db.execute(sql`
     SELECT d.id, d.sku_code, d.title, d.points, d.created_at, u.full_name designer,
       (SELECT thumb_key FROM design_files f WHERE f.design_id = d.id AND f.thumb_key IS NOT NULL LIMIT 1) thumb,
       (SELECT count(*)::int FROM order_items oi WHERE oi.design_id = d.id) biz_items,
       (SELECT count(*)::int FROM design_reviews r WHERE r.design_id = d.id) reviewed
-    FROM designs d LEFT JOIN users u ON u.id = d.designer_id
+    FROM designs d LEFT JOIN users u ON u.id = d.designer_id${range}
     ORDER BY reviewed ASC, d.created_at DESC LIMIT 40
   `);
   return NextResponse.json({
