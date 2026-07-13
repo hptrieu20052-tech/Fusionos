@@ -190,7 +190,7 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
         <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--blue-soft)", border: "1px solid var(--line)", borderRadius: 10, padding: "8px 12px", margin: "2px 0 4px", lineHeight: 1.55 }}>
           New Etsy shops (0–100 sales) usually can&apos;t get an API key yet — pull orders with the{" "}
           <a href="/extension/" target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>FUSION Order Sync extension</a>{" "}
-          instead. Once the shop has its own Etsy API approved, hit Connect Etsy and orders switch to the official API.
+          instead. Once the shop has its own Etsy API approved, copy the connect link, open it in the shop's own browser profile, and orders switch to the official API.
         </div>
       )}
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -231,9 +231,18 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     setEtsyBusy(true);
     const j = await fetch("/api/etsy/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, keystring: etsyKey.trim(), sharedSecret: etsySecret.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setEtsyBusy(false);
-    if (j.ok) { flash("✓ Etsy app saved — now click Connect Etsy"); setEtsySaved(true); reload(); } else flash("✗ " + (j.error ?? "Error"));
+    if (j.ok) { flash("✓ Etsy app saved — now Copy connect link and open it in the shop's browser profile"); setEtsySaved(true); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
-  const connectEtsy = () => { window.location.href = `/api/etsy/oauth/start?storeId=${store.id}`; };
+  // Copy link authorize Etsy → dán vào AdsPower nơi shop đang login.
+  // PKCE verifier lưu server-side theo `state`, nên KHÔNG cần đăng nhập Fusion OS trong AdsPower.
+  const etsyConnectLink = async () => {
+    setEtsyBusy(true);
+    const j = await fetch(`/api/etsy/oauth/start?storeId=${store.id}&copy=1`).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setEtsyBusy(false);
+    if (!j.ok) { flash("✗ " + (j.error ?? "Error")); return; }
+    navigator.clipboard?.writeText(j.url);
+    flash("✓ Connect link copied — paste it into the shop's AdsPower browser and Authorize (valid 10 min)");
+  };
   // ===== TikTok Shop API =====
   const [ttKey, setTtKey] = useState(store.tiktok?.appKey ?? "");
   const [ttSecret, setTtSecret] = useState("");
@@ -245,9 +254,8 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     setTtBusy(true);
     const j = await fetch("/api/tiktok/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, appKey: ttKey.trim(), appSecret: ttSecret.trim(), authLink: ttAuthLink.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setTtBusy(false);
-    if (j.ok) { flash("✓ TikTok app saved — now click Connect TikTok"); setTtSaved(true); reload(); } else flash("✗ " + (j.error ?? "Error"));
+    if (j.ok) { flash("✓ TikTok app saved — now Copy connect link and open it in the shop’s browser profile"); setTtSaved(true); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
-  const connectTt = () => { window.location.href = `/api/tiktok/oauth/start?storeId=${store.id}`; };
   // Link authorize tĩnh (TikTok không PKCE) → copy dán vào browser AdsPower của shop là đúng bài
   const ttConnectLink = () => {
     const base = ttAuthLink.trim() || store.tiktok?.authLink || "";
@@ -343,9 +351,13 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
             <L label="Keystring (App API Key)"><input value={etsyKey} onChange={(e) => setEtsyKey(e.target.value)} onFocus={() => setRoEtsy(false)} readOnly={roEtsy} placeholder="e.g. 1aa2bb33c44d55…" style={inp} name="fusion-etsy-key" autoComplete="off" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
             <L label="Shared Secret"><input type="password" value={etsySecret} onChange={(e) => setEtsySecret(e.target.value)} onFocus={() => setRoEtsy(false)} readOnly={roEtsy} placeholder={store.etsy?.hasKeystring ? "••• (saved, leave blank to keep)" : "shared secret"} style={inp} name="fusion-etsy-secret" autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
           </div>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 7, background: "#FFF6F4", border: "1px solid #F6D9D0", borderRadius: 9, padding: "8px 10px", fontSize: 11.5, fontWeight: 600, color: "#B4543C", marginTop: 10 }}>
+            <IconWarn width={13} height={13} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>Open the connect link <b>only inside the shop&apos;s own browser profile</b> (AdsPower). Authorizing from the wrong IP can get the shop suspended. The link works without logging in to Fusion OS there, and expires in 10 minutes.</span>
+          </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
             <button onClick={saveEtsyApi} disabled={etsyBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
-            <button onClick={connectEtsy} disabled={etsyBusy || !(store.etsy?.hasKeystring || etsySaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.etsy?.hasKeystring || etsySaved) ? "pointer" : "default", opacity: (store.etsy?.hasKeystring || etsySaved) ? 1 : 0.5 }} title={(store.etsy?.hasKeystring || etsySaved) ? "" : "Enter Keystring + Shared Secret and click Save app first"}>{store.etsy?.connected ? "Reconnect Etsy" : "Connect Etsy"}</button>
+            <button onClick={etsyConnectLink} disabled={etsyBusy || !(store.etsy?.hasKeystring || etsySaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.etsy?.hasKeystring || etsySaved) ? "pointer" : "default", opacity: (store.etsy?.hasKeystring || etsySaved) ? 1 : 0.5 }} title="Copy the authorize link and open it in the shop's own AdsPower profile. Never open it here — a wrong IP can get the shop suspended."><IconCopy width={12} height={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />{store.etsy?.connected ? "Copy reconnect link" : "Copy connect link"}</button>
             {store.etsy?.connected && <button onClick={pullEtsy} disabled={etsyBusy} style={{ background: "#2E7D46", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}><IconDownload width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />Pull orders</button>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
               {store.etsy?.connected
@@ -376,10 +388,13 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           <L label="Authorization link (Partner Center → app detail → copy authorize URL)">
             <input value={ttAuthLink} onChange={(e) => setTtAuthLink(e.target.value)} placeholder="https://services.tiktokshop.com/open/authorize?service_id=…" style={{ ...inp, fontSize: 12 }} autoComplete="off" />
           </L>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 7, background: "#FFF6F4", border: "1px solid #F6D9D0", borderRadius: 9, padding: "8px 10px", fontSize: 11.5, fontWeight: 600, color: "#B4543C", marginTop: 10 }}>
+            <IconWarn width={13} height={13} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>Open the connect link <b>only inside the shop&apos;s own browser profile</b> (AdsPower). Authorizing from the wrong IP can get the shop suspended.</span>
+          </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
             <button onClick={saveTtApi} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
-            <button onClick={connectTt} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.tiktok?.hasApp || ttSaved) ? "pointer" : "default", opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title={(store.tiktok?.hasApp || ttSaved) ? "" : "Enter App Key + Secret and click Save app first"}>{store.tiktok?.connected ? "Reconnect TikTok" : "Connect TikTok"}</button>
-            <button onClick={ttConnectLink} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ ...btnGhost, fontSize: 12.5, opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title="Copy the authorize link to open in the shop's AdsPower profile"><IconCopy width={12} height={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />Copy connect link</button>
+            <button onClick={ttConnectLink} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.tiktok?.hasApp || ttSaved) ? "pointer" : "default", opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title="Copy the authorize link and open it in the shop's own AdsPower profile. Never open it here - a wrong IP can get the shop suspended."><IconCopy width={12} height={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />{store.tiktok?.connected ? "Copy reconnect link" : "Copy connect link"}</button>
             {store.tiktok?.connected && <button onClick={checkTt} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Check connection</button>}
             {store.tiktok?.connected && <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>Orders auto-pull every 15 min</span>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>

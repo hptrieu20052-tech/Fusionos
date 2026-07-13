@@ -237,6 +237,18 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
 }, (t) => [index("idx_ff_order").on(t.orderId)]);
 
 // ---------- FINANCE ----------
+// ---------- OAUTH PKCE TẠM (Etsy) ----------
+// Trước đây verifier PKCE nằm trong cookie httpOnly → callback BẮT BUỘC phải về đúng browser đã bấm
+// Connect, nên muốn authorize shop trong AdsPower thì phải đăng nhập Fusion OS ngay trong AdsPower.
+// Lưu server-side, tra theo `state` (random 32 byte, dùng 1 lần, hết hạn 10 phút) → không cần cookie,
+// không cần session ở browser đó. Copy link dán sang AdsPower là chạy. An toàn hơn cookie.
+export const oauthPending = pgTable("oauth_pending", {
+  state: text("state").primaryKey(),
+  verifier: text("verifier").notNull(),
+  storeId: uuid("store_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 // ---------- BLOCKLIST ĐƠN HỆ THỐNG CŨ ----------
 // Danh sách Order ID đã xử lý ở hệ thống cũ. Mọi cửa ingest (extension, cron API, import Excel)
 // đều bỏ qua đơn có external_id nằm ở đây → không bị push đúp sang nhà in trong lúc chuyển hệ thống.

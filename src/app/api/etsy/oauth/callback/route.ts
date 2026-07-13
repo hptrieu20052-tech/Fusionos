@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { exchangeCode, getMe, readEtsyCfg, saveEtsyCfg } from "@/lib/etsy";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
@@ -12,12 +12,17 @@ export async function GET(req: NextRequest) {
 
   const code = req.nextUrl.searchParams.get("code") || "";
   const state = req.nextUrl.searchParams.get("state") || "";
-  const raw = req.cookies.get("etsy_oauth")?.value || "";
-  if (!code || !state || !raw) return done(false, "Missing code/state");
+  if (!code || !state) return done(false, "Missing code/state");
 
-  let saved: { state: string; verifier: string; storeId: string };
-  try { saved = JSON.parse(raw); } catch { return done(false, "Bad session"); }
-  if (saved.state !== state) return done(false, "State mismatch");
+  // PKCE verifier lấy từ DB theo `state` (không dùng cookie) → callback chạy được ở BẤT KỲ browser nào,
+  // kể cả AdsPower chưa từng đăng nhập Fusion OS. `state` dùng 1 lần, hết hạn 10 phút.
+  const rows = (await db.execute(sql`
+    DELETE FROM oauth_pending
+    WHERE state = ${state} AND created_at > now() - interval '10 minutes'
+    RETURNING verifier, store_id
+  `)).rows as { verifier: string; store_id: string }[];
+  if (!rows.length) return done(false, "Link expired or already used — click Copy connect link again");
+  const saved = { verifier: rows[0].verifier, storeId: rows[0].store_id };
 
   try {
     const [store] = await db.select({ c: schema.stores.apiCredentials }).from(schema.stores).where(eq(schema.stores.id, saved.storeId)).limit(1);
@@ -37,9 +42,7 @@ export async function GET(req: NextRequest) {
       shopId: me.shopId,
     });
 
-    const res = done(true, "Connected to Etsy");
-    res.cookies.delete("etsy_oauth");
-    return res;
+    return done(true, "Connected to Etsy");
   } catch (e) {
     return done(false, String((e as Error)?.message ?? e).slice(0, 160));
   }
