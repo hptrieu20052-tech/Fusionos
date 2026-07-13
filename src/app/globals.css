@@ -483,3 +483,7 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
   .topnav-user{margin-left:auto}
   .tb-caret{display:none}
 }
+
+/* Finance: 5 KPI trên 1 hàng (desktop) — mobile về 2 cột */
+.kpis-5{grid-template-columns:repeat(5,minmax(0,1fr)) !important}
+@media (max-width:900px){ .kpis-5{grid-template-columns:repeat(2,1fr) !important} }

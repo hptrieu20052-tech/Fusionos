@@ -40,13 +40,11 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
 
   return (
     <>
-      <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ marginLeft: "auto" }}>
-          <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
-        </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
       </div>
 
-      <div className="kpis">
+      <div className="kpis kpis-5">
         <div className="kpi"><div className="l">{tr("fin.revenue")}</div><div className="v" style={{ color: "var(--green)" }}>{money(revenue)}</div></div>
         <div className="kpi"><div className="l">Platform fee</div><div className="v" style={{ color: "var(--red)" }}>{money(fee)}</div></div>
         <div className="kpi"><div className="l">{tr("fin.totalCost")}</div><div className="v" style={{ color: "var(--red)" }}>{money(Math.abs(cost) + fee)}</div></div>
