@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import * as XLSX from "xlsx";
+import { ignoredSet } from "@/lib/ignored-orders";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -146,10 +147,14 @@ export async function POST(req: NextRequest) {
 
   if (!groups.size) return NextResponse.json({ ok: false, error: "Could not detect the Order ID column — check that this is a valid Etsy export file" }, { status: 400 });
 
+  // Blocklist đơn hệ thống CŨ → bỏ qua, tránh push đúp sang nhà in
+  const blocked = await ignoredSet(Array.from(groups.keys()));
+
   let created = 0, skipped = 0;
   const errors: string[] = [];
 
   for (const g of Array.from(groups.values())) {
+    if (blocked.has(g.ext)) { skipped++; continue; } // đã xử lý ở hệ thống cũ
     // Chống trùng: đã có đơn etsy cùng external_id thì bỏ qua
     const [dup] = await db.select({ id: schema.orders.id }).from(schema.orders)
       .where(and(eq(schema.orders.platform, "etsy" as never), eq(schema.orders.externalId, g.ext))).limit(1);

@@ -1,6 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { beforeLaunch } from "@/lib/ingest-cutoff";
 import { and, eq } from "drizzle-orm";
+import { ignoredSet } from "@/lib/ignored-orders";
 
 export type InItem = {
   title?: string; sku?: string; qty?: number; price?: number;
@@ -29,9 +30,13 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
   // Đơn đã ship/hoàn tất/huỷ trên sàn → KHÔNG tạo mới (đơn cũ hệ thống trước); đơn đã có vẫn merge bình thường
   const SHIPPED_LIKE = /shipped|in_transit|delivered|completed|cancel/i;
 
+  // Blocklist đơn hệ thống CŨ — hỏi DB 1 lần cho cả lô, không hỏi từng đơn
+  const blocked = await ignoredSet(orders.map((o) => String(o.externalId ?? "")));
+
   for (const o of orders.slice(0, 500)) {
     const ext = s(o.externalId);
     if (!ext) { skipped++; continue; }
+    if (blocked.has(ext)) { skipped++; continue; } // đơn đã xử lý ở hệ thống cũ → bỏ qua, tránh in đúp
     try {
       const [dup] = await db.select().from(schema.orders)
         .where(and(eq(schema.orders.platform, platform as never), eq(schema.orders.externalId, ext))).limit(1);

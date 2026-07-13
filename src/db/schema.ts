@@ -237,6 +237,17 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
 }, (t) => [index("idx_ff_order").on(t.orderId)]);
 
 // ---------- FINANCE ----------
+// ---------- BLOCKLIST ĐƠN HỆ THỐNG CŨ ----------
+// Danh sách Order ID đã xử lý ở hệ thống cũ. Mọi cửa ingest (extension, cron API, import Excel)
+// đều bỏ qua đơn có external_id nằm ở đây → không bị push đúp sang nhà in trong lúc chuyển hệ thống.
+// Không lưu platform: Order ID của Etsy (10 số) và TikTok (18–19 số) không đụng nhau,
+// chặn theo ID thuần vừa đơn giản vừa an toàn hơn (nạp sai sàn cũng vẫn chặn đúng đơn).
+export const ignoredOrders = pgTable("ignored_orders", {
+  externalId: text("external_id").primaryKey(),
+  note: text("note"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const transactions = pgTable("transactions", {
   id: uuid("id").primaryKey().defaultRandom(),
   type: txTypeEnum("type").notNull(),

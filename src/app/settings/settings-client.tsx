@@ -11,6 +11,95 @@ type Ff = { id: string; name: string; method: string; apiEndpoint: string | null
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; productType: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
 const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
 
+
+// ===== Blocklist đơn hệ thống CŨ =====
+// Chống push đúp khi chạy song song 2 hệ thống: đơn nào hệ cũ đã xử lý thì FUSION bỏ qua.
+function LegacyOrders() {
+  const confirm = useConfirm();
+  const [total, setTotal] = useState(0);
+  const [needsMigration, setNeedsMigration] = useState(false);
+  const [raw, setRaw] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const load = () => fetch("/api/admin/ignored-orders").then((r) => r.json()).then((j) => {
+    if (j.ok) { setTotal(j.total); setNeedsMigration(!!j.needsMigration); }
+  });
+  useEffect(() => { load(); }, []);
+
+  async function onFile(f: File | undefined) {
+    if (!f) return;
+    setRaw(await f.text()); // .csv / .txt — Excel thì Save As CSV trước
+    setMsg("");
+  }
+
+  async function submit() {
+    if (!raw.trim()) return;
+    setBusy(true); setMsg("");
+    const j = await fetch("/api/admin/ignored-orders", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ raw, note }),
+    }).then((r) => r.json()).catch(() => null);
+    setBusy(false);
+    if (j?.ok) {
+      setMsg(`\u2713 Parsed ${j.parsed} IDs \u00b7 added ${j.added} new \u00b7 ${j.duplicated} already blocked \u00b7 total ${j.total}`);
+      setRaw(""); if (fileRef.current) fileRef.current.value = "";
+      load();
+    } else setMsg("\u26a0 " + (j?.error ?? "Error"));
+  }
+
+  async function clearAll() {
+    if (!(await confirm({ message: `Clear the entire blocklist (${total} order IDs)? New pulls will start accepting these orders again.`, danger: true }))) return;
+    await fetch("/api/admin/ignored-orders", { method: "DELETE" });
+    setMsg("\u2713 Blocklist cleared");
+    load();
+  }
+
+  return (
+    <div className="panel">
+      <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Legacy orders (migration blocklist) · {total}</h3>
+      <div className="sub" style={{ marginTop: 6 }}>
+        Order IDs already handled by the OLD system. Every ingest path (extension, API cron, Excel import)
+        skips them, so they can never be pushed to a print provider twice.
+        Paste the IDs or upload a .csv / .txt export — extra columns are ignored, IDs are auto-detected.
+      </div>
+
+      {needsMigration && (
+        <div style={{ marginTop: 10, background: "#FFF6F4", border: "1px solid #F6D9D0", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, fontWeight: 700, color: "#B4543C" }}>
+          Run MIGRATION_ignored_orders.sql in Supabase first — the table does not exist yet.
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <input ref={fileRef} type="file" accept=".csv,.txt,.tsv" onChange={(e) => onFile(e.target.files?.[0])}
+          style={{ ...inp, padding: "7px 10px" }} />
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (e.g. legacy export 2026-07-13)"
+          style={{ ...inp, flex: 1, minWidth: 200 }} />
+      </div>
+
+      <textarea value={raw} onChange={(e) => setRaw(e.target.value)} rows={5}
+        placeholder={"Paste order IDs here \u2014 one per line, or a full CSV export\n3612345678\n577474027162734608\n\u2026"}
+        style={{ ...inp, width: "100%", marginTop: 8, fontFamily: "monospace", fontSize: 12, resize: "vertical" }} />
+
+      <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button type="button" onClick={submit} disabled={busy || !raw.trim()}
+          style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 18px", fontWeight: 800, cursor: busy ? "wait" : "pointer", fontSize: 12.5, opacity: !raw.trim() ? 0.5 : 1 }}>
+          {busy ? "\u2026" : "Load into blocklist"}
+        </button>
+        {total > 0 && (
+          <button type="button" onClick={clearAll}
+            style={{ background: "var(--card)", border: "1px solid var(--line)", color: "var(--red)", borderRadius: 10, padding: "9px 16px", fontWeight: 700, cursor: "pointer", fontSize: 12.5 }}>
+            <IconTrash width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} /> Clear all
+          </button>
+        )}
+        {msg && <span style={{ fontSize: 12.5, fontWeight: 700 }}>{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean; ingestConfigured: boolean }) {
   const { t } = useLang();
   const confirm = useConfirm();
@@ -103,6 +192,8 @@ export function SettingsClient({ canEdit, ingestConfigured }: { canEdit: boolean
           Webhook tracking fulfiller: <b>POST /api/webhooks/fulfillment</b> · header <b>x-webhook-secret</b> {t("set.perBrandBelow")}
         </div>
       </div>
+
+      {canEdit && <LegacyOrders />}
 
       <div className="panel">
         <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{t("s.fulfillmentApi")} · {ffs.length}</h3>
