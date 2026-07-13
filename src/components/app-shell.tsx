@@ -26,6 +26,10 @@ export default function AppShell({ user, links, children }: {
   const path = usePathname();
   const { t } = useLang();
   const isActive = (href: string) => href === "/" ? path === "/" : path.startsWith(href);
+
+  // Trang /login KHÔNG BAO GIỜ khoác app chrome (nav/avatar) — kể cả khi session còn sống
+  // (middleware đã redirect người đăng nhập khỏi /login; đây là lớp chặn thứ 2 chống flash UI).
+  const isLogin = path === "/login";
   const initials = user.name.split(" ").map((w) => w[0]).slice(-2).join("").toUpperCase();
   const [moreOpen, setMoreOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -56,6 +60,8 @@ export default function AppShell({ user, links, children }: {
     window.addEventListener("focus", warm);
     return () => { document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", warm); };
   }, []);
+
+  if (isLogin) return <>{children}</>;
 
   return (
     <div className="app">

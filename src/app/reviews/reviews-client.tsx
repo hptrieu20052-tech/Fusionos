@@ -10,7 +10,7 @@ const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius
 export function ReviewsClient({ canReview }: { canReview: boolean }) {
   const { t } = useLang();
   const [designs, setDesigns] = useState<D[]>([]);
-  const [dr, setDr] = useState<RangeValue | null>(null); // lọc theo ngày tạo design
+  const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days — lọc theo ngày tạo design
   const [sel, setSel] = useState<D | null>(null);
   const [scores, setScores] = useState({ scoreBrief: 8, scoreAesthetic: 8, scoreTechnical: 8 });
   const [comment, setComment] = useState("");
@@ -50,7 +50,7 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
           <div className="sub">{t("rev.rubric")}</div>
         </div>
         <div style={{ marginLeft: "auto" }}>
-          <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr(null)} />
+          <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
         </div>
       </div>
       <div className="panel">

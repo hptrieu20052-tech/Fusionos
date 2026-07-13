@@ -320,19 +320,26 @@ function printifyAdapter(): FulfillerAdapter {
           l.designBack ? uploadImageByUrl(token, `${l.fulfillerSku}-back`, l.designBack) : Promise.resolve(undefined),
           printAreasOf(l.pfBlueprintId!, l.pfProviderId!),
         ]);
-        const ph = pa.get(l.pfVariantId!) ?? {};
+        // Variant không có trong response (hiếm) → mượn positions của variant bất kỳ cùng blueprint
+        const ph = pa.get(l.pfVariantId!) ?? pa.values().next().value ?? {};
         const positions = Object.keys(ph);
-        // SP 1 mặt in → Front vào vùng in DUY NHẤT (dù tên không phải "front", vd phone case = mặt lưng)
-        const frontPos = ph["front"] ? "front" : (positions.length === 1 ? positions[0] : "front");
-        const backPos = ph["back"] ? "back" : "back";
+        // Chọn vị trí THEO DANH SÁCH THẬT của blueprint (mỗi blueprint đặt tên khác nhau:
+        // front/front_side/default/back...; phone case chỉ có 1 vùng tên "back"):
+        //  1. đúng tên → 2. tên chứa từ khoá → 3. front rơi về vùng ĐẦU TIÊN; back không có thì BỎ ảnh back (tránh 422)
+        const pickPos = (want: string): string | undefined =>
+          ph[want] ? want : positions.find((p) => p.toLowerCase().includes(want));
+        const noData = positions.length === 0; // API không trả placeholder → giữ tên legacy, không dám bỏ ảnh
+        const frontPos = pickPos("front") ?? pickPos("default") ?? (positions[0] ?? "front");
+        const backPos = pickPos("back") ?? (noData ? "back" : undefined);
+        const dropBack = !!backImageId && !backPos; // blueprint không có mặt sau → bỏ ảnh back thay vì 422
         const prod = await createProduct(token, shopId, {
           title: `${extNumber} · ${l.fulfillerSku}`,
           blueprintId: l.pfBlueprintId!, providerId: l.pfProviderId!, variantId: l.pfVariantId!,
           price: l.price ? Math.round(l.price * 100) : 2000,
-          frontImageId, backImageId,
+          frontImageId, backImageId: dropBack ? undefined : backImageId,
           frontScale: fitHeightScale(ph[frontPos], l.designFrontW, l.designFrontH),
-          backScale: fitHeightScale(ph[backPos], l.designBackW, l.designBackH),
-          frontPosition: frontPos, backPosition: backPos,
+          backScale: backPos ? fitHeightScale(ph[backPos], l.designBackW, l.designBackH) : 1,
+          frontPosition: frontPos, backPosition: backPos ?? "back",
         });
         return { product_id: prod.productId, variant_id: prod.variantId, quantity: l.qty };
       }));

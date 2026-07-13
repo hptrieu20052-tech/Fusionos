@@ -6,6 +6,21 @@ const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/a
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Đã đăng nhập mà vào /login → đưa về Dashboard (tránh trang login khoác app chrome gây hiểu nhầm bảo mật)
+  if (pathname === "/login") {
+    const token = req.cookies.get("fusion_session")?.value;
+    if (token) {
+      try {
+        await jwtVerify(token, new TextEncoder().encode(process.env.AUTH_SECRET ?? "dev-secret-change-me"));
+        const url = req.nextUrl.clone();
+        url.pathname = "/";
+        url.search = "";
+        return NextResponse.redirect(url);
+      } catch { /* token hỏng → cho vào login bình thường */ }
+    }
+  }
+
   if (PUBLIC.some((p) => pathname.startsWith(p))) return NextResponse.next();
 
   const token = req.cookies.get("fusion_session")?.value;

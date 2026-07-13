@@ -13,7 +13,7 @@ const TX_TYPES = ["revenue","base_cost","shipping","platform_fee","ads","sample"
 export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const { t: tr } = useLang();
   const [days, setDays] = useState(30);
-  const [dr, setDr] = useState<RangeValue | null>(null); // range tuỳ chọn — ưu tiên hơn preset days
+  const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days — chỉnh bằng picker
   const [data, setData] = useState<{ byType: Row[]; daily: Row[]; bySeller: Row[]; byPlatform: Row[] } | null>(null);
   const [form, setForm] = useState({ type: "ads", amount: "", note: "" });
   const [msg, setMsg] = useState("");
@@ -44,10 +44,9 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
     <>
       <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <h3 style={{ fontWeight: 800, fontSize: 15 }}>Finance</h3>
-        <div className="nav" style={{ marginTop: 0, marginLeft: "auto" }}>
-          {[7, 30, 90].map((d) => <a key={d} onClick={() => { setDays(d); setDr(null); }} className={!dr && days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
+        <div style={{ marginLeft: "auto" }}>
+          <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
         </div>
-        <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr(null)} />
       </div>
 
       <div className="kpis">

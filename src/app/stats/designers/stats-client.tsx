@@ -7,7 +7,7 @@ type Designer = { id: string; name: string; values: number[]; total: number; poi
 
 export function DesignerStats() {
   const [days, setDays] = useState(7);
-  const [dr, setDr] = useState<RangeValue | null>(null); // range tuỳ chọn — ưu tiên hơn preset days
+  const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days — chỉnh bằng picker
   const [dayList, setDayList] = useState<string[]>([]);
   const [designers, setDesigners] = useState<Designer[]>([]);
 
@@ -31,16 +31,15 @@ export function DesignerStats() {
     <>
       <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
         <h3 style={{ fontWeight: 800, fontSize: 15 }}>Designer Statistics</h3>
-        <div className="nav" style={{ marginTop: 0, marginLeft: "auto" }}>
-          {[7, 14, 30].map((d) => <a key={d} onClick={() => { setDays(d); setDr(null); }} className={!dr && days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
+        <div style={{ marginLeft: "auto" }}>
+          <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
         </div>
-        <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr(null)} />
       </div>
 
       <div className="kpis">
         <div className="kpi"><div className="l">Designs today</div><div className="v">{today}</div>
           <div className="d" style={{ color: today >= yest ? "var(--green)" : "var(--red)" }}>{today >= yest ? "▲ +" : "▼ "}{today - yest} vs yesterday</div></div>
-        <div className="kpi"><div className="l">Total {days} days</div><div className="v">{grand}</div><div className="d">Avg {(grand / (days || 1)).toFixed(1)}/day · {designers.length} designers</div></div>
+        <div className="kpi"><div className="l">Total {dayList.length} days</div><div className="v">{grand}</div><div className="d">Avg {(grand / (dayList.length || 1)).toFixed(1)}/day · {designers.length} designers</div></div>
         <div className="kpi"><div className="l">Avg quality score</div><div className="v">{avgScore ? avgScore.toFixed(1) : "—"}<span style={{ fontSize: 13, color: "var(--muted)" }}>/10</span></div></div>
         <div className="kpi"><div className="l">Top order-generating design</div><div className="v" style={{ fontSize: 17 }}>{topBiz?.name ?? "—"}</div><div className="d" style={{ color: "var(--green)" }}>{topBiz?.bizOrders ?? 0} orders / 30 days</div></div>
       </div>
