@@ -67,18 +67,49 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   if (!b) return json({ ok: false, error: "bad body" }, 400);
 
-  const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
-  const shop = {
-    shopLive: b.live === true,                       // false = 404/redirect → shop bị suspend hoặc đóng
-    shopSales: num(b.sales),                         // "536 sales"
-    shopRating: num(b.rating),                       // "4.8"
-    shopReviews: num(b.reviews),                     // "(61)"
-    shopAge: typeof b.age === "string" ? b.age.slice(0, 40) : null, // "9 months on Etsy"
-    shopStatus: typeof b.status === "number" ? b.status : null,     // HTTP status thật, để soi khi lỗi
-    shopCheckedAt: new Date().toISOString(),
+  // BUG CŨ: Number(null) = 0 và isFinite(0) = true → null biến thành 0,
+  // nên lần check hỏng lại hiện ra "0 (0) · 0 sales" thay vì ẩn đi.
+  const num = (v: unknown) => {
+    if (v == null || v === "") return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
   };
 
-  const health = { ...((st.health as Record<string, unknown>) ?? {}), ...shop };
+  const prev = (st.health as Record<string, unknown>) ?? {};
+  const ok = b.ok === true;     // extension đọc được số liệu thật (không phải trang chặn/captcha)
+  const gone = b.gone === true; // xác định chắc chắn shop đã đóng (404 / "shop not available")
+  const status = typeof b.status === "number" ? b.status : null;
+
+  // Chặn bot (403/429) hay lỗi mạng KHÔNG PHẢI là suspend. Trước đây gộp chung → báo suspend oan.
+  // Không đọc được gì thì giữ nguyên trạng thái cũ, chỉ ghi nhận lần check thất bại.
+  if (!ok && !gone) {
+    const health = {
+      ...prev,
+      shopCheckedAt: new Date().toISOString(),
+      shopCheckFailed: true,
+      shopStatus: status,
+    };
+    await db.update(schema.stores).set({ health }).where(eq(schema.stores.id, st.id));
+    return json({ ok: true, note: "check failed — previous state kept" });
+  }
+
+  const shop: Record<string, unknown> = {
+    shopLive: !gone,
+    shopStatus: status,
+    shopCheckedAt: new Date().toISOString(),
+    shopCheckFailed: false,
+  };
+  // Chỉ ghi đè số liệu khi đọc được thật — không xoá số cũ bằng null
+  if (!gone) {
+    const fields: [string, unknown][] = [
+      ["shopSales", num(b.sales)], ["shopRating", num(b.rating)],
+      ["shopReviews", num(b.reviews)], ["shopListings", num(b.listings)],
+      ["shopAge", typeof b.age === "string" && b.age ? b.age.slice(0, 40) : null],
+    ];
+    for (const [k, v] of fields) if (v != null) shop[k] = v;
+  }
+
+  const health = { ...prev, ...shop };
   await db.update(schema.stores).set({ health }).where(eq(schema.stores.id, st.id));
   return json({ ok: true });
 }

@@ -74,10 +74,13 @@ export async function GET(req: NextRequest) {
           if (!h.shopCheckedAt) return null;
           return {
             live: h.shopLive === true,
+            checkFailed: h.shopCheckFailed === true, // Etsy chặn / lỗi mạng — KHÔNG phải suspend
             sales: h.shopSales ?? null,
             rating: h.shopRating ?? null,
             reviews: h.shopReviews ?? null,
+            listings: h.shopListings ?? null,
             age: h.shopAge ?? null,
+            status: h.shopStatus ?? null,
             checkedAt: h.shopCheckedAt,
           };
         })(),

@@ -9,7 +9,7 @@ import { IconSettings, IconTrash, IconLink, IconPuzzle, IconRefresh, IconKey, Ic
 type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
   sellerName: string | null; sellerId: string | null; note: string | null; storeUrl: string | null;
-  shop?: { live: boolean; sales: number | null; rating: number | null; reviews: number | null; age: string | null; checkedAt: string } | null;
+  shop?: { live: boolean; checkFailed: boolean; sales: number | null; rating: number | null; reviews: number | null; listings: number | null; age: string | null; status: number | null; checkedAt: string } | null;
   currency: string; fxRate: string; ingestToken?: string | null; health?: { fxConvertedAt?: string; fxConvertedRate?: number } | null;
   orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
@@ -126,19 +126,14 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--line)"; e.currentTarget.style.borderLeftColor = s.live ? "var(--green)" : "var(--red)"; }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
                     <b style={{ fontSize: 14 }}>{s.name}</b>
-                    {/* Badge: SUSPENDED = shop thật sự chết trên Etsy (extension check trang public).
-                        LIVE/DIE = chỉ nói có đơn trong 7 ngày hay không — nhẹ hơn hẳn. */}
-                    {s.shop && !s.shop.live ? (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: "var(--red-soft)", color: "var(--red)" }} title={`Shop page unreachable — checked ${new Date(s.shop.checkedAt).toLocaleString()}`}>
-                        <IconWarn width={11} height={11} /> SUSPENDED
-                      </span>
-                    ) : (
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999,
-                        background: s.live ? "var(--green-soft)" : "var(--red-soft)", color: s.live ? "var(--green)" : "var(--red)" }}>
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: s.live ? "var(--green)" : "var(--red)" }} />
-                        {s.live ? t("s.live") : t("s.die")}
-                      </span>
-                    )}
+                    {/* Badge LIVE/DIE = có đơn trong 7 ngày hay không. Không dò được suspend nữa
+                        (extension chỉ đọc DOM trang seller tự mở, không fetch gì) — nhưng shop bị khoá
+                        thì seller không vào được Shop Manager → số liệu đứng yên → badge "stale" bên dưới. */}
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 999,
+                      background: s.live ? "var(--green-soft)" : "var(--red-soft)", color: s.live ? "var(--green)" : "var(--red)" }}>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: s.live ? "var(--green)" : "var(--red)" }} />
+                      {s.live ? t("s.live") : t("s.die")}
+                    </span>
                     {canAdd && (
                       <span style={{ marginLeft: "auto", display: "inline-flex", gap: 4 }}>
                         {s.storeUrl && <a href={s.storeUrl} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="st-iconbtn" title={t("st.openShop")}><IconLink width={14} height={14} /></a>}
@@ -158,7 +153,18 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
                         </span>
                       )}
                       {s.shop.sales != null && <>·<span><b style={{ color: "var(--ink)" }}>{s.shop.sales.toLocaleString()}</b> sales</span></>}
+                      {s.shop.listings != null && <>·<span><b style={{ color: "var(--ink)" }}>{s.shop.listings.toLocaleString()}</b> listings</span></>}
                       {s.shop.age && <>·<span>{s.shop.age}</span></>}
+                      {(() => {
+                        const days = Math.floor((Date.now() - Date.parse(s.shop!.checkedAt)) / 86400000);
+                        // Seller không mở Shop Manager quá 7 ngày → số liệu cũ.
+                        // Nếu kéo dài, rất có thể shop đã bị khoá (seller không vào được nữa).
+                        return days > 7 ? (
+                          <span style={{ color: "var(--red)", fontWeight: 700 }} title={`Last read from Shop Manager on ${new Date(s.shop!.checkedAt).toLocaleString()}`}>
+                            · {days}d stale
+                          </span>
+                        ) : null;
+                      })()}
                     </div>
                   )}
                   {/* Hàng 2: seller + số đơn/doanh thu 30 ngày (từ DB của mình) */}
