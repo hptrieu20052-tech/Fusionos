@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     return "new";
   };
 
-  type Line = { title: string; sku: string; qty: number; price: number; variant: string };
+  type Line = { title: string; sku: string; qty: number; price: number; variant: string; listingId: string };
   type Grp = {
     ext: string; first: string; last: string; phone: string;
     addr1: string; addr2: string; city: string; state: string; zip: string; country: string;
@@ -153,6 +153,8 @@ export async function POST(req: NextRequest) {
         qty,
         price: unit,
         variant: pick(r, ["variation"]),
+        // Product ID = khoá để gợi ý design theo listing (giống etsy_listing_id). File export TikTok có cột này.
+        listingId: pick(r, ["productid", "product_id"]),
       });
     }
   }
@@ -182,12 +184,17 @@ export async function POST(req: NextRequest) {
         note: g.note || null,
         orderedAt: new Date(),
       }).returning();
-      const lines = g.lines.length ? g.lines : [{ title: `Đơn TikTok ${g.ext}`, sku: "", qty: 1, price: total, variant: "" }];
+      const lines = g.lines.length ? g.lines : [{ title: `Đơn TikTok ${g.ext}`, sku: "", qty: 1, price: total, variant: "", listingId: "" }];
       for (const l of lines) {
         await db.insert(schema.orderItems).values({
           orderId: order.id, productTitle: l.title, internalSku: l.sku || null,
           qty: l.qty, unitPrice: (l.price / fxRate).toFixed(2),
           variant: l.variant || null,
+          // Cột etsy_listing_id dùng chung cho mọi sàn (Etsy: listing_id · TikTok: product_id)
+          etsyListingId: l.listingId || null,
+          productUrl: l.listingId ? `https://shop.tiktok.com/view/product/${l.listingId}` : null,
+          // File Excel của TikTok KHÔNG có cột ảnh sản phẩm → imageUrl để trống.
+          // Muốn có ảnh thì kéo đơn bằng API (cron 15 phút), đường đó lấy được sku_image.
         });
       }
       created++;
