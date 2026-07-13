@@ -2,10 +2,12 @@
 import { useEffect, useState } from "react";
 import { LOGO_WHITE } from "./journey-images";
 
-// Ảnh hành trình đọc TRỰC TIẾP từ public/journey/{năm}.jpg — thay ảnh chỉ cần ghi đè file
-// cùng tên trong folder rồi deploy. TĂNG JOURNEY_V mỗi lần thay ảnh để phá cache trình duyệt/Cloudflare.
+// Ảnh hành trình đọc TRỰC TIẾP từ public/journey/{năm}.{đuôi} — thay ảnh chỉ cần ghi đè file
+// cùng tên rồi deploy. TĂNG JOURNEY_V mỗi lần thay ảnh để phá cache trình duyệt/Cloudflare.
+// Đuôi file được DÒ TỰ ĐỘNG theo thứ tự: jpg → jpeg → png → webp → JPG → PNG (onError nhảy đuôi kế).
 const JOURNEY_V = 2;
-const journeySrc = (y: string) => `/journey/${y}.jpg?v=${JOURNEY_V}`;
+const JOURNEY_EXTS = ["jpg", "jpeg", "png", "webp", "JPG", "PNG"];
+const journeySrc = (y: string, extIdx = 0) => `/journey/${y}.${JOURNEY_EXTS[extIdx]}?v=${JOURNEY_V}`;
 
 // Our journey — ảnh & logo nhúng base64 (hiển thị trực tiếp, không phụ thuộc file public).
 const JOURNEY = ["2021", "2022", "2023", "2024", "2025"];
@@ -129,8 +131,14 @@ export default function LoginPage() {
               return (
                 <div key={y} className={`lg-cf-card${off === 0 ? " on" : ""}`} style={style} onClick={() => off !== 0 && pick(i)}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img className="lg-cf-img" src={src} alt={y}
-                    onError={(e) => { const el = e.currentTarget; el.style.display = "none"; (el.nextElementSibling as HTMLElement | null)?.classList.remove("hidden-fb"); }} />
+                  <img className="lg-cf-img" src={src} alt={y} data-ext="0"
+                    onError={(e) => {
+                      // Dò đuôi kế tiếp; hết đuôi mới hiện ô năm fallback
+                      const el = e.currentTarget;
+                      const next = Number(el.dataset.ext ?? 0) + 1;
+                      if (next < JOURNEY_EXTS.length) { el.dataset.ext = String(next); el.src = journeySrc(y, next); }
+                      else { el.style.display = "none"; (el.nextElementSibling as HTMLElement | null)?.classList.remove("hidden-fb"); }
+                    }} />
                   <div className="lg-cf-fb hidden-fb">{y}</div>
                   {off === 0 && <div className="lg-cf-year">{y}</div>}
                 </div>
