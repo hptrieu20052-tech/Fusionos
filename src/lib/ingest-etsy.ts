@@ -1,4 +1,5 @@
 import { db, schema } from "@/lib/db";
+import { beforeLaunch } from "@/lib/ingest-cutoff";
 import { and, eq } from "drizzle-orm";
 
 export type InItem = {
@@ -59,6 +60,8 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
       }
 
       if (o.platformStatus && SHIPPED_LIKE.test(String(o.platformStatus))) { skipped++; continue; }
+      // MỐC LAUNCH: đơn đặt trước INGEST_SINCE → thuộc hệ thống cũ, bỏ qua (chống push đúp)
+      if (beforeLaunch(o.orderedAt)) { skipped++; continue; }
 
       const items = Array.isArray(o.items) ? o.items : [];
       const subtotal = items.reduce((a, it) => a + num(it.price) * (num(it.qty) || 1), 0);

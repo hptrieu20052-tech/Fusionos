@@ -184,6 +184,12 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
               </div>
               <div className="dc-acts">
                 {d.downloadUrl && (
+                  <button className="dc-act" title="View design in new tab"
+                    onClick={(e) => { e.stopPropagation(); window.open(d.downloadUrl!, "_blank", "noopener"); }}>
+                    <IconEyeOpen width={16} height={16} />
+                  </button>
+                )}
+                {d.downloadUrl && (
                   <button className="dc-act" title={t("d.downloadOriginal")}
                     onClick={(e) => { e.stopPropagation(); forceDownload(d.downloadUrl!, d.title); }}>
                     <IconDownload width={16} height={16} />

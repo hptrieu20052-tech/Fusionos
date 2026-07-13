@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const cfg = await ttGetValidCfg(st.id, st.apiCredentials as Record<string, string> | null);
-    const since = Math.floor(Date.now() / 1000) - 30 * 86400;
+    const { ingestSinceMs } = await import("@/lib/ingest-cutoff");
+    const since = Math.max(Math.floor(Date.now() / 1000) - 30 * 86400, Math.floor(ingestSinceMs() / 1000) || 0);
     const raw = await ttSearchOrders(cfg, { pageSize: 50, createdAfter: since });
     const orders = raw.map(ttNormalizeOrder).filter((o) => o.externalId);
     const r = await insertEtsyOrders({ id: st.id, sellerId: st.sellerId, fx: st.fxRate, name: st.name }, orders, "api", "tiktok");
