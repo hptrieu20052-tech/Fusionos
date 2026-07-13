@@ -14,7 +14,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const { t: tr } = useLang();
   const [days, setDays] = useState(30);
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days — chỉnh bằng picker
-  const [data, setData] = useState<{ byType: Row[]; daily: Row[]; bySeller: Row[]; byPlatform: Row[] } | null>(null);
+  const [data, setData] = useState<{ totals: { revenue: number; fee: number; cost: number; profit: number; orders: number }; byType: Row[]; daily: Row[]; bySeller: Row[]; byStore: Row[]; byPlatform: Row[] } | null>(null);
   const [form, setForm] = useState({ type: "ads", amount: "", note: "" });
   const [msg, setMsg] = useState("");
 
@@ -33,9 +33,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
 
   if (!data) return <div className="panel empty">{tr("c.loading2")}</div>;
 
-  const revenue = data.byType.filter((t) => Number(t.total) > 0).reduce((a, t) => a + Number(t.total), 0);
-  const cost = data.byType.filter((t) => Number(t.total) < 0).reduce((a, t) => a + Number(t.total), 0);
-  const profit = revenue + cost;
+  const { revenue, fee, cost, profit } = data.totals;
   const margin = revenue ? (profit / revenue) * 100 : 0;
   const dailyNet = data.daily.map((d) => Number(d.rev) + Number(d.cost));
   const maxAbs = Math.max(...dailyNet.map(Math.abs), 1);
@@ -43,7 +41,6 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   return (
     <>
       <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Finance</h3>
         <div style={{ marginLeft: "auto" }}>
           <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
         </div>
@@ -51,7 +48,8 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
 
       <div className="kpis">
         <div className="kpi"><div className="l">{tr("fin.revenue")}</div><div className="v" style={{ color: "var(--green)" }}>{money(revenue)}</div></div>
-        <div className="kpi"><div className="l">{tr("fin.totalCost")}</div><div className="v" style={{ color: "var(--red)" }}>{money(cost)}</div></div>
+        <div className="kpi"><div className="l">Platform fee</div><div className="v" style={{ color: "var(--red)" }}>{money(fee)}</div></div>
+        <div className="kpi"><div className="l">{tr("fin.totalCost")}</div><div className="v" style={{ color: "var(--red)" }}>{money(Math.abs(cost) + fee)}</div></div>
         <div className="kpi"><div className="l">{tr("fin.profit")}</div><div className="v" style={{ color: profit >= 0 ? "var(--green)" : "var(--red)" }}>{profit >= 0 ? "" : "-"}{money(profit)}</div></div>
         <div className="kpi"><div className="l">{tr("fin.margin")}</div><div className="v">{margin.toFixed(1)}%</div></div>
       </div>
@@ -72,34 +70,66 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
         </div>
         <div className="panel">
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{tr("fin.costBreakdown")}</h3>
-          <HBarList rows={data.byType.filter((t) => Number(t.total) < 0).map((t) => ({
-            label: typeLabel(tr, String(t.type)), value: Math.abs(Number(t.total)),
-            color: "#CE6B6B", suffix: money(t.total),
-          }))} />
+          <HBarList rows={[
+            ...(fee > 0 ? [{ label: "Platform fee", value: fee, color: "#C98A3D", suffix: money(fee) }] : []),
+            ...data.byType.filter((t) => Number(t.total) < 0).map((t) => ({
+              label: typeLabel(tr, String(t.type)), value: Math.abs(Number(t.total)),
+              color: "#CE6B6B", suffix: money(t.total),
+            })),
+          ]} />
         </div>
+      </div>
+
+      <div className="panel">
+        <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by store</h3>
+        <table style={{ marginTop: 8 }}>
+          <thead><tr><th>Store</th><th>Seller</th><th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>Fee</th><th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
+          <tbody>{data.byStore.map((st) => {
+            const pf = Number(st.rev) - Number(st.fee) + Number(st.cost);
+            return (
+              <tr key={String(st.id)}>
+                <td><span className="chip" style={{ marginRight: 6 }}>{String(st.marketplace)}</span><b>{String(st.store)}</b></td>
+                <td>{String(st.seller ?? "—")}</td>
+                <td style={{ textAlign: "right" }}>{String(st.orders)}</td>
+                <td style={{ textAlign: "right" }}>{money(st.rev)}</td>
+                <td style={{ textAlign: "right", color: "var(--muted)" }}>{money(st.fee)}</td>
+                <td style={{ textAlign: "right", color: "var(--red)" }}>{money(st.cost)}</td>
+                <td style={{ textAlign: "right", fontWeight: 800, color: pf >= 0 ? "var(--green)" : "var(--red)" }}>{pf < 0 ? "-" : ""}{money(pf)}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <div className="panel">
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by seller</h3>
           <table style={{ marginTop: 8 }}>
-            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
-            <tbody>{data.bySeller.map((s) => (
-              <tr key={String(s.name)}><td><b>{String(s.name)}</b></td>
-                <td style={{ textAlign: "right" }}>{money(s.rev)}</td>
-                <td style={{ textAlign: "right", fontWeight: 800, color: Number(s.profit) >= 0 ? "var(--green)" : "var(--red)" }}>{Number(s.profit) < 0 ? "-" : ""}{money(s.profit)}</td></tr>
-            ))}</tbody>
+            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>Fee</th><th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
+            <tbody>{data.bySeller.map((s) => {
+              const pf = Number(s.rev) - Number(s.fee) + Number(s.cost);
+              return (
+                <tr key={String(s.name)}><td><b>{String(s.name)}</b></td>
+                  <td style={{ textAlign: "right" }}>{money(s.rev)}</td>
+                  <td style={{ textAlign: "right", color: "var(--muted)" }}>{money(s.fee)}</td>
+                  <td style={{ textAlign: "right", color: "var(--red)" }}>{money(s.cost)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 800, color: pf >= 0 ? "var(--green)" : "var(--red)" }}>{pf < 0 ? "-" : ""}{money(pf)}</td></tr>
+              );
+            })}</tbody>
           </table>
         </div>
         <div className="panel">
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by platform</h3>
           <table style={{ marginTop: 8 }}>
             <thead><tr><th>Marketplace</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
-            <tbody>{data.byPlatform.map((p) => (
-              <tr key={String(p.marketplace)}><td><span className="chip">{String(p.marketplace)}</span></td>
-                <td style={{ textAlign: "right" }}>{money(p.rev)}</td>
-                <td style={{ textAlign: "right", fontWeight: 800, color: Number(p.profit) >= 0 ? "var(--green)" : "var(--red)" }}>{Number(p.profit) < 0 ? "-" : ""}{money(p.profit)}</td></tr>
-            ))}</tbody>
+            <tbody>{data.byPlatform.map((p) => {
+              const pf = Number(p.rev) - Number(p.fee) + Number(p.cost);
+              return (
+                <tr key={String(p.marketplace)}><td><span className="chip">{String(p.marketplace)}</span></td>
+                  <td style={{ textAlign: "right" }}>{money(p.rev)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 800, color: pf >= 0 ? "var(--green)" : "var(--red)" }}>{pf < 0 ? "-" : ""}{money(pf)}</td></tr>
+              );
+            })}</tbody>
           </table>
           {canAdd && (
             <form onSubmit={addTx} style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", borderTop: "1px solid var(--line)", paddingTop: 12, alignItems: "center" }}>

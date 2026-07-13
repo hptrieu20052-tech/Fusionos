@@ -43,7 +43,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     // Scoring + Designer Stats + Finance: hiện TRỰC TIẾP (không còn nhóm More), tạm chỉ admin thấy để review
     ...(isAdmin ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Operations" }] : []),
     ...(isAdmin ? [{ href: "/stats/designers", label: "nav.statsDesigners", icon: "statsDesigners", section: "Reports" }] : []),
-    ...(isAdmin ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Reports" }] : []),
+    ...(isAdmin || session.role === "seller" ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Reports" }] : []),
     ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "System" }] : []),
     ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "System" }] : []),
     ...(isAdmin ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "System" }] : []),
