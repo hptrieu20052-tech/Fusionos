@@ -197,7 +197,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   }
   const actBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 5, background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 10px", fontSize: 12, cursor: "pointer", marginLeft: 6, fontWeight: 600, color: "var(--ink)" };
 
-  type Team = { id: string; name: string; members: { id: string; fullName: string; role: string }[] };
+  type Team = { id: string; name: string; telegramChatId?: string; members: { id: string; fullName: string; role: string }[] };
   const [teamList, setTeamList] = useState<Team[]>([]);
   const [newTeam, setNewTeam] = useState("");
   const loadTeams = () => fetch("/api/admin/teams").then((r) => r.json()).then((j) => { if (j.ok) setTeamList(j.teams); });
@@ -219,6 +219,12 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
     const j = await fetch("/api/admin/teams", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: tm.id }) }).then((r) => r.json());
     if (j.ok) { setUsers((us) => us.map((u) => u.team === tm.name ? { ...u, team: null } : u)); loadTeams(); }
     else setMsg("⚠ " + (j.error ?? "Error"));
+  }
+  // Lưu Telegram chat id của team; test=true → bắn tin thử vào group luôn
+  async function saveTeamTelegram(id: string, chatId: string, test: boolean) {
+    const j = await fetch("/api/admin/teams", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, telegramChatId: chatId, testTelegram: test }) }).then((r) => r.json());
+    setMsg(j.ok ? (test ? "✓ Test message sent to Telegram" : "✓ Telegram chat saved") : "⚠ " + (j.error ?? "Error"));
+    if (j.ok) loadTeams();
   }
   async function setMemberTeam(userId: string, team: string) {
     await patchUser(userId, { team });
@@ -372,6 +378,16 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                     <option value="">{t("adm.addMember")}</option>
                     {outside.map((u) => <option key={u.id} value={u.id}>{u.fullName} ({u.role}){u.team ? ` · ${t("adm.inTeam")} ${u.team}` : ""}</option>)}
                   </select>
+                  {/* Telegram group nhận thông báo SALE của team */}
+                  <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+                    <input defaultValue={tm.telegramChatId ?? ""} placeholder="Telegram chat ID (e.g. -100123...)"
+                      onBlur={(e) => { if (e.target.value.trim() !== (tm.telegramChatId ?? "")) saveTeamTelegram(tm.id, e.target.value.trim(), false); }}
+                      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+                      style={{ ...inp, padding: "6px 9px", fontSize: 12, flex: 1, minWidth: 0 }} />
+                    <button type="button" title="Send a test message to this group"
+                      onClick={(e) => { const box = (e.currentTarget.previousSibling as HTMLInputElement); saveTeamTelegram(tm.id, box.value.trim(), true); }}
+                      style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 10px", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Test</button>
+                  </div>
                 </div>
               );
             })}

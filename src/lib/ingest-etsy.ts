@@ -22,6 +22,7 @@ const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], source: "extension" | "api" = "api", platform: "etsy" | "tiktok" = "etsy") {
   const fx = Number(store.fx) > 0 ? Number(store.fx) : 1;
   let created = 0, skipped = 0;
+  const createdIds: string[] = [];
   const errors: string[] = [];
   let updated = 0;
 
@@ -96,11 +97,16 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         });
       }
       created++;
+      if (order?.id) createdIds.push(order.id);
     } catch (e) {
       errors.push(`${ext}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
     }
   }
 
   await db.update(schema.stores).set({ lastSyncAt: new Date() }).where(eq(schema.stores.id, store.id));
+  // Thông báo SALE về Telegram theo team (lỗi Telegram không ảnh hưởng ingest)
+  if (createdIds.length) {
+    try { const { notifyNewSales } = await import("@/lib/telegram"); await notifyNewSales(createdIds); } catch { /* bỏ qua */ }
+  }
   return { created, updated, skipped, errors: errors.slice(0, 20) };
 }

@@ -360,5 +360,7 @@ export const orderIssues = pgTable("order_issues", {
 export const teams = pgTable("teams", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
+  // Chat ID group Telegram của team — bot bắn thông báo SALE về đây (MIGRATION_team_telegram.sql)
+  telegramChatId: text("telegram_chat_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

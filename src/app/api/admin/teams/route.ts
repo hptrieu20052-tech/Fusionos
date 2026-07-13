@@ -12,7 +12,7 @@ export async function GET() {
   const teams = await db.select().from(schema.teams).orderBy(schema.teams.name);
   const users = await db.select({ id: schema.users.id, fullName: schema.users.fullName, role: schema.users.role, team: schema.users.team }).from(schema.users);
   const out = teams.map((tm) => ({
-    id: tm.id, name: tm.name,
+    id: tm.id, name: tm.name, telegramChatId: tm.telegramChatId ?? "",
     members: users.filter((u) => u.team === tm.name).map((u) => ({ id: u.id, fullName: u.fullName, role: u.role })),
   }));
   return NextResponse.json({ ok: true, teams: out, allUsers: users });
@@ -32,14 +32,28 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH { id, name } — đổi tên team (đồng bộ luôn users.team)
+// PATCH { id, name? , telegramChatId?, testTelegram? } — đổi tên team (đồng bộ users.team) / lưu chat Telegram
 export async function PATCH(req: NextRequest) {
   if (!(await adminOnly())) return NextResponse.json({ ok: false }, { status: 403 });
   const b = await req.json().catch(() => null);
-  const name = String(b?.name ?? "").trim();
-  if (!b?.id || !name) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
+  if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   const [old] = await db.select().from(schema.teams).where(eq(schema.teams.id, b.id)).limit(1);
   if (!old) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+
+  // Lưu Telegram chat id (chuỗi rỗng = tắt thông báo cho team này) + gửi tin thử nếu yêu cầu
+  if (b.telegramChatId !== undefined) {
+    const chatId = String(b.telegramChatId ?? "").trim();
+    await db.update(schema.teams).set({ telegramChatId: chatId || null }).where(eq(schema.teams.id, b.id));
+    if (b.testTelegram && chatId) {
+      const { sendTelegram } = await import("@/lib/telegram");
+      const r = await sendTelegram(chatId, `✅ <b>FUSION OS connected!</b>\nSale notifications for team <b>${old.name}</b> will arrive here.`);
+      if (!r.ok) return NextResponse.json({ ok: false, error: `Telegram: ${r.error}` }, { status: 400 });
+    }
+    if (b.name === undefined) return NextResponse.json({ ok: true });
+  }
+
+  const name = String(b?.name ?? "").trim();
+  if (!name) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   try {
     await db.update(schema.teams).set({ name }).where(eq(schema.teams.id, b.id));
     await db.update(schema.users).set({ team: name }).where(eq(schema.users.team, old.name));

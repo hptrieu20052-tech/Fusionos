@@ -160,6 +160,7 @@ export async function POST(req: NextRequest) {
   if (!groups.size) return NextResponse.json({ ok: false, error: "No valid orders in the file" }, { status: 400 });
 
   let created = 0, skipped = 0;
+  const createdIds: string[] = [];
   const errors: string[] = [];
 
   for (const g of Array.from(groups.values())) {
@@ -190,10 +191,15 @@ export async function POST(req: NextRequest) {
         });
       }
       created++;
+      if (order?.id) createdIds.push(order.id);
     } catch (e) {
       errors.push(`Đơn ${g.ext}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
     }
   }
 
+  // Thông báo SALE về Telegram theo team (lỗi Telegram không ảnh hưởng import)
+  if (createdIds.length) {
+    try { const { notifyNewSales } = await import("@/lib/telegram"); await notifyNewSales(createdIds); } catch { /* bỏ qua */ }
+  }
   return NextResponse.json({ ok: true, orders: groups.size, created, skipped, errors: errors.slice(0, 30) });
 }
