@@ -1,6 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { JOURNEY_IMG, LOGO_WHITE } from "./journey-images";
+import { LOGO_WHITE } from "./journey-images";
+
+// Ảnh hành trình đọc TRỰC TIẾP từ public/journey/{năm}.jpg — thay ảnh chỉ cần ghi đè file
+// cùng tên trong folder rồi deploy. TĂNG JOURNEY_V mỗi lần thay ảnh để phá cache trình duyệt/Cloudflare.
+const JOURNEY_V = 2;
+const journeySrc = (y: string) => `/journey/${y}.jpg?v=${JOURNEY_V}`;
 
 // Our journey — ảnh & logo nhúng base64 (hiển thị trực tiếp, không phụ thuộc file public).
 const JOURNEY = ["2021", "2022", "2023", "2024", "2025"];
@@ -82,6 +87,7 @@ export default function LoginPage() {
         .lg-terms b{color:#33445a;font-weight:700}
         .lg-dev{text-align:center;font-size:12.5px;color:#4a5a6a;margin-top:20px;padding-top:16px;border-top:1px solid #eef1f4}
         .lg-dev b{color:#003c84}
+        .lg-cf-fb.hidden-fb{display:none}
         .lg-mobilebrand{display:none}
         @media(max-width:900px){
           .lg-left{display:none}
@@ -119,13 +125,13 @@ export default function LoginPage() {
                 pointerEvents: shown ? "auto" : "none",
                 filter: abs === 0 ? "none" : "brightness(.78)",
               };
-              const src = JOURNEY_IMG[y];
+              const src = journeySrc(y);
               return (
                 <div key={y} className={`lg-cf-card${off === 0 ? " on" : ""}`} style={style} onClick={() => off !== 0 && pick(i)}>
-                  {src
-                    // eslint-disable-next-line @next/next/no-img-element
-                    ? <img className="lg-cf-img" src={src} alt={y} />
-                    : <div className="lg-cf-fb">{y}</div>}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img className="lg-cf-img" src={src} alt={y}
+                    onError={(e) => { const el = e.currentTarget; el.style.display = "none"; (el.nextElementSibling as HTMLElement | null)?.classList.remove("hidden-fb"); }} />
+                  <div className="lg-cf-fb hidden-fb">{y}</div>
                   {off === 0 && <div className="lg-cf-year">{y}</div>}
                 </div>
               );

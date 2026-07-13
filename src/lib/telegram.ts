@@ -61,29 +61,39 @@ export async function notifyNewSales(orderIds: string[]): Promise<void> {
     const storeOf = new Map(stores.map((s) => [s.id, s.name]));
     const chatOfTeam = new Map(teams.filter((t) => t.telegramChatId?.trim()).map((t) => [t.name, t.telegramChatId!.trim()]));
     const defaultChat = (process.env.TELEGRAM_DEFAULT_CHAT_ID ?? "").trim();
+    // Kênh TOÀN CÔNG TY (admin/quản lý không thuộc team): env TELEGRAM_ALL_CHAT_ID —
+    // nhận MỌI đơn, song song với group team. Có thể là group riêng hoặc chat cá nhân với bot.
+    const allChat = (process.env.TELEGRAM_ALL_CHAT_ID ?? "").trim();
 
-    // Gom đơn theo chat id đích
+    // Gom đơn theo chat id đích (1 đơn có thể tới 2 nơi: group team + kênh toàn công ty)
     const byChat = new Map<string, typeof orders>();
+    const push = (chat: string, o: (typeof orders)[number]) => {
+      if (!chat) return;
+      if (!byChat.has(chat)) byChat.set(chat, []);
+      const list = byChat.get(chat)!;
+      if (!list.some((x) => x.id === o.id)) list.push(o);
+    };
     for (const o of orders) {
       const seller = o.sellerId ? sellerOf.get(o.sellerId) : undefined;
-      const chat = (seller?.team && chatOfTeam.get(seller.team)) || defaultChat;
-      if (!chat) continue;
-      if (!byChat.has(chat)) byChat.set(chat, []);
-      byChat.get(chat)!.push(o);
+      push((seller?.team && chatOfTeam.get(seller.team)) || defaultChat, o);
+      push(allChat, o);
     }
 
     const line = (o: (typeof orders)[number]) => {
       const seller = o.sellerId ? sellerOf.get(o.sellerId) : undefined;
       const store = o.storeId ? storeOf.get(o.storeId) : undefined;
-      return `<b>${esc(o.orderLabel || o.externalId)}</b> · ${money(o.total)} · ${esc(store ?? o.platform)}${seller ? ` · ${esc(seller.name)}` : ""}`;
+      // Bố cục: 🛒 NEW SALE! SÀN · seller · store #label · $total
+      return `🛒 <b>NEW SALE!</b> ${esc(String(o.platform).toUpperCase())}${seller ? ` · ${esc(seller.name)}` : ""}${store ? ` · ${esc(store)}` : ""} <b>#${esc(o.orderLabel || o.externalId)}</b> · <b>${money(o.total)}</b>`;
     };
 
-    await Promise.all(Array.from(byChat.entries()).map(async ([chat, list]) => {
-      const text = list.length === 1
-        ? `🛒 <b>NEW SALE!</b>\n${line(list[0])}`
-        : `🛒 <b>${list.length} NEW SALES!</b>\n` + list.slice(0, 10).map(line).join("\n") + (list.length > 10 ? `\n…+${list.length - 10} more` : "");
-      await sendTelegram(chat, text);
-    }));
+    // MỖI ĐƠN 1 THÔNG BÁO riêng (kể cả 12 đơn = 12 tin) — gửi tuần tự + giãn 300ms
+    // để không chạm rate limit Telegram (~20 tin/phút/group).
+    for (const [chat, list] of Array.from(byChat.entries())) {
+      for (const o of list) {
+        await sendTelegram(chat, line(o));
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
   } catch {
     // fire-and-forget: không bao giờ ném lỗi ra luồng ingest
   }
