@@ -15,8 +15,35 @@ type Item = {
   special_print: boolean; designThumb: string | null; mockupUrl: string | null;
   imageUrl?: string | null; productUrl?: string | null; variant?: string | null;
   designSides?: { kind: string; label: string; thumb: string | null; original: string | null }[];
-  suggest: { designId: string; skuCode: number; title: string; thumb: string | null; reason?: "listing" | "name" } | null;
+  suggests?: Suggest[];
+  custom?: boolean;
+  baseDesign?: Suggest | null;
 };
+type Suggest = {
+  designId: string; skuCode: number; title: string; thumb: string | null;
+  reason: "listing" | "sku" | "name"; hits?: number; score?: number;
+};
+const REASON_STYLE: Record<Suggest["reason"], { bg: string; fg: string }> = {
+  listing: { bg: "#EAF3EA", fg: "#2E7D46" },
+  sku: { bg: "#EAF0F8", fg: "#2F5B99" },
+  name: { bg: "var(--line)", fg: "var(--muted)" },
+};
+
+// Badge lý do gợi ý: seller nhìn là biết tin được tới đâu, không phải mở design ra soi.
+function reasonBadge(sg: Suggest, t: (k: string) => string) {
+  const st = REASON_STYLE[sg.reason];
+  const label =
+    sg.reason === "listing" ? t("o.matchListingBadge")
+    : sg.reason === "sku" ? t("o.matchSkuBadge")
+    : `${t("o.matchNameBadge")} ${Math.round((sg.score ?? 0) * 100)}%`;
+  const hits = sg.reason !== "name" && (sg.hits ?? 0) > 1 ? ` · ${sg.hits}\u00d7` : "";
+  return (
+    <span style={{ background: st.bg, color: st.fg, borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 800 }}>
+      {label}{hits}
+    </span>
+  );
+}
+
 type Order = {
   id: string; external_id: string; platform: string; status: string; ordered_at: string;
   buyer_first: string | null; buyer_last: string | null;
@@ -70,6 +97,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const [q, setQ] = useState("");
   const [platform, setPlatform] = useState("");
   const [fulfillerId, setFulfillerId] = useState("");
+  const [designF, setDesignF] = useState(""); // "" | assigned | unassigned
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" });
   const [page, setPage] = useState(1); const [show, setShow] = useState(20);
   const [msg, setMsg] = useState("");
@@ -93,11 +121,12 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
     if (q) p.set("q", q);
     if (platform) p.set("platform", platform);
     if (fulfillerId) p.set("fulfillerId", fulfillerId);
+    if (designF) p.set("design", designF);
     if (dr) { const d = rangeToDates(dr); p.set("from", d.from); p.set("to", d.to); }
     const j = await fetch(`/api/orders?${p}`).then((r) => r.json());
     if (my !== reqSeq.current) return; // bỏ response cũ nếu đã có request mới hơn
     if (j.ok) setData(j);
-  }, [page, show, status, sellerId, storeId, q, platform, fulfillerId, dr]);
+  }, [page, show, status, sellerId, storeId, q, platform, fulfillerId, designF, dr]);
   useEffect(() => { load(); }, [load]);
   // Poll trạng thái/tracking Printway ngầm khi mở trang (server throttle 10 phút — gọi thoải mái)
   useEffect(() => {
@@ -239,6 +268,14 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
             <select value={fulfillerId} onChange={(e) => { setFulfillerId(e.target.value); setPage(1); }}>
               <option value="">{t("o.allWord")}</option>
               {(data.fulfillers ?? []).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+            </select>
+          </div>
+          <div className="field">
+            <label>{t("o.designFilter")}</label>
+            <select value={designF} onChange={(e) => { setDesignF(e.target.value); setPage(1); }}>
+              <option value="">{t("o.allWord")}</option>
+              <option value="assigned">{t("o.designAssigned")}</option>
+              <option value="unassigned">{t("o.designUnassigned")}</option>
             </select>
           </div>
         </div>
@@ -641,6 +678,8 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
   const [showIssue, setShowIssue] = useState(false);
   const [ffSel, setFfSel] = useState("");
   const canCreate = ["new", "has_issues"].includes(o.status); // chỉ đơn NEW / Has issues mới đẩy được
+  // Chưa gán đủ design cho mọi sản phẩm thì chưa cho chọn nhà fulfill — tránh đẩy đơn thiếu file in.
+  const allDesigned = o.items.length > 0 && o.items.every((i) => !!i.design_id);
   const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number; unitCost?: number }>>({});
   const [busy, setBusy] = useState(false);
   const [ship, setShip] = useState({
@@ -900,7 +939,14 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                 </div>
                 <div className="o2-right">
                   <div className="o2-field">{F("orderLabel", t("o.orderLabel"))}</div>
-                  {!canPushFf ? null : canCreate ? (
+                  {!canPushFf ? null : !allDesigned ? (
+                    <div className="o2-field">
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{t("o.fulfilledBy")}</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#B4543C", background: "#FFF6F4", border: "1px dashed #F6D9D0", borderRadius: 10, padding: "10px 12px", fontWeight: 600 }}>
+                        <IconWarn width={14} height={14} /> {t("o.needDesignFirst")}
+                      </div>
+                    </div>
+                  ) : canCreate ? (
                   <>
                   <div className="o2-field">
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{ffSel && <SupplierLogo name={detail.fulfillerOptions.find((x) => x.fulfillerId === ffSel)?.name ?? ""} size={15} />}{t("o.fulfilledBy")}</label>
@@ -1078,21 +1124,48 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
         ) : null}
         {/* (đã có DesignId ở ô trên — không lặp lại caption) */}
 
-        {/* Gợi ý khi chưa gán */}
-        {!it.design_id && it.suggest && (
+        {/* Gợi ý khi chưa gán — đơn custom thì không gợi ý, chỉ hiện design gốc để tham chiếu */}
+        {!it.design_id && it.custom && (
           <div style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
-              {t("o.suggestDesigns")}
-              {it.suggest.reason === "listing"
-                ? <span style={{ background: "#EAF3EA", color: "#2E7D46", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "none", letterSpacing: 0 }}>{t("o.usedForListing")}</span>
-                : <span style={{ background: "var(--line)", color: "var(--muted)", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 700, textTransform: "none", letterSpacing: 0 }}>{t("o.matchNameBadge")}</span>}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FFF6F4", border: "1px solid #F6D9D0", borderRadius: 9, padding: "8px 10px", fontSize: 11.5, fontWeight: 700, color: "#B4543C" }}>
+              <IconWarn />
+              {t("o.customNoSuggest")}
             </div>
-            {it.suggest.thumb && (
-              <div className="o2-dpreview checker" onClick={() => setZoom(it.suggest!.thumb)} title={t("o.clickEnlarge")}>
-                <img src={it.suggest.thumb} alt="" />
+            {it.baseDesign && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 5 }}>
+                  {t("o.baseDesign")} #{it.baseDesign.skuCode}
+                </div>
+                {it.baseDesign.thumb && (
+                  <div className="o2-dpreview checker" onClick={() => setZoom(it.baseDesign!.thumb)} title={t("o.clickEnlarge")}>
+                    <img src={it.baseDesign.thumb} alt="" />
+                  </div>
+                )}
               </div>
             )}
-            <button onClick={() => assign(it.suggest!.skuCode)} disabled={busy} style={{ marginTop: 6, width: "100%", background: "var(--green)", color: "#fff", border: "none", borderRadius: 9, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{t("o.acceptDesign")} #{it.suggest.skuCode}</button>
+          </div>
+        )}
+
+        {!it.design_id && !it.custom && !!it.suggests?.length && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 6 }}>
+              {t("o.suggestDesigns")}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {it.suggests.map((sg) => (
+                <div key={sg.designId} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 8 }}>
+                  <div style={{ marginBottom: 6 }}>{reasonBadge(sg, t)}</div>
+                  {sg.thumb && (
+                    <div className="o2-dpreview checker" onClick={() => setZoom(sg.thumb)} title={t("o.clickEnlarge")}>
+                      <img src={sg.thumb} alt="" />
+                    </div>
+                  )}
+                  <button onClick={() => assign(sg.skuCode)} disabled={busy} style={{ marginTop: 6, width: "100%", background: "var(--green)", color: "#fff", border: "none", borderRadius: 9, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                    {t("o.acceptDesign")} #{sg.skuCode}
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

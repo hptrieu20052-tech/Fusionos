@@ -146,22 +146,6 @@ export async function POST(req: NextRequest) {
 
   if (!groups.size) return NextResponse.json({ ok: false, error: "Could not detect the Order ID column — check that this is a valid Etsy export file" }, { status: 400 });
 
-  // Tự học: listing đã từng được gán design ở đơn trước → tự gán lại cho đơn mới.
-  const allListingIds = Array.from(new Set(
-    Array.from(groups.values()).flatMap((g) => g.lines.map((l) => l.listingId).filter(Boolean)),
-  ));
-  const listingDesign = new Map<string, string>(); // listingId -> designId
-  if (allListingIds.length) {
-    const prior = (await db.execute(sql`
-      SELECT DISTINCT ON (etsy_listing_id) etsy_listing_id, design_id
-      FROM order_items
-      WHERE etsy_listing_id IN (${sql.join(allListingIds.map((x) => sql`${x}`), sql`, `)})
-        AND design_id IS NOT NULL
-      ORDER BY etsy_listing_id, id DESC
-    `)).rows as { etsy_listing_id: string; design_id: string }[];
-    for (const p of prior) listingDesign.set(p.etsy_listing_id, p.design_id);
-  }
-
   let created = 0, skipped = 0;
   const errors: string[] = [];
 
@@ -191,7 +175,8 @@ export async function POST(req: NextRequest) {
           qty: l.qty, unitPrice: (l.price / fxRate).toFixed(2),
           personalization: l.personalization || null,
           variant: l.variant || null,
-          designId: (l.listingId && listingDesign.get(l.listingId)) || null,
+          // Không auto-gán design: đơn custom cần file riêng cho từng khách,
+          // gán tự động là in nhầm tên. Order Hub sẽ gợi ý để seller tự chọn.
           etsyListingId: l.listingId || null,
           productUrl: l.listingId ? `https://www.etsy.com/listing/${l.listingId}` : null,
         });

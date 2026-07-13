@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
 import { scopeOwnerIds, resolveScope } from "@/lib/scope";
 import { fileUrl } from "@/lib/storage";
+import { suggestForItems } from "@/lib/design-suggest";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,10 @@ export async function GET(req: NextRequest) {
   if (sp.get("storeId")) conds.push(sql`o.store_id = ${sp.get("storeId")}::uuid`);
   if (sp.get("platform")) conds.push(sql`o.platform = ${sp.get("platform")}::marketplace`);
   if (sp.get("fulfillerId")) conds.push(sql`EXISTS (SELECT 1 FROM fulfillment_orders fo WHERE fo.order_id = o.id AND fo.fulfiller_id = ${sp.get("fulfillerId")}::uuid)`);
+  // Lọc theo tình trạng gán design: "assigned" = mọi sản phẩm đã có design; "unassigned" = còn ít nhất 1 sản phẩm thiếu
+  const dz = sp.get("design");
+  if (dz === "assigned") conds.push(sql`NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.design_id IS NULL)`);
+  else if (dz === "unassigned") conds.push(sql`EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.design_id IS NULL)`);
   const q = sp.get("q")?.trim();
   if (q) {
     const like = "%" + q + "%";
@@ -88,50 +93,9 @@ export async function GET(req: NextRequest) {
     for (const k of Object.keys(sidesMap)) sidesMap[k].sort((a, b) => (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9));
   }
 
-  // Gợi ý design cho item chưa gán: khớp từ khoá dài trong tên sản phẩm với title/tags design
+  // Gợi ý design cho item chưa gán — 3 tầng (listing → sku → tên), đơn custom thì không gợi ý.
   const need = items.filter((i) => !i.design_id);
-  const terms = Array.from(new Set(need.flatMap((i) =>
-    String(i.product_title).toLowerCase().split(/[^a-zà-ỹ0-9]+/i).filter((w) => w.length >= 5).slice(0, 4)
-  ))).slice(0, 24);
-  let cands: { id: string; sku_code: number; title: string; thumb_key: string | null }[] = [];
-  if (terms.length) {
-    const orIlike = terms.map((t) => sql`d.title ILIKE ${"%" + t + "%"}`).reduce((a, c) => sql`${a} OR ${c}`);
-    cands = (await db.execute(sql`
-      SELECT d.id, d.sku_code, d.title, df.thumb_key
-      FROM designs d
-      LEFT JOIN LATERAL (SELECT thumb_key FROM design_files WHERE design_id = d.id AND thumb_key IS NOT NULL LIMIT 1) df ON TRUE
-      WHERE ${orIlike} LIMIT 200
-    `)).rows as typeof cands;
-  }
-  const suggestFor = (title: string) => {
-    const words = new Set(title.toLowerCase().split(/[^a-zà-ỹ0-9]+/i).filter((w) => w.length >= 5));
-    let best: (typeof cands)[number] | null = null; let bestScore = 0;
-    for (const c of cands) {
-      const cw = c.title.toLowerCase().split(/[^a-zà-ỹ0-9]+/i);
-      const score = cw.reduce((a, w) => a + (words.has(w) ? 1 : 0), 0);
-      if (score > bestScore) { bestScore = score; best = c; }
-    }
-    return best && bestScore > 0 ? { designId: best.id, skuCode: best.sku_code, title: best.title, thumb: fileUrl(best.thumb_key), reason: "name" as const } : null;
-  };
-
-  // ƯU TIÊN 1 — Học từ lịch sử: listing từng gán design nào → gợi ý lại (chính xác nhất)
-  const needListingIds = Array.from(new Set(need.map((i) => i.etsy_listing_id).filter(Boolean))) as string[];
-  const learnedByListing = new Map<string, { designId: string; skuCode: number; title: string; thumb: string | null; reason: "listing" }>();
-  if (needListingIds.length) {
-    const lr = (await db.execute(sql`
-      SELECT DISTINCT ON (oi.etsy_listing_id) oi.etsy_listing_id AS lid, d.id, d.sku_code, d.title, df.thumb_key
-      FROM order_items oi JOIN designs d ON d.id = oi.design_id
-      LEFT JOIN LATERAL (SELECT thumb_key FROM design_files WHERE design_id = d.id AND thumb_key IS NOT NULL LIMIT 1) df ON TRUE
-      WHERE oi.etsy_listing_id IN (${sql.join(needListingIds.map((x) => sql`${x}`), sql`, `)}) AND oi.design_id IS NOT NULL
-      ORDER BY oi.etsy_listing_id, oi.id DESC
-    `)).rows as { lid: string; id: string; sku_code: number; title: string; thumb_key: string | null }[];
-    for (const r of lr) learnedByListing.set(r.lid, { designId: r.id, skuCode: r.sku_code, title: r.title, thumb: fileUrl(r.thumb_key), reason: "listing" });
-  }
-  const suggestForItem = (i: Record<string, unknown>) => {
-    const lid = i.etsy_listing_id as string | null;
-    if (lid && learnedByListing.has(lid)) return learnedByListing.get(lid); // đã học → chính xác nhất
-    return suggestFor(String(i.product_title)); // fallback: khớp tên
-  };
+  const suggestMap = await suggestForItems(need as never[]);
 
   // Đếm theo trạng thái — áp CÙNG bộ lọc (store/seller/marketplace/search/ngày) trừ chính status
   const countRows = await db.execute(sql`SELECT o.status, count(*)::int c FROM orders o WHERE ${baseWhere} GROUP BY o.status`);
@@ -155,7 +119,8 @@ export async function GET(req: NextRequest) {
       imageUrl: (i.image_url as string | null) ?? null,
       productUrl: (i.product_url as string | null) ?? null,
       variant: (i.variant as string | null) ?? null,
-      suggest: i.design_id ? null : suggestForItem(i),
+      ...(i.design_id ? { suggests: [], custom: false, baseDesign: null }
+                      : (suggestMap.get(i.id as string) ?? { suggests: [], custom: false, baseDesign: null })),
     })),
   }));
   return NextResponse.json({ ok: true, total, page, show, counts, sellers, stores: storesR, fulfillers: fulfillersR, orders: out });
