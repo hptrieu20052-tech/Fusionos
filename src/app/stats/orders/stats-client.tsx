@@ -1,21 +1,23 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { BarChart, Heat } from "@/components/charts";
 
 type Seller = { id: string; name: string; values: number[]; total: number };
 
 export function OrderStats() {
-  const [days, setDays] = useState(7);
+  const [days] = useState(30);
+  const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days
   const [metric, setMetric] = useState<"orders" | "items">("orders");
   const [dayList, setDayList] = useState<string[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [scoped, setScoped] = useState(false);
 
   const load = useCallback(() => {
-    fetch(`/api/stats/orders?days=${days}&metric=${metric}`).then((r) => r.json()).then((j) => {
+    fetch(`/api/stats/orders?${dr ? (() => { const { from, to } = rangeToDates(dr); return `from=${from}&to=${to}`; })() : `days=${days}`}&metric=${metric}`).then((r) => r.json()).then((j) => {
       if (j.ok) { setDayList(j.days); setSellers(j.sellers); setScoped(!!j.scoped); }
     });
-  }, [days, metric]);
+  }, [days, metric, dr]);
   useEffect(() => { load(); }, [load]);
 
   const totals = dayList.map((_, i) => sellers.reduce((t, s) => t + s.values[i], 0));
@@ -29,21 +31,20 @@ export function OrderStats() {
 
   return (
     <>
-      <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Order Statistics</h3>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
         <div className="nav" style={{ marginTop: 0 }}>
-          {[7, 14, 30].map((d) => <a key={d} onClick={() => setDays(d)} className={days === d ? "on" : ""} style={{ cursor: "pointer" }}>{d} days</a>)}
-        </div>
-        <div className="nav" style={{ marginTop: 0, marginLeft: "auto" }}>
           <a onClick={() => setMetric("orders")} className={metric === "orders" ? "on" : ""} style={{ cursor: "pointer" }}>Orders</a>
           <a onClick={() => setMetric("items")} className={metric === "items" ? "on" : ""} style={{ cursor: "pointer" }}>Items</a>
+        </div>
+        <div style={{ marginLeft: "auto" }}>
+          <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
         </div>
       </div>
 
       <div className="kpis">
         <div className="kpi"><div className="l">{L} today</div><div className="v">{today.toLocaleString()}</div>
           <div className="d" style={{ color: diff >= 0 ? "var(--green)" : "var(--red)" }}>{diff >= 0 ? "▲" : "▼"} {Math.abs(diff).toFixed(1)}% vs yesterday</div></div>
-        <div className="kpi"><div className="l">Total {days} days</div><div className="v">{grand.toLocaleString()}</div><div className="d">Avg {(grand / (days || 1)).toFixed(1)}/day</div></div>
+        <div className="kpi"><div className="l">Total {dayList.length} days</div><div className="v">{grand.toLocaleString()}</div><div className="d">Avg {(grand / (dayList.length || 1)).toFixed(1)}/day</div></div>
         <div className="kpi"><div className="l">Top seller</div><div className="v" style={{ fontSize: 17 }}>{top?.name ?? "—"}</div><div className="d" style={{ color: "var(--green)" }}>{top?.total.toLocaleString() ?? 0} {L.toLowerCase()}</div></div>
         <div className="kpi"><div className="l">Sellers with orders</div><div className="v">{sellers.length}</div></div>
       </div>
@@ -66,14 +67,14 @@ export function OrderStats() {
                   <td><b>{idx === 0 ? "" : ""}{s.name}</b></td>
                   {s.values.map((v, i) => <td key={i} style={{ textAlign: "center" }}><Heat v={v} max={maxCell} /></td>)}
                   <td style={{ textAlign: "right", fontWeight: 800 }}>{s.total.toLocaleString()}</td>
-                  <td style={{ textAlign: "right", fontWeight: 800 }}>{(s.total / (days || 1)).toFixed(1)}</td>
+                  <td style={{ textAlign: "right", fontWeight: 800 }}>{(s.total / (dayList.length || 1)).toFixed(1)}</td>
                 </tr>
               ))}
               <tr style={{ background: "var(--blue-soft)" }}>
                 <td style={{ fontWeight: 800 }}>{scoped ? "Team total" : "Whole company"}</td>
                 {totals.map((v, i) => <td key={i} style={{ textAlign: "center", fontWeight: 800 }}>{v}</td>)}
                 <td style={{ textAlign: "right", fontWeight: 800 }}>{grand.toLocaleString()}</td>
-                <td style={{ textAlign: "right", fontWeight: 800 }}>{(grand / (days || 1)).toFixed(1)}</td>
+                <td style={{ textAlign: "right", fontWeight: 800 }}>{(grand / (dayList.length || 1)).toFixed(1)}</td>
               </tr>
             </tbody>
           </table>

@@ -44,11 +44,8 @@ export function ReviewsClient({ canReview }: { canReview: boolean }) {
 
   return (
     <>
-      <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <div>
-          <h3 style={{ fontWeight: 800, fontSize: 15 }}>{t("rev.scoreDesign")}</h3>
-          <div className="sub">{t("rev.rubric")}</div>
-        </div>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+        <div className="sub" style={{ margin: 0 }}>{t("rev.rubric")}</div>
         <div style={{ marginLeft: "auto" }}>
           <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
         </div>

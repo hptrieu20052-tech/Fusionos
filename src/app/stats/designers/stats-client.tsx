@@ -29,11 +29,8 @@ export function DesignerStats() {
 
   return (
     <>
-      <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <h3 style={{ fontWeight: 800, fontSize: 15 }}>Designer Statistics</h3>
-        <div style={{ marginLeft: "auto" }}>
-          <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
-        </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
       </div>
 
       <div className="kpis">
