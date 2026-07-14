@@ -111,6 +111,9 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const [importing, setImporting] = useState(false);
   const [selIds, setSelIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("shipped");
+  // Duplicate: hộp xác nhận + sửa Order label. PHẢI khai ở đây, cùng cụm hook —
+  // đặt sau `if (!data) return ...` sẽ khiến số hook đổi giữa các lần render (React error #310).
+  const [dupFor, setDupFor] = useState<{ id: string; label: string } | null>(null);
 
   const reqSeq = useRef(0);
   const load = useCallback(async () => {
@@ -141,9 +144,6 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const pages = Math.max(Math.ceil(data.total / show), 1);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
-  // Duplicate: bắt xác nhận + cho sửa Order label trước khi tạo, tránh bấm nhầm
-  // và tránh 2 đơn trùng label không phân biệt được.
-  const [dupFor, setDupFor] = useState<{ id: string; label: string } | null>(null);
   const cloneOrder = async (id: string, orderLabel: string) => {
     const j = await fetch(`/api/orders/${id}/clone`, {
       method: "POST", headers: { "Content-Type": "application/json" },
