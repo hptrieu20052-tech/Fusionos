@@ -42,8 +42,13 @@ async function openFfosOf(fulfillerId: string): Promise<OpenFfo[]> {
   return rows.map(({ label, ext, ...r }) => ({ ...r, extNumber: (label?.trim() || ext || null) }));
 }
 
-async function applyUpdate(ffo: OpenFfo, upd: { status: string; trackingNumber?: string; trackingUrl?: string; carrier?: string }): Promise<boolean> {
-  const changed = upd.status !== ffo.status || (upd.trackingNumber && upd.trackingNumber !== ffo.trackingNumber);
+async function applyUpdate(ffo: OpenFfo, upd: {
+  status: string; trackingNumber?: string; trackingUrl?: string; carrier?: string;
+  // Giá THẬT từ nhà in (tùy nhà mới có). base/ship/tax để hiển thị; total để ghi bút toán.
+  cost?: { base?: number; ship?: number; tax?: number; total: number };
+}): Promise<boolean> {
+  const costChanged = !!(upd.cost && upd.cost.total > 0 && Math.abs(upd.cost.total - Number(ffo.cost ?? 0)) >= 0.005);
+  const changed = upd.status !== ffo.status || (upd.trackingNumber && upd.trackingNumber !== ffo.trackingNumber) || costChanged;
   if (!changed) return false;
 
   // ---- ĐƠN BỊ HUỶ bên supplier → hoàn cost + đơn về Cancel (giống flow webhook Merchize/Printify) ----
@@ -69,6 +74,19 @@ async function applyUpdate(ffo: OpenFfo, upd: { status: string; trackingNumber?:
     trackingCarrier: upd.carrier || undefined,
     trackingSyncedAt: upd.trackingNumber ? new Date() : undefined,
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
+
+  // GIÁ THẬT: nhà in trả cost (vd FlashShip total_fee) → ghi vào ffo + upsert bút toán qua rebalance.
+  // Nhà in trả 1 số gộp thì để tất cả vào baseCost (ship/tax = 0) — Total vẫn đúng.
+  if (upd.cost && upd.cost.total > 0 && upd.status !== "cancelled") {
+    const c = upd.cost;
+    const total = Math.round(c.total * 100) / 100;
+    await db.update(schema.fulfillmentOrders).set({
+      baseCost: (c.base ?? total).toFixed(2), shipCost: (c.ship ?? 0).toFixed(2),
+      extraFee: (c.tax ?? 0).toFixed(2), cost: total.toFixed(2),
+    }).where(eq(schema.fulfillmentOrders.id, ffo.id));
+    await rebalanceOrderCost(ffo.orderId, `cost sync (poll)`);
+  }
+
   await syncOrderFromFf(ffo.orderId, upd.status);
   if (upd.trackingNumber && upd.trackingNumber !== ffo.trackingNumber) {
     await autoPushEtsyTracking(ffo.orderId);
@@ -103,6 +121,27 @@ function mapMerchizeStatus(raw: string, hasTracking: boolean, paid = false): str
   // "fulfilled/fulfilling" của Merchize = đang sản xuất, KHÔNG phải đã gửi hàng
   if (/produc|process|print|packing|packed|fulfil/.test(s) || isPaidWord(s) || paid) return "in_production";
   return "";
+}
+
+// Dò field CHI PHÍ (best-effort) từ response ONOS/Wembroidery — chỉ ghi khi > 0.
+// Số gộp → để cả vào base; nếu có tách ship/tax thì tách. Doc 2 nhà này chưa rõ tên field
+// nên dò rộng; sai thì đơn giữ nguyên cost cũ (không phá gì).
+function pickNum(o: Record<string, unknown>, keys: string[]): number {
+  for (const k of keys) { const v = o?.[k]; if (v !== undefined && v !== null && v !== "") { const n = Number(v); if (!isNaN(n) && n > 0) return n; } }
+  return 0;
+}
+function onosCost(d: Record<string, unknown>): { base?: number; ship?: number; tax?: number; total: number } | undefined {
+  const base = pickNum(d, ["base_cost", "product_cost", "base_price", "product_price"]);
+  const ship = pickNum(d, ["shipping_cost", "ship_cost", "shipping_fee"]);
+  const tax = pickNum(d, ["tax", "tax_fee", "import_tax"]);
+  const total = pickNum(d, ["total_cost", "total_fee", "total", "total_price", "amount"]) || (base + ship + tax);
+  return total > 0 ? { base: base || undefined, ship: ship || undefined, tax: tax || undefined, total } : undefined;
+}
+function wemCost(o: Record<string, unknown>): { base?: number; ship?: number; tax?: number; total: number } | undefined {
+  const base = pickNum(o, ["baseCost", "productCost", "itemCost"]);
+  const ship = pickNum(o, ["shippingCost", "shipCost", "shippingFee"]);
+  const total = pickNum(o, ["totalCost", "total", "totalPrice", "grandTotal"]) || (base + ship);
+  return total > 0 ? { base: base || undefined, ship: ship || undefined, total } : undefined;
 }
 
 export async function syncOnosWem(opts: { force?: boolean } = {}) {
@@ -140,7 +179,12 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             if (!ffo) continue;
             const hasTrack = !!(d.tracking_number || ffo.trackingNumber);
             const st = mapFsStatus(d.status, d.tracking_status, hasTrack, d.payment ?? d.payment_status) || ffo.status;
-            if (await applyUpdate(ffo, { status: st, trackingNumber: d.tracking_number || undefined, carrier: d.carrier || undefined })) updated++;
+            // FlashShip: total_fee là số GỘP (không tách base/ship) → để cả vào base. Chỉ ghi khi > 0.
+            const fee = Number(d.total_fee ?? 0);
+            if (await applyUpdate(ffo, {
+              status: st, trackingNumber: d.tracking_number || undefined, carrier: d.carrier || undefined,
+              cost: fee > 0 ? { total: fee } : undefined,
+            })) updated++;
           }
         } catch (e) { if (errors.length < 5) errors.push(`${ff.name}: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
       }
@@ -159,7 +203,8 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             const trackingNumber = S(d.tracking_number ?? tr.tracking_number ?? d.trackingNumber);
             const carrier = S(d.carrier ?? tr.carrier ?? d.carrier_code);
             const status = mapOnosStatus(S(d.status ?? d.order_status), !!(trackingNumber || ffo.trackingNumber));
-            if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, carrier: carrier || undefined })) updated++;
+            const oc = onosCost(d);
+            if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, carrier: carrier || undefined, cost: oc })) updated++;
           } else if (kind === "wem") {
             const raw = await getWembroideryOrder(api, ffo.externalFfId!);
             const root = (raw.data && typeof raw.data === "object" ? raw.data : raw) as Record<string, unknown>;
@@ -169,7 +214,8 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             const trackingNumber = S(withTrack?.trackingNumber);
             const carrier = S(withTrack?.carrierCode ?? withTrack?.carrier);
             const status = mapWemStatus(S(order.status), !!(trackingNumber || ffo.trackingNumber));
-            if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, carrier: carrier || undefined })) updated++;
+            const wc = wemCost(order);
+            if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, carrier: carrier || undefined, cost: wc })) updated++;
           } else {
             // Merchize: endpoint tracking trả kèm status (cancel/fulfilled/...) và ĐÔI KHI cả chi phí.
             // Đơn cũ lưu nhầm Mongo _id → fallback hỏi bằng external_number + identifier.
