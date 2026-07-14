@@ -198,11 +198,13 @@ export function verifyWembroiderySignature(rawBody: string, secret: string, sign
 
 // ---- Map trạng thái Wembroidery → trạng thái fulfillment nội bộ ----
 // Statuses: pending_payment, paid, processing, shipped, completed, archived, refunded, cancelled
+/** QUY TẮC CHUNG: Push → pushed · ĐÃ TRẢ TIỀN → in_production · CÓ TRACKING → shipped. */
 export function mapWemStatus(raw: string, hasTracking: boolean): string {
   const s = raw.toLowerCase();
   if (/cancel|refund/.test(s)) return "cancelled";
   if (/complete|archiv|deliver/.test(s)) return "delivered";
-  if (/ship/.test(s) || hasTracking) return "shipped";
-  if (/process/.test(s)) return "in_production";
+  // Bug cũ: /ship/ khớp cả "shipping" → nhảy shipped khi chưa có mã vận đơn
+  if (hasTracking || /shipped|in.?transit|transit|picked|out.?for.?delivery/.test(s)) return "shipped";
+  if (/process|produc|print|packing|packed|fulfil/.test(s) || (/\bpaid\b/.test(s) && !/unpaid|not\s*paid/.test(s))) return "in_production";
   return "pushed";
 }

@@ -2,10 +2,11 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, isNotNull, like, notInArray } from "drizzle-orm";
 import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
-import { getOnosOrder, mapOnosStatus } from "@/lib/onos";
+import { getOnosOrder, mapOnosStatus, isPaidWord } from "@/lib/onos";
 import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
 import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
+import { toISO2 } from "@/lib/printify";
 
 /**
  * POLL BACKUP trạng thái + tracking cho MERCHIZE · FLASHSHIP · ONOS · WEMBROIDERY.
@@ -19,7 +20,7 @@ import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
 const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 const arrOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
 
-type OpenFfo = { id: string; orderId: string; externalFfId: string | null; status: string; trackingNumber: string | null; cost: string | null; extNumber: string | null };
+type OpenFfo = { id: string; orderId: string; externalFfId: string | null; status: string; trackingNumber: string | null; cost: string | null; extNumber: string | null; country: string | null };
 
 async function openFfosOf(fulfillerId: string): Promise<OpenFfo[]> {
   // Kèm external_number của đơn (orderLabel > externalId) để fallback hỏi Merchize khi
@@ -29,7 +30,7 @@ async function openFfosOf(fulfillerId: string): Promise<OpenFfo[]> {
     externalFfId: schema.fulfillmentOrders.externalFfId, status: schema.fulfillmentOrders.status,
     trackingNumber: schema.fulfillmentOrders.trackingNumber,
     cost: schema.fulfillmentOrders.cost,
-    label: schema.orders.orderLabel, ext: schema.orders.externalId,
+    label: schema.orders.orderLabel, ext: schema.orders.externalId, country: schema.orders.country,
   }).from(schema.fulfillmentOrders)
     .innerJoin(schema.orders, eq(schema.orders.id, schema.fulfillmentOrders.orderId))
     .where(and(
@@ -92,12 +93,14 @@ async function throttled(ff: typeof schema.fulfillers.$inferSelect, force: boole
 }
 
 // Map trạng thái Merchize (poll tracking endpoint) → ffo
-function mapMerchizeStatus(raw: string, hasTracking: boolean): string {
+// QUY TẮC: chỉ "shipped" khi CÓ TRACKING; trả tiền xong = "in_production".
+function mapMerchizeStatus(raw: string, hasTracking: boolean, paid = false): string {
   const s = (raw || "").toLowerCase();
   if (/cancel|refund/.test(s)) return "cancelled";
   if (/deliver|complete/.test(s)) return "delivered";
-  if (/ship|transit|fulfil/.test(s) || hasTracking) return "shipped";
-  if (/produc|process|paid/.test(s)) return "in_production";
+  if (hasTracking || /shipped|in.?transit|transit|picked|out.?for.?delivery/.test(s)) return "shipped";
+  // "fulfilled/fulfilling" của Merchize = đang sản xuất, KHÔNG phải đã gửi hàng
+  if (/produc|process|print|packing|packed|fulfil/.test(s) || isPaidWord(s) || paid) return "in_production";
   return "";
 }
 
@@ -135,7 +138,7 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             const ffo = batch.find((f) => f.externalFfId === d.order_code);
             if (!ffo) continue;
             const hasTrack = !!(d.tracking_number || ffo.trackingNumber);
-            const st = mapFsStatus(d.status, d.tracking_status, hasTrack) || ffo.status;
+            const st = mapFsStatus(d.status, d.tracking_status, hasTrack, d.payment ?? d.payment_status) || ffo.status;
             if (await applyUpdate(ffo, { status: st, trackingNumber: d.tracking_number || undefined, carrier: d.carrier || undefined })) updated++;
           }
         } catch (e) { if (errors.length < 5) errors.push(`${ff.name}: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
@@ -175,8 +178,11 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
               externalNumber: ffo.extNumber ?? undefined,
               identifier: cred.identifier,
             });
-            const t = extractMerchizeTracking(raw);
-            const status = mapMerchizeStatus(t.status ?? "", !!(t.trackingNumber || ffo.trackingNumber)) || ffo.status;
+            // Import tax phụ thuộc NƯỚC GIAO HÀNG (captured_catalogs[SKU].tax[US] …)
+            const t = extractMerchizeTracking(raw, toISO2(ffo.country));
+            // Merchize trả về chi phí = đơn ĐÃ ĐƯỢC TRẢ TIỀN → vào sản xuất
+            const mzPaid = (t.fulfillmentCost ?? 0) > 0;
+            const status = mapMerchizeStatus(t.status ?? "", !!(t.trackingNumber || ffo.trackingNumber), mzPaid) || ffo.status;
             if (await applyUpdate(ffo, { status, trackingNumber: t.trackingNumber, trackingUrl: t.trackingUrl, carrier: t.carrier })) updated++;
 
             // CHI PHÍ: Merchize chỉ bắn tiền qua webhook PAYMENT — webhook không tới thì đơn kẹt ở

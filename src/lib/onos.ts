@@ -244,12 +244,16 @@ export async function createOnosWebhook(c: Cred, topic: "order.updated" | "shipm
 }
 
 // ---- Map trạng thái ONOS → trạng thái fulfillment nội bộ ----
+/** "đã trả tiền" — phải loại "unpaid"/"not paid", nếu không /paid/ sẽ khớp nhầm cả 2. */
+export const isPaidWord = (s: string) => /\bpaid\b/.test(s) && !/unpaid|un-paid|not\s*paid|chưa/.test(s);
+
 export function mapOnosStatus(raw: string, hasTracking: boolean): string {
   const s = raw.toLowerCase();
   if (/cancel|refund/.test(s)) return "cancelled";
   if (/deliver|complete/.test(s)) return "delivered";
-  if (/ship|transit|picked/.test(s) || hasTracking) return "shipped";
-  if (/process|produc|print/.test(s)) return "in_production";
-  if (/pend|creat|paid|new/.test(s)) return "pushed";
-  return hasTracking ? "shipped" : "pushed";
+  // QUY TẮC: CHỈ shipped khi CÓ TRACKING (hoặc supplier báo đã ship/đang vận chuyển).
+  if (hasTracking || /shipped|in.?transit|transit|picked|out.?for.?delivery/.test(s)) return "shipped";
+  // Trả tiền xong = vào sản xuất (bug cũ: "paid" bị xếp chung nhóm pushed → đứng mãi ở Pushed)
+  if (/process|produc|print|packing|packed|fulfil/.test(s) || isPaidWord(s)) return "in_production";
+  return "pushed";
 }

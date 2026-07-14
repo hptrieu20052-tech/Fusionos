@@ -56,11 +56,12 @@ export async function syncPrintify(opts: { force?: boolean } = {}) {
         const carrier = String(sh.carrier ?? "");
         const trackingUrl = String(sh.url ?? "");
 
+        // QUY TẮC CHUNG: Push → pushed · ĐÃ TRẢ TIỀN → in_production · CÓ TRACKING → shipped.
         const isCancel = /cancel/.test(statusRaw);
         const ffStatus = isCancel ? "cancelled"
           : /deliver/.test(statusRaw) ? "delivered"
-          : (tracking || /shipped|fulfilled|on-hold-ship/.test(statusRaw)) ? "shipped"
-          : /in-production|in_production|sending|pending|has-issues|payment|on-hold/.test(statusRaw) ? "in_production"
+          : (tracking || /^shipped$/.test(statusRaw)) ? "shipped"
+          : /in-production|in_production|sending|fulfilled|has-issues|payment-processing/.test(statusRaw) ? "in_production"
           : "";
 
         const patch: Record<string, unknown> = {};

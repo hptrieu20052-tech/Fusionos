@@ -58,11 +58,14 @@ export async function POST(req: NextRequest) {
   const pfStatus = String(ord?.status ?? "").toLowerCase();
   const isCancel = evtType.includes("cancel") || pfStatus === "canceled" || pfStatus === "cancelled"
     || !!ord?.canceled_at || !!ord?.cancelled_at;
+  // QUY TẮC CHUNG: Push → pushed · ĐÃ TRẢ TIỀN → in_production · CÓ TRACKING → shipped.
+  // Bug cũ: "fulfilled" / event shipment KHÔNG kèm tracking vẫn bị đánh shipped.
   let status = ffo.status;
   if (isCancel) status = "cancelled";
   else if (evtType.includes("delivered") || pfStatus === "delivered") status = "delivered";
-  else if (evtType.includes("shipment") || trackingNumber || pfStatus === "fulfilled" || pfStatus === "shipped") status = "shipped";
-  else if (evtType.includes("sent-to-production") || pfStatus.includes("production")) status = "in_production";
+  else if (trackingNumber || pfStatus === "shipped") status = "shipped";
+  else if (evtType.includes("sent-to-production") || pfStatus.includes("production")
+        || pfStatus === "fulfilled" || pfStatus === "partially-fulfilled") status = "in_production";
 
   const patch: Record<string, unknown> = { status };
   if (hasCost && !isCancel) {

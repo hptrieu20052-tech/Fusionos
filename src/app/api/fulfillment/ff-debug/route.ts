@@ -6,7 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { getPrintwayOrderDetail, extractPwCost } from "@/lib/printway-api";
 import { pwCredOf } from "@/lib/printway-cost";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
-import { getPrintifyOrder } from "@/lib/printify";
+import { getPrintifyOrder, toISO2 } from "@/lib/printify";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
       if (!apiKey) return NextResponse.json({ ok: false, error: "Merchize: thiếu API Key" }, { status: 400 });
       const baseUrl = ff.apiEndpoint?.trim() || "";
       if (!baseUrl) return NextResponse.json({ ok: false, error: "Merchize: thiếu Base URL" }, { status: 400 });
-      const [ord] = await db.select({ label: schema.orders.orderLabel, ext: schema.orders.externalId })
+      const [ord] = await db.select({ label: schema.orders.orderLabel, ext: schema.orders.externalId, country: schema.orders.country })
         .from(schema.orders).where(eq(schema.orders.id, ffo.orderId)).limit(1);
       const externalNumber = (ord?.label?.trim() || ord?.ext || "") || undefined;
       const { raw, via } = await getMerchizeTrackingSmart(baseUrl, apiKey, {
@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         ok: true, fusion,
         sentAs: { code: ffo.externalFfId, external_number: externalNumber ?? null, identifier: cred.identifier ?? null, matchedVia: via },
-        parsed: extractMerchizeTracking(raw), raw,
+        parsed: extractMerchizeTracking(raw, toISO2(ord?.country ?? "US")), raw,
       });
     }
 

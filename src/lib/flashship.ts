@@ -95,6 +95,8 @@ export async function cancelFlashshipOrders(c: Cred, orderCodes: string[], note 
 // ---- Detail theo lô: POST /orders/list-order-code { list_order_code } (max 20/lần) ----
 export type FsOrderDetail = {
   order_code: string; partner_order_id: string; status: string;
+  /** FlashShip tách RIÊNG trạng thái thanh toán: "Pending" (chưa trả) / "Success" (đã trả) */
+  payment?: string | null; payment_status?: string | null;
   tracking_number: string | null; tracking_status: string | null; carrier: string | null;
   total_fee: number | null; reject_note: string | null;
 };
@@ -111,16 +113,30 @@ export async function getFlashshipOrdersByCodes(c: Cred, codes: string[]): Promi
 }
 
 // ---- Map trạng thái FlashShip → trạng thái ffo của FUSION ----
-// CONFIRMED → pushed · IN_PRODUCING/COMPLETED → in_production (chưa có tracking) ·
-// HOLD → error (kèm message) · CANCELED/REFUNDED → cancelled · tracking Delivered → delivered
-export function mapFsStatus(status: string, trackingStatus?: string | null, hasTracking = false): string {
+/**
+ * QUY TẮC CHUNG (mọi nhà in): Push → pushed · ĐÃ TRẢ TIỀN → in_production · CÓ TRACKING → shipped.
+ *
+ * FlashShip có HAI cột riêng biệt:
+ *   Payment: Pending  | Status: Confirmed  → đơn đã nhận nhưng CHƯA TRẢ TIỀN  → pushed
+ *   Payment: Success  | Status: Producing  → ĐÃ TRẢ TIỀN, đang sản xuất       → in_production
+ * ⇒ KHÔNG được coi CONFIRMED là đã trả tiền.
+ * Trả "" = không đổi trạng thái hiện tại.
+ */
+export function mapFsStatus(status: string, trackingStatus?: string | null, hasTracking = false, payment?: string | null): string {
   const s = (status || "").toUpperCase();
   const t = (trackingStatus || "").toLowerCase();
-  if (/deliver/.test(t)) return "delivered";
-  if (hasTracking || /transit|pre-shipment|shipment/.test(t)) return "shipped";
-  if (s === "CANCELED" || s === "REFUNDED") return "cancelled";
+  const p = (payment || "").toUpperCase();
+
+  // Huỷ/hold xét TRƯỚC tracking (đơn huỷ mà có tracking không được đánh shipped)
+  if (/CANCEL|REFUND|REJECT/.test(s)) return "cancelled";
   if (s === "HOLD") return "error";
-  if (s === "IN_PRODUCING" || s === "COMPLETED") return "in_production";
-  if (s === "CONFIRMED") return "pushed";
+  if (/deliver/.test(t)) return "delivered";
+  if (hasTracking || /transit|pre-shipment|shipment|shipped|picked/.test(t)) return "shipped";
+
+  // ĐÃ TRẢ TIỀN: payment = Success, hoặc status đã sang Producing/Completed
+  const paid = /SUCCESS|PAID|COMPLET/.test(p) || /PRODUC|PROCESS|COMPLET|PRINT/.test(s);
+  if (paid) return "in_production";
+
+  // CONFIRMED + payment Pending → vẫn là "pushed" (chưa trừ tiền)
   return "";
 }

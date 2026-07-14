@@ -40,51 +40,66 @@ export async function getMerchizeTracking(
 }
 
 /**
- * Rút tracking/status/CHI PHÍ từ response Merchize.
+ * Rút tracking / status / CHI PHÍ từ response /orders/tracking của Merchize.
  *
- * Chú ý 2 bẫy đã gặp:
- *  - `data` có thể là MẢNG (như Printway) → phải lấy phần tử đầu, không thì bóc ra rỗng.
- *  - KHÔNG được fallback tracking sang field `code`: đó là ORDER CODE, không phải mã vận đơn
- *    (bug cũ sẽ nhét mã đơn vào ô tracking rồi tự đẩy nhầm lên Etsy).
- * Tracking có thể nằm ở cấp đơn, trong items[] hoặc trong shipment/tracking lồng nhau → dò cả 3.
+ * Cấu trúc thật (xác nhận từ response):
+ *   { success, data: [ { status, shipping_cost, tracking_number, tracking_company, tracking_url,
+ *                        items: [ { fulfillment_cost, fulfilled_quantity, ffm_mapped_catalog_sku,
+ *                                   captured_catalogs: { SKU: { tax: { US: 0.5 } } } } ] } ] }
+ *
+ * Bẫy đã gặp:
+ *  - `data` là MẢNG SHIPMENT (RE-xxxxx-F1, -F2…) → phải CỘNG DỒN, không lấy phần tử đầu.
+ *  - Import tax KHÔNG có ở cấp đơn: nằm trong captured_catalogs[SKU].tax[<country>].
+ *    Merchize UI gọi là "US Import Tax/item" và tính = tax/item × quantity.
+ *  - KHÔNG fallback tracking sang `code`/`name` — đó là mã đơn/shipment, không phải mã vận đơn.
  */
-export function extractMerchizeTracking(data: unknown): {
+export function extractMerchizeTracking(data: unknown, countryCode = "US"): {
   trackingNumber?: string; trackingUrl?: string; carrier?: string; status?: string;
   fulfillmentCost?: number; shippingCost?: number; importTax?: number;
 } {
   const d = (data as Record<string, unknown>) ?? {};
-  const raw: unknown = d.data ?? d.resource ?? d;
-  const r = (Array.isArray(raw) ? (raw[0] ?? {}) : raw) as Record<string, unknown>;
+  const rawArr: unknown = d.data ?? d.resource ?? d;
+  const arr = (Array.isArray(rawArr) ? rawArr : [rawArr]) as Record<string, unknown>[];
+  const N = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+  const S = (v: unknown) => (v === undefined || v === null || v === "" ? "" : String(v));
+  const cc = (countryCode || "US").toUpperCase();
 
-  // Gom mọi object có thể chứa tracking: cấp đơn + nested + từng item
-  const nests: Record<string, unknown>[] = [r];
-  for (const k of ["tracking", "shipment", "shipping", "fulfillment"]) {
-    const v = r[k];
-    if (v && typeof v === "object" && !Array.isArray(v)) nests.push(v as Record<string, unknown>);
-  }
-  for (const k of ["items", "order_items", "orderitems", "shipments", "trackings"]) {
-    const arr = r[k];
-    if (Array.isArray(arr)) for (const it of arr) if (it && typeof it === "object") nests.push(it as Record<string, unknown>);
-  }
-  const g = (...names: string[]) => {
-    for (const o of nests) for (const n of names) { const v = o?.[n]; if (v !== undefined && v !== null && v !== "") return String(v); }
-    return undefined;
-  };
-  const n = (...names: string[]) => {
-    for (const o of nests) for (const k of names) {
-      const v = o?.[k];
-      if (v !== undefined && v !== null && v !== "") { const x = Number(v); if (!isNaN(x) && x > 0) return x; }
+  let trackingNumber = "", trackingUrl = "", carrier = "", status = "";
+  let base = 0, ship = 0, tax = 0, sawCost = false;
+
+  for (const e of arr) {
+    if (!e || typeof e !== "object") continue;
+    if (!trackingNumber) {
+      trackingNumber = S(e.tracking_number ?? e.tracking_code);
+      trackingUrl = S(e.tracking_url);
+      carrier = S(e.tracking_company ?? e.shipping_carrier ?? e.carrier ?? e.carrier_code);
     }
-    return undefined;
-  };
+    if (!status) status = S(e.status ?? e.fulfillment_status ?? e.order_status);
+    ship += N(e.shipping_cost ?? e.shipping_fee);
+
+    const items = (Array.isArray(e.items) ? e.items : Array.isArray(e.order_items) ? e.order_items : []) as Record<string, unknown>[];
+    for (const it of items) {
+      const c = N(it.fulfillment_cost ?? it.base_cost);
+      if (c > 0) { base += c; sawCost = true; }
+      const qty = N(it.fulfilled_quantity ?? it.quantity) || 1;
+      // Import tax của ĐÚNG nước giao hàng, lấy từ catalog đã capture lúc tạo đơn
+      const caps = (it.captured_catalogs ?? {}) as Record<string, Record<string, unknown>>;
+      for (const cat of Object.values(caps)) {
+        const tmap = (cat?.tax ?? {}) as Record<string, unknown>;
+        const t = N(tmap[cc]);
+        if (t > 0) { tax += t * qty; break; }
+      }
+    }
+  }
+  const r2 = (n: number) => Math.round(n * 100) / 100; // giữ đúng tới cent
   return {
-    trackingNumber: g("tracking_number", "tracking_code", "trackingNumber"),
-    trackingUrl: g("tracking_url", "trackingUrl"),
-    carrier: g("shipping_carrier", "carrier", "tracking_company", "shipping_company", "carrier_code"),
-    status: g("status", "fulfillment_status", "order_status"),
-    fulfillmentCost: n("fulfillment_cost", "total_cost", "base_cost", "fulfillmentCost"),
-    shippingCost: n("shipping_cost", "shipping_fee", "shippingCost"),
-    importTax: n("import_tax", "us_import_tax", "tax", "tax_fee", "importTax"),
+    trackingNumber: trackingNumber || undefined,
+    trackingUrl: trackingUrl || undefined,
+    carrier: carrier || undefined,
+    status: status || undefined,
+    fulfillmentCost: sawCost ? r2(base) : undefined,
+    shippingCost: r2(ship),
+    importTax: r2(tax),
   };
 }
 

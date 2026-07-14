@@ -281,12 +281,14 @@ export function normalizePwOrder(it: Record<string, unknown>) {
 }
 
 // Map trạng thái Printway → trạng thái ffo của FUSION (dùng chung cho poll + webhook)
+/** QUY TẮC CHUNG: Push → pushed · ĐÃ TRẢ TIỀN → in_production · CÓ TRACKING → shipped. */
 export function mapPwStatus(statusRaw: string, hasTracking = false): string {
   const s = (statusRaw || "").toLowerCase();
   if (/cancel|refund|reject/.test(s)) return "cancelled";
   if (/deliver/.test(s)) return "delivered";
-  if (hasTracking || /ship|fulfil|transit|dispatch/.test(s)) return "shipped";
-  if (/production|process|printing|printed|pending|paid|confirm|hold|approv/.test(s)) return "in_production";
+  // Bug cũ: /ship/ khớp "shipping", /fulfil/ khớp "fulfilling" → shipped khi chưa có tracking
+  if (hasTracking || /shipped|in.?transit|transit|dispatch|picked|out.?for.?delivery/.test(s)) return "shipped";
+  if (/production|process|printing|printed|pending|paid|confirm|hold|approv|fulfil/.test(s)) return "in_production";
   return "";
 }
 

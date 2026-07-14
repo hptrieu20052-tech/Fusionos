@@ -85,8 +85,15 @@ export async function POST(req: NextRequest) {
     // và Finance đứng $0 dù card đã có giá. Rebalance sẽ CHÈN cho khớp cost của bản ghi đẩy.
     await rebalanceOrderCost(ffo.orderId, `Merchize · ${ffo.externalFfId ?? ""} — cost sync`);
 
-    // Đã có phí fulfillment = đơn đã "paid" → In Production (chỉ tiến)
+    // Đã có phí fulfillment = đơn đã "paid" → In Production (chỉ tiến, KHÔNG lùi).
+    // Bug cũ: chỉ nâng status ĐƠN CHÍNH, quên bản ghi đẩy → card Merchize kẹt ở PUSHED.
+    // Lưu ý: KHÔNG đụng tới shipped/delivered — chỉ có TRACKING mới được đẩy sang shipped.
     if (fulfillmentCost !== undefined) {
+      await db.update(schema.fulfillmentOrders).set({ status: "in_production" })
+        .where(and(
+          eq(schema.fulfillmentOrders.id, ffo.id),
+          inArray(schema.fulfillmentOrders.status, ["pending", "pushed"] as never),
+        ));
       await db.update(schema.orders).set({ status: "in_production", updatedAt: new Date() })
         .where(and(eq(schema.orders.id, ffo.orderId), inArray(schema.orders.status, ["new", "created"])));
     }
