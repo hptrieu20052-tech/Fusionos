@@ -5,6 +5,7 @@ import { syncPrintwayCost } from "@/lib/printway-cost";
 import { rebalanceOrderCost } from "@/lib/order-status";
 import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
 
 // Kênh chính là webhook (/api/webhooks/printway — đăng ký ở Settings). Poll này là BACKUP:
 // quét danh sách đơn 30 ngày gần nhất, khớp theo order_name (= externalFfId mà FUSION gửi
@@ -23,7 +24,7 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
 
     // Throttle 10 phút / fulfiller (trừ khi force)
     const last = Date.parse(String(cred.printwaySyncAt ?? "")) || 0;
-    if (!opts.force && Date.now() - last < 10 * 60_000) { skipped++; continue; }
+    if (!opts.force && Date.now() - last < FF_POLL_THROTTLE_MS) { skipped++; continue; }
     await db.update(schema.fulfillers).set({ credentials: { ...cred, printwaySyncAt: new Date().toISOString() } }).where(eq(schema.fulfillers.id, ff.id));
 
     // Các bản ghi đẩy Printway chưa kết thúc

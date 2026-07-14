@@ -629,3 +629,10 @@ export function getAdapter(name: string): FulfillerAdapter {
   const slug = slugifyFulfiller(name);
   return FULFILLER_ADAPTERS[slug] ?? makeAdapter(slug || "generic", name);
 }
+
+/**
+ * THROTTLE POLL NHÀ IN — mặc định 2 phút (trước là 10 phút → tracking về quá chậm).
+ * Chỉnh bằng env FF_POLL_THROTTLE_MS. Đặt 0 = không throttle (chỉ nên dùng khi debug:
+ * mỗi nhà in đều có rate limit, vd Printway 50 req/3s).
+ */
+export const FF_POLL_THROTTLE_MS = Number(process.env.FF_POLL_THROTTLE_MS ?? 2 * 60_000);

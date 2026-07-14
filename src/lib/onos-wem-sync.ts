@@ -7,6 +7,7 @@ import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
 import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
 import { toISO2 } from "@/lib/printify";
+import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
 
 /**
  * POLL BACKUP trạng thái + tracking cho MERCHIZE · FLASHSHIP · ONOS · WEMBROIDERY.
@@ -87,7 +88,7 @@ async function applyUpdate(ffo: OpenFfo, upd: { status: string; trackingNumber?:
 async function throttled(ff: typeof schema.fulfillers.$inferSelect, force: boolean): Promise<boolean> {
   const cred = (ff.credentials ?? {}) as Record<string, unknown>;
   const last = Date.parse(String(cred.pollSyncAt ?? "")) || 0;
-  if (!force && Date.now() - last < 10 * 60_000) return true;
+  if (!force && Date.now() - last < FF_POLL_THROTTLE_MS) return true;
   await db.update(schema.fulfillers).set({ credentials: { ...cred, pollSyncAt: new Date().toISOString() } }).where(eq(schema.fulfillers.id, ff.id));
   return false;
 }

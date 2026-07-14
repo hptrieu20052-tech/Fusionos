@@ -109,6 +109,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const [exportMenu, setExportMenu] = useState(false);
   const excelRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
+  const [syncing, setSyncing] = useState(false); // nút đồng bộ tay: ép poll TẤT CẢ nhà in (bỏ throttle 10')
   const [selIds, setSelIds] = useState<Set<string>>(new Set());
   const [bulkStatus, setBulkStatus] = useState("shipped");
   // Duplicate: hộp xác nhận + sửa Order label. PHẢI khai ở đây, cùng cụm hook —
@@ -133,10 +134,26 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
     if (j.ok) setData(j);
   }, [page, show, status, sellerId, storeId, q, platform, fulfillerId, designF, dr]);
   useEffect(() => { load(); }, [load]);
-  // Poll trạng thái/tracking Printway ngầm khi mở trang (server throttle 10 phút — gọi thoải mái)
+  // AUTO-SYNC NGẦM: kéo trạng thái · tracking · chi phí từ TẤT CẢ nhà in.
+  // Chạy ngay khi mở trang, rồi lặp mỗi 60s. Server tự throttle (FF_POLL_THROTTLE_MS, mặc định 2')
+  // nên gọi dày vẫn an toàn — không đập vào rate limit của nhà in.
+  // Tạm dừng khi tab bị ẩn (đỡ tốn invocation Vercel), chạy lại ngay khi quay lại tab.
   useEffect(() => {
-    fetch("/api/fulfillment/printway-sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
-      .then((r) => r.json()).then((j) => { if (j?.updated > 0) load(); }).catch(() => {});
+    let stop = false;
+    const tick = async () => {
+      if (stop || document.hidden) return;
+      try {
+        const j = await fetch("/api/fulfillment/printway-sync", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+        }).then((r) => r.json());
+        if (!stop && j?.updated > 0) load();
+      } catch { /* im lặng — poll ngầm không được làm phiền người dùng */ }
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    const onVis = () => { if (!document.hidden) tick(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { stop = true; clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -144,6 +161,21 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const all = Object.values(data.counts).reduce((a, b) => a + b, 0);
   const pages = Math.max(Math.ceil(data.total / show), 1);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
+
+  // Ép đồng bộ NGAY (bỏ throttle 10') cho cả 6 nhà in:
+  // Printway · Printify · Merchize · ONOS · Wembroidery · FlashShip
+  const syncNow = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    const j = await fetch("/api/fulfillment/printway-sync", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ force: true }),
+    }).then((r) => r.json()).catch(() => ({ ok: false }));
+    setSyncing(false);
+    if (!j?.ok) { flash("✗ " + t("o.syncFailed")); return; }
+    const n = Number(j.updated ?? 0);
+    flash(n > 0 ? t("o.syncedN").replace("{n}", String(n)) : t("o.syncedNone"));
+    if (n > 0) load();
+  };
 
   const cloneOrder = async (id: string, orderLabel: string) => {
     const j = await fetch(`/api/orders/${id}/clone`, {
@@ -200,6 +232,17 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
               </div>
             </>)}
           </div>
+          {canPushFf && (
+            <button onClick={syncNow} disabled={syncing} className="btn btn-outline" title={t("o.syncNowHint")}
+              aria-label={t("o.syncNow")}
+              style={{
+                opacity: syncing ? 0.6 : 1, cursor: syncing ? "default" : "pointer",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+                width: 38, height: 38, padding: 0,
+              }}>
+              <IconRefresh width={16} height={16} style={{ animation: syncing ? "spin 1s linear infinite" : undefined }} />
+            </button>
+          )}
           {canEdit && (
             <div style={{ position: "relative" }}>
               <button onClick={() => setImportMenu((v) => !v)} className="btn btn-outline">{importing ? t("c.loading") : <><IconDownload width={14} height={14} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("c.import")} {t("o.ordersWord")} ▾</>}</button>

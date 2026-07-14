@@ -3,6 +3,7 @@ import { and, eq, like, notInArray } from "drizzle-orm";
 import { getPrintifyOrder } from "@/lib/printify";
 import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
 
 /**
  * POLL PRINTIFY (backup cho webhook).
@@ -28,7 +29,7 @@ export async function syncPrintify(opts: { force?: boolean } = {}) {
 
     // Throttle 10 phút / fulfiller (trừ khi force)
     const last = Date.parse(String(cred.printifySyncAt ?? "")) || 0;
-    if (!opts.force && Date.now() - last < 10 * 60_000) { skipped++; continue; }
+    if (!opts.force && Date.now() - last < FF_POLL_THROTTLE_MS) { skipped++; continue; }
     await db.update(schema.fulfillers).set({ credentials: { ...cred, printifySyncAt: new Date().toISOString() } }).where(eq(schema.fulfillers.id, ff.id));
 
     const open = await db.select({

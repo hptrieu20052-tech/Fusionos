@@ -528,3 +528,6 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
   /* KHÔNG đụng .panel{overflow-x} ở đây — nó dùng chung với bảng Admin/Finance,
      tắt đi là mấy bảng đó vỡ. Bảng report đã tự vừa nhờ ẩn cột. */
 }
+
+/* Nút "Đồng bộ nhà in" — icon quay khi đang chạy */
+@keyframes spin{to{transform:rotate(360deg)}}

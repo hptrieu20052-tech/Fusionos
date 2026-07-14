@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
+import { syncOnosWem } from "@/lib/onos-wem-sync";
 import { getPrintwayOrderDetail, extractPwCost } from "@/lib/printway-api";
 import { pwCredOf } from "@/lib/printway-cost";
 
@@ -19,12 +20,16 @@ export async function POST(req: NextRequest) {
   if ((await levelOf(session, "orders")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({})) as { force?: boolean };
   const force = !!b.force;
-  const [printway, printify] = await Promise.all([
-    syncPrintway({ force }).catch((e) => ({ ok: false, updated: 0, errors: [String((e as Error)?.message ?? e)] })),
-    syncPrintify({ force }).catch((e) => ({ ok: false, updated: 0, errors: [String((e as Error)?.message ?? e)] })),
+  // Chạy TẤT CẢ nhà in (trước đây mở trang Orders chỉ đồng bộ Printway → Merchize/ONOS/Wem/FlashShip
+  // phải đợi cron 5' + throttle 10'/nhà). Bản thân mỗi sync vẫn tự throttle nên gọi dày vẫn an toàn.
+  const fail = (e: unknown) => ({ ok: false, updated: 0, errors: [String((e as Error)?.message ?? e)] });
+  const [printway, printify, others] = await Promise.all([
+    syncPrintway({ force }).catch(fail),
+    syncPrintify({ force }).catch(fail),
+    syncOnosWem({ force }).catch(fail),
   ]);
-  const updated = (printway.updated ?? 0) + (printify.updated ?? 0);
-  return NextResponse.json({ ok: true, updated, printway, printify });
+  const updated = (printway.updated ?? 0) + (printify.updated ?? 0) + (others.updated ?? 0);
+  return NextResponse.json({ ok: true, updated, printway, printify, others });
 }
 
 // GET ?debug=<external_ff_id | fulfillment_order_id> — trả RAW /order/detail của Printway + giá bóc được.
