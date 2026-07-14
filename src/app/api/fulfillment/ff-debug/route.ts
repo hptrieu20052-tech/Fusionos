@@ -7,6 +7,7 @@ import { getPrintwayOrderDetail, extractPwCost } from "@/lib/printway-api";
 import { pwCredOf } from "@/lib/printway-cost";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
 import { getPrintifyOrder, toISO2 } from "@/lib/printify";
+import { getFlashshipOrdersByCodes } from "@/lib/flashship";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -79,6 +80,12 @@ export async function GET(req: NextRequest) {
       if (!token || !shopId) return NextResponse.json({ ok: false, error: "Printify: thiếu token / shopId" }, { status: 400 });
       const raw = await getPrintifyOrder(token, shopId, ffo.externalFfId ?? "");
       return NextResponse.json({ ok: true, fusion, sentAs: { shopId, orderId: ffo.externalFfId }, raw });
+    }
+
+    if (name.includes("flashship") || name.includes("flashpod")) {
+      if (!apiKey) return NextResponse.json({ ok: false, error: "FlashShip: thiếu API token" }, { status: 400 });
+      const arr = await getFlashshipOrdersByCodes({ accessToken: apiKey, endpoint: ff.apiEndpoint }, [ffo.externalFfId ?? ""]);
+      return NextResponse.json({ ok: true, fusion, sentAs: { list_order_code: [ffo.externalFfId] }, raw: arr });
     }
 
     return NextResponse.json({ ok: false, error: `Chưa hỗ trợ debug cho nhà in "${ff.name}"`, fusion }, { status: 400 });
