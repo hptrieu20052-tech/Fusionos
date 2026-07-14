@@ -105,7 +105,8 @@ export async function GET(req: NextRequest) {
   // Dropdown filter data
   const sellers = scopeIds ? [] : (await db.execute(sql`SELECT id, full_name AS name FROM users WHERE role='seller' ORDER BY full_name`)).rows;
   const storeFilter = scopeIds ? sql` WHERE seller_id IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
-  const storesR = (await db.execute(sql`SELECT id, name FROM stores${storeFilter} ORDER BY name`)).rows;
+  // marketplace: để modal Import chỉ hiện store ĐÚNG SÀN (Etsy import không được chọn shop TikTok)
+  const storesR = (await db.execute(sql`SELECT id, name, marketplace FROM stores${storeFilter} ORDER BY name`)).rows;
   const fulfillersR = (await db.execute(sql`SELECT id, name FROM fulfillers ORDER BY name`)).rows;
 
   const out = orders.map((o) => ({

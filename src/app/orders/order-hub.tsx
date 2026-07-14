@@ -55,7 +55,7 @@ type Order = {
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
-type Opt = { id: string; name: string };
+type Opt = { id: string; name: string; marketplace?: string };
 type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; lines?: { product: string; variant: string | null; sku: string; qty: number }[] | null };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -84,7 +84,7 @@ function trackingUrl(carrier: string | null, num: string): string {
 
 export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false, canChangeStatus = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean; canChangeStatus?: boolean }) {
   const searchParams = useSearchParams();
-  const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: { id: string; name: string }[]; fulfillers: { id: string; name: string }[] } | null>(null);
+  const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: Opt[]; fulfillers: { id: string; name: string }[] } | null>(null);
   // Khởi tạo trạng thái ngay từ URL (?status=new) để chỉ gọi API 1 lần đúng bộ lọc, tránh race đè dữ liệu
   const [status, setStatus] = useState(() => {
     const s = searchParams.get("status");
@@ -1203,16 +1203,20 @@ function TikTokImportModal({ close, reload, flash, sellers, stores }: {
 }) {
   const { t } = useLang();
   const confirm = useConfirm();
+  const ttStores = stores.filter((s) => s.marketplace === "tiktok");
   const [storeId, setStoreId] = useState("");
   const [sellerId, setSellerId] = useState("");
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const doImport = async (file: File) => {
+    // Bắt buộc chọn store: import không store thì đơn không gắn được vào shop nào,
+    // sai seller, sai doanh thu, và không biết đường push tracking về đâu.
+    if (!storeId) { flash("✗ " + t("o.mustPickStore")); return; }
     setBusy(true);
     const fd = new FormData();
     fd.append("file", file);
-    if (storeId) fd.append("storeId", storeId);
+    fd.append("storeId", storeId);
     if (sellerId) fd.append("sellerId", sellerId);
     const j = await fetch("/api/orders/import-tiktok", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
     setBusy(false);
@@ -1234,11 +1238,13 @@ function TikTokImportModal({ close, reload, flash, sellers, stores }: {
           {t("o.tiktokGuide")}
         </div>
 
-        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.tiktokStore")}
-          <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
+        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.tiktokStore")} <span style={{ color: "var(--red)" }}>*</span>
+          {/* Chỉ hiện store TikTok — trước đây liệt kê cả shop Etsy, chọn nhầm là đơn vào sai shop */}
+          <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4, borderColor: storeId ? undefined : "var(--red)" }}>
             <option value="">{t("o.pickStore")}</option>
-            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {ttStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+          {!ttStores.length && <div style={{ fontSize: 11.5, color: "var(--red)", marginTop: 4, fontWeight: 600 }}>{t("o.noStoreForPlatform")}</div>}
         </label>
         <label style={{ ...rLbl, display: "block", marginBottom: 16 }}>{t("o.sellerOptional")}
           <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
@@ -1249,8 +1255,8 @@ function TikTokImportModal({ close, reload, flash, sellers, stores }: {
 
         <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) doImport(f); e.target.value = ""; }} />
-        <button onClick={() => fileRef.current?.click()} disabled={busy}
-          style={{ ...btnBlue, width: "100%", padding: "12px", fontSize: 14, opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        <button onClick={() => fileRef.current?.click()} disabled={busy || !storeId}
+          style={{ ...btnBlue, width: "100%", padding: "12px", fontSize: 14, opacity: (busy || !storeId) ? 0.5 : 1, cursor: storeId ? "pointer" : "not-allowed", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
           <IconUpload width={16} height={16} /> {busy ? t("o.importing") : t("o.pickTiktokCsvImport")}
         </button>
         <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10 }}>{t("o.dupSkipNote")}</div>
@@ -1266,16 +1272,20 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
 }) {
   const { t } = useLang();
   const confirm = useConfirm();
+  const etsyStores = stores.filter((s) => s.marketplace === "etsy");
   const [storeId, setStoreId] = useState("");
   const [sellerId, setSellerId] = useState("");
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const doImport = async (file: File) => {
+    // Bắt buộc chọn store: import không store thì đơn không gắn được vào shop nào,
+    // sai seller, sai doanh thu, và không biết đường push tracking về đâu.
+    if (!storeId) { flash("✗ " + t("o.mustPickStore")); return; }
     setBusy(true);
     const fd = new FormData();
     fd.append("file", file);
-    if (storeId) fd.append("storeId", storeId);
+    fd.append("storeId", storeId);
     if (sellerId) fd.append("sellerId", sellerId);
     const j = await fetch("/api/orders/import-etsy", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
     setBusy(false);
@@ -1301,11 +1311,13 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
           {t("o.etsyGuide")}
         </div>
 
-        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.etsyStore")}
-          <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
+        <label style={{ ...rLbl, display: "block", marginBottom: 12 }}>{t("o.etsyStore")} <span style={{ color: "var(--red)" }}>*</span>
+          {/* Chỉ hiện store Etsy */}
+          <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4, borderColor: storeId ? undefined : "var(--red)" }}>
             <option value="">{t("o.pickStore")}</option>
-            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {etsyStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+          {!etsyStores.length && <div style={{ fontSize: 11.5, color: "var(--red)", marginTop: 4, fontWeight: 600 }}>{t("o.noStoreForPlatform")}</div>}
         </label>
         <label style={{ ...rLbl, display: "block", marginBottom: 16 }}>{t("o.sellerOptional")}
           <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} style={{ ...inp, width: "100%", marginTop: 4 }}>
@@ -1316,8 +1328,8 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
 
         <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }}
           onChange={(e) => { const f = e.target.files?.[0]; if (f) doImport(f); e.target.value = ""; }} />
-        <button onClick={() => fileRef.current?.click()} disabled={busy}
-          style={{ ...btnBlue, width: "100%", padding: "12px", fontSize: 14, opacity: busy ? 0.6 : 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        <button onClick={() => fileRef.current?.click()} disabled={busy || !storeId}
+          style={{ ...btnBlue, width: "100%", padding: "12px", fontSize: 14, opacity: (busy || !storeId) ? 0.5 : 1, cursor: storeId ? "pointer" : "not-allowed", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
           <IconUpload width={16} height={16} /> {busy ? t("o.importing") : t("o.pickCsvImport")}
         </button>
         <div style={{ fontSize: 11.5, color: "var(--faint)", marginTop: 10 }}>{t("o.dupSkipNote")}</div>
@@ -1337,7 +1349,7 @@ function EtsyImportModal({ close, reload, flash, sellers, stores }: {
 
 function CreateOrderModal({ close, reload, flash, sellers, stores }: {
   close: () => void; reload: () => void; flash: (m: string) => void;
-  sellers: { id: string; name: string }[]; stores: { id: string; name: string }[];
+  sellers: Opt[]; stores: Opt[];
 }) {
   const { t } = useLang();
   const [f, setF] = useState({

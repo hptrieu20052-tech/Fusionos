@@ -429,6 +429,8 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "o.tiktokGuide": { vi: "Xuất file đơn ở TikTok Seller Center (Orders → To Ship → Export), rồi tải file CSV lên đây. Nhiều dòng cùng Order ID sẽ gộp thành 1 đơn.", en: "Export orders from TikTok Seller Center (Orders → To Ship → Export), then upload the CSV here. Multiple rows with the same Order ID are merged into one order." },
   "o.matchNameBadge": { vi: "khớp tên", en: "name match" },
   "o.matchListingBadge": { vi: "khớp listing", en: "listing match" },
+  "o.mustPickStore": { vi: "Phải chọn shop trước khi import", en: "Pick a store before importing" },
+  "o.noStoreForPlatform": { vi: "Chưa có shop nào của sàn này — thêm ở trang Stores", en: "No store for this marketplace yet — add one in Stores" },
   "o.designFilter": { vi: "Design", en: "Design" },
   "o.designAssigned": { vi: "Đã gán ID", en: "Assigned" },
   "o.designUnassigned": { vi: "Chưa gán ID", en: "Unassigned" },

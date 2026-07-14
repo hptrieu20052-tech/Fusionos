@@ -25,13 +25,19 @@ export async function POST(req: NextRequest) {
   const form = await req.formData().catch(() => null);
   const file = form?.get("file") as File | null;
   const storeId = (form?.get("storeId") as string) || null;
+  // BẮT BUỘC có store. Không store → đơn không gắn được shop, sai seller, sai doanh thu,
+  // và push tracking không biết về đâu. Chặn ở SERVER, không chỉ ẩn nút ở UI.
+  if (!storeId) return NextResponse.json({ ok: false, error: "Pick a store first" }, { status: 400 });
   let sellerId = (form?.get("sellerId") as string) || null;
   if (!file) return NextResponse.json({ ok: false, error: "missing file" }, { status: 400 });
 
   // Không chọn seller → lấy seller mặc định của store (đồng bộ với cấu hình store)
   let fxRate = 1;
-  if (storeId) {
-    const [st] = await db.select({ s: schema.stores.sellerId, fx: schema.stores.fxRate }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
+  {
+    const [st] = await db.select({ s: schema.stores.sellerId, fx: schema.stores.fxRate, mk: schema.stores.marketplace }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
+    if (!st) return NextResponse.json({ ok: false, error: "Store not found" }, { status: 404 });
+    // Chống chọn nhầm sàn: import etsy mà trỏ vào shop sàn khác → đơn vào sai shop, không sửa được
+    if (st.mk !== "etsy") return NextResponse.json({ ok: false, error: `That store is not a etsy store` }, { status: 400 });
     if (!sellerId) sellerId = st?.s ?? null;
     const r = Number(st?.fx ?? 1);
     if (r > 0) fxRate = r; // tiền shop → USD: chia cho tỉ giá
