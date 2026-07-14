@@ -115,8 +115,46 @@ export async function createMerchizeOrder(baseUrl: string, apiKey: string, paylo
     throw new Error(`Merchize từ chối đơn: ${JSON.stringify(data.message ?? data.error ?? data).slice(0, 400)}`);
   }
   const inner = (data.data ?? data.resource ?? data) as Record<string, unknown>;
-  const orderCode = String(inner?._id ?? inner?.order_code ?? inner?.code ?? inner?.id ?? data?.order_code ?? "");
+  // PHẢI ưu tiên `code` (RM-xxxxx-xxxxx) — đó là mã endpoint /orders/tracking nhận.
+  // Bug cũ: lấy `_id` (Mongo ObjectId) trước → mọi lần poll tracking đều trả "Order not found".
+  const nested = (inner?.data && typeof inner.data === "object" ? inner.data : {}) as Record<string, unknown>;
+  const orderCode = String(
+    inner?.code ?? inner?.order_code ?? nested?.code ?? nested?.order_code ??
+    inner?._id ?? inner?.id ?? data?.order_code ?? "",
+  );
   return { orderCode, raw: data };
+}
+
+/**
+ * Lấy tracking đơn Merchize — TỰ ĐỘNG FALLBACK.
+ *
+ * Endpoint /orders/tracking nhận `code` (RM-xxxxx-xxxxx), KHÔNG nhận Mongo `_id`.
+ * Đơn đẩy trước bản vá lưu nhầm `_id` → gọi bằng code sẽ "Order not found".
+ * → Thử `code` trước; hỏng thì hỏi lại bằng `external_number` + `identifier`
+ *   (chính là chuỗi FUSION gửi lúc tạo đơn), luôn khớp dù lưu id kiểu gì.
+ */
+export async function getMerchizeTrackingSmart(
+  baseUrl: string, apiKey: string,
+  p: { code?: string; externalNumber?: string; identifier?: string },
+): Promise<{ raw: unknown; via: "code" | "external_number" | "none" }> {
+  const notFound = (r: unknown) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    return o.success === false || /not found/i.test(String(o.message ?? ""));
+  };
+  if (p.code) {
+    try {
+      const raw = await getMerchizeTracking(baseUrl, apiKey, { code: p.code });
+      if (!notFound(raw)) return { raw, via: "code" };
+    } catch { /* thử cách 2 */ }
+  }
+  if (p.externalNumber && p.identifier) {
+    try {
+      const raw = await getMerchizeTracking(baseUrl, apiKey, { externalNumber: p.externalNumber, identifier: p.identifier });
+      if (!notFound(raw)) return { raw, via: "external_number" };
+      return { raw, via: "none" };
+    } catch { /* rơi xuống dưới */ }
+  }
+  return { raw: { success: false, message: "Order not found (đã thử cả code và external_number)" }, via: "none" };
 }
 
 /** GET tất cả variant của 1 product Merchize (x-api-key). */

@@ -4,7 +4,7 @@ import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrder
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { getOnosOrder, mapOnosStatus } from "@/lib/onos";
 import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
-import { getMerchizeTracking, extractMerchizeTracking } from "@/lib/merchize";
+import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
 import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
 
 /**
@@ -19,19 +19,25 @@ import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
 const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 const arrOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
 
-type OpenFfo = { id: string; orderId: string; externalFfId: string | null; status: string; trackingNumber: string | null; cost: string | null };
+type OpenFfo = { id: string; orderId: string; externalFfId: string | null; status: string; trackingNumber: string | null; cost: string | null; extNumber: string | null };
 
 async function openFfosOf(fulfillerId: string): Promise<OpenFfo[]> {
-  return db.select({
+  // Kèm external_number của đơn (orderLabel > externalId) để fallback hỏi Merchize khi
+  // external_ff_id lưu nhầm Mongo _id thay vì code RM-xxxxx.
+  const rows = await db.select({
     id: schema.fulfillmentOrders.id, orderId: schema.fulfillmentOrders.orderId,
     externalFfId: schema.fulfillmentOrders.externalFfId, status: schema.fulfillmentOrders.status,
     trackingNumber: schema.fulfillmentOrders.trackingNumber,
     cost: schema.fulfillmentOrders.cost,
-  }).from(schema.fulfillmentOrders).where(and(
+    label: schema.orders.orderLabel, ext: schema.orders.externalId,
+  }).from(schema.fulfillmentOrders)
+    .innerJoin(schema.orders, eq(schema.orders.id, schema.fulfillmentOrders.orderId))
+    .where(and(
     eq(schema.fulfillmentOrders.fulfillerId, fulfillerId),
     isNotNull(schema.fulfillmentOrders.externalFfId),
     notInArray(schema.fulfillmentOrders.status, ["delivered", "cancelled", "error"]),
   ));
+  return rows.map(({ label, ext, ...r }) => ({ ...r, extNumber: (label?.trim() || ext || null) }));
 }
 
 async function applyUpdate(ffo: OpenFfo, upd: { status: string; trackingNumber?: string; trackingUrl?: string; carrier?: string }): Promise<boolean> {
@@ -161,9 +167,14 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             const status = mapWemStatus(S(order.status), !!(trackingNumber || ffo.trackingNumber));
             if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, carrier: carrier || undefined })) updated++;
           } else {
-            // Merchize: endpoint tracking trả kèm status (cancel/fulfilled/...) và ĐÔI KHI cả chi phí
+            // Merchize: endpoint tracking trả kèm status (cancel/fulfilled/...) và ĐÔI KHI cả chi phí.
+            // Đơn cũ lưu nhầm Mongo _id → fallback hỏi bằng external_number + identifier.
             const baseUrl = ff.apiEndpoint?.trim() || "https://bo-group-2.merchize.com/hgu3s";
-            const raw = await getMerchizeTracking(baseUrl, apiKey, { code: ffo.externalFfId! });
+            const { raw } = await getMerchizeTrackingSmart(baseUrl, apiKey, {
+              code: ffo.externalFfId ?? undefined,
+              externalNumber: ffo.extNumber ?? undefined,
+              identifier: cred.identifier,
+            });
             const t = extractMerchizeTracking(raw);
             const status = mapMerchizeStatus(t.status ?? "", !!(t.trackingNumber || ffo.trackingNumber)) || ffo.status;
             if (await applyUpdate(ffo, { status, trackingNumber: t.trackingNumber, trackingUrl: t.trackingUrl, carrier: t.carrier })) updated++;
