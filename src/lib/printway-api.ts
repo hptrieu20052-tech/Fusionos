@@ -356,29 +356,37 @@ export async function getPrintwayOrderDetail(c: Cred, p: { pwOrderId?: string; o
 // Printway UI hiển thị: Product price / Shipping fee / Tax / Total → dò mọi biến thể tên field.
 export type PwCost = { base: number; ship: number; tax: number; total: number; found: boolean };
 export function extractPwCost(obj: Record<string, unknown>): PwCost {
-  const d = (obj.data && typeof obj.data === "object" && !Array.isArray(obj.data) ? (obj.data as Record<string, unknown>) : obj);
+  // /order/detail trả { success, message, data: [ {...} ] } → data là MẢNG, phải lấy phần tử đầu.
+  const d0: unknown = obj.data !== undefined ? obj.data : obj;
+  const d = (Array.isArray(d0) ? (d0[0] ?? {}) : d0) as Record<string, unknown>;
+
   const pickN = (o: Record<string, unknown>, ...keys: string[]) => {
     for (const k of keys) {
       if (o[k] !== undefined && o[k] !== null && o[k] !== "") { const n = pwNum(o[k]); if (n > 0) return n; }
     }
     return 0;
   };
-  let base = pickN(d, "product_price", "base_cost", "base_price", "product_cost", "product_amount", "subtotal", "sub_total", "items_price");
+  // Tên field THẬT của Printway (xác nhận từ response): base_fee / shipping_fee / tax_fee / total_price.
+  // Các tên khác giữ lại làm dự phòng nếu Printway đổi schema.
+  let base = pickN(d, "base_fee", "base_cost", "product_price", "base_price", "product_cost", "product_amount", "subtotal", "sub_total", "items_price");
   let ship = pickN(d, "shipping_fee", "ship_cost", "shipping_cost", "ship_fee", "shipping_price", "shipping_amount");
-  let tax = pickN(d, "tax", "tax_fee", "tax_amount", "taxes", "tax_price");
-  let total = pickN(d, "total", "total_price", "total_cost", "grand_total", "total_amount", "amount");
+  let tax = pickN(d, "tax_fee", "tax", "tax_cost", "tax_amount", "taxes", "tax_price");
+  let total = pickN(d, "total_price", "total", "total_cost", "grand_total", "total_amount", "amount");
+  const surcharge = pickN(d, "surcharge");
 
-  // Không có ở cấp đơn → cộng dồn từ order_items
+  // Không có ở cấp đơn → cộng dồn từ dòng hàng (Printway đặt tên "orderitems")
   if (!base && !ship) {
-    const arr = (Array.isArray(d.order_items) ? d.order_items : Array.isArray(d.items) ? d.items : []) as Record<string, unknown>[];
+    const arr = ((Array.isArray(d.orderitems) ? d.orderitems
+      : Array.isArray(d.order_items) ? d.order_items
+      : Array.isArray(d.items) ? d.items : []) as Record<string, unknown>[]);
     for (const it of arr) {
-      base += pickN(it, "product_price", "base_cost", "base_price", "price", "product_cost", "amount");
-      ship += pickN(it, "shipping_fee", "ship_cost", "shipping_cost", "ship_fee");
-      tax += pickN(it, "tax", "tax_fee", "tax_amount");
+      base += pickN(it, "base_cost", "base_fee", "product_price", "base_price", "price", "product_cost");
+      ship += pickN(it, "shipping_cost", "shipping_fee", "ship_cost", "ship_fee");
+      tax += pickN(it, "tax_cost", "tax_fee", "tax", "tax_amount");
     }
   }
-  if (!total) total = base + ship + tax;
-  if (total && !base) base = Math.max(0, total - ship - tax);
+  if (!total) total = base + ship + tax + surcharge;
+  if (total && !base) base = Math.max(0, total - ship - tax - surcharge);
   const r2 = (n: number) => Math.round(n * 100) / 100; // giữ đúng tới cent
-  return { base: r2(base), ship: r2(ship), tax: r2(tax), total: r2(total), found: total > 0 };
+  return { base: r2(base), ship: r2(ship), tax: r2(tax + surcharge), total: r2(total), found: total > 0 };
 }

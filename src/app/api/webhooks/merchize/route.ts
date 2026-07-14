@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { and, eq, inArray, like, or } from "drizzle-orm";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
-import { syncOrderFromFf, refundOrderCost } from "@/lib/order-status";
+import { syncOrderFromFf, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { markShippedOnTracking } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +81,9 @@ export async function POST(req: NextRequest) {
         like(schema.transactions.note, `%${ffo.externalFfId}%`),
       ));
     }
+    // Dòng bút toán có thể KHÔNG tồn tại (bị xoá khi undo push / rebalance) → UPDATE không tạo ra gì
+    // và Finance đứng $0 dù card đã có giá. Rebalance sẽ CHÈN cho khớp cost của bản ghi đẩy.
+    await rebalanceOrderCost(ffo.orderId, `Merchize · ${ffo.externalFfId ?? ""} — cost sync`);
 
     // Đã có phí fulfillment = đơn đã "paid" → In Production (chỉ tiến)
     if (fulfillmentCost !== undefined) {
@@ -128,6 +131,7 @@ export async function POST(req: NextRequest) {
     await db.update(schema.fulfillmentOrders).set({ baseCost: "0", shipCost: "0", extraFee: "0", cost: "0", costEvents: {} }).where(eq(schema.fulfillmentOrders.id, ffo.id));
     await db.update(schema.orders).set({ status: "cancel", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
     await refundOrderCost(ffo.orderId, "Refund cost — cancelled by Merchize");
+    await rebalanceOrderCost(ffo.orderId, "Cost adjustment — cancelled by Merchize");
     return NextResponse.json({ ok: true, matched: ffo.id, status, trashed: true });
   }
   if (trackingNumber || status === "shipped") {
