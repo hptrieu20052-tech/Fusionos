@@ -49,9 +49,9 @@ export default function TeamReport({ range, from, to, title }: RangeProps) {
 
       {loading && <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,.5)", borderRadius: 18, zIndex: 5 }} />}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: 20, alignItems: "start" }}>
+      <div className="rep-grid" style={{ ["--rep-side" as string]: "340px" } as React.CSSProperties}>
         {/* Stacked bar theo thời gian */}
-        <div style={{ display: "flex", alignItems: "flex-end", gap: buckets.length > 20 ? 3 : 8, height: H + 40, overflowX: "auto", paddingBottom: 4 }}>
+        <div className="rep-bars" style={{ gap: buckets.length > 20 ? 3 : 8, height: H + 40 }}>
           {buckets.map((b, bi) => {
             const t = colTotal[bi];
             return (
@@ -71,7 +71,7 @@ export default function TeamReport({ range, from, to, title }: RangeProps) {
         </div>
 
         {/* Donut + xếp hạng team thu gọn bên phải */}
-        <div>
+        <div className="rep-side">
           <Donut teams={teams} metric={metric} total={metric === "r" ? totals.revenue : totals.orders} />
           <div style={{ marginTop: 12 }}>
             {teams.map((t, ti) => (

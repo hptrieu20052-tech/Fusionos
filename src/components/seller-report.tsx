@@ -76,9 +76,9 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
 
       {loading && <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,.5)", borderRadius: 18, zIndex: 5 }} />}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 20, alignItems: "start" }}>
+      <div className="rep-grid" style={{ ["--rep-side" as string]: "320px" } as React.CSSProperties}>
         {/* Stacked bars */}
-        <div style={{ display: "flex", alignItems: "flex-end", gap: buckets.length > 20 ? 3 : 8, height: H + 40, overflowX: "auto", paddingBottom: 4 }}>
+        <div className="rep-bars" style={{ gap: buckets.length > 20 ? 3 : 8, height: H + 40 }}>
         {buckets.map((b, bi) => {
           const t = colTotal[bi];
           return (
@@ -98,9 +98,9 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
         </div>
 
         {/* Donut tỉ trọng + xếp hạng */}
-        <div>
+        <div className="rep-side">
           <Donut sellers={sellers} metric={metric} total={metric === "o" ? totals.orders : totals.items} />
-          <div style={{ marginTop: 14, maxHeight: 240, overflowY: "auto", paddingRight: 4 }}>
+          <div className="rep-rank" style={{ marginTop: 14, maxHeight: 240, overflowY: "auto", paddingRight: 4 }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "right" }}>

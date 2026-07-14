@@ -487,3 +487,23 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 /* Finance: 5 KPI trên 1 hàng (desktop) — mobile về 2 cột */
 .kpis-5{grid-template-columns:repeat(5,minmax(0,1fr)) !important}
 @media (max-width:900px){ .kpis-5{grid-template-columns:repeat(2,1fr) !important} }
+
+
+/* ===== REPORT (Seller / Team / Designer): biểu đồ cột + donut ===== */
+/* Trước đây grid "1fr 320px" viết INLINE nên media query không đè được →
+   trên mobile cột biểu đồ (1fr) bị bóp còn ~0, biểu đồ cột biến mất. */
+.rep-grid{display:grid;grid-template-columns:1fr var(--rep-side, 320px);gap:20px;align-items:start}
+.rep-bars{display:flex;align-items:flex-end;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.rep-bars::-webkit-scrollbar{height:5px}
+.rep-bars::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
+
+@media (max-width:900px){
+  .rep-grid{grid-template-columns:1fr;gap:16px}
+  /* Biểu đồ cột lên TRƯỚC donut — đây là thứ cần nhìn nhất */
+  .rep-bars{order:1;min-height:190px}
+  .rep-side{order:2}
+  /* Bảng xếp hạng: bỏ chiều cao cố định (maxHeight viết inline → cần !important) */
+  .rep-side .rep-rank{max-height:none !important;overflow-y:visible !important}
+  /* Bảng bên trong cuộn ngang riêng, không đẩy vỡ trang */
+  .rep-side table{min-width:300px}
+}

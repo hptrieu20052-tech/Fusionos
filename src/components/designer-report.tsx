@@ -65,9 +65,9 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
 
       {loading && <div style={{ position: "absolute", inset: 0, background: "rgba(255,255,255,.5)", borderRadius: 18, zIndex: 5 }} />}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: 20, alignItems: "start" }}>
+      <div className="rep-grid" style={{ ["--rep-side" as string]: "400px" } as React.CSSProperties}>
         {/* Stacked bars */}
-        <div style={{ display: "flex", alignItems: "flex-end", gap: buckets.length > 20 ? 3 : 8, height: H + 40, overflowX: "auto", paddingBottom: 4 }}>
+        <div className="rep-bars" style={{ gap: buckets.length > 20 ? 3 : 8, height: H + 40 }}>
           {buckets.map((b, bi) => {
             const t = colTotal[bi];
             return (
@@ -87,7 +87,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
         </div>
 
         {/* Donut + bảng xếp hạng KPI */}
-        <div>
+        <div className="rep-side">
           <Donut designers={designers} metric={metric} total={metric === "d" ? totals.designs : totals.salesOrders} />
           <div style={{ marginTop: 12, maxHeight: 240, overflowY: "auto" }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
