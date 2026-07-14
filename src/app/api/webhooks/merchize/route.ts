@@ -106,14 +106,18 @@ export async function POST(req: NextRequest) {
   const trackingUrl = pick("tracking_url", "trackingUrl");
   const carrier = pick("shipping_carrier", "carrier", "tracking_company", "shipping_company");
 
-  // Map event → trạng thái (ưu tiên new_shipment_status của event SHIPMENT)
+  // Map event → trạng thái. QUY TẮC: Push → pushed · ĐÃ TRẢ TIỀN → in_production · CÓ TRACKING → shipped.
   const shipStatus = String(r.new_shipment_status ?? r.shipment_status ?? "").toLowerCase();
   let status = ffo.status as string;
-  if (/DELIVER/.test(ev) || /deliver/.test(shipStatus)) status = "delivered";
-  else if (/SHIP|TRANSIT|TRACKING/.test(ev) || trackingNumber || /transit|shipped|out_for_delivery|picked/.test(shipStatus)) status = "shipped";
-  else if (/PRODUCT|PROCESS|ACCEPT|CREATED/.test(ev) || /pre_transit|label/.test(shipStatus)) status = "in_production";
-  else if (/CANCEL/.test(ev)) status = "cancelled";
-  else if (/return|fail|exception/.test(shipStatus)) status = "error";
+  if (/CANCEL|REFUND/.test(ev)) status = "cancelled";
+  else if (/DELIVER/.test(ev) || /deliver/.test(shipStatus)) status = "delivered";
+  // Bug: event "Order changed tracking/shipment" KHÔNG kèm mã vẫn bị đánh shipped → bắt buộc có trackingNumber
+  else if (trackingNumber || /transit|shipped|out_for_delivery|picked/.test(shipStatus)) status = "shipped";
+  // Bug: event "Order created" (ORDER_CREATED) khớp /CREATED/ → nhảy in_production dù CHƯA trả tiền.
+  // Mốc in_production duy nhất = đã trả tiền (nhánh PAYMENT ở trên) hoặc Merchize báo đang sản xuất.
+  else if (/PRODUCT|PROCESS|FULFIL/.test(ev) || /pre_transit|label/.test(shipStatus)) status = "in_production";
+  // SỰ CỐ: "Order invalid address" / "Order issue updated" → đánh dấu lỗi để đơn không kẹt im lặng
+  else if (/INVALID|ADDRESS|ISSUE/.test(ev) || /return|fail|exception/.test(shipStatus)) status = "error";
 
   await db.update(schema.fulfillmentOrders).set({
     trackingNumber: trackingNumber || ffo.trackingNumber,
@@ -140,6 +144,12 @@ export async function POST(req: NextRequest) {
     await refundOrderCost(ffo.orderId, "Refund cost — cancelled by Merchize");
     await rebalanceOrderCost(ffo.orderId, "Cost adjustment — cancelled by Merchize");
     return NextResponse.json({ ok: true, matched: ffo.id, status, trashed: true });
+  }
+  if (status === "error") {
+    // Merchize báo sai địa chỉ / có sự cố → đưa đơn chính sang HAS ISSUES để support xử lý ngay
+    await db.update(schema.orders).set({ status: "has_issues", updatedAt: new Date() })
+      .where(and(eq(schema.orders.id, ffo.orderId), inArray(schema.orders.status, ["new", "created", "in_production"])));
+    return NextResponse.json({ ok: true, matched: ffo.id, status, issue: String(r.message ?? r.reason ?? ev).slice(0, 200) });
   }
   if (trackingNumber || status === "shipped") {
     await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() })
