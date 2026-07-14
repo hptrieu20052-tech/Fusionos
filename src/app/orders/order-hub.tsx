@@ -141,8 +141,15 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const pages = Math.max(Math.ceil(data.total / show), 1);
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 2500); };
 
-  const cloneOrder = async (id: string) => {
-    const j = await fetch(`/api/orders/${id}/clone`, { method: "POST" }).then((r) => r.json());
+  // Duplicate: bắt xác nhận + cho sửa Order label trước khi tạo, tránh bấm nhầm
+  // và tránh 2 đơn trùng label không phân biệt được.
+  const [dupFor, setDupFor] = useState<{ id: string; label: string } | null>(null);
+  const cloneOrder = async (id: string, orderLabel: string) => {
+    const j = await fetch(`/api/orders/${id}/clone`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderLabel }),
+    }).then((r) => r.json()).catch(() => ({ ok: false }));
+    setDupFor(null);
     if (j.ok) { flash(t("o.cloned") + j.order.externalId); load(); } else flash("✗ " + (j.error ?? t("o.errorWord")));
   };
   const toggleSel = (id: string) => {
@@ -337,7 +344,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
       {data.orders.map((o) => (
         <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
-          reload={load} flash={flash} cloneOrder={cloneOrder} copyText={copyText}
+          reload={load} flash={flash} openDup={(id, label) => setDupFor({ id, label })} copyText={copyText}
           fulfillers={data.fulfillers} />
       ))}
       {!data.orders.length && <div className="panel empty" style={{ marginTop: 12 }}>{t("o.noMatch")}</div>}
@@ -348,6 +355,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
 
 
       {showCreate && <CreateOrderModal close={() => setShowCreate(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
+      {dupFor && <DuplicateModal init={dupFor} close={() => setDupFor(null)} onConfirm={cloneOrder} />}
       {showEtsy && <EtsyImportModal close={() => setShowEtsy(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
       {showTiktok && <TikTokImportModal close={() => setShowTiktok(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
     </>
@@ -668,10 +676,50 @@ function ManualTracking({ orderId, platform, ff, fulfillerId, fulfillers, flash,
   );
 }
 
-function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, reload, flash, cloneOrder, copyText, fulfillers }: {
+// Hộp xác nhận Duplicate: bắt bấm 2 lần và cho sửa Order label trước khi tạo.
+// Trước đây bấm 1 phát là nhân bản luôn, label trùng y hệt đơn gốc → không phân biệt được.
+function DuplicateModal({ init, close, onConfirm }: {
+  init: { id: string; label: string };
+  close: () => void;
+  onConfirm: (id: string, label: string) => Promise<void>;
+}) {
+  const { t } = useLang();
+  const [label, setLabel] = useState(init.label ? `${init.label}-CLONE` : "");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
+      <div className="panel" style={{ width: 460, maxWidth: "100%" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <b style={{ fontSize: 16 }}>{t("o.dupTitle")}</b>
+          {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 14 }}>{t("o.dupHint")}</div>
+
+        <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>
+          {t("o.orderLabel")}
+          <input value={label} onChange={(e) => setLabel(e.target.value)} autoFocus
+            placeholder={init.label || "—"}
+            style={{ ...inp, width: "100%", marginTop: 5, fontWeight: 600, textTransform: "none", letterSpacing: 0 }} />
+        </label>
+
+        <div style={{ display: "flex", gap: 8, marginTop: 18, justifyContent: "flex-end" }}>
+          <button onClick={close} disabled={busy} style={{ ...btnGhost, fontSize: 13 }}>{t("c.cancel")}</button>
+          <button onClick={async () => { setBusy(true); await onConfirm(init.id, label.trim()); setBusy(false); }}
+            disabled={busy}
+            style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, fontSize: 13, cursor: busy ? "wait" : "pointer", opacity: busy ? 0.6 : 1 }}>
+            {busy ? "…" : t("o.dupConfirm")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, reload, flash, openDup, copyText, fulfillers }: {
   o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
-  cloneOrder: (id: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
+  openDup: (id: string, label: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
 }) {
   const { t } = useLang();
   const confirm = useConfirm();
@@ -972,7 +1020,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
           </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
           {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
-          {isAdmin && <button onClick={() => cloneOrder(o.id)} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
+          {isAdmin && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "")} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
       </div>
       {showIssue && <IssueModal order={o} fulfillers={fulfillers}
