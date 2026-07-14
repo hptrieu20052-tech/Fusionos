@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import { cancelPrintwayOrder, deletePrintwayOrder } from "@/lib/printway-api";
 import { cancelFlashshipOrders } from "@/lib/flashship";
+import { rebalanceOrderCost } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,11 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   }
   await db.delete(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.id, params.id));
 
+  // CÂN LẠI SỔ: dòng hoàn tiền (refundOrderCost) có note "Refund cost — …" nên KHÔNG bị xoá ở
+  // bước trên → nếu bỏ qua, nó nằm lại một mình và làm cost ÂM. Rebalance xoá/điều chỉnh cho khớp
+  // với các bản ghi đẩy còn lại.
+  const rebalanced = await rebalanceOrderCost(ffo.orderId);
+
   // Còn bản ghi đẩy nào cho đơn này không? Không → đưa đơn về "new"
   const [rest] = await db.select({ id: schema.fulfillmentOrders.id }).from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, ffo.orderId)).limit(1);
   if (!rest) {
@@ -68,5 +74,5 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
       await db.update(schema.orders).set({ status: "new", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
     }
   }
-  return NextResponse.json({ ok: true, revertedToNew: !rest, remote });
+  return NextResponse.json({ ok: true, revertedToNew: !rest, rebalanced, remote });
 }

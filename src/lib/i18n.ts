@@ -528,6 +528,8 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "dz.uploadHintPost": { vi: " sau.", en: " later." },
   "dz.page": { vi: "Trang {n}", en: "Page {n}" },
   "dz.gridOf": { vi: "{m} — lưới", en: "{m} grid" },
+  "dz.productName": { vi: "Sản phẩm", en: "Product name" },
+  "dz.printAreas": { vi: "Mặt in", en: "Print areas" },
   "dz.groupShirt": { vi: "Áo / Hoodie", en: "Shirt / Hoodie" },
   "sk.filterSuffix": { vi: " (lọc)", en: " (filtered)" },
   "sk.moreClickAgain": { vi: " · CÒN nữa — bấm lại để tiếp", en: " · MORE available — click again to continue" },

@@ -495,8 +495,11 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 /* ===== REPORT (Seller / Team / Designer): biểu đồ cột + donut ===== */
 /* Trước đây grid "1fr 320px" viết INLINE nên media query không đè được →
    trên mobile cột biểu đồ (1fr) bị bóp còn ~0, biểu đồ cột biến mất. */
-.rep-grid{display:grid;grid-template-columns:1fr var(--rep-side, 320px);gap:20px;align-items:start}
-.rep-bars{display:flex;align-items:flex-end;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch}
+.rep-grid{display:grid;grid-template-columns:1fr minmax(0,var(--rep-side, 320px));gap:20px;align-items:start}
+/* min-width:0 BẮT BUỘC: grid item mặc định min-width:auto → cột bar (30 ngày × 22px)
+   nở rộng hơn cột 1fr → panel rộng hơn màn hình → CẢ TRANG trượt ngang. */
+.rep-bars{display:flex;align-items:flex-end;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;min-width:0}
+.rep-side{min-width:0}
 .rep-bars::-webkit-scrollbar{height:5px}
 .rep-bars::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
 
@@ -513,8 +516,12 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
   /* Designer: ẩn Score (toàn "—") + Revenue → còn 4 cột, vừa khít, không phải vuốt.
      Seller giữ ĐỦ 6 cột (toàn chỉ số quan trọng) → cho vuốt ngang trong chính bảng. */
   .rep-col-opt{display:none}
-  .rep-side table{min-width:400px}
+  /* BỎ min-width cứng (400px > bề ngang máy → tràn + dàn cột thưa).
+     Cột TÊN chiếm hết phần dư → các cột số dồn sát phải, không còn khoảng trống giữa bảng. */
+  .rep-side table{width:100%;min-width:0;table-layout:auto}
+  .rep-side th:first-child,.rep-side td:first-child{width:100%}
   .rep-side th,.rep-side td{padding-left:3px !important;padding-right:3px !important;font-size:11.5px;white-space:nowrap}
+  .rep-side th:not(:first-child),.rep-side td:not(:first-child){width:1%}
 
   /* Biểu đồ cột: chừa mép phải để cột cuối không dính sát viền */
   .rep-bars{padding-right:10px}

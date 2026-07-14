@@ -1,6 +1,6 @@
 "use client";
 import { useLang } from "@/components/lang-provider";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Designer = {
   id: string; name: string; designs: number; points: number;
@@ -13,7 +13,7 @@ const PALETTE = [
   "#9D89D4", "#5FAE87", "#E0A45E", "#D583AB", "#1D5FAE", "#CE7B7B", "#5FA8BC", "#9FB56B",
   "#DB9468", "#3D9BE0", "#5FAFA3", "#C388D6", "#CBB05E", "#5E8FC7", "#7BB88A", "#D07F93",
 ];
-const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type RangeProps = { range: string; from?: string; to?: string; hideMoney?: boolean; title?: string };
 export default function DesignerReport({ range, from, to, hideMoney, title }: RangeProps) {
@@ -28,6 +28,13 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
     fetch(`/api/stats/designer-report?range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
       .then((j) => { if (j.ok) setData(j); }).finally(() => setLoading(false));
   }, [range, from, to]);
+
+  // Cột bar cuộn ngang trong panel → tự nhảy tới NGÀY MỚI NHẤT (mép phải) mỗi khi đổi dữ liệu/metric
+  const barsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = barsRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [data, metric]);
 
   if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingDesigner")}</div>;
 
@@ -67,7 +74,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
 
       <div className="rep-grid" style={{ ["--rep-side" as string]: "400px" } as React.CSSProperties}>
         {/* Stacked bars */}
-        <div className="rep-bars" style={{ gap: buckets.length > 20 ? 3 : 8, height: H + 40 }}>
+        <div className="rep-bars" ref={barsRef} style={{ gap: buckets.length > 20 ? 3 : 8, height: H + 40 }}>
           {buckets.map((b, bi) => {
             const t = colTotal[bi];
             return (
@@ -89,7 +96,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
         {/* Donut + bảng xếp hạng KPI */}
         <div className="rep-side">
           <Donut designers={designers} metric={metric} total={metric === "d" ? totals.designs : totals.salesOrders} />
-          <div style={{ marginTop: 12, maxHeight: 240, overflowY: "auto" }}>
+          <div className="rep-rank" style={{ marginTop: 12, maxHeight: 240, overflowY: "auto" }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "right" }}>

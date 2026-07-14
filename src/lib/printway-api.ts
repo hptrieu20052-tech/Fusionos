@@ -326,3 +326,59 @@ export async function calcPrintwayPrice(
   if (total && !base_) base_ = total - ship_;
   return { total, base: base_, ship: ship_, raw: j };
 }
+
+// ---- Chi tiết đơn: GET /order/detail { pw_order_id | order_name } ----
+// Doc mô tả là GET kèm body JSON — fetch() KHÔNG cho GET có body → thử GET query-string trước,
+// không ra giá thì fallback POST body. Đây là NGUỒN GIÁ THẬT duy nhất: webhook Printway
+// (type=order/tracking) không gửi tiền, /order/calculate-price lúc đẩy có thể fail/0.
+export async function getPrintwayOrderDetail(c: Cred, p: { pwOrderId?: string; orderName?: string }): Promise<Record<string, unknown>> {
+  const qs = new URLSearchParams();
+  if (p.pwOrderId) qs.set("pw_order_id", p.pwOrderId);
+  if (p.orderName) qs.set("order_name", p.orderName);
+
+  let j: Record<string, unknown> = {};
+  try {
+    const r = await fetch(`${base(c)}/order/detail?${qs}`, { headers: headers(c), ...ft() });
+    j = (await r.json().catch(() => ({}))) as Record<string, unknown>;
+    if (r.ok && j.success !== false && extractPwCost(j).found) return j;
+  } catch { /* thử tiếp POST */ }
+
+  const body: Record<string, string> = {};
+  if (p.pwOrderId) body.pw_order_id = p.pwOrderId;
+  if (p.orderName) body.order_name = p.orderName;
+  const r2 = await fetch(`${base(c)}/order/detail`, { method: "POST", headers: headers(c), body: JSON.stringify(body), ...ft() });
+  const j2 = (await r2.json().catch(() => ({}))) as Record<string, unknown>;
+  if (r2.ok && j2.success !== false) return j2;
+  return j;
+}
+
+// Bóc GIÁ từ 1 object đơn Printway (order/detail, order-list, transaction/order-list).
+// Printway UI hiển thị: Product price / Shipping fee / Tax / Total → dò mọi biến thể tên field.
+export type PwCost = { base: number; ship: number; tax: number; total: number; found: boolean };
+export function extractPwCost(obj: Record<string, unknown>): PwCost {
+  const d = (obj.data && typeof obj.data === "object" && !Array.isArray(obj.data) ? (obj.data as Record<string, unknown>) : obj);
+  const pickN = (o: Record<string, unknown>, ...keys: string[]) => {
+    for (const k of keys) {
+      if (o[k] !== undefined && o[k] !== null && o[k] !== "") { const n = pwNum(o[k]); if (n > 0) return n; }
+    }
+    return 0;
+  };
+  let base = pickN(d, "product_price", "base_cost", "base_price", "product_cost", "product_amount", "subtotal", "sub_total", "items_price");
+  let ship = pickN(d, "shipping_fee", "ship_cost", "shipping_cost", "ship_fee", "shipping_price", "shipping_amount");
+  let tax = pickN(d, "tax", "tax_fee", "tax_amount", "taxes", "tax_price");
+  let total = pickN(d, "total", "total_price", "total_cost", "grand_total", "total_amount", "amount");
+
+  // Không có ở cấp đơn → cộng dồn từ order_items
+  if (!base && !ship) {
+    const arr = (Array.isArray(d.order_items) ? d.order_items : Array.isArray(d.items) ? d.items : []) as Record<string, unknown>[];
+    for (const it of arr) {
+      base += pickN(it, "product_price", "base_cost", "base_price", "price", "product_cost", "amount");
+      ship += pickN(it, "shipping_fee", "ship_cost", "shipping_cost", "ship_fee");
+      tax += pickN(it, "tax", "tax_fee", "tax_amount");
+    }
+  }
+  if (!total) total = base + ship + tax;
+  if (total && !base) base = Math.max(0, total - ship - tax);
+  const r2 = (n: number) => Math.round(n * 100) / 100; // giữ đúng tới cent
+  return { base: r2(base), ship: r2(ship), tax: r2(tax), total: r2(total), found: total > 0 };
+}

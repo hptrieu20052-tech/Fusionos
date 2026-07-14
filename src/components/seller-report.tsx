@@ -1,11 +1,13 @@
 "use client";
 import { useLang } from "@/components/lang-provider";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Seller = { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number }[]; revenue?: number; fee?: number; cost?: number; profit?: number | null; platforms?: string[] };
 type Data = { buckets: string[]; sellers: Seller[]; totals: { orders: number; items: number }; showMoney?: boolean; hideProfit?: boolean; money?: { revenue: number; fee: number; cost: number; profit: number | null } | null };
 
-const usd = (n: number | null | undefined) => n == null ? "—" : (n < 0 ? "-$" : "$") + Math.abs(Math.round(n)).toLocaleString();
+// Tiền hiển thị ĐÚNG TỚI CENT (không làm tròn). round(*100)/100 chỉ để khử nhiễu float khi cộng dồn.
+const cents = (n: number) => Math.round(n * 100) / 100;
+const usd = (n: number | null | undefined) => n == null ? "—" : (n < 0 ? "-$" : "$") + cents(Math.abs(n)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MK: Record<string, string> = { etsy: "Etsy", tiktok: "TikTok", amazon: "Amazon", other: "Other" };
 
 // Bảng màu cố định theo thứ tự xếp hạng — đủ 24 seller, lặp lại nếu nhiều hơn
@@ -30,6 +32,13 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
       .then((j) => { if (j.ok) setData(j); else setErr(true); })
       .catch(() => setErr(true)).finally(() => setLoading(false));
   }, [range, from, to]);
+
+  // Cột bar cuộn ngang trong panel → tự nhảy tới NGÀY MỚI NHẤT (mép phải)
+  const barsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = barsRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [data, metric]);
 
   if (err) return null; // không có quyền / lỗi → không hiển thị thay vì kẹt loading
   if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingSeller")}</div>;
@@ -78,7 +87,7 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
 
       <div className="rep-grid" style={{ ["--rep-side" as string]: "320px" } as React.CSSProperties}>
         {/* Stacked bars */}
-        <div className="rep-bars" style={{ gap: buckets.length > 20 ? 3 : 8, height: H + 40 }}>
+        <div className="rep-bars" ref={barsRef} style={{ gap: buckets.length > 20 ? 3 : 8, height: H + 40 }}>
         {buckets.map((b, bi) => {
           const t = colTotal[bi];
           return (

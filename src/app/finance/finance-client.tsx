@@ -7,7 +7,7 @@ import { useLang } from "@/components/lang-provider";
 const typeLabel = (t: (k: string) => string, ty: string) => t(`fin.t.${ty}`) || ty;
 type Row = Record<string, string | number | null>;
 const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
-const money = (v: unknown) => "$" + Math.abs(Number(v ?? 0)).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const money = (v: unknown) => "$" + (Math.round(Math.abs(Number(v ?? 0)) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const TX_TYPES = ["revenue","base_cost","shipping","platform_fee","ads","sample","salary","tool","refund","other"];
 export function FinanceClient({ canAdd }: { canAdd: boolean }) {

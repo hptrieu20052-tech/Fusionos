@@ -7,7 +7,7 @@ import TeamReport from "@/components/team-report";
 import SellerReport from "@/components/seller-report";
 import DesignerReport from "@/components/designer-report";
 
-const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type Pipe = { c: number; q: number };
 type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitCost: number;

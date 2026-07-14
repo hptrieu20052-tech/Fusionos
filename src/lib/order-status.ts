@@ -65,6 +65,44 @@ export async function refundOrderCost(orderId: string, note: string) {
 }
 
 /**
+ * CÂN LẠI SỔ giá vốn của 1 đơn: tổng bút toán base_cost phải = -(tổng cost của các bản ghi đẩy còn lại).
+ *
+ * Vì sao cần: dòng hoàn tiền của refundOrderCost() có note "Refund cost — …" (KHÔNG chứa
+ * external_ff_id), nên khi xoá bản ghi đẩy (chỉ xoá bút toán khớp external_ff_id) thì dòng
+ * hoàn tiền +X bị bỏ lại mồ côi → Finance/Dashboard hiện cost ÂM.
+ *
+ * - Không còn bản ghi đẩy nào có chi phí → xoá SẠCH base_cost của đơn (gồm cả dòng hoàn tiền).
+ * - Còn bản ghi đẩy → chèn 1 dòng điều chỉnh cho khớp.
+ */
+export async function rebalanceOrderCost(orderId: string): Promise<boolean> {
+  try {
+    const ffos = await db.select({ cost: schema.fulfillmentOrders.cost, status: schema.fulfillmentOrders.status })
+      .from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, orderId));
+    const target = -ffos.filter((r) => r.status !== "cancelled").reduce((a, r) => a + Number(r.cost ?? 0), 0);
+    const cur = Number(((await db.execute(sql`
+      SELECT coalesce(sum(amount),0)::numeric s FROM transactions WHERE order_id = ${orderId}::uuid AND type = 'base_cost'
+    `)).rows[0] as { s: string }).s);
+
+    if (Math.abs(cur - target) < 0.005) return false; // đã khớp tới cent
+    if (Math.abs(target) < 0.005) {
+      await db.delete(schema.transactions).where(and(
+        eq(schema.transactions.orderId, orderId),
+        eq(schema.transactions.type, "base_cost"),
+      ));
+      return true;
+    }
+    const [ord] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
+    await db.insert(schema.transactions).values({
+      type: "base_cost", amount: (target - cur).toFixed(2),
+      orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
+      note: "Cost adjustment — rebalanced after push removed",
+      occurredAt: new Date().toISOString().slice(0, 10),
+    });
+    return true;
+  } catch { return false; }
+}
+
+/**
  * Cancel từ FUSION → best-effort huỷ luôn bên nhà in (Printway cancel/delete, FlashShip seller-reject)
  * cho các bản ghi đẩy THẬT chưa kết thúc, và đánh dấu ffo = cancelled. Fail không chặn.
  */

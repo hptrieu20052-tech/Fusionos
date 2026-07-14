@@ -1,6 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { listPrintwayOrders, normalizePwOrder } from "@/lib/printway-api";
+import { syncPrintwayCost } from "@/lib/printway-cost";
 import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 
@@ -11,7 +12,7 @@ import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 export async function syncPrintway(opts: { force?: boolean } = {}) {
   const fulfillers = await db.select().from(schema.fulfillers);
   const pws = fulfillers.filter((f) => f.name.toLowerCase().includes("printway"));
-  let updated = 0, checked = 0, skipped = 0;
+  let updated = 0, checked = 0, skipped = 0, costed = 0;
   const errors: string[] = [];
 
   for (const ff of pws) {
@@ -28,7 +29,7 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
     const open = await db.select({
       id: schema.fulfillmentOrders.id, orderId: schema.fulfillmentOrders.orderId,
       externalFfId: schema.fulfillmentOrders.externalFfId, status: schema.fulfillmentOrders.status,
-      tracking: schema.fulfillmentOrders.trackingNumber,
+      tracking: schema.fulfillmentOrders.trackingNumber, cost: schema.fulfillmentOrders.cost,
     }).from(schema.fulfillmentOrders).where(and(
       eq(schema.fulfillmentOrders.fulfillerId, ff.id),
       notInArray(schema.fulfillmentOrders.status, ["delivered", "cancelled", "error"] as never),
@@ -68,6 +69,17 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
     } catch (e) {
       errors.push(`${ff.name}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
     }
+
+    // GIÁ THẬT: webhook/list của Printway không mang tiền → gọi /order/detail cho các đơn còn $0.
+    // Giá chỉ chốt sau khi đơn được PAID bên Printway, nên phải quét lại (không chỉ lúc đẩy).
+    const noCost = open.filter((x) => Number(x.cost ?? 0) <= 0).slice(0, 25); // chặn 25 đơn/lần (rate 50req/3s)
+    for (const x of noCost) {
+      try {
+        if (await syncPrintwayCost({ accessToken: token, endpoint: ff.apiEndpoint }, x)) costed++;
+      } catch (e) {
+        errors.push(`${ff.name} cost ${x.externalFfId}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
+      }
+    }
   }
-  return { ok: errors.length === 0, updated, checked, skipped, errors };
+  return { ok: errors.length === 0, updated, checked, skipped, costed, errors };
 }

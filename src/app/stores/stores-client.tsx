@@ -23,7 +23,7 @@ const CONNECT: [string, string][] = [["extension", "Chrome Extension"], ["api", 
 const CURRENCIES: [string, string][] = [["USD", "USD ($)"], ["VND", "VND (₫)"], ["EUR", "EUR (€)"], ["GBP", "GBP (£)"], ["AUD", "AUD"], ["CAD", "CAD"], ["JPY", "JPY (¥)"]];
 const FX_DEFAULT: Record<string, number> = { VND: 25400, EUR: 0.92, GBP: 0.79, AUD: 1.5, CAD: 1.36, JPY: 157 };
 const MK_COLOR: Record<string, string> = { tiktok: "#25242A", amazon: "#FF9900", etsy: "#F1641E", other: "#66788E" };
-const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Field credentials theo từng sàn
 const CRED_FIELDS: Record<string, [string, string][]> = {
   tiktok: [["app_key", "App Key"], ["app_secret", "App Secret"], ["access_token", "Access Token"], ["shop_id", "Shop ID"]],

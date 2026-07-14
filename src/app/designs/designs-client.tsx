@@ -275,6 +275,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const [tagInput, setTagInput] = useState("");
   const [tab, setTab] = useState<"mockup" | "design" | "video">("design");
   const [addSideOpen, setAddSideOpen] = useState(false);
+  const [sideGroupIdx, setSideGroupIdx] = useState(0); // cột trái = Product name, cột phải = print areas
   const addTileRef = useRef<HTMLDivElement>(null);
   const [sideMenuPos, setSideMenuPos] = useState<{ left: number; top: number; maxH: number } | null>(null);
   const openSideMenu = () => {
@@ -282,7 +283,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     if (!el) { setAddSideOpen((v) => !v); return; }
     if (addSideOpen) { setAddSideOpen(false); return; }
     const r = el.getBoundingClientRect();
-    const W = 340, GAP = 8, M = 10;
+    const W = 470, GAP = 8, M = 10;
     let left = r.right + GAP;
     if (left + W > window.innerWidth - M) left = Math.max(M, r.left - W - GAP); // hết chỗ bên phải → lật sang trái
     const spaceBelow = window.innerHeight - r.top - M;
@@ -501,28 +502,45 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               {canEdit && tab === "design" && (
                 <div style={{ position: "relative" }} ref={addTileRef}>
                   <AddTile label={t("dz.addFace")} onClick={openSideMenu} />
-                  {addSideOpen && sideMenuPos && (<>
+                  {addSideOpen && sideMenuPos && (() => {
+                    // Chỉ hiện product còn mặt in chưa dùng; chọn product ở cột trái → print areas ở cột phải
+                    const groups = sideGroups(t)
+                      .map((g) => ({ ...g, avail: g.sides.filter((x) => !detail.files.some((f) => f.kind === x)) }))
+                      .filter((g) => g.avail.length);
+                    if (!groups.length) return null;
+                    const gi = Math.min(sideGroupIdx, groups.length - 1);
+                    const cur = groups[gi];
+                    return (<>
                     <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
-                    <div style={{ position: "fixed", left: sideMenuPos.left, top: sideMenuPos.top, zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 340, maxHeight: sideMenuPos.maxH, overflowY: "auto", padding: 10 }}>
-                      {sideGroups(t).map((g) => {
-                        const avail = g.sides.filter((s) => !detail.files.some((x) => x.kind === s));
-                        if (!avail.length) return null;
-                        return (
-                          <div key={g.group} style={{ marginBottom: 6 }}>
-                            <div style={{ padding: "4px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{g.group}</div>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                              {avail.map((s) => (
-                                <button key={s} onClick={() => { setAddSideOpen(false); pickAndUpload(s); }}
-                                  style={{ padding: "8px 6px", background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--ink)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                  {sideLabel(t)[s] || s}
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div style={{ position: "fixed", left: sideMenuPos.left, top: sideMenuPos.top, zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 470, maxHeight: sideMenuPos.maxH, display: "flex", overflow: "hidden" }}>
+                      {/* CỘT TRÁI — Product name */}
+                      <div style={{ width: 168, flex: "0 0 168px", borderRight: "1px solid var(--line)", background: "#F7F9FC", overflowY: "auto", padding: 8 }}>
+                        <div style={{ padding: "2px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.productName")}</div>
+                        {groups.map((g, i) => (
+                          <button key={g.group} onClick={() => setSideGroupIdx(i)}
+                            style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 8px", marginBottom: 4, borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, lineHeight: 1.25,
+                              background: i === gi ? "var(--accent)" : "#fff", color: i === gi ? "#fff" : "var(--ink)",
+                              border: `1px solid ${i === gi ? "transparent" : "var(--line)"}` }}>
+                            {g.group}
+                            <span style={{ display: "block", fontSize: 10, fontWeight: 600, opacity: .7 }}>{g.avail.length}</span>
+                          </button>
+                        ))}
+                      </div>
+                      {/* CỘT PHẢI — Print areas của product đang chọn */}
+                      <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
+                        <div style={{ padding: "2px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.printAreas")}</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                          {cur.avail.map((x) => (
+                            <button key={x} onClick={() => { setAddSideOpen(false); pickAndUpload(x); }}
+                              style={{ padding: "8px 6px", background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--ink)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {sideLabel(t)[x] || x}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
-                  </>)}
+                                    </>);
+                  })()}
                 </div>
               )}
             </div>

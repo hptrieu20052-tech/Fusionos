@@ -7,7 +7,7 @@ type Data = { buckets: string[]; teams: Team[]; totals: { orders: number; items:
 
 const PALETTE = ["#1D5FAE", "#E0A45E", "#5FAE87", "#D583AB", "#9D89D4", "#CE7B7B"];
 
-const money = (n: number) => "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type RangeProps = { range: string; from?: string; to?: string; title?: string };
 export default function TeamReport({ range, from, to, title }: RangeProps) {
@@ -132,7 +132,7 @@ function Donut({ teams, metric, total }: { teams: Team[]; metric: "r" | "o"; tot
   });
   const show = hov !== null ? teams[hov] : null;
   const showV = show ? val(show) : total;
-  const fmt = (n: number) => metric === "r" ? "$" + n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : n.toLocaleString();
+  const fmt = (n: number) => metric === "r" ? money(n) : n.toLocaleString();
   return (
     <svg viewBox="0 0 200 200" style={{ width: "100%", maxWidth: 210, display: "block", margin: "0 auto" }}>
       {arcs.map((a) => a.frac > 0 && (

@@ -4,6 +4,7 @@ import { eq, or } from "drizzle-orm";
 import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { mapPwStatus } from "@/lib/printway-api";
+import { syncPrintwayCost, pwCredOf } from "@/lib/printway-cost";
 
 export const dynamic = "force-dynamic";
 
@@ -81,5 +82,21 @@ export async function POST(req: NextRequest) {
       await autoPushEtsyTracking(ffo.orderId);
     }
   }
-  return NextResponse.json({ ok: true, matched: ffo.id, applied: Object.keys(patch) });
+  // GIÁ THẬT: payload webhook Printway KHÔNG có tiền (chỉ order_status / tracking).
+  // Đơn còn $0 → gọi /order/detail lấy Product price + Shipping fee + Tax (chỉ có sau khi PAID).
+  let costed = false;
+  if (Number(ffo.cost ?? 0) <= 0) {
+    const cred = pwCredOf(ff);
+    if (cred) {
+      try {
+        costed = await syncPrintwayCost(cred, {
+          id: ffo.id, orderId: ffo.orderId,
+          externalFfId: (patch.externalFfId as string) ?? ffo.externalFfId,
+          cost: ffo.cost,
+        });
+      } catch { /* không chặn webhook */ }
+    }
+  }
+
+  return NextResponse.json({ ok: true, matched: ffo.id, applied: Object.keys(patch), costed });
 }
