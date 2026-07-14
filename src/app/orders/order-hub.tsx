@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { Flash } from "@/components/flash";
+import { decodeEntities, splitVariant, type VariantPart } from "@/lib/variant-display";
 import { useSearchParams } from "next/navigation";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
@@ -1073,8 +1074,23 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
         </>}
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
-        <b>{it.product_title}</b>
-        {it.variant && <div style={{ fontSize: 12.5, color: "var(--ink)", fontWeight: 700, marginTop: 3, lineHeight: 1.4 }}>{it.variant.replace(/,/g, " · ")}</div>}
+        <b>{decodeEntities(it.product_title as string)}</b>
+        {/* Variant: mỗi thuộc tính một dòng như trên Etsy — nhãn chữ thường mờ, giá trị in đậm.
+            decodeEntities() để đơn CŨ trong DB (còn dính &quot;) cũng hiện đúng, không cần backfill. */}
+        {(() => {
+          const parts = splitVariant(it.variant as string | null);
+          if (!parts.length) return null;
+          return (
+            <div style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>
+              {parts.map((v: VariantPart, i: number) => (
+                <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {v.label && <span style={{ color: "var(--muted)", fontWeight: 500, flexShrink: 0 }}>{v.label}</span>}
+                  <span style={{ color: "var(--ink)", fontWeight: 700 }}>{v.value}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
         {it.productUrl && (
           <a href={it.productUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#E0913C", fontWeight: 700, textDecoration: "none", marginTop: 3 }}>
             {t("o.viewOnEtsy")} ↗
@@ -1450,7 +1466,7 @@ function Personalization({ it, onSaved, flash }: { it: Item; onSaved: () => void
     <div style={{ marginTop: 6, fontSize: 13 }}>
       {it.personalization
         ? <span style={{ background: "var(--amber-soft)", borderRadius: 8, padding: "4px 10px", display: "inline-block" }}>
-            <b>{t("o.personalization")}:</b> {it.personalization}
+            <b>{t("o.personalization")}:</b> {decodeEntities(it.personalization)}
             <button onClick={() => { setV(it.personalization ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: 12, marginLeft: 8, padding: 0 }}>{t("c.edit")}</button>
           </span>
         : <button onClick={() => setEditing(true)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, padding: 0, textDecoration: "underline" }}>+ {t("o.addPersonalization")}</button>}

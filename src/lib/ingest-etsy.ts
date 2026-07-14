@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { beforeLaunch } from "@/lib/ingest-cutoff";
 import { and, eq } from "drizzle-orm";
 import { ignoredSet } from "@/lib/ignored-orders";
+import { decodeEntities } from "@/lib/variant-display";
 
 export type InItem = {
   title?: string; sku?: string; qty?: number; price?: number;
@@ -15,7 +16,9 @@ export type InOrder = {
 };
 export type IngestStore = { id: string; sellerId: string | null; fx: unknown; name: string };
 
-const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+// Decode HTML entity NGAY KHI LƯU (Etsy trả "3&quot;") → đơn mới sạch trong DB,
+// và file đẩy sang nhà in cũng không dính chuỗi rác.
+const s = (v: unknown) => (typeof v === "string" && v.trim() ? decodeEntities(v).trim() : null);
 const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 
 // Ghi đơn Etsy đã chuẩn hoá vào DB. Dedup theo (platform=etsy, external_id).
