@@ -789,6 +789,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
 }) {
   const { t } = useLang();
   const confirm = useConfirm();
+  const promptFn = usePrompt();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [showIssue, setShowIssue] = useState(false);
   const [ffSel, setFfSel] = useState("");
@@ -828,8 +829,33 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
 
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
+  // XOÁ BẢN GHI ĐẨY — hành động NGUY HIỂM (sai bút toán nếu bấm nhầm).
+  // → Liệt kê CỤ THỂ mất gì, rồi bắt gõ lại đúng mã đơn nhà in mới cho xoá.
   const delFf = async (id: string) => {
-    if (!(await confirm({ message: t("o.delPushRecConfirm"), danger: true }))) return;
+    const f = (detail?.ffOrders ?? []).find((x) => x.id === id);
+    const code = (f?.externalFfId ?? "").trim();
+    const guard = code || "DELETE";
+    const cost = Number(f?.cost ?? (Number(f?.baseCost ?? 0) + Number(f?.shipCost ?? 0) + Number(f?.extraFee ?? 0)));
+    const onlyOne = (detail?.ffOrders?.length ?? 0) <= 1;
+
+    const bullets = [
+      t("o.delFfWhat1").replace("{ff}", f?.fulfillerName ?? "—").replace("{code}", code || "—"),
+      cost > 0 ? t("o.delFfWhat2").replace("{amt}", money(cost)) : t("o.delFfWhat2z"),
+      f?.trackingNumber ? t("o.delFfWhat3").replace("{tn}", f.trackingNumber) : "",
+      onlyOne ? t("o.delFfWhat4") : "",
+      t("o.delFfWhat5"), // KHÔNG huỷ đơn bên nhà in
+    ].filter(Boolean).map((x) => "• " + x).join("\n");
+
+    const typed = await promptFn({
+      title: t("o.delFfTitle"),
+      message: `${t("o.delFfIntro")}\n\n${bullets}\n\n${t("o.delFfTypeToConfirm").replace("{code}", guard)}`,
+      danger: true, tone: "red",
+      confirmText: t("o.delFfBtn"),
+      input: { placeholder: guard },
+    });
+    if (typed === null) return;
+    if (typed.trim() !== guard) { flash("✗ " + t("o.delFfMismatch").replace("{code}", guard)); return; }
+
     const j = await fetch(`/api/fulfillment/${id}`, { method: "DELETE" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     if (j.ok) { flash(t("o.pushRecDeleted")); loadDetail(); reload(); }
     else flash("✗ " + (j.error ?? t("o.errWordLow")));

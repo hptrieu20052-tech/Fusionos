@@ -11,7 +11,7 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 const bookPages = Array.from({ length: 24 }, (_, i) => `page_${pad2(i + 1)}`);
 // Nhãn hiển thị cho mọi mặt in. Ưu tiên nhãn này rồi mới đến i18n.
 const sideLabel = (t: (k: string) => string): Record<string, string> => ({
-  design_front: "Front", design_back: "Back", sleeve_left: t("dz.sleeveLeft"), sleeve_right: t("dz.sleeveRight"),
+  design_front: "Front side", design_back: "Back side", sleeve_left: t("dz.sleeveLeft"), sleeve_right: t("dz.sleeveRight"),
   cover_front: t("dz.coverFront"), back_cover: t("dz.coverBack"), book_cover: t("dz.cover"),
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.mo" + (i + 1))])),
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`grid_${pad2(i + 1)}`, t("dz.gridOf").replace("{m}", t("dz.mo" + (i + 1)))])),
@@ -21,7 +21,7 @@ const sideLabel = (t: (k: string) => string): Record<string, string> => ({
 // Nhóm mặt in để thêm (theo loại sản phẩm)
 const sideGroups = (t: (k: string) => string): { group: string; sides: string[] }[] => ([
   { group: t("dz.groupShirt"), sides: ["design_front", "design_back", "sleeve_left", "sleeve_right"] },
-  { group: "Calendar", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`), "back_cover"] },
+  { group: "Wall Calendars", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`), "back_cover"] },
   // Wall Calendars (Blank): bìa trước → (tháng + lưới) x12 → bìa sau. Dùng lại tên mặt đã có, chỉ thêm grid_01..12.
   { group: "Wall Calendars (Blank)", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, `grid_${pad2(i + 1)}`]).flat(), "back_cover"] },
   { group: t("dz.photoBookHard"), sides: ["book_cover", ...bookPages] },
