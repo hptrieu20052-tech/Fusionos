@@ -187,15 +187,17 @@ async function handlePush(req: NextRequest) {
   // Tự đăng ký webhook Printify LẦN ĐẦU (idempotent) — khỏi terminal/curl. Cờ lưu trong credentials.
   if (!pushRes.simulated && ff.name.toLowerCase().includes("printify")) {
     const cr = (ff.credentials ?? {}) as Record<string, unknown>;
-    if (!cr.printifyWebhooksAt) {
-      const token = (cr.apiKey || cr.apiToken) as string | undefined;
-      const shopId = cr.shopId as string | number | undefined;
-      if (token && shopId) {
-        try {
-          await ensureWebhooks(token, shopId, `${req.nextUrl.origin}/api/webhooks/printify`);
-          await db.update(schema.fulfillers).set({ credentials: { ...cr, printifyWebhooksAt: new Date().toISOString() } }).where(eq(schema.fulfillers.id, ff.id));
-        } catch { /* không chặn đẩy đơn */ }
-      }
+    // Cờ phải gắn với SHOP ID: trước đây chỉ có printifyWebhooksAt → đổi token/shop id thì
+    // shop mới KHÔNG được đăng ký webhook → đơn đứng $0 và không bao giờ có tracking.
+    const token = (cr.apiKey || cr.apiToken) as string | undefined;
+    const shopId = cr.shopId as string | number | undefined;
+    if (token && shopId && String(cr.printifyWebhookShop ?? "") !== String(shopId)) {
+      try {
+        await ensureWebhooks(token, shopId, `${req.nextUrl.origin}/api/webhooks/printify`);
+        await db.update(schema.fulfillers).set({
+          credentials: { ...cr, printifyWebhookShop: String(shopId), printifyWebhooksAt: new Date().toISOString() },
+        }).where(eq(schema.fulfillers.id, ff.id));
+      } catch { /* không chặn đẩy đơn */ }
     }
   }
 

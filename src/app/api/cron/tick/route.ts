@@ -4,6 +4,7 @@ import { getValidCfg, readEtsyCfg, fetchReceipts, normalizeReceipt } from "@/lib
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
 import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/lib/tiktok-shop";
 import { syncPrintway } from "@/lib/printway-sync";
+import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
 
 export const dynamic = "force-dynamic";
@@ -79,6 +80,14 @@ async function tick(req: NextRequest) {
     catch (e) { printway = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
+  // ---- 2b. Printify poll backup: webhook chỉ đăng ký 1 lần/shop → đổi token/shop id là mất
+  //          webhook → đơn đứng $0, không tracking. Poll gọi thẳng GET order nên luôn lấy được.
+  let printify: unknown = null;
+  if (Date.now() < deadline) {
+    try { printify = await syncPrintify({ force: false }); }
+    catch (e) { printify = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+  }
+
   // ---- 3. ONOS + Wembroidery poll backup (webhook 2 nhà này là kênh chính, poll chống lỡ) ----
   let onosWem: unknown = null;
   if (Date.now() < deadline) {
@@ -86,7 +95,7 @@ async function tick(req: NextRequest) {
     catch (e) { onosWem = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, printway, onosWem };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, printway, printify, onosWem };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }
