@@ -162,21 +162,28 @@ export async function uploadImageByUrl(token: string, fileName: string, url: str
   return j.id;
 }
 
+export type PfPlaceholder = { position: string; images: { id: string; x: number; y: number; scale: number; angle: number }[] };
 export type CreateProductInput = {
   title: string;
   blueprintId: number; providerId: number; variantId: number;
   price?: number; // cents; mặc định 2000
+  /** Cách MỚI: truyền thẳng placeholders đã map (nhiều mặt: cover/page_xx/month_xx...). Ưu tiên hơn front/back. */
+  placeholders?: PfPlaceholder[];
   frontImageId?: string; backImageId?: string;
   frontScale?: number; backScale?: number; // scale ảnh (khớp chiều cao vùng in)
   frontPosition?: string; backPosition?: string; // vị trí placeholder (SP 1 mặt → Front vào vùng duy nhất)
 };
 /** Tạo product trong shop. Trả { productId, variantId }. */
 export async function createProduct(token: string, shopId: string | number, inp: CreateProductInput): Promise<{ productId: string; variantId: number }> {
-  const placeholders: { position: string; images: { id: string; x: number; y: number; scale: number; angle: number }[] }[] = [];
+  const placeholders: PfPlaceholder[] = [...(inp.placeholders ?? [])];
   const fPos = inp.frontPosition ?? "front";
   const bPos = inp.backPosition ?? "back";
-  if (inp.frontImageId) placeholders.push({ position: fPos, images: [{ id: inp.frontImageId, x: 0.5, y: 0.5, scale: inp.frontScale ?? 1, angle: 0 }] });
-  if (inp.backImageId && bPos !== fPos) placeholders.push({ position: bPos, images: [{ id: inp.backImageId, x: 0.5, y: 0.5, scale: inp.backScale ?? 1, angle: 0 }] });
+  if (!placeholders.length) {
+    if (inp.frontImageId) placeholders.push({ position: fPos, images: [{ id: inp.frontImageId, x: 0.5, y: 0.5, scale: inp.frontScale ?? 1, angle: 0 }] });
+    if (inp.backImageId && bPos !== fPos) placeholders.push({ position: bPos, images: [{ id: inp.backImageId, x: 0.5, y: 0.5, scale: inp.backScale ?? 1, angle: 0 }] });
+  }
+  // Printify BẮT BUỘC print_areas[].placeholders không rỗng → báo lỗi rõ ràng thay vì HTTP 400 khó hiểu.
+  if (!placeholders.length) throw new Error("Design chưa có file mặt in nào để gửi Printify (print_areas.placeholders rỗng).");
 
   const body = {
     title: inp.title.slice(0, 120) || "Fusion order",

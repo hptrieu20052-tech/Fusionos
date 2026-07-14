@@ -49,19 +49,27 @@ async function handlePush(req: NextRequest) {
 
   // Map design URL (front/back/sleeve/hood) theo designId — cho adapter cần artwork (Merchize...)
   const designIds = Array.from(new Set(items.map((i) => i.designId).filter(Boolean))) as string[];
-  const sideUrls = new Map<string, { front?: string; back?: string; frontW?: number; frontH?: number; backW?: number; backH?: number }>();
+  type SideMap = {
+    front?: string; back?: string; frontW?: number; frontH?: number; backW?: number; backH?: number;
+    sides: { kind: string; url: string; w?: number; h?: number }[];
+  };
+  const sideUrls = new Map<string, SideMap>();
   if (designIds.length) {
     const files = await db.select().from(schema.designFiles).where(inArray(schema.designFiles.designId, designIds));
     for (const f of files) {
-      const cur = sideUrls.get(f.designId) ?? {};
+      if (f.kind === "mockup" || f.kind === "video") continue; // chỉ lấy MẶT IN
+      const cur: SideMap = sideUrls.get(f.designId) ?? { sides: [] };
       const url = fileUrl(f.storageKey) ?? undefined;
+      if (!url) { sideUrls.set(f.designId, cur); continue; }
+      // Mọi mặt in (design_front/back, book_cover, page_xx, month_xx, grid_xx...) → adapter tự map theo nhà in
+      cur.sides.push({ kind: f.kind, url, w: f.width ?? undefined, h: f.height ?? undefined });
       if (f.kind === "design_front") { cur.front = url; cur.frontW = f.width ?? undefined; cur.frontH = f.height ?? undefined; }
       else if (f.kind === "design_back") { cur.back = url; cur.backW = f.width ?? undefined; cur.backH = f.height ?? undefined; }
       sideUrls.set(f.designId, cur);
     }
   }
   const enrich = (it: typeof items[number], m: typeof schema.skuMappings.$inferSelect) => {
-    const s = it.designId ? sideUrls.get(it.designId) ?? {} : {};
+    const s: SideMap = (it.designId ? sideUrls.get(it.designId) : undefined) ?? { sides: [] };
     return {
       internalSku: m.internalSku, productId: m.fulfillerProductId ?? null,
       variant: m.variant ?? null, fulfillerProduct: m.fulfillerProduct ?? m.productType ?? null,
@@ -70,6 +78,7 @@ async function handlePush(req: NextRequest) {
       image: fileUrl(it.mockupKey) ?? it.imageUrl ?? null, // mockup gửi nhà in = đúng ảnh hiển thị trên đơn (mockup tay/link → ảnh listing Etsy)
       designFront: s.front ?? null, designBack: s.back ?? null,
       designFrontW: s.frontW, designFrontH: s.frontH, designBackW: s.backW, designBackH: s.backH,
+      designSides: s.sides,
       pfBlueprintId: m.pfBlueprintId ?? null, pfProviderId: m.pfProviderId ?? null, pfVariantId: m.pfVariantId ?? null,
     };
   };

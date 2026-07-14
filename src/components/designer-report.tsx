@@ -96,8 +96,8 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
                   <th style={{ textAlign: "left", padding: "3px 4px" }}>#  Designer</th>
                   <th style={{ padding: "3px 4px" }}>Design</th>
                   <th style={{ padding: "3px 4px" }}>Sale</th>
-                  {!hideMoney && <th style={{ padding: "3px 4px" }}>Revenue</th>}
-                  <th style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>
+                  {!hideMoney && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>Revenue</th>}
+                  <th className="rep-col-opt" style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>
                   <th style={{ padding: "3px 4px" }}>KPI</th>
                 </tr>
               </thead>
@@ -111,8 +111,8 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
                     </td>
                     <td style={{ padding: "5px 4px" }}><b>{s.designs}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.points}{tr("rep.ptSuffix")})</span></td>
                     <td style={{ padding: "5px 4px" }}>{s.salesOrders}</td>
-                    {!hideMoney && <td style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
-                    <td style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                    {!hideMoney && <td className="rep-col-opt" style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
+                    <td className="rep-col-opt" style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     <td style={{ padding: "5px 4px" }}>
                       <span style={{ background: si === 0 ? "var(--blue)" : "var(--blue-soft)", color: si === 0 ? "#fff" : "var(--blue)", borderRadius: 8, padding: "2px 8px", fontWeight: 800 }}>{s.kpi.toFixed(1)}</span>
                     </td>

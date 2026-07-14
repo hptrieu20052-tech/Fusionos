@@ -6,6 +6,8 @@ export const DESIGN_KINDS: string[] = [
   "design_front", "design_back", "sleeve_left", "sleeve_right",
   "cover_front", "back_cover", "book_cover",
   ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`),
+  // Wall Calendars (Blank): dùng lại cover_front / month_01..12 / back_cover, chỉ thêm 12 mặt lưới lịch
+  ...Array.from({ length: 12 }, (_, i) => `grid_${pad2(i + 1)}`),
   ...Array.from({ length: 24 }, (_, i) => `page_${pad2(i + 1)}`),
 ];
 

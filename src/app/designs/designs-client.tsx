@@ -14,6 +14,7 @@ const sideLabel = (t: (k: string) => string): Record<string, string> => ({
   design_front: "Front", design_back: "Back", sleeve_left: t("dz.sleeveLeft"), sleeve_right: t("dz.sleeveRight"),
   cover_front: t("dz.coverFront"), back_cover: t("dz.coverBack"), book_cover: t("dz.cover"),
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.mo" + (i + 1))])),
+  ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`grid_${pad2(i + 1)}`, t("dz.gridOf").replace("{m}", t("dz.mo" + (i + 1)))])),
   ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`page_${pad2(i + 1)}`, t("dz.page").replace("{n}", String(i + 1))])),
   mockup: "Mockup", video: "Video",
 });
@@ -21,6 +22,8 @@ const sideLabel = (t: (k: string) => string): Record<string, string> => ({
 const sideGroups = (t: (k: string) => string): { group: string; sides: string[] }[] => ([
   { group: t("dz.groupShirt"), sides: ["design_front", "design_back", "sleeve_left", "sleeve_right"] },
   { group: "Calendar", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`), "back_cover"] },
+  // Wall Calendars (Blank): bìa trước → (tháng + lưới) x12 → bìa sau. Dùng lại tên mặt đã có, chỉ thêm grid_01..12.
+  { group: "Wall Calendars (Blank)", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, `grid_${pad2(i + 1)}`]).flat(), "back_cover"] },
   { group: t("dz.photoBookHard"), sides: ["book_cover", ...bookPages] },
 ]);
 type FileRow = { id: string; kind: string; filename?: string | null; uploaderName?: string | null; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };

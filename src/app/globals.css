@@ -479,8 +479,11 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 /* Mobile: logo canh GIỮA topnav (burger trái · avatar phải) */
 @media (max-width:720px){
   .topnav-inner{position:relative;justify-content:space-between}
-  .topnav-brand{position:absolute;left:50%;transform:translateX(-50%);flex:0 0 auto}
-  .topnav-user{margin-left:auto}
+  /* Logo canh giữa bằng absolute → PHẢI có z-index, nếu không .topnav-user (position:relative,
+     nằm sau trong DOM) sẽ vẽ đè lên và nuốt mất cú chạm → bấm logo không ra Dashboard. */
+  .topnav-brand{position:absolute;left:50%;transform:translateX(-50%);flex:0 0 auto;z-index:2;padding:6px 10px}
+  .topnav-user{margin-left:auto;z-index:1}
+  .topnav-burger{z-index:1}
   .tb-caret{display:none}
 }
 
@@ -503,7 +506,18 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
   .rep-bars{order:1;min-height:190px}
   .rep-side{order:2}
   /* Bảng xếp hạng: bỏ chiều cao cố định (maxHeight viết inline → cần !important) */
-  .rep-side .rep-rank{max-height:none !important;overflow-y:visible !important}
-  /* Bảng bên trong cuộn ngang riêng, không đẩy vỡ trang */
-  .rep-side table{min-width:300px}
+  .rep-side .rep-rank{max-height:none !important;overflow-y:visible !important;overflow-x:auto !important;-webkit-overflow-scrolling:touch}
+  .rep-side .rep-rank::-webkit-scrollbar{height:5px}
+  .rep-side .rep-rank::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
+
+  /* Designer: ẩn Score (toàn "—") + Revenue → còn 4 cột, vừa khít, không phải vuốt.
+     Seller giữ ĐỦ 6 cột (toàn chỉ số quan trọng) → cho vuốt ngang trong chính bảng. */
+  .rep-col-opt{display:none}
+  .rep-side table{min-width:400px}
+  .rep-side th,.rep-side td{padding-left:3px !important;padding-right:3px !important;font-size:11.5px;white-space:nowrap}
+
+  /* Biểu đồ cột: chừa mép phải để cột cuối không dính sát viền */
+  .rep-bars{padding-right:10px}
+  /* KHÔNG đụng .panel{overflow-x} ở đây — nó dùng chung với bảng Admin/Finance,
+     tắt đi là mấy bảng đó vỡ. Bảng report đã tự vừa nhờ ẩn cột. */
 }

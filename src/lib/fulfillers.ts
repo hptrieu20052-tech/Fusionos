@@ -29,6 +29,8 @@ export type PushLine = {
   image?: string | null;
   designFront?: string | null; designBack?: string | null; designSleeve?: string | null; designHood?: string | null;
   designFrontW?: number; designFrontH?: number; designBackW?: number; designBackH?: number;
+  /** TẤT CẢ mặt design của card (design_front, book_cover, page_01.., month_01.., grid_01..) — Printify map theo tên vùng in thật */
+  designSides?: { kind: string; url: string; w?: number; h?: number }[];
   pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null;
 };
 export type PushCtx = {
@@ -313,33 +315,70 @@ function printifyAdapter(): FulfillerAdapter {
         const s = (pa.height * imgW) / (pa.width * imgH);
         return Math.max(0.1, Math.min(s, 1));
       };
-      // Parallel: mỗi line upload ảnh (front+back song song) → tạo product. Các line chạy đồng thời.
+      // Với 1 vùng in (position) của blueprint, tìm mặt design phù hợp trong card.
+      // Blueprint đặt tên vùng in rất khác nhau: front / front_side / default / back /
+      // cover / page 1 / page_01 / inside_1 ... → match theo SỐ trước, rồi tới TỪ KHOÁ.
+      const pad2 = (n: number) => String(n).padStart(2, "0");
+      const kindsForPosition = (pos: string): string[] => {
+        const p = pos.toLowerCase();
+        const out: string[] = [];
+        const n = Number(p.match(/(\d+)/)?.[1] ?? 0);
+        if (n >= 1 && n <= 24) {
+          if (p.includes("month") || p.includes("cal")) out.push(`month_${pad2(n)}`, `grid_${pad2(n)}`, `page_${pad2(n)}`);
+          else if (p.includes("grid")) out.push(`grid_${pad2(n)}`, `month_${pad2(n)}`);
+          else out.push(`page_${pad2(n)}`, `month_${pad2(n)}`, `grid_${pad2(n)}`);
+        }
+        if (p.includes("sleeve") && p.includes("left")) out.push("sleeve_left");
+        if (p.includes("sleeve") && p.includes("right")) out.push("sleeve_right");
+        if (p.includes("back")) out.push("design_back", "back_cover");
+        if (p.includes("cover")) out.push("book_cover", "cover_front", "design_front");
+        if (p.includes("front") || p.includes("default") || p.includes("all")) out.push("design_front", "cover_front", "book_cover");
+        return out;
+      };
+      // Parallel: mỗi line map mặt design → vùng in → upload đúng ảnh cần → tạo product.
       const lineItems = await Promise.all(ctx.lines.map(async (l) => {
-        const [frontImageId, backImageId, pa] = await Promise.all([
-          l.designFront ? uploadImageByUrl(token, `${l.fulfillerSku}-front`, l.designFront) : Promise.resolve(undefined),
-          l.designBack ? uploadImageByUrl(token, `${l.fulfillerSku}-back`, l.designBack) : Promise.resolve(undefined),
-          printAreasOf(l.pfBlueprintId!, l.pfProviderId!),
-        ]);
+        const pa = await printAreasOf(l.pfBlueprintId!, l.pfProviderId!);
         // Variant không có trong response (hiếm) → mượn positions của variant bất kỳ cùng blueprint
         const ph = pa.get(l.pfVariantId!) ?? pa.values().next().value ?? {};
-        const positions = Object.keys(ph);
-        // Chọn vị trí THEO DANH SÁCH THẬT của blueprint (mỗi blueprint đặt tên khác nhau:
-        // front/front_side/default/back...; phone case chỉ có 1 vùng tên "back"):
-        //  1. đúng tên → 2. tên chứa từ khoá → 3. front rơi về vùng ĐẦU TIÊN; back không có thì BỎ ảnh back (tránh 422)
-        const pickPos = (want: string): string | undefined =>
-          ph[want] ? want : positions.find((p) => p.toLowerCase().includes(want));
-        const noData = positions.length === 0; // API không trả placeholder → giữ tên legacy, không dám bỏ ảnh
-        const frontPos = pickPos("front") ?? pickPos("default") ?? (positions[0] ?? "front");
-        const backPos = pickPos("back") ?? (noData ? "back" : undefined);
-        const dropBack = !!backImageId && !backPos; // blueprint không có mặt sau → bỏ ảnh back thay vì 422
+        const realPos = Object.keys(ph);
+        // API không trả placeholder → giữ tên legacy front/back
+        const positions = realPos.length ? realPos : ["front", "back"];
+
+        // Gom mọi mặt design của card (fallback về designFront/designBack kiểu cũ)
+        type Side = { kind: string; url: string; w?: number; h?: number };
+        const byKind = new Map<string, Side>();
+        for (const s of l.designSides ?? []) if (s.url) byKind.set(s.kind, s);
+        if (l.designFront && !byKind.has("design_front")) byKind.set("design_front", { kind: "design_front", url: l.designFront, w: l.designFrontW, h: l.designFrontH });
+        if (l.designBack && !byKind.has("design_back")) byKind.set("design_back", { kind: "design_back", url: l.designBack, w: l.designBackW, h: l.designBackH });
+
+        // Map vùng in → mặt design (mỗi mặt chỉ dùng 1 lần)
+        const plan: { position: string; side: Side }[] = [];
+        const used = new Set<string>();
+        for (const pos of positions) {
+          const k = kindsForPosition(pos).find((x) => byKind.has(x) && !used.has(x));
+          if (k) { plan.push({ position: pos, side: byKind.get(k)! }); used.add(k); }
+        }
+        // Không match được vùng nào (vd Photo Book: card chỉ có book_cover/page_xx nhưng blueprint
+        // đặt tên khác) → vẫn phải có ≥1 ảnh, nếu không Printify trả 400 "placeholders is required".
+        if (!plan.length) {
+          const sides = Array.from(byKind.values());
+          const primary = byKind.get("design_front") ?? byKind.get("book_cover") ?? byKind.get("cover_front")
+            ?? sides.slice().sort((a, b) => a.kind.localeCompare(b.kind))[0];
+          if (!primary) throw new Error(`SKU ${l.fulfillerSku}: card design chưa có file mặt in nào — Printify yêu cầu ít nhất 1 ảnh.`);
+          plan.push({ position: positions[0], side: primary });
+        }
+
+        const uploaded = await Promise.all(plan.map((x) => uploadImageByUrl(token, `${l.fulfillerSku}-${x.side.kind}`, x.side.url)));
+        const placeholders = plan.map((x, i) => ({
+          position: x.position,
+          images: [{ id: uploaded[i], x: 0.5, y: 0.5, scale: fitHeightScale(ph[x.position], x.side.w, x.side.h), angle: 0 }],
+        }));
+
         const prod = await createProduct(token, shopId, {
           title: `${extNumber} · ${l.fulfillerSku}`,
           blueprintId: l.pfBlueprintId!, providerId: l.pfProviderId!, variantId: l.pfVariantId!,
           price: l.price ? Math.round(l.price * 100) : 2000,
-          frontImageId, backImageId: dropBack ? undefined : backImageId,
-          frontScale: fitHeightScale(ph[frontPos], l.designFrontW, l.designFrontH),
-          backScale: backPos ? fitHeightScale(ph[backPos], l.designBackW, l.designBackH) : 1,
-          frontPosition: frontPos, backPosition: backPos ?? "back",
+          placeholders,
         });
         return { product_id: prod.productId, variant_id: prod.variantId, quantity: l.qty };
       }));

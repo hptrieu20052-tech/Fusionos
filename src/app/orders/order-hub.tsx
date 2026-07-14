@@ -114,6 +114,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   // Duplicate: hộp xác nhận + sửa Order label. PHẢI khai ở đây, cùng cụm hook —
   // đặt sau `if (!data) return ...` sẽ khiến số hook đổi giữa các lần render (React error #310).
   const [dupFor, setDupFor] = useState<{ id: string; label: string } | null>(null);
+  const [showTtTracking, setShowTtTracking] = useState(false);
 
   const reqSeq = useRef(0);
   const load = useCallback(async () => {
@@ -186,10 +187,10 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
                   <span style={{ fontSize: 19, width: 20, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IconCheck width={17} height={17} /></span><div style={{ textAlign: "left" }}><b>{t("o.onlyEligible")}</b><div style={IMPORT_SUB}>{t("o.eligibleDesc")}</div></div>
                 </a>
                 <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>TikTok Shop</div>
-                <a href="/api/orders/export-tiktok-tracking" onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
+                <button onClick={() => { setExportMenu(false); setShowTtTracking(true); }} style={{ ...IMPORT_ITEM }}>
                   <MarketplaceLogo mk="tiktok" size={20} />
-                  <div style={{ textAlign: "left" }}><b>Tracking upload template</b><div style={IMPORT_SUB}>Shipment info file — bulk upload in Seller Center</div></div>
-                </a>
+                  <div style={{ textAlign: "left" }}><b>Tracking upload template</b><div style={IMPORT_SUB}>Shipment info file — pick a store, bulk upload in Seller Center</div></div>
+                </button>
                 <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>{t("o.printerNoApi")}</div>
                 {["Printway", "Wembroidery", "Flashship", "Onospod"].map((s) => (
                   <button key={s} disabled style={{ ...IMPORT_ITEM, opacity: .5, cursor: "default" }}>
@@ -356,6 +357,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
 
       {showCreate && <CreateOrderModal close={() => setShowCreate(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
       {dupFor && <DuplicateModal init={dupFor} close={() => setDupFor(null)} onConfirm={cloneOrder} />}
+      {showTtTracking && <TtTrackingModal close={() => setShowTtTracking(false)} flash={flash} stores={data.stores} dr={dr} />}
       {showEtsy && <EtsyImportModal close={() => setShowEtsy(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
       {showTiktok && <TikTokImportModal close={() => setShowTiktok(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
     </>
@@ -678,6 +680,70 @@ function ManualTracking({ orderId, platform, ff, fulfillerId, fulfillers, flash,
 
 // Hộp xác nhận Duplicate: bắt bấm 2 lần và cho sửa Order label trước khi tạo.
 // Trước đây bấm 1 phát là nhân bản luôn, label trùng y hệt đơn gốc → không phân biệt được.
+// Xuất file "Shipment info" để upload tracking hàng loạt lên TikTok Seller Center.
+// BẮT BUỘC chọn shop: file upload lên TỪNG shop, trộn nhiều shop vào một file là TikTok từ chối.
+function TtTrackingModal({ close, flash, stores, dr }: {
+  close: () => void; flash: (m: string) => void; stores: Opt[]; dr: RangeValue | null;
+}) {
+  const { t } = useLang();
+  const ttStores = stores.filter((s) => s.marketplace === "tiktok");
+  const [storeId, setStoreId] = useState(ttStores.length === 1 ? ttStores[0].id : "");
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    if (!storeId) { flash("✗ " + t("o.mustPickStore")); return; }
+    setBusy(true);
+    const p = new URLSearchParams({ storeId });
+    if (dr) { const d = rangeToDates(dr); p.set("from", d.from); p.set("to", d.to); }
+    try {
+      const r = await fetch(`/api/orders/export-tiktok-tracking?${p}`);
+      if (!r.ok) { const j = await r.json().catch(() => null); flash("✗ " + (j?.error ?? "Export failed")); setBusy(false); return; }
+      const n = Number(r.headers.get("X-Row-Count") ?? 0);
+      if (!n) { flash("✗ " + t("o.ttNoTracking")); setBusy(false); return; }
+      const blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = r.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "shipment_info.xlsx";
+      a.click(); URL.revokeObjectURL(a.href);
+      flash(`✓ ${n} ${t("o.ttExported")}`);
+      close();
+    } catch { flash("✗ " + t("o.netError")); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={busy ? undefined : close}>
+      <div className="panel" style={{ width: 460, maxWidth: "100%" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <MarketplaceLogo mk="tiktok" size={20} /> {t("o.ttTrackingTitle")}
+          </b>
+          {!busy && <button onClick={close} style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", color: "var(--muted)" }}>✕</button>}
+        </div>
+        <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 14 }}>{t("o.ttTrackingHint")}</div>
+
+        <label style={{ ...rLbl, display: "block", marginBottom: 14 }}>
+          {t("o.tiktokStore")} <span style={{ color: "var(--red)" }}>*</span>
+          <select value={storeId} onChange={(e) => setStoreId(e.target.value)}
+            style={{ ...inp, width: "100%", marginTop: 4, borderColor: storeId ? undefined : "var(--red)" }}>
+            <option value="">{t("o.pickStore")}</option>
+            {ttStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          {!ttStores.length && <div style={{ fontSize: 11.5, color: "var(--red)", marginTop: 4, fontWeight: 600 }}>{t("o.noStoreForPlatform")}</div>}
+        </label>
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={close} disabled={busy} style={{ ...btnGhost, fontSize: 13 }}>{t("c.cancel")}</button>
+          <button onClick={run} disabled={busy || !storeId}
+            style={{ ...btnBlue, fontSize: 13, padding: "9px 20px", opacity: (busy || !storeId) ? 0.5 : 1, cursor: storeId ? "pointer" : "not-allowed" }}>
+            {busy ? "…" : t("o.ttExportBtn")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DuplicateModal({ init, close, onConfirm }: {
   init: { id: string; label: string };
   close: () => void;
