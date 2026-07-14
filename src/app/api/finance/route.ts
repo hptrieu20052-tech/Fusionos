@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   // Đơn tính doanh thu: trong range, không cancel/trash
   const ordersWhere = sql`o.ordered_at::date >= ${FROM} AND o.ordered_at::date <= ${TO} AND o.status NOT IN ('cancel','trash')${inSeller}`;
 
-  const [totals, byType, dailyRev, dailyCost, bySeller, byStore, byPlatform] = await Promise.all([
+  const [totals, byType, dailyRev, dailyCost, bySeller, byStore, byPlatform, bySupplier] = await Promise.all([
     // Tổng revenue + fee từ orders
     db.execute(sql`
       SELECT coalesce(sum(o.total),0) revenue, coalesce(sum(o.platform_fee),0) fee, count(*)::int orders
@@ -84,6 +84,26 @@ export async function GET(req: NextRequest) {
       FROM orders o JOIN stores s ON s.id = o.store_id
       WHERE ${ordersWhere}
       GROUP BY 1 ORDER BY rev DESC`),
+    // THEO NHÀ IN: gộp (đơn, nhà in) trước để KHÔNG đếm trùng doanh thu khi 1 đơn đẩy nhiều dòng
+    // cho cùng nhà in. Đơn đẩy sang 2 nhà khác nhau sẽ xuất hiện ở cả 2 hàng (đúng bản chất).
+    // Bỏ bản ghi đẩy đã cancelled (không tính chi phí).
+    db.execute(sql`
+      SELECT f.name,
+        count(*)::int orders,
+        coalesce(sum(x.cost),0) cost,
+        coalesce(sum(x.rev),0) rev,
+        coalesce(sum(x.fee),0) fee
+      FROM (
+        SELECT ffo.fulfiller_id fid, o.id oid,
+          sum(coalesce(ffo.cost, coalesce(ffo.base_cost,0) + coalesce(ffo.ship_cost,0) + coalesce(ffo.extra_fee,0))) cost,
+          max(o.total) rev, max(o.platform_fee) fee
+        FROM fulfillment_orders ffo
+        JOIN orders o ON o.id = ffo.order_id
+        WHERE ${ordersWhere} AND ffo.status <> 'cancelled'
+        GROUP BY 1,2
+      ) x
+      JOIN fulfillers f ON f.id = x.fid
+      GROUP BY f.name ORDER BY cost DESC`),
   ]);
 
   const trow = (totals.rows[0] ?? {}) as Record<string, unknown>;
@@ -110,5 +130,6 @@ export async function GET(req: NextRequest) {
     ok: true, days, scoped: !!ownerIds,
     totals: { revenue, fee, cost, profit, orders: Number(trow.orders ?? 0) },
     byType: byType.rows, daily, bySeller: bySeller.rows, byStore: byStore.rows, byPlatform: byPlatform.rows,
+    bySupplier: bySupplier.rows,
   });
 }

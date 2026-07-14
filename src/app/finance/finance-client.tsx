@@ -14,7 +14,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const { t: tr } = useLang();
   const [days, setDays] = useState(30);
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days — chỉnh bằng picker
-  const [data, setData] = useState<{ totals: { revenue: number; fee: number; cost: number; profit: number; orders: number }; byType: Row[]; daily: Row[]; bySeller: Row[]; byStore: Row[]; byPlatform: Row[] } | null>(null);
+  const [data, setData] = useState<{ totals: { revenue: number; fee: number; cost: number; profit: number; orders: number }; byType: Row[]; daily: Row[]; bySeller: Row[]; byStore: Row[]; byPlatform: Row[]; bySupplier: Row[] } | null>(null);
   const [form, setForm] = useState({ type: "ads", amount: "", note: "" });
   const [msg, setMsg] = useState("");
 
@@ -141,6 +141,39 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
               {msg && <span style={{ fontSize: 12, fontWeight: 700 }}>{msg}</span>}
             </form>
           )}
+
+          {/* PROFIT BY SUPPLIER — mỗi nhà in đã fulfill bao nhiêu tiền trong kỳ.
+              1 đơn đẩy sang 2 nhà khác nhau sẽ được tính doanh thu ở CẢ HAI hàng (đúng bản chất),
+              nên tổng Revenue của bảng này có thể > Revenue tổng. Cột Cost thì luôn chính xác. */}
+          <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+            <h3 style={{ fontWeight: 800, fontSize: 14.5, margin: 0 }}>{tr("fin.bySupplier")}</h3>
+            {!(data.bySupplier ?? []).length ? (
+              <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 8 }}>{tr("fin.noSupplier")}</div>
+            ) : (
+              <table style={{ marginTop: 8 }}>
+                <thead><tr>
+                  <th>{tr("fin.supplier")}</th>
+                  <th style={{ textAlign: "right" }}>{tr("fin.ordersCol")}</th>
+                  <th style={{ textAlign: "right" }}>Revenue</th>
+                  <th style={{ textAlign: "right" }}>Cost</th>
+                  <th style={{ textAlign: "right" }}>Profit</th>
+                </tr></thead>
+                <tbody>{(data.bySupplier ?? []).map((f) => {
+                  const c = Number(f.cost ?? 0);            // cost lưu DƯƠNG ở fulfillment_orders
+                  const pf = Number(f.rev ?? 0) - Number(f.fee ?? 0) - c;
+                  return (
+                    <tr key={String(f.name)}>
+                      <td><b>{String(f.name)}</b></td>
+                      <td style={{ textAlign: "right", color: "var(--muted)" }}>{Number(f.orders ?? 0).toLocaleString()}</td>
+                      <td style={{ textAlign: "right" }}>{money(f.rev)}</td>
+                      <td style={{ textAlign: "right", color: "var(--red)" }}>{money(c)}</td>
+                      <td style={{ textAlign: "right", fontWeight: 800, color: pf >= 0 ? "var(--green)" : "var(--red)" }}>{pf < 0 ? "-" : ""}{money(pf)}</td>
+                    </tr>
+                  );
+                })}</tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
     </>
