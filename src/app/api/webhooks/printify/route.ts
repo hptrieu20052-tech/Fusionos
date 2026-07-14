@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, like, or, desc } from "drizzle-orm";
 import { getPrintifyOrder } from "@/lib/printify";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
-import {markShippedOnTracking, syncOrderFromFf, refundOrderCost } from "@/lib/order-status";
+import { markShippedOnTracking, syncOrderFromFf, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +102,9 @@ export async function POST(req: NextRequest) {
       eq(schema.transactions.type, "base_cost"),
       like(schema.transactions.note, `%${printifyOrderId}%`),
     ));
+    // Bút toán có thể KHÔNG tồn tại (đã bị xoá khi undo push) → update không tạo ra gì.
+    // Rebalance sẽ CHÈN cho khớp với cost của các bản ghi đẩy còn lại.
+    await rebalanceOrderCost(ffo.orderId, `Printify · ${printifyOrderId} — cost sync`);
   }
 
   // Đồng bộ trạng thái đơn chính (chỉ tiến, không lùi). Đơn chính không có 'delivered' → coi như shipped.

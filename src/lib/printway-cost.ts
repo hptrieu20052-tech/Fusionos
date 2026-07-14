@@ -1,6 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { and, eq, like } from "drizzle-orm";
 import { getPrintwayOrderDetail, extractPwCost } from "@/lib/printway-api";
+import { rebalanceOrderCost } from "@/lib/order-status";
 
 type Cred = { accessToken: string; endpoint?: string | null };
 type FfoLite = { id: string; orderId: string; externalFfId: string | null; cost?: string | null };
@@ -34,22 +35,17 @@ export async function syncPrintwayCost(cred: Cred, ffo: FfoLite): Promise<boolea
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
 
   // Bút toán base_cost = -(total). Note lúc đẩy có chứa external_ff_id; nếu id đã bị
-  // nâng cấp (order_name → PWN…) thì không khớp nữa → fallback theo orderId.
+  // nâng cấp (order_name → PWN…) thì không khớp → rebalance sẽ CHÈN/điều chỉnh cho đủ
+  // (quan trọng: dòng bút toán có thể đã bị XOÁ khi undo push → update không đủ, phải insert).
   const amount = (-c.total).toFixed(2);
-  let hit: { id: string }[] = [];
   if (ffo.externalFfId) {
-    hit = await db.update(schema.transactions).set({ amount }).where(and(
-      eq(schema.transactions.orderId, ffo.orderId),
-      eq(schema.transactions.type, "base_cost"),
-      like(schema.transactions.note, `%${ffo.externalFfId}%`),
-    )).returning({ id: schema.transactions.id });
-  }
-  if (!hit.length) {
     await db.update(schema.transactions).set({ amount }).where(and(
       eq(schema.transactions.orderId, ffo.orderId),
       eq(schema.transactions.type, "base_cost"),
+      like(schema.transactions.note, `%${ffo.externalFfId}%`),
     ));
   }
+  await rebalanceOrderCost(ffo.orderId, `Printway · ${ffo.externalFfId ?? ""} — cost sync`);
   return true;
 }
 

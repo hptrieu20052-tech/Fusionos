@@ -1,5 +1,5 @@
 import { db, schema } from "@/lib/db";
-import {and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 
 // Khi đơn có tracking (webhook fulfiller trả về / nhập tay / import) → tự chuyển sang "shipped".
 // Chỉ nâng từ các trạng thái trước đó; KHÔNG đụng đơn đã shipped/delivered/trash/cancel.
@@ -74,7 +74,7 @@ export async function refundOrderCost(orderId: string, note: string) {
  * - Không còn bản ghi đẩy nào có chi phí → xoá SẠCH base_cost của đơn (gồm cả dòng hoàn tiền).
  * - Còn bản ghi đẩy → chèn 1 dòng điều chỉnh cho khớp.
  */
-export async function rebalanceOrderCost(orderId: string): Promise<boolean> {
+export async function rebalanceOrderCost(orderId: string, note = "Cost adjustment — rebalance"): Promise<boolean> {
   try {
     const ffos = await db.select({ cost: schema.fulfillmentOrders.cost, status: schema.fulfillmentOrders.status })
       .from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, orderId));
@@ -95,7 +95,7 @@ export async function rebalanceOrderCost(orderId: string): Promise<boolean> {
     await db.insert(schema.transactions).values({
       type: "base_cost", amount: (target - cur).toFixed(2),
       orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
-      note: "Cost adjustment — rebalanced after push removed",
+      note,
       occurredAt: new Date().toISOString().slice(0, 10),
     });
     return true;

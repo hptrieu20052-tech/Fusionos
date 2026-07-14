@@ -1,7 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { and, eq, like, notInArray } from "drizzle-orm";
 import { getPrintifyOrder } from "@/lib/printify";
-import { syncOrderFromFf, markShippedOnTracking, refundOrderCost } from "@/lib/order-status";
+import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 
 /**
@@ -79,7 +79,8 @@ export async function syncPrintify(opts: { force?: boolean } = {}) {
         const taxC = N(o.total_tax);
         const grand = Math.round((baseC + shipC + taxC)) / 100;
 
-        if (grand > 0 && !isCancel && Number(x.cost ?? 0) <= 0) {
+        const priced = grand > 0 && !isCancel;
+        if (priced && Math.abs(Number(x.cost ?? 0) - grand) >= 0.005) {
           patch.baseCost = (baseC / 100).toFixed(2);
           patch.shipCost = (shipC / 100).toFixed(2);
           patch.extraFee = (taxC / 100).toFixed(2);
@@ -88,21 +89,6 @@ export async function syncPrintify(opts: { force?: boolean } = {}) {
 
         if (Object.keys(patch).length) {
           await db.update(schema.fulfillmentOrders).set(patch).where(eq(schema.fulfillmentOrders.id, x.id));
-          if (patch.cost) {
-            // Bút toán base_cost = -(grand). Note lúc đẩy chứa external_ff_id.
-            const hit = await db.update(schema.transactions).set({ amount: (-grand).toFixed(2) }).where(and(
-              eq(schema.transactions.orderId, x.orderId),
-              eq(schema.transactions.type, "base_cost"),
-              like(schema.transactions.note, `%${pid}%`),
-            )).returning({ id: schema.transactions.id });
-            if (!hit.length) {
-              await db.update(schema.transactions).set({ amount: (-grand).toFixed(2) }).where(and(
-                eq(schema.transactions.orderId, x.orderId),
-                eq(schema.transactions.type, "base_cost"),
-              ));
-            }
-            costed++;
-          }
           if (ffStatus) await syncOrderFromFf(x.orderId, ffStatus);
           if (patch.trackingNumber) {
             await markShippedOnTracking(x.orderId);
@@ -113,6 +99,19 @@ export async function syncPrintify(opts: { force?: boolean } = {}) {
             await refundOrderCost(x.orderId, "Refund cost — cancelled by Printify");
           }
           updated++;
+        }
+
+        // ---- SỔ: chạy MỖI LẦN (kể cả khi ffo đã có cost) vì bút toán base_cost có thể
+        // đang thiếu/lệch (bị xoá khi undo push, hoặc lúc đẩy chỉ ghi 0). ----
+        if (priced) {
+          // 1) Sửa đúng dòng của bản ghi đẩy này (note lúc đẩy có chứa external_ff_id)
+          await db.update(schema.transactions).set({ amount: (-grand).toFixed(2) }).where(and(
+            eq(schema.transactions.orderId, x.orderId),
+            eq(schema.transactions.type, "base_cost"),
+            like(schema.transactions.note, `%${pid}%`),
+          ));
+          // 2) Cân lại tổng: nếu chưa có dòng nào (đã bị xoá) thì rebalance sẽ CHÈN cho đủ.
+          if (await rebalanceOrderCost(x.orderId, `Printify · ${pid} — cost sync`)) costed++;
         }
       } catch (e) {
         errors.push(`${ff.name} ${pid}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);

@@ -64,7 +64,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   // CÂN LẠI SỔ: dòng hoàn tiền (refundOrderCost) có note "Refund cost — …" nên KHÔNG bị xoá ở
   // bước trên → nếu bỏ qua, nó nằm lại một mình và làm cost ÂM. Rebalance xoá/điều chỉnh cho khớp
   // với các bản ghi đẩy còn lại.
-  const rebalanced = await rebalanceOrderCost(ffo.orderId);
+  const rebalanced = await rebalanceOrderCost(ffo.orderId, "Cost adjustment — rebalanced after push removed");
 
   // Còn bản ghi đẩy nào cho đơn này không? Không → đưa đơn về "new"
   const [rest] = await db.select({ id: schema.fulfillmentOrders.id }).from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, ffo.orderId)).limit(1);

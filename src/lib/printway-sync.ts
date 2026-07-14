@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { listPrintwayOrders, normalizePwOrder } from "@/lib/printway-api";
 import { syncPrintwayCost } from "@/lib/printway-cost";
+import { rebalanceOrderCost } from "@/lib/order-status";
 import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 
@@ -79,6 +80,10 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
       } catch (e) {
         errors.push(`${ff.name} cost ${x.externalFfId}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
       }
+    }
+    // Đơn ĐÃ có cost nhưng bút toán có thể thiếu/lệch (bị xoá khi undo push) → cân lại sổ, KHÔNG gọi API.
+    for (const x of open.filter((x) => Number(x.cost ?? 0) > 0)) {
+      await rebalanceOrderCost(x.orderId, `Printway · ${x.externalFfId ?? ""} — cost sync`);
     }
   }
   return { ok: errors.length === 0, updated, checked, skipped, costed, errors };

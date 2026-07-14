@@ -27,18 +27,23 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, updated, printway, printify });
 }
 
-// GET ?debug=<fulfillment_order_id> — trả RAW /order/detail của Printway + giá bóc được.
+// GET ?debug=<external_ff_id | fulfillment_order_id> — trả RAW /order/detail của Printway + giá bóc được.
 // Chỉ admin. Dùng khi cost vẫn = 0 để xem Printway thực sự trả field gì.
+// Nhận thẳng mã hiện trên UI, vd: ?debug=PWN8780848
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session || (await levelOf(session, "fulfillment")) < 3) {
+  // Thang level tối đa là 2 (admin = 2) → chỉ cần admin hoặc level 2 module fulfillment
+  if (!session || (session.role !== "admin" && (await levelOf(session, "fulfillment")) < 2)) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
-  const id = req.nextUrl.searchParams.get("debug");
-  if (!id) return NextResponse.json({ ok: false, error: "missing ?debug=<ffoId>" }, { status: 400 });
+  const id = (req.nextUrl.searchParams.get("debug") ?? "").trim();
+  if (!id) return NextResponse.json({ ok: false, error: "missing ?debug=<PWN… hoặc ffoId>" }, { status: 400 });
 
-  const [ffo] = await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.id, id)).limit(1);
-  if (!ffo) return NextResponse.json({ ok: false, error: "ffo not found" }, { status: 404 });
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const [ffo] = await db.select().from(schema.fulfillmentOrders)
+    .where(isUuid ? eq(schema.fulfillmentOrders.id, id) : eq(schema.fulfillmentOrders.externalFfId, id))
+    .limit(1);
+  if (!ffo) return NextResponse.json({ ok: false, error: "không tìm thấy bản ghi đẩy nào khớp " + id }, { status: 404 });
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, ffo.fulfillerId)).limit(1);
   if (!ff) return NextResponse.json({ ok: false, error: "fulfiller not found" }, { status: 404 });
   const cred = pwCredOf(ff);
