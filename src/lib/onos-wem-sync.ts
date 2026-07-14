@@ -1,6 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { and, eq, inArray, isNotNull, like, notInArray } from "drizzle-orm";
-import { syncOrderFromFf, markShippedOnTracking, refundOrderCost } from "@/lib/order-status";
+import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { getOnosOrder, mapOnosStatus } from "@/lib/onos";
 import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
@@ -19,13 +19,14 @@ import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
 const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 const arrOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
 
-type OpenFfo = { id: string; orderId: string; externalFfId: string | null; status: string; trackingNumber: string | null };
+type OpenFfo = { id: string; orderId: string; externalFfId: string | null; status: string; trackingNumber: string | null; cost: string | null };
 
 async function openFfosOf(fulfillerId: string): Promise<OpenFfo[]> {
   return db.select({
     id: schema.fulfillmentOrders.id, orderId: schema.fulfillmentOrders.orderId,
     externalFfId: schema.fulfillmentOrders.externalFfId, status: schema.fulfillmentOrders.status,
     trackingNumber: schema.fulfillmentOrders.trackingNumber,
+    cost: schema.fulfillmentOrders.cost,
   }).from(schema.fulfillmentOrders).where(and(
     eq(schema.fulfillmentOrders.fulfillerId, fulfillerId),
     isNotNull(schema.fulfillmentOrders.externalFfId),
@@ -160,12 +161,31 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             const status = mapWemStatus(S(order.status), !!(trackingNumber || ffo.trackingNumber));
             if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, carrier: carrier || undefined })) updated++;
           } else {
-            // Merchize: endpoint tracking trả kèm status (cancel/fulfilled/...)
+            // Merchize: endpoint tracking trả kèm status (cancel/fulfilled/...) và ĐÔI KHI cả chi phí
             const baseUrl = ff.apiEndpoint?.trim() || "https://bo-group-2.merchize.com/hgu3s";
             const raw = await getMerchizeTracking(baseUrl, apiKey, { code: ffo.externalFfId! });
             const t = extractMerchizeTracking(raw);
             const status = mapMerchizeStatus(t.status ?? "", !!(t.trackingNumber || ffo.trackingNumber)) || ffo.status;
             if (await applyUpdate(ffo, { status, trackingNumber: t.trackingNumber, trackingUrl: t.trackingUrl, carrier: t.carrier })) updated++;
+
+            // CHI PHÍ: Merchize chỉ bắn tiền qua webhook PAYMENT — webhook không tới thì đơn kẹt ở
+            // giá SKU mapping (thiếu import tax). Nếu poll trả về giá thì ghi đè + cân lại sổ.
+            const base = t.fulfillmentCost, ship = t.shippingCost ?? 0, tax = t.importTax ?? 0;
+            if (base != null && status !== "cancelled") {
+              const total = Math.round((base + ship + tax) * 100) / 100;
+              if (total > 0 && Math.abs(total - Number(ffo.cost ?? 0)) >= 0.005) {
+                await db.update(schema.fulfillmentOrders).set({
+                  baseCost: base.toFixed(2), shipCost: ship.toFixed(2), extraFee: tax.toFixed(2), cost: total.toFixed(2),
+                }).where(eq(schema.fulfillmentOrders.id, ffo.id));
+                await db.update(schema.transactions).set({ amount: (-total).toFixed(2) }).where(and(
+                  eq(schema.transactions.orderId, ffo.orderId),
+                  eq(schema.transactions.type, "base_cost"),
+                  like(schema.transactions.note, `%${ffo.externalFfId}%`),
+                ));
+                await rebalanceOrderCost(ffo.orderId, `Merchize · ${ffo.externalFfId} — cost poll`);
+                updated++;
+              }
+            }
           }
         } catch (e) {
           if (errors.length < 5) errors.push(`${ff.name} ${ffo.externalFfId}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);

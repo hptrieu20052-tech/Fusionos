@@ -39,16 +39,52 @@ export async function getMerchizeTracking(
   return text ? JSON.parse(text) : {};
 }
 
-/** Rút tracking number/url/carrier từ response Merchize (dò nhiều tên field cho chắc). */
-export function extractMerchizeTracking(data: unknown): { trackingNumber?: string; trackingUrl?: string; carrier?: string; status?: string } {
+/**
+ * Rút tracking/status/CHI PHÍ từ response Merchize.
+ *
+ * Chú ý 2 bẫy đã gặp:
+ *  - `data` có thể là MẢNG (như Printway) → phải lấy phần tử đầu, không thì bóc ra rỗng.
+ *  - KHÔNG được fallback tracking sang field `code`: đó là ORDER CODE, không phải mã vận đơn
+ *    (bug cũ sẽ nhét mã đơn vào ô tracking rồi tự đẩy nhầm lên Etsy).
+ * Tracking có thể nằm ở cấp đơn, trong items[] hoặc trong shipment/tracking lồng nhau → dò cả 3.
+ */
+export function extractMerchizeTracking(data: unknown): {
+  trackingNumber?: string; trackingUrl?: string; carrier?: string; status?: string;
+  fulfillmentCost?: number; shippingCost?: number; importTax?: number;
+} {
   const d = (data as Record<string, unknown>) ?? {};
-  const r = (d.data ?? d.resource ?? d) as Record<string, unknown>;
-  const g = (...names: string[]) => { for (const n of names) { const v = r?.[n]; if (v) return String(v); } return undefined; };
+  const raw: unknown = d.data ?? d.resource ?? d;
+  const r = (Array.isArray(raw) ? (raw[0] ?? {}) : raw) as Record<string, unknown>;
+
+  // Gom mọi object có thể chứa tracking: cấp đơn + nested + từng item
+  const nests: Record<string, unknown>[] = [r];
+  for (const k of ["tracking", "shipment", "shipping", "fulfillment"]) {
+    const v = r[k];
+    if (v && typeof v === "object" && !Array.isArray(v)) nests.push(v as Record<string, unknown>);
+  }
+  for (const k of ["items", "order_items", "orderitems", "shipments", "trackings"]) {
+    const arr = r[k];
+    if (Array.isArray(arr)) for (const it of arr) if (it && typeof it === "object") nests.push(it as Record<string, unknown>);
+  }
+  const g = (...names: string[]) => {
+    for (const o of nests) for (const n of names) { const v = o?.[n]; if (v !== undefined && v !== null && v !== "") return String(v); }
+    return undefined;
+  };
+  const n = (...names: string[]) => {
+    for (const o of nests) for (const k of names) {
+      const v = o?.[k];
+      if (v !== undefined && v !== null && v !== "") { const x = Number(v); if (!isNaN(x) && x > 0) return x; }
+    }
+    return undefined;
+  };
   return {
-    trackingNumber: g("tracking_number", "tracking_code", "trackingNumber", "code"),
+    trackingNumber: g("tracking_number", "tracking_code", "trackingNumber"),
     trackingUrl: g("tracking_url", "trackingUrl"),
-    carrier: g("shipping_carrier", "carrier", "tracking_company", "shipping_company"),
+    carrier: g("shipping_carrier", "carrier", "tracking_company", "shipping_company", "carrier_code"),
     status: g("status", "fulfillment_status", "order_status"),
+    fulfillmentCost: n("fulfillment_cost", "total_cost", "base_cost", "fulfillmentCost"),
+    shippingCost: n("shipping_cost", "shipping_fee", "shippingCost"),
+    importTax: n("import_tax", "us_import_tax", "tax", "tax_fee", "importTax"),
   };
 }
 
