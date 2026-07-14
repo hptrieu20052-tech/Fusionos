@@ -56,7 +56,7 @@ type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unit
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
 type Opt = { id: string; name: string; marketplace?: string };
-type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; lines?: { product: string; variant: string | null; sku: string; qty: number }[] | null };
+type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number }[] | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -793,6 +793,9 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
   const [showIssue, setShowIssue] = useState(false);
   const [ffSel, setFfSel] = useState("");
   const canCreate = ["new", "has_issues"].includes(o.status); // chỉ đơn NEW / Has issues mới đẩy được
+  // REVIEW: đơn vừa đẩy xong (status = created) → giữ nguyên panel variant + design nhưng KHOÁ,
+  // để support đối chiếu đã đẩy đúng variant/design chưa. Sang in_production trở đi thì ẩn.
+  const isReview = o.status === "created";
   // Chưa gán đủ design cho mọi sản phẩm thì chưa cho chọn nhà fulfill — tránh đẩy đơn thiếu file in.
   const allDesigned = o.items.length > 0 && o.items.every((i) => !!i.design_id);
   const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number; unitCost?: number }>>({});
@@ -1075,6 +1078,18 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                   {/* Chọn variant nằm ở TỪNG sản phẩm bên dưới; nút Create cũng ở cuối cho liền mạch */}
                   {ffSel && <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>↓ Pick <b>{t("o.variantQty")}</b> on each product, then click <b>Create order</b> at the bottom</div>}
                   </>
+                  ) : isReview ? (
+                  <>
+                  <div className="o2-field">
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <SupplierLogo name={(detail.ffOrders ?? [])[0]?.fulfillerName ?? ""} size={15} />{t("o.fulfilledBy")}
+                    </label>
+                    <input readOnly value={(detail.ffOrders ?? [])[0]?.fulfillerName ?? ""} style={{ ...inp, width: "100%", background: "#F2F5F9", color: "var(--muted)", cursor: "default" }} />
+                  </div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>
+                    {t("o.reviewPushed")}
+                  </div>
+                  </>
                   ) : (
                     <div style={{ fontSize: 12, color: "var(--muted)", background: "var(--card)", border: "1px dashed var(--line)", borderRadius: 10, padding: "10px 12px" }}>
                       {t("o.pushNotePre")}<b style={{ color: STATUS_COLORS[o.status] ?? "var(--ink)" }}>{o.status.toUpperCase()}</b>{t("o.pushNoteMid")}<b>NEW</b>{t("o.pushNotePost")}
@@ -1093,11 +1108,17 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
         close={() => setShowIssue(false)} flash={flash} onSaved={reload} />}
 
       {/* Items — chỉ hiển thị sản phẩm + gán design (variant đã dời lên cột phải) */}
-      {o.items.map((it) => <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} canEdit={canEdit}
-        showPicker={canPushFf && !!detail && canCreate && !!ffSel}
-        fulfillerId={ffSel} pickerSeed={variants}
-        line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
-        setLine={(v) => setLines({ ...lines, [it.id]: v })} />)}
+      {o.items.map((it, idx) => {
+        // Đơn đã đẩy → dựng lại dòng ĐÃ ĐẨY của đúng item (ưu tiên itemId; đơn cũ chưa lưu itemId → khớp theo thứ tự)
+        const pl = (detail?.ffOrders ?? [])[0]?.lines ?? [];
+        const reviewLine = isReview ? (pl.find((l) => l.itemId === it.id) ?? pl[idx] ?? null) : null;
+        return <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} canEdit={canEdit}
+          showPicker={canPushFf && !!detail && canCreate && !!ffSel}
+          reviewLine={canPushFf ? reviewLine : null}
+          fulfillerId={ffSel} pickerSeed={variants}
+          line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
+          setLine={(v) => setLines({ ...lines, [it.id]: v })} />;
+      })}
       {canPushFf && detail && canCreate && ffSel && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px dashed var(--line)", flexWrap: "wrap" }}>
           {complete
@@ -1128,10 +1149,12 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   );
 }
 
-function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine }: {
+function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine, reviewLine = null }: {
   it: Item; onSaved: () => void; flash: (m: string) => void; canEdit?: boolean;
   showPicker?: boolean; fulfillerId?: string; pickerSeed?: Variant[];
   line?: { mappingId: string; qty: number; unitCost?: number }; setLine?: (v: { mappingId: string; qty: number; unitCost?: number }) => void;
+  /** Đơn ĐÃ ĐẨY (status=created): dòng đã gửi nhà in → hiện panel CHỈ ĐỌC để đối chiếu */
+  reviewLine?: { product: string; variant: string | null; sku: string; qty: number } | null;
 }) {
   const { t } = useLang();
   const [skuInput, setSkuInput] = useState("");
@@ -1306,6 +1329,24 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
           <VariantPicker fulfillerId={fulfillerId} seed={pickerSeed}
             line={line ?? { mappingId: "", qty: it.qty }}
             setLine={setLine ?? (() => {})} />
+        </div>
+      )}
+      {/* ĐÃ ĐẨY — panel CHỈ ĐỌC, cùng chỗ với panel chọn variant, để đối chiếu variant/SKU/SL đã gửi */}
+      {!showPicker && reviewLine && (
+        <div style={{ flex: "1 1 300px", minWidth: 260, background: "#F3F8F4", border: "1px solid #CFE6D6", borderRadius: 12, padding: "12px 14px" }}>
+          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 8 }}>{t("o.pushedVariant")}</div>
+          {([
+            [t("o.product"), reviewLine.product],
+            [t("o.variantLabel"), reviewLine.variant ?? "—"],
+            [t("o.skuVariant"), reviewLine.sku],
+            [t("o.qty"), String(reviewLine.qty)],
+          ] as [string, string][]).map(([lab, val]) => (
+            <div key={lab} className="o2-field" style={{ marginBottom: 8 }}>
+              <label>{lab}</label>
+              <input readOnly value={val} title={val}
+                style={{ ...inp, width: "100%", background: "#fff", color: "var(--ink)", cursor: "default", fontWeight: 600 }} />
+            </div>
+          ))}
         </div>
       )}
     </div>

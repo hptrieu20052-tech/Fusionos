@@ -89,7 +89,8 @@ async function handlePush(req: NextRequest) {
   let shipSum = 0;
   let lineNote = "";
   const pushLines: { fulfillerSku: string; qty: number }[] = [];
-  const pushedLines: { product: string; variant: string | null; sku: string; qty: number }[] = [];
+  // Lưu kèm itemId + mappingId để card đơn ĐÃ ĐẨY dựng lại được panel review (chỉ đọc)
+  const pushedLines: { itemId: string; mappingId: string; product: string; variant: string | null; sku: string; qty: number }[] = [];
   if (Array.isArray(b.lines) && b.lines.length) {
     if (b.lines.length !== items.length) {
       return NextResponse.json({ ok: false, error: "missing variant selection for some items" }, { status: 400 });
@@ -113,7 +114,7 @@ async function handlePush(req: NextRequest) {
       cost += (Number(m.baseCost) + Number(m.shipCost)) * qty;
       parts.push(`${m.fulfillerSku}×${qty}`);
       pushLines.push({ fulfillerSku: m.fulfillerSku, qty, ...enrich(it, m) });
-      pushedLines.push({ product: it.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty });
+      pushedLines.push({ itemId: it.id, mappingId: m.id, product: it.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty });
     }
     lineNote = " · " + parts.join(", ");
   } else {
@@ -134,7 +135,7 @@ async function handlePush(req: NextRequest) {
       baseSum += Number(m.baseCost) * i.qty;
       shipSum += Number(m.shipCost) * i.qty;
       pushLines.push({ fulfillerSku: m.fulfillerSku, qty: i.qty, ...enrich(i, m) });
-      pushedLines.push({ product: i.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty: i.qty });
+      pushedLines.push({ itemId: i.id, mappingId: m.id, product: i.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty: i.qty });
     }
     cost = baseSum + shipSum;
   }
