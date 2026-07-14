@@ -50,3 +50,31 @@ export function splitVariant(raw: string | null | undefined): VariantPart[] {
   }
   return out;
 }
+
+
+/**
+ * Nhận diện đơn CÁ NHÂN HOÁ (Etsy "Custom options": Text box / List of options / File upload).
+ *
+ * Không thể dựa vào cột `personalization`: Etsy cho seller TỰ ĐẶT TÊN field
+ * ("Please enter the name here", "Choose Your Shape"…), nên chúng lẫn vào variant thường
+ * và cột personalization bị bỏ trống → suggest design vẫn hiện → in nhầm tên khách.
+ *
+ * Chặn theo 2 tín hiệu, chạy được cả với đơn CŨ đã nằm trong DB:
+ *   1. Tiêu đề sản phẩm mang dấu hiệu hàng custom
+ *   2. Variant có field dạng CÂU NHẮC NHẬP (khác hẳn variant chọn sẵn như "Size: 4x4")
+ *
+ * Cố tình chặn THỪA còn hơn chặn THIẾU: gán tay mất 10 giây, in sai tên là mất cả đơn.
+ */
+const TITLE_CUSTOM = /personaliz|custom|monogram|name\s*(patch|tag|badge)|your\s+name|initial/i;
+const PROMPT_LABEL = /enter|type\s+your|your\s+name|personaliz|monogram|initial|message|note|custom\s*text|dedication|inscription|font|spelling/i;
+
+export function isCustomItem(productTitle?: string | null, variant?: string | null, personalization?: string | null): boolean {
+  if (personalization && String(personalization).trim()) return true;
+  if (productTitle && TITLE_CUSTOM.test(decodeEntities(productTitle))) return true;
+  for (const p of splitVariant(variant)) {
+    if (!p.label) continue;
+    if (PROMPT_LABEL.test(p.label)) return true;
+    if (p.label.trim().endsWith("?")) return true; // "What name would you like?"
+  }
+  return false;
+}

@@ -1122,7 +1122,8 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
         </>}
       </div>
       <div className="o2-detail" style={{ fontSize: 13 }}>
-        <b>{decodeEntities(it.product_title as string)}</b>
+        {/* Title chữ thường (không đậm) để variant/personalization nổi lên — giống layout Etsy */}
+        <div style={{ color: "var(--ink)", lineHeight: 1.45 }}>{decodeEntities(it.product_title as string)}</div>
         {/* Variant: mỗi thuộc tính một dòng như trên Etsy — nhãn chữ thường mờ, giá trị in đậm.
             decodeEntities() để đơn CŨ trong DB (còn dính &quot;) cũng hiện đúng, không cần backfill. */}
         {(() => {
@@ -1524,7 +1525,9 @@ function Personalization({ it, onSaved, flash }: { it: Item; onSaved: () => void
   );
   return (
     <div style={{ marginTop: 6, fontSize: 13 }}>
-      {it.personalization
+      {/* Etsy "Custom options" giờ nằm sẵn trong variant (tách dòng như trên Etsy) → không hiện lại
+          ô vàng nữa cho khỏi lặp. Chỉ hiện khi nội dung KHÔNG có trong variant (staff tự thêm tay). */}
+      {it.personalization && !decodeEntities(it.variant).includes(decodeEntities(it.personalization).slice(0, 20))
         ? <span style={{ background: "var(--amber-soft)", borderRadius: 8, padding: "4px 10px", display: "inline-block" }}>
             <b>{t("o.personalization")}:</b> {decodeEntities(it.personalization)}
             <button onClick={() => { setV(it.personalization ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: 12, marginLeft: 8, padding: 0 }}>{t("c.edit")}</button>

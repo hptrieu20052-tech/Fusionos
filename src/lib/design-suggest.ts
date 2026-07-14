@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { fileUrl } from "@/lib/storage";
+import { isCustomItem } from "@/lib/variant-display";
 
 /**
  * Gợi ý design cho order item.
@@ -42,6 +43,7 @@ export type SuggestInput = {
   internal_sku?: unknown;
   etsy_listing_id?: unknown;   // Etsy: listing_id · TikTok: product_id (cùng cột)
   personalization?: unknown;
+  variant?: unknown;
 };
 
 type LearnedRow = {
@@ -150,10 +152,17 @@ export async function suggestForItems(items: SuggestInput[]): Promise<Map<string
     const learnedSku = (sku && bySku.get(sku)) || [];
 
     // ---- Chặn đơn custom ----
-    const hasPersoText = !!str(it.personalization);
+    // Etsy "Custom options" (Text box / List / File upload) do seller TỰ ĐẶT TÊN
+    // ("Please enter the name here"…) nên lẫn vào variant, cột personalization bị bỏ trống.
+    // Không thể chỉ trông vào personalization — phải soi cả tiêu đề và tên field trong variant.
+    const looksCustom = isCustomItem(
+      it.product_title as string | null,
+      it.variant as string | null,
+      it.personalization as string | null,
+    );
     // Listing/SKU này từng gán một design personalize → cả listing là loại custom
     const listingIsCustom = [...learnedListing, ...learnedSku].some((r) => r.personalize);
-    const custom = hasPersoText || listingIsCustom;
+    const custom = looksCustom || listingIsCustom;
 
     if (custom) {
       const base = learnedListing[0] ?? learnedSku[0] ?? null;
