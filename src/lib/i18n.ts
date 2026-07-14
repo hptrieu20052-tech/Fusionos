@@ -245,7 +245,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "a.emailNote": { vi: "Họ tên, email & vai trò do quản trị viên quản lý", en: "Name, email & role are managed by the admin" },
   "db.pipeOrder": { vi: "Đơn hàng", en: "Order" },
   "db.pipeInProduction": { vi: "Đang sản xuất", en: "In production" },
-  "db.pipeInTransit": { vi: "Đang vận chuyển", en: "In transit" },
+  "db.pipeInTransit": { vi: "Shipped", en: "Shipped" },
   "db.pipeDelivered": { vi: "Đã giao", en: "Delivered" },
   "db.quantity": { vi: "SL", en: "Quantity" },
   "db.allOrder": { vi: "Tất cả đơn", en: "All orders" },

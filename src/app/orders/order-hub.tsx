@@ -1184,6 +1184,8 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
 }) {
   const { t } = useLang();
   const [skuInput, setSkuInput] = useState("");
+  const [sideIdx, setSideIdx] = useState(0); // mặt đang xem lớn (design nhiều mặt: photo book 24 trang, calendar 26 mặt)
+  useEffect(() => { setSideIdx(0); }, [it.design_id]);
   const [busy, setBusy] = useState(false);
   const assign = async (sku: number | string | null) => {
     setBusy(true);
@@ -1285,23 +1287,49 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
           )}
         </div>
 
-        {/* Preview design đã gán — hiện đủ các mặt */}
-        {it.design_id && (it.designSides?.filter((s) => s.thumb).length ?? 0) > 0 ? (
-          <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-            {it.designSides!.filter((s) => s.thumb).map((s, idx) => (
-              <div key={idx} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                <div className="o2-dpreview checker" style={{ width: 96, marginTop: 0 }} onClick={() => setZoom(s.original ?? s.thumb)} title={(t(SIDE_KEY[s.kind]) || s.label) + " · " + t("o.clickEnlarge")}>
-                  <img src={s.thumb!} alt={t(SIDE_KEY[s.kind]) || s.label} />
-                </div>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)" }}>{t(SIDE_KEY[s.kind]) || s.label}</span>
+        {/* Preview design đã gán — 1 ảnh LỚN + dải thumbnail trượt ngang (giống card Design).
+            Trước đây trải phẳng mọi mặt → photo book 24 trang chiếm cả màn hình. */}
+        {(() => {
+          const sides = (it.designSides ?? []).filter((s) => s.thumb);
+          if (!it.design_id || !sides.length) {
+            return it.design_id && it.designThumb ? (
+              <div className="o2-dpreview checker" onClick={() => setZoom(it.designThumb)} title={t("o.clickEnlarge")}>
+                <img src={it.designThumb} alt="" />
               </div>
-            ))}
-          </div>
-        ) : it.design_id && it.designThumb ? (
-          <div className="o2-dpreview checker" onClick={() => setZoom(it.designThumb)} title={t("o.clickEnlarge")}>
-            <img src={it.designThumb} alt="" />
-          </div>
-        ) : null}
+            ) : null;
+          }
+          const i = Math.min(sideIdx, sides.length - 1);
+          const cur = sides[i];
+          const labelOf = (x: typeof cur) => t(SIDE_KEY[x.kind]) || x.label;
+          return (
+            <div style={{ marginTop: 10, width: 232, maxWidth: "100%" }}>
+              {/* Ảnh lớn của mặt đang chọn */}
+              <div className="o2-dpreview checker" style={{ width: "100%", marginTop: 0 }}
+                onClick={() => setZoom(cur.original ?? cur.thumb)} title={labelOf(cur) + " · " + t("o.clickEnlarge")}>
+                <img src={cur.thumb!} alt={labelOf(cur)} />
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "var(--ink)" }}>{labelOf(cur)}</span>
+                <span style={{ fontSize: 10.5, color: "var(--faint)", marginLeft: "auto" }}>{i + 1}/{sides.length}</span>
+              </div>
+              {/* Dải thumbnail — trượt ngang khi nhiều mặt */}
+              {sides.length > 1 && (
+                <div style={{ display: "flex", gap: 5, marginTop: 6, overflowX: "auto", paddingBottom: 4, scrollbarWidth: "thin" }}>
+                  {sides.map((s, idx) => (
+                    <button key={idx} onClick={() => setSideIdx(idx)} title={labelOf(s)}
+                      style={{
+                        flex: "0 0 auto", width: 40, height: 40, padding: 0, borderRadius: 7, cursor: "pointer", overflow: "hidden",
+                        background: "#fff", border: idx === i ? "2px solid var(--accent)" : "1px solid var(--line)",
+                        opacity: idx === i ? 1 : 0.72,
+                      }}>
+                      <img src={s.thumb!} alt={labelOf(s)} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
         {/* (đã có DesignId ở ô trên — không lặp lại caption) */}
 
         {/* Gợi ý khi chưa gán — đơn custom thì không gợi ý, chỉ hiện design gốc để tham chiếu */}
