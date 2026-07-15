@@ -52,26 +52,43 @@ async function handle(code: string, rawState: string, origin: string, wantJson: 
   }
 }
 
+// theyourlist có thể đặt tên tham số khác nhau → dò nhiều biến thể.
+const pickParam = (sp: URLSearchParams, names: string[]) => {
+  for (const n of names) { const v = sp.get(n); if (v) return v; }
+  return "";
+};
+const CODE_KEYS = ["code", "auth_code", "authorization_code", "authCode"];
+const STATE_KEYS = ["state", "st", "shop_state"];
+
 export async function GET(req: NextRequest) {
-  const code = req.nextUrl.searchParams.get("code") ?? "";
-  const state = req.nextUrl.searchParams.get("state") ?? "";
-  // Trình duyệt bị redirect tới đây → trả redirect về /stores (không JSON)
+  const sp = req.nextUrl.searchParams;
+  const code = pickParam(sp, CODE_KEYS);
+  const state = pickParam(sp, STATE_KEYS);
+  // DEBUG: nếu thiếu code/state, đính kèm danh sách key nhận được để biết theyourlist gửi tên gì
+  if (!code || !state) {
+    const keys = Array.from(sp.keys()).join(",") || "(none)";
+    return NextResponse.redirect(new URL(`/stores?tt=err&m=${encodeURIComponent("missing code/state · got keys: " + keys)}`, req.nextUrl.origin));
+  }
   return handle(code, state, req.nextUrl.origin, false);
 }
 
 export async function POST(req: NextRequest) {
   // theyourlist server gọi POST → nhận code/state từ body (json hoặc form) hoặc query
-  let code = req.nextUrl.searchParams.get("code") ?? "";
-  let state = req.nextUrl.searchParams.get("state") ?? "";
+  const sp = req.nextUrl.searchParams;
+  let code = pickParam(sp, CODE_KEYS);
+  let state = pickParam(sp, STATE_KEYS);
   try {
     const ct = req.headers.get("content-type") ?? "";
     if (ct.includes("application/json")) {
       const b = await req.json().catch(() => ({})) as Record<string, string>;
-      code = code || b.code || "";
-      state = state || b.state || "";
+      code = code || CODE_KEYS.map((k) => b[k]).find(Boolean) || "";
+      state = state || STATE_KEYS.map((k) => b[k]).find(Boolean) || "";
     } else {
       const f = await req.formData().catch(() => null);
-      if (f) { code = code || String(f.get("code") ?? ""); state = state || String(f.get("state") ?? ""); }
+      if (f) {
+        code = code || CODE_KEYS.map((k) => String(f.get(k) ?? "")).find(Boolean) || "";
+        state = state || STATE_KEYS.map((k) => String(f.get(k) ?? "")).find(Boolean) || "";
+      }
     }
   } catch { /* dùng query */ }
   // Server-to-server → trả JSON
