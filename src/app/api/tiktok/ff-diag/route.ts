@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { ttGetValidCfg, ttGetOrderDetail, ttGetShippingProviders, ttProbe } from "@/lib/tiktok-shop";
+import { ttGetValidCfg, ttGetOrderDetail, ttGetShippingProviders, ttProbe, ttSearchPackages, ttGetShippingDocument } from "@/lib/tiktok-shop";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -51,14 +51,31 @@ export async function GET(req: NextRequest) {
       ttProbe(cfg, "GET", "/logistics/202309/warehouses", {}),
     ]);
 
+    // ===== TEST THẬT CHUỖI GET-LABEL =====
+    // 1) tìm package của đơn; 2) nếu có package → thử lấy shipping_document (label).
+    let packages: unknown = null, packagesError: string | null = null;
+    let labelTest: unknown = null;
+    try {
+      const pkgs = await ttSearchPackages(cfg, ext);
+      packages = pkgs;
+      const pkgId = pkgs.length ? String((pkgs[0] as Record<string, unknown>).id ?? (pkgs[0] as Record<string, unknown>).package_id ?? "") : "";
+      if (pkgId) {
+        try { labelTest = { packageId: pkgId, doc: await ttGetShippingDocument(cfg, pkgId) }; }
+        catch (e) { labelTest = { packageId: pkgId, error: String((e as Error)?.message ?? e).slice(0, 200) }; }
+      } else {
+        labelTest = { note: "Đơn chưa có package — cần Arrange shipment trên TikTok trước rồi chạy lại." };
+      }
+    } catch (e) { packagesError = String((e as Error)?.message ?? e).slice(0, 200); }
+
     return NextResponse.json({
       ok: true,
       order: { internalId: ord.id, externalId: ord.externalId, shippingTypeStored: ord.shippingType },
       shopId: cfg.shopId, shopName: cfg.shopName,
       orderDetail, orderDetailError,
+      packages, packagesError, labelTest,
       providers,
       capabilities,
-      hint: "Gửi toàn bộ JSON này cho trợ lý. Xem capabilities[]: code=40006 = app thiếu quyền API đó.",
+      hint: "Chạy trên đơn ĐÃ Arrange shipment để thấy package + labelTest.doc.doc_url.",
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });

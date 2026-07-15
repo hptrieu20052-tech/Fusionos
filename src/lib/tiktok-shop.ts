@@ -168,6 +168,24 @@ export async function ttProbe(cfg: TtCfg, method: "GET" | "POST", path: string, 
   }
 }
 
+// Tìm package của 1 đơn (fulfillment/packages/search — đã xác nhận app có quyền, code=0).
+// Package chỉ có sau khi đơn off-hold + Arrange shipment. Trả mảng package thô để lấy id.
+export async function ttSearchPackages(cfg: TtCfg, orderId: string) {
+  const d = await ttFetch(cfg, "POST", "/fulfillment/202309/packages/search", { page_size: "50" }, { order_ids: [orderId] });
+  return (d?.packages as Record<string, unknown>[] | undefined) ?? [];
+}
+
+// Lấy shipping document (label PDF) của 1 package → trả doc_url (link ký sẵn của TikTok).
+// Dùng cho đơn Ship-by-TikTok: lấy link này gửi supplier (FlashPOD/Onos/Merchize).
+export async function ttGetShippingDocument(cfg: TtCfg, packageId: string, opts?: { docType?: string; format?: string; size?: string }) {
+  const d = await ttFetch(cfg, "GET", `/fulfillment/202309/packages/${packageId}/shipping_documents`, {
+    document_type: opts?.docType ?? "SHIPPING_LABEL",
+    document_size: opts?.size ?? "A6",
+    document_format: opts?.format ?? "PDF",
+  });
+  return d as { doc_url?: string } & Record<string, unknown>;
+}
+
 // ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====
 // Get Order Detail 202309: GET /order/202309/orders?ids=<comma>. Trả orders[] kèm packages, line_items,
 // shipping_type/fulfillment_type, delivery_option... Dùng để xác minh trước khi viết ship/label.
