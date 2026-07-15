@@ -148,6 +148,34 @@ export async function ttGetAuthorizedShops(cfg: TtCfg) {
   }));
 }
 
+// ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====
+// Get Order Detail 202309: GET /order/202309/orders?ids=<comma>. Trả orders[] kèm packages, line_items,
+// shipping_type/fulfillment_type, delivery_option... Dùng để xác minh trước khi viết ship/label.
+export async function ttGetOrderDetail(cfg: TtCfg, ids: string[]) {
+  const d = await ttFetch(cfg, "GET", "/order/202309/orders", { ids: ids.join(",") });
+  return (d?.orders as Record<string, unknown>[] | undefined) ?? [];
+}
+
+// Danh sách shipping provider (để map carrier → provider_id khi đẩy tracking Seller Shipping).
+// Path 202309 có thể khác theo region → thử vài biến thể, trả cái nào chạy + lỗi cái không chạy.
+export async function ttGetShippingProviders(cfg: TtCfg): Promise<{ ok: boolean; path?: string; data?: unknown; errors: string[] }> {
+  const candidates = [
+    "/logistics/202309/shipping_providers",
+    "/logistics/202309/delivery_options",
+    "/logistics/202309/warehouses",
+  ];
+  const errors: string[] = [];
+  for (const path of candidates) {
+    try {
+      const d = await ttFetch(cfg, "GET", path, {});
+      return { ok: true, path, data: d, errors };
+    } catch (e) {
+      errors.push(`${path}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
+    }
+  }
+  return { ok: false, errors };
+}
+
 // ===== Token hợp lệ: tự refresh khi sắp hết hạn, lưu ngược vào store =====
 export async function ttGetValidCfg(storeId: string, cred: Record<string, string> | null): Promise<TtCfg> {
   let cfg = readTtCfg(cred);

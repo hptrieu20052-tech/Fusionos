@@ -273,6 +273,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const [ttAuthLink, setTtAuthLink] = useState(store.tiktok?.authLink ?? "");
   const [ttBusy, setTtBusy] = useState(false);
   const [ttSaved, setTtSaved] = useState(false); // Connect sáng ngay sau Save app, khỏi mở lại modal
+  const [ttLive, setTtLive] = useState<{ connected: boolean; shopName?: string } | null>(null); // Check connection cập nhật badge tại chỗ
   const saveTtApi = async () => {
     if (!ttKey.trim() || !ttSecret.trim()) { flash("✗ Enter App Key + App Secret"); return; }
     setTtBusy(true);
@@ -293,9 +294,15 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     setTtBusy(true);
     const j = await fetch("/api/tiktok/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setTtBusy(false);
-    if (j.ok) flash(`✓ Connection OK — ${(j.shops ?? []).map((x: { name: string }) => x.name).join(", ") || "authorized"}`);
-    else flash("✗ " + (j.error ?? "Error"));
+    if (j.ok) {
+      const nm = (j.shops ?? []).map((x: { name: string }) => x.name).join(", ");
+      setTtLive({ connected: true, shopName: nm || store.tiktok?.shopName || store.tiktok?.shopId });
+      flash(`✓ Connection OK — ${nm || "authorized"}`);
+    } else flash("✗ " + (j.error ?? "Error"));
   };
+  // Trạng thái hiển thị: ưu tiên kết quả Check connection vừa chạy, chưa có thì lấy prop từ server.
+  const ttConnected = ttLive?.connected ?? store.tiktok?.connected ?? false;
+  const ttName = ttLive?.shopName || store.tiktok?.shopName || store.tiktok?.shopId;
   const pullEtsy = async () => {
     setEtsyBusy(true);
     const j = await fetch("/api/etsy/pull", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
@@ -419,12 +426,12 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
             <button onClick={saveTtApi} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
-            <button onClick={ttConnectLink} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.tiktok?.hasApp || ttSaved) ? "pointer" : "default", opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title="Copy the authorize link and open it in the shop's own AdsPower profile. Never open it here - a wrong IP can get the shop suspended."><IconCopy width={12} height={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />{store.tiktok?.connected ? "Copy reconnect link" : "Copy connect link"}</button>
-            {store.tiktok?.connected && <button onClick={checkTt} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Check connection</button>}
-            {store.tiktok?.connected && <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>Orders auto-pull every 15 min</span>}
+            <button onClick={ttConnectLink} disabled={ttBusy || !(store.tiktok?.hasApp || ttSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.tiktok?.hasApp || ttSaved) ? "pointer" : "default", opacity: (store.tiktok?.hasApp || ttSaved) ? 1 : 0.5 }} title="Copy the authorize link and open it in the shop's own AdsPower profile. Never open it here - a wrong IP can get the shop suspended."><IconCopy width={12} height={12} style={{ verticalAlign: "-1px", marginRight: 4 }} />{ttConnected ? "Copy reconnect link" : "Copy connect link"}</button>
+            {(ttConnected || store.tiktok?.hasApp || ttSaved) && <button onClick={checkTt} disabled={ttBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Check connection</button>}
+            {ttConnected && <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>Orders auto-pull every 15 min</span>}
             <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
-              {store.tiktok?.connected
-                ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> Connected · {store.tiktok?.shopName || store.tiktok?.shopId}</span>
+              {ttConnected
+                ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> Connected · {ttName}</span>
                 : <span style={{ color: "var(--muted)" }}>Not connected</span>}
             </span>
           </div>
