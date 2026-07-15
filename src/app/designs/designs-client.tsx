@@ -5,6 +5,7 @@ import { useConfirm } from "@/components/confirm-provider";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload, IconRefresh } from "@/components/icons";
+import { DESIGN_KINDS } from "@/lib/design-kinds";
 
 const KIND_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -347,6 +348,47 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
       setUploads((u) => u.filter((x) => x.id !== upId));
     })();
   };
+  // ===== Upload cả FOLDER: tên file = Print Area → tự map vào đúng mặt in =====
+  const folderRef = useRef<HTMLInputElement>(null);
+  const kindFromFilename = (name: string): string | null => {
+    let base = name.replace(/\.[^.]+$/, "").toLowerCase().trim().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "").replace(/_+/g, "_");
+    if (DESIGN_KINDS.includes(base)) return base;
+    // page1 / page_1 / page01 → page_01 (cả month/grid)
+    const m = base.match(/^(page|month|grid)_?0*(\d{1,2})$/);
+    if (m) { const k = `${m[1]}_${String(m[2]).padStart(2, "0")}`; if (DESIGN_KINDS.includes(k)) return k; }
+    // vài alias hay gặp
+    const alias: Record<string, string> = { front: "design_front", back: "design_back", cover: "cover_front", frontside: "design_front", backside: "design_back" };
+    if (alias[base] && DESIGN_KINDS.includes(alias[base])) return alias[base];
+    return null;
+  };
+  const onFolderPicked = (fileList: FileList | null) => {
+    if (folderRef.current) folderRef.current.value = "";
+    if (!fileList || !fileList.length) return;
+    const existing = new Set(detail.files.map((f) => f.kind));
+    const queued = new Set<string>();
+    const matched: { file: File; kind: string }[] = [];
+    let unmatched = 0, dup = 0;
+    for (const file of Array.from(fileList)) {
+      if (!file.type.startsWith("image/")) { unmatched++; continue; }
+      const kind = kindFromFilename(file.name);
+      if (!kind) { unmatched++; continue; }
+      if (existing.has(kind) || queued.has(kind)) { dup++; continue; } // mặt đã có → bỏ qua, không đè
+      queued.add(kind); matched.push({ file, kind });
+    }
+    if (!matched.length) { flash(`✗ No file matched a print area (${unmatched} unmatched, ${dup} already present)`); return; }
+    flash(`Uploading ${matched.length} face(s)${dup ? `, ${dup} already present` : ""}${unmatched ? `, ${unmatched} unmatched` : ""}`);
+    let remaining = matched.length;
+    for (const { file, kind } of matched) {
+      const upId = Math.random().toString(36).slice(2);
+      setUploads((u) => [...u, { id: upId, kind, name: file.name }]);
+      (async () => {
+        try { await doUpload(d.id, file, kind); }
+        catch (e) { flash(`✗ ${kind}: ${(e as Error).message}`); }
+        setUploads((u) => u.filter((x) => x.id !== upId));
+        if (--remaining === 0) { reopen(d.id); reload(); } // refresh 1 lần khi xong hết
+      })();
+    }
+  };
   const delFile = async (fileId: string) => {
     if (!(await confirm({ message: t("d.confirmDeleteFile"), danger: true }))) return;
     const j = await fetch(`/api/designs/files/${fileId}`, { method: "DELETE" }).then((r) => r.json());
@@ -543,6 +585,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   })()}
                 </div>
               )}
+              {canEdit && tab === "design" && <AddTile label="Upload folder" onClick={() => folderRef.current?.click()} />}
             </div>
             {filesOf(tab).length === 0 && !canEdit && (
               <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "6px 0 2px" }}>{t("d.noFiles")}</div>
@@ -550,6 +593,10 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
             <input ref={fileRef} type="file"
               accept={tab === "video" ? "video/*" : "image/*"}
               onChange={(e) => { const file = e.target.files?.[0]; if (file) onPicked(file); }}
+              style={{ display: "none" }} />
+            <input ref={folderRef} type="file" multiple
+              {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+              onChange={(e) => onFolderPicked(e.target.files)}
               style={{ display: "none" }} />
           </div>
 

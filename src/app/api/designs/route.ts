@@ -1,94 +1,160 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { desc } from "drizzle-orm";
+import { desc, eq, inArray, and, or, ilike, sql as dsql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { levelOf } from "@/lib/rbac";
-import { useR2, writeFile, readFile, fileUrl } from "@/lib/storage";
+import { levelOf, hasRestriction } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
+import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
 
-// GET /api/designs/diag — CHỈ admin. Chẩn đoán vì sao ảnh design không hiện.
-// KHÔNG lộ secret: chỉ báo biến môi trường CÓ hay KHÔNG, và URL public (không phải bí mật).
-export async function GET() {
+// GET /api/designs — grid Design Studio (chỉ trả thumb/preview, KHÔNG trả file gốc)
+export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ ok: false, error: "Not signed in" }, { status: 401 });
-  if ((await levelOf(session, "designs")) < 2)
-    return NextResponse.json({ ok: false, error: "Requires designs admin permission" }, { status: 403 });
+  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
+  if ((await levelOf(session, "designs")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
-  const env = {
-    R2_ACCOUNT_ID: !!process.env.R2_ACCOUNT_ID,
-    R2_ACCESS_KEY_ID: !!process.env.R2_ACCESS_KEY_ID,
-    R2_SECRET_ACCESS_KEY: !!process.env.R2_SECRET_ACCESS_KEY,
-    R2_BUCKET: process.env.R2_BUCKET || null,
-    R2_PUBLIC_URL: process.env.R2_PUBLIC_URL || process.env.R2_PUBLIC_BASE || null,
-  };
+  const sp = req.nextUrl.searchParams;
+  const show = Math.min(Math.max(Number(sp.get("show") ?? 24), 8), 60);
+  const page = Math.max(Number(sp.get("page") ?? 1), 1);
 
-  // 1) Test ghi + đọc lại một file nhỏ vào kho lưu trữ đang dùng
-  const testKey = `diag/selftest-${Date.now()}.txt`;
-  const testBody = Buffer.from("fusion-os storage self-test");
-  const write: { ok: boolean; error?: string } = { ok: false };
-  const read: { ok: boolean; bytes?: number; matches?: boolean; error?: string } = { ok: false };
-  try {
-    await writeFile(testKey, testBody, "text/plain");
-    write.ok = true;
-    try {
-      const got = await readFile(testKey);
-      read.ok = true;
-      read.bytes = got.length;
-      read.matches = got.toString() === testBody.toString();
-    } catch (e) {
-      read.error = String(e).slice(0, 300);
+  const parts = [] as ReturnType<typeof eq>[];
+  const scopeIds = await scopeOwnerIds(session, "designs");
+  if (scopeIds && scopeIds.length) {
+    const idList = dsql.join(scopeIds.map((x) => dsql`${x}::uuid`), dsql`, `);
+    parts.push(dsql`(
+      ${schema.designs.designerId} IN (${idList})
+      OR ${schema.designs.sellerId} IN (${idList})
+      OR ${schema.designs.creatorId} IN (${idList})
+    )` as never);
+  }
+  const q = sp.get("q")?.trim();
+  if (q) {
+    const clean = q.replace(/^#/, "").trim();
+    if (/^\d+$/.test(clean)) {
+      // Gõ SỐ → tìm theo ID (#skuCode) chính xác, HOẶC số đứng riêng trong tên
+      // (tránh dính chuỗi số dài trong title auto-gen như ...0829122).
+      const idNum = Number(clean);
+      parts.push(or(
+        Number.isSafeInteger(idNum) ? eq(schema.designs.skuCode, idNum) : dsql`false`,
+        dsql`${schema.designs.title} ~ ${"(^|[^0-9])" + clean + "([^0-9]|$)"}`,
+      )!);
+    } else {
+      // Gõ CHỮ → tìm theo tên
+      parts.push(ilike(schema.designs.title, "%" + q + "%"));
     }
-  } catch (e) {
-    write.error = String(e).slice(0, 300);
+  }
+  if (sp.get("platform")) parts.push(eq(schema.designs.platform, sp.get("platform") as never));
+  if (sp.get("sellerId")) parts.push(eq(schema.designs.sellerId, sp.get("sellerId")!));
+  if (sp.get("designerId")) parts.push(eq(schema.designs.designerId, sp.get("designerId")!));
+  if (sp.get("from")) parts.push(dsql`${schema.designs.createdAt} >= ${sp.get("from")}::date` as never);
+  if (sp.get("to")) parts.push(dsql`${schema.designs.createdAt} < (${sp.get("to")}::date + 1)` as never);
+  const conds = parts.length ? and(...parts) : undefined;
+
+  // Đếm tổng: khi KHÔNG lọc gì → dùng ước lượng nhanh từ thống kê bảng (tránh count(*) toàn bảng lớn).
+  // Khi CÓ lọc → count chính xác (đã có index nên nhanh).
+  let total: number;
+  if (!parts.length) {
+    const est = await db.execute(dsql`SELECT reltuples::bigint AS c FROM pg_class WHERE relname = 'designs'`);
+    total = Number((est.rows[0] as { c: string })?.c ?? 0);
+    // Nếu bảng còn nhỏ (chưa ANALYZE) thì ước lượng có thể = 0/âm → count thật
+    if (total < 1000) {
+      const r = await db.select({ c: dsql<number>`count(*)::int` }).from(schema.designs);
+      total = r[0]?.c ?? 0;
+    }
+  } else {
+    const r = await db.select({ c: dsql<number>`count(*)::int` }).from(schema.designs).where(conds);
+    total = r[0]?.c ?? 0;
   }
 
-  // 2) Lấy file design mới nhất, kiểm tra file THẬT có đọc được từ kho không
-  const [latest] = await db.select().from(schema.designFiles).orderBy(desc(schema.designFiles.createdAt)).limit(1);
-  let latestFile: Record<string, unknown> | null = null;
-  if (latest) {
-    const realRead: { ok: boolean; bytes?: number; error?: string } = { ok: false };
-    try {
-      const buf = await readFile(latest.storageKey);
-      realRead.ok = true;
-      realRead.bytes = buf.length;
-    } catch (e) {
-      realRead.error = String(e).slice(0, 300);
-    }
-    latestFile = {
-      designId: latest.designId,
-      kind: latest.kind,
-      processingStatus: latest.processingStatus,
-      storageKey: latest.storageKey,
-      thumbKey: latest.thumbKey,
-      previewKey: latest.previewKey,
-      urls: {
-        original: fileUrl(latest.storageKey),
-        thumb: fileUrl(latest.thumbKey),
-        preview: fileUrl(latest.previewKey),
-      },
-      // Kết quả đọc file gốc trực tiếp từ R2/local — quan trọng nhất:
-      realFileReadableFromStorage: realRead,
+  const rows = await db.select().from(schema.designs).where(conds).orderBy(desc(schema.designs.createdAt)).limit(show).offset((page - 1) * show);
+  const ids = rows.map((d) => d.id);
+  const files = ids.length
+    ? await db.select().from(schema.designFiles).where(inArray(schema.designFiles.designId, ids))
+    : [];
+
+  // Tên người liên quan + điểm TB cho card
+  const { sql } = await import("drizzle-orm");
+  const meta = ids.length ? (await db.execute(sql`
+    SELECT d.id,
+      su.full_name AS seller, du.full_name AS designer, cu.full_name AS creator,
+      (SELECT avg(total_score)::numeric(4,2) FROM design_reviews r WHERE r.design_id = d.id) AS score
+    FROM designs d
+    LEFT JOIN users su ON su.id = d.seller_id
+    LEFT JOIN users du ON du.id = d.designer_id
+    LEFT JOIN users cu ON cu.id = d.creator_id
+    WHERE d.id IN (${sql.join(ids.map((x) => sql`${x}::uuid`), sql`, `)})
+  `)).rows as { id: string; seller: string | null; designer: string | null; creator: string | null; score: string | null }[] : [];
+  const mmap = new Map(meta.map((m) => [m.id, m]));
+
+  const out = rows.map((d) => {
+    const f = files.filter((x) => x.designId === d.id);
+    // Cover mặc định = mặt trước; nếu không có thì mockup, rồi file đầu
+    const front = f.find((x) => x.kind === "design_front");
+    const cover = front ?? f.find((x) => x.kind === "mockup") ?? f[0];
+    const main = front ?? cover;
+    const m = mmap.get(d.id);
+    // Các mặt/ảnh khác (khác cover) để hiện thumbnail dưới chân card
+    const KIND_LABEL: Record<string, string> = { design_front: "Front", design_back: "Back", mockup: "Mockup", video: "Video" };
+    const sides = f
+      .filter((x) => x.id !== cover?.id && x.kind !== "video")
+      .map((x) => ({ id: x.id, kind: x.kind, label: KIND_LABEL[x.kind] ?? x.kind, thumb: fileUrl(x.thumbKey) ?? fileUrl(x.previewKey), original: fileUrl(x.storageKey) }));
+    return {
+      ...d,
+      filesCount: f.length,
+      sellerName: m?.seller ?? null, designerName: m?.designer ?? null, creatorName: m?.creator ?? null,
+      avgScore: m?.score ? Number(m.score) : null,
+      dims: main?.width && main?.height ? `${main.width}x${main.height}` : null,
+      sizeMB: main ? (Number(main.sizeBytes) / 1048576).toFixed(2) : null,
+      downloadUrl: main ? fileUrl(main.storageKey) : null,
+      coverLabel: cover && cover.kind !== "design_front" ? (KIND_LABEL[cover.kind] ?? cover.kind) : null,
+      coverKind: cover && cover.kind !== "design_front" ? cover.kind : null,
+      cover: cover
+        ? { thumb: fileUrl(cover.thumbKey), preview: fileUrl(cover.previewKey), original: fileUrl(cover.storageKey), status: cover.processingStatus }
+        : null,
+      sides,
     };
-  }
-
-  // 3) Kết luận tự động
-  const notes: string[] = [];
-  if (!useR2) notes.push("useR2 = FALSE → using local disk. On Vercel the disk is temporary/read-only → images are lost. Set all 4 R2_* variables on Vercel.");
-  if (useR2 && !env.R2_PUBLIC_URL) notes.push("R2 is enabled but R2_PUBLIC_URL is NOT set → images are served via /api/files (slow, requires login). Set R2_PUBLIC_URL to the bucket's public domain.");
-  if (write.ok && !read.ok) notes.push("Write succeeded but READ failed → wrong read permission or wrong bucket/endpoint.");
-  if (!write.ok) notes.push("CANNOT write to storage → wrong R2 credentials or bucket doesn't exist. See write.error.");
-  if (latestFile && !(latestFile.realFileReadableFromStorage as { ok: boolean }).ok)
-    notes.push("The latest design file CANNOT be read from storage → the file didn't actually upload to R2 (usually the bucket CORS blocks browser PUT, or the presigned URL is wrong).");
-
-  return NextResponse.json({
-    ok: true,
-    useR2,
-    env,
-    selfTest: { key: testKey, write, read },
-    latestFile,
-    notes,
-    hint: "Send this entire JSON to the assistant for diagnosis.",
   });
+  let sellers = await cachedRoleUsers("seller");
+  let designers = await cachedRoleUsers("designer");
+  // Phạm vi own/team: dropdown chỉ hiện người trong phạm vi
+  if (scopeIds) {
+    const allow = new Set(scopeIds);
+    sellers = sellers.filter((u) => allow.has(u.id));
+    designers = designers.filter((u) => allow.has(u.id));
+  }
+  return NextResponse.json({ ok: true, designs: out, total, page, show, sellers, designers, scoped: !!scopeIds });
+}
+
+// Cache danh sách seller/designer (đổi rất ít) trong 60s → giảm 2 truy vấn DB mỗi lần load lưới.
+type RoleUser = { id: string; name: string };
+const roleCache: Record<string, { at: number; rows: RoleUser[] }> = {};
+async function cachedRoleUsers(role: "seller" | "designer"): Promise<RoleUser[]> {
+  const c = roleCache[role];
+  if (c && Date.now() - c.at < 60_000) return c.rows;
+  const { sql: s } = await import("drizzle-orm");
+  const rows = (await db.execute(s`SELECT id, full_name AS name FROM users WHERE role=${role} ORDER BY full_name`)).rows as RoleUser[];
+  roleCache[role] = { at: Date.now(), rows };
+  return rows;
+}
+
+// POST /api/designs — tạo design mới
+export async function POST(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
+  if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+
+  const b = await req.json().catch(() => null);
+  if (!b?.title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
+
+  const [d] = await db.insert(schema.designs).values({
+    title: String(b.title).trim(),
+    description: b.description,
+    points: [1, 2, 3].includes(b.points) ? b.points : 1,
+    platform: schema.designs.platform.enumValues.includes(b.platform) ? b.platform : null,
+    designerId: session.role === "designer" ? session.sub : b.designerId ?? null,
+    sellerId: session.role === "seller" ? session.sub : b.sellerId ?? null,
+    personalize: !!b.personalize,
+  }).returning();
+  return NextResponse.json({ ok: true, design: d });
 }

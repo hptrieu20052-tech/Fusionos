@@ -48,22 +48,12 @@ function reasonBadge(sg: Suggest, t: (k: string) => string) {
 type TtLabelUi = { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string };
 
 // Nút lấy label TikTok Shipping + hiện link R2 để gửi supplier. Tự quản state, không đụng list cha.
-function TiktokLabelButton({ orderId, initial, onFlash }: { orderId: string; initial?: TtLabelUi[] | null; onFlash: (m: string) => void }) {
-  const [labels, setLabels] = useState<TtLabelUi[]>(initial ?? []);
-  const [busy, setBusy] = useState(false);
-  const fetchLabel = async () => {
-    setBusy(true);
-    const j = await fetch("/api/tiktok/get-label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    setBusy(false);
-    if (j.ok) { setLabels(j.labels ?? []); onFlash(`✓ Got ${j.labels?.length ?? 0} label(s)`); }
-    else onFlash("✗ " + (j.reason ?? j.error ?? "Error"));
-  };
+function TiktokLabelButton({ initial, onFlash }: { initial?: TtLabelUi[] | null; onFlash: (m: string) => void }) {
+  const labels = initial ?? [];
   const copy = (v: string) => { navigator.clipboard?.writeText(v); onFlash("✓ Copied"); };
+  if (!labels.length) return null; // chưa có label (cron chưa lấy được) → không hiện gì; bỏ nút bấm tay
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      <button onClick={fetchLabel} disabled={busy} style={{ background: "#111", color: "#fff", border: 0, borderRadius: 8, padding: "3px 9px", fontSize: 11.5, fontWeight: 800, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
-        {busy ? "…" : labels.length ? "Refresh label" : "Get TikTok label"}
-      </button>
       {labels.map((l) => (
         <span key={l.packageId} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, background: "#EAF3EA", border: "1px solid #BFE0BF", borderRadius: 8, padding: "2px 7px" }}>
           {l.url ? <a href={l.url} target="_blank" rel="noreferrer" style={{ color: "#2E7D46", fontWeight: 700, textDecoration: "none" }}>Label PDF ↗</a> : <span style={{ color: "var(--muted)" }}>label (no url)</span>}
@@ -714,12 +704,6 @@ function ManualTracking({ orderId, platform, ff, fulfillerId, fulfillers, flash,
         <button onClick={() => setOpen(true)} style={{ ...btnGhost, fontSize: 11.5, flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
           <IconPin width={12} height={12} /> {ff?.trackingNumber ? t("o.editTracking") : t("o.addTracking")}
         </button>
-        {platform === "etsy" && ff?.trackingNumber && (
-          <button onClick={pushEtsy} disabled={pushing} title="Send this tracking to Etsy (marks the order shipped & notifies the buyer)"
-            style={{ ...btnGhost, fontSize: 11.5, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, borderColor: "#CDE3FA", color: "var(--blue)", whiteSpace: "nowrap" }}>
-            <IconSend width={12} height={12} /> {pushing ? "\u2026" : "Push \u2192 Etsy"}
-          </button>
-        )}
       </div>
     );
   }
@@ -1041,7 +1025,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                     : null
                 )}
                 {o.platform === "tiktok" && o.shipping_type === "TIKTOK" && (
-                  <TiktokLabelButton orderId={o.id} initial={o.tiktok_labels} onFlash={flash} />
+                  <TiktokLabelButton initial={o.tiktok_labels} onFlash={flash} />
                 )}
               </div>
               {/* Người nhận + địa chỉ */}
@@ -1270,7 +1254,6 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
   reviewLine?: { product: string; variant: string | null; sku: string; qty: number } | null;
 }) {
   const { t } = useLang();
-  const [skuInput, setSkuInput] = useState("");
   const [sideIdx, setSideIdx] = useState(0); // mặt đang xem lớn (design nhiều mặt: photo book 24 trang, calendar 26 mặt)
   useEffect(() => { setSideIdx(0); }, [it.design_id]);
   const [busy, setBusy] = useState(false);
@@ -1280,6 +1263,18 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
     setBusy(false);
     if (j.ok) { flash(sku === null ? t("o.unassigned") : `${t("o.assigned")} #${j.design?.sku_code ?? sku}`); onSaved(); }
     else flash("✗ " + (j.error ?? "Error"));
+  };
+  // Ô DesignId sửa/dán trực tiếp + tự gán (khỏi bấm Assign, khỏi Delete trước khi đổi).
+  const assignedSku = it.design_id ? String(it.design_sku ?? "") : "";
+  const [val, setVal] = useState(assignedSku);
+  useEffect(() => { setVal(assignedSku); }, [assignedSku]);
+  const debRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const commitAssign = () => { if (debRef.current) clearTimeout(debRef.current); if (val && val !== assignedSku) assign(val); };
+  const onValChange = (raw: string) => {
+    const clean = raw.replace(/\D/g, "");
+    setVal(clean);
+    if (debRef.current) clearTimeout(debRef.current);
+    if (clean && clean !== assignedSku) debRef.current = setTimeout(() => assign(clean), 700); // dán/gõ xong ~0.7s tự gán
   };
   // Upload mockup thẳng vào ô ảnh của item (đơn CSV không có mockup)
   const mockRef = useRef<HTMLInputElement>(null);
@@ -1360,17 +1355,13 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
       <div className="o2-assigncol">
         <div className="ig">
           <span className="ig-l">DesignId</span>
-          {it.design_id ? (
-            <input value={String(it.design_sku ?? "")} readOnly className="ig-in" />
-          ) : (
-            <input placeholder="132691" value={skuInput}
-              onChange={(e) => setSkuInput(e.target.value.replace(/\D/g, ""))}
-              onKeyDown={(e) => e.key === "Enter" && skuInput && assign(skuInput)} className="ig-in" />
-          )}
-          {it.design_id ? (
+          <input placeholder="132691" value={val} disabled={busy}
+            onChange={(e) => onValChange(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commitAssign(); }}
+            onBlur={commitAssign}
+            className="ig-in" />
+          {it.design_id && (
             <button onClick={() => assign(null)} disabled={busy} className="ig-btn danger" title={t("o.unassign")}><IconTrash width={14} height={14} /></button>
-          ) : (
-            <button onClick={() => skuInput && assign(skuInput)} disabled={busy || !skuInput} className="ig-btn">{t("o.assign")}</button>
           )}
         </div>
 
