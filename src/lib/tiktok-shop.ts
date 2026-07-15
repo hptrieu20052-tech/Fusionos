@@ -237,6 +237,16 @@ export async function ttGetPackageIdsForOrder(cfg: TtCfg, orderExtId: string): P
   return [];
 }
 
+// ===== Đẩy tracking Seller Shipping lên TikTok (mark shipped) =====
+// Endpoint đã xác nhận có quyền: POST /fulfillment/202309/orders/{id}/packages (đòi tracking_number).
+// provider_id lấy từ order detail (nếu có); rỗng thì bỏ, để TikTok tự nhận theo format tracking.
+export async function ttShipPackage(cfg: TtCfg, p: { orderId: string; orderLineItemIds: string[]; trackingNumber: string; providerId?: string }) {
+  const body: Record<string, unknown> = { tracking_number: p.trackingNumber };
+  if (p.orderLineItemIds.length) body.order_line_item_ids = p.orderLineItemIds;
+  if (p.providerId) body.shipping_provider_id = p.providerId;
+  return ttFetch(cfg, "POST", `/fulfillment/202309/orders/${p.orderId}/packages`, {}, body);
+}
+
 // ===== Token hợp lệ: tự refresh khi sắp hết hạn, lưu ngược vào store =====
 export async function ttGetValidCfg(storeId: string, cred: Record<string, string> | null): Promise<TtCfg> {
   let cfg = readTtCfg(cred);

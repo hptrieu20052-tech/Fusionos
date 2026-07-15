@@ -240,6 +240,8 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   trackingSyncedAt: timestamp("tracking_synced_at", { withTimezone: true }),
   // Thời điểm đã đẩy tracking NGƯỢC lên Etsy qua API (createReceiptShipment). null = chưa đẩy.
   etsyTrackingPushedAt: timestamp("etsy_tracking_pushed_at", { withTimezone: true }),
+  // Thời điểm đã đẩy tracking lên TikTok (Seller Shipping, ship package). null = chưa đẩy.
+  tiktokTrackingPushedAt: timestamp("tiktok_tracking_pushed_at", { withTimezone: true }),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_ff_order").on(t.orderId)]);

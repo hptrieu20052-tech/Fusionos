@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { getAdapter, type PushLine } from "@/lib/fulfillers";
 import { ensureWebhooks } from "@/lib/printify";
 import { fileUrl } from "@/lib/storage";
+import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -163,6 +164,20 @@ async function handlePush(req: NextRequest) {
     orderLabel = `${shop}-${order.externalId}`;
   }
 
+  // --- CHỈ đơn Ship-by-TikTok: lấy nhãn TikTok (R2) để gửi supplier (FlashShip link_label / Onos SBTT). ---
+  let ttLabelUrl: string | undefined, ttTracking: string | undefined, ttLabelWarn: string | undefined;
+  if (order.shippingType === "TIKTOK") {
+    const existing = (order.tiktokLabels as { url?: string | null; trackingNumber?: string }[] | null) ?? [];
+    let lbl = existing.find((l) => l?.url);
+    if (!lbl) {
+      const r = await fetchAndStoreTiktokLabels(order.id); // cần đơn đã Arrange (có package)
+      if (r.ok) lbl = r.labels.find((l) => l.url);
+      else ttLabelWarn = r.reason ?? r.error;
+    }
+    if (lbl) { ttLabelUrl = lbl.url ?? undefined; ttTracking = lbl.trackingNumber; }
+    else if (!ttLabelWarn) ttLabelWarn = "No TikTok label yet — arrange shipment first";
+  }
+
   // --- Gọi API fulfiller qua adapter theo từng nhà ---
   const adapter = getAdapter(ff.name);
   let pushRes;
@@ -176,6 +191,7 @@ async function handlePush(req: NextRequest) {
         buyerFirst: order.buyerFirst, buyerLast: order.buyerLast,
         addr1: order.addr1, addr2: order.addr2, city: order.city,
         state: order.state, zip: order.zip, country: order.country,
+        labelUrl: ttLabelUrl, shippingTracking: ttTracking,
       },
       lines: pushLines,
     });
@@ -225,5 +241,5 @@ async function handlePush(req: NextRequest) {
     occurredAt: new Date().toISOString().slice(0, 10),
   });
 
-  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost: finalCost, simulated: pushRes.simulated, reason: pushRes.reason });
+  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost: finalCost, simulated: pushRes.simulated, reason: pushRes.reason, ttLabelWarn });
 }

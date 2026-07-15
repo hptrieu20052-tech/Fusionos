@@ -48,19 +48,31 @@ function reasonBadge(sg: Suggest, t: (k: string) => string) {
 type TtLabelUi = { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string };
 
 // Nút lấy label TikTok Shipping + hiện link R2 để gửi supplier. Tự quản state, không đụng list cha.
-function TiktokLabelButton({ initial, onFlash }: { initial?: TtLabelUi[] | null; onFlash: (m: string) => void }) {
-  const labels = initial ?? [];
+function TiktokLabelButton({ orderId, initial, onFlash }: { orderId: string; initial?: TtLabelUi[] | null; onFlash: (m: string) => void }) {
+  const [labels, setLabels] = useState<TtLabelUi[]>(initial ?? []);
+  const [busy, setBusy] = useState(false);
+  const fetchLabel = async () => {
+    setBusy(true);
+    const j = await fetch("/api/tiktok/get-label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setBusy(false);
+    if (j.ok) { setLabels(j.labels ?? []); onFlash(`✓ Got ${j.labels?.length ?? 0} label(s)`); }
+    else onFlash("✗ " + (j.reason ?? j.error ?? "Error"));
+  };
   const copy = (v: string) => { navigator.clipboard?.writeText(v); onFlash("✓ Copied"); };
-  if (!labels.length) return null; // chưa có label (cron chưa lấy được) → không hiện gì; bỏ nút bấm tay
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      {labels.map((l) => (
+      {labels.length ? labels.map((l) => (
         <span key={l.packageId} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, background: "#EAF3EA", border: "1px solid #BFE0BF", borderRadius: 8, padding: "2px 7px" }}>
           {l.url ? <a href={l.url} target="_blank" rel="noreferrer" style={{ color: "#2E7D46", fontWeight: 700, textDecoration: "none" }}>Label PDF ↗</a> : <span style={{ color: "var(--muted)" }}>label (no url)</span>}
           {l.url && <button onClick={() => copy(l.url!)} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 11 }}>copy</button>}
           {l.trackingNumber && <span style={{ color: "var(--muted)" }}>#{l.trackingNumber}</span>}
+          <button onClick={fetchLabel} disabled={busy} title="Refresh label" style={{ border: 0, background: "transparent", cursor: "pointer", color: "var(--muted)", fontSize: 12 }}>{busy ? "…" : "↻"}</button>
         </span>
-      ))}
+      )) : (
+        <button onClick={fetchLabel} disabled={busy} style={{ background: "#111", color: "#fff", border: 0, borderRadius: 8, padding: "3px 9px", fontSize: 11.5, fontWeight: 800, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
+          {busy ? "…" : "Get label"}
+        </button>
+      )}
     </span>
   );
 }
@@ -983,6 +995,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
     setBusy(false);
     if (j.ok) {
       if (j.simulated) flash(t("o.simPushWarn") + (j.reason ?? t("o.checkFfConfig")));
+      else if (j.ttLabelWarn) flash("⚠ Pushed, but TikTok label: " + j.ttLabelWarn);
       else flash(t("o.pushedReal"));
       reload();
     } else flash("✗ " + (j.error ?? "Error"));
@@ -1025,7 +1038,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                     : null
                 )}
                 {o.platform === "tiktok" && o.shipping_type === "TIKTOK" && (
-                  <TiktokLabelButton initial={o.tiktok_labels} onFlash={flash} />
+                  <TiktokLabelButton orderId={o.id} initial={o.tiktok_labels} onFlash={flash} />
                 )}
               </div>
               {/* Người nhận + địa chỉ */}

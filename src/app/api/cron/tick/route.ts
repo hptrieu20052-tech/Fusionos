@@ -5,6 +5,7 @@ import { getValidCfg, readEtsyCfg, fetchReceipts, normalizeReceipt } from "@/lib
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
 import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/lib/tiktok-shop";
 import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
+import { pushTiktokTrackingForOrder } from "@/lib/tiktok-tracking";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
@@ -95,6 +96,27 @@ async function tick(req: NextRequest) {
     } catch (e) { ttLabelSweep = { tried: 0, got: 0, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
+  // ---- 1d. TikTok Seller Shipping: tự đẩy tracking (supplier trả về) lên TikTok. Idempotent qua tiktok_tracking_pushed_at. ----
+  let ttTrackSweep: { tried: number; pushed: number; error?: string } = { tried: 0, pushed: 0 };
+  if (Date.now() < deadline) {
+    try {
+      const rows = (await db.execute(sql`
+        SELECT DISTINCT o.id FROM orders o
+        JOIN fulfillment_orders fo ON fo.order_id = o.id
+        WHERE o.platform='tiktok' AND o.shipping_type='SELLER'
+          AND fo.tracking_number IS NOT NULL AND fo.tiktok_tracking_pushed_at IS NULL
+          AND o.status NOT IN ('cancel','trash')
+          AND o.ordered_at > now() - interval '20 days'
+        LIMIT 10
+      `)).rows as { id: string }[];
+      for (const r of rows) {
+        if (Date.now() > deadline) break;
+        ttTrackSweep.tried++;
+        try { const res = await pushTiktokTrackingForOrder(r.id); ttTrackSweep.pushed += res.pushed; } catch { /* skip */ }
+      }
+    } catch (e) { ttTrackSweep = { tried: 0, pushed: 0, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+  }
+
   // ---- 2. Printway poll backup (throttle 10' nội bộ — gọi dày cũng không spam API) ----
   let printway: unknown = null;
   if (Date.now() < deadline) {
@@ -117,7 +139,7 @@ async function tick(req: NextRequest) {
     catch (e) { onosWem = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, printway, printify, onosWem };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, ttTrackSweep, printway, printify, onosWem };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }

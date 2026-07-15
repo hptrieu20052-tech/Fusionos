@@ -46,6 +46,8 @@ export type PushCtx = {
     addr1: string | null; addr2: string | null; city: string | null;
     state: string | null; zip: string | null; country: string | null;
     phone?: string | null; email?: string | null;
+    /** CHỈ đơn Ship-by-TikTok: link nhãn TikTok (R2) + tracking → gửi supplier. Đơn khác luôn undefined. */
+    labelUrl?: string | null; shippingTracking?: string | null;
   };
   lines: PushLine[];
 };
@@ -147,6 +149,7 @@ function flashshipAdapter(): FulfillerAdapter {
         buyer_zip: o.zip || "",
         buyer_country_code: toISO2(o.country || "United States"),
         shipment,
+        link_label: o.labelUrl || undefined, // CHỈ đơn Ship-by-TikTok có; đơn khác undefined → không đổi hành vi
         products,
       });
       return {
@@ -518,12 +521,15 @@ function onosAdapter(): FulfillerAdapter {
         return it;
       });
 
-      const method = ["ONOSEXPRESS", "SBTT", "COD"].includes(cred.shippingMethod) ? cred.shippingMethod as "ONOSEXPRESS" | "SBTT" | "COD" : "ONOSEXPRESS";
+      // Đơn Ship-by-TikTok (có label) → SBTT + tracking.link_print = link nhãn TikTok. Đơn khác giữ nguyên như cũ.
+      const isTtLabel = !!o.labelUrl;
+      const method = isTtLabel ? "SBTT" as const : (["ONOSEXPRESS", "SBTT", "COD"].includes(cred.shippingMethod) ? cred.shippingMethod as "ONOSEXPRESS" | "SBTT" | "COD" : "ONOSEXPRESS");
       const res = await createOnosOrder({ apiKey, endpoint: ctx.fulfiller.apiEndpoint }, {
         order_id: orderExtNumber(o),
         identifier: cred.identifier || "FUSION",
         reference_id: o.externalId,
         items,
+        ...(isTtLabel ? { inc_active_service: true, tracking: { tracking_number: o.shippingTracking || "", carrier: "USPS", link_print: o.labelUrl || undefined } } : {}),
         shipping_info: {
           full_name: [o.buyerFirst, o.buyerLast].filter(Boolean).join(" ") || "Customer",
           address_1: o.addr1 || "",
@@ -672,7 +678,8 @@ function compassupAdapter(): FulfillerAdapter {
       const items: CompassupItem[] = ctx.lines.map((l) => {
         const ex = (l.extra ?? {}) as Record<string, unknown>;
         const weightEach = Number(ex.weight ?? 0) || 0.1; // fallback 0.1kg nếu SP không có weight
-        const isCustom = ex.custom === true || (Array.isArray(ex.attachments) && (ex.attachments as unknown[]).length > 0);
+        // Có design gán vào (designSides) = coi như custom → đính link file design cho nhà in.
+        const isCustom = ex.custom === true || (Array.isArray(ex.attachments) && (ex.attachments as unknown[]).length > 0) || (l.designSides?.length ?? 0) > 0;
         const it: CompassupItem = {
           product_id: String(l.fulfillerProductId ?? ex.product_id ?? ""),
           sku_id: l.fulfillerSku,
