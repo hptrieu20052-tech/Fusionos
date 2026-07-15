@@ -280,11 +280,12 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     setTtBusy(false);
     if (j.ok) { flash("✓ TikTok app saved — now Copy connect link and open it in the shop’s browser profile"); setTtSaved(true); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
-  // Link authorize tĩnh (TikTok không PKCE) → copy dán vào browser AdsPower của shop là đúng bài
+  // Link authorize tĩnh (TikTok không PKCE) → copy dán vào browser AdsPower của shop là đúng bài.
+  // state PHẢI có tiền tố "sto_" để theyourlist forward code về os.fusiondn.com/api/tiktokshops/auth.
   const ttConnectLink = () => {
     const base = ttAuthLink.trim() || store.tiktok?.authLink || "";
     if (!base) { flash("✗ Save the Authorization link first"); return; }
-    const link = `${base}${base.includes("?") ? "&" : "?"}state=${store.id}`;
+    const link = `${base}${base.includes("?") ? "&" : "?"}state=sto_${store.id}`;
     navigator.clipboard?.writeText(link);
     flash("✓ Connect link copied — paste it into the shop's AdsPower browser and Authorize");
   };
