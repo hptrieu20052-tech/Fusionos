@@ -67,6 +67,15 @@ export async function GET(req: NextRequest) {
           connected: !!cred.etsy_refresh_token && !!cred.etsy_shop_id,
           shopId: cred.etsy_shop_id || "",
         },
+        // TikTok: đã có refresh_token + shop_id = đã kết nối (dùng app riêng HOẶC app theyourlist)
+        tiktok: {
+          hasApp: !!cred.tiktok_app_key || !!cred.tiktok_auth_link,
+          appKey: cred.tiktok_app_key || "",
+          authLink: cred.tiktok_auth_link || "",
+          connected: !!cred.tiktok_access_token && !!cred.tiktok_shop_id,
+          shopId: cred.tiktok_shop_id || "",
+          shopName: cred.tiktok_shop_name || "",
+        },
         sellerName: r.sellerName,
         // Số liệu shop public do extension đọc hộ (sales / rating / reviews / tuổi shop / còn sống)
         shop: (() => {
