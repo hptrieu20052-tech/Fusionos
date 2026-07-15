@@ -29,18 +29,22 @@ async function handle(code: string, rawState: string, origin: string, wantJson: 
 
   if (!code || !storeId) return back("missing code/state");
 
-  const [st] = await db.select().from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
-  if (!st) return back("store doesn't exist");
-  const cred = st.apiCredentials as Record<string, string> | null;
-  const cfg = readTtCfg(cred);
-
-  // App riêng của store (nếu có) ưu tiên; else app PARTNER theyourlist từ env.
-  const partner = theyourlistApp();
-  const appKey = cfg.appKey || partner?.appKey || "";
-  const appSecret = cfg.appSecret || partner?.appSecret || "";
-  if (!appKey || !appSecret) return back("No TikTok app key: set THEYOURLIST_APP_KEY/SECRET env");
-
+  // BỌC TOÀN BỘ trong try để KHÔNG BAO GIỜ trả HTTP 500 trần — theyourlist cần response sạch.
   try {
+    // storeId phải là UUID hợp lệ, nếu không db.select ném lỗi (đó là nguồn 500 khi test bằng "abc")
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(storeId)) {
+      return back(`bad store id in state: ${storeId}`);
+    }
+    const [st] = await db.select().from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
+    if (!st) return back("store doesn't exist");
+    const cred = st.apiCredentials as Record<string, string> | null;
+    const cfg = readTtCfg(cred);
+
+    const partner = theyourlistApp();
+    const appKey = cfg.appKey || partner?.appKey || "";
+    const appSecret = cfg.appSecret || partner?.appSecret || "";
+    if (!appKey || !appSecret) return back("No TikTok app key: set THEYOURLIST_APP_KEY/SECRET env");
+
     const t = await ttExchangeToken(appKey, appSecret, { authCode: code });
     let next = writeTtCfg(cred, cfg.appKey ? t : { ...t, appKey, appSecret });
     const shops = await ttGetAuthorizedShops(readTtCfg(next));
@@ -48,6 +52,7 @@ async function handle(code: string, rawState: string, origin: string, wantJson: 
     await db.update(schema.stores).set({ apiCredentials: next, connectMethod: "api" }).where(eq(schema.stores.id, storeId));
     return back(shops[0]?.name ? `connected: ${shops[0].name}` : "connected", true);
   } catch (e) {
+    console.error("[tiktokshops/auth] error:", e);
     return back(String((e as Error)?.message ?? e).slice(0, 180));
   }
 }
