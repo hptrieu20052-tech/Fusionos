@@ -12,7 +12,7 @@ type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku:
 const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
 
 
-export function SettingsClient({ canEdit }: { canEdit: boolean }) {
+export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
   const { t } = useLang();
   const confirm = useConfirm();
   const [tab, setTab] = useState<"api" | "sku">("api");
@@ -111,14 +111,14 @@ export function SettingsClient({ canEdit }: { canEdit: boolean }) {
                 {f.shopId && <span className="badge b-ship">Shop ID: {f.shopId}</span>}
                 {f.identifier && <span className="badge b-ship">ID: {f.identifier}</span>}
                 {f.hasWebhookSecret ? <span className="badge b-ship">{t("s.hasWebhook")}</span> : <span className="badge b-mut">{t("s.noWebhook")}</span>}
-                {canEdit && <button type="button" onClick={() => setEditOpen((p) => ({ ...p, [f.id]: !p[f.id] }))}
+                {isAdmin && <button type="button" onClick={() => setEditOpen((p) => ({ ...p, [f.id]: !p[f.id] }))}
                   style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 9, padding: "5px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--blue)" }}>
                   {editOpen[f.id] ? t("set.close") : <><IconPencil width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("c.edit")}</>}
                 </button>}
-                {canEdit && <button type="button" onClick={() => delFf(f.id, f.name)} title={t("set.deleteFulfiller")}
+                {isAdmin && <button type="button" onClick={() => delFf(f.id, f.name)} title={t("set.deleteFulfiller")}
                   style={{ background: "var(--card)", border: "1px solid #F3C7C7", borderRadius: 9, padding: "5px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--red)" }}><IconTrash width={14} height={14} /></button>}
               </div>
-              {canEdit && editOpen[f.id] && (() => {
+              {isAdmin && editOpen[f.id] && (() => {
                 const isMerchize = f.name.toLowerCase().includes("merchize");
                 const isPrintway = f.name.toLowerCase().includes("printway");
                 const isOnos = f.name.toLowerCase().includes("onos");
@@ -170,7 +170,7 @@ export function SettingsClient({ canEdit }: { canEdit: boolean }) {
             </div>
           ))}
         </div>
-        {canEdit && (
+        {isAdmin && (
           <form onSubmit={addFf} style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
             <b style={{ fontSize: 12.5, alignSelf: "center" }}>{t("s.addFulfiller")}</b>
             <input required placeholder={t("s.fulfillerNamePh")} value={nf.name} onChange={(e) => setNf({ ...nf, name: e.target.value })} style={{ ...inp, minWidth: 170 }} />

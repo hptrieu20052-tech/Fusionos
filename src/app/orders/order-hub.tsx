@@ -1043,7 +1043,9 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
               </div>
               {/* Người nhận + địa chỉ */}
               {([cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")) && (
-                <div className="o2-buyer">{[cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")}</div>
+                <div className="o2-buyer">{[cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")}
+                  <button className="icon-btn" title="Copy name" onClick={() => copyText([cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" "))} style={{ marginLeft: 6, verticalAlign: "-2px" }}><IconCopy width={12} height={12} /></button>
+                </div>
               )}
               <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ") || t("o.noAddress")}</span></div>
               {/* Tài chính đơn */}
@@ -1112,6 +1114,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                             <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.trackingNumber}</span>
                             <button className="icon-btn" title={t("o.copyTrack")} onClick={() => copyText(f.trackingNumber!)}><IconCopy width={12} height={12} /></button>
                             <span style={{ fontSize: 11, color: "var(--muted)" }}>· {f.trackingCarrier || t("o.carrier")}</span>
+                            {f.trackingCarrier && <button className="icon-btn" title="Copy carrier" onClick={() => copyText(f.trackingCarrier!)}><IconCopy width={12} height={12} /></button>}
                           </div>
                           <a href={f.trackingUrl || trackingUrl(f.trackingCarrier, f.trackingNumber)} target="_blank" rel="noreferrer" style={{ ...btnGhost, textDecoration: "none", fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}>{t("o.trackLink")} ↗</a>
                         </div>

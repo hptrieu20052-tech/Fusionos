@@ -164,18 +164,20 @@ async function handlePush(req: NextRequest) {
     orderLabel = `${shop}-${order.externalId}`;
   }
 
-  // --- CHỈ đơn Ship-by-TikTok: lấy nhãn TikTok (R2) để gửi supplier (FlashShip link_label / Onos SBTT). ---
-  let ttLabelUrl: string | undefined, ttTracking: string | undefined, ttLabelWarn: string | undefined;
+  // --- CHỈ đơn Ship-by-TikTok: BẮT BUỘC có nhãn TikTok mới cho đẩy (không có → chặn, tránh supplier ship thiếu nhãn). ---
+  let ttLabelUrl: string | undefined, ttTracking: string | undefined;
   if (order.shippingType === "TIKTOK") {
     const existing = (order.tiktokLabels as { url?: string | null; trackingNumber?: string }[] | null) ?? [];
     let lbl = existing.find((l) => l?.url);
     if (!lbl) {
       const r = await fetchAndStoreTiktokLabels(order.id); // cần đơn đã Arrange (có package)
       if (r.ok) lbl = r.labels.find((l) => l.url);
-      else ttLabelWarn = r.reason ?? r.error;
     }
     if (lbl) { ttLabelUrl = lbl.url ?? undefined; ttTracking = lbl.trackingNumber; }
-    else if (!ttLabelWarn) ttLabelWarn = "No TikTok label yet — arrange shipment first";
+    else return NextResponse.json({
+      ok: false,
+      error: "TikTok Shipping order has no shipping label yet — arrange shipment on TikTok first, then push.",
+    }, { status: 400 });
   }
 
   // --- Gọi API fulfiller qua adapter theo từng nhà ---
@@ -241,5 +243,5 @@ async function handlePush(req: NextRequest) {
     occurredAt: new Date().toISOString().slice(0, 10),
   });
 
-  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost: finalCost, simulated: pushRes.simulated, reason: pushRes.reason, ttLabelWarn });
+  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost: finalCost, simulated: pushRes.simulated, reason: pushRes.reason });
 }
