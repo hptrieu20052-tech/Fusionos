@@ -51,6 +51,16 @@ export async function GET(req: NextRequest) {
       ttProbe(cfg, "GET", "/logistics/202309/warehouses", {}),
     ]);
 
+    // PROBE WRITE (AN TOÀN — body rỗng/thiếu field): chỉ để LỘ QUYỀN.
+    //  - code=40006 "no schema found" → app KHÔNG có quyền lệnh này (không dùng được qua theyourlist).
+    //  - code khác (thiếu tham số / validation) → app CÓ quyền, chỉ là body chưa đủ → dựng thật được.
+    // KHÔNG tạo shipment, KHÔNG bị charge vì body cố tình không hợp lệ.
+    const writeProbes = await Promise.all([
+      ttProbe(cfg, "POST", `/fulfillment/202309/orders/${ext}/packages`, {}, {}),
+      ttProbe(cfg, "POST", "/fulfillment/202309/packages/rts", {}, {}),
+      ttProbe(cfg, "POST", `/fulfillment/202309/orders/${ext}/packages/deliver`, {}, {}),
+    ]);
+
     // ===== TEST THẬT CHUỖI GET-LABEL =====
     // 1) tìm package của đơn; 2) nếu có package → thử lấy shipping_document (label).
     let packages: unknown = null, packagesError: string | null = null;
@@ -75,7 +85,8 @@ export async function GET(req: NextRequest) {
       packages, packagesError, labelTest,
       providers,
       capabilities,
-      hint: "Chạy trên đơn ĐÃ Arrange shipment để thấy package + labelTest.doc.doc_url.",
+      writeProbes,
+      hint: "writeProbes: code=40006 = app KHÔNG có quyền Arrange (WRITE). Code khác (thiếu field) = CÓ quyền.",
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
