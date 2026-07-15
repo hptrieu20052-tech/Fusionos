@@ -214,6 +214,29 @@ export async function ttGetShippingProviders(cfg: TtCfg): Promise<{ ok: boolean;
   return { ok: false, errors };
 }
 
+// Lấy package_id của ĐÚNG 1 đơn. Order Detail.packages có sau khi Arrange; nếu trống thì
+// search (trả cả shop) rồi lọc theo orders[].id === orderExtId. Trả [{ id, trackingNumber }].
+export async function ttGetPackageIdsForOrder(cfg: TtCfg, orderExtId: string): Promise<{ id: string; trackingNumber?: string }[]> {
+  // 1) Order Detail
+  try {
+    const orders = await ttGetOrderDetail(cfg, [orderExtId]);
+    const pkgs = (orders[0]?.packages as Record<string, unknown>[] | undefined) ?? [];
+    const ids = pkgs.map((p) => ({ id: String(p.id ?? p.package_id ?? ""), trackingNumber: p.tracking_number ? String(p.tracking_number) : undefined })).filter((x) => x.id);
+    if (ids.length) return ids;
+  } catch { /* fallback bên dưới */ }
+  // 2) Search toàn shop → lọc theo order id (quét tối đa vài trang gần nhất)
+  let pageToken = "";
+  for (let i = 0; i < 4; i++) {
+    const d = await ttFetch(cfg, "POST", "/fulfillment/202309/packages/search", { page_size: "50", ...(pageToken ? { page_token: pageToken } : {}) }, {});
+    const pkgs = (d?.packages as Record<string, unknown>[] | undefined) ?? [];
+    const hit = pkgs.filter((p) => Array.isArray(p.orders) && (p.orders as Record<string, unknown>[]).some((o) => String(o.id) === orderExtId));
+    if (hit.length) return hit.map((p) => ({ id: String(p.id), trackingNumber: p.tracking_number ? String(p.tracking_number) : undefined }));
+    pageToken = String(d?.next_page_token ?? "");
+    if (!pageToken) break;
+  }
+  return [];
+}
+
 // ===== Token hợp lệ: tự refresh khi sắp hết hạn, lưu ngược vào store =====
 export async function ttGetValidCfg(storeId: string, cred: Record<string, string> | null): Promise<TtCfg> {
   let cfg = readTtCfg(cred);

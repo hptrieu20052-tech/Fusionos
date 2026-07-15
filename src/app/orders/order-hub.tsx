@@ -45,11 +45,42 @@ function reasonBadge(sg: Suggest, t: (k: string) => string) {
   );
 }
 
+type TtLabelUi = { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string };
+
+// Nút lấy label TikTok Shipping + hiện link R2 để gửi supplier. Tự quản state, không đụng list cha.
+function TiktokLabelButton({ orderId, initial, onFlash }: { orderId: string; initial?: TtLabelUi[] | null; onFlash: (m: string) => void }) {
+  const [labels, setLabels] = useState<TtLabelUi[]>(initial ?? []);
+  const [busy, setBusy] = useState(false);
+  const fetchLabel = async () => {
+    setBusy(true);
+    const j = await fetch("/api/tiktok/get-label", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setBusy(false);
+    if (j.ok) { setLabels(j.labels ?? []); onFlash(`✓ Got ${j.labels?.length ?? 0} label(s)`); }
+    else onFlash("✗ " + (j.reason ?? j.error ?? "Error"));
+  };
+  const copy = (v: string) => { navigator.clipboard?.writeText(v); onFlash("✓ Copied"); };
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <button onClick={fetchLabel} disabled={busy} style={{ background: "#111", color: "#fff", border: 0, borderRadius: 8, padding: "3px 9px", fontSize: 11.5, fontWeight: 800, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
+        {busy ? "…" : labels.length ? "Refresh label" : "Get TikTok label"}
+      </button>
+      {labels.map((l) => (
+        <span key={l.packageId} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, background: "#EAF3EA", border: "1px solid #BFE0BF", borderRadius: 8, padding: "2px 7px" }}>
+          {l.url ? <a href={l.url} target="_blank" rel="noreferrer" style={{ color: "#2E7D46", fontWeight: 700, textDecoration: "none" }}>Label PDF ↗</a> : <span style={{ color: "var(--muted)" }}>label (no url)</span>}
+          {l.url && <button onClick={() => copy(l.url!)} style={{ border: 0, background: "transparent", cursor: "pointer", color: "#2E7D46", fontWeight: 700, fontSize: 11 }}>copy</button>}
+          {l.trackingNumber && <span style={{ color: "var(--muted)" }}>#{l.trackingNumber}</span>}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 type Order = {
   id: string; external_id: string; platform: string; status: string; ordered_at: string;
   buyer_first: string | null; buyer_last: string | null;
   addr1: string | null; addr2: string | null; city: string | null; state: string | null; zip: string | null; country: string;
   total: string; platform_fee: string; seller_name: string | null; store_name: string | null; order_label: string | null; note: string | null; shipping_type?: string | null;
+  tiktok_labels?: { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string }[] | null;
   items: Item[];
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
@@ -1004,10 +1035,13 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                 {o.store_name && <span className="o2-chip">{o.store_name}</span>}
                 {o.platform === "tiktok" && o.shipping_type && (
                   o.shipping_type === "TIKTOK"
-                    ? <span className="o2-chip" style={{ background: "#111", color: "#fff", fontWeight: 800 }} title="Fulfilled by TikTok — get the shipping label, then push to the supplier">{t("o.shipByTiktok")}</span>
+                    ? <span className="o2-chip" style={{ background: "#111", color: "#fff", fontWeight: 800 }} title="Fulfilled by TikTok — get the shipping label, then send it to the supplier">{t("o.shipByTiktok")}</span>
                     : o.shipping_type === "SELLER"
                     ? <span className="o2-chip" style={{ background: "#EAF3EA", color: "#2E7D46", fontWeight: 800, border: "1px solid #BFE0BF" }} title="Ship by Seller — you arrange shipping">{t("o.shipBySeller")}</span>
                     : null
+                )}
+                {o.platform === "tiktok" && o.shipping_type === "TIKTOK" && (
+                  <TiktokLabelButton orderId={o.id} initial={o.tiktok_labels} onFlash={flash} />
                 )}
               </div>
               {/* Người nhận + địa chỉ */}
