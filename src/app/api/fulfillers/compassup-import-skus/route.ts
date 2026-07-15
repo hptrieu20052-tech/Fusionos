@@ -82,12 +82,14 @@ export async function POST(req: NextRequest) {
       // upsert theo (internalSku, fulfillerId)
       await db.insert(schema.skuMappings).values({
         internalSku: r.internalSku.trim(), fulfillerId: ff.id,
+        productType: extra.product_name,
         fulfillerSku: r.skuId, fulfillerProduct: extra.product_name, fulfillerProductId: product.productId,
         variant: extra.attribute, baseCost: Number(r.baseCost).toFixed(2), shipCost: Number(r.shipCost ?? 0).toFixed(2),
         extraJson: extra,
       }).onConflictDoUpdate({
         target: [schema.skuMappings.internalSku, schema.skuMappings.fulfillerId],
         set: {
+          productType: extra.product_name,
           fulfillerSku: r.skuId, fulfillerProduct: extra.product_name, fulfillerProductId: product.productId,
           variant: extra.attribute, baseCost: Number(r.baseCost).toFixed(2), shipCost: Number(r.shipCost ?? 0).toFixed(2),
           extraJson: extra, active: true,
