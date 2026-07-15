@@ -61,10 +61,33 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         }
         const inTotal = num(o.total);
         if (inTotal > 0 && (!dup.total || Number(dup.total) === 0)) patch.total = (inTotal / fx).toFixed(2);
+        // MERGE ITEM: điền blank title/variant/price/image/personalization cho item.
+        // (đơn cũ import Excel/harvest thiếu → kéo lại từ API/extension là tự lành, KHÔNG đè dữ liệu đã có).
+        let itemUpdated = false;
+        const inItems = Array.isArray(o.items) ? o.items : [];
+        if (inItems.length) {
+          const exItems = await db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, dup.id));
+          const blank = (v: unknown) => !v || String(v).trim() === "" || String(v).startsWith("Etsy order ");
+          for (let i = 0; i < inItems.length; i++) {
+            const inIt = inItems[i];
+            const ex = (exItems.length === 1 && inItems.length === 1) ? exItems[0]
+              : ((s(inIt.listingId) && exItems.find((e) => e.etsyListingId && e.etsyListingId === s(inIt.listingId))) || exItems[i]);
+            if (!ex) continue;
+            const ip: Record<string, unknown> = {};
+            if (s(inIt.title) && blank(ex.productTitle)) ip.productTitle = s(inIt.title);
+            if (s(inIt.variant) && blank(ex.variant)) ip.variant = s(inIt.variant);
+            if (s(inIt.imageUrl) && blank(ex.imageUrl)) ip.imageUrl = s(inIt.imageUrl);
+            if (s(inIt.personalization) && blank(ex.personalization)) ip.personalization = s(inIt.personalization);
+            if (s(inIt.listingId) && !ex.etsyListingId) ip.etsyListingId = s(inIt.listingId);
+            const inPrice = num(inIt.price);
+            if (inPrice > 0 && (!ex.unitPrice || Number(ex.unitPrice) === 0)) ip.unitPrice = (inPrice / fx).toFixed(2);
+            if (Object.keys(ip).length) { await db.update(schema.orderItems).set(ip).where(eq(schema.orderItems.id, ex.id)); itemUpdated = true; }
+          }
+        }
         if (Object.keys(patch).length) {
           await db.update(schema.orders).set(patch).where(eq(schema.orders.id, dup.id));
           updated++;
-        } else skipped++;
+        } else if (itemUpdated) { updated++; } else skipped++;
         continue;
       }
 
