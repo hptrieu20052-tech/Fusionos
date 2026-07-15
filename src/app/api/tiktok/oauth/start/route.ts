@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { readTtCfg } from "@/lib/tiktok-shop";
+import { readTtCfg, wrapTtState } from "@/lib/tiktok-shop";
 
 export const dynamic = "force-dynamic";
 
@@ -24,9 +24,12 @@ export async function GET(req: NextRequest) {
   const cfg = readTtCfg(cred);
   if (!authLink && !cfg.appKey) return NextResponse.json({ ok: false, error: "Save App Key + Auth link first" }, { status: 400 });
 
+  // state có tiền tố riêng của Fusion (mặc định "fso_") để theyourlist nhận diện & forward về
+  //   os.fusiondn.com/api/tiktokshops/auth. Bên theyourlist phải whitelist đúng tiền tố này.
+  const state = wrapTtState(storeId);
   // Ưu tiên Authorization link từ Partner Center (service_id); fallback dạng app_key
   const url = authLink
-    ? `${authLink}${authLink.includes("?") ? "&" : "?"}state=${storeId}`
-    : `https://services.tiktokshop.com/open/authorize?app_key=${encodeURIComponent(cfg.appKey)}&state=${storeId}`;
+    ? `${authLink}${authLink.includes("?") ? "&" : "?"}state=${state}`
+    : `https://services.tiktokshop.com/open/authorize?app_key=${encodeURIComponent(cfg.appKey)}&state=${state}`;
   return NextResponse.redirect(url);
 }

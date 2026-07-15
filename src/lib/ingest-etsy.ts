@@ -11,7 +11,7 @@ export type InItem = {
 export type InOrder = {
   externalId?: string; buyerFirst?: string; buyerLast?: string;
   addr1?: string; addr2?: string; city?: string; state?: string; zip?: string; country?: string;
-  total?: number; fee?: number; orderedAt?: string; note?: string; platformStatus?: string;
+  total?: number; fee?: number; orderedAt?: string; note?: string; platformStatus?: string; shippingType?: string;
   items?: InItem[];
 };
 export type IngestStore = { id: string; sellerId: string | null; fx: unknown; name: string };
@@ -80,6 +80,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         externalId: ext, platform: platform as never,
         storeId: store.id, sellerId: store.sellerId, source: source as never, status: "new",
         platformStatus: s(o.platformStatus),
+        shippingType: s(o.shippingType),
         buyerFirst: s(o.buyerFirst), buyerLast: s(o.buyerLast),
         addr1: s(o.addr1), addr2: s(o.addr2), city: s(o.city), state: s(o.state), zip: s(o.zip),
         country: s(o.country) ?? "United States",

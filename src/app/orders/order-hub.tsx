@@ -49,7 +49,7 @@ type Order = {
   id: string; external_id: string; platform: string; status: string; ordered_at: string;
   buyer_first: string | null; buyer_last: string | null;
   addr1: string | null; addr2: string | null; city: string | null; state: string | null; zip: string | null; country: string;
-  total: string; platform_fee: string; seller_name: string | null; store_name: string | null; order_label: string | null; note: string | null;
+  total: string; platform_fee: string; seller_name: string | null; store_name: string | null; order_label: string | null; note: string | null; shipping_type?: string | null;
   items: Item[];
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
@@ -1002,6 +1002,13 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                 </span>
                 <span className="o2-chip seller">{o.seller_name ?? "—"}</span>
                 {o.store_name && <span className="o2-chip">{o.store_name}</span>}
+                {o.platform === "tiktok" && o.shipping_type && (
+                  o.shipping_type === "TIKTOK"
+                    ? <span className="o2-chip" style={{ background: "#111", color: "#fff", fontWeight: 800 }} title="Fulfilled by TikTok — get the shipping label, then push to the supplier">{t("o.shipByTiktok")}</span>
+                    : o.shipping_type === "SELLER"
+                    ? <span className="o2-chip" style={{ background: "#EAF3EA", color: "#2E7D46", fontWeight: 800, border: "1px solid #BFE0BF" }} title="Ship by Seller — you arrange shipping">{t("o.shipBySeller")}</span>
+                    : null
+                )}
               </div>
               {/* Người nhận + địa chỉ */}
               {([cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")) && (

@@ -58,6 +58,25 @@ export function writeTtCfg(existing: Record<string, string> | null | undefined, 
  * (redirect auth.theyourlist.com) thay vì app riêng. Lấy từ env; token exchange + refresh
  * đều phải dùng đúng cặp key này.
  */
+/**
+ * Tiền tố `state` để theyourlist nhận diện đây là shop của FUSION (không lẫn với hệ thống cũ "sto_").
+ * theyourlist forward về Fusion khi state khớp tiền tố này. Đổi qua env nếu cần.
+ * (Bên theyourlist phải thêm nhánh: if (explode('_', $state)[0] == '<tiền tố>') → gửi về Fusion.)
+ */
+export const FUSION_STATE_PREFIX = (process.env.FUSION_TT_STATE_PREFIX?.trim() || "sto");
+
+/** Bọc storeId thành state gửi TikTok: "<prefix>_<storeId>". */
+export const wrapTtState = (storeId: string) => `${FUSION_STATE_PREFIX}_${storeId}`;
+
+/** Gỡ tiền tố về storeId (chấp nhận cả tiền tố Fusion mới lẫn "sto_" cũ để không vỡ đơn đang chạy). */
+export function unwrapTtState(state: string): string {
+  const s = (state ?? "").trim();
+  for (const pfx of [FUSION_STATE_PREFIX, "sto"]) {
+    if (s.startsWith(pfx + "_")) return s.slice(pfx.length + 1);
+  }
+  return s;
+}
+
 export function theyourlistApp(): { appKey: string; appSecret: string } | null {
   const appKey = process.env.THEYOURLIST_APP_KEY?.trim();
   const appSecret = process.env.THEYOURLIST_APP_SECRET?.trim();
@@ -205,6 +224,14 @@ export function ttNormalizeOrder(o: Record<string, unknown>) {
     total,
     note: s(o.buyer_message) ?? undefined,
     platformStatus: s(o.status) ?? undefined,
+    // Fulfillment type: "TIKTOK" = Ship by TikTok (get label) · "SELLER" = Ship by Seller.
+    // TikTok đặt tên field khác nhau theo version API → dò cả 3.
+    shippingType: ((): string | undefined => {
+      const raw = String(o.shipping_type ?? o.fulfillment_type ?? o.delivery_option_type ?? "").toUpperCase();
+      if (/TIKTOK|TT|PLATFORM|FBT|FULFILLED_BY_TIKTOK/.test(raw)) return "TIKTOK";
+      if (/SELLER|SELF|MERCHANT/.test(raw)) return "SELLER";
+      return raw || undefined;
+    })(),
     items: merged,
   };
 }

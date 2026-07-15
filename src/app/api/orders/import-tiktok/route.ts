@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
   type Grp = {
     ext: string; first: string; last: string; phone: string;
     addr1: string; addr2: string; city: string; state: string; zip: string; country: string;
-    total: number; status: string; note: string; lines: Line[];
+    total: number; status: string; note: string; shippingType: string | null; lines: Line[];
   };
   const groups = new Map<string, Grp>();
 
@@ -143,6 +143,13 @@ export async function POST(req: NextRequest) {
         country: pick(r, ["country"]) || "United States",
         total: money(pick(r, ["orderamount", "grandtotal"])),
         status: pick(r, ["orderstatus"]),
+        // Ship by TikTok vs Ship by Seller — cột "Fulfillment Type" trong file TikTok
+        shippingType: (() => {
+          const raw = (pick(r, ["fulfillmenttype", "shippingtype", "shippingprovidername", "deliveryoption"]) || "").toUpperCase();
+          if (/TIKTOK|TT|PLATFORM|FBT|FULFILLED BY TIKTOK/.test(raw)) return "TIKTOK";
+          if (/SELLER|SELF|MERCHANT|SHIP BY SELLER/.test(raw)) return "SELLER";
+          return raw || null;
+        })(),
         note: noteParts.join(" · "),
         lines: [],
       };
@@ -188,6 +195,7 @@ export async function POST(req: NextRequest) {
         externalId: g.ext, platform: "tiktok" as never,
         storeId, sellerId, source: "excel", status: st,
         platformStatus: g.status || null,
+        shippingType: g.shippingType || null,
         buyerFirst: g.first || null, buyerLast: g.last || null,
         addr1: g.addr1 || null, addr2: g.addr2 || null, city: g.city || null,
         state: g.state || null, zip: g.zip || null, country: g.country,

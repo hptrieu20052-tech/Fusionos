@@ -79,6 +79,8 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "o.buyer": { vi: "Guest", en: "Buyer" },
   "o.address": { vi: "Địa chỉ giao", en: "Shipping address" },
   "o.total": { vi: "Tổng", en: "Total" },
+  "o.shipByTiktok": { vi: "Ship by TikTok", en: "Ship by TikTok" },
+  "o.shipBySeller": { vi: "Ship by Seller", en: "Ship by Seller" },
   "o.fee": { vi: "Phí sàn", en: "Fee" },
   "o.afterFee": { vi: "Sau phí", en: "After fee" },
   "o.dup": { vi: "Nhân bản", en: "Duplicate" },

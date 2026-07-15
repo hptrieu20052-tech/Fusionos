@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { readTtCfg, writeTtCfg, ttExchangeToken, ttGetAuthorizedShops, theyourlistApp } from "@/lib/tiktok-shop";
+import { readTtCfg, writeTtCfg, ttExchangeToken, ttGetAuthorizedShops, theyourlistApp, unwrapTtState } from "@/lib/tiktok-shop";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -13,7 +13,8 @@ export const maxDuration = 60;
  */
 export async function GET(req: NextRequest) {
   const code = req.nextUrl.searchParams.get("code") ?? "";
-  const storeId = req.nextUrl.searchParams.get("state") ?? "";
+  const rawState = req.nextUrl.searchParams.get("state") ?? "";
+  const storeId = unwrapTtState(rawState); // gỡ tiền tố Fusion/legacy nếu có
   const back = (msg: string, ok = false) =>
     NextResponse.redirect(new URL(`/stores?tt=${ok ? "ok" : "err"}&m=${encodeURIComponent(msg)}`, req.nextUrl.origin));
   if (!code || !storeId) return back("missing code/state");

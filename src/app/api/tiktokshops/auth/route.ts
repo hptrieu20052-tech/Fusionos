@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { readTtCfg, writeTtCfg, ttExchangeToken, ttGetAuthorizedShops, theyourlistApp } from "@/lib/tiktok-shop";
+import { readTtCfg, writeTtCfg, ttExchangeToken, ttGetAuthorizedShops, theyourlistApp, unwrapTtState } from "@/lib/tiktok-shop";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -18,7 +18,9 @@ export const maxDuration = 60;
  * Hỗ trợ cả GET (redirect trực tiếp từ trình duyệt) lẫn POST (server theyourlist gọi).
  * Path này phải bypass Cloudflare Access (thêm vào allowlist nếu có).
  */
-async function handle(code: string, storeId: string, origin: string, wantJson: boolean) {
+async function handle(code: string, rawState: string, origin: string, wantJson: boolean) {
+  // theyourlist forward state NGUYÊN (fso_<storeId>) → gỡ tiền tố để lấy storeId thật
+  const storeId = unwrapTtState(rawState);
   const redirectBack = (msg: string, ok = false) =>
     NextResponse.redirect(new URL(`/stores?tt=${ok ? "ok" : "err"}&m=${encodeURIComponent(msg)}`, origin));
   const jsonBack = (msg: string, ok = false) =>
