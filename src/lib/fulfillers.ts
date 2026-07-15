@@ -1,4 +1,5 @@
 import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPrintAreas } from "@/lib/printify";
+import { createCompassupOrder, type CompassupCred, type CompassupItem } from "@/lib/compassup";
 import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
 import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, calcPrintwayPrice, type PwOrderItem } from "@/lib/printway-api";
 import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
@@ -25,6 +26,8 @@ export type PushLine = {
   variant?: string | null;
   /** Tên sản phẩm bên nhà fulfill (fulfiller_product) — ONOS cần attribute "product" */
   fulfillerProduct?: string | null;
+  /** ID sản phẩm bên nhà fulfill (Compassup product_id) */
+  fulfillerProductId?: string | null;
   price?: number; currency?: string;
   image?: string | null;
   designFront?: string | null; designBack?: string | null; designSleeve?: string | null; designHood?: string | null;
@@ -32,6 +35,8 @@ export type PushLine = {
   /** TẤT CẢ mặt design của card (design_front, book_cover, page_01.., month_01.., grid_01..) — Printify map theo tên vùng in thật */
   designSides?: { kind: string; url: string; w?: number; h?: number }[];
   pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null;
+  /** Dữ liệu riêng của nhà in (Compassup: {link, sup_site, seller_id, weight, sku_id, custom, attachments}) */
+  extra?: Record<string, unknown> | null;
 };
 export type PushCtx = {
   fulfiller: { id: string; name: string; apiEndpoint: string | null; credentials: unknown };
@@ -93,7 +98,7 @@ export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   flashship: flashshipAdapter(),
   onospod: onosAdapter(),
   onos: onosAdapter(),
-  compassup: makeAdapter("compassup", "Compassup"),
+  compassup: compassupAdapter(),
   gearment: makeAdapter("gearment", "Gearment"),
 };
 
@@ -628,6 +633,103 @@ export function slugifyFulfiller(name: string): string {
 export function getAdapter(name: string): FulfillerAdapter {
   const slug = slugifyFulfiller(name);
   return FULFILLER_ADAPTERS[slug] ?? makeAdapter(slug || "generic", name);
+}
+
+
+/**
+ * Adapter COMPASSUP THẬT — POST /openapi/1/orders.
+ *
+ * Nhà SOURCING/DROPSHIP trung gian: sản phẩm từ sup TQ (b2b_cn), Compassup gộp mọi item
+ * thành 1 đơn = 1 tracking. KHÔNG phải POD → không design (trừ item custom).
+ *
+ * credentials = {
+ *   bearerToken, tenant, restKey, username,   // auth + ký sign
+ *   accountId,                                 // account_id (shop bên Compassup)
+ *   warehouseId,                               // warehouse_id (cố định)
+ *   goodType?: "normal", transport?: "fast",   // services (mặc định normal/fast)
+ *   shippingType?: "seller",                   // seller | platform
+ *   shippingFrom?: "CN",
+ * }
+ * lines[].fulfillerSku      = sku_id Compassup
+ * lines[].fulfillerProductId = product_id
+ * lines[].extra             = { link, sup_site, seller_id, weight, image_link, declaration_title, custom?, attachments? }
+ */
+function compassupAdapter(): FulfillerAdapter {
+  return {
+    slug: "compassup", label: "Compassup",
+    async push(ctx) {
+      const cr = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
+      const token = cr.bearerToken || cr.apiKey || cr.accessToken;
+      if (!token || !cr.tenant || !cr.restKey || !ctx.fulfiller.apiEndpoint) return simulate("compassup");
+
+      const cred: CompassupCred = {
+        bearerToken: token, tenant: cr.tenant, restKey: cr.restKey,
+        endpoint: ctx.fulfiller.apiEndpoint, username: cr.username || cr.tenant,
+      };
+      const o = ctx.order;
+      const num = orderExtNumber(o);
+
+      const items: CompassupItem[] = ctx.lines.map((l) => {
+        const ex = (l.extra ?? {}) as Record<string, unknown>;
+        const weightEach = Number(ex.weight ?? 0) || 0.1; // fallback 0.1kg nếu SP không có weight
+        const isCustom = ex.custom === true || (Array.isArray(ex.attachments) && (ex.attachments as unknown[]).length > 0);
+        const it: CompassupItem = {
+          product_id: String(l.fulfillerProductId ?? ex.product_id ?? ""),
+          sku_id: l.fulfillerSku,
+          product_name: String(ex.product_name ?? l.fulfillerProduct ?? l.internalSku ?? ""),
+          declaration_title: String(ex.declaration_title ?? ex.product_name ?? l.fulfillerProduct ?? ""),
+          quantity: l.qty,
+          weight: Math.round(weightEach * l.qty * 1000) / 1000,
+          attribute: String(ex.attribute ?? l.variant ?? ""),
+          image_link: String(ex.image_link ?? l.image ?? ""),
+          link: String(ex.link ?? ""),
+          sup_site: String(ex.sup_site ?? "b2b_cn"),
+          seller_id: String(ex.seller_id ?? ""),
+          state: String(ex.state ?? "confirmed"),
+          warehouse_id: String(ex.warehouse_id ?? cr.warehouseId ?? ""),
+        };
+        // Đơn CUSTOM: gắn type + attachments (link file design bên mình)
+        if (isCustom) {
+          it.type = "custom";
+          const att = (Array.isArray(ex.attachments) ? ex.attachments : []) as { src: string; type?: string }[];
+          it.attachments = att.map((a) => ({ src: String(a.src), type: a.type || "link" }));
+          // Nếu chưa cấp attachments nhưng có designSides → dùng chúng
+          if (!it.attachments.length && l.designSides?.length) {
+            it.attachments = l.designSides.map((d) => ({ src: d.url, type: "link" }));
+          }
+        }
+        return it;
+      });
+
+      const totalWeight = Math.round(items.reduce((a, i) => a + i.weight, 0) * 1000) / 1000;
+
+      const res = await createCompassupOrder(cred, {
+        platform: (cr.platform || detectPlatform(o.orderLabel) || "etsy"),
+        account_id: cr.accountId || cr.account_id || "",
+        shipping_country: toISO2(o.country) || "US",
+        shipping_from: cr.shippingFrom || "CN",
+        shipping_name: [o.buyerFirst, o.buyerLast].filter(Boolean).join(" ") || "Customer",
+        shipping_phone: o.phone || "0000000000",
+        shipping_address: [o.addr1, o.addr2].filter(Boolean).join(", "),
+        shipping_city: o.city || "",
+        shipping_state: o.state || "",
+        shipping_zipcode: o.zip || "",
+        own_code: num,
+        items,
+        shipping_type: cr.shippingType || "seller",
+        weight_before: totalWeight || 0.1,
+        services: { good_type: cr.goodType || "normal", transport: cr.transport || "fast" },
+        certificate_type: "", certificate_code: "",
+      });
+      return { externalFfId: res.orderId, simulated: false, raw: res.raw };
+    },
+  };
+}
+
+/** Đoán platform từ orderLabel (STORE-<id>): số đơn TikTok toàn số dài, Etsy có tiền tố cửa hàng. */
+function detectPlatform(label?: string | null): string | null {
+  if (!label) return null;
+  return /tiktok/i.test(label) ? "tiktok" : /etsy/i.test(label) ? "etsy" : null;
 }
 
 /**

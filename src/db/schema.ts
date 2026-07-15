@@ -182,6 +182,8 @@ export const fulfillers = pgTable("fulfillers", {
   tokenExpiresAt: timestamp("token_expires_at", { withTimezone: true }),
   autoPush: boolean("auto_push").notNull().default(false),
   safeMode: boolean("safe_mode").notNull().default(false),
+  // Nhà DROPSHIP (Compassup...) — KHÔNG cần gán design mới đẩy được đơn
+  nonPod: boolean("non_pod").notNull().default(false),
   status: text("status").notNull().default("connected"),
 });
 
@@ -204,6 +206,8 @@ export const skuMappings = pgTable("sku_mappings", {
   active: boolean("active").notNull().default(true),
   // Ghim: chỉ SP được ghim mới hiện mặc định trong form tạo đơn (tránh nhồi cả nghìn SKU)
   pinned: boolean("pinned").notNull().default(false),
+  // Dữ liệu riêng nhà in không có cột chuyên biệt (Compassup: link, sup_site, seller_id, weight, sku_id, custom)
+  extraJson: jsonb("extra_json"),
 }, (t) => [
   uniqueIndex("uq_map_sku_ff").on(t.internalSku, t.fulfillerId),
   index("idx_map_sku").on(t.internalSku),

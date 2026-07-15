@@ -3,6 +3,7 @@ import { and, eq, inArray, isNotNull, like, notInArray } from "drizzle-orm";
 import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { getOnosOrder, mapOnosStatus, isPaidWord } from "@/lib/onos";
+import { getCompassupTracking, getCompassupFees, type CompassupCred } from "@/lib/compassup";
 import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
 import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
@@ -156,15 +157,56 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
     const kind = name.includes("onos") ? "onos"
       : name.includes("wembroidery") ? "wem"
       : name.includes("merchize") ? "merchize"
-      : name.includes("flashship") ? "flashship" : null;
+      : name.includes("flashship") ? "flashship"
+      : name.includes("compassup") ? "compassup" : null;
     if (!kind) continue;
     const cred = (ff.credentials ?? {}) as Record<string, string>;
-    const apiKey = cred.apiKey || cred.accessToken || cred.apiToken;
+    const apiKey = cred.apiKey || cred.accessToken || cred.apiToken || cred.bearerToken;
     if (!apiKey) { skipped++; continue; }
     if (await throttled(ff, !!opts.force)) { skipped++; continue; }
 
     const open = (await openFfosOf(ff.id)).filter((f) => !f.externalFfId?.startsWith("SIM-") && !f.externalFfId?.startsWith("MANUAL-"));
     const api = { apiKey, endpoint: ff.apiEndpoint };
+
+    if (kind === "compassup") {
+      // Compassup: 1 đơn = 1 tracking. Tracking batch 20 id/lần; cost cộng dồn fees[].
+      const cCred: CompassupCred = {
+        bearerToken: cred.bearerToken || apiKey, tenant: cred.tenant, restKey: cred.restKey,
+        endpoint: ff.apiEndpoint, username: cred.username,
+      };
+      if (!cCred.tenant || !cCred.restKey) { skipped++; continue; }
+
+      // 1) TRACKING theo lô 20
+      for (let i = 0; i < open.length; i += 20) {
+        if (Date.now() - started > BUDGET_MS) break;
+        const batch = open.slice(i, i + 20);
+        try {
+          const { tracks } = await getCompassupTracking(cCred, batch.map((f) => f.externalFfId!));
+          checked += batch.length;
+          for (const tk of tracks) {
+            // API tracks có thể không kèm order_id → nếu chỉ 1 đơn trong lô thì gán thẳng
+            const ffo = tk.orderId ? batch.find((f) => f.externalFfId === tk.orderId) : (batch.length === 1 ? batch[0] : undefined);
+            if (!ffo || !tk.code) continue;
+            if (await applyUpdate(ffo, { status: "shipped", trackingNumber: tk.code, carrier: tk.carrier || undefined })) updated++;
+          }
+        } catch (e) { if (errors.length < 5) errors.push(`${ff.name} track: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
+      }
+
+      // 2) COST cho đơn còn $0 (fees là Estimate cho tới khi Compassup chốt)
+      for (const ffo of open.filter((f) => Number(f.cost ?? 0) <= 0).slice(0, 20)) {
+        if (Date.now() - started > BUDGET_MS) break;
+        try {
+          const { total } = await getCompassupFees(cCred, ffo.externalFfId!);
+          if (total > 0 && Math.abs(total - Number(ffo.cost ?? 0)) >= 0.005) {
+            await db.update(schema.fulfillmentOrders).set({ baseCost: total.toFixed(2), shipCost: "0", extraFee: "0", cost: total.toFixed(2) })
+              .where(eq(schema.fulfillmentOrders.id, ffo.id));
+            await rebalanceOrderCost(ffo.orderId, `Compassup · ${ffo.externalFfId} — cost poll`);
+            updated++;
+          }
+        } catch (e) { if (errors.length < 5) errors.push(`${ff.name} fees: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
+      }
+      continue;
+    }
 
     if (kind === "flashship") {
       // FlashShip: batch 20 code/lần — rẻ, nhanh

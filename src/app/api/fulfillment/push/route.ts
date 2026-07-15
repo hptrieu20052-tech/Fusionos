@@ -80,6 +80,7 @@ async function handlePush(req: NextRequest) {
       designFrontW: s.frontW, designFrontH: s.frontH, designBackW: s.backW, designBackH: s.backH,
       designSides: s.sides,
       pfBlueprintId: m.pfBlueprintId ?? null, pfProviderId: m.pfProviderId ?? null, pfVariantId: m.pfVariantId ?? null,
+      extra: (m.extraJson ?? null) as Record<string, unknown> | null,
     };
   };
 

@@ -8,6 +8,7 @@ import { pwCredOf } from "@/lib/printway-cost";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
 import { getPrintifyOrder, toISO2 } from "@/lib/printify";
 import { getFlashshipOrdersByCodes } from "@/lib/flashship";
+import { getCompassupTracking, getCompassupFees, type CompassupCred } from "@/lib/compassup";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -80,6 +81,19 @@ export async function GET(req: NextRequest) {
       if (!token || !shopId) return NextResponse.json({ ok: false, error: "Printify: thiếu token / shopId" }, { status: 400 });
       const raw = await getPrintifyOrder(token, shopId, ffo.externalFfId ?? "");
       return NextResponse.json({ ok: true, fusion, sentAs: { shopId, orderId: ffo.externalFfId }, raw });
+    }
+
+    if (name.includes("compassup")) {
+      const cc: CompassupCred = {
+        bearerToken: cred.bearerToken || apiKey, tenant: cred.tenant, restKey: cred.restKey,
+        endpoint: ff.apiEndpoint, username: cred.username,
+      };
+      if (!cc.tenant || !cc.restKey) return NextResponse.json({ ok: false, error: "Compassup: thiếu tenant / restKey" }, { status: 400 });
+      const [track, fees] = await Promise.all([
+        getCompassupTracking(cc, [ffo.externalFfId ?? ""]).catch((e) => ({ error: String((e as Error)?.message ?? e) })),
+        getCompassupFees(cc, ffo.externalFfId ?? "").catch((e) => ({ error: String((e as Error)?.message ?? e) })),
+      ]);
+      return NextResponse.json({ ok: true, fusion, sentAs: { order_id: ffo.externalFfId }, track, fees });
     }
 
     if (name.includes("flashship") || name.includes("flashpod")) {

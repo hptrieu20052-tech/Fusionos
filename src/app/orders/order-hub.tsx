@@ -54,7 +54,7 @@ type Order = {
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
-type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
+type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; nonPod?: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
 type Opt = { id: string; name: string; marketplace?: string };
 type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number }[] | null };
 
@@ -842,6 +842,9 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
   const isReview = o.status === "created";
   // Chưa gán đủ design cho mọi sản phẩm thì chưa cho chọn nhà fulfill — tránh đẩy đơn thiếu file in.
   const allDesigned = o.items.length > 0 && o.items.every((i) => !!i.design_id);
+  // Có nhà DROPSHIP (non-POD) khả dụng → bỏ chặn "cần gán design": đơn dropship không có design.
+  const hasNonPod = (detail?.fulfillerOptions ?? []).some((f) => f.nonPod);
+  const designGateOk = allDesigned || hasNonPod;
   const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number; unitCost?: number }>>({});
   const [busy, setBusy] = useState(false);
   const [ship, setShip] = useState({
@@ -1126,7 +1129,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                 </div>
                 <div className="o2-right">
                   <div className="o2-field">{F("orderLabel", t("o.orderLabel"))}</div>
-                  {!canPushFf ? null : !allDesigned ? (
+                  {!canPushFf ? null : !designGateOk ? (
                     <div className="o2-field">
                       <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>{t("o.fulfilledBy")}</label>
                       <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#B4543C", background: "#FFF6F4", border: "1px dashed #F6D9D0", borderRadius: 10, padding: "10px 12px", fontWeight: 600 }}>
