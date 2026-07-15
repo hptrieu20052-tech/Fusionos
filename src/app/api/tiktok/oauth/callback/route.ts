@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
-import { readTtCfg, writeTtCfg, ttExchangeToken, ttGetAuthorizedShops } from "@/lib/tiktok-shop";
+import { readTtCfg, writeTtCfg, ttExchangeToken, ttGetAuthorizedShops, theyourlistApp } from "@/lib/tiktok-shop";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -22,11 +22,18 @@ export async function GET(req: NextRequest) {
   if (!st) return back("store doesn't exist");
   const cred = st.apiCredentials as Record<string, string> | null;
   const cfg = readTtCfg(cred);
-  if (!cfg.appKey || !cfg.appSecret) return back("App Key/Secret not saved");
+
+  // App riêng của store (nếu đã lưu) → dùng. Chưa có → dùng app PARTNER theyourlist (env).
+  // Phải LƯU cặp key dùng để đổi token vào store, vì refresh token sau này cần đúng cặp đó.
+  const partner = theyourlistApp();
+  const appKey = cfg.appKey || partner?.appKey || "";
+  const appSecret = cfg.appSecret || partner?.appSecret || "";
+  if (!appKey || !appSecret) return back("No TikTok app key: set THEYOURLIST_APP_KEY/SECRET or save the store's own App Key/Secret");
 
   try {
-    const t = await ttExchangeToken(cfg.appKey, cfg.appSecret, { authCode: code });
-    let next = writeTtCfg(cred, t);
+    const t = await ttExchangeToken(appKey, appSecret, { authCode: code });
+    // Ghi kèm appKey/appSecret đã dùng (nếu store chưa có) → refresh token về sau chạy đúng app
+    let next = writeTtCfg(cred, cfg.appKey ? t : { ...t, appKey, appSecret });
     // Lấy shop authorize (thường 1 shop/lần authorize) → shop_id + cipher cho mọi call sau
     const shops = await ttGetAuthorizedShops(readTtCfg(next));
     if (shops.length) next = writeTtCfg(next, { shopId: shops[0].id, shopCipher: shops[0].cipher, shopName: shops[0].name });

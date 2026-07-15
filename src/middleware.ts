@@ -3,7 +3,9 @@ import { jwtVerify } from "jose";
 
 // /api/ping: chỉ SELECT 1 để hâm nóng — an toàn public. /api/cron: tự xác thực bằng CRON_SECRET trong route.
 // /journey: ảnh tĩnh trang LOGIN (chưa đăng nhập) — không whitelist thì middleware 307 ảnh về /login → carousel trống.
-const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/api/ping", "/api/cron", "/journey/"];
+// /api/tiktokshops/auth + /api/tiktok/oauth/callback: điểm nhận OAuth từ TikTok/theyourlist,
+// KHÔNG có session cookie → phải public (state=storeId tự xác định store, an toàn).
+const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/api/ping", "/api/cron", "/journey/", "/api/tiktokshops/auth", "/api/tiktok/oauth/callback"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

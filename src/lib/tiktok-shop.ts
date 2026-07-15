@@ -53,6 +53,17 @@ export function writeTtCfg(existing: Record<string, string> | null | undefined, 
   return next;
 }
 
+/**
+ * App key/secret của PARTNER dùng chung (theyourlist) — khi shop authorize qua app của họ
+ * (redirect auth.theyourlist.com) thay vì app riêng. Lấy từ env; token exchange + refresh
+ * đều phải dùng đúng cặp key này.
+ */
+export function theyourlistApp(): { appKey: string; appSecret: string } | null {
+  const appKey = process.env.THEYOURLIST_APP_KEY?.trim();
+  const appSecret = process.env.THEYOURLIST_APP_SECRET?.trim();
+  return appKey && appSecret ? { appKey, appSecret } : null;
+}
+
 const ft = () => ({ signal: AbortSignal.timeout(25000) });
 
 // ===== Chữ ký request =====

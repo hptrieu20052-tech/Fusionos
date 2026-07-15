@@ -731,6 +731,15 @@ function CompassupImport({ fulfillerId, onDone }: { fulfillerId: string; onDone:
   const setR = (id: string, k: string, v: string | boolean) => setRows((p) => ({ ...p, [id]: { ...p[id], [k]: v } }));
   // Khi bật 1 variant mà chưa có Internal SKU → tự điền mã ngẫu nhiên (bỏ khâu gõ tay)
   const toggleOn = (id: string, on: boolean) => setRows((p) => ({ ...p, [id]: { ...p[id], on, internalSku: on && !p[id]?.internalSku ? randSku() : p[id]?.internalSku } }));
+  // Tick/bỏ tất cả variant CHƯA map cùng lúc (tự sinh Internal SKU cho variant được bật)
+  const toggleAll = (on: boolean) => setRows((p) => {
+    const n = { ...p };
+    for (const sk of (product?.skus ?? [])) {
+      if (sk.alreadyMapped) continue;
+      n[sk.sku_id] = { ...n[sk.sku_id], on, internalSku: on && !n[sk.sku_id]?.internalSku ? randSku() : n[sk.sku_id]?.internalSku };
+    }
+    return n;
+  });
 
   return (
     <div style={{ marginTop: 10, border: "1px solid #BFE0BF", background: "#F6FBF6", borderRadius: 12, padding: 12 }}>
@@ -745,8 +754,19 @@ function CompassupImport({ fulfillerId, onDone }: { fulfillerId: string; onDone:
 
       {product && (
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>{product.title}
-            <span style={{ fontWeight: 500, color: "var(--muted)", marginLeft: 8 }}>· {product.marketplace} · seller {product.sellerId.slice(0, 12)}…</span>
+          <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <span>{product.title}</span>
+            <span style={{ fontWeight: 500, color: "var(--muted)" }}>· {product.marketplace} · seller {product.sellerId.slice(0, 12)}…</span>
+            {(() => {
+              const selectable = product.skus.filter((s) => !s.alreadyMapped);
+              const allOn = selectable.length > 0 && selectable.every((s) => rows[s.sku_id]?.on);
+              return (
+                <label style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, cursor: "pointer", color: "var(--blue)" }}>
+                  <input type="checkbox" checked={allOn} onChange={(e) => toggleAll(e.target.checked)} />
+                  {allOn ? "Clear all" : `Select all (${selectable.length})`}
+                </label>
+              );
+            })()}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {product.skus.map((s) => {
