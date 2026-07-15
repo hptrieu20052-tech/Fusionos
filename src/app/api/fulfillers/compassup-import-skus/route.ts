@@ -60,10 +60,10 @@ export async function POST(req: NextRequest) {
   }
 
   // ---- Chế độ B: SAVE mappings ----
-  const rows = b.rows as { skuId: string; internalSku: string; baseCost: number; shipCost?: number; weight?: number; attribute?: string; image?: string; productName?: string }[];
+  const rows = b.rows as { skuId: string; internalSku: string; baseCost: number; shipCost?: number; weight?: number; attribute?: string; image?: string; productName?: string; custom?: boolean }[];
   let created = 0; const errors: string[] = [];
   for (const r of rows) {
-    if (!r.internalSku?.trim() || !r.skuId || isNaN(Number(r.baseCost))) { errors.push(`${r.internalSku || r.skuId}: thiếu internalSku/baseCost`); continue; }
+    if (!r.internalSku?.trim() || !r.skuId) { errors.push(`${r.internalSku || r.skuId}: missing internalSku`); continue; }
     const sku = product.skus.find((s) => s.sku_id === r.skuId);
     const extra = {
       link: String(b.link).trim(),
@@ -76,6 +76,7 @@ export async function POST(req: NextRequest) {
       image_link: r.image || sku?.image || product.images[0] || "",
       attribute: r.attribute || sku?.attribute || "",
       weight: Number(r.weight ?? sku?.weight ?? 0) || 0,
+      custom: !!r.custom, // SKU cần gửi file design (thêu tên) → đơn phải có DesignId
     };
     try {
       // upsert theo (internalSku, fulfillerId)

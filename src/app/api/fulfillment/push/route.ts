@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { getAdapter } from "@/lib/fulfillers";
+import { getAdapter, type PushLine } from "@/lib/fulfillers";
 import { ensureWebhooks } from "@/lib/printify";
 import { fileUrl } from "@/lib/storage";
 
@@ -89,7 +89,7 @@ async function handlePush(req: NextRequest) {
   let baseSum = 0;
   let shipSum = 0;
   let lineNote = "";
-  const pushLines: { fulfillerSku: string; qty: number }[] = [];
+  const pushLines: PushLine[] = [];
   // Lưu kèm itemId + mappingId để card đơn ĐÃ ĐẨY dựng lại được panel review (chỉ đọc)
   const pushedLines: { itemId: string; mappingId: string; product: string; variant: string | null; sku: string; qty: number }[] = [];
   if (Array.isArray(b.lines) && b.lines.length) {
@@ -139,6 +139,20 @@ async function handlePush(req: NextRequest) {
       pushedLines.push({ itemId: i.id, mappingId: m.id, product: i.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty: i.qty });
     }
     cost = baseSum + shipSum;
+  }
+
+  // CHẶN ĐẨY: SKU đánh dấu "custom" (thêu tên) BẮT BUỘC có file design để gửi attachments.
+  // Compassup là non-POD nên không bị chặn design ở tầng UI → phải kiểm ở đây.
+  const customNoDesign = pushLines.filter((l) => {
+    const isCustom = (l.extra as Record<string, unknown> | null)?.custom === true;
+    const hasDesign = (l.designSides && l.designSides.length > 0) || !!l.designFront;
+    return isCustom && !hasDesign;
+  });
+  if (customNoDesign.length) {
+    return NextResponse.json({
+      ok: false,
+      error: `Custom SKU requires a design before pushing: ${customNoDesign.map((l) => l.fulfillerSku).join(", ")}. Assign a DesignId to the item first.`,
+    }, { status: 400 });
   }
 
   // Đảm bảo số đơn gửi nhà in = TênStore-IDĐơn (nếu chưa set orderLabel thì tự dựng)

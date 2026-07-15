@@ -166,6 +166,7 @@ export function parseCompassupProduct(raw: unknown): CompassupProduct | null {
   const skusRaw = (Array.isArray(p.skus) ? p.skus : []) as Record<string, unknown>[];
   // weight có thể ở SKU hoặc ở attribute_configs[] (khớp theo attribute_value/id)
   const cfgs = (Array.isArray(p.attribute_configs) ? p.attribute_configs : []) as Record<string, unknown>[];
+  const productImgs = (Array.isArray(p.images) ? p.images : []) as string[];
   const skus: CompassupSku[] = skusRaw.map((s) => {
     const attrs = (Array.isArray(s.attributes) ? s.attributes : []) as Record<string, unknown>[];
     // "Color: black; Shoe Size: 0" — dùng làm field `attribute` khi tạo đơn
@@ -177,7 +178,7 @@ export function parseCompassupProduct(raw: unknown): CompassupProduct | null {
       const match = cfgs.find((c) => String(c.attribute_id ?? c.attribute_value ?? "") && label.includes(String(c.attribute_value ?? "")));
       weight = Number(match?.weight ?? cfgs[0]?.weight ?? 0) || 0;
     }
-    return { sku_id: String(s.sku_id ?? ""), label, image: img ?? null, attribute: label, weight };
+    return { sku_id: String(s.sku_id ?? ""), label, image: (img ?? productImgs[0]) ?? null, attribute: label, weight };
   });
   // marketplace → sup_site khi tạo đơn (b2c_global / b2b_cn …). seller_id lấy từ shop_id.
   const marketplace = String(p.marketplace ?? "");
