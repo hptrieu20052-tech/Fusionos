@@ -47,6 +47,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Thêm sản phẩm Printify: chọn blueprint + nhà in → import TẤT CẢ variant
   const [addProd, setAddProd] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [cuOpen, setCuOpen] = useState(false); // panel Import-từ-link của Compassup
   // Ghim sản phẩm cho form tạo đơn
   const [pinPicker, setPinPicker] = useState<{ product: string; count: number }[] | null>(null);
   const [pinSel, setPinSel] = useState<Set<string>>(new Set());
@@ -362,7 +363,15 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             {ff.method === "api" && ff.name.toLowerCase().includes("wembroidery") && canEdit && (
               <button onClick={getSkuWembroidery} title="Pull catalog from Wembroidery" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
             )}
+            {ff.method === "api" && ff.name.toLowerCase().includes("compassup") && canEdit && (
+              <button onClick={() => setCuOpen((v) => !v)} title="Nhập variant từ link sản phẩm Compassup" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconPlus width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{cuOpen ? "Đóng import" : "Import từ link"}</button>
+            )}
           </div>
+
+          {/* Compassup: panel Import-từ-link (chỉ hiện khi active là Compassup + đã bật) */}
+          {ff?.name.toLowerCase().includes("compassup") && cuOpen && canEdit && (
+            <CompassupImport fulfillerId={active} onDone={() => { setCuOpen(false); refresh(); }} />
+          )}
 
           {/* Bảng mapping */}
           <div style={{ overflowX: "auto", border: "1px solid var(--line)", borderRadius: 12 }}>
@@ -665,6 +674,98 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+
+// ---- Compassup: Import từ link → chọn variant → tạo mapping ----
+type CuSku = { sku_id: string; label: string; image: string | null; attribute: string; weight: number; alreadyMapped?: boolean };
+type CuProduct = { pid: string; productId: string; title: string; marketplace: string; sellerId: string; images: string[]; skus: CuSku[] };
+function CompassupImport({ fulfillerId, onDone }: { fulfillerId: string; onDone: () => void }) {
+  const inp2: CSSProperties = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 10, font: "inherit", fontSize: 12.5 };
+  const [link, setLink] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [product, setProduct] = useState<CuProduct | null>(null);
+  const [rows, setRows] = useState<Record<string, { on: boolean; internalSku: string; baseCost: string; shipCost: string; weight: string }>>({});
+  const [msg, setMsg] = useState("");
+
+  const fetchVariants = async () => {
+    if (!link.trim()) return;
+    setLoading(true); setMsg(""); setProduct(null);
+    const j = await fetch("/api/fulfillers/compassup-import-skus", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fulfillerId, link: link.trim() }),
+    }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setLoading(false);
+    if (!j.ok) { setMsg("✗ " + (j.error ?? "lỗi")); return; }
+    const p = j.product as CuProduct;
+    setProduct(p);
+    const init: typeof rows = {};
+    for (const s of p.skus) init[s.sku_id] = { on: false, internalSku: "", baseCost: "", shipCost: "0", weight: String(s.weight || "") };
+    setRows(init);
+  };
+
+  const save = async () => {
+    if (!product) return;
+    const picked = product.skus.filter((s) => rows[s.sku_id]?.on).map((s) => ({
+      skuId: s.sku_id, internalSku: rows[s.sku_id].internalSku.trim(),
+      baseCost: Number(rows[s.sku_id].baseCost), shipCost: Number(rows[s.sku_id].shipCost || 0),
+      weight: Number(rows[s.sku_id].weight || s.weight || 0), attribute: s.attribute, image: s.image ?? "", productName: product.title,
+    }));
+    if (!picked.length) { setMsg("Chọn ít nhất 1 variant"); return; }
+    if (picked.some((r) => !r.internalSku || isNaN(r.baseCost))) { setMsg("Điền Internal SKU + Base cost cho variant đã chọn"); return; }
+    setLoading(true);
+    const j = await fetch("/api/fulfillers/compassup-import-skus", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fulfillerId, link: link.trim(), rows: picked }),
+    }).then((r) => r.json()).catch(() => ({ ok: false }));
+    setLoading(false);
+    setMsg(j.ok ? `✓ Đã tạo ${j.created} mapping` : "✗ " + (j.errors?.join("; ") ?? "lỗi"));
+    if (j.created) onDone();
+  };
+
+  const setR = (id: string, k: string, v: string | boolean) => setRows((p) => ({ ...p, [id]: { ...p[id], [k]: v } }));
+
+  return (
+    <div style={{ marginTop: 10, border: "1px solid #BFE0BF", background: "#F6FBF6", borderRadius: 12, padding: 12 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input placeholder="Dán link sourcing.compassup.com/product/…" value={link} onChange={(e) => setLink(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") fetchVariants(); }} style={{ ...inp2, flex: 1, minWidth: 280 }} />
+        <button type="button" onClick={fetchVariants} disabled={loading}
+          style={{ background: "#2E7D46", border: 0, color: "#fff", borderRadius: 10, padding: "8px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>
+          {loading ? "Đang tải…" : "Lấy variant"}
+        </button>
+      </div>
+
+      {product && (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>{product.title}
+            <span style={{ fontWeight: 500, color: "var(--muted)", marginLeft: 8 }}>· {product.marketplace} · seller {product.sellerId.slice(0, 12)}…</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {product.skus.map((s) => {
+              const r = rows[s.sku_id]; const off = s.alreadyMapped || !r?.on;
+              return (
+                <div key={s.sku_id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", opacity: s.alreadyMapped ? 0.5 : 1 }}>
+                  <input type="checkbox" checked={!!r?.on} disabled={s.alreadyMapped} onChange={(e) => setR(s.sku_id, "on", e.target.checked)} style={{ width: 15, height: 15 }} />
+                  {s.image && <img src={s.image} alt="" style={{ width: 34, height: 34, borderRadius: 6, objectFit: "cover" }} />}
+                  <span style={{ fontSize: 12, minWidth: 140, flex: 1 }}>{s.label}{s.alreadyMapped && <span style={{ color: "var(--green)", marginLeft: 6, fontSize: 11 }}>đã map</span>}</span>
+                  <input placeholder="Internal SKU" value={r?.internalSku ?? ""} disabled={off} onChange={(e) => setR(s.sku_id, "internalSku", e.target.value)} style={{ ...inp2, width: 130 }} />
+                  <input placeholder="Base $" value={r?.baseCost ?? ""} disabled={off} onChange={(e) => setR(s.sku_id, "baseCost", e.target.value)} style={{ ...inp2, width: 78 }} />
+                  <input placeholder="Ship $" value={r?.shipCost ?? ""} disabled={off} onChange={(e) => setR(s.sku_id, "shipCost", e.target.value)} style={{ ...inp2, width: 70 }} />
+                  <input placeholder="Weight kg" value={r?.weight ?? ""} disabled={off} onChange={(e) => setR(s.sku_id, "weight", e.target.value)} style={{ ...inp2, width: 80 }} title="Khối lượng ước tính (kg) khi tạo đơn" />
+                </div>
+              );
+            })}
+          </div>
+          <button type="button" onClick={save} disabled={loading}
+            style={{ marginTop: 10, background: "var(--blue)", color: "#fff", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>
+            Tạo mapping cho variant đã chọn
+          </button>
+        </div>
+      )}
+      {msg && <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: msg.startsWith("✗") ? "var(--red)" : "var(--green)" }}>{msg}</div>}
     </div>
   );
 }
