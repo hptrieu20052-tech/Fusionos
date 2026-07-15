@@ -1,133 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "crypto";
 import { db, schema } from "@/lib/db";
-import { desc, eq, and, inArray, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { scopeOwnerIds } from "@/lib/scope";
+import { hasAction } from "@/lib/actions";
 
 export const dynamic = "force-dynamic";
 
-// GET /api/stores?sellerId=&marketplace=
-export async function GET(req: NextRequest) {
+/**
+ * POST /api/stores/[id]/fx-convert — quy đổi 1 LẦN các đơn ĐÃ import (đang lưu số tiền gốc)
+ * sang USD bằng cách chia total/phí/đơn giá cho fx_rate của shop. Ghi mốc để cảnh báo chạy lại.
+ */
+export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "stores")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!session || (await levelOf(session, "stores")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "stores.fx"))) return NextResponse.json({ ok: false, error: "forbidden: fx" }, { status: 403 });
 
-  const sp = req.nextUrl.searchParams;
-  const scopeIds = await scopeOwnerIds(session, "stores");
-  const parts = [];
-  // Phạm vi own/team: chỉ store thuộc seller trong phạm vi (store chưa gán seller cũng bị ẩn)
-  if (scopeIds) parts.push(inArray(schema.stores.sellerId, scopeIds));
-  else if (sp.get("sellerId")) parts.push(eq(schema.stores.sellerId, sp.get("sellerId")!));
-  if (sp.get("marketplace")) parts.push(eq(schema.stores.marketplace, sp.get("marketplace") as never));
-  const where = parts.length ? and(...parts) : undefined;
+  const [store] = await db.select().from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
+  if (!store) return NextResponse.json({ ok: false, error: "store doesn't exist" }, { status: 404 });
+  const rate = Number(store.fxRate ?? 1);
+  if (!(rate > 1)) return NextResponse.json({ ok: false, error: "Rate must be > 1 (e.g. VND ≈ 25400) — set it in the store form first." }, { status: 400 });
 
-  const rows = await db
-    .select({ s: schema.stores, sellerName: schema.users.fullName })
-    .from(schema.stores)
-    .leftJoin(schema.users, eq(schema.stores.sellerId, schema.users.id))
-    .where(where)
-    .orderBy(desc(schema.stores.createdAt));
+  // Chia total + platform_fee của đơn, và unit_price của item, cho tỉ giá → USD
+  const res = await db.execute(sql`
+    UPDATE orders
+    SET total = round(total / ${rate}, 2),
+        platform_fee = round(platform_fee / ${rate}, 2),
+        currency = 'USD',
+        updated_at = now()
+    WHERE store_id = ${params.id}
+  `);
+  await db.execute(sql`
+    UPDATE order_items SET unit_price = round(unit_price / ${rate}, 2)
+    WHERE order_id IN (SELECT id FROM orders WHERE store_id = ${params.id})
+  `);
 
-  // Đơn 30d + 7d để đánh giá "live" (có đơn gần đây)
-  const counts = await db.execute(sql`
-    SELECT store_id,
-      count(*) FILTER (WHERE ordered_at > NOW()-interval '30 days')::int c30,
-      count(*) FILTER (WHERE ordered_at > NOW()-interval '7 days')::int c7,
-      coalesce(sum(total) FILTER (WHERE ordered_at > NOW()-interval '30 days'),0) rev30,
-      max(ordered_at) last_order
-    FROM orders WHERE store_id IS NOT NULL GROUP BY store_id`);
-  const cmap = new Map((counts.rows as { store_id: string; c30: number; c7: number; rev30: string; last_order: string }[]).map((r) => [r.store_id, r]));
+  const convertedAt = new Date().toISOString();
+  const health = { ...((store.health as Record<string, unknown>) ?? {}), fxConvertedAt: convertedAt, fxConvertedRate: rate };
+  await db.update(schema.stores).set({ health }).where(eq(schema.stores.id, params.id));
 
-  const sellers = await db.select({ id: schema.users.id, name: schema.users.fullName })
-    .from(schema.users)
-    .where(scopeIds ? and(eq(schema.users.role, "seller"), inArray(schema.users.id, scopeIds)) : eq(schema.users.role, "seller"));
-
-  return NextResponse.json({
-    ok: true,
-    sellers,
-    scoped: !!scopeIds,
-    stores: rows.map((r) => {
-      const c = cmap.get(r.s.id);
-      const lastOrder = c?.last_order ? new Date(c.last_order) : null;
-      const daysSince = lastOrder ? Math.floor((Date.now() - lastOrder.getTime()) / 86400000) : null;
-      // live nếu có đơn trong 7 ngày; die nếu store active nhưng >14 ngày không đơn
-      const live = (c?.c7 ?? 0) > 0;
-      const cred = (r.s.apiCredentials ?? {}) as Record<string, string>;
-      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_"));
-      return {
-        ...r.s,
-        apiCredentials: undefined,
-        hasCredentials: shownKeys.length > 0,
-        credentialKeys: shownKeys,
-        etsy: {
-          hasKeystring: !!cred.etsy_keystring,
-          keystring: cred.etsy_keystring || "",
-          connected: !!cred.etsy_refresh_token && !!cred.etsy_shop_id,
-          shopId: cred.etsy_shop_id || "",
-        },
-        // TikTok: đã có refresh_token + shop_id = đã kết nối (dùng app riêng HOẶC app theyourlist)
-        tiktok: {
-          hasApp: !!cred.tiktok_app_key || !!cred.tiktok_auth_link,
-          appKey: cred.tiktok_app_key || "",
-          authLink: cred.tiktok_auth_link || "",
-          connected: !!cred.tiktok_access_token && !!cred.tiktok_shop_id,
-          shopId: cred.tiktok_shop_id || "",
-          shopName: cred.tiktok_shop_name || "",
-        },
-        sellerName: r.sellerName,
-        // Số liệu shop public do extension đọc hộ (sales / rating / reviews / tuổi shop / còn sống)
-        shop: (() => {
-          const h = (r.s.health ?? {}) as Record<string, unknown>;
-          if (!h.shopCheckedAt) return null;
-          return {
-            live: h.shopLive === true,
-            checkFailed: h.shopCheckFailed === true, // Etsy chặn / lỗi mạng — KHÔNG phải suspend
-            sales: h.shopSales ?? null,
-            rating: h.shopRating ?? null,
-            reviews: h.shopReviews ?? null,
-            listings: h.shopListings ?? null,
-            age: h.shopAge ?? null,
-            status: h.shopStatus ?? null,
-            checkedAt: h.shopCheckedAt,
-          };
-        })(),
-        orders30d: c?.c30 ?? 0,
-        orders7d: c?.c7 ?? 0,
-        revenue30d: Number(c?.rev30 ?? 0),
-        lastOrderDays: daysSince,
-        live,
-      };
-    }),
-  });
-}
-
-// POST tạo store
-export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "stores")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-
-  const b = await req.json().catch(() => null);
-  if (!b?.name || !schema.stores.marketplace.enumValues.includes(b.marketplace) || !schema.stores.connectMethod.enumValues.includes(b.connectMethod)) {
-    return NextResponse.json({ ok: false, error: "Missing name / marketplace / connection method" }, { status: 400 });
-  }
-  // Chặn trùng tên store (không phân biệt hoa/thường) — tránh nhầm lẫn khi khớp đơn về sau
-  const name = String(b.name).trim();
-  const [dupName] = await db.select({ id: schema.stores.id })
-    .from(schema.stores).where(sql`lower(${schema.stores.name}) = lower(${name})`).limit(1);
-  if (dupName) return NextResponse.json({ ok: false, error: `Tên store "${name}" đã tồn tại — hãy dùng tên khác` }, { status: 409 });
-
-  // Seller tạo store → luôn là store của chính mình (bỏ qua sellerId gửi lên)
-  const sellerId = session.role === "seller" ? session.sub : (b.sellerId || null);
-  const ingestToken = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
-  const [s] = await db.insert(schema.stores).values({
-    name, marketplace: b.marketplace, connectMethod: b.connectMethod,
-    sellerId, status: "active", note: b.note, ingestToken,
-    storeUrl: (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null,
-    currency: (typeof b.currency === "string" && b.currency.trim()) ? b.currency.trim().toUpperCase() : "USD",
-    fxRate: (b.fxRate != null && Number(b.fxRate) > 0) ? String(Number(b.fxRate)) : "1",
-  }).returning();
-  return NextResponse.json({ ok: true, store: s });
+  return NextResponse.json({ ok: true, orders: (res as { rowCount?: number }).rowCount ?? 0, rate, convertedAt });
 }

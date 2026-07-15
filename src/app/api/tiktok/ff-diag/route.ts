@@ -70,8 +70,14 @@ export async function GET(req: NextRequest) {
       packages = pkgs;
       const pkgId = pkgs.length ? String((pkgs[0] as Record<string, unknown>).id ?? (pkgs[0] as Record<string, unknown>).package_id ?? "") : "";
       if (pkgId) {
-        try { labelTest = { packageId: pkgId, doc: await ttGetShippingDocument(cfg, pkgId) }; }
-        catch (e) { labelTest = { packageId: pkgId, error: String((e as Error)?.message ?? e).slice(0, 200) }; }
+        // Lấy CẢ 2 loại để xác minh cái nào là nhãn USPS thật (cái nào là packing slip).
+        const types = ["SHIPPING_LABEL", "PACKING_SLIP", "SHIPPING_LABEL_AND_PACKING_SLIP"];
+        const docs: Record<string, unknown> = {};
+        for (const dt of types) {
+          try { docs[dt] = await ttGetShippingDocument(cfg, pkgId, { docType: dt }); }
+          catch (e) { docs[dt] = { error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+        }
+        labelTest = { packageId: pkgId, docsByType: docs };
       } else {
         labelTest = { note: "Đơn chưa có package — cần Arrange shipment trên TikTok trước rồi chạy lại." };
       }

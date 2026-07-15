@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
+import { sql } from "drizzle-orm";
 import { getValidCfg, readEtsyCfg, fetchReceipts, normalizeReceipt } from "@/lib/etsy";
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
 import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/lib/tiktok-shop";
+import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
@@ -73,6 +75,26 @@ async function tick(req: NextRequest) {
     }
   }
 
+  // ---- 1c. TikTok Shipping: tự lấy label cho đơn ĐÃ Arrange (có package) mà chưa có label ----
+  // Idempotent: đơn có tiktok_labels rồi thì bỏ qua. Đơn chưa Arrange → chưa có package → thử lại vòng sau.
+  let ttLabelSweep: { tried: number; got: number; error?: string } = { tried: 0, got: 0 };
+  if (Date.now() < deadline) {
+    try {
+      const rows = (await db.execute(sql`
+        SELECT id FROM orders
+        WHERE platform='tiktok' AND shipping_type='TIKTOK' AND tiktok_labels IS NULL
+          AND status NOT IN ('shipped','delivered','completed','cancel','trash')
+          AND ordered_at > now() - interval '10 days'
+        ORDER BY ordered_at DESC LIMIT 10
+      `)).rows as { id: string }[];
+      for (const r of rows) {
+        if (Date.now() > deadline) break;
+        ttLabelSweep.tried++;
+        try { const res = await fetchAndStoreTiktokLabels(r.id); if (res.ok) ttLabelSweep.got++; } catch { /* skip */ }
+      }
+    } catch (e) { ttLabelSweep = { tried: 0, got: 0, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+  }
+
   // ---- 2. Printway poll backup (throttle 10' nội bộ — gọi dày cũng không spam API) ----
   let printway: unknown = null;
   if (Date.now() < deadline) {
@@ -95,7 +117,7 @@ async function tick(req: NextRequest) {
     catch (e) { onosWem = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, printway, printify, onosWem };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, printway, printify, onosWem };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }

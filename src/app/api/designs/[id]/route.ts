@@ -1,90 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
-import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
-// GET — chi tiết design đầy đủ cho modal: files, người liên quan, điểm, đơn phát sinh + data cho các select
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+// POST /api/designs/[id]/ai-info — sinh Title/Description/Tags chuẩn listing.
+// Có ANTHROPIC_API_KEY trong .env → gọi Claude; không có → sinh theo mẫu.
+export async function POST(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "designs")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await hasAction(session, "designs.ai"))) return NextResponse.json({ ok: false, error: "forbidden: ai" }, { status: 403 });
 
   const [d] = await db.select().from(schema.designs).where(eq(schema.designs.id, params.id)).limit(1);
   if (!d) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
-  const files = await db.select().from(schema.designFiles).where(eq(schema.designFiles.designId, d.id));
-  const uploaderIds = Array.from(new Set(files.map((f) => f.uploadedBy).filter(Boolean))) as string[];
-  const uploaders = uploaderIds.length
-    ? (await db.execute(sql`SELECT id, full_name FROM users WHERE id IN (${sql.join(uploaderIds.map((x) => sql`${x}::uuid`), sql`, `)})`)).rows as { id: string; full_name: string }[]
-    : [];
-  const uMap = new Map(uploaders.map((u) => [u.id, u.full_name]));
-  const names = await db.execute(sql`
-    SELECT
-      (SELECT full_name FROM users WHERE id = ${d.designerId ?? null}::uuid) AS designer,
-      (SELECT full_name FROM users WHERE id = ${d.sellerId ?? null}::uuid) AS seller,
-      (SELECT full_name FROM users WHERE id = ${d.creatorId ?? null}::uuid) AS creator,
-      (SELECT name FROM stores WHERE id = ${d.storeId ?? null}::uuid) AS store
-  `);
-  const n = names.rows[0] as { designer: string | null; seller: string | null; creator: string | null; store: string | null };
-
-  const orders = await db.execute(sql`SELECT count(*)::int c, coalesce(sum(oi.qty),0)::int items FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.design_id = ${d.id} AND o.status NOT IN ('new','cancel','trash')`);
-  const score = await db.execute(sql`SELECT avg(total_score)::numeric(4,2) s, count(*)::int c FROM design_reviews WHERE design_id = ${d.id}`);
-
-  // Data cho các dropdown trong modal
-  const people = (await db.execute(sql`SELECT id, full_name AS name, role FROM users WHERE role IN ('seller','designer','content') AND status='active' ORDER BY full_name`)).rows as { id: string; name: string; role: string }[];
-  const storesR = (await db.execute(sql`SELECT id, name FROM stores ORDER BY name`)).rows;
-
-  return NextResponse.json({
-    ok: true,
-    design: { ...d, designerName: n.designer, sellerName: n.seller, creatorName: n.creator, storeName: n.store },
-    files: files.map((f) => ({ ...f, sizeBytes: Number(f.sizeBytes), thumbUrl: fileUrl(f.thumbKey), previewUrl: fileUrl(f.previewKey), originalUrl: fileUrl(f.storageKey), uploaderName: f.uploadedBy ? (uMap.get(f.uploadedBy) ?? null) : null })),
-    ordersGenerated: orders.rows[0] as { c: number; items: number },
-    avgScore: Number((score.rows[0] as { s: string | null }).s ?? 0),
-    reviewCount: (score.rows[0] as { c: number }).c,
-    sellers: people.filter((p) => p.role === "seller"),
-    designers: people.filter((p) => p.role === "designer"),
-    creators: people.filter((p) => p.role === "content"),
-    stores: storesR,
-  });
-}
-
-// PATCH — sửa toàn bộ thông tin design
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-
-  const b = await req.json().catch(() => null);
-  if (!b) return NextResponse.json({ ok: false }, { status: 400 });
-  const patch: Record<string, unknown> = {};
-  if (typeof b.title === "string") patch.title = b.title.slice(0, 140);
-  if (typeof b.description === "string") patch.description = b.description;
-  if (typeof b.personalization === "string") patch.personalization = b.personalization.slice(0, 256) || null;
-  for (const k of ["productLink", "note"] as const) if (typeof b[k] === "string") patch[k] = b[k];
-  for (const k of ["sellerId", "designerId", "creatorId", "storeId"] as const) if (k in b) patch[k] = b[k] || null;
-  if (Number.isInteger(b.points) && b.points >= 0 && b.points <= 10) patch.points = b.points;
-  if (typeof b.listed === "boolean") patch.listed = b.listed;
-  if (typeof b.personalize === "boolean") patch.personalize = b.personalize;
-  if (Array.isArray(b.tags)) {
-    const seen = new Set<string>();
-    patch.tags = b.tags.map((t: unknown) => String(t).trim().slice(0, 20)).filter((t: string) => t && !seen.has(t) && seen.add(t)).slice(0, 13);
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (key) {
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        signal: AbortSignal.timeout(45000), // tránh treo hết function → luôn kịp fallback
+        headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-5",
+          max_tokens: 700,
+          messages: [{
+            role: "user",
+            content: `Bạn là chuyên gia viết listing POD (print-on-demand) cho Etsy/Amazon/TikTok Shop.
+Design hiện tại: title="${d.title}", tags=${JSON.stringify(d.tags)}, personalize=${d.personalize}.
+Viết lại giúp tôi và trả về CHỈ JSON (không markdown): {"title": "...max 130 characters, SEO-friendly...", "description": "...3-5 selling sentences, mention material/gift occasion...", "tags": ["...13 tags, each tag <20 characters..."]}`,
+          }],
+        }),
+      });
+      const j = await r.json();
+      const text = (j.content ?? []).map((c: { text?: string }) => c.text ?? "").join("");
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      return NextResponse.json({ ok: true, source: "ai", ...parsed });
+    } catch {
+      // rơi xuống template nếu AI lỗi
+    }
   }
-  if ("platform" in b) patch.platform = b.platform && (schema.designs.platform.enumValues as readonly string[]).includes(b.platform) ? b.platform : null;
-  await db.update(schema.designs).set(patch).where(eq(schema.designs.id, params.id));
-  return NextResponse.json({ ok: true });
-}
 
-// DELETE — xoá design (cần quyền mức 2; files xoá cascade)
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  if (!(await hasAction(session, "designs.delete"))) return NextResponse.json({ ok: false, error: "forbidden: delete" }, { status: 403 });
-  await db.delete(schema.designs).where(eq(schema.designs.id, params.id));
-  return NextResponse.json({ ok: true });
+  // Fallback theo mẫu khi chưa cấu hình AI
+  const base = d.title.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  const cap = base.replace(/\b\w/g, (c) => c.toUpperCase());
+  const tags = Array.from(new Set([
+    ...d.tags,
+    ...base.toLowerCase().split(" ").filter((w) => w.length >= 4),
+    d.personalize ? "personalized gift" : "custom design",
+  ])).slice(0, 13);
+  return NextResponse.json({
+    ok: true, source: "template",
+    title: cap,
+    description: `${cap} — thiết kế độc quyền từ FUSION. ${d.personalize ? "Can be personalized with the customer's name/request. " : ""}Phù hợp làm quà tặng và sản phẩm chủ lực trên Etsy, Amazon, TikTok Shop.`,
+    tags,
+    hint: "Add ANTHROPIC_API_KEY to .env to use real AI.",
+  });
 }

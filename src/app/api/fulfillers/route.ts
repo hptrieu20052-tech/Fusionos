@@ -1,89 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { hasAction } from "@/lib/actions";
+import { createOnosWebhook, listOnosWebhooks } from "@/lib/onos";
+import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
 
-async function guard(min: 1 | 2) {
-  const session = await getSession();
-  if (!session) return null;
-  if ((await levelOf(session, "settings")) < min) return null;
-  return session;
-}
-
-export async function GET() {
-  if (!(await guard(1))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  const ffs = await db.select().from(schema.fulfillers);
-  // Đếm mapping + ghim theo từng nhà (KHÔNG kéo toàn bộ rows — bảng dùng /api/mappings/list phân trang)
-  const counts = await db.select({
-    fid: schema.skuMappings.fulfillerId,
-    total: sql<number>`count(*)::int`,
-    pinned: sql<number>`count(*) filter (where ${schema.skuMappings.pinned})::int`,
-  }).from(schema.skuMappings).groupBy(schema.skuMappings.fulfillerId);
-  const cmap = new Map(counts.map((c) => [c.fid, c]));
-  return NextResponse.json({
-    ok: true,
-    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, identifier: (f.credentials as { identifier?: string } | null)?.identifier ?? null, credentials: f.credentials ? "•••• saved" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined, mapCount: cmap.get(f.id)?.total ?? 0, pinnedCount: cmap.get(f.id)?.pinned ?? 0 })),
-  });
-}
-
+/**
+ * POST { fulfillerId, endpoint? } — đăng ký webhook ONOS topic 'order.updated' + 'shipment.events'
+ * trỏ về /api/webhooks/onos. Sinh secret (lưu fulfillers.webhook_secret) nếu chưa có —
+ * ONOS ký HMAC-SHA256 payload bằng secret này và gửi lại trong header.
+ */
 export async function POST(req: NextRequest) {
-  const _s = await guard(2);
-  if (!_s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  if (!(await hasAction(_s, "fulfillment.credentials"))) return NextResponse.json({ ok: false, error: "forbidden: credentials" }, { status: 403 });
+  const session = await getSession();
+  if (!session || (await levelOf(session, "settings")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
-  if (!b?.name || !["api", "excel"].includes(b.method)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
-  try {
-    const [f] = await db.insert(schema.fulfillers).values({
-      name: b.name.trim(), method: b.method, apiEndpoint: b.apiEndpoint || null,
-      webhookSecret: b.webhookSecret || null, autoPush: !!b.autoPush,
-      credentials: b.apiKey ? { apiKey: b.apiKey } : null,
-    }).returning();
-    return NextResponse.json({ ok: true, id: f.id });
-  } catch { return NextResponse.json({ ok: false, error: "name already exists" }, { status: 409 }); }
-}
+  if (!b?.fulfillerId) return NextResponse.json({ ok: false, error: "missing fulfillerId" }, { status: 400 });
 
-export async function PATCH(req: NextRequest) {
-  const _s = await guard(2);
-  if (!_s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  if (!(await hasAction(_s, "fulfillment.credentials"))) return NextResponse.json({ ok: false, error: "forbidden: credentials" }, { status: 403 });
-  const b = await req.json().catch(() => null);
-  if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
-  const patch: Record<string, unknown> = {};
-  if (typeof b.apiEndpoint === "string") patch.apiEndpoint = b.apiEndpoint || null;
-  if (typeof b.webhookSecret === "string" && b.webhookSecret) patch.webhookSecret = b.webhookSecret;
-  // Credentials: gộp apiKey (token) + shopId (cho Printify). Giữ giá trị cũ nếu chỉ đổi 1 phần.
-  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "") || (b.identifier !== undefined && b.identifier !== "")) {
-    const [cur] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.id)).limit(1);
-    const prev = (cur?.credentials ?? {}) as Record<string, unknown>;
-    patch.credentials = {
-      ...prev,
-      ...(b.apiKey ? { apiKey: b.apiKey } : {}),
-      ...(b.shopId !== undefined && b.shopId !== "" ? { shopId: String(b.shopId) } : {}),
-      ...(b.identifier !== undefined && b.identifier !== "" ? { identifier: String(b.identifier) } : {}),
-    };
+  const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.fulfillerId)).limit(1);
+  if (!ff) return NextResponse.json({ ok: false, error: "fulfiller doesn't exist" }, { status: 404 });
+  const c = (ff.credentials ?? {}) as { apiKey?: string; accessToken?: string; apiToken?: string };
+  const apiKey = c.apiKey || c.accessToken || c.apiToken;
+  if (!apiKey) return NextResponse.json({ ok: false, error: "ONOS token not configured (Settings → API Key)" }, { status: 400 });
+
+  let secret = ff.webhookSecret || "";
+  if (!secret) {
+    secret = crypto.randomBytes(24).toString("hex");
+    await db.update(schema.fulfillers).set({ webhookSecret: secret }).where(eq(schema.fulfillers.id, ff.id));
   }
-  if (typeof b.autoPush === "boolean") patch.autoPush = b.autoPush;
-  await db.update(schema.fulfillers).set(patch).where(eq(schema.fulfillers.id, b.id));
-  return NextResponse.json({ ok: true });
-}
 
-// DELETE { id } — xóa fulfiller (chặn nếu đã có đơn đẩy qua để giữ lịch sử)
-export async function DELETE(req: NextRequest) {
-  const _s = await guard(2);
-  if (!_s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  if (!(await hasAction(_s, "fulfillment.credentials"))) return NextResponse.json({ ok: false, error: "forbidden: credentials" }, { status: 403 });
-  const b = await req.json().catch(() => null);
-  if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
-  // Có đơn fulfillment đã đẩy qua nhà này → không xóa (giữ lịch sử)
-  const ffo = await db.select({ id: schema.fulfillmentOrders.id }).from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.fulfillerId, b.id)).limit(1);
-  if (ffo.length) return NextResponse.json({ ok: false, error: "Orders have already been pushed to this provider — can't delete. You can leave it (not configuring a token means it's unused)." }, { status: 409 });
-  // Dọn cấu hình liên quan rồi xóa
-  await db.delete(schema.skuMappings).where(eq(schema.skuMappings.fulfillerId, b.id));
-  await db.update(schema.orderIssues).set({ fulfillerId: null }).where(eq(schema.orderIssues.fulfillerId, b.id));
-  await db.delete(schema.fulfillers).where(eq(schema.fulfillers.id, b.id));
-  return NextResponse.json({ ok: true });
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? "";
+  const proto = req.headers.get("x-forwarded-proto") ?? "https";
+  const endpoint = (b.endpoint as string)?.trim() || (host ? `${proto}://${host}/api/webhooks/onos` : "");
+  if (!endpoint) return NextResponse.json({ ok: false, error: "cannot resolve endpoint URL" }, { status: 400 });
+
+  const cred = { apiKey, endpoint: ff.apiEndpoint };
+  const results: Record<string, unknown> = {};
+  const errors: string[] = [];
+  for (const topic of ["order.updated", "shipment.events"] as const) {
+    try { results[topic] = await createOnosWebhook(cred, topic, endpoint, secret); }
+    catch (e) { errors.push(String((e as Error)?.message ?? e).slice(0, 200)); }
+  }
+  let current: unknown = null;
+  try { current = await listOnosWebhooks(cred); } catch { /* best-effort */ }
+
+  if (errors.length === 2) return NextResponse.json({ ok: false, error: errors.join(" · "), current }, { status: 500 });
+  return NextResponse.json({ ok: true, endpoint, results, errors: errors.length ? errors : undefined, current });
 }
