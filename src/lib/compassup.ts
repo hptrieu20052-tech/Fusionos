@@ -152,7 +152,7 @@ export async function getCompassupTracking(c: CompassupCred, orderIds: string[])
 }
 
 // ---- Product detail (import mapping từ link) ----
-export type CompassupSku = { sku_id: string; label: string; image: string | null; attribute: string };
+export type CompassupSku = { sku_id: string; label: string; image: string | null; attribute: string; weight: number };
 export type CompassupProduct = {
   pid: string; productId: string; title: string; titleTrans: string;
   images: string[]; skus: CompassupSku[]; marketplace: string; productType: string;
@@ -164,12 +164,20 @@ export function parseCompassupProduct(raw: unknown): CompassupProduct | null {
   const p = j.data?.product;
   if (!p) return null;
   const skusRaw = (Array.isArray(p.skus) ? p.skus : []) as Record<string, unknown>[];
+  // weight có thể ở SKU hoặc ở attribute_configs[] (khớp theo attribute_value/id)
+  const cfgs = (Array.isArray(p.attribute_configs) ? p.attribute_configs : []) as Record<string, unknown>[];
   const skus: CompassupSku[] = skusRaw.map((s) => {
     const attrs = (Array.isArray(s.attributes) ? s.attributes : []) as Record<string, unknown>[];
     // "Color: black; Shoe Size: 0" — dùng làm field `attribute` khi tạo đơn
     const label = attrs.map((a) => `${a.attribute_trans ?? a.attribute_name}: ${a.value_trans ?? a.value}`).join("; ");
     const img = attrs.map((a) => a.sku_image).find((x) => x) as string | undefined;
-    return { sku_id: String(s.sku_id ?? ""), label, image: img ?? null, attribute: label };
+    // weight: ưu tiên trên SKU; không có thì dò trong attribute_configs theo tên thuộc tính
+    let weight = Number(s.weight ?? 0) || 0;
+    if (!weight && cfgs.length) {
+      const match = cfgs.find((c) => String(c.attribute_id ?? c.attribute_value ?? "") && label.includes(String(c.attribute_value ?? "")));
+      weight = Number(match?.weight ?? cfgs[0]?.weight ?? 0) || 0;
+    }
+    return { sku_id: String(s.sku_id ?? ""), label, image: img ?? null, attribute: label, weight };
   });
   // marketplace → sup_site khi tạo đơn (b2c_global / b2b_cn …). seller_id lấy từ shop_id.
   const marketplace = String(p.marketplace ?? "");
