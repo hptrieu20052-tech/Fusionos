@@ -148,6 +148,26 @@ export async function ttGetAuthorizedShops(cfg: TtCfg) {
   }));
 }
 
+// Probe an toàn: gọi 1 endpoint, KHÔNG ném lỗi — trả code/message để biết app có quyền không.
+// code=40006 "no schema found" = app KHÔNG có quyền gọi API này (thiếu trong schema app).
+export async function ttProbe(cfg: TtCfg, method: "GET" | "POST", path: string, query: Record<string, string> = {}, body?: unknown): Promise<{ path: string; ok: boolean; httpStatus: number; code?: number; message?: string; dataKeys?: string[] }> {
+  const base = cfg.apiBase?.replace(/\/$/, "") || TT_API;
+  const bodyStr = body ? JSON.stringify(body) : "";
+  const params: Record<string, string> = { ...query, app_key: cfg.appKey, timestamp: String(Math.floor(Date.now() / 1000)) };
+  if (cfg.shopCipher && !params.shop_cipher) params.shop_cipher = cfg.shopCipher;
+  params.sign = ttSign(cfg.appSecret, path, params, bodyStr);
+  try {
+    const r = await fetch(`${base}${path}?${new URLSearchParams(params).toString()}`, {
+      method, headers: { "Content-Type": "application/json", "x-tts-access-token": cfg.accessToken },
+      body: method === "POST" ? bodyStr : undefined, ...ft(),
+    });
+    const j = (await r.json().catch(() => ({}))) as { code?: number; message?: string; data?: Record<string, unknown> };
+    return { path, ok: r.ok && j.code === 0, httpStatus: r.status, code: j.code, message: (j.message ?? "").slice(0, 120), dataKeys: j.data ? Object.keys(j.data) : undefined };
+  } catch (e) {
+    return { path, ok: false, httpStatus: 0, message: String((e as Error)?.message ?? e).slice(0, 120) };
+  }
+}
+
 // ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====
 // Get Order Detail 202309: GET /order/202309/orders?ids=<comma>. Trả orders[] kèm packages, line_items,
 // shipping_type/fulfillment_type, delivery_option... Dùng để xác minh trước khi viết ship/label.

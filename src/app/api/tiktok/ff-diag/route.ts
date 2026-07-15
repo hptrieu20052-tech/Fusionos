@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { ttGetValidCfg, ttGetOrderDetail, ttGetShippingProviders } from "@/lib/tiktok-shop";
+import { ttGetValidCfg, ttGetOrderDetail, ttGetShippingProviders, ttProbe } from "@/lib/tiktok-shop";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,13 +42,23 @@ export async function GET(req: NextRequest) {
     // Shipping providers (để map carrier → provider_id)
     const providers = await ttGetShippingProviders(cfg);
 
+    // PROBE NĂNG LỰC: các API cần cho push tracking + get label. code=40006 = app KHÔNG có quyền.
+    const ext = ord.externalId;
+    const capabilities = await Promise.all([
+      ttProbe(cfg, "POST", "/fulfillment/202309/packages/search", { page_size: "10" }, { order_ids: [ext] }),
+      ttProbe(cfg, "GET", `/fulfillment/202309/orders/${ext}/packages`, {}),
+      ttProbe(cfg, "GET", "/logistics/202309/shipping_providers", {}),
+      ttProbe(cfg, "GET", "/logistics/202309/warehouses", {}),
+    ]);
+
     return NextResponse.json({
       ok: true,
       order: { internalId: ord.id, externalId: ord.externalId, shippingTypeStored: ord.shippingType },
       shopId: cfg.shopId, shopName: cfg.shopName,
       orderDetail, orderDetailError,
       providers,
-      hint: "Gửi toàn bộ JSON này cho trợ lý. Cần: packages[].id, shipping_type/fulfillment_type, và provider list.",
+      capabilities,
+      hint: "Gửi toàn bộ JSON này cho trợ lý. Xem capabilities[]: code=40006 = app thiếu quyền API đó.",
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
