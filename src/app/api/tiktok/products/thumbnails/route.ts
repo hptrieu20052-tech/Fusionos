@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({} as Record<string, unknown>));
-  const ids = (Array.isArray(b.ids) ? b.ids : []).filter((x): x is string => typeof x === "string").slice(0, 30);
+  const rawIds: unknown[] = Array.isArray(b.ids) ? (b.ids as unknown[]) : [];
+  const ids = rawIds.filter((x): x is string => typeof x === "string").slice(0, 30);
 
   const out: Record<string, string> = {};
   const queue = [...ids];
