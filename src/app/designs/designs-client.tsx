@@ -226,7 +226,8 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
                   onClick={(e) => { e.stopPropagation(); copyText(d.title); }}>
                   <IconCopy width={12} height={12} />
                 </button>
-                <span title={d.title}>{d.title}</span>
+                <span title={t("d.copy") + " " + t("d.title").toLowerCase()} style={{ cursor: "pointer" }}
+                  onClick={(e) => { e.stopPropagation(); copyText(d.title); }}>{d.title}</span>
               </div>
               <div className="dc-meta"><span>{t("c.seller")}</span><b>{d.sellerName ?? "—"}</b></div>
               <div className="dc-meta"><span>{t("c.designer")}</span><b>{d.designerName ?? "—"}</b></div>
