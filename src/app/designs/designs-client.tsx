@@ -365,15 +365,16 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     return null;
   };
   const onFolderPicked = (fileList: FileList | null) => {
+    const files = fileList ? Array.from(fileList) : []; // COPY trước — reset input phía dưới sẽ xoá e.target.files (live ref)
     if (folderRef.current) folderRef.current.value = "";
-    if (!fileList || !fileList.length) { flash("✗ No file selected"); return; }
-    flash(`📂 Read ${fileList.length} file(s), matching…`); // báo ngay để biết handler đã chạy
+    if (!files.length) { flash("✗ No file selected"); return; }
+    flash(`📂 Read ${files.length} file(s), matching…`); // báo ngay để biết handler đã chạy
     const existing = new Set(detail.files.map((f) => f.kind));
     const queued = new Set<string>();
     const matched: { file: File; kind: string }[] = [];
     const unmatchedNames: string[] = [];
     let dup = 0;
-    for (const file of Array.from(fileList)) {
+    for (const file of files) {
       if (!file.type.startsWith("image/")) { unmatchedNames.push(file.name); continue; }
       const kind = kindFromFilename(file.name);
       if (!kind) { unmatchedNames.push(file.name); continue; }
