@@ -37,12 +37,21 @@ export default function AppShell({ user, links, children, canProducts = false }:
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
 
-  // Đóng drawer khi chuyển trang + khoá scroll nền khi drawer mở
-  useEffect(() => { setMobileOpen(false); setUserOpen(false); }, [path]);
+  // Đóng drawer + mọi dropdown khi chuyển trang + khoá scroll nền khi drawer mở
+  useEffect(() => { setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); }, [path]);
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [mobileOpen]);
+  // Click ra ngoài dropdown (Products / More) thì đóng
+  useEffect(() => {
+    if (!prodOpen && !moreOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement)?.closest?.(".topnav-more")) { setProdOpen(false); setMoreOpen(false); }
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [prodOpen, moreOpen]);
 
   // HÂM NÓNG sau idle: Vercel Hobby cho lambda ngủ sau vài phút không có request →
   // click đầu tiên khi quay lại bị cold start 2–5s. Khi tab visible trở lại (hoặc window focus),
@@ -68,7 +77,7 @@ export default function AppShell({ user, links, children, canProducts = false }:
   // Dropdown Products (TikTok Shop) — chèn ngay sau "Design Studio" trong nav; chỉ hiện khi có quyền module `products`.
   const hasDesigns = links.some((l) => !l.more && l.href === "/designs");
   const productsDropdown = canProducts ? (
-    <div key="__products" className="topnav-more" onMouseLeave={() => setProdOpen(false)}>
+    <div key="__products" className="topnav-more">
       <button className={`topnav-item${path.startsWith("/tiktok-products") || path.startsWith("/tiktok-templates") ? " active" : ""}`} onClick={() => setProdOpen((v) => !v)}>
         <span className="topnav-ic"><IconProducts width={17} height={17} /></span>
         Products <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
@@ -117,7 +126,7 @@ export default function AppShell({ user, links, children, canProducts = false }:
             {/* Fallback: nếu người này không thấy Design Studio thì vẫn hiện Products (nếu có quyền) */}
             {!hasDesigns && productsDropdown}
             {links.some((l) => l.more) && (
-              <div className="topnav-more" onMouseLeave={() => setMoreOpen(false)}>
+              <div className="topnav-more">
                 <button className={`topnav-item${links.some((l) => l.more && isActive(l.href)) ? " active" : ""}`} onClick={() => setMoreOpen((v) => !v)}>
                   <span className="topnav-ic"><IconGrid width={17} height={17} /></span>
                   {t("nav.more")} <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
