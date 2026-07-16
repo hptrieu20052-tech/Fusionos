@@ -153,10 +153,16 @@ export async function getPrintAreas(token: string, blueprintId: number | string,
 
 /** Upload ảnh lên Printify bằng URL. Trả image_id. */
 export async function uploadImageByUrl(token: string, fileName: string, url: string): Promise<string> {
-  const res = await fetch(`${BASE}/uploads/images.json`, {
-    method: "POST", headers: headers(token),
-    body: JSON.stringify({ file_name: fileName, url }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/uploads/images.json`, {
+      method: "POST", headers: headers(token),
+      body: JSON.stringify({ file_name: fileName, url }),
+      signal: AbortSignal.timeout(30000), // tạo mới mỗi call — KHÔNG để module-level
+    });
+  } catch (e) {
+    throw new Error(`Printify upload timeout/lỗi mạng (${fileName}): ${String((e as Error)?.message ?? e)}`);
+  }
   if (!res.ok) throw new Error(`Printify upload HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const j = (await res.json()) as { id: string };
   return j.id;
@@ -193,9 +199,15 @@ export async function createProduct(token: string, shopId: string | number, inp:
     variants: [{ id: inp.variantId, price: inp.price ?? 2000, is_enabled: true }],
     print_areas: [{ variant_ids: [inp.variantId], placeholders }],
   };
-  const res = await fetch(`${BASE}/shops/${shopId}/products.json`, {
-    method: "POST", headers: headers(token), body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/shops/${shopId}/products.json`, {
+      method: "POST", headers: headers(token), body: JSON.stringify(body),
+      signal: AbortSignal.timeout(40000),
+    });
+  } catch (e) {
+    throw new Error(`Printify create product timeout/lỗi mạng: ${String((e as Error)?.message ?? e)}`);
+  }
   if (!res.ok) throw new Error(`Printify create product HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const j = (await res.json()) as { id: string; variants: { id: number }[] };
   return { productId: j.id, variantId: inp.variantId };
@@ -225,9 +237,15 @@ export async function createOrderFromProducts(
       city: address.city || "", zip: address.zip || "",
     },
   };
-  const res = await fetch(`${BASE}/shops/${shopId}/orders.json`, {
-    method: "POST", headers: headers(token), body: JSON.stringify(body),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/shops/${shopId}/orders.json`, {
+      method: "POST", headers: headers(token), body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch (e) {
+    throw new Error(`Printify create order timeout/lỗi mạng: ${String((e as Error)?.message ?? e)}`);
+  }
   if (!res.ok) throw new Error(`Printify create order HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const j = (await res.json()) as { id: string };
   return { orderId: j.id, raw: j };

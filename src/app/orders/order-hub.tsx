@@ -879,6 +879,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
     city: o.city ?? "", state: o.state ?? "", zip: o.zip ?? "", country: o.country ?? "United States",
     orderLabel: o.order_label ?? "",
   });
+  const dirtyShip = useRef(false); // có sửa địa chỉ chưa lưu?
 
   const loadDetail = useCallback(async () => {
     const j = await fetch(`/api/orders/${o.id}`).then((r) => r.json()).catch(() => null);
@@ -1003,10 +1004,19 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
 
   // Sửa địa chỉ: cần quyền edit; với non-admin chỉ được sửa khi đơn còn NEW (đã Create là khoá)
   const addrEditable = canEdit && (isAdmin || o.status === "new");
+  // Lưu địa chỉ/người nhận khi rời ô (chỉ khi có thay đổi) — không cần bấm Create order mới lưu.
+  const saveShip = async () => {
+    if (!addrEditable || !dirtyShip.current) return;
+    dirtyShip.current = false;
+    const j = await fetch(`/api/orders/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ship) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) flash("✓ Saved"); else { dirtyShip.current = true; flash("✗ " + (j.error ?? "Save failed")); }
+  };
   const F = (k: keyof typeof ship, label: string, placeholder?: string) => (
     <div className="o2-field">
       <label>{label}</label>
-      <input value={ship[k]} disabled={!addrEditable} placeholder={placeholder} onChange={(e) => setShip({ ...ship, [k]: e.target.value })}
+      <input value={ship[k]} disabled={!addrEditable} placeholder={placeholder}
+        onChange={(e) => { setShip({ ...ship, [k]: e.target.value }); dirtyShip.current = true; }}
+        onBlur={saveShip}
         style={{ ...inp, opacity: addrEditable ? 1 : 0.65 }} />
     </div>
   );

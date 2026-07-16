@@ -285,6 +285,17 @@ function printwayAdapter(): FulfillerAdapter {
  * lines[].fulfillerSku = SKU của variant sản phẩm bên Printify.
  * Chưa cấu hình token/shopId → simulate (không chặn luồng).
  */
+// Chạy fn theo lô, tối đa `limit` cái đồng thời (tránh Printify bóp khi upload nhiều mặt cùng lúc).
+async function mapLimit<T, R>(items: T[], limit: number, fn: (x: T, i: number) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let idx = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) || 1 }, async () => {
+    while (idx < items.length) { const i = idx++; out[i] = await fn(items[i], i); }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 function printifyAdapter(): FulfillerAdapter {
   return {
     slug: "printify",
@@ -376,7 +387,7 @@ function printifyAdapter(): FulfillerAdapter {
           plan.push({ position: positions[0], side: primary });
         }
 
-        const uploaded = await Promise.all(plan.map((x) => uploadImageByUrl(token, `${l.fulfillerSku}-${x.side.kind}`, x.side.url)));
+        const uploaded = await mapLimit(plan, 8, (x) => uploadImageByUrl(token, `${l.fulfillerSku}-${x.side.kind}`, x.side.url));
         const placeholders = plan.map((x, i) => ({
           position: x.position,
           images: [{ id: uploaded[i], x: 0.5, y: 0.5, scale: fitHeightScale(ph[x.position], x.side.w, x.side.h), angle: 0 }],

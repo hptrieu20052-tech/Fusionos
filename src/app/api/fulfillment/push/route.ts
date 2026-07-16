@@ -9,7 +9,7 @@ import { fileUrl } from "@/lib/storage";
 import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300; // Fluid Compute cho Hobby tới 300s; push chủ yếu I/O nên không tốn Active CPU
 
 /**
  * POST { orderId, fulfillerId } — đẩy đơn sang fulfiller.
