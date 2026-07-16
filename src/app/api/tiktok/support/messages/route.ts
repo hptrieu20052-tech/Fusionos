@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { levelOf } from "@/lib/rbac";
 import { ttGetConversationMessages } from "@/lib/tiktok-shop";
 import { resolveStore, simplifyMessage } from "@/lib/tiktok-support";
 
@@ -9,7 +10,7 @@ export const maxDuration = 60;
 // GET /api/tiktok/support/messages?storeId=&conversationId=&pageToken=
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  if (!session || (await levelOf(session, "support")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const sp = req.nextUrl.searchParams;
   const storeId = sp.get("storeId");
   const conversationId = sp.get("conversationId");

@@ -91,6 +91,8 @@ export function buildProductBody(detail: Record<string, unknown>, ov: ProductOve
 
   const body: Record<string, unknown> = {
     save_mode: ov.saveMode ?? "AS_DRAFT",
+    // Shop US (region shop) bắt buộc category V2 — nếu không khai sẽ lỗi 12052217.
+    category_version: "v2",
     title: ov.title ?? (detail.title as string | undefined) ?? "",
     description: ov.description ?? (detail.description as string | undefined) ?? "",
     category_id: leaf?.id,

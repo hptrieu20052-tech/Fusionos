@@ -183,6 +183,13 @@ export const IconBox = (p: P) => (
     <path d="M21 8l-9-5-9 5v8l9 5 9-5V8zM3.3 8.3L12 13l8.7-4.7M12 13v9" />
   </svg>
 );
+export const IconMarketing = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={16} height={16} {...p}>
+    <path d="M3 11v2a1 1 0 0 0 1 1h2l3.5 3.5V7.5L6 11H4a1 1 0 0 0-1 0z" />
+    <path d="M6 14v3a1 1 0 0 0 1 1h1v-4" />
+    <path d="M11 8.5a4 4 0 0 1 0 7M14 6a7 7 0 0 1 0 12" />
+  </svg>
+);
 export const IconSupport = (p: P) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={16} height={16} {...p}>
     <path d="M4 13a8 8 0 0 1 16 0" />

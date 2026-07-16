@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
-  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport,
+  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing,
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 
@@ -18,11 +18,13 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
 
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
 
-export default function AppShell({ user, links, children, canProducts = false }: {
+export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false }: {
   user: { name: string; role: string; avatarUrl?: string | null };
   links: NavLink[];
   children: React.ReactNode;
   canProducts?: boolean;
+  canSupport?: boolean;
+  canMarketing?: boolean;
 }) {
   const path = usePathname();
   const { t } = useLang();
@@ -74,24 +76,33 @@ export default function AppShell({ user, links, children, canProducts = false }:
 
   if (isLogin) return <>{children}</>;
 
-  // Dropdown Products (TikTok Shop) — chèn ngay sau "Design Studio" trong nav; chỉ hiện khi có quyền module `products`.
+  // Dropdown "Seller Hub" (gộp Products + Templates + Support) — sau "Design Studio"; hiện khi có quyền products HOẶC support.
   const hasDesigns = links.some((l) => !l.more && l.href === "/designs");
-  const productsDropdown = canProducts ? (
-    <div key="__products" className="topnav-more">
-      <button className={`topnav-item${path.startsWith("/tiktok-products") || path.startsWith("/tiktok-templates") ? " active" : ""}`} onClick={() => setProdOpen((v) => !v)}>
+  const hubActive = ["/tiktok-products", "/tiktok-templates", "/support", "/marketing"].some((h) => path.startsWith(h));
+  const productsDropdown = (canProducts || canSupport || canMarketing) ? (
+    <div key="__sellerhub" className="topnav-more">
+      <button className={`topnav-item${hubActive ? " active" : ""}`} onClick={() => setProdOpen((v) => !v)}>
         <span className="topnav-ic"><IconBox width={17} height={17} /></span>
-        Products <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
+        Seller Hub <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
       </button>
       {prodOpen && (
         <div className="topnav-more-menu" onClick={() => setProdOpen(false)}>
-          <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
+          {canProducts && <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
             <span className="topnav-ic"><IconBox width={16} height={16} /></span>
             Manage Products Tiktok
-          </Link>
-          <Link href="/tiktok-templates" prefetch className={`topnav-more-item${isActive("/tiktok-templates") ? " active" : ""}`}>
+          </Link>}
+          {canProducts && <Link href="/tiktok-templates" prefetch className={`topnav-more-item${isActive("/tiktok-templates") ? " active" : ""}`}>
             <span className="topnav-ic"><IconGrid width={16} height={16} /></span>
             Manage Templates Tiktok
-          </Link>
+          </Link>}
+          {canSupport && <Link href="/support" prefetch className={`topnav-more-item${isActive("/support") ? " active" : ""}`}>
+            <span className="topnav-ic"><IconSupport width={16} height={16} /></span>
+            Customer Messages Tiktok
+          </Link>}
+          {canMarketing && <Link href="/marketing" prefetch className={`topnav-more-item${isActive("/marketing") ? " active" : ""}`}>
+            <span className="topnav-ic"><IconMarketing width={16} height={16} /></span>
+            Marketing Tiktok
+          </Link>}
         </div>
       )}
     </div>
@@ -192,17 +203,31 @@ export default function AppShell({ user, links, children, canProducts = false }:
                   {t(l.label)}
                 </Link>
               );
-              // Sau "Design Studio": chèn 2 mục Products (nếu có quyền)
-              if (l.href === "/designs" && canProducts) {
+              // Sau "Design Studio": chèn nhóm Seller Hub (Products + Templates + Customer Messages + Marketing) theo quyền
+              if (l.href === "/designs" && (canProducts || canSupport || canMarketing)) {
                 return [el,
-                  <Link key="__mp" href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
-                    <span className="topnav-ic"><IconBox width={18} height={18} /></span>
-                    Manage Products Tiktok
-                  </Link>,
-                  <Link key="__mt" href="/tiktok-templates" prefetch className={`mobile-nav-item${isActive("/tiktok-templates") ? " active" : ""}`}>
-                    <span className="topnav-ic"><IconGrid width={18} height={18} /></span>
-                    Manage Templates Tiktok
-                  </Link>,
+                  ...(canProducts ? [
+                    <Link key="__mp" href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
+                      <span className="topnav-ic"><IconBox width={18} height={18} /></span>
+                      Manage Products Tiktok
+                    </Link>,
+                    <Link key="__mt" href="/tiktok-templates" prefetch className={`mobile-nav-item${isActive("/tiktok-templates") ? " active" : ""}`}>
+                      <span className="topnav-ic"><IconGrid width={18} height={18} /></span>
+                      Manage Templates Tiktok
+                    </Link>,
+                  ] : []),
+                  ...(canSupport ? [
+                    <Link key="__ms" href="/support" prefetch className={`mobile-nav-item${isActive("/support") ? " active" : ""}`}>
+                      <span className="topnav-ic"><IconSupport width={18} height={18} /></span>
+                      Customer Messages Tiktok
+                    </Link>,
+                  ] : []),
+                  ...(canMarketing ? [
+                    <Link key="__mk" href="/marketing" prefetch className={`mobile-nav-item${isActive("/marketing") ? " active" : ""}`}>
+                      <span className="topnav-ic"><IconMarketing width={18} height={18} /></span>
+                      Marketing Tiktok
+                    </Link>,
+                  ] : []),
                 ];
               }
               return [el];
@@ -211,6 +236,18 @@ export default function AppShell({ user, links, children, canProducts = false }:
               <Link href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
                 <span className="topnav-ic"><IconBox width={18} height={18} /></span>
                 Manage Products Tiktok
+              </Link>
+            )}
+            {!hasDesigns && canSupport && (
+              <Link href="/support" prefetch className={`mobile-nav-item${isActive("/support") ? " active" : ""}`}>
+                <span className="topnav-ic"><IconSupport width={18} height={18} /></span>
+                Customer Messages Tiktok
+              </Link>
+            )}
+            {!hasDesigns && canMarketing && (
+              <Link href="/marketing" prefetch className={`mobile-nav-item${isActive("/marketing") ? " active" : ""}`}>
+                <span className="topnav-ic"><IconMarketing width={18} height={18} /></span>
+                Marketing Tiktok
               </Link>
             )}
           </nav>

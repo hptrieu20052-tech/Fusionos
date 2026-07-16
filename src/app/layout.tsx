@@ -27,13 +27,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const [u] = await db.select({ k: schema.users.avatarKey }).from(schema.users).where(eq(schema.users.id, session.sub)).limit(1);
     avatarUrl = fileUrl(u?.k ?? null);
   }
-  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners, products] = session
+  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners, products, support, marketing] = session
     ? await Promise.all([
         can(session, "orders"), can(session, "stores"), can(session, "designs"),
         can(session, "fulfillment"), can(session, "finance"), can(session, "settings"),
-        can(session, "reviews"), can(session, "statsDesigners"), can(session, "products"),
+        can(session, "reviews"), can(session, "statsDesigners"), can(session, "products"), can(session, "support"), can(session, "marketing"),
       ])
-    : [false, false, false, false, false, false, false, false, false];
+    : [false, false, false, false, false, false, false, false, false, false, false];
 
   const isAdmin = session?.role === "admin";
   const links: NavLink[] = session ? [
@@ -48,8 +48,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     // Seller vẫn luôn thấy: API tự giới hạn số liệu về phần của riêng họ.
     ...(finance || session.role === "seller" ? [{ href: "/finance", label: "nav.finance", icon: "finance", section: "Reports" }] : []),
     ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "System" }] : []),
-    // Support: placeholder cho kế hoạch tiếp theo (hiện cho mọi user đăng nhập).
-    { href: "/support", label: "nav.support", icon: "support", section: "System" },
+    // Support nằm trong dropdown "Seller Hub" (cùng Products) — xem canSupport truyền xuống AppShell.
     ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "System" }] : []),
     ...(isAdmin ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "System" }] : []),
   ] : [];
@@ -62,7 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <LangProvider initial={lang}>
           <ConfirmProvider>
           {session ? (
-            <AppShell user={{ name: session.name, role: session.role, avatarUrl }} links={navLinks} canProducts={products}>
+            <AppShell user={{ name: session.name, role: session.role, avatarUrl }} links={navLinks} canProducts={products} canSupport={support} canMarketing={marketing}>
               {children}
             </AppShell>
           ) : (

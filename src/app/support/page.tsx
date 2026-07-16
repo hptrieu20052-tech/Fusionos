@@ -1,4 +1,5 @@
 import { getSession } from "@/lib/auth";
+import { levelOf } from "@/lib/rbac";
 import { db, schema } from "@/lib/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -10,7 +11,9 @@ export const dynamic = "force-dynamic";
 // Support inbox — customer messages TikTok. Seller chỉ thấy store MÌNH; admin thấy hết.
 export default async function SupportPage() {
   const session = await getSession();
-  if (!session) return <div className="panel empty">Unauthorized.</div>;
+  if (!session || (await levelOf(session, "support")) < 1) {
+    return <div className="panel empty">You don&apos;t have permission to view Support.</div>;
+  }
 
   const scopeIds = await storeOwnerScopeIds(session);
   const conds = [eq(schema.stores.marketplace, "tiktok")];
