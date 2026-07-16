@@ -82,6 +82,7 @@ async function handlePush(req: NextRequest) {
       designSides: s.sides,
       pfBlueprintId: m.pfBlueprintId ?? null, pfProviderId: m.pfProviderId ?? null, pfVariantId: m.pfVariantId ?? null,
       extra: (m.extraJson ?? null) as Record<string, unknown> | null,
+      personalization: it.personalization ?? null,
     };
   };
 
@@ -181,7 +182,7 @@ async function handlePush(req: NextRequest) {
   }
 
   // --- Gọi API fulfiller qua adapter theo từng nhà ---
-  const adapter = getAdapter(ff.name);
+  const adapter = getAdapter(ff.name, ff.credentials);
   let pushRes;
   console.log(`[push] ${ff.name} order=${order.externalId} adapter start`);
   const t0 = Date.now();
@@ -194,6 +195,7 @@ async function handlePush(req: NextRequest) {
         addr1: order.addr1, addr2: order.addr2, city: order.city,
         state: order.state, zip: order.zip, country: order.country,
         labelUrl: ttLabelUrl, shippingTracking: ttTracking,
+        shippingType: order.shippingType,
       },
       lines: pushLines,
     });

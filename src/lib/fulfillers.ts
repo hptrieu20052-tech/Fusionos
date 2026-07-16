@@ -5,6 +5,7 @@ import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, calcPrintway
 import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
 import { createOnosOrder, type OnosItem } from "@/lib/onos";
 import { createWembroideryOrder, type WemItem, type WemDesign } from "@/lib/wembroidery";
+import { getSheetHeaders, appendSheetRow, normHeader } from "@/lib/gsheet";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
  * ------------------------------------------------------------------
@@ -37,6 +38,8 @@ export type PushLine = {
   pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null;
   /** Dữ liệu riêng của nhà in (Compassup: {link, sup_site, seller_id, weight, sku_id, custom, attachments}) */
   extra?: Record<string, unknown> | null;
+  /** Personalization/note của item (đơn cá nhân hoá) — dùng cho Google Sheet, note nhà in */
+  personalization?: string | null;
 };
 export type PushCtx = {
   fulfiller: { id: string; name: string; apiEndpoint: string | null; credentials: unknown };
@@ -48,6 +51,8 @@ export type PushCtx = {
     phone?: string | null; email?: string | null;
     /** CHỈ đơn Ship-by-TikTok: link nhãn TikTok (R2) + tracking → gửi supplier. Đơn khác luôn undefined. */
     labelUrl?: string | null; shippingTracking?: string | null;
+    /** TIKTOK | SELLER (đơn TikTok) — map sang PLATFORM/SELLER cho Google Sheet */
+    shippingType?: string | null;
   };
   lines: PushLine[];
 };
@@ -641,13 +646,66 @@ function wembroideryAdapter(): FulfillerAdapter {
   };
 }
 
+/** Google Sheet: sinh giá trị cho 1 cột (theo tên header) từ order + line. Cột không map (supplier điền) → "". */
+function gsheetFieldValue(header: string, o: PushCtx["order"], l: PushLine): string {
+  const key = normHeader(header);
+  const side = (k: string) => l.designSides?.find((s) => s.kind === k)?.url ?? "";
+  const fullName = [o.buyerFirst, o.buyerLast].filter(Boolean).join(" ");
+  const shipType = o.shippingType === "SELLER" ? "SELLER" : "PLATFORM"; // TIKTOK/khác → PLATFORM
+  const map: Record<string, string> = {
+    date: new Date().toISOString().slice(0, 10),
+    order_id: o.externalId, orderid: o.externalId, order: o.externalId, order_number: o.externalId,
+    shipping_type: shipType, shippingtype: shipType,
+    buyer_first_name: o.buyerFirst ?? "", first_name: o.buyerFirst ?? "", firstname: o.buyerFirst ?? "",
+    buyer_last_name: o.buyerLast ?? "", last_name: o.buyerLast ?? "", lastname: o.buyerLast ?? "",
+    customer_s_name: fullName, customers_name: fullName, customer_name: fullName, name: fullName, buyer_name: fullName, recipient: fullName,
+    buyer_phone_number: o.phone ?? "", phone: o.phone ?? "", phone_number: o.phone ?? "",
+    buyer_email: o.email ?? "", email: o.email ?? "",
+    buyer_country: o.country ?? "", country: o.country ?? "",
+    buyer_state: o.state ?? "", state: o.state ?? "", state_province: o.state ?? "",
+    buyer_city: o.city ?? "", city: o.city ?? "",
+    buyer_address_1: o.addr1 ?? "", address_line_1: o.addr1 ?? "", address_1: o.addr1 ?? "", address1: o.addr1 ?? "", address: o.addr1 ?? "",
+    buyer_address_2: o.addr2 ?? "", address_line_2: o.addr2 ?? "", address_2: o.addr2 ?? "", address2: o.addr2 ?? "",
+    buyer_postcode: o.zip ?? "", zip: o.zip ?? "", postcode: o.zip ?? "", zip_code: o.zip ?? "", postal_code: o.zip ?? "",
+    quantity: String(l.qty), qty: String(l.qty),
+    sku: l.fulfillerSku,
+    design_front: side("design_front") || l.designFront || "", design_back: side("design_back") || l.designBack || "",
+    design_sleeve_left: side("sleeve_left"), design_sleeve_right: side("sleeve_right"),
+    note: l.personalization ?? "", product_note: l.personalization ?? "", personalization: l.personalization ?? "",
+    link_label: o.labelUrl ?? "", // đơn TikTok-shipping → link nhãn TikTok; đơn khác trống
+  };
+  // STATUS / tracking_number / tracking_status / *_cost / shipping_fee / mockup_* / store_code / variant_id / card_code → "" (supplier điền / chưa có)
+  return map[key] ?? "";
+}
+
+/** Adapter Google Sheet: push = append 1 dòng/item (map theo tên header). Đơn nhiều item → nhiều dòng, chung order_id. */
+function gsheetAdapter(): FulfillerAdapter {
+  return {
+    slug: "gsheet",
+    label: "Google Sheet",
+    async push(ctx) {
+      const c = (ctx.fulfiller.credentials ?? {}) as { sheetId?: string; tab?: string };
+      if (!c.sheetId || !c.tab) throw new Error("Fulfiller Google Sheet chưa cấu hình Sheet ID / Tab.");
+      const headers = await getSheetHeaders(c.sheetId, c.tab);
+      if (!headers.length) throw new Error(`Tab "${c.tab}" không có dòng header (hàng 1). Kiểm tra tên tab + đã share Sheet cho service account chưa.`);
+      for (const l of ctx.lines) {
+        const row = headers.map((h) => gsheetFieldValue(h, ctx.order, l));
+        await appendSheetRow(c.sheetId, c.tab, row);
+      }
+      return { externalFfId: `GSHEET-${ctx.order.externalId}`, simulated: false };
+    },
+  };
+}
+
 /** Chuẩn hoá tên nhà fulfill → slug (bỏ dấu, khoảng trắng, ký tự đặc biệt). */
 export function slugifyFulfiller(name: string): string {
   return name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
 }
 
-/** Lấy adapter theo tên nhà fulfill; không khớp → adapter generic simulate. */
-export function getAdapter(name: string): FulfillerAdapter {
+/** Lấy adapter theo credentials.kind (Google Sheet) rồi tới tên nhà fulfill; không khớp → generic simulate. */
+export function getAdapter(name: string, credentials?: unknown): FulfillerAdapter {
+  const cred = (credentials ?? {}) as { kind?: string };
+  if (cred.kind === "gsheet") return gsheetAdapter();
   const slug = slugifyFulfiller(name);
   return FULFILLER_ADAPTERS[slug] ?? makeAdapter(slug || "generic", name);
 }

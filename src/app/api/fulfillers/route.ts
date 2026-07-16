@@ -35,12 +35,15 @@ export async function POST(req: NextRequest) {
   if (!_s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   if (!(await hasAction(_s, "fulfillment.credentials"))) return NextResponse.json({ ok: false, error: "forbidden: credentials" }, { status: 403 });
   const b = await req.json().catch(() => null);
-  if (!b?.name || !["api", "excel"].includes(b.method)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
+  if (!b?.name || !["api", "excel", "gsheet"].includes(b.method)) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   try {
+    const credentials = b.method === "gsheet"
+      ? { kind: "gsheet", sheetId: String(b.sheetId || "").trim(), tab: String(b.tab || "").trim() }
+      : (b.apiKey ? { apiKey: b.apiKey } : null);
     const [f] = await db.insert(schema.fulfillers).values({
       name: b.name.trim(), method: b.method, apiEndpoint: b.apiEndpoint || null,
       webhookSecret: b.webhookSecret || null, autoPush: !!b.autoPush,
-      credentials: b.apiKey ? { apiKey: b.apiKey } : null,
+      credentials,
     }).returning();
     return NextResponse.json({ ok: true, id: f.id });
   } catch { return NextResponse.json({ ok: false, error: "name already exists" }, { status: 409 }); }

@@ -595,7 +595,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                   })()}
                 </div>
               )}
-              {canEdit && tab === "design" && <AddTile label="Upload folder" onClick={() => folderRef.current?.click()} />}
+              {canEdit && tab === "design" && <AddTile label="Upload files" onClick={() => folderRef.current?.click()} />}
             </div>
             {filesOf(tab).length === 0 && !canEdit && (
               <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "6px 0 2px" }}>{t("d.noFiles")}</div>
@@ -604,9 +604,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               accept={tab === "video" ? "video/*" : "image/*"}
               onChange={(e) => { const file = e.target.files?.[0]; if (file) onPicked(file); }}
               style={{ display: "none" }} />
-            <input
-              ref={(el) => { folderRef.current = el; if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
-              type="file" multiple
+            <input ref={folderRef} type="file" multiple accept="image/*"
               onChange={(e) => onFolderPicked(e.target.files)}
               style={{ display: "none" }} />
           </div>

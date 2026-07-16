@@ -19,7 +19,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [maps, setMaps] = useState<Map[]>([]);
   const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string; identifier: string }>>({});
-  const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "" });
+  const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "", sheetId: "", tab: "" });
   const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
   const [msg, setMsg] = useState("");
   const [shops, setShops] = useState<Record<string, { id: number; title: string }[] | "loading" | string>>({});
@@ -68,7 +68,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
   async function addFf(e: React.FormEvent) {
     e.preventDefault();
     const j = await fetch("/api/fulfillers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nf) }).then((r) => r.json());
-    setMsg(j.ok ? t("s.addedFulfiller") : "⚠ " + j.error); if (j.ok) { setNf({ name: "", method: "api", apiEndpoint: "" }); load(); }
+    setMsg(j.ok ? t("s.addedFulfiller") : "⚠ " + j.error); if (j.ok) { setNf({ name: "", method: "api", apiEndpoint: "", sheetId: "", tab: "" }); load(); }
   }
   async function addMap(e: React.FormEvent) {
     e.preventDefault();
@@ -174,8 +174,15 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
           <form onSubmit={addFf} style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap", borderTop: "1px solid var(--line)", paddingTop: 12 }}>
             <b style={{ fontSize: 12.5, alignSelf: "center" }}>{t("s.addFulfiller")}</b>
             <input required placeholder={t("s.fulfillerNamePh")} value={nf.name} onChange={(e) => setNf({ ...nf, name: e.target.value })} style={{ ...inp, minWidth: 170 }} />
-            <select value={nf.method} onChange={(e) => setNf({ ...nf, method: e.target.value })} style={inp}><option value="api">API</option><option value="excel">Excel</option></select>
-            <input placeholder="API endpoint" value={nf.apiEndpoint} onChange={(e) => setNf({ ...nf, apiEndpoint: e.target.value })} style={{ ...inp, flex: 1, minWidth: 160 }} />
+            <select value={nf.method} onChange={(e) => setNf({ ...nf, method: e.target.value })} style={inp}><option value="api">API</option><option value="excel">Excel</option><option value="gsheet">Google Sheet</option></select>
+            {nf.method === "gsheet" ? (
+              <>
+                <input placeholder="Sheet ID (trong URL /d/…/edit)" value={nf.sheetId} onChange={(e) => setNf({ ...nf, sheetId: e.target.value.trim() })} style={{ ...inp, flex: 1, minWidth: 200 }} />
+                <input placeholder="Tab name (vd Embroidery US)" value={nf.tab} onChange={(e) => setNf({ ...nf, tab: e.target.value })} style={{ ...inp, width: 180 }} />
+              </>
+            ) : (
+              <input placeholder="API endpoint" value={nf.apiEndpoint} onChange={(e) => setNf({ ...nf, apiEndpoint: e.target.value })} style={{ ...inp, flex: 1, minWidth: 160 }} />
+            )}
             <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("set.add")}</button>
           </form>
         )}
