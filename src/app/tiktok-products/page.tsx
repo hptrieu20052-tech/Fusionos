@@ -21,7 +21,19 @@ export default async function TiktokProductsPage() {
     .from(schema.stores).where(and(...storeConds));
 
   const productWhere = scopeIds ? (stores.length ? inArray(schema.tiktokProducts.storeId, stores.map((s) => s.id)) : sql`false`) : undefined;
-  const rows = await db.select().from(schema.tiktokProducts)
+  // CHỈ lấy cột hiển thị — KHÔNG kéo cột `raw` (jsonb rất nặng) để giảm payload/độ trễ trang.
+  const rows = await db.select({
+    id: schema.tiktokProducts.id,
+    storeId: schema.tiktokProducts.storeId,
+    tiktokProductId: schema.tiktokProducts.tiktokProductId,
+    title: schema.tiktokProducts.title,
+    status: schema.tiktokProducts.status,
+    mainImageUrl: schema.tiktokProducts.mainImageUrl,
+    categoryName: schema.tiktokProducts.categoryName,
+    sellerSku: schema.tiktokProducts.sellerSku,
+    priceMin: schema.tiktokProducts.priceMin,
+    ttUpdateTime: schema.tiktokProducts.ttUpdateTime,
+  }).from(schema.tiktokProducts)
     .where(productWhere)
     .orderBy(desc(schema.tiktokProducts.ttUpdateTime)).limit(1000);
 
