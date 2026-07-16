@@ -264,8 +264,8 @@ export async function ttGetCategoryAttributes(cfg: TtCfg, categoryId: string, lo
 // data: bytes ảnh; use_case: MAIN_IMAGE | ATTRIBUTE_IMAGE | DESCRIPTION_IMAGE ...
 export async function ttUploadProductImage(cfg: TtCfg, bytes: Uint8Array, filename: string, useCase = "MAIN_IMAGE"): Promise<{ uri: string | null; url: string | null; raw: unknown }> {
   const path = "/product/202309/images/upload";
+  // Endpoint upload ảnh KHÔNG nhận shop_cipher (TikTok trả 36009004 nếu có) → không thêm.
   const params: Record<string, string> = { app_key: cfg.appKey, timestamp: String(Math.floor(Date.now() / 1000)) };
-  if (cfg.shopCipher) params.shop_cipher = cfg.shopCipher;
   params.sign = ttSign(cfg.appSecret, path, params, ""); // multipart: body KHÔNG vào chữ ký
   const fd = new FormData();
   fd.append("data", new Blob([bytes as BlobPart]), filename);

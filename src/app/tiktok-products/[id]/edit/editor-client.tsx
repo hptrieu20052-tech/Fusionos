@@ -1,6 +1,35 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+
+// Rich-text editor gọn (contentEditable) — B/I/U + list. Xuất HTML cho description.
+function RichText({ value, onChange }: { value: string; onChange: (html: string) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inited = useRef(false);
+  useEffect(() => {
+    if (ref.current && !inited.current) { ref.current.innerHTML = value || ""; inited.current = true; }
+  }, [value]);
+  const cmd = (c: string) => { document.execCommand(c, false); if (ref.current) onChange(ref.current.innerHTML); ref.current?.focus(); };
+  const tbtn: React.CSSProperties = { border: "1px solid var(--line)", background: "#fff", borderRadius: 6, minWidth: 30, height: 28, cursor: "pointer", fontSize: 13, fontWeight: 700 };
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 9, overflow: "hidden" }}>
+      <div style={{ display: "flex", gap: 5, padding: 7, borderBottom: "1px solid var(--line)", background: "#F8FAFC" }}>
+        <button type="button" title="Bold" onClick={() => cmd("bold")} style={tbtn}><b>B</b></button>
+        <button type="button" title="Italic" onClick={() => cmd("italic")} style={{ ...tbtn, fontStyle: "italic" }}>I</button>
+        <button type="button" title="Underline" onClick={() => cmd("underline")} style={{ ...tbtn, textDecoration: "underline" }}>U</button>
+        <button type="button" title="Bullet list" onClick={() => cmd("insertUnorderedList")} style={{ ...tbtn, minWidth: 34 }}>• ⋮</button>
+        <button type="button" title="Numbered list" onClick={() => cmd("insertOrderedList")} style={{ ...tbtn, minWidth: 34 }}>1.</button>
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={() => ref.current && onChange(ref.current.innerHTML)}
+        style={{ minHeight: 150, maxHeight: 300, overflowY: "auto", padding: "10px 12px", fontSize: 13.5, lineHeight: 1.5, outline: "none" }}
+      />
+    </div>
+  );
+}
 
 type Sku = { sellerSku: string; variant: string; price: string; currency: string; quantity: number };
 type Summary = {
@@ -132,8 +161,7 @@ export default function EditorClient({ id, mode }: { id: string; mode: "edit" | 
 
       <div style={sec}>
         <label style={lab}>Description (*)</label>
-        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={8} style={{ ...fld, fontFamily: "inherit", resize: "vertical" }} />
-        <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 4 }}>HTML accepted. (Rich-text editor coming soon.)</div>
+        <RichText value={description} onChange={setDescription} />
       </div>
 
       <div style={{ ...sec, display: "flex", gap: 14, flexWrap: "wrap" }}>
