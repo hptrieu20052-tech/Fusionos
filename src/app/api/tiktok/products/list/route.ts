@@ -20,7 +20,19 @@ export async function GET() {
     storeFilter = ids.length ? inArray(schema.tiktokProducts.storeId, ids) : sql`false`;
   }
 
-  const rows = await db.select().from(schema.tiktokProducts)
+  // CHỈ cột hiển thị — KHÔNG kéo `raw` (jsonb nặng) để nhẹ payload.
+  const rows = await db.select({
+    id: schema.tiktokProducts.id,
+    storeId: schema.tiktokProducts.storeId,
+    tiktokProductId: schema.tiktokProducts.tiktokProductId,
+    title: schema.tiktokProducts.title,
+    status: schema.tiktokProducts.status,
+    mainImageUrl: schema.tiktokProducts.mainImageUrl,
+    categoryName: schema.tiktokProducts.categoryName,
+    sellerSku: schema.tiktokProducts.sellerSku,
+    priceMin: schema.tiktokProducts.priceMin,
+    ttUpdateTime: schema.tiktokProducts.ttUpdateTime,
+  }).from(schema.tiktokProducts)
     .where(storeFilter)
     .orderBy(desc(schema.tiktokProducts.ttUpdateTime)).limit(1000);
   return NextResponse.json({ ok: true, rows: JSON.parse(JSON.stringify(rows)) });
