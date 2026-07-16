@@ -214,12 +214,10 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
             )}
             <div className="dc-body">
               <div className="dc-top">
-                <span className="dc-id">
+                <span className="dc-id" style={{ cursor: "pointer" }} title={t("d.copy") + " ID"}
+                  onClick={(e) => { e.stopPropagation(); copyText(String(d.skuCode)); }}>
                   #{d.skuCode}
-                  <button className="icon-btn" style={{ width: 18, height: 18, border: "none", background: "transparent", color: "inherit" }}
-                    title={t("d.copy") + " ID"} onClick={(e) => { e.stopPropagation(); copyText(String(d.skuCode)); }}>
-                    <IconCopy width={11} height={11} />
-                  </button>
+                  <IconCopy width={11} height={11} style={{ marginLeft: 4, verticalAlign: "-1px", opacity: 0.7 }} />
                 </span>
                 <span className="dc-date">{fmtDate(d.createdAt)}</span>
               </div>

@@ -1375,6 +1375,14 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
         {(() => {
           const parts = splitVariant(it.variant as string | null);
           if (!parts.length) return null;
+          // Copy full variants dạng "label: value" mỗi dòng (kèm personalization nếu có) — gửi designer làm mẫu cho nhanh.
+          const copyDetails = () => {
+            const lines = parts.map((v: VariantPart) => (v.label ? `${v.label}: ${v.value}` : v.value));
+            const pz = (it.personalization ?? "").trim();
+            if (pz && !parts.some((p) => (p.value || "").includes(pz))) lines.push(`Personalization: ${pz}`);
+            navigator.clipboard?.writeText(lines.join("\n"));
+            flash(t("d.copied"));
+          };
           return (
             <div style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>
               {parts.map((v: VariantPart, i: number) => (
@@ -1383,6 +1391,10 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
                   <span style={{ color: "var(--ink)", fontWeight: 700 }}>{v.value}</span>
                 </div>
               ))}
+              <button type="button" onClick={copyDetails} title="Copy all details (label: value)"
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 3, padding: "2px 8px", border: "1px solid var(--line)", background: "var(--card)", borderRadius: 7, cursor: "pointer", fontSize: 11, fontWeight: 700, color: "var(--blue)" }}>
+                <IconCopy width={11} height={11} /> Copy details
+              </button>
             </div>
           );
         })()}

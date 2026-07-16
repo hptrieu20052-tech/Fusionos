@@ -651,6 +651,10 @@ function gsheetFieldValue(header: string, o: PushCtx["order"], l: PushLine): str
   const key = normHeader(header);
   const side = (k: string) => l.designSides?.find((s) => s.kind === k)?.url ?? "";
   const fullName = [o.buyerFirst, o.buyerLast].filter(Boolean).join(" ");
+  const addr12 = [o.addr1, o.addr2].filter(Boolean).join(" "); // cột gộp "Address 1&2" của Zootop
+  const cs = splitColorSize(l.variant); // tách Color / Size từ nhãn variant (vd "Black / L")
+  const dFront = side("design_front") || l.designFront || "";
+  const dBack = side("design_back") || l.designBack || "";
   const shipType = o.shippingType === "SELLER" ? "SELLER" : "PLATFORM"; // TIKTOK/khác → PLATFORM
   const map: Record<string, string> = {
     date: new Date().toISOString().slice(0, 10),
@@ -661,17 +665,21 @@ function gsheetFieldValue(header: string, o: PushCtx["order"], l: PushLine): str
     customer_s_name: fullName, customers_name: fullName, customer_name: fullName, name: fullName, buyer_name: fullName, recipient: fullName,
     buyer_phone_number: o.phone ?? "", phone: o.phone ?? "", phone_number: o.phone ?? "",
     buyer_email: o.email ?? "", email: o.email ?? "",
-    buyer_country: o.country ?? "", country: o.country ?? "",
-    buyer_state: o.state ?? "", state: o.state ?? "", state_province: o.state ?? "",
+    buyer_country: o.country ?? "", country: o.country ?? "", country_code: o.country ?? "",
+    buyer_state: o.state ?? "", state: o.state ?? "", state_province: o.state ?? "", state_code: o.state ?? "",
     buyer_city: o.city ?? "", city: o.city ?? "",
     buyer_address_1: o.addr1 ?? "", address_line_1: o.addr1 ?? "", address_1: o.addr1 ?? "", address1: o.addr1 ?? "", address: o.addr1 ?? "",
     buyer_address_2: o.addr2 ?? "", address_line_2: o.addr2 ?? "", address_2: o.addr2 ?? "", address2: o.addr2 ?? "",
-    buyer_postcode: o.zip ?? "", zip: o.zip ?? "", postcode: o.zip ?? "", zip_code: o.zip ?? "", postal_code: o.zip ?? "",
+    address_1_2: addr12, address_1_and_2: addr12, address_1_2_shipping: addr12, // Zootop cột gộp
+    buyer_postcode: o.zip ?? "", zip: o.zip ?? "", postcode: o.zip ?? "", zip_code: o.zip ?? "", postal_code: o.zip ?? "", postcode_code: o.zip ?? "",
     quantity: String(l.qty), qty: String(l.qty),
-    sku: l.fulfillerSku,
-    design_front: side("design_front") || l.designFront || "", design_back: side("design_back") || l.designBack || "",
+    sku: l.fulfillerSku, sku_basic: l.fulfillerSku, // Zootop "SKU BASIC"
+    size: cs.size, color: cs.color, // Zootop Size/Color (tách từ variant). Type không có sẵn → để trống
+    design_front: dFront, design_back: dBack,
+    design_link_front: dFront, design_link_back: dBack, // Zootop "design link front/back"
     design_sleeve_left: side("sleeve_left"), design_sleeve_right: side("sleeve_right"),
     note: l.personalization ?? "", product_note: l.personalization ?? "", personalization: l.personalization ?? "",
+    customer_note: l.personalization ?? "", custome_name: l.personalization ?? "", // Zootop "Customer Note" / "CUSTOME NAME"
     link_label: o.labelUrl ?? "", // đơn TikTok-shipping → link nhãn TikTok; đơn khác trống
   };
   // STATUS / tracking_number / tracking_status / *_cost / shipping_fee / mockup_* / store_code / variant_id / card_code → "" (supplier điền / chưa có)

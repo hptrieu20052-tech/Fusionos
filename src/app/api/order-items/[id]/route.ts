@@ -15,8 +15,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ((await levelOf(session, "orders")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const item = (await db.execute(sql`
-    SELECT i.id, i.order_id, o.seller_id FROM order_items i JOIN orders o ON o.id = i.order_id WHERE i.id = ${params.id}::uuid
-  `)).rows[0] as { id: string; order_id: string; seller_id: string | null } | undefined;
+    SELECT i.id, i.order_id, i.product_title, o.seller_id FROM order_items i JOIN orders o ON o.id = i.order_id WHERE i.id = ${params.id}::uuid
+  `)).rows[0] as { id: string; order_id: string; product_title: string | null; seller_id: string | null } | undefined;
   if (!item) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   if (!(await inScope(session, "orders", item.seller_id))) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
@@ -36,6 +36,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       design = (await db.execute(sql`SELECT id, sku_code, title FROM designs WHERE sku_code = ${sku}`)).rows[0] as unknown as D | undefined ?? null;
       if (!design) return NextResponse.json({ ok: false, error: `Không tìm thấy design #${sku}` }, { status: 404 });
       await db.update(schema.orderItems).set({ designId: design.id }).where(eq(schema.orderItems.id, params.id));
+      // Dán ID design → lấy luôn title của card design = tên sản phẩm của order item này.
+      const pt = (item.product_title ?? "").trim();
+      if (pt && pt !== design.title) {
+        await db.execute(sql`UPDATE designs SET title = ${pt} WHERE id = ${design.id}`);
+        design = { ...design, title: pt };
+      }
     }
   }
   if ("personalization" in b) {
