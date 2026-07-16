@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import DateRangePicker, { rangeToDates, type RangeValue } from "@/components/date-range";
 
 type Store = { id: string; name: string; sellerId: string | null };
 type Seller = { id: string; name: string | null };
@@ -15,8 +16,7 @@ export default function FinanceClient({ stores, sellers = [] }: { stores: Store[
   const shopOptions = useMemo(() => (seller ? stores.filter((s) => s.sellerId === seller) : stores), [stores, seller]);
   const [storeId, setStoreId] = useState(stores[0]?.id ?? "");
   const [status, setStatus] = useState("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const [dr, setDr] = useState<RangeValue>({ range: "30d" }); // mặc định 30 ngày — chỉnh bằng date range picker
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -27,6 +27,7 @@ export default function FinanceClient({ stores, sellers = [] }: { stores: Store[
     setLoading(true); setErr(""); setLoaded(false);
     const qs = new URLSearchParams({ storeId });
     if (status) qs.set("status", status);
+    const { from, to } = rangeToDates(dr);
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
     try {
@@ -64,8 +65,7 @@ export default function FinanceClient({ stores, sellers = [] }: { stores: Store[
           <option value="PROCESSING">PROCESSING</option>
           <option value="FAILED">FAILED</option>
         </select>
-        <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} title="From" style={sel} />
-        <input type="date" value={to} onChange={(e) => setTo(e.target.value)} title="To" style={sel} />
+        <DateRangePicker value={dr} onChange={(v) => setDr(v)} align="right" />
         <button onClick={load} disabled={loading || !storeId} style={{ ...sel, cursor: loading || !storeId ? "default" : "pointer", fontWeight: 700, background: "var(--blue)", color: "#fff", border: 0, opacity: loading || !storeId ? 0.6 : 1 }}>{loading ? "Loading…" : "Load payouts"}</button>
       </div>
 
