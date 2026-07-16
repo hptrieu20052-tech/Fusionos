@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 type Row = {
@@ -7,7 +7,10 @@ type Row = {
   mainImageUrl: string | null; categoryName: string | null; sellerSku: string | null;
   priceMin: string | null; ttUpdateTime: string | null;
 };
-type Store = { id: string; name: string };
+type Store = { id: string; name: string; sellerId: string | null };
+type Seller = { id: string; name: string | null };
+
+const PAGE_SIZE = 20;
 
 const STATUSES = ["ALL", "ACTIVATE", "DRAFT", "PENDING", "FAILED", "SELLER_DEACTIVATED", "PLATFORM_DEACTIVATED", "FREEZE", "DELETED"];
 const statusColor = (s: string | null) => {
@@ -17,17 +20,23 @@ const statusColor = (s: string | null) => {
   return { bg: "#EEF1F5", fg: "#5B6472" };
 };
 
-export default function TiktokProductsClient({ stores, initial, isAdmin, canManage = false }: { stores: Store[]; initial: Row[]; isAdmin: boolean; canManage?: boolean }) {
+export default function TiktokProductsClient({ stores, sellers = [], initial, isAdmin, canManage = false }: { stores: Store[]; sellers?: Seller[]; initial: Row[]; isAdmin: boolean; canManage?: boolean }) {
   const [rows, setRows] = useState<Row[]>(initial);
   const [kw, setKw] = useState("");
   const [shop, setShop] = useState("");
-  const [status, setStatus] = useState("ALL");
+  const [seller, setSeller] = useState("");
+  const [status, setStatus] = useState("ACTIVATE"); // mặc định chỉ hiện listing đang bán
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState("");
+  const [page, setPage] = useState(1);
 
   const storeName = useMemo(() => new Map(stores.map((s) => [s.id, s.name])), [stores]);
+  const storeSeller = useMemo(() => new Map(stores.map((s) => [s.id, s.sellerId])), [stores]);
+  // Chọn seller → chỉ hiện shop của seller đó trong dropdown Shop.
+  const shopOptions = useMemo(() => (seller ? stores.filter((s) => s.sellerId === seller) : stores), [stores, seller]);
 
   const filtered = useMemo(() => rows.filter((r) => {
+    if (seller && storeSeller.get(r.storeId) !== seller) return false;
     if (shop && r.storeId !== shop) return false;
     if (status !== "ALL" && r.status !== status) return false;
     if (kw) {
@@ -35,7 +44,25 @@ export default function TiktokProductsClient({ stores, initial, isAdmin, canMana
       if (!(r.title?.toLowerCase().includes(q) || r.tiktokProductId.includes(q) || r.sellerSku?.toLowerCase().includes(q))) return false;
     }
     return true;
-  }), [rows, kw, shop, status]);
+  }), [rows, kw, shop, seller, status, storeSeller]);
+
+  // Phân trang 20/trang; reset về trang 1 khi đổi filter.
+  useEffect(() => { setPage(1); }, [kw, shop, seller, status]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const paged = useMemo(() => filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE), [filtered, pageSafe]);
+
+  // Lazy-load ảnh thumbnail cho các dòng đang xem (search list không trả ảnh) — cache client + backfill DB.
+  const [thumbs, setThumbs] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const need = paged.filter((r) => !r.mainImageUrl && !thumbs[r.id]).map((r) => r.id);
+    if (!need.length) return;
+    let alive = true;
+    fetch("/api/tiktok/products/thumbnails", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: need }) })
+      .then((r) => r.json()).then((j) => { if (alive && j?.ok && j.thumbs) setThumbs((p) => ({ ...p, ...j.thumbs })); }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paged]);
 
   const sync = async () => {
     setSyncing(true); setMsg("Syncing products from TikTok…");
@@ -64,9 +91,15 @@ export default function TiktokProductsClient({ stores, initial, isAdmin, canMana
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <input placeholder="Keyword (title / product id / sku)" value={kw} onChange={(e) => setKw(e.target.value)} style={{ flex: 1, minWidth: 220, padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13 }} />
+        {sellers.length > 1 && (
+          <select value={seller} onChange={(e) => { setSeller(e.target.value); setShop(""); }} style={{ padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13 }}>
+            <option value="">All sellers</option>
+            {sellers.map((s) => <option key={s.id} value={s.id}>{s.name || "—"}</option>)}
+          </select>
+        )}
         <select value={shop} onChange={(e) => setShop(e.target.value)} style={{ padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13 }}>
           <option value="">All shops</option>
-          {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {shopOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13 }}>
           {STATUSES.map((s) => <option key={s} value={s}>{s === "ALL" ? "All status" : s}</option>)}
@@ -91,13 +124,13 @@ export default function TiktokProductsClient({ stores, initial, isAdmin, canMana
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r) => {
+            {paged.map((r) => {
               const sc = statusColor(r.status);
               return (
                 <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                   <td style={{ padding: "8px 6px" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {r.mainImageUrl ? <img src={r.mainImageUrl} alt="" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 7 }} /> : <div style={{ width: 42, height: 42, background: "#EEF1F5", borderRadius: 7 }} />}
+                    {(r.mainImageUrl || thumbs[r.id]) ? <img src={r.mainImageUrl || thumbs[r.id]} alt="" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 7 }} /> : <div style={{ width: 42, height: 42, background: "#EEF1F5", borderRadius: 7 }} />}
                   </td>
                   <td style={{ padding: "8px 6px", maxWidth: 380 }}>
                     <div style={{ fontWeight: 600, lineHeight: 1.3 }}>{r.title || "(no title)"}</div>
@@ -114,7 +147,7 @@ export default function TiktokProductsClient({ stores, initial, isAdmin, canMana
                   {canManage && (
                     <td style={{ padding: "8px 6px", whiteSpace: "nowrap" }}>
                       <Link href={`/tiktok-products/${r.id}/edit`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textDecoration: "none", marginRight: 10 }}>Edit</Link>
-                      <Link href={`/tiktok-products/${r.id}/edit?mode=clone`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", textDecoration: "none" }}>Clone</Link>
+                      <Link href={`/tiktok-products/${r.id}/edit?mode=clone`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", textDecoration: "none" }}>Duplicate</Link>
                     </td>
                   )}
                 </tr>
@@ -124,7 +157,21 @@ export default function TiktokProductsClient({ stores, initial, isAdmin, canMana
         </table>
         {!filtered.length && <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>No products. Bấm &quot;Sync from TikTok&quot; để kéo về.</div>}
       </div>
-      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit = sửa live trên TikTok · Clone = nhân bản cùng shop (mặc định nháp). Đổi ảnh/category/attributes ở bản kế.</div>}
+
+      {filtered.length > PAGE_SIZE && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+            {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} / {filtered.length}
+          </span>
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pageSafe <= 1} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: pageSafe <= 1 ? "default" : "pointer", opacity: pageSafe <= 1 ? 0.5 : 1 }}>← Trước</button>
+            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Trang {pageSafe}/{totalPages}</span>
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={pageSafe >= totalPages} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: pageSafe >= totalPages ? "default" : "pointer", opacity: pageSafe >= totalPages ? 0.5 : 1 }}>Sau →</button>
+          </div>
+        </div>
+      )}
+
+      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit = sửa live trên TikTok · Duplicate = nhân bản cùng shop (mặc định nháp). Đổi ảnh/category/attributes ở bản kế.</div>}
     </div>
   );
 }

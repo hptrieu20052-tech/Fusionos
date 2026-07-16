@@ -78,7 +78,7 @@ export default function EditorClient({ id, mode }: { id: string; mode: "edit" | 
   const endpoint = mode === "clone" ? `/api/tiktok/products/${id}/clone` : `/api/tiktok/products/${id}/edit`;
 
   const call = async (dryRun: boolean) => {
-    setBusy(true); setMsg(dryRun ? "Đang dựng body…" : mode === "clone" ? "Đang tạo bản clone trên TikTok…" : "Đang cập nhật trên TikTok…"); setPreview("");
+    setBusy(true); setMsg(dryRun ? "Đang dựng body…" : mode === "clone" ? "Đang tạo bản duplicate trên TikTok…" : "Đang cập nhật trên TikTok…"); setPreview("");
     try {
       const j = await fetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload(dryRun)) }).then((r) => r.json());
       if (!j.ok) { setMsg("✗ " + (j.error || "Thất bại")); }
@@ -95,7 +95,7 @@ export default function EditorClient({ id, mode }: { id: string; mode: "edit" | 
   return (
     <div className="panel" style={{ padding: 20, maxWidth: 900 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>{mode === "clone" ? "Clone product · TikTok Shop" : "Edit product · TikTok Shop"}</h2>
+        <h2 style={{ margin: 0, fontSize: 18 }}>{mode === "clone" ? "Duplicate product · TikTok Shop" : "Edit product · TikTok Shop"}</h2>
         <button onClick={() => router.push("/tiktok-products")} style={{ background: "none", border: "1px solid var(--line)", borderRadius: 8, padding: "7px 13px", fontSize: 13, cursor: "pointer" }}>← Quay lại</button>
       </div>
 
@@ -152,12 +152,12 @@ export default function EditorClient({ id, mode }: { id: string; mode: "edit" | 
       </div>
 
       <div style={sec}>
-        <label style={lab}>Variants — giá / tồn / SKU</label>
-        <div style={{ overflowX: "auto" }}>
+        <label style={lab}>Variants — giá / tồn / SKU <span style={{ color: "var(--faint)", fontWeight: 500 }}>({skus.length})</span></label>
+        <div style={{ maxHeight: 300, overflowY: "auto", overflowX: "auto", border: "1px solid var(--line)", borderRadius: 10 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
-              <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 11.5 }}>
-                <th style={{ padding: "6px 6px" }}>Variant</th><th style={{ padding: "6px 6px", width: 120 }}>Price</th><th style={{ padding: "6px 6px", width: 110 }}>Qty</th><th style={{ padding: "6px 6px", width: 200 }}>Seller SKU</th>
+              <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 11.5, position: "sticky", top: 0, background: "#fff", boxShadow: "0 1px 0 var(--line)", zIndex: 1 }}>
+                <th style={{ padding: "8px 10px" }}>Variant</th><th style={{ padding: "8px 10px", width: 120 }}>Price</th><th style={{ padding: "8px 10px", width: 110 }}>Qty</th><th style={{ padding: "8px 10px", width: 200 }}>Seller SKU</th>
               </tr>
             </thead>
             <tbody>
@@ -198,7 +198,7 @@ export default function EditorClient({ id, mode }: { id: string; mode: "edit" | 
 
       <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
         <button onClick={() => call(false)} disabled={busy} style={{ background: mode === "clone" ? "var(--green)" : "var(--blue)", color: "#fff", border: 0, borderRadius: 9, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
-          {mode === "clone" ? "Tạo bản clone" : "Cập nhật lên TikTok"}
+          {mode === "clone" ? "Tạo bản Duplicate" : "Cập nhật lên TikTok"}
         </button>
         <button onClick={() => call(true)} disabled={busy} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 9, padding: "10px 16px", fontWeight: 700, fontSize: 13, cursor: busy ? "default" : "pointer" }}>
           Xem body (không đẩy)

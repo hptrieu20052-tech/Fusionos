@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
-  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid,
+  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox,
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 
@@ -79,13 +79,13 @@ export default function AppShell({ user, links, children, canProducts = false }:
   const productsDropdown = canProducts ? (
     <div key="__products" className="topnav-more">
       <button className={`topnav-item${path.startsWith("/tiktok-products") || path.startsWith("/tiktok-templates") ? " active" : ""}`} onClick={() => setProdOpen((v) => !v)}>
-        <span className="topnav-ic"><IconProducts width={17} height={17} /></span>
+        <span className="topnav-ic"><IconBox width={17} height={17} /></span>
         Products <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
       </button>
       {prodOpen && (
         <div className="topnav-more-menu" onClick={() => setProdOpen(false)}>
           <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconProducts width={16} height={16} /></span>
+            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
             Manage Products Tiktok
           </Link>
           <Link href="/tiktok-templates" prefetch className={`topnav-more-item${isActive("/tiktok-templates") ? " active" : ""}`}>
@@ -196,7 +196,7 @@ export default function AppShell({ user, links, children, canProducts = false }:
               if (l.href === "/designs" && canProducts) {
                 return [el,
                   <Link key="__mp" href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
-                    <span className="topnav-ic"><IconProducts width={18} height={18} /></span>
+                    <span className="topnav-ic"><IconBox width={18} height={18} /></span>
                     Manage Products Tiktok
                   </Link>,
                   <Link key="__mt" href="/tiktok-templates" prefetch className={`mobile-nav-item${isActive("/tiktok-templates") ? " active" : ""}`}>
@@ -209,7 +209,7 @@ export default function AppShell({ user, links, children, canProducts = false }:
             })}
             {!hasDesigns && canProducts && (
               <Link href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
-                <span className="topnav-ic"><IconProducts width={18} height={18} /></span>
+                <span className="topnav-ic"><IconBox width={18} height={18} /></span>
                 Manage Products Tiktok
               </Link>
             )}
