@@ -89,6 +89,14 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) { packagesError = String((e as Error)?.message ?? e).slice(0, 200); }
 
+    // PROBE PRODUCT API (scope seller.product.*): read + write. code=40006 = app KHÔNG có scope Product.
+    const productProbes = await Promise.all([
+      ttProbe(cfg, "POST", "/product/202309/products/search", { page_size: "1" }, {}),
+      ttProbe(cfg, "POST", "/product/202309/products", {}, {}),
+      ttProbe(cfg, "GET", "/product/202309/categories", { locale: "en-US" }),
+      ttProbe(cfg, "GET", "/product/202309/brands", { page_size: "1" }),
+    ]);
+
     return NextResponse.json({
       ok: true,
       order: { internalId: ord.id, externalId: ord.externalId, shippingTypeStored: ord.shippingType },
@@ -99,7 +107,8 @@ export async function GET(req: NextRequest) {
       capabilities,
       writeProbes,
       arrangeProbes,
-      hint: "40006 = app KHÔNG có quyền. Code khác (thiếu field/validation) = CÓ quyền. arrangeProbes: eligible_shipping_service + packages = luồng auto-Arrange.",
+      productProbes,
+      hint: "40006 = app KHÔNG có quyền. Code khác (thiếu field/validation) = CÓ quyền. productProbes: products/search + products = Manage Products qua API.",
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });

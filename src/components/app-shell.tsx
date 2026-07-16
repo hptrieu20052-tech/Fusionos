@@ -32,6 +32,7 @@ export default function AppShell({ user, links, children }: {
   const isLogin = path === "/login";
   const initials = user.name.split(" ").map((w) => w[0]).slice(-2).join("").toUpperCase();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [prodOpen, setProdOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
 
@@ -87,6 +88,25 @@ export default function AppShell({ user, links, children }: {
                 </Link>
               );
             })}
+            {/* Products dropdown (TikTok Shop) */}
+            <div className="topnav-more" onMouseLeave={() => setProdOpen(false)}>
+              <button className={`topnav-item${path.startsWith("/tiktok-products") || path.startsWith("/tiktok-templates") ? " active" : ""}`} onClick={() => setProdOpen((v) => !v)}>
+                <span className="topnav-ic"><IconProducts width={17} height={17} /></span>
+                Products <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
+              </button>
+              {prodOpen && (
+                <div className="topnav-more-menu" onClick={() => setProdOpen(false)}>
+                  <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
+                    <span className="topnav-ic"><IconProducts width={16} height={16} /></span>
+                    Manage Products
+                  </Link>
+                  <Link href="/tiktok-templates" prefetch className={`topnav-more-item${isActive("/tiktok-templates") ? " active" : ""}`}>
+                    <span className="topnav-ic"><IconGrid width={16} height={16} /></span>
+                    Manage Templates
+                  </Link>
+                </div>
+              )}
+            </div>
             {links.some((l) => l.more) && (
               <div className="topnav-more" onMouseLeave={() => setMoreOpen(false)}>
                 <button className={`topnav-item${links.some((l) => l.more && isActive(l.href)) ? " active" : ""}`} onClick={() => setMoreOpen((v) => !v)}>

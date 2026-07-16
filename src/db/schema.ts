@@ -177,6 +177,24 @@ export const designFiles = pgTable("design_files", {
   index("idx_files_sha").on(t.sha256),
 ]);
 
+// Sản phẩm TikTok kéo về từ Product API (Manage Products). Mỗi (store, tiktokProductId) = 1 dòng.
+export const tiktokProducts = pgTable("tiktok_products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),
+  tiktokProductId: text("tiktok_product_id").notNull(),
+  title: text("title"),
+  status: text("status"),
+  mainImageUrl: text("main_image_url"),
+  categoryId: text("category_id"),
+  categoryName: text("category_name"),
+  sellerSku: text("seller_sku"),
+  priceMin: numeric("price_min", { precision: 12, scale: 2 }),
+  ttCreateTime: timestamp("tt_create_time", { withTimezone: true }),
+  ttUpdateTime: timestamp("tt_update_time", { withTimezone: true }),
+  raw: jsonb("raw"),
+  syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({ uqTtProduct: uniqueIndex("uq_tt_product").on(t.storeId, t.tiktokProductId) }));
+
 // ---------- FULFILLMENT ----------
 export const fulfillers = pgTable("fulfillers", {
   id: uuid("id").primaryKey().defaultRandom(),

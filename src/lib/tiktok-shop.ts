@@ -206,6 +206,19 @@ export async function ttCreatePackage(cfg: TtCfg, orderId: string, shippingServi
   return { packageId: pid ? String(pid) : null, raw: d };
 }
 
+// ===== PRODUCT API (Manage Products) — scope seller.product.basic =====
+// Search Products 202502: POST /product/202502/products/search. page_size/page_token ở query, filter ở body.
+export async function ttSearchProducts(cfg: TtCfg, body: Record<string, unknown>, pageToken?: string, pageSize = 100): Promise<{ products: Record<string, unknown>[]; nextPageToken: string; totalCount: number }> {
+  const query: Record<string, string> = { page_size: String(pageSize) };
+  if (pageToken) query.page_token = pageToken;
+  const d = await ttFetch(cfg, "POST", "/product/202502/products/search", query, body ?? {});
+  return {
+    products: (d?.products as Record<string, unknown>[] | undefined) ?? [],
+    nextPageToken: d?.next_page_token ? String(d.next_page_token) : "",
+    totalCount: Number(d?.total_count ?? 0),
+  };
+}
+
 // ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====
 // Get Order Detail 202309: GET /order/202309/orders?ids=<comma>. Trả orders[] kèm packages, line_items,
 // shipping_type/fulfillment_type, delivery_option... Dùng để xác minh trước khi viết ship/label.
