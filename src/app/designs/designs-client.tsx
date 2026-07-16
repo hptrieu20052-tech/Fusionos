@@ -217,16 +217,11 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
                 <span className="dc-id" style={{ cursor: "pointer" }} title={t("d.copy") + " ID"}
                   onClick={(e) => { e.stopPropagation(); copyText(String(d.skuCode)); }}>
                   #{d.skuCode}
-                  <IconCopy width={11} height={11} style={{ marginLeft: 4, verticalAlign: "-1px", opacity: 0.7 }} />
                 </span>
                 <span className="dc-date">{fmtDate(d.createdAt)}</span>
               </div>
               <div className="dc-title">
-                <button className="icon-btn" title={t("d.copy") + " " + t("d.title").toLowerCase()}
-                  onClick={(e) => { e.stopPropagation(); copyText(d.title); }}>
-                  <IconCopy width={12} height={12} />
-                </button>
-                <span title={t("d.copy") + " " + t("d.title").toLowerCase()} style={{ cursor: "pointer" }}
+                <span title={t("d.copy") + " " + t("d.title").toLowerCase()} style={{ cursor: "pointer", fontWeight: 700, background: "#EEF4FF", borderRadius: 6, padding: "1px 7px" }}
                   onClick={(e) => { e.stopPropagation(); copyText(d.title); }}>{d.title}</span>
               </div>
               <div className="dc-meta"><span>{t("c.seller")}</span><b>{d.sellerName ?? "—"}</b></div>

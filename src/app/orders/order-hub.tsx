@@ -105,6 +105,10 @@ const IMPORT_SUB: CSSProperties = { fontSize: 11, color: "var(--muted)", fontWei
 const SIDE_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 const money = (n: number | string) => "$" + Number(n).toFixed(2);
 const cleanName = (v: string | null | undefined) => (v ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+// Pill nền xanh nhạt + chữ đậm cho các giá trị click-để-copy (đồng bộ với chip #id). Nhạt để không rối.
+const copyPill: React.CSSProperties = { background: "#EAF1FF", border: "1px solid #D5E3FB", borderRadius: 8, padding: "1px 8px", cursor: "pointer", fontWeight: 700, color: "var(--blue)", display: "inline-block", lineHeight: 1.6 };
+// Tracking + Carrier quan trọng → pill to hơn, đậm hơn cho nổi.
+const copyPillStrong: React.CSSProperties = { background: "#E7F6EC", border: "1px solid #BFE3CC", borderRadius: 8, padding: "3px 11px", cursor: "pointer", fontWeight: 800, color: "#1E8E4E", display: "inline-block", lineHeight: 1.6 };
 // Link tra cứu tracking theo hãng vận chuyển
 function trackingUrl(carrier: string | null, num: string): string {
   const c = (carrier ?? "").toLowerCase();
@@ -1041,8 +1045,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
             <div className="o2-info">
               <div className="o2-l1">
                 {canEdit && <input type="checkbox" checked={selected} onChange={onToggleSel} style={{ width: 17, height: 17, cursor: "pointer", accentColor: "var(--blue)", flexShrink: 0 }} />}
-                <span className="o2-num" style={{ cursor: "pointer" }} title={t("d.copy") + " ID"} onClick={(e) => { e.stopPropagation(); copyText(o.external_id); }}>#{o.external_id}</span>
-                <button className="icon-btn" title={t("d.copy") + " ID"} onClick={() => copyText(o.external_id)}><IconCopy width={12} height={12} /></button>
+                <span className="o2-num" style={{ ...copyPill }} title={t("d.copy") + " ID"} onClick={(e) => { e.stopPropagation(); copyText(o.external_id); }}>#{o.external_id}</span>
                 <span className="o2-status" style={{ background: STATUS_COLORS[o.status] ?? "#6B7280" }}>{o.status.toUpperCase()}</span>
                 <span style={{ fontSize: 12, color: "var(--muted)" }}>{new Date(o.ordered_at).toISOString().slice(0, 10)}</span>
               </div>
@@ -1066,8 +1069,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
               {/* Người nhận + địa chỉ */}
               {([cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")) && (
                 <div className="o2-buyer">
-                  <span style={{ cursor: "pointer" }} title="Copy name" onClick={(e) => { e.stopPropagation(); copyText([cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")); }}>{[cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")}</span>
-                  <button className="icon-btn" title="Copy name" onClick={() => copyText([cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" "))} style={{ marginLeft: 6, verticalAlign: "-2px" }}><IconCopy width={12} height={12} /></button>
+                  <span style={{ ...copyPill }} title="Copy name" onClick={(e) => { e.stopPropagation(); copyText([cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")); }}>{[cleanName(o.buyer_first), cleanName(o.buyer_last)].filter(Boolean).join(" ")}</span>
                 </div>
               )}
               <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ") || t("o.noAddress")}</span></div>
@@ -1103,8 +1105,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                         <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted)", margin: "2px 0" }}>
                           {f.externalFfId && <>
                             <span>{t("o.codeLabel")}</span>
-                            <b style={{ fontFamily: "ui-monospace,monospace", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180, cursor: "pointer" }} title={t("o.copyFfCode")} onClick={(e) => { e.stopPropagation(); copyText(f.externalFfId!); }}>{f.externalFfId}</b>
-                            <button className="icon-btn" title={t("o.copyFfCode")} onClick={() => copyText(f.externalFfId!)}><IconCopy width={11} height={11} /></button>
+                            <b style={{ ...copyPill, fontFamily: "ui-monospace,monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }} title={t("o.copyFfCode")} onClick={(e) => { e.stopPropagation(); copyText(f.externalFfId!); }}>{f.externalFfId}</b>
                           </>}
                           {f.pushedAt && <span style={{ marginLeft: "auto", whiteSpace: "nowrap" }}>{fmtDateTime(f.pushedAt)}</span>}
                         </div>
@@ -1134,10 +1135,10 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                       {f.trackingNumber ? (
                         <div className="o2-track-row">
                           <div style={{ minWidth: 0, flex: 1, display: "flex", alignItems: "center", gap: 7 }}>
-                            <span style={{ fontFamily: "ui-monospace,monospace", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }} title={t("o.copyTrack")} onClick={(e) => { e.stopPropagation(); copyText(f.trackingNumber!); }}>{f.trackingNumber}</span>
-                            <button className="icon-btn" title={t("o.copyTrack")} onClick={() => copyText(f.trackingNumber!)}><IconCopy width={12} height={12} /></button>
-                            <span style={{ fontSize: 11, color: "var(--muted)", cursor: f.trackingCarrier ? "pointer" : "default" }} title={f.trackingCarrier ? "Copy carrier" : undefined} onClick={(e) => { if (f.trackingCarrier) { e.stopPropagation(); copyText(f.trackingCarrier); } }}>· {f.trackingCarrier || t("o.carrier")}</span>
-                            {f.trackingCarrier && <button className="icon-btn" title="Copy carrier" onClick={() => copyText(f.trackingCarrier!)}><IconCopy width={12} height={12} /></button>}
+                            <span style={{ ...copyPillStrong, fontFamily: "ui-monospace,monospace", fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={t("o.copyTrack")} onClick={(e) => { e.stopPropagation(); copyText(f.trackingNumber!); }}>{f.trackingNumber}</span>
+                            {f.trackingCarrier
+                              ? <span style={{ ...copyPillStrong, fontSize: 12 }} title="Copy carrier" onClick={(e) => { e.stopPropagation(); copyText(f.trackingCarrier!); }}>{f.trackingCarrier}</span>
+                              : <span style={{ fontSize: 11, color: "var(--muted)" }}>· {t("o.carrier")}</span>}
                           </div>
                           <a href={f.trackingUrl || trackingUrl(f.trackingCarrier, f.trackingNumber)} target="_blank" rel="noreferrer" style={{ ...btnGhost, textDecoration: "none", fontSize: 11, padding: "5px 10px", whiteSpace: "nowrap" }}>{t("o.trackLink")} ↗</a>
                         </div>
@@ -1385,17 +1386,16 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
             flash(t("d.copied"));
           };
           return (
-            <div style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>
+            // Cả khối Variants là 1 vùng nền màu — click bất kỳ đâu trong vùng là copy toàn bộ (label: value).
+            <div onClick={copyDetails} title="Click to copy all details"
+              style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.5, background: "#EEF4FF", border: "1px solid #D5E3FB", borderRadius: 9, padding: "8px 11px", cursor: "pointer" }}>
               {parts.map((v: VariantPart, i: number) => (
                 <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {v.label && <span style={{ color: "var(--muted)", fontWeight: 500, flexShrink: 0 }}>{v.label}</span>}
                   <span style={{ color: "var(--ink)", fontWeight: 700 }}>{v.value}</span>
                 </div>
               ))}
-              <button type="button" onClick={copyDetails} title="Copy all details (label: value)"
-                style={{ display: "inline-flex", alignItems: "center", gap: 4, marginTop: 3, padding: "2px 8px", border: "1px solid var(--line)", background: "var(--card)", borderRadius: 7, cursor: "pointer", fontSize: 11, fontWeight: 700, color: "var(--blue)" }}>
-                <IconCopy width={11} height={11} /> Copy details
-              </button>
+              <div style={{ fontSize: 10.5, color: "var(--blue)", fontWeight: 700, marginTop: 5, opacity: 0.75 }}>Click to copy details</div>
             </div>
           );
         })()}
