@@ -1,13 +1,13 @@
 import { getSession } from "@/lib/auth";
-import { can } from "@/lib/rbac";
 import { DesignerStats } from "./stats-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function DesignerStatsPage() {
   const session = await getSession();
-  if (!session || !(await can(session, "statsDesigners"))) {
-    return <div className="panel empty">You don't have permission to view designer statistics.</div>;
+  // TẠM KHOÁ — chưa cần. Chỉ admin vào được (chặn staff qua link trực tiếp).
+  if (!session || session.role !== "admin") {
+    return <div className="panel empty" style={{ padding: 40, textAlign: "center" }}><h2 style={{ margin: "0 0 8px" }}>Designer Stats</h2><p style={{ color: "var(--muted)" }}>Coming soon.</p></div>;
   }
   return <DesignerStats />;
 }

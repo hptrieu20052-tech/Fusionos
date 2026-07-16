@@ -13,6 +13,13 @@ type Data = {
 };
 
 const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", products: "Products", reviews: "Scoring", statsDesigners: "Designer Stats", finance: "Finance", hr: "Staff", stores: "Stores", support: "Customer Messages", marketing: "Marketing", settings: "Settings" };
+// Bố cục bảng quyền — đồng điệu với Menu. Ẩn fulfillment/reviews/statsDesigners (module vẫn tồn tại, route vẫn chạy). Gộp Seller Hub.
+const PERM_SECTIONS: { title: string | null; grouped?: boolean; mods: string[] }[] = [
+  { title: null, mods: ["dashboard", "orders", "designs"] },
+  // Seller Hub: 1 dòng set CHUNG cho Products + Customer Messages + Marketing.
+  { title: "Seller Hub", grouped: true, mods: ["products", "support", "marketing"] },
+  { title: null, mods: ["finance", "stores", "hr", "settings"] },
+];
 // 1 lựa chọn 4 mức cho mỗi trang (gộp truy cập + phạm vi)
 const accessOpts = (t: (k: string) => string) => ([
   { v: "all", label: "View full", bg: "var(--green-soft)", fg: "var(--green)" },
@@ -117,26 +124,51 @@ export function UserFunctionPermission() {
           <div>
             {changes.size > 0 && <div style={{ fontSize: 12, color: "var(--amber)", fontWeight: 700, marginBottom: 8 }}>{changes.size} unsaved change(s) — click Save (switching person discards changes).</div>}
             <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
-              {data.modules.map((m, i) => {
-                const cur = accessOf(m);
-                return (
-                  <div key={m} style={{ display: "grid", gridTemplateColumns: "170px 1fr", alignItems: "center", gap: 12, padding: "9px 14px", borderTop: i ? "1px solid var(--line)" : "none" }}>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{MODULE_LABEL[m] || m}{dot(isOwn(m))}</span>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
-                      {accessOpts(t).map((o) => {
-                        const on = cur === o.v;
-                        return (
-                          <button key={o.v} onClick={() => setAccess(m, o.v)}
-                            style={{ padding: "6px 6px", borderRadius: 8, border: "1px solid", cursor: "pointer", fontSize: 11.5, fontWeight: 800, textAlign: "center", whiteSpace: "nowrap",
-                              background: on ? o.bg : "#fff", color: on ? o.fg : "var(--muted)", borderColor: on ? o.fg : "var(--line)" }}>
-                            {o.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+              {(() => {
+                const have = new Set(data.modules);
+                const rows: React.ReactNode[] = [];
+                let first = true;
+                const rowBtns = (cur: string, apply: (v: string) => void) => (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                    {accessOpts(t).map((o) => {
+                      const on = cur === o.v;
+                      return (
+                        <button key={o.v} onClick={() => apply(o.v)}
+                          style={{ padding: "6px 6px", borderRadius: 8, border: "1px solid", cursor: "pointer", fontSize: 11.5, fontWeight: 800, textAlign: "center", whiteSpace: "nowrap",
+                            background: on ? o.bg : "#fff", color: on ? o.fg : "var(--muted)", borderColor: on ? o.fg : "var(--line)" }}>
+                          {o.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 );
-              })}
+                for (const sec of PERM_SECTIONS) {
+                  const mods = sec.mods.filter((m) => have.has(m));
+                  if (!mods.length) continue;
+                  if (sec.grouped) {
+                    // 1 dòng set CHUNG cho cả nhóm (Seller Hub). Giá trị hiển thị theo module đầu; bấm áp cho tất cả.
+                    const cur = accessOf(mods[0]);
+                    rows.push(
+                      <div key={`g_${sec.title}`} style={{ display: "grid", gridTemplateColumns: "170px 1fr", alignItems: "center", gap: 12, padding: "9px 14px", borderTop: first ? "none" : "1px solid var(--line)" }}>
+                        <span style={{ fontWeight: 800, fontSize: 13, color: "var(--blue)" }}>{sec.title}{dot(mods.some((m) => isOwn(m)))}</span>
+                        {rowBtns(cur, (v) => mods.forEach((m) => setAccess(m, v)))}
+                      </div>
+                    );
+                    first = false;
+                    continue;
+                  }
+                  for (const m of mods) {
+                    rows.push(
+                      <div key={m} style={{ display: "grid", gridTemplateColumns: "170px 1fr", alignItems: "center", gap: 12, padding: "9px 14px", borderTop: first ? "none" : "1px solid var(--line)" }}>
+                        <span style={{ fontWeight: 700, fontSize: 13 }}>{MODULE_LABEL[m] || m}{dot(isOwn(m))}</span>
+                        {rowBtns(accessOf(m), (v) => setAccess(m, v))}
+                      </div>
+                    );
+                    first = false;
+                  }
+                }
+                return rows;
+              })()}
             </div>
             <div className="sub" style={{ marginTop: 8, fontSize: 11.5 }}>{t("perm.teamOwnHint")} <b>Orders</b>, <b>Design</b> {t("perm.pageHint1")}</div>
           </div>

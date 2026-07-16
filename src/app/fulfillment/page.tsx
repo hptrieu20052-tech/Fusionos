@@ -1,5 +1,5 @@
 import { getSession } from "@/lib/auth";
-import { can, levelOf } from "@/lib/rbac";
+import { levelOf } from "@/lib/rbac";
 import { db, schema } from "@/lib/db";
 import { desc, eq } from "drizzle-orm";
 import { FulfillClient } from "./fulfill-client";
@@ -8,8 +8,9 @@ export const dynamic = "force-dynamic";
 
 export default async function FulfillmentPage() {
   const session = await getSession();
-  if (!session || !(await can(session, "fulfillment"))) {
-    return <div className="panel empty">You don't have permission to view the Fulfillment module.</div>;
+  // TẠM KHOÁ — chưa cần. Chỉ admin vào được (chặn staff qua link trực tiếp).
+  if (!session || session.role !== "admin") {
+    return <div className="panel empty" style={{ padding: 40, textAlign: "center" }}><h2 style={{ margin: "0 0 8px" }}>Fulfillment</h2><p style={{ color: "var(--muted)" }}>Coming soon.</p></div>;
   }
   const canPush = (await levelOf(session, "fulfillment")) >= 2;
 
