@@ -349,7 +349,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     })();
   };
   // ===== Upload cả FOLDER: tên file = Print Area → tự map vào đúng mặt in =====
-  const folderRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement | null>(null);
   const kindFromFilename = (name: string): string | null => {
     let base = name.replace(/\.[^.]+$/, "").toLowerCase().trim().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "").replace(/_+/g, "_");
     if (DESIGN_KINDS.includes(base)) return base;
@@ -594,8 +594,9 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               accept={tab === "video" ? "video/*" : "image/*"}
               onChange={(e) => { const file = e.target.files?.[0]; if (file) onPicked(file); }}
               style={{ display: "none" }} />
-            <input ref={folderRef} type="file" multiple
-              {...({ webkitdirectory: "", directory: "" } as Record<string, string>)}
+            <input
+              ref={(el) => { folderRef.current = el; if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); } }}
+              type="file" multiple
               onChange={(e) => onFolderPicked(e.target.files)}
               style={{ display: "none" }} />
           </div>

@@ -160,7 +160,7 @@ export async function uploadImageByUrl(token: string, fileName: string, url: str
       const res = await fetch(`${BASE}/uploads/images.json`, {
         method: "POST", headers: headers(token),
         body: JSON.stringify({ file_name: fileName, url }),
-        signal: AbortSignal.timeout(30000), // tạo mới mỗi call — KHÔNG để module-level
+        signal: AbortSignal.timeout(60000), // 60s: đủ cho ảnh tải chậm (cache lạnh / origin chậm). Tạo mới mỗi call.
       });
       if (res.ok) { const j = (await res.json()) as { id: string }; return j.id; }
       lastErr = new Error(`Printify upload HTTP ${res.status}: ${(await res.text()).slice(0, 150)}`);
