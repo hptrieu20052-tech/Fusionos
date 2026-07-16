@@ -153,19 +153,23 @@ export async function getPrintAreas(token: string, blueprintId: number | string,
 
 /** Upload ảnh lên Printify bằng URL. Trả image_id. */
 export async function uploadImageByUrl(token: string, fileName: string, url: string): Promise<string> {
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}/uploads/images.json`, {
-      method: "POST", headers: headers(token),
-      body: JSON.stringify({ file_name: fileName, url }),
-      signal: AbortSignal.timeout(30000), // tạo mới mỗi call — KHÔNG để module-level
-    });
-  } catch (e) {
-    throw new Error(`Printify upload timeout/lỗi mạng (${fileName}): ${String((e as Error)?.message ?? e)}`);
+  let lastErr: Error | null = null;
+  // Thử tối đa 3 lần: ảnh bị Cloudflare bóp/cache lạnh thường lần sau là được.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch(`${BASE}/uploads/images.json`, {
+        method: "POST", headers: headers(token),
+        body: JSON.stringify({ file_name: fileName, url }),
+        signal: AbortSignal.timeout(30000), // tạo mới mỗi call — KHÔNG để module-level
+      });
+      if (res.ok) { const j = (await res.json()) as { id: string }; return j.id; }
+      lastErr = new Error(`Printify upload HTTP ${res.status}: ${(await res.text()).slice(0, 150)}`);
+    } catch (e) {
+      lastErr = new Error(`Printify upload timeout/lỗi mạng (${fileName}): ${String((e as Error)?.message ?? e)}`);
+    }
+    if (attempt < 3) await new Promise((r) => setTimeout(r, 1500 * attempt)); // backoff 1.5s, 3s
   }
-  if (!res.ok) throw new Error(`Printify upload HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  const j = (await res.json()) as { id: string };
-  return j.id;
+  throw lastErr ?? new Error(`Printify upload thất bại (${fileName})`);
 }
 
 export type PfPlaceholder = { position: string; images: { id: string; x: number; y: number; scale: number; angle: number }[] };

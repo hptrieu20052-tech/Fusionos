@@ -387,7 +387,7 @@ function printifyAdapter(): FulfillerAdapter {
           plan.push({ position: positions[0], side: primary });
         }
 
-        const uploaded = await mapLimit(plan, 8, (x) => uploadImageByUrl(token, `${l.fulfillerSku}-${x.side.kind}`, x.side.url));
+        const uploaded = await mapLimit(plan, 5, (x) => uploadImageByUrl(token, `${l.fulfillerSku}-${x.side.kind}`, x.side.url));
         const placeholders = plan.map((x, i) => ({
           position: x.position,
           images: [{ id: uploaded[i], x: 0.5, y: 0.5, scale: fitHeightScale(ph[x.position], x.side.w, x.side.h), angle: 0 }],
