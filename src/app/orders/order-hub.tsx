@@ -1395,7 +1395,6 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
                   <span style={{ color: "var(--ink)", fontWeight: 700 }}>{v.value}</span>
                 </div>
               ))}
-              <div style={{ fontSize: 10.5, color: "var(--blue)", fontWeight: 700, marginTop: 5, opacity: 0.75 }}>Click to copy details</div>
             </div>
           );
         })()}
