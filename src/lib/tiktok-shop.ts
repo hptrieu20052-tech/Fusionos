@@ -281,6 +281,35 @@ export async function ttUploadProductImage(cfg: TtCfg, bytes: Uint8Array, filena
   return { uri: j.data?.uri ? String(j.data.uri) : null, url: j.data?.url ? String(j.data.url) : null, raw: j.data };
 }
 
+// ===== CUSTOMER SERVICE / IM (Support inbox) — scope seller.customer_service =====
+// Get Conversations 202309: GET /customer_service/202309/conversations (page_size max 20). Cần shop_cipher (ttFetch tự thêm).
+export async function ttGetConversations(cfg: TtCfg, pageToken?: string, pageSize = 20): Promise<{ conversations: Record<string, unknown>[]; nextPageToken: string }> {
+  const q: Record<string, string> = { page_size: String(pageSize), need_session_info: "true" };
+  if (pageToken) q.page_token = pageToken;
+  const d = await ttFetch(cfg, "GET", "/customer_service/202309/conversations", q);
+  return { conversations: (d?.conversations as Record<string, unknown>[] | undefined) ?? [], nextPageToken: d?.next_page_token ? String(d.next_page_token) : "" };
+}
+
+// Get Conversation Messages 202309: GET /customer_service/202309/conversations/{id}/messages (page_size max 10).
+export async function ttGetConversationMessages(cfg: TtCfg, conversationId: string, pageToken?: string, pageSize = 10): Promise<{ messages: Record<string, unknown>[]; nextPageToken: string }> {
+  const q: Record<string, string> = { page_size: String(pageSize), sort_order: "DESC", sort_field: "create_time" };
+  if (pageToken) q.page_token = pageToken;
+  const d = await ttFetch(cfg, "GET", `/customer_service/202309/conversations/${conversationId}/messages`, q);
+  return { messages: (d?.messages as Record<string, unknown>[] | undefined) ?? [], nextPageToken: d?.next_page_token ? String(d.next_page_token) : "" };
+}
+
+// Send Message 202606: POST /customer_service/202606/conversations/{id}/messages. content = JSON string.
+export async function ttSendMessage(cfg: TtCfg, conversationId: string, text: string): Promise<Record<string, unknown>> {
+  const body = { type: "TEXT", content: JSON.stringify({ content: text }), sender_role: "CUSTOMER_SERVICE" };
+  const d = await ttFetch(cfg, "POST", `/customer_service/202606/conversations/${conversationId}/messages`, {}, body);
+  return d ?? {};
+}
+
+// Read Message 202309: POST /customer_service/202309/conversations/{id}/messages/read (đánh dấu đã đọc).
+export async function ttReadConversation(cfg: TtCfg, conversationId: string): Promise<void> {
+  await ttFetch(cfg, "POST", `/customer_service/202309/conversations/${conversationId}/messages/read`, {}, {});
+}
+
 // ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====
 // Get Order Detail 202309: GET /order/202309/orders?ids=<comma>. Trả orders[] kèm packages, line_items,
 // shipping_type/fulfillment_type, delivery_option... Dùng để xác minh trước khi viết ship/label.
