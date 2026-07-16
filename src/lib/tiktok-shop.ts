@@ -258,6 +258,48 @@ export async function ttDeleteProducts(cfg: TtCfg, productIds: string[]): Promis
   return d ?? {};
 }
 
+// ===== PROMOTION / MARKETING (scope seller.promotion) =====
+// Create Promotion Activity 202309: POST /promotion/202309/activities.
+// activity_type: FIXED_PRICE | DIRECT_DISCOUNT | FLASHSALE | SHIPPING_DISCOUNT. product_level: PRODUCT | VARIATION | SHOP.
+// begin_time/end_time = UNIX giây. discount (object) chỉ cần cho SHIPPING_DISCOUNT/BMSM/BXGY; FIXED_PRICE/DIRECT_DISCOUNT/FLASHSALE set giá theo product ở Update Products.
+export async function ttCreatePromotion(cfg: TtCfg, body: Record<string, unknown>): Promise<{ activityId: string | null; status: string | null; raw: Record<string, unknown> }> {
+  const d = await ttFetch(cfg, "POST", "/promotion/202309/activities", {}, body);
+  return { activityId: d?.activity_id ? String(d.activity_id) : null, status: d?.status ? String(d.status) : null, raw: d ?? {} };
+}
+
+// Update Promotion Activity Products 202309: PUT /promotion/202309/activities/{id}/products — gắn product + giá/discount cho từng product.
+// products[].id, activity_price_amount (FIXED_PRICE/FLASHSALE) HOẶC discount (DIRECT_DISCOUNT, %), quantity_limit, quantity_per_user, skus:[].
+export async function ttUpdatePromotionProducts(cfg: TtCfg, activityId: string, products: Record<string, unknown>[]): Promise<Record<string, unknown>> {
+  const d = await ttFetch(cfg, "PUT", `/promotion/202309/activities/${activityId}/products`, {}, { activity_id: activityId, products });
+  return d ?? {};
+}
+
+// Search Promotion Activities 202309: POST /promotion/202309/activities/search.
+export async function ttSearchPromotions(cfg: TtCfg, p: { status?: string; activityType?: string; title?: string; pageToken?: string; pageSize?: number }): Promise<{ activities: Record<string, unknown>[]; nextPageToken: string; totalCount: number }> {
+  const body: Record<string, unknown> = { page_size: p.pageSize ?? 50, page_token: p.pageToken ?? "" };
+  if (p.status) body.status = p.status;
+  if (p.activityType) body.activity_type = p.activityType;
+  if (p.title) body.activity_title = p.title;
+  const d = await ttFetch(cfg, "POST", "/promotion/202309/activities/search", {}, body);
+  return {
+    activities: (d?.activities as Record<string, unknown>[] | undefined) ?? [],
+    nextPageToken: d?.next_page_token ? String(d.next_page_token) : "",
+    totalCount: Number(d?.total_count ?? 0),
+  };
+}
+
+// Get Promotion Activity 202309: GET /promotion/202309/activities/{id} — chi tiết + product list.
+export async function ttGetPromotion(cfg: TtCfg, activityId: string): Promise<Record<string, unknown>> {
+  const d = await ttFetch(cfg, "GET", `/promotion/202309/activities/${activityId}`, {});
+  return d ?? {};
+}
+
+// Deactivate Promotion Activity 202309: POST /promotion/202309/activities/{id}/deactivate — dừng chương trình.
+export async function ttDeactivatePromotion(cfg: TtCfg, activityId: string): Promise<Record<string, unknown>> {
+  const d = await ttFetch(cfg, "POST", `/promotion/202309/activities/${activityId}/deactivate`, {});
+  return d ?? {};
+}
+
 // Get Warehouses (logistics) — cần warehouse_id cho inventory khi Create (nếu source thiếu).
 export async function ttGetWarehouses(cfg: TtCfg): Promise<{ id: string; name: string; isDefault: boolean }[]> {
   const d = await ttFetch(cfg, "GET", "/logistics/202309/warehouses", {});

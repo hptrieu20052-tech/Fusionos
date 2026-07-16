@@ -35,9 +35,10 @@ export function rangeToDates(v: RangeValue): { from: string; to: string } {
   }
 }
 
-export default function DateRangePicker({ value, onChange, align = "left", allowClear = false, onClear }: {
+export default function DateRangePicker({ value, onChange, align = "left", allowClear = false, onClear, allowFuture = false }: {
   value: RangeValue; onChange: (v: RangeValue) => void; align?: "left" | "right";
   allowClear?: boolean; onClear?: () => void;
+  allowFuture?: boolean; // true → cho chọn ngày tương lai (dùng cho lịch chạy promotion), ẩn preset quá khứ
 }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
@@ -53,7 +54,7 @@ export default function DateRangePicker({ value, onChange, align = "left", allow
   }, [open]);
 
   const clickDay = (d: Date) => {
-    if (d > today) return;
+    if (!allowFuture && d > today) return;
     const ds = iso(d);
     if (!pick.start || (pick.start && pick.end) || parseISO(ds) < parseISO(pick.start)) {
       setPick({ start: ds, end: "" });
@@ -76,7 +77,7 @@ export default function DateRangePicker({ value, onChange, align = "left", allow
       <div className="dp-grid">
         {matrix(md.getFullYear(), md.getMonth()).map((d, i) => {
           const out = d.getMonth() !== md.getMonth();
-          const fut = d > today;
+          const fut = allowFuture ? false : d > today;
           return (
             <button key={i} type="button" disabled={out || fut}
               className={`dp-day${out ? " out" : ""}${fut ? " fut" : ""}${inRange(d) && !out ? " range" : ""}${isEnd(d) && !out ? " sel" : ""}`}
@@ -103,6 +104,7 @@ export default function DateRangePicker({ value, onChange, align = "left", allow
       </button>
       {open && (
         <div className={`dp-pop${align === "right" ? " right" : ""}`}>
+          {!allowFuture && (
           <div className="dp-presets">
             {PRESETS.map(([k, l]) => (
               <button key={k} className={value.range === k ? "on" : ""} onClick={() => {
@@ -115,6 +117,7 @@ export default function DateRangePicker({ value, onChange, align = "left", allow
             ))}
             {allowClear && <button className="dp-clear" onClick={() => { onClear?.(); setOpen(false); }}>{t("c.clearFilter")}</button>}
           </div>
+          )}
           <div className="dp-cals">
             <button type="button" className="dp-nav prev" onClick={() => setBase((b) => addMonths(b, -1))}>‹</button>
             <Month md={base} />
