@@ -182,13 +182,17 @@ async function handlePush(req: NextRequest) {
   }
 
   // --- Gọi API fulfiller qua adapter theo từng nhà ---
-  const adapter = getAdapter(ff.name, ff.credentials);
+  // Google Sheet (Hướng B): tab chọn lúc đẩy → ghi đè credentials.tab
+  const ffCreds = ((ff.credentials as { kind?: string } | null)?.kind === "gsheet" && b.gsheetTab)
+    ? { ...(ff.credentials as Record<string, unknown>), tab: String(b.gsheetTab) }
+    : ff.credentials;
+  const adapter = getAdapter(ff.name, ffCreds);
   let pushRes;
   console.log(`[push] ${ff.name} order=${order.externalId} adapter start`);
   const t0 = Date.now();
   try {
     pushRes = await adapter.push({
-      fulfiller: { id: ff.id, name: ff.name, apiEndpoint: ff.apiEndpoint, credentials: ff.credentials },
+      fulfiller: { id: ff.id, name: ff.name, apiEndpoint: ff.apiEndpoint, credentials: ffCreds },
       order: {
         externalId: order.externalId, orderLabel,
         buyerFirst: order.buyerFirst, buyerLast: order.buyerLast,

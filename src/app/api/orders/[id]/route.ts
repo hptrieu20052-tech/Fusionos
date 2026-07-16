@@ -67,7 +67,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     });
     const autoMatched = lines.every((l) => l !== null); // khớp sẵn SKU đơn → tự tính giá
     const mapped = hasProducts.get(f.id) ?? false;       // nhà đã có sản phẩm để chọn
-    return { fulfillerId: f.id, name: f.name, mapped, nonPod: !!f.nonPod, estCost: autoMatched ? lines.reduce((t, l) => t! + l!, 0) : null };
+    return { fulfillerId: f.id, name: f.name, mapped, nonPod: !!f.nonPod, gsheet: ((f.credentials as { kind?: string } | null)?.kind) === "gsheet", estCost: autoMatched ? lines.reduce((t, l) => t! + l!, 0) : null };
   });
 
   const hideCustomer = await hasRestriction(session, "hide_customer_info");

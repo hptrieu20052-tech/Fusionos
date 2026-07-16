@@ -6,6 +6,14 @@ const SA_EMAIL = process.env.GOOGLE_SA_EMAIL ?? "";
 const SA_KEY = (process.env.GOOGLE_SA_KEY ?? "").replace(/\\n/g, "\n");
 const API = "https://sheets.googleapis.com/v4/spreadsheets";
 
+// Chấp nhận cả URL đầy đủ (…/d/<ID>/edit) lẫn ID trần
+export function extractSheetId(input: string): string {
+  const m = String(input || "").match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return (m ? m[1] : String(input || "")).trim();
+}
+// Range có tab (nếu tab rỗng → dùng tab đầu tiên của sheet)
+const rng = (tab: string, a1: string) => encodeURIComponent(tab ? `${tab}!${a1}` : a1);
+
 let cachedToken: { token: string; exp: number } | null = null;
 
 function b64url(input: Buffer | string): string {
@@ -42,8 +50,9 @@ async function getAccessToken(): Promise<string> {
 
 // Đọc hàng header (hàng 1) của tab → mảng tên cột
 export async function getSheetHeaders(sheetId: string, tab: string): Promise<string[]> {
+  sheetId = extractSheetId(sheetId);
   const token = await getAccessToken();
-  const range = encodeURIComponent(`${tab}!1:1`);
+  const range = rng(tab, "1:1");
   const res = await fetch(`${API}/${sheetId}/values/${range}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`Sheets read header HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const j = (await res.json()) as { values?: unknown[][] };
@@ -52,8 +61,9 @@ export async function getSheetHeaders(sheetId: string, tab: string): Promise<str
 
 // Append 1 dòng vào cuối tab
 export async function appendSheetRow(sheetId: string, tab: string, row: (string | number)[]): Promise<void> {
+  sheetId = extractSheetId(sheetId);
   const token = await getAccessToken();
-  const range = encodeURIComponent(`${tab}!A1`);
+  const range = rng(tab, "A1");
   const res = await fetch(`${API}/${sheetId}/values/${range}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -65,8 +75,9 @@ export async function appendSheetRow(sheetId: string, tab: string, row: (string 
 
 // Đọc toàn bộ tab → { headers, rows } (rows KHÔNG gồm header). Dùng cho cron đọc tracking về.
 export async function readSheet(sheetId: string, tab: string): Promise<{ headers: string[]; rows: string[][] }> {
+  sheetId = extractSheetId(sheetId);
   const token = await getAccessToken();
-  const range = encodeURIComponent(tab);
+  const range = encodeURIComponent(tab || "A:ZZ");
   const res = await fetch(`${API}/${sheetId}/values/${range}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`Sheets read HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const j = (await res.json()) as { values?: unknown[][] };
@@ -78,8 +89,9 @@ export async function readSheet(sheetId: string, tab: string): Promise<{ headers
 
 // Ghi 1 ô (A1 notation, vd "B5") — để đánh dấu đã import nếu cần
 export async function updateSheetCell(sheetId: string, tab: string, a1: string, value: string): Promise<void> {
+  sheetId = extractSheetId(sheetId);
   const token = await getAccessToken();
-  const range = encodeURIComponent(`${tab}!${a1}`);
+  const range = rng(tab, a1);
   const res = await fetch(`${API}/${sheetId}/values/${range}?valueInputOption=RAW`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -87,6 +99,16 @@ export async function updateSheetCell(sheetId: string, tab: string, a1: string, 
     signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) throw new Error(`Sheets update HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+}
+
+// Liệt kê tên tất cả tab trong Sheet (để chọn lúc đẩy đơn)
+export async function listSheetTabs(sheetId: string): Promise<string[]> {
+  sheetId = extractSheetId(sheetId);
+  const token = await getAccessToken();
+  const res = await fetch(`${API}/${sheetId}?fields=sheets.properties.title`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+  if (!res.ok) throw new Error(`Sheets meta HTTP ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const j = (await res.json()) as { sheets?: { properties?: { title?: string } }[] };
+  return (j.sheets ?? []).map((s) => s.properties?.title ?? "").filter(Boolean);
 }
 
 // Chuẩn hoá tên cột để map (bỏ hoa/thường, khoảng trắng, ngoặc chú thích, \n)

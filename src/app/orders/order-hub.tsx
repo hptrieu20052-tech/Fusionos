@@ -87,7 +87,7 @@ type Order = {
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
-type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; nonPod?: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
+type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; nonPod?: boolean; gsheet?: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
 type Opt = { id: string; name: string; marketplace?: string };
 type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number }[] | null };
 
@@ -863,6 +863,18 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
   const [detail, setDetail] = useState<Detail | null>(null);
   const [showIssue, setShowIssue] = useState(false);
   const [ffSel, setFfSel] = useState("");
+  // Google Sheet fulfiller: chọn tab lúc đẩy (Hướng B)
+  const [gsheetTabs, setGsheetTabs] = useState<string[]>([]);
+  const [gsheetTab, setGsheetTab] = useState("");
+  const selFfIsGsheet = !!detail?.fulfillerOptions.find((f) => f.fulfillerId === ffSel)?.gsheet;
+  useEffect(() => {
+    if (!ffSel || !selFfIsGsheet) { setGsheetTabs([]); setGsheetTab(""); return; }
+    setGsheetTabs([]); setGsheetTab("");
+    fetch("/api/fulfillers/gsheet-tabs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: ffSel }) })
+      .then((r) => r.json()).then((j) => { if (j.ok) { setGsheetTabs(j.tabs ?? []); if ((j.tabs ?? []).length === 1) setGsheetTab(j.tabs[0]); } else flash("✗ Load tabs: " + (j.error ?? "")); })
+      .catch(() => flash("✗ Load tabs failed"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ffSel, selFfIsGsheet]);
   const canCreate = ["new", "has_issues"].includes(o.status); // chỉ đơn NEW / Has issues mới đẩy được
   // REVIEW: đơn vừa đẩy xong (status = created) → giữ nguyên panel variant + design nhưng KHOÁ,
   // để support đối chiếu đã đẩy đúng variant/design chưa. Sang in_production trở đi thì ẩn.
@@ -947,7 +959,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
     }
     setLines(init);
   };
-  const complete = !!ffSel && !!detail && detail.items.length > 0 &&
+  const complete = !!ffSel && !!detail && detail.items.length > 0 && (!selFfIsGsheet || !!gsheetTab) &&
     detail.items.every((it) => lines[it.id]?.mappingId && lines[it.id]?.qty >= 1);
   const estCost = complete && detail
     ? detail.items.reduce((tot, it) => { const l = lines[it.id]; const uc = l.unitCost ?? variants.find((x) => x.id === l.mappingId)?.unitCost ?? 0; return tot + uc * l.qty; }, 0)
@@ -978,7 +990,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
       const s1 = await fetch(`/api/orders/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ship) }).then((r) => r.json());
       if (!s1.ok) { setBusy(false); return flash("✗ " + (s1.error ?? "")); }
     }
-    const body = { orderId: o.id, fulfillerId: ffSel, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })) };
+    const body = { orderId: o.id, fulfillerId: ffSel, gsheetTab: gsheetTab || undefined, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })) };
     // 5xx/non-JSON (Cloudflare 502, Vercel rollout...) → retry 1 lần sau 2.5s.
     // An toàn: adapter Printway check đơn đã tồn tại theo order_name trước khi tạo → không double.
     const doPush = () => fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -1242,6 +1254,15 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
           line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
           setLine={(v) => setLines({ ...lines, [it.id]: v })} />;
       })}
+      {canPushFf && detail && canCreate && ffSel && selFfIsGsheet && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Google Sheet tab:</span>
+          <select value={gsheetTab} onChange={(e) => setGsheetTab(e.target.value)} style={{ ...inp, minWidth: 180 }}>
+            <option value="">{gsheetTabs.length ? "— Chọn tab —" : "Đang tải tabs…"}</option>
+            {gsheetTabs.map((tb) => <option key={tb} value={tb}>{tb}</option>)}
+          </select>
+        </div>
+      )}
       {canPushFf && detail && canCreate && ffSel && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px dashed var(--line)", flexWrap: "wrap" }}>
           {complete

@@ -60,6 +60,12 @@ export async function GET(req: NextRequest) {
       ttProbe(cfg, "POST", "/fulfillment/202309/packages/rts", {}, {}),
       ttProbe(cfg, "POST", `/fulfillment/202309/orders/${ext}/packages/deliver`, {}, {}),
     ]);
+    // PROBE LUỒNG ARRANGE (Platform shipping US): Get Eligible Shipping Service + Create Package.
+    // Body rỗng/sai → chỉ lộ quyền (40006 = không có; code khác = CÓ, chỉ thiếu field). KHÔNG mua nhãn.
+    const arrangeProbes = await Promise.all([
+      ttProbe(cfg, "POST", `/fulfillment/202309/orders/${ext}/shipping_services/query`, {}, {}), // Get Eligible Shipping Service (scope basic)
+      ttProbe(cfg, "POST", "/fulfillment/202512/packages", {}, {}), // Create Packages 202512 (scope basic) = mua nhãn = Arrange
+    ]);
 
     // ===== TEST THẬT CHUỖI GET-LABEL =====
     // 1) tìm package của đơn; 2) nếu có package → thử lấy shipping_document (label).
@@ -92,7 +98,8 @@ export async function GET(req: NextRequest) {
       providers,
       capabilities,
       writeProbes,
-      hint: "writeProbes: code=40006 = app KHÔNG có quyền Arrange (WRITE). Code khác (thiếu field) = CÓ quyền.",
+      arrangeProbes,
+      hint: "40006 = app KHÔNG có quyền. Code khác (thiếu field/validation) = CÓ quyền. arrangeProbes: eligible_shipping_service + packages = luồng auto-Arrange.",
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
