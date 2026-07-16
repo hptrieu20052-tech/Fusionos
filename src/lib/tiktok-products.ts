@@ -25,7 +25,7 @@ export async function resolveProduct(session: Session, rowId: string): Promise<R
     const cfg = await ttGetValidCfg(store.id, (store.apiCredentials ?? null) as Record<string, string> | null);
     return { ok: true, row, store, cfg };
   } catch (e) {
-    return { ok: false, error: "Store chưa kết nối TikTok: " + String((e as Error)?.message ?? e).slice(0, 150), status: 400 };
+    return { ok: false, error: "Store not connected to TikTok: " + String((e as Error)?.message ?? e).slice(0, 150), status: 400 };
   }
 }
 
@@ -108,7 +108,7 @@ export function buildProductBody(detail: Record<string, unknown>, ov: ProductOve
 export function summarizeDetail(detail: Record<string, unknown>) {
   const chains = (detail.category_chains as { id?: string; local_name?: string; is_leaf?: boolean }[] | undefined) ?? [];
   const leaf = chains.find((c) => c.is_leaf) ?? chains[chains.length - 1];
-  const imgs = (detail.main_images as { urls?: string[]; thumb_urls?: string[] }[] | undefined) ?? [];
+  const imgs = (detail.main_images as { uri?: string; urls?: string[]; thumb_urls?: string[] }[] | undefined) ?? [];
   const skus = (detail.skus as Record<string, unknown>[] | undefined) ?? [];
   const pw = detail.package_weight as { value?: string; unit?: string } | undefined;
   const pd = detail.package_dimensions as { length?: string; width?: string; height?: string; unit?: string } | undefined;
@@ -120,7 +120,7 @@ export function summarizeDetail(detail: Record<string, unknown>) {
     categoryId: leaf?.id ?? null,
     categoryName: (chains.map((c) => c.local_name).filter(Boolean).join(" · ")) || null,
     brand: (detail.brand as { name?: string } | undefined)?.name ?? null,
-    images: imgs.map((i) => i.urls?.[0] ?? i.thumb_urls?.[0]).filter(Boolean),
+    images: imgs.map((i) => ({ uri: i.uri ?? "", url: i.urls?.[0] ?? i.thumb_urls?.[0] ?? "" })).filter((x) => x.uri || x.url),
     packageWeight: pw ? { value: pw.value ?? "", unit: pw.unit ?? "" } : null,
     packageDimensions: pd ? { length: pd.length ?? "", width: pd.width ?? "", height: pd.height ?? "", unit: pd.unit ?? "" } : null,
     attributes: attrs.map((a) => ({ name: a.name ?? "", values: (a.values ?? []).map((v) => v.name).filter(Boolean) })),

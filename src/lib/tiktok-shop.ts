@@ -262,7 +262,7 @@ export async function ttGetCategoryAttributes(cfg: TtCfg, categoryId: string, lo
 
 // Upload Product Image 202309 — multipart (KHÔNG ký body). Trả uri để nhét vào main_images/sku_img khi Create/Edit.
 // data: bytes ảnh; use_case: MAIN_IMAGE | ATTRIBUTE_IMAGE | DESCRIPTION_IMAGE ...
-export async function ttUploadProductImage(cfg: TtCfg, bytes: Uint8Array, filename: string, useCase = "MAIN_IMAGE"): Promise<{ uri: string | null; raw: unknown }> {
+export async function ttUploadProductImage(cfg: TtCfg, bytes: Uint8Array, filename: string, useCase = "MAIN_IMAGE"): Promise<{ uri: string | null; url: string | null; raw: unknown }> {
   const path = "/product/202309/images/upload";
   const params: Record<string, string> = { app_key: cfg.appKey, timestamp: String(Math.floor(Date.now() / 1000)) };
   if (cfg.shopCipher) params.shop_cipher = cfg.shopCipher;
@@ -274,11 +274,11 @@ export async function ttUploadProductImage(cfg: TtCfg, bytes: Uint8Array, filena
   const r = await fetch(`${base}${path}?${new URLSearchParams(params).toString()}`, {
     method: "POST", headers: { "x-tts-access-token": cfg.accessToken }, body: fd, ...ft(),
   });
-  const j = (await r.json().catch(() => ({}))) as { code?: number; message?: string; data?: { uri?: string } };
+  const j = (await r.json().catch(() => ({}))) as { code?: number; message?: string; data?: { uri?: string; url?: string } };
   if (!r.ok || (j.code !== undefined && j.code !== 0)) {
     throw new Error(`TikTok upload image: HTTP ${r.status} code=${j.code} ${j.message ?? ""}`.trim());
   }
-  return { uri: j.data?.uri ? String(j.data.uri) : null, raw: j.data };
+  return { uri: j.data?.uri ? String(j.data.uri) : null, url: j.data?.url ? String(j.data.url) : null, raw: j.data };
 }
 
 // ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====

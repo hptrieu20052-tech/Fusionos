@@ -155,7 +155,7 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
             })}
           </tbody>
         </table>
-        {!filtered.length && <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>No products. Bấm &quot;Sync from TikTok&quot; để kéo về.</div>}
+        {!filtered.length && <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>No products. Click &quot;Sync from TikTok&quot; to pull them in.</div>}
       </div>
 
       {filtered.length > PAGE_SIZE && (
@@ -164,14 +164,14 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
             {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} / {filtered.length}
           </span>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pageSafe <= 1} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: pageSafe <= 1 ? "default" : "pointer", opacity: pageSafe <= 1 ? 0.5 : 1 }}>← Trước</button>
-            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Trang {pageSafe}/{totalPages}</span>
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={pageSafe >= totalPages} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: pageSafe >= totalPages ? "default" : "pointer", opacity: pageSafe >= totalPages ? 0.5 : 1 }}>Sau →</button>
+            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pageSafe <= 1} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: pageSafe <= 1 ? "default" : "pointer", opacity: pageSafe <= 1 ? 0.5 : 1 }}>← Prev</button>
+            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Page {pageSafe}/{totalPages}</span>
+            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={pageSafe >= totalPages} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: pageSafe >= totalPages ? "default" : "pointer", opacity: pageSafe >= totalPages ? 0.5 : 1 }}>Next →</button>
           </div>
         </div>
       )}
 
-      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit = sửa live trên TikTok · Duplicate = nhân bản cùng shop (mặc định nháp). Đổi ảnh/category/attributes ở bản kế.</div>}
+      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit = update live on TikTok · Duplicate = clone within the same shop (defaults to draft). You can edit title/description/images/price/stock/packaging; category/attributes editing comes next.</div>}
     </div>
   );
 }

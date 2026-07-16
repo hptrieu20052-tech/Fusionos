@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
-  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox,
+  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport,
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 
@@ -13,7 +13,7 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
   dashboard: IconDashboard, orders: IconOrders, fulfillment: IconTruck,
   designs: IconArtwork, reviews: IconEye, statsOrders: IconReport,
   statsDesigners: IconReport, finance: IconWallet, stores: IconStore,
-  settings: IconSettings, admin: IconProducts,
+  settings: IconSettings, admin: IconProducts, support: IconSupport,
 };
 
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
@@ -90,7 +90,7 @@ export default function AppShell({ user, links, children, canProducts = false }:
           </Link>
           <Link href="/tiktok-templates" prefetch className={`topnav-more-item${isActive("/tiktok-templates") ? " active" : ""}`}>
             <span className="topnav-ic"><IconGrid width={16} height={16} /></span>
-            Manage Templates
+            Manage Templates Tiktok
           </Link>
         </div>
       )}
@@ -201,7 +201,7 @@ export default function AppShell({ user, links, children, canProducts = false }:
                   </Link>,
                   <Link key="__mt" href="/tiktok-templates" prefetch className={`mobile-nav-item${isActive("/tiktok-templates") ? " active" : ""}`}>
                     <span className="topnav-ic"><IconGrid width={18} height={18} /></span>
-                    Manage Templates
+                    Manage Templates Tiktok
                   </Link>,
                 ];
               }

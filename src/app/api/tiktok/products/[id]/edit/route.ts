@@ -33,6 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       width: (b.packageDim as Record<string, unknown>).width != null ? String((b.packageDim as Record<string, unknown>).width) : undefined,
       height: (b.packageDim as Record<string, unknown>).height != null ? String((b.packageDim as Record<string, unknown>).height) : undefined,
     } : undefined,
+    mainImageUris: Array.isArray(b.mainImageUris) ? (b.mainImageUris as unknown[]).filter((x): x is string => typeof x === "string") : undefined,
   };
 
   try {
