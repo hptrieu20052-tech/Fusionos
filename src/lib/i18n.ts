@@ -793,6 +793,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "adm.modOrders": { vi: "Đơn hàng", en: "Orders" },
   "adm.modFulfillment": { vi: "Fulfillment", en: "Fulfillment" },
   "adm.modDesigns": { vi: "Design Studio", en: "Design Studio" },
+  "adm.modProducts": { vi: "Products (TikTok)", en: "Products (TikTok)" },
   "adm.searchName": { vi: "Tìm theo tên…", en: "Search full name…" },
   "adm.allRoles": { vi: "Tất cả role", en: "All roles" },
   "adm.allTeams": { vi: "Tất cả team", en: "All teams" },

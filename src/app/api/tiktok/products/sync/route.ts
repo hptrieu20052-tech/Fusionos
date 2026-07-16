@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { storeOwnerScopeIds } from "@/lib/scope";
 import { readTtCfg, ttGetValidCfg, ttSearchProducts } from "@/lib/tiktok-shop";
 
 export const dynamic = "force-dynamic";
@@ -37,11 +38,14 @@ function extract(p: Record<string, unknown>) {
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || (await levelOf(session, "orders")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}));
   const onlyStore = b?.storeId as string | undefined;
 
-  const stores = await db.select({ id: schema.stores.id, name: schema.stores.name, c: schema.stores.apiCredentials }).from(schema.stores);
+  // Phạm vi: seller chỉ được sync store MÌNH (store.sellerId ∈ scope). admin/all → mọi store.
+  const scopeIds = await storeOwnerScopeIds(session);
+  const storeWhere = scopeIds ? inArray(schema.stores.sellerId, scopeIds) : undefined;
+  const stores = await db.select({ id: schema.stores.id, name: schema.stores.name, c: schema.stores.apiCredentials }).from(schema.stores).where(storeWhere);
   const ttStores = stores.filter((s) => readTtCfg((s.c ?? null) as Record<string, string> | null).refreshToken && (!onlyStore || s.id === onlyStore));
 
   const deadline = Date.now() + 270_000;

@@ -27,13 +27,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const [u] = await db.select({ k: schema.users.avatarKey }).from(schema.users).where(eq(schema.users.id, session.sub)).limit(1);
     avatarUrl = fileUrl(u?.k ?? null);
   }
-  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners] = session
+  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners, products] = session
     ? await Promise.all([
         can(session, "orders"), can(session, "stores"), can(session, "designs"),
         can(session, "fulfillment"), can(session, "finance"), can(session, "settings"),
-        can(session, "reviews"), can(session, "statsDesigners"),
+        can(session, "reviews"), can(session, "statsDesigners"), can(session, "products"),
       ])
-    : [false, false, false, false, false, false, false, false];
+    : [false, false, false, false, false, false, false, false, false];
 
   const isAdmin = session?.role === "admin";
   const links: NavLink[] = session ? [
@@ -60,7 +60,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <LangProvider initial={lang}>
           <ConfirmProvider>
           {session ? (
-            <AppShell user={{ name: session.name, role: session.role, avatarUrl }} links={navLinks}>
+            <AppShell user={{ name: session.name, role: session.role, avatarUrl }} links={navLinks} canProducts={products}>
               {children}
             </AppShell>
           ) : (

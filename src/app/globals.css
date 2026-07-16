@@ -48,7 +48,7 @@ tr:last-child td{border-bottom:none}
 .topnav-inner{display:flex;align-items:center;gap:18px;padding:0 22px;height:60px;max-width:1600px;margin:0 auto}
 .topnav-brand{display:flex;align-items:center;flex-shrink:0}
 .topnav-brand img{height:34px;width:auto;display:block}
-.topnav-menu{display:flex;align-items:center;gap:3px;flex:1;overflow-x:auto;scrollbar-width:none}
+.topnav-menu{display:flex;align-items:center;gap:3px;flex:1;overflow:visible}
 .topnav-menu::-webkit-scrollbar{display:none}
 .topnav-item{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:10px;
   font-size:13.5px;font-weight:600;color:var(--muted);white-space:nowrap;transition:all .15s}

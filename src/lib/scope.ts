@@ -51,6 +51,19 @@ export async function scopeOwnerIds(session: Session, resource: ScopeResource): 
   return members.map((m) => m.id);
 }
 
+/**
+ * Store-owner ids cho phạm vi Products (và bất kỳ dữ liệu gắn theo store).
+ * SÀN AN TOÀN: role `seller` LUÔN bị giới hạn own store — kể cả khi chưa seed scope `stores`
+ * (SEED_permissions.sql chỉ seed orders/designs/dashboard). Admin & role khác giữ nguyên scope thật (own/team/all).
+ * Trả null = không giới hạn (thấy mọi store).
+ */
+export async function storeOwnerScopeIds(session: Session): Promise<string[] | null> {
+  const ids = await scopeOwnerIds(session, "stores");
+  if (ids) return ids;                                    // đã có giới hạn own/team theo cấu hình
+  if (session.role === "seller") return [session.sub];    // seller chưa cấu hình → CHỈ store mình
+  return null;                                            // admin / role khác → all
+}
+
 /** Chủ sở hữu ownerId có nằm trong phạm vi của user không (dùng cho check quyền theo từng đơn/design). */
 export async function inScope(session: Session, resource: ScopeResource, ownerId: string | null | undefined): Promise<boolean> {
   const ids = await scopeOwnerIds(session, resource);
