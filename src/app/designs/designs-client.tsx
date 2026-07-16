@@ -356,27 +356,36 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     // page1 / page_1 / page01 → page_01 (cả month/grid)
     const m = base.match(/^(page|month|grid)_?0*(\d{1,2})$/);
     if (m) { const k = `${m[1]}_${String(m[2]).padStart(2, "0")}`; if (DESIGN_KINDS.includes(k)) return k; }
-    // vài alias hay gặp
-    const alias: Record<string, string> = { front: "design_front", back: "design_back", cover: "cover_front", frontside: "design_front", backside: "design_back" };
+    // vài alias hay gặp. "cover" (trơn) = bìa sách (book_cover, hiện tên "Cover"); "cover front" khớp trực tiếp cover_front ở trên.
+    const alias: Record<string, string> = { front: "design_front", back: "design_back", cover: "book_cover", bookcover: "book_cover", coverfront: "cover_front", frontside: "design_front", backside: "design_back", bia: "book_cover" };
     if (alias[base] && DESIGN_KINDS.includes(alias[base])) return alias[base];
+    // số trần "1".."24" hoặc "p1" / "pg1" / "trang1" → page_NN
+    const bare = base.match(/^(?:page|pg|p|trang)?_?0*(\d{1,2})$/);
+    if (bare) { const k = `page_${String(bare[1]).padStart(2, "0")}`; if (DESIGN_KINDS.includes(k)) return k; }
     return null;
   };
   const onFolderPicked = (fileList: FileList | null) => {
     if (folderRef.current) folderRef.current.value = "";
-    if (!fileList || !fileList.length) return;
+    if (!fileList || !fileList.length) { flash("✗ No file selected"); return; }
+    flash(`📂 Read ${fileList.length} file(s), matching…`); // báo ngay để biết handler đã chạy
     const existing = new Set(detail.files.map((f) => f.kind));
     const queued = new Set<string>();
     const matched: { file: File; kind: string }[] = [];
-    let unmatched = 0, dup = 0;
+    const unmatchedNames: string[] = [];
+    let dup = 0;
     for (const file of Array.from(fileList)) {
-      if (!file.type.startsWith("image/")) { unmatched++; continue; }
+      if (!file.type.startsWith("image/")) { unmatchedNames.push(file.name); continue; }
       const kind = kindFromFilename(file.name);
-      if (!kind) { unmatched++; continue; }
+      if (!kind) { unmatchedNames.push(file.name); continue; }
       if (existing.has(kind) || queued.has(kind)) { dup++; continue; } // mặt đã có → bỏ qua, không đè
       queued.add(kind); matched.push({ file, kind });
     }
-    if (!matched.length) { flash(`✗ No file matched a print area (${unmatched} unmatched, ${dup} already present)`); return; }
-    flash(`Uploading ${matched.length} face(s)${dup ? `, ${dup} already present` : ""}${unmatched ? `, ${unmatched} unmatched` : ""}`);
+    if (!matched.length) {
+      const eg = unmatchedNames.slice(0, 3).join(", ");
+      flash(`✗ No file matched a print area. Rename files to design_front / page_01 / book_cover... (${unmatchedNames.length} unmatched${eg ? ": " + eg : ""}${dup ? `, ${dup} already present` : ""})`);
+      return;
+    }
+    flash(`Uploading ${matched.length} face(s)${dup ? `, ${dup} already present` : ""}${unmatchedNames.length ? `, ${unmatchedNames.length} unmatched` : ""}`);
     let remaining = matched.length;
     for (const { file, kind } of matched) {
       const upId = Math.random().toString(36).slice(2);
