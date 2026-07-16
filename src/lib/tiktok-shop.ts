@@ -93,7 +93,7 @@ function ttSign(appSecret: string, path: string, params: Record<string, string>,
   return crypto.createHmac("sha256", appSecret).update(base).digest("hex");
 }
 
-async function ttFetch(cfg: TtCfg, method: "GET" | "POST", path: string, query: Record<string, string>, bodyObj?: unknown) {
+async function ttFetch(cfg: TtCfg, method: "GET" | "POST" | "PUT", path: string, query: Record<string, string>, bodyObj?: unknown) {
   const base = cfg.apiBase?.replace(/\/$/, "") || TT_API;
   const body = bodyObj ? JSON.stringify(bodyObj) : "";
   const params: Record<string, string> = {
@@ -107,7 +107,7 @@ async function ttFetch(cfg: TtCfg, method: "GET" | "POST", path: string, query: 
   const r = await fetch(`${base}${path}?${qs}`, {
     method,
     headers: { "Content-Type": "application/json", "x-tts-access-token": cfg.accessToken },
-    body: method === "POST" ? body : undefined,
+    body: method !== "GET" ? body : undefined,
     ...ft(),
   });
   const j = (await r.json().catch(() => ({}))) as { code?: number; message?: string; data?: unknown };
@@ -217,6 +217,68 @@ export async function ttSearchProducts(cfg: TtCfg, body: Record<string, unknown>
     nextPageToken: d?.next_page_token ? String(d.next_page_token) : "",
     totalCount: Number(d?.total_count ?? 0),
   };
+}
+
+// ===== CLONE / EDIT / UPLOAD (Manage Products Phase 3) — scope seller.product.write =====
+// Get Product Detail 202309: GET /product/202309/products/{id} → full product (title, desc, category_chains,
+// brand, main_images[uri], skus[price/inventory/sales_attributes], package_weight/dimensions, product_attributes).
+export async function ttGetProductDetail(cfg: TtCfg, productId: string): Promise<Record<string, unknown>> {
+  const d = await ttFetch(cfg, "GET", `/product/202309/products/${productId}`, { return_under_review_version: "false" });
+  return d ?? {};
+}
+
+// Create Product 202309: POST /product/202309/products (scope write). save_mode: LISTING = đăng bán luôn, AS_DRAFT = nháp.
+export async function ttCreateProduct(cfg: TtCfg, body: Record<string, unknown>): Promise<{ productId: string | null; raw: Record<string, unknown> }> {
+  const d = await ttFetch(cfg, "POST", "/product/202309/products", {}, body);
+  const pid = (d?.product_id ?? (d?.product as { id?: string } | undefined)?.id) as string | undefined;
+  return { productId: pid ? String(pid) : null, raw: d ?? {} };
+}
+
+// Edit Product 202309: PUT /product/202309/products/{id} (scope write) — body full-replace giống Create.
+export async function ttEditProduct(cfg: TtCfg, productId: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const d = await ttFetch(cfg, "PUT", `/product/202309/products/${productId}`, {}, body);
+  return d ?? {};
+}
+
+// Get Warehouses (logistics) — cần warehouse_id cho inventory khi Create (nếu source thiếu).
+export async function ttGetWarehouses(cfg: TtCfg): Promise<{ id: string; name: string; isDefault: boolean }[]> {
+  const d = await ttFetch(cfg, "GET", "/logistics/202309/warehouses", {});
+  return ((d?.warehouses as Record<string, unknown>[] | undefined) ?? []).map((w) => ({
+    id: String(w.id ?? ""), name: String(w.name ?? ""), isDefault: !!(w.is_default ?? w.default),
+  }));
+}
+
+// Get Categories 202309 (đầy đủ cây; để đổi category ở phase sau). locale vd en-US.
+export async function ttGetCategories(cfg: TtCfg, locale = "en-US"): Promise<Record<string, unknown>[]> {
+  const d = await ttFetch(cfg, "GET", "/product/202309/categories", { locale });
+  return (d?.categories as Record<string, unknown>[] | undefined) ?? [];
+}
+
+// Get Category Attributes 202309 — thuộc tính (bắt buộc/tuỳ chọn) theo category leaf.
+export async function ttGetCategoryAttributes(cfg: TtCfg, categoryId: string, locale = "en-US"): Promise<Record<string, unknown>[]> {
+  const d = await ttFetch(cfg, "GET", `/product/202309/categories/${categoryId}/attributes`, { locale });
+  return (d?.attributes as Record<string, unknown>[] | undefined) ?? [];
+}
+
+// Upload Product Image 202309 — multipart (KHÔNG ký body). Trả uri để nhét vào main_images/sku_img khi Create/Edit.
+// data: bytes ảnh; use_case: MAIN_IMAGE | ATTRIBUTE_IMAGE | DESCRIPTION_IMAGE ...
+export async function ttUploadProductImage(cfg: TtCfg, bytes: Uint8Array, filename: string, useCase = "MAIN_IMAGE"): Promise<{ uri: string | null; raw: unknown }> {
+  const path = "/product/202309/images/upload";
+  const params: Record<string, string> = { app_key: cfg.appKey, timestamp: String(Math.floor(Date.now() / 1000)) };
+  if (cfg.shopCipher) params.shop_cipher = cfg.shopCipher;
+  params.sign = ttSign(cfg.appSecret, path, params, ""); // multipart: body KHÔNG vào chữ ký
+  const fd = new FormData();
+  fd.append("data", new Blob([bytes as BlobPart]), filename);
+  fd.append("use_case", useCase);
+  const base = cfg.apiBase?.replace(/\/$/, "") || TT_API;
+  const r = await fetch(`${base}${path}?${new URLSearchParams(params).toString()}`, {
+    method: "POST", headers: { "x-tts-access-token": cfg.accessToken }, body: fd, ...ft(),
+  });
+  const j = (await r.json().catch(() => ({}))) as { code?: number; message?: string; data?: { uri?: string } };
+  if (!r.ok || (j.code !== undefined && j.code !== 0)) {
+    throw new Error(`TikTok upload image: HTTP ${r.status} code=${j.code} ${j.message ?? ""}`.trim());
+  }
+  return { uri: j.data?.uri ? String(j.data.uri) : null, raw: j.data };
 }
 
 // ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====

@@ -1,5 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
+import Link from "next/link";
 
 type Row = {
   id: string; storeId: string; tiktokProductId: string; title: string | null; status: string | null;
@@ -16,7 +17,7 @@ const statusColor = (s: string | null) => {
   return { bg: "#EEF1F5", fg: "#5B6472" };
 };
 
-export default function TiktokProductsClient({ stores, initial, isAdmin }: { stores: Store[]; initial: Row[]; isAdmin: boolean }) {
+export default function TiktokProductsClient({ stores, initial, isAdmin, canManage = false }: { stores: Store[]; initial: Row[]; isAdmin: boolean; canManage?: boolean }) {
   const [rows, setRows] = useState<Row[]>(initial);
   const [kw, setKw] = useState("");
   const [shop, setShop] = useState("");
@@ -86,6 +87,7 @@ export default function TiktokProductsClient({ stores, initial, isAdmin }: { sto
               <th style={{ padding: "8px 6px" }}>Price</th>
               <th style={{ padding: "8px 6px" }}>Status</th>
               <th style={{ padding: "8px 6px" }}>Updated</th>
+              {canManage && <th style={{ padding: "8px 6px" }}>Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -109,6 +111,12 @@ export default function TiktokProductsClient({ stores, initial, isAdmin }: { sto
                     <span style={{ background: sc.bg, color: sc.fg, fontWeight: 700, fontSize: 11, borderRadius: 6, padding: "2px 8px" }}>{r.status ?? "—"}</span>
                   </td>
                   <td style={{ padding: "8px 6px", color: "var(--muted)", fontSize: 12 }}>{r.ttUpdateTime ? new Date(r.ttUpdateTime).toLocaleDateString() : "—"}</td>
+                  {canManage && (
+                    <td style={{ padding: "8px 6px", whiteSpace: "nowrap" }}>
+                      <Link href={`/tiktok-products/${r.id}/edit`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textDecoration: "none", marginRight: 10 }}>Edit</Link>
+                      <Link href={`/tiktok-products/${r.id}/edit?mode=clone`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", textDecoration: "none" }}>Clone</Link>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -116,7 +124,7 @@ export default function TiktokProductsClient({ stores, initial, isAdmin }: { sto
         </table>
         {!filtered.length && <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>No products. Bấm &quot;Sync from TikTok&quot; để kéo về.</div>}
       </div>
-      {!isAdmin && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit / Clone / Upload sẽ bổ sung ở phase sau.</div>}
+      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit = sửa live trên TikTok · Clone = nhân bản cùng shop (mặc định nháp). Đổi ảnh/category/attributes ở bản kế.</div>}
     </div>
   );
 }

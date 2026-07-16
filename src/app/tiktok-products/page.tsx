@@ -23,5 +23,6 @@ export default async function TiktokProductsPage() {
     .where(productWhere)
     .orderBy(desc(schema.tiktokProducts.ttUpdateTime)).limit(1000);
   const isAdmin = session.role === "admin";
-  return <TiktokProductsClient stores={stores} initial={JSON.parse(JSON.stringify(rows))} isAdmin={isAdmin} />;
+  const canManage = (await levelOf(session, "products")) >= 2; // Clone / Edit cần quyền full
+  return <TiktokProductsClient stores={stores} initial={JSON.parse(JSON.stringify(rows))} isAdmin={isAdmin} canManage={canManage} />;
 }
