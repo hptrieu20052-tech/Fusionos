@@ -158,6 +158,7 @@ export async function POST(req: NextRequest) {
 
   let created = 0, skipped = 0;
   const errors: string[] = [];
+  const createdIds: string[] = []; // để bắn báo sale Telegram sau khi tạo
 
   for (const g of Array.from(groups.values())) {
     if (blocked.has(g.ext)) { skipped++; continue; } // đã xử lý ở hệ thống cũ
@@ -192,10 +193,16 @@ export async function POST(req: NextRequest) {
           productUrl: l.listingId ? `https://www.etsy.com/listing/${l.listingId}` : null,
         });
       }
+      createdIds.push(order.id);
       created++;
     } catch (e) {
       errors.push(`Đơn ${g.ext}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
     }
+  }
+
+  // Báo sale về Telegram cho các đơn VỪA TẠO qua CSV (giống luồng extension/TikTok). Fire-and-forget.
+  if (createdIds.length) {
+    try { const { notifyNewSales } = await import("@/lib/telegram"); await notifyNewSales(createdIds); } catch { /* bỏ qua */ }
   }
 
   return NextResponse.json({ ok: true, orders: groups.size, created, skipped, errors: errors.slice(0, 30) });

@@ -17,18 +17,28 @@ export const dynamic = "force-dynamic";
  * Khớp đơn theo order_code (external_ff_id) hoặc partner_order_id (orders.external_id/order_label).
  * Phải trả 200 nhanh — FlashShip retry 4 lần/5 phút, fail liên tục sẽ bị tắt webhook 1 giờ.
  */
+// FlashShip kiểm tra URL bằng GET/HEAD khi tạo webhook + nút "Trigger Test" → trả 200 để URL hợp lệ.
+export async function GET() {
+  return NextResponse.json({ ok: true, endpoint: "flashship-webhook", ready: true });
+}
+export async function HEAD() {
+  return new NextResponse(null, { status: 200 });
+}
+
 export async function POST(req: NextRequest) {
   const sig = (req.headers.get("x-signature") || "").trim().toLowerCase();
   const rawBody = await req.text();
   let b: Record<string, unknown> | null = null;
   try { b = JSON.parse(rawBody); } catch { /* giữ null */ }
-  if (!b) return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
+  // Ping/test không phải JSON đơn hàng → vẫn trả 200 để FlashShip chấp nhận URL (không có gì để xử lý).
+  if (!b) return NextResponse.json({ ok: true, ignored: "no json body (test ping)" });
 
   const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
   const r = (b.resource && typeof b.resource === "object" ? (b.resource as Record<string, unknown>) : b);
   const orderCode = S(r.order_code);
   const partnerOrderId = S(r.partner_order_id);
-  if (!orderCode && !partnerOrderId) return NextResponse.json({ ok: false, error: "missing order_code/partner_order_id" }, { status: 400 });
+  // Test event của FlashShip thường không kèm order_code thật → ack 200, bỏ qua.
+  if (!orderCode && !partnerOrderId) return NextResponse.json({ ok: true, ignored: "no order_code/partner_order_id (test event)" });
 
   // ---- Tìm fulfillment order: external_ff_id = order_code; else theo partner_order_id → orders ----
   const ids = [orderCode, partnerOrderId].filter(Boolean);
@@ -39,7 +49,8 @@ export async function POST(req: NextRequest) {
       .where(or(eq(schema.orders.externalId, partnerOrderId), eq(schema.orders.orderLabel, partnerOrderId))).limit(1);
     if (ord) ffo = (await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, ord.id)).limit(1))[0];
   }
-  if (!ffo) return NextResponse.json({ ok: false, error: "no matching order found" }, { status: 404 });
+  // Không khớp đơn nào (vd test event với mã giả) → ack 200 để FlashShip không coi URL lỗi / không tắt webhook.
+  if (!ffo) return NextResponse.json({ ok: true, ignored: "no matching order (test?)" });
 
   // ---- Xác thực chữ ký theo nhà fulfill của đơn ----
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, ffo.fulfillerId)).limit(1);
