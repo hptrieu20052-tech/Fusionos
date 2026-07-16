@@ -1,7 +1,9 @@
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
-import { ttGetValidCfg, ttGetPackageIdsForOrder, ttGetShippingDocument } from "@/lib/tiktok-shop";
+import { eq, sql } from "drizzle-orm";
+import { ttGetValidCfg, ttGetPackageIdsForOrder, ttGetShippingDocument, ttCreatePackage, ttGetShippingServices } from "@/lib/tiktok-shop";
 import { writeFile, fileUrl } from "@/lib/storage";
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export type TtLabel = { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string };
 export type LabelResult = { ok: boolean; labels: TtLabel[]; reason?: string; error?: string };
@@ -11,7 +13,7 @@ export type LabelResult = { ok: boolean; labels: TtLabel[]; reason?: string; err
  * CHỈ áp dụng đơn shipping_type = TIKTOK. Đơn chưa Arrange (chưa có package) → reason để UI báo.
  * best-effort: không ném lỗi làm hỏng luồng gọi.
  */
-export async function fetchAndStoreTiktokLabels(orderInternalId: string): Promise<LabelResult> {
+export async function fetchAndStoreTiktokLabels(orderInternalId: string, opts?: { autoArrange?: boolean }): Promise<LabelResult> {
   const [order] = await db.select({
     id: schema.orders.id, platform: schema.orders.platform, externalId: schema.orders.externalId,
     storeId: schema.orders.storeId, shippingType: schema.orders.shippingType,
@@ -26,12 +28,40 @@ export async function fetchAndStoreTiktokLabels(orderInternalId: string): Promis
 
   try {
     const cfg = await ttGetValidCfg(order.storeId, cred);
-    const pkgs = await ttGetPackageIdsForOrder(cfg, order.externalId);
+    let pkgs = await ttGetPackageIdsForOrder(cfg, order.externalId);
+
+    // AUTO-ARRANGE: chưa có package + được phép → tạo package = MUA NHÃN ($3.95). Idempotent qua tiktok_arranged_at.
+    if (!pkgs.length && opts?.autoArrange) {
+      const locked = await db.execute(sql`UPDATE orders SET tiktok_arranged_at = now() WHERE id = ${order.id} AND tiktok_arranged_at IS NULL RETURNING id`);
+      if (!locked.rows.length) {
+        // tiến trình khác đang/đã arrange → đọc lại package
+        pkgs = await ttGetPackageIdsForOrder(cfg, order.externalId);
+        if (!pkgs.length) return { ok: false, labels: [], reason: "arrange đang chạy ở tiến trình khác — thử lại sau chốc lát" };
+      } else {
+        try {
+          const svc = await ttGetShippingServices(cfg, order.externalId).catch(() => ({ serviceId: null }));
+          const cp = await ttCreatePackage(cfg, order.externalId, svc.serviceId);
+          if (!cp.packageId) throw new Error("Create Package: không trả về package id");
+          pkgs = await ttGetPackageIdsForOrder(cfg, order.externalId);
+          if (!pkgs.length) pkgs = [{ id: cp.packageId }];
+        } catch (e) {
+          await db.update(schema.orders).set({ tiktokArrangedAt: null }).where(eq(schema.orders.id, order.id)); // mở khoá để retry
+          return { ok: false, labels: [], error: "arrange failed: " + String((e as Error)?.message ?? e).slice(0, 250) };
+        }
+      }
+    }
+
     if (!pkgs.length) return { ok: false, labels: [], reason: "No package yet — arrange shipment on TikTok Seller Center first, then fetch." };
 
     const labels: TtLabel[] = [];
     for (const pkg of pkgs) {
-      const doc = await ttGetShippingDocument(cfg, pkg.id);
+      // nhãn có thể chưa sẵn ngay sau khi arrange → thử lại vài lần
+      let doc: { doc_url?: string } & Record<string, unknown> = {};
+      for (let i = 0; i < 3; i++) {
+        doc = await ttGetShippingDocument(cfg, pkg.id);
+        if (doc?.doc_url) break;
+        if (i < 2) await sleep(2500);
+      }
       const docUrl = String(doc?.doc_url ?? "");
       if (!docUrl) continue;
       // Tải PDF (link TikTok hết hạn ~24h) → lưu R2 để link bền cho supplier.
@@ -46,7 +76,7 @@ export async function fetchAndStoreTiktokLabels(orderInternalId: string): Promis
         key, url: fileUrl(key), fetchedAt: new Date().toISOString(),
       });
     }
-    if (!labels.length) return { ok: false, labels: [], reason: "package exists but no shipping document returned yet" };
+    if (!labels.length) return { ok: false, labels: [], reason: "package đã tạo nhưng nhãn chưa sẵn — cron sẽ lấy lại" };
 
     await db.update(schema.orders).set({ tiktokLabels: labels }).where(eq(schema.orders.id, order.id));
     return { ok: true, labels };

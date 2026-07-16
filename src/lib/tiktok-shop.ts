@@ -186,6 +186,26 @@ export async function ttGetShippingDocument(cfg: TtCfg, packageId: string, opts?
   return d as { doc_url?: string } & Record<string, unknown>;
 }
 
+// ===== AUTO-ARRANGE (mua nhãn TikTok) — scope seller.fulfillment.basic (theyourlist có) =====
+// Get Eligible Shipping Service: POST /fulfillment/202309/orders/{id}/shipping_services/query → list dịch vụ.
+export async function ttGetShippingServices(cfg: TtCfg, orderId: string): Promise<{ serviceId: string | null; raw: unknown }> {
+  const d = await ttFetch(cfg, "POST", `/fulfillment/202309/orders/${orderId}/shipping_services/query`, {}, {});
+  const list = (d?.shipping_services as { id?: string; is_default?: boolean }[] | undefined) ?? [];
+  const def = list.find((s) => s.is_default) ?? list[0];
+  return { serviceId: def?.id ? String(def.id) : null, raw: d };
+}
+
+// Create Packages 202512: POST /fulfillment/202512/packages → TẠO PACKAGE + MUA NHÃN (Arrange). TỐN PHÍ ~$3.95.
+// ship_type=1: gộp cả đơn 1 package/1 tracking. shipping_service_id optional (bỏ → TikTok dùng default).
+export async function ttCreatePackage(cfg: TtCfg, orderId: string, shippingServiceId?: string | null): Promise<{ packageId: string | null; raw: unknown }> {
+  const body: Record<string, unknown> = { ship_type: "1", order_id: orderId };
+  if (shippingServiceId) body.shipping_service_id = shippingServiceId;
+  const d = await ttFetch(cfg, "POST", "/fulfillment/202512/packages", {}, body);
+  const pkgs = (d?.packages as { id?: string; package_id?: string }[] | undefined) ?? [];
+  const pid = pkgs[0]?.id ?? pkgs[0]?.package_id ?? (d?.package_id ? String(d.package_id) : null);
+  return { packageId: pid ? String(pid) : null, raw: d };
+}
+
 // ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====
 // Get Order Detail 202309: GET /order/202309/orders?ids=<comma>. Trả orders[] kèm packages, line_items,
 // shipping_type/fulfillment_type, delivery_option... Dùng để xác minh trước khi viết ship/label.

@@ -91,6 +91,8 @@ export const orders = pgTable("orders", {
   shippingType: text("shipping_type"),
   // Label TikTok Shipping đã lấy về + lưu R2: [{ packageId, trackingNumber, key, url, fetchedAt }]. Gửi link cho supplier.
   tiktokLabels: jsonb("tiktok_labels"),
+  // Thời điểm đã Arrange (Create Package) qua API — khoá chống arrange 2 lần (tốn tiền). null = chưa arrange.
+  tiktokArrangedAt: timestamp("tiktok_arranged_at", { withTimezone: true }),
   orderedAt: timestamp("ordered_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

@@ -171,7 +171,7 @@ async function handlePush(req: NextRequest) {
     const existing = (order.tiktokLabels as { url?: string | null; trackingNumber?: string }[] | null) ?? [];
     let lbl = existing.find((l) => l?.url);
     if (!lbl) {
-      const r = await fetchAndStoreTiktokLabels(order.id); // cần đơn đã Arrange (có package)
+      const r = await fetchAndStoreTiktokLabels(order.id, { autoArrange: true }); // tự Arrange (mua nhãn) nếu chưa có package
       if (r.ok) lbl = r.labels.find((l) => l.url);
     }
     if (lbl) { ttLabelUrl = lbl.url ?? undefined; ttTracking = lbl.trackingNumber; }
