@@ -7,7 +7,8 @@ import { SkuMappingClient } from "@/app/sku-mapping/sku-mapping-client";
 import { useConfirm } from "@/components/confirm-provider";
 import { SupplierLogo } from "@/components/supplier-logo";
 
-type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; shopId: string | null; identifier: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string };
+type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; shopId: string | null; identifier: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string; logoUrl?: string | null };
+type Revealed = { apiEndpoint: string; webhookSecret: string; apiKey: string; shopId: string; identifier: string; sheetId: string; tab: string };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; productType: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
 const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
 
@@ -18,8 +19,9 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
   const [tab, setTab] = useState<"api" | "sku">("api");
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [maps, setMaps] = useState<Map[]>([]);
-  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string; identifier: string }>>({});
-  const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "", sheetId: "", tab: "" });
+  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string; identifier: string; logoKey: string }>>({});
+  const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "", sheetId: "", tab: "", logoKey: "" });
+  const [revealed, setRevealed] = useState<Record<string, Revealed | undefined>>({});
   const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
   const [msg, setMsg] = useState("");
   const [shops, setShops] = useState<Record<string, { id: number; title: string }[] | "loading" | string>>({});
@@ -27,9 +29,24 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
 
   const setE = (id: string, field: string, value: string) =>
     setEdit((prev) => {
-      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "" };
+      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", logoKey: "" };
       return { ...prev, [id]: { ...base, [field]: value } };
     });
+
+  // Upload favicon → trả về storage key.
+  async function uploadLogo(file: File): Promise<string | null> {
+    const t0 = await fetch("/api/fulfillers/logo-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: file.name, contentType: file.type }) }).then((r) => r.json()).catch(() => null);
+    if (!t0?.ok) { setMsg("⚠ " + (t0?.error ?? "upload url failed")); return null; }
+    const put = await fetch(t0.url, { method: t0.method, headers: { "Content-Type": file.type }, body: file }).catch(() => null);
+    if (!put || !put.ok) { setMsg("⚠ favicon upload failed"); return null; }
+    return t0.key as string;
+  }
+  // Xem/ẩn giá trị thật của credential (con mắt).
+  async function toggleReveal(id: string) {
+    if (revealed[id]) { setRevealed((p) => ({ ...p, [id]: undefined })); return; }
+    const j = await fetch("/api/fulfillers/reveal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json()).catch(() => ({ ok: false }));
+    if (j.ok) setRevealed((p) => ({ ...p, [id]: j })); else setMsg("⚠ " + (j.error ?? "reveal failed"));
+  }
 
   const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => { if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings ?? []); } });
   useEffect(() => { load(); }, []);
@@ -37,7 +54,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
   async function saveFf(id: string) {
     const e = edit[id]; if (!e) return;
     const j = await fetch("/api/fulfillers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
-    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
+    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", logoKey: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
   }
   async function listShops(id: string) {
     const token = edit[id]?.apiKey;
@@ -68,7 +85,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
   async function addFf(e: React.FormEvent) {
     e.preventDefault();
     const j = await fetch("/api/fulfillers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(nf) }).then((r) => r.json());
-    setMsg(j.ok ? t("s.addedFulfiller") : "⚠ " + j.error); if (j.ok) { setNf({ name: "", method: "api", apiEndpoint: "", sheetId: "", tab: "" }); load(); }
+    setMsg(j.ok ? t("s.addedFulfiller") : "⚠ " + j.error); if (j.ok) { setNf({ name: "", method: "api", apiEndpoint: "", sheetId: "", tab: "", logoKey: "" }); load(); }
   }
   async function addMap(e: React.FormEvent) {
     e.preventDefault();
@@ -103,10 +120,12 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
           {ffs.map((f) => (
             <div key={f.id} style={{ border: "1px solid var(--line)", borderRadius: 14, padding: "13px 15px" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <SupplierLogo name={f.name} size={22} />
+                <SupplierLogo name={f.name} src={f.logoUrl} size={22} />
                 <b style={{ fontSize: 13.5 }}>{f.name}</b>
                 <span className="chip">{f.method}</span>
                 {f.credentials ? <span className="badge b-ship">Token {f.credentials}</span> : <span className="badge b-issue">{t("s.noApiKey")}</span>}
+                {isAdmin && f.credentials && <button type="button" onClick={() => toggleReveal(f.id)} title={revealed[f.id] ? "Hide" : "Show key / secret"}
+                  style={{ background: "none", border: "1px solid var(--line)", borderRadius: 8, padding: "2px 7px", cursor: "pointer", fontSize: 13, lineHeight: 1, color: "var(--muted)" }}>{revealed[f.id] ? "🙈" : "👁"}</button>}
                 {f.apiEndpoint && <span className="badge b-mut" style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.apiEndpoint}>URL: {f.apiEndpoint}</span>}
                 {f.shopId && <span className="badge b-ship">Shop ID: {f.shopId}</span>}
                 {f.identifier && <span className="badge b-ship">ID: {f.identifier}</span>}
@@ -118,6 +137,15 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                 {isAdmin && <button type="button" onClick={() => delFf(f.id, f.name)} title={t("set.deleteFulfiller")}
                   style={{ background: "var(--card)", border: "1px solid #F3C7C7", borderRadius: 9, padding: "5px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--red)" }}><IconTrash width={14} height={14} /></button>}
               </div>
+              {isAdmin && revealed[f.id] && (
+                <div style={{ marginTop: 8, background: "#0E1726", color: "#CFE3FF", borderRadius: 10, padding: "10px 12px", fontSize: 12, fontFamily: "ui-monospace,monospace", wordBreak: "break-all", lineHeight: 1.7 }}>
+                  {([["API endpoint", revealed[f.id]!.apiEndpoint], ["API token / key", revealed[f.id]!.apiKey], ["Webhook secret", revealed[f.id]!.webhookSecret], ["Shop ID", revealed[f.id]!.shopId], ["Identifier", revealed[f.id]!.identifier], ["Sheet ID", revealed[f.id]!.sheetId], ["Tab", revealed[f.id]!.tab]] as const)
+                    .filter(([, v]) => v)
+                    .map(([k, v]) => (
+                      <div key={k}><span style={{ color: "#7FA8D9" }}>{k}:</span> {v} <button type="button" onClick={() => navigator.clipboard?.writeText(v)} title="Copy" style={{ background: "none", border: 0, color: "#7FA8D9", cursor: "pointer", fontSize: 11 }}>copy</button></div>
+                    ))}
+                </div>
+              )}
               {isAdmin && editOpen[f.id] && (() => {
                 const isMerchize = f.name.toLowerCase().includes("merchize");
                 const isPrintway = f.name.toLowerCase().includes("printway");
@@ -133,6 +161,12 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                     <button type="button" onClick={() => listShops(f.id)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{t("s.getShop")}</button>
                   </>}
                   <input placeholder={t("s.webhookNew")} value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setE(f.id, "webhookSecret", e.target.value)} style={{ ...inp, width: 150 }} />
+                  {/* Favicon supplier — hiện ảnh hiện tại, upload để đổi */}
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "1px dashed var(--line)", borderRadius: 11, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: edit[f.id]?.logoKey ? "var(--green)" : "var(--muted)" }}>
+                    <SupplierLogo name={f.name} src={f.logoUrl} size={18} />
+                    {edit[f.id]?.logoKey ? "Favicon ✓ (change)" : "Change favicon"}
+                    <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => { const file = e.target.files?.[0]; if (!file) return; const k = await uploadLogo(file); if (k) setE(f.id, "logoKey", k); e.target.value = ""; }} />
+                  </label>
                   <button onClick={() => saveFf(f.id)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("c.save")}</button>
                 </div>
                 {isPrintway && (
@@ -183,6 +217,12 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
             ) : (
               <input placeholder="API endpoint" value={nf.apiEndpoint} onChange={(e) => setNf({ ...nf, apiEndpoint: e.target.value })} style={{ ...inp, flex: 1, minWidth: 160 }} />
             )}
+            {/* Favicon supplier — upload → hiện preview cạnh nút */}
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "1px dashed var(--line)", borderRadius: 10, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: nf.logoKey ? "var(--green)" : "var(--muted)" }}>
+              <IconUpload width={13} height={13} />
+              {nf.logoKey ? "Favicon ✓ (change)" : "Favicon"}
+              <input type="file" accept="image/*" style={{ display: "none" }} onChange={async (e) => { const f = e.target.files?.[0]; if (!f) return; const k = await uploadLogo(f); if (k) setNf((p) => ({ ...p, logoKey: k })); e.target.value = ""; }} />
+            </label>
             <button style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}>{t("set.add")}</button>
           </form>
         )}

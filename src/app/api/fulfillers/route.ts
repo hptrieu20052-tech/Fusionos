@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
+import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export async function GET() {
   const cmap = new Map(counts.map((c) => [c.fid, c]));
   return NextResponse.json({
     ok: true,
-    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, identifier: (f.credentials as { identifier?: string } | null)?.identifier ?? null, credentials: f.credentials ? "•••• saved" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined, mapCount: cmap.get(f.id)?.total ?? 0, pinnedCount: cmap.get(f.id)?.pinned ?? 0 })),
+    fulfillers: ffs.map((f) => ({ ...f, shopId: (f.credentials as { shopId?: string } | null)?.shopId ?? null, identifier: (f.credentials as { identifier?: string } | null)?.identifier ?? null, credentials: f.credentials ? "•••• saved" : null, hasWebhookSecret: !!f.webhookSecret, webhookSecret: undefined, logoUrl: fileUrl(f.logoKey), mapCount: cmap.get(f.id)?.total ?? 0, pinnedCount: cmap.get(f.id)?.pinned ?? 0 })),
   });
 }
 
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
     const [f] = await db.insert(schema.fulfillers).values({
       name: b.name.trim(), method: b.method, apiEndpoint: b.apiEndpoint || null,
       webhookSecret: b.webhookSecret || null, autoPush: !!b.autoPush,
+      logoKey: b.logoKey || null,
       credentials,
     }).returning();
     return NextResponse.json({ ok: true, id: f.id });
@@ -70,6 +72,7 @@ export async function PATCH(req: NextRequest) {
     };
   }
   if (typeof b.autoPush === "boolean") patch.autoPush = b.autoPush;
+  if (typeof b.logoKey === "string" && b.logoKey) patch.logoKey = b.logoKey;
   await db.update(schema.fulfillers).set(patch).where(eq(schema.fulfillers.id, b.id));
   return NextResponse.json({ ok: true });
 }

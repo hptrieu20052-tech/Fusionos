@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useConfirm } from "@/components/confirm-provider";
 
 type Row = {
   id: string; storeId: string; tiktokProductId: string; title: string | null; status: string | null;
@@ -29,6 +30,8 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
   const [syncing, setSyncing] = useState(false);
   const [msg, setMsg] = useState("");
   const [page, setPage] = useState(1);
+  const [busyId, setBusyId] = useState("");
+  const confirm = useConfirm();
 
   const storeName = useMemo(() => new Map(stores.map((s) => [s.id, s.name])), [stores]);
   const storeSeller = useMemo(() => new Map(stores.map((s) => [s.id, s.sellerId])), [stores]);
@@ -78,6 +81,27 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
       } else setMsg("✗ " + (j.error ?? "Sync failed"));
     } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? e)); }
     setSyncing(false);
+  };
+
+  // Activate / Deactivate / Delete listing trực tiếp trên TikTok.
+  const lifecycle = async (r: Row, action: "activate" | "deactivate" | "delete") => {
+    const name = r.title || r.tiktokProductId;
+    if (action === "delete") {
+      const ok = await confirm({ message: `Delete "${name}" from TikTok Shop? This can't be undone.`, danger: true });
+      if (!ok) return;
+    } else if (action === "deactivate") {
+      const ok = await confirm({ message: `Deactivate "${name}"? It will be removed from sale but you can activate it again later.` });
+      if (!ok) return;
+    }
+    setBusyId(r.id); setMsg(`${action === "activate" ? "Activating" : action === "deactivate" ? "Deactivating" : "Deleting"} "${name}"…`);
+    try {
+      const j = await fetch(`/api/tiktok/products/${r.id}/lifecycle`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) }).then((x) => x.json());
+      if (j.ok) {
+        if (action === "delete") { setRows((prev) => prev.filter((x) => x.id !== r.id)); setMsg(`✓ Deleted "${name}"`); }
+        else { const st = action === "activate" ? "ACTIVATE" : "SELLER_DEACTIVATED"; setRows((prev) => prev.map((x) => x.id === r.id ? { ...x, status: st } : x)); setMsg(`✓ ${action === "activate" ? "Activated" : "Deactivated"} "${name}"`); }
+      } else setMsg("✗ " + (j.error ?? `${action} failed`));
+    } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? e)); }
+    setBusyId("");
   };
 
   return (
@@ -144,12 +168,23 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
                     <span style={{ background: sc.bg, color: sc.fg, fontWeight: 700, fontSize: 11, borderRadius: 6, padding: "2px 8px" }}>{r.status ?? "—"}</span>
                   </td>
                   <td style={{ padding: "8px 6px", color: "var(--muted)", fontSize: 12 }}>{r.ttUpdateTime ? new Date(r.ttUpdateTime).toLocaleDateString() : "—"}</td>
-                  {canManage && (
+                  {canManage && (() => {
+                    const deactivated = r.status?.includes("DEACTIVATED");
+                    const busy = busyId === r.id;
+                    const linkBtn = (color: string) => ({ fontSize: 12, fontWeight: 700, color, background: "none", border: 0, padding: 0, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 } as const);
+                    return (
                     <td style={{ padding: "8px 6px", whiteSpace: "nowrap" }}>
-                      <Link href={`/tiktok-products/${r.id}/edit`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textDecoration: "none", marginRight: 10 }}>Edit</Link>
-                      <Link href={`/tiktok-products/${r.id}/edit?mode=clone`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", textDecoration: "none" }}>Duplicate</Link>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <Link href={`/tiktok-products/${r.id}/edit`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textDecoration: "none" }}>Edit</Link>
+                        <Link href={`/tiktok-products/${r.id}/edit?mode=clone`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", textDecoration: "none" }}>Duplicate</Link>
+                        {deactivated
+                          ? <button type="button" disabled={busy} onClick={() => lifecycle(r, "activate")} style={linkBtn("#1E8E4E")}>Activate</button>
+                          : <button type="button" disabled={busy} onClick={() => lifecycle(r, "deactivate")} style={linkBtn("#B7791F")}>Deactivate</button>}
+                        <button type="button" disabled={busy} onClick={() => lifecycle(r, "delete")} style={linkBtn("#C0392B")}>Delete</button>
+                      </div>
                     </td>
-                  )}
+                    );
+                  })()}
                 </tr>
               );
             })}
@@ -171,7 +206,7 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
         </div>
       )}
 
-      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit = update live on TikTok · Duplicate = clone within the same shop (defaults to draft). You can edit title/description/images/price/stock/packaging; category/attributes editing comes next.</div>}
+      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit = update live on TikTok · Duplicate = clone within the same shop (defaults to draft) · Deactivate = remove from sale (reversible with Activate) · Delete = remove the listing on TikTok (permanent).</div>}
     </div>
   );
 }

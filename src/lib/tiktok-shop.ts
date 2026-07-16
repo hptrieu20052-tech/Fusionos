@@ -93,7 +93,7 @@ function ttSign(appSecret: string, path: string, params: Record<string, string>,
   return crypto.createHmac("sha256", appSecret).update(base).digest("hex");
 }
 
-async function ttFetch(cfg: TtCfg, method: "GET" | "POST" | "PUT", path: string, query: Record<string, string>, bodyObj?: unknown) {
+async function ttFetch(cfg: TtCfg, method: "GET" | "POST" | "PUT" | "DELETE", path: string, query: Record<string, string>, bodyObj?: unknown) {
   const base = cfg.apiBase?.replace(/\/$/, "") || TT_API;
   const body = bodyObj ? JSON.stringify(bodyObj) : "";
   const params: Record<string, string> = {
@@ -240,6 +240,24 @@ export async function ttEditProduct(cfg: TtCfg, productId: string, body: Record<
   return d ?? {};
 }
 
+// Deactivate Products 202309: POST /product/202309/products/deactivate (scope write) — gỡ khỏi bán, giữ listing (SELLER_DEACTIVATED). Có thể Activate lại.
+export async function ttDeactivateProducts(cfg: TtCfg, productIds: string[]): Promise<Record<string, unknown>> {
+  const d = await ttFetch(cfg, "POST", "/product/202309/products/deactivate", {}, { product_ids: productIds });
+  return d ?? {};
+}
+
+// Activate Products 202309: POST /product/202309/products/activate (scope write) — bật bán lại product đang deactivated.
+export async function ttActivateProducts(cfg: TtCfg, productIds: string[]): Promise<Record<string, unknown>> {
+  const d = await ttFetch(cfg, "POST", "/product/202309/products/activate", {}, { product_ids: productIds });
+  return d ?? {};
+}
+
+// Delete Products 202309: DELETE /product/202309/products (scope write) — xóa listing (chuyển DELETED, không khôi phục qua API).
+export async function ttDeleteProducts(cfg: TtCfg, productIds: string[]): Promise<Record<string, unknown>> {
+  const d = await ttFetch(cfg, "DELETE", "/product/202309/products", {}, { product_ids: productIds });
+  return d ?? {};
+}
+
 // Get Warehouses (logistics) — cần warehouse_id cho inventory khi Create (nếu source thiếu).
 export async function ttGetWarehouses(cfg: TtCfg): Promise<{ id: string; name: string; isDefault: boolean }[]> {
   const d = await ttFetch(cfg, "GET", "/logistics/202309/warehouses", {});
@@ -308,6 +326,18 @@ export async function ttSendMessage(cfg: TtCfg, conversationId: string, text: st
 // Read Message 202309: POST /customer_service/202309/conversations/{id}/messages/read (đánh dấu đã đọc).
 export async function ttReadConversation(cfg: TtCfg, conversationId: string): Promise<void> {
   await ttFetch(cfg, "POST", `/customer_service/202309/conversations/${conversationId}/messages/read`, {}, {});
+}
+
+// ===== FINANCE (payout/settlement) — scope seller.finance.info =====
+// Get Statements 202309: GET /finance/202309/statements. sort_field bắt buộc = statement_time. Cần shop_cipher (ttFetch tự thêm).
+export async function ttGetStatements(cfg: TtCfg, p: { timeGe?: number; timeLt?: number; paymentStatus?: string; pageToken?: string; pageSize?: number; sortOrder?: string }): Promise<{ statements: Record<string, unknown>[]; nextPageToken: string }> {
+  const q: Record<string, string> = { sort_field: "statement_time", sort_order: p.sortOrder ?? "DESC", page_size: String(p.pageSize ?? 50) };
+  if (p.timeGe) q.statement_time_ge = String(p.timeGe);
+  if (p.timeLt) q.statement_time_lt = String(p.timeLt);
+  if (p.paymentStatus) q.payment_status = p.paymentStatus;
+  if (p.pageToken) q.page_token = p.pageToken;
+  const d = await ttFetch(cfg, "GET", "/finance/202309/statements", q);
+  return { statements: (d?.statements as Record<string, unknown>[] | undefined) ?? [], nextPageToken: d?.next_page_token ? String(d.next_page_token) : "" };
 }
 
 // ===== CHẨN ĐOÁN (read-only) — lấy Order Detail thật để biết shape package/shipping =====

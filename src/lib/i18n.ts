@@ -797,6 +797,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "adm.modProducts": { vi: "Products", en: "Products" },
   "adm.modSupport": { vi: "Customer Messages", en: "Customer Messages" },
   "adm.modMarketing": { vi: "Marketing", en: "Marketing" },
+  "adm.modFinanceTiktok": { vi: "Finance (TikTok)", en: "Finance (TikTok)" },
   "adm.searchName": { vi: "Tìm theo tên…", en: "Search full name…" },
   "adm.allRoles": { vi: "Tất cả role", en: "All roles" },
   "adm.allTeams": { vi: "Tất cả team", en: "All teams" },

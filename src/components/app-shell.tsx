@@ -18,13 +18,14 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
 
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
 
-export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false }: {
+export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false, canFinanceTiktok = false }: {
   user: { name: string; role: string; avatarUrl?: string | null };
   links: NavLink[];
   children: React.ReactNode;
   canProducts?: boolean;
   canSupport?: boolean;
   canMarketing?: boolean;
+  canFinanceTiktok?: boolean;
 }) {
   const path = usePathname();
   const { t } = useLang();
@@ -78,8 +79,8 @@ export default function AppShell({ user, links, children, canProducts = false, c
 
   // Dropdown "Seller Hub" (gộp Products + Templates + Support) — sau "Design Studio"; hiện khi có quyền products HOẶC support.
   const hasDesigns = links.some((l) => !l.more && l.href === "/designs");
-  const hubActive = ["/tiktok-products", "/tiktok-templates", "/support", "/marketing"].some((h) => path.startsWith(h));
-  const productsDropdown = (canProducts || canSupport || canMarketing) ? (
+  const hubActive = ["/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
+  const productsDropdown = (canProducts || canSupport || canMarketing || canFinanceTiktok) ? (
     <div key="__sellerhub" className="topnav-more">
       <button className={`topnav-item${hubActive ? " active" : ""}`} onClick={() => setProdOpen((v) => !v)}>
         <span className="topnav-ic"><IconBox width={17} height={17} /></span>
@@ -102,6 +103,10 @@ export default function AppShell({ user, links, children, canProducts = false, c
           {canMarketing && <Link href="/marketing" prefetch className={`topnav-more-item${isActive("/marketing") ? " active" : ""}`}>
             <span className="topnav-ic"><IconMarketing width={16} height={16} /></span>
             Marketing Tiktok
+          </Link>}
+          {canFinanceTiktok && <Link href="/tiktok-finance" prefetch className={`topnav-more-item${isActive("/tiktok-finance") ? " active" : ""}`}>
+            <span className="topnav-ic"><IconWallet width={16} height={16} /></span>
+            Finance Tiktok
           </Link>}
         </div>
       )}
@@ -204,7 +209,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
                 </Link>
               );
               // Sau "Design Studio": chèn nhóm Seller Hub (Products + Templates + Customer Messages + Marketing) theo quyền
-              if (l.href === "/designs" && (canProducts || canSupport || canMarketing)) {
+              if (l.href === "/designs" && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
                 return [el,
                   ...(canProducts ? [
                     <Link key="__mp" href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
@@ -226,6 +231,12 @@ export default function AppShell({ user, links, children, canProducts = false, c
                     <Link key="__mk" href="/marketing" prefetch className={`mobile-nav-item${isActive("/marketing") ? " active" : ""}`}>
                       <span className="topnav-ic"><IconMarketing width={18} height={18} /></span>
                       Marketing Tiktok
+                    </Link>,
+                  ] : []),
+                  ...(canFinanceTiktok ? [
+                    <Link key="__mf" href="/tiktok-finance" prefetch className={`mobile-nav-item${isActive("/tiktok-finance") ? " active" : ""}`}>
+                      <span className="topnav-ic"><IconWallet width={18} height={18} /></span>
+                      Finance Tiktok
                     </Link>,
                   ] : []),
                 ];

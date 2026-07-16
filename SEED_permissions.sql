@@ -6,12 +6,14 @@ INSERT INTO role_permissions (role, module, level) VALUES
   -- SELLER: Add Store, Kéo Order, Gửi Idea, Upload/Check Design (của mình), Dán ID Design vào Order (KHÔNG fulfill)
   ('seller','dashboard',1),('seller','orders',2),('seller','fulfillment',0),('seller','designs',2),
   ('seller','finance',0),('seller','hr',0),('seller','stores',2),('seller','settings',0),
+  ('seller','products',2),('seller','support',2),('seller','marketing',2),('seller','financeTiktok',2),
   -- DESIGNER: Thiết kế, Upload/Sửa file
   ('designer','dashboard',1),('designer','orders',0),('designer','fulfillment',0),('designer','designs',2),
   ('designer','finance',0),('designer','hr',0),('designer','stores',0),('designer','settings',0),
-  -- SUPPORT: Đẩy đơn, Khiếu nại nhà in, Thống kê, Kiểm toán, Tính lương
+  -- SUPPORT: Đẩy đơn, Khiếu nại nhà in, Thống kê, Kiểm toán, Tính lương + Customer Messages
   ('support','dashboard',2),('support','orders',2),('support','fulfillment',2),('support','designs',1),
-  ('support','finance',2),('support','hr',1),('support','stores',1),('support','settings',0)
+  ('support','finance',2),('support','hr',1),('support','stores',1),('support','settings',0),
+  ('support','support',2)
 ON CONFLICT (role, module) DO UPDATE SET level = EXCLUDED.level;
 
 -- ===== Giới hạn dữ liệu theo role =====
