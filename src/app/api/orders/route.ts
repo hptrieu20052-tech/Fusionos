@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   const total = (totalR.rows[0] as { t: number }).t;
 
   const rows = await db.execute(sql`
-    SELECT o.*, u.full_name AS seller_name, s.name AS store_name
+    SELECT o.*, u.full_name AS seller_name, u.team AS seller_team, s.name AS store_name
     FROM orders o
     LEFT JOIN users u ON u.id = o.seller_id
     LEFT JOIN stores s ON s.id = o.store_id
@@ -108,6 +108,8 @@ export async function GET(req: NextRequest) {
   // marketplace: để modal Import chỉ hiện store ĐÚNG SÀN (Etsy import không được chọn shop TikTok)
   const storesR = (await db.execute(sql`SELECT id, name, marketplace FROM stores${storeFilter} ORDER BY name`)).rows;
   const fulfillersR = (await db.execute(sql`SELECT id, name FROM fulfillers ORDER BY name`)).rows;
+  // Designers (có Telegram chat id) để nút "Gửi Designer" chọn theo team seller.
+  const designers = (await db.execute(sql`SELECT id, full_name AS name, team FROM users WHERE role='designer' AND status='active' AND telegram_chat_id IS NOT NULL AND team IS NOT NULL ORDER BY full_name`)).rows;
 
   const out = orders.map((o) => ({
     ...o,
@@ -125,7 +127,7 @@ export async function GET(req: NextRequest) {
                       : (suggestMap.get(i.id as string) ?? { suggests: [], custom: false, baseDesign: null })),
     })),
   }));
-  return NextResponse.json({ ok: true, total, page, show, counts, sellers, stores: storesR, fulfillers: fulfillersR, orders: out });
+  return NextResponse.json({ ok: true, total, page, show, counts, sellers, stores: storesR, fulfillers: fulfillersR, designers, orders: out });
 }
 
 // POST /api/orders — tạo đơn tay

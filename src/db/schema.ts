@@ -38,6 +38,7 @@ export const users = pgTable("users", {
   startedAt: date("started_at"),        // ngày bắt đầu làm việc
   contractKey: text("contract_key"),    // file hợp đồng trên R2 (docx/pdf)
   avatarKey: text("avatar_key"),
+  telegramChatId: text("telegram_chat_id"), // chat riêng với bot — designer nhận đơn seller gửi qua
   status: userStatusEnum("status").notNull().default("pending"),
   lastActiveAt: timestamp("last_active_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -88,6 +89,8 @@ export const orders = pgTable("orders", {
   orderLabel: text("order_label"),
   note: text("note"),                 // note NỘI BỘ (staff tự ghi)
   buyerNote: text("buyer_note"),      // note của KHÁCH (message from buyer trên Etsy) — hiện nền cam, read-only
+  designerSentTo: text("designer_sent_to"),   // đã gửi đơn cho designer nào (tên) qua Telegram
+  designerSentAt: timestamp("designer_sent_at", { withTimezone: true }),
   // TikTok: "TIKTOK" (Fulfilled by TikTok — get label để đẩy nhà in) | "SELLER" (mình tự ship). Null = không rõ / sàn khác.
   shippingType: text("shipping_type"),
   // Label TikTok Shipping đã lấy về + lưu R2: [{ packageId, trackingNumber, key, url, fetchedAt }]. Gửi link cho supplier.

@@ -32,7 +32,7 @@ type RoleAction = { role: string; actionKey: string; enabled: boolean };
 const scopeResources = (t: (k: string) => string): { key: string; label: string }[] => [{ key: "orders", label: t("adm.ordersWord") }, { key: "designs", label: "Design" }];
 const scopeOpts = (t: (k: string) => string): { v: string; label: string }[] => [{ v: "all", label: t("adm.allWord") }, { v: "team", label: t("adm.wholeTeam") }, { v: "own", label: t("adm.ownOnly") }];
 const ACTION_MODULE_LABEL: Record<string, string> = { orders: "Orders", designs: "Design Studio", fulfillment: "Fulfillment", stores: "Stores", finance: "Finance" };
-type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string; avatarUrl?: string | null; dateOfBirth?: string | null; startedAt?: string | null; phone?: string | null; contractKey?: string | null; contractUrl?: string | null };
+type User = { id: string; fullName: string; email: string; role: string; team: string | null; status: string; avatarUrl?: string | null; dateOfBirth?: string | null; startedAt?: string | null; phone?: string | null; contractKey?: string | null; contractUrl?: string | null; telegramChatId?: string | null };
 
 // Ô sửa trực tiếp (Full name / Email): trông như text, click là gõ được, Enter/blur để lưu, Esc để huỷ.
 function EditableCell({ value, onSave, bold, type = "text" }: { value: string; onSave: (v: string) => void; bold?: boolean; type?: string }) {
@@ -164,7 +164,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
   async function patchUser(id: string, body: Record<string, unknown>, okMsg?: string) {
     const j = await fetch("/api/admin/users", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId: id, ...body }) }).then((r) => r.json());
     if (j.ok) {
-      setUsers((us) => us.map((u) => u.id === id ? { ...u, ...(body.role ? { role: body.role as string } : {}), ...(body.team !== undefined ? { team: (body.team as string) || null } : {}), ...(body.status ? { status: body.status as string } : {}), ...(body.fullName ? { fullName: body.fullName as string } : {}), ...(body.email ? { email: body.email as string } : {}), ...("startedAt" in body ? { startedAt: (body.startedAt as string) || null } : {}), ...("dateOfBirth" in body ? { dateOfBirth: (body.dateOfBirth as string) || null } : {}), ...("phone" in body ? { phone: (body.phone as string) || null } : {}), ...("contractKey" in body ? { contractKey: (body.contractKey as string) || null } : {}) } : u));
+      setUsers((us) => us.map((u) => u.id === id ? { ...u, ...(body.role ? { role: body.role as string } : {}), ...(body.team !== undefined ? { team: (body.team as string) || null } : {}), ...(body.status ? { status: body.status as string } : {}), ...(body.fullName ? { fullName: body.fullName as string } : {}), ...(body.email ? { email: body.email as string } : {}), ...("startedAt" in body ? { startedAt: (body.startedAt as string) || null } : {}), ...("dateOfBirth" in body ? { dateOfBirth: (body.dateOfBirth as string) || null } : {}), ...("phone" in body ? { phone: (body.phone as string) || null } : {}), ...("telegramChatId" in body ? { telegramChatId: (body.telegramChatId as string) || null } : {}), ...("contractKey" in body ? { contractKey: (body.contractKey as string) || null } : {}) } : u));
       if (okMsg) setMsg(okMsg);
     } else setMsg("⚠ " + (j.error ?? "Error"));
   }
@@ -299,7 +299,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
           )}
         </div>
         <table style={{ marginTop: 8 }}>
-          <thead><tr><th style={{ width: 44 }}></th><th>{t("adm.colName")}</th><th>Email</th><th>{t("adm.colRole")}</th><th>Team</th><th>{t("adm.colStatus")}</th><th style={{ textAlign: "right" }}>{t("adm.colActions")}</th></tr></thead>
+          <thead><tr><th style={{ width: 44 }}></th><th>{t("adm.colName")}</th><th>Email</th><th>{t("adm.colRole")}</th><th>Team</th><th>Telegram chat ID</th><th>{t("adm.colStatus")}</th><th style={{ textAlign: "right" }}>{t("adm.colActions")}</th></tr></thead>
           <tbody>
             {shownUsers.map((u) => (
               <React.Fragment key={u.id}>
@@ -324,6 +324,11 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                     <option value="">{t("adm.noTeamOpt")}</option>
                     {teamList.map((tm) => <option key={tm.id} value={tm.name}>{tm.name}</option>)}
                   </select>
+                </td>
+                <td>
+                  <input key={u.telegramChatId ?? ""} defaultValue={u.telegramChatId ?? ""} placeholder={u.role === "designer" ? "vd 5123456789" : "—"}
+                    onBlur={(e) => { const v = e.target.value.trim(); if (v !== (u.telegramChatId ?? "")) patchUser(u.id, { telegramChatId: v }, v ? "✓ Saved chat ID" : "✓ Cleared chat ID"); }}
+                    style={{ ...inp, padding: "5px 8px", fontSize: 12.5, width: 130, fontFamily: "ui-monospace,monospace" }} />
                 </td>
                 <td style={{ color: u.status === "active" ? "var(--green)" : "var(--faint)", fontWeight: 700 }}>{u.status === "active" ? t("adm.active") : t("adm.locked")}</td>
                 <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>

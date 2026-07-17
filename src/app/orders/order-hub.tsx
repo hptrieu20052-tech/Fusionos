@@ -82,7 +82,8 @@ type Order = {
   id: string; external_id: string; platform: string; status: string; ordered_at: string;
   buyer_first: string | null; buyer_last: string | null;
   addr1: string | null; addr2: string | null; city: string | null; state: string | null; zip: string | null; country: string;
-  total: string; platform_fee: string; seller_name: string | null; store_name: string | null; order_label: string | null; note: string | null; buyer_note?: string | null; shipping_type?: string | null;
+  total: string; platform_fee: string; seller_name: string | null; seller_team?: string | null; store_name: string | null; order_label: string | null; note: string | null; buyer_note?: string | null; shipping_type?: string | null;
+  designer_sent_to?: string | null; designer_sent_at?: string | null;
   tiktok_labels?: { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string }[] | null;
   items: Item[];
 };
@@ -122,7 +123,7 @@ function trackingUrl(carrier: string | null, num: string): string {
 
 export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false, canChangeStatus = false, canDuplicate = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean; canChangeStatus?: boolean; canDuplicate?: boolean }) {
   const searchParams = useSearchParams();
-  const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: Opt[]; fulfillers: { id: string; name: string }[] } | null>(null);
+  const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: Opt[]; fulfillers: { id: string; name: string }[]; designers?: { id: string; name: string; team: string | null }[] } | null>(null);
   // Khởi tạo trạng thái ngay từ URL (?status=new) để chỉ gọi API 1 lần đúng bộ lọc, tránh race đè dữ liệu
   const [status, setStatus] = useState(() => {
     const s = searchParams.get("status");
@@ -424,7 +425,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
 
       {/* Cards */}
       {data.orders.map((o) => (
-        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin} canDuplicate={canDuplicate}
+        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin} canDuplicate={canDuplicate} designers={data.designers ?? []}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
           reload={load} flash={flash} openDup={(id, label) => setDupFor({ id, label })} copyText={copyText}
           fulfillers={data.fulfillers} />
@@ -857,8 +858,42 @@ function DuplicateModal({ init, close, onConfirm }: {
   );
 }
 
-function OrderCard({ o, canEdit, canPushFf, isAdmin, canDuplicate = false, selected, onToggleSel, reload, flash, openDup, copyText, fulfillers }: {
-  o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; canDuplicate?: boolean; selected: boolean; onToggleSel: () => void;
+// Gửi đơn cho Designer qua Telegram — chọn 1 designer CÙNG TEAM với seller của đơn.
+function SendDesigner({ order, designers, flash, reload }: { order: Order; designers: { id: string; name: string; team: string | null }[]; flash: (m: string) => void; reload: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const teamDesigners = order.seller_team ? designers.filter((d) => d.team === order.seller_team) : designers;
+  const send = async (d: { id: string; name: string }) => {
+    setOpen(false); setBusy(true);
+    const j = await fetch(`/api/orders/${order.id}/send-designer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designerId: d.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setBusy(false);
+    if (j.ok) { flash(`✓ Đã gửi ${j.designer}${j.photos ? ` · ${j.photos} ảnh` : ""}${j.photoWarn ? ` (ảnh lỗi: ${j.photoWarn})` : ""}`); reload(); }
+    else flash("✗ " + (j.error ?? "Error"));
+  };
+  const sent = !!order.designer_sent_to;
+  return (
+    <div style={{ position: "relative" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)} disabled={busy}
+        style={{ ...btnGhost, color: sent ? "#1E8E4E" : "#0e8a5f", borderColor: "#BFE3CC", background: sent ? "#E7F6EC" : "#EAF7F0", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6, cursor: busy ? "wait" : "pointer" }}
+        title={sent ? `Đã gửi ${order.designer_sent_to}` : "Gửi đơn cho designer qua Telegram"}>
+        <IconSend width={13} height={13} /> {busy ? "Đang gửi…" : sent ? `Đã gửi · ${order.designer_sent_to}` : "Gửi Designer"} <span style={{ fontSize: 10 }}>▾</span>
+      </button>
+      {open && (
+        <>
+          <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setOpen(false)} />
+          <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 8px 24px rgba(20,30,50,.14)", minWidth: 190, padding: 6 }}>
+            {teamDesigners.length ? teamDesigners.map((d) => (
+              <button key={d.id} type="button" onClick={() => send(d)} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: 0, padding: "8px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{d.name}</button>
+            )) : <div style={{ padding: "9px 11px", fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>Team chưa có designer nào (kèm Telegram chat ID). Admin điền chat ID ở bảng Staff.</div>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function OrderCard({ o, canEdit, canPushFf, isAdmin, canDuplicate = false, designers = [], selected, onToggleSel, reload, flash, openDup, copyText, fulfillers }: {
+  o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; canDuplicate?: boolean; designers?: { id: string; name: string; team: string | null }[]; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
   openDup: (id: string, label: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
 }) {
@@ -1238,6 +1273,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, canDuplicate = false, selec
             )}
           </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
+          <SendDesigner order={o} designers={designers} flash={flash} reload={reload} />
           {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
           {(isAdmin || canDuplicate) && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "")} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>

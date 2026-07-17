@@ -17,7 +17,7 @@ export async function GET() {
       role: schema.users.role, team: schema.users.team, status: schema.users.status,
       lastActiveAt: schema.users.lastActiveAt,
       dateOfBirth: schema.users.dateOfBirth, startedAt: schema.users.startedAt, contractKey: schema.users.contractKey,
-      avatarKey: schema.users.avatarKey, phone: schema.users.phone,
+      avatarKey: schema.users.avatarKey, phone: schema.users.phone, telegramChatId: schema.users.telegramChatId,
     })
     .from(schema.users);
   return NextResponse.json({ ok: true, users: users.map((u) => ({ ...u, contractUrl: fileUrl(u.contractKey), avatarUrl: fileUrl(u.avatarKey) })) });
@@ -68,6 +68,7 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof b.role === "string" && schema.users.role.enumValues.includes(b.role)) patch.role = b.role;
   if (typeof b.team === "string") patch.team = b.team.trim() || null;
+  if (typeof b.telegramChatId === "string") patch.telegramChatId = b.telegramChatId.trim() || null;
   if (typeof b.fullName === "string" && b.fullName.trim()) patch.fullName = b.fullName.trim();
   if ("phone" in b) patch.phone = (typeof b.phone === "string" && b.phone.trim()) ? b.phone.trim().slice(0, 30) : null;
   if ("dateOfBirth" in b) patch.dateOfBirth = (typeof b.dateOfBirth === "string" && b.dateOfBirth) ? b.dateOfBirth : null;

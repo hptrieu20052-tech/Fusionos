@@ -35,6 +35,35 @@ export async function sendTelegram(chatId: string, html: string): Promise<{ ok: 
 
 const money = (v: unknown) => "$" + Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
+// Gửi ALBUM ảnh (sendMediaGroup) — tối đa 10 ảnh/nhóm, tự chia lô nếu nhiều hơn. caption đặt ở ảnh đầu nhóm đầu.
+export async function sendTelegramMediaGroup(chatId: string, photoUrls: string[], caption?: string): Promise<{ ok: boolean; error?: string }> {
+  const token = TOKEN();
+  if (!token) return { ok: false, error: "TELEGRAM_BOT_TOKEN not configured" };
+  const urls = photoUrls.filter(Boolean);
+  if (!urls.length) return { ok: true };
+  let firstErr = "";
+  for (let i = 0; i < urls.length; i += 10) {
+    const batch = urls.slice(i, i + 10);
+    const media = batch.map((u, j) => {
+      const m: Record<string, unknown> = { type: "photo", media: u };
+      if (i === 0 && j === 0 && caption) { m.caption = caption; m.parse_mode = "HTML"; }
+      return m;
+    });
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${token}/sendMediaGroup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chatId.trim(), media }),
+        signal: AbortSignal.timeout(25000),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
+      if (!j.ok && !firstErr) firstErr = String(j.description ?? res.status);
+    } catch (e) { if (!firstErr) firstErr = String((e as Error)?.message ?? e); }
+    await new Promise((r) => setTimeout(r, 400)); // giãn nhịp giữa các lô
+  }
+  return firstErr ? { ok: false, error: firstErr.slice(0, 200) } : { ok: true };
+}
+
 /**
  * Bắn thông báo SALE cho danh sách đơn VỪA TẠO (gọi sau ingest/import).
  * Gom theo chat: seller.team → teams.telegram_chat_id; không có team/chat → TELEGRAM_DEFAULT_CHAT_ID.
