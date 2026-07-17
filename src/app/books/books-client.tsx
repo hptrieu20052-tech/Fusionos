@@ -234,7 +234,11 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const saveStyle = async () => { if (stylePrompt !== (detail.title.stylePrompt ?? "")) await api(`/api/books/${id}`, "PATCH", { stylePrompt }); };
   const illustrate = async (pageNo: number) => {
     setBusyPage(pageNo); lsSet("bs_image_model", imgModel);
-    const j = await api(`/api/books/${id}/illustrate`, "POST", { pageNo, model: imgModel || undefined });
+    let j = await api(`/api/books/${id}/illustrate`, "POST", { pageNo, model: imgModel || undefined });
+    // Timeout tạm thời (502/504) → tự thử lại 1 lần
+    if (!j.ok && /\b50[24]\b|hết giờ|timeout/i.test(String(j.error ?? ""))) {
+      j = await api(`/api/books/${id}/illustrate`, "POST", { pageNo, model: imgModel || undefined });
+    }
     setBusyPage(null);
     if (j.ok) setIllus((m) => ({ ...m, [pageNo]: j.url as string }));
     else flash(`✗ trang ${pageNo}: ` + (j.error ?? "Lỗi vẽ"));

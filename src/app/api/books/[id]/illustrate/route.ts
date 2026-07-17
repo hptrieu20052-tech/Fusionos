@@ -23,11 +23,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!page) return NextResponse.json({ ok: false, error: "page not found" }, { status: 404 });
 
   try {
-    // Ảnh reference → base64 data URL (khỏi phụ thuộc URL công khai của R2)
+    // Ảnh reference → THU NHỎ 768px rồi base64 (ảnh gốc vài MB gửi mỗi request → nặng + timeout).
     const refs: string[] = [];
     if (title.characterRefKey) {
       const buf = await readFile(title.characterRefKey);
-      refs.push(`data:image/png;base64,${buf.toString("base64")}`);
+      let refBuf = buf;
+      try {
+        const sharp = (await import("sharp")).default;
+        refBuf = await sharp(buf).rotate().resize(768, 768, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
+      } catch { /* resize lỗi → dùng ảnh gốc */ }
+      refs.push(`data:image/jpeg;base64,${refBuf.toString("base64")}`);
     }
     const style = (title.stylePrompt ?? "").trim();
     const prompt = [
