@@ -34,11 +34,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       page.illustrationBrief ?? "",
       style ? `Art style: ${style}.` : "Children's book illustration style.",
       refs.length ? "Keep the SAME main character (baby) design, face and style as the reference image, consistent across pages." : "",
+      "Compose with the main character in the upper-center area and leave a calmer, less-busy space in the bottom third for a text caption to be overlaid later.",
       "No text, letters or words in the image.",
     ].filter(Boolean).join(" ");
 
+    // Kích thước in: Page 3450×2550 (tỉ lệ 23:17). Cover 7470×3000 (~2.49:1) — làm ở khâu cover riêng.
+    // Sinh đúng TỈ LỆ; số px chính xác resize ở khâu Export.
     const model = b?.model ? String(b.model) : undefined;
-    const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png" });
+    const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png", aspectRatio: "23:17", resolution: "2K" });
 
     const key = `book-illustrations/${params.id}-p${pageNo}-${Date.now()}.png`;
     await writeFile(key, Buffer.from(img.b64, "base64"), img.mediaType || "image/png");

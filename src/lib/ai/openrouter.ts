@@ -41,14 +41,17 @@ const OR_IMAGE = "https://openrouter.ai/api/v1/images";
 const IMAGE_MODEL = () => (process.env.OPENROUTER_IMAGE_MODEL ?? "google/gemini-2.5-flash-image").trim();
 
 // Sinh 1 ẢNH: prompt + ảnh reference (giữ nhân vật). Trả base64 + media type + chi phí.
-export async function orGenerateImage(prompt: string, refDataUrls: string[], opts?: { model?: string; outputFormat?: string }): Promise<{ b64: string; mediaType: string; cost: number }> {
+export async function orGenerateImage(prompt: string, refDataUrls: string[], opts?: { model?: string; outputFormat?: string; aspectRatio?: string; quality?: string; resolution?: string }): Promise<{ b64: string; mediaType: string; cost: number }> {
   const key = KEY();
   if (!key) throw new Error("OPENROUTER_API_KEY chưa cấu hình trong env.");
   const body: Record<string, unknown> = {
     model: opts?.model ?? IMAGE_MODEL(),
     prompt,
     output_format: opts?.outputFormat ?? "png",
+    quality: opts?.quality ?? "high",
   };
+  if (opts?.aspectRatio) body.aspect_ratio = opts.aspectRatio;
+  if (opts?.resolution) body.resolution = opts.resolution;
   const refs = refDataUrls.filter(Boolean);
   if (refs.length) body.input_references = refs.map((u) => ({ type: "image_url", image_url: { url: u } }));
   const res = await fetch(OR_IMAGE, {
