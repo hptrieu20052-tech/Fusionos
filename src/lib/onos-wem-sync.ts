@@ -2,6 +2,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, isNotNull, like, notInArray } from "drizzle-orm";
 import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 import { getOnosOrder, mapOnosStatus, isPaidWord } from "@/lib/onos";
 import { getCompassupTracking, getCompassupFees, type CompassupCred } from "@/lib/compassup";
 import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
@@ -91,6 +92,7 @@ async function applyUpdate(ffo: OpenFfo, upd: {
   await syncOrderFromFf(ffo.orderId, upd.status);
   if (upd.trackingNumber && upd.trackingNumber !== ffo.trackingNumber) {
     await autoPushEtsyTracking(ffo.orderId);
+    await autoPushTiktokTracking(ffo.orderId);
     await markShippedOnTracking(ffo.orderId);
   }
   if (upd.trackingNumber || upd.status === "shipped") {

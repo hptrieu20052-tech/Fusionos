@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, or } from "drizzle-orm";
 import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 import { mapFsStatus } from "@/lib/flashship";
 import crypto from "crypto";
 
@@ -92,6 +93,7 @@ export async function POST(req: NextRequest) {
     if (patch.trackingNumber) {
       await markShippedOnTracking(ffo.orderId);
       await autoPushEtsyTracking(ffo.orderId);
+      await autoPushTiktokTracking(ffo.orderId);
     }
   }
   return NextResponse.json({ ok: true, matched: ffo.id, event: evType, applied: Object.keys(patch) });

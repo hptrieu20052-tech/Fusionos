@@ -5,6 +5,7 @@ import { syncPrintwayCost } from "@/lib/printway-cost";
 import { rebalanceOrderCost } from "@/lib/order-status";
 import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
 
 // Kênh chính là webhook (/api/webhooks/printway — đăng ký ở Settings). Poll này là BACKUP:
@@ -63,6 +64,7 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
           if (patch.trackingNumber) {
             await markShippedOnTracking(hit.orderId);
             await autoPushEtsyTracking(hit.orderId);
+            await autoPushTiktokTracking(hit.orderId);
           }
           updated++;
         }

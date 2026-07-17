@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { and, eq, inArray, like, or } from "drizzle-orm";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 import { syncOrderFromFf, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { markShippedOnTracking } from "@/lib/order-status";
 
@@ -127,7 +128,7 @@ export async function POST(req: NextRequest) {
     trackingSyncedAt: trackingNumber ? new Date() : ffo.trackingSyncedAt,
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
   await syncOrderFromFf(ffo.orderId, status);
-  if (trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); } // CÓ TRACKING mới ship + đẩy lên Etsy (bug cũ: thiếu {} → đơn vừa tạo đã nhảy Shipped)
+  if (trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await autoPushTiktokTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); } // CÓ TRACKING mới ship + đẩy lên Etsy/TikTok (bug cũ: thiếu {} → đơn vừa tạo đã nhảy Shipped)
 
   // Đồng bộ trạng thái đơn chính (chỉ tiến, không lùi)
   if (status === "cancelled") {

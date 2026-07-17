@@ -3,6 +3,7 @@ import { and, eq, like, notInArray } from "drizzle-orm";
 import { getPrintifyOrder } from "@/lib/printify";
 import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
 
 /**
@@ -95,6 +96,7 @@ export async function syncPrintify(opts: { force?: boolean } = {}) {
           if (patch.trackingNumber) {
             await markShippedOnTracking(x.orderId);
             await autoPushEtsyTracking(x.orderId);
+            await autoPushTiktokTracking(x.orderId);
           }
           if (isCancel) {
             await db.update(schema.fulfillmentOrders).set({ baseCost: "0", shipCost: "0", extraFee: "0", cost: "0" }).where(eq(schema.fulfillmentOrders.id, x.id));

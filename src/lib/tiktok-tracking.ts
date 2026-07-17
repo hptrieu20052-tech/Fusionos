@@ -61,3 +61,10 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
   }
   return { ok: errors.length === 0, pushed, errors };
 }
+
+// Gọi an toàn từ webhook (không làm hỏng luồng webhook nếu TikTok lỗi).
+// Tự bỏ qua đơn không phải TikTok Seller-Shipping (hàm trên đã guard), nên gọi vô tư ở mọi webhook tracking.
+export async function autoPushTiktokTracking(orderId: string) {
+  try { return await pushTiktokTrackingForOrder(orderId); }
+  catch { return null; }
+}
