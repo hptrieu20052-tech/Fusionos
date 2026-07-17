@@ -1396,12 +1396,16 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
           return (
             <div onClick={copyDetails} title="Click to copy all details"
               style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.5, background: "#EEF4FF", border: "1px solid #D5E3FB", borderRadius: 9, padding: "8px 11px", cursor: "pointer" }}>
-              {lines.map((v, i) => (
-                <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {lines.map((v, i) => {
+                // Value dài nhiều dòng (lời đề tặng) → giữ xuống dòng như Etsy + cho value xuống hàng riêng.
+                const multiline = v.value.includes("\n") || v.value.length > 60;
+                return (
+                <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "baseline" }}>
                   {v.label && <span style={{ color: "var(--muted)", fontWeight: 500, flexShrink: 0 }}>{v.label}</span>}
-                  <span style={{ color: "var(--ink)", fontWeight: 700 }}>{v.value}</span>
+                  <span style={{ color: "var(--ink)", fontWeight: 700, whiteSpace: "pre-wrap", ...(multiline ? { flexBasis: "100%" } : {}) }}>{v.value}</span>
                 </div>
-              ))}
+                );
+              })}
             </div>
           );
         })()}
