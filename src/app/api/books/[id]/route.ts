@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq, asc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     id: schema.bookPages.id, pageNo: schema.bookPages.pageNo,
     textTemplate: schema.bookPages.textTemplate, illustrationBrief: schema.bookPages.illustrationBrief,
   }).from(schema.bookPages).where(eq(schema.bookPages.titleId, params.id)).orderBy(asc(schema.bookPages.pageNo));
-  return NextResponse.json({ ok: true, title, pages });
+  const assetRows = await db.select({ pageNo: schema.bookAssets.pageNo, storageKey: schema.bookAssets.storageKey })
+    .from(schema.bookAssets).where(eq(schema.bookAssets.titleId, params.id));
+  const assets: Record<number, string | null> = {};
+  for (const a of assetRows) assets[a.pageNo] = fileUrl(a.storageKey);
+  return NextResponse.json({ ok: true, title: { ...title, characterRefUrl: fileUrl(title.characterRefKey) }, pages, assets });
 }
 
 // PATCH /api/books/[id] — sửa tên/trạng thái/concept; hoặc thay toàn bộ pages { pages:[{page_no,text,illustration}] }
@@ -33,6 +38,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof b.status === "string") patch.status = b.status;
   if (b.concept !== undefined) patch.concept = b.concept;
   if (b.personalization !== undefined) patch.personalization = b.personalization;
+  if (typeof b.characterRefKey === "string") patch.characterRefKey = b.characterRefKey || null;
+  if (typeof b.stylePrompt === "string") patch.stylePrompt = b.stylePrompt || null;
   await db.update(schema.bookTitles).set(patch).where(eq(schema.bookTitles.id, params.id));
 
   // Thay toàn bộ trang nếu client gửi mảng pages

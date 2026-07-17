@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; updatedAt: string };
 type Idea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 type Page = { page_no: number; text: string; illustration: string };
-type Detail = { title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown }; pages: { pageNo: number; textTemplate: string | null; illustrationBrief: string | null }[] };
+type Detail = { title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefUrl?: string | null; stylePrompt?: string | null }; pages: { pageNo: number; textTemplate: string | null; illustrationBrief: string | null }[]; assets?: Record<number, string | null> };
 
 const inp: React.CSSProperties = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 10, font: "inherit", fontSize: 13, width: "100%", boxSizing: "border-box" };
 const btn: React.CSSProperties = { border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 700, cursor: "pointer", fontSize: 13 };
@@ -30,13 +30,25 @@ async function api(url: string, method = "GET", body?: unknown): Promise<ApiResu
 const lsGet = (k: string) => { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } };
 const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
 
+const PROV_NAME: Record<string, string> = { anthropic: "Anthropic", google: "Google", openai: "OpenAI", cohere: "Cohere", "meta-llama": "Meta", mistralai: "Mistral", "x-ai": "xAI", deepseek: "DeepSeek", qwen: "Qwen", "amazon": "Amazon", "perplexity": "Perplexity" };
+// Nhóm model theo HÃNG (optgroup) cho dễ tìm — Anthropic / Google / Cohere… mỗi nhóm riêng.
+function ModelOptions({ models }: { models: { id: string; name: string }[] }) {
+  const groups = new Map<string, { id: string; name: string }[]>();
+  for (const m of models) { const prov = m.id.split("/")[0] || "other"; (groups.get(prov) ?? (() => { const a: { id: string; name: string }[] = []; groups.set(prov, a); return a; })()).push(m); }
+  const sorted = Array.from(groups.entries()).sort((a, b) => (PROV_NAME[a[0]] ?? a[0]).localeCompare(PROV_NAME[b[0]] ?? b[0]));
+  return (<>{sorted.map(([prov, items]) => (
+    <optgroup key={prov} label={PROV_NAME[prov] ?? prov}>
+      {items.map((m) => <option key={m.id} value={m.id}>{m.name.replace(/^[^:]+:\s*/, "")}</option>)}
+    </optgroup>
+  ))}</>);
+}
 // Bộ chọn AI model cho khâu (lấy list từ OpenRouter). "" = dùng model mặc định ở env.
 function ModelPicker({ models, value, onChange, label = "AI model" }: { models: { id: string; name: string }[]; value: string; onChange: (v: string) => void; label?: string }) {
   return (
     <label style={{ fontSize: 12, fontWeight: 600, display: "block" }}>{label}
       <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inp, marginTop: 4 }}>
         <option value="">— Mặc định (env) —</option>
-        {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        <ModelOptions models={models} />
       </select>
     </label>
   );
@@ -161,27 +173,72 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
 }
 
 function DetailView({ detail, reload, flash, models }: { detail: Detail; reload: () => void; flash: (m: string) => void; models: { id: string; name: string }[] }) {
+  const id = detail.title.id;
   const concept = (detail.title.concept ?? {}) as { hook?: string; angle?: string; usp?: string; outline?: string[] };
   const [pages, setPages] = useState<Page[]>(detail.pages.map((p) => ({ page_no: p.pageNo, text: p.textTemplate ?? "", illustration: p.illustrationBrief ?? "" })));
   const [busy, setBusy] = useState(false);
   const [model, setModel] = useState("");
-  useEffect(() => { setModel(lsGet("bs_text_model")); }, []);
+  // ---- Gen Image state ----
+  const [imgModels, setImgModels] = useState<{ id: string; name: string }[]>([]);
+  const [imgModel, setImgModel] = useState("");
+  const [refUrl, setRefUrl] = useState<string | null>(detail.title.characterRefUrl ?? null);
+  const [stylePrompt, setStyleP] = useState(detail.title.stylePrompt ?? "");
+  const [illus, setIllus] = useState<Record<number, string>>({});
+  const [busyPage, setBusyPage] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [busyAll, setBusyAll] = useState(false);
+
+  useEffect(() => { setModel(lsGet("bs_text_model")); setImgModel(lsGet("bs_image_model")); }, []);
+  useEffect(() => { api("/api/books/models?type=image").then((j) => { if (j.ok) setImgModels((j.models as { id: string; name: string }[]) ?? []); }); }, []);
+  // Đồng bộ khi detail reload
+  useEffect(() => {
+    setRefUrl(detail.title.characterRefUrl ?? null);
+    setStyleP(detail.title.stylePrompt ?? "");
+    const m: Record<number, string> = {};
+    for (const [k, v] of Object.entries(detail.assets ?? {})) if (v) m[Number(k)] = v as string;
+    setIllus(m);
+  }, [detail]);
 
   const genScript = async () => {
-    setBusy(true);
-    lsSet("bs_text_model", model);
-    const j = await api(`/api/books/${detail.title.id}/script`, "POST", { model: model || undefined });
+    setBusy(true); lsSet("bs_text_model", model);
+    const j = await api(`/api/books/${id}/script`, "POST", { model: model || undefined });
     setBusy(false);
     if (j.ok) { setPages((j.pages as Page[]) ?? []); flash("✓ Đã sinh kịch bản"); reload(); }
     else flash("✗ " + (j.error ?? "Lỗi sinh kịch bản"));
   };
   const save = async () => {
     setBusy(true);
-    const j = await api(`/api/books/${detail.title.id}`, "PATCH", { pages });
+    const j = await api(`/api/books/${id}`, "PATCH", { pages });
     setBusy(false);
     flash(j.ok ? "✓ Đã lưu" : "✗ " + (j.error ?? "Lỗi lưu"));
   };
   const setPage = (i: number, k: "text" | "illustration", v: string) => setPages((ps) => ps.map((p, idx) => idx === i ? { ...p, [k]: v } : p));
+
+  const uploadRef = async (file: File) => {
+    setUploading(true);
+    const t = await api(`/api/books/${id}/reference-url`, "POST", { contentType: file.type || "image/png" });
+    if (!t.ok) { flash("✗ " + (t.error ?? "Lỗi")); setUploading(false); return; }
+    try {
+      const put = await fetch(t.url as string, { method: (t.method as string) || "PUT", headers: { "Content-Type": file.type || "image/png" }, body: file });
+      if (!put.ok) throw new Error("upload HTTP " + put.status);
+      const p = await api(`/api/books/${id}`, "PATCH", { characterRefKey: t.key });
+      if (p.ok) { flash("✓ Đã tải ảnh nhân vật"); reload(); } else flash("✗ " + (p.error ?? "Lỗi lưu"));
+    } catch (e) { flash("✗ upload: " + String((e as Error)?.message ?? e).slice(0, 100)); }
+    setUploading(false);
+  };
+  const saveStyle = async () => { if (stylePrompt !== (detail.title.stylePrompt ?? "")) await api(`/api/books/${id}`, "PATCH", { stylePrompt }); };
+  const illustrate = async (pageNo: number) => {
+    setBusyPage(pageNo); lsSet("bs_image_model", imgModel);
+    const j = await api(`/api/books/${id}/illustrate`, "POST", { pageNo, model: imgModel || undefined });
+    setBusyPage(null);
+    if (j.ok) setIllus((m) => ({ ...m, [pageNo]: j.url as string }));
+    else flash(`✗ trang ${pageNo}: ` + (j.error ?? "Lỗi vẽ"));
+  };
+  const illustrateAll = async () => {
+    setBusyAll(true);
+    for (const p of pages) { await illustrate(p.page_no); }
+    setBusyAll(false); flash("✓ Vẽ xong (kiểm tra + vẽ lại trang lỗi nếu cần)");
+  };
 
   return (
     <div>
@@ -189,29 +246,44 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         <div style={{ fontWeight: 800, fontSize: 16 }}>{detail.title.name}</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>{[detail.title.occasion, detail.title.audience].filter(Boolean).join(" · ") || "—"}</div>
         {concept.hook && <div style={{ fontSize: 13, marginTop: 8 }}>{concept.hook}</div>}
-        <div style={{ fontSize: 12, marginTop: 6, color: "var(--muted)", lineHeight: 1.6 }}>
-          {concept.angle && <div><b>Angle:</b> {concept.angle}</div>}
-          {concept.usp && <div><b>USP:</b> {concept.usp}</div>}
-        </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>Kịch bản {pages.length ? `· ${pages.length} trang` : ""}</h3>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <select value={model} onChange={(e) => setModel(e.target.value)} title="AI viết kịch bản" style={{ ...inp, width: 190, fontSize: 12, padding: "7px 9px" }}>
-            <option value="">— Model mặc định —</option>
-            {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          <select value={model} onChange={(e) => setModel(e.target.value)} title="AI viết kịch bản" style={{ ...inp, width: 200, fontSize: 12, padding: "7px 9px" }}>
+            <option value="">— Model text mặc định —</option>
+            <ModelOptions models={models} />
           </select>
           <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={genScript}>{busy ? "Đang viết…" : pages.length ? "↻ Sinh lại" : "✨ Sinh kịch bản"}</button>
           {pages.length > 0 && <button style={{ ...btnBlue, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={save}>Lưu</button>}
         </div>
       </div>
 
+      {pages.length > 0 && (
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 12, background: "#FAFBFF" }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: uploading ? "wait" : "pointer" }}>
+            {refUrl
+              // eslint-disable-next-line @next/next/no-img-element
+              ? <img src={refUrl} alt="ref" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />
+              : <span style={{ width: 52, height: 52, display: "grid", placeItems: "center", borderRadius: 8, border: "1px dashed var(--line)", color: "var(--muted)", fontSize: 11 }}>Ref</span>}
+            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>{uploading ? "Đang tải…" : refUrl ? "Đổi ảnh nhân vật" : "Tải ảnh nhân vật (reference)"}</span>
+            <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadRef(f); e.target.value = ""; }} />
+          </label>
+          <input value={stylePrompt} onChange={(e) => setStyleP(e.target.value)} onBlur={saveStyle} placeholder="Style chung (vd soft watercolor, pastel…)" style={{ ...inp, flex: 1, minWidth: 150, fontSize: 12.5 }} />
+          <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="AI vẽ ảnh" style={{ ...inp, width: 200, fontSize: 12, padding: "7px 9px" }}>
+            <option value="">— Model ảnh mặc định —</option>
+            <ModelOptions models={imgModels} />
+          </select>
+          <button style={{ ...btnBlue, opacity: (busyAll || busyPage !== null) ? 0.6 : 1 }} disabled={busyAll || busyPage !== null} onClick={illustrateAll}>{busyAll ? "Đang vẽ…" : "🎨 Vẽ tất cả"}</button>
+        </div>
+      )}
+
       {pages.length === 0 ? <div className="panel empty" style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Chưa có kịch bản. Bấm <b>Sinh kịch bản</b> để AI viết từng trang.</div>
         : (
           <div style={{ display: "grid", gap: 10 }}>
             {pages.map((p, i) => (
-              <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "44px 1fr", gap: 12 }}>
+              <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 172px", gap: 12 }}>
                 <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 13 }}>#{p.page_no}</div>
                 <div style={{ display: "grid", gap: 8 }}>
                   <div>
@@ -222,6 +294,13 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
                     <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Brief minh hoạ (cảnh vẽ)</div>
                     <textarea value={p.illustration} onChange={(e) => setPage(i, "illustration", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
                   </div>
+                </div>
+                <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
+                  {illus[p.page_no]
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={illus[p.page_no]} alt={`p${p.page_no}`} style={{ width: "100%", borderRadius: 8, border: "1px solid var(--line)", display: "block" }} />
+                    : <div style={{ height: 110, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Chưa vẽ</div>}
+                  <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no || busyAll} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Đang vẽ…" : illus[p.page_no] ? "↻ Vẽ lại" : "🎨 Vẽ"}</button>
                 </div>
               </div>
             ))}

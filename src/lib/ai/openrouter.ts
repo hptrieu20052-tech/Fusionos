@@ -37,6 +37,35 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
   catch { throw new Error("Model trả về không phải JSON hợp lệ: " + cleaned.slice(0, 200)); }
 }
 
+const OR_IMAGE = "https://openrouter.ai/api/v1/images";
+const IMAGE_MODEL = () => (process.env.OPENROUTER_IMAGE_MODEL ?? "google/gemini-2.5-flash-image").trim();
+
+// Sinh 1 ẢNH: prompt + ảnh reference (giữ nhân vật). Trả base64 + media type + chi phí.
+export async function orGenerateImage(prompt: string, refDataUrls: string[], opts?: { model?: string; outputFormat?: string }): Promise<{ b64: string; mediaType: string; cost: number }> {
+  const key = KEY();
+  if (!key) throw new Error("OPENROUTER_API_KEY chưa cấu hình trong env.");
+  const body: Record<string, unknown> = {
+    model: opts?.model ?? IMAGE_MODEL(),
+    prompt,
+    output_format: opts?.outputFormat ?? "png",
+  };
+  const refs = refDataUrls.filter(Boolean);
+  if (refs.length) body.input_references = refs.map((u) => ({ type: "image_url", image_url: { url: u } }));
+  const res = await fetch(OR_IMAGE, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://fusionos.app", "X-Title": "FUSION Book Studio" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(110000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`OpenRouter image HTTP ${res.status}: ${text.slice(0, 300)}`);
+  let data: { data?: { b64_json?: string; media_type?: string }[]; usage?: { cost?: number } };
+  try { data = JSON.parse(text); } catch { throw new Error("OpenRouter image trả về không phải JSON."); }
+  const img = data?.data?.[0];
+  if (!img?.b64_json) throw new Error("OpenRouter image: không có ảnh trả về (" + text.slice(0, 200) + ")");
+  return { b64: img.b64_json, mediaType: img.media_type ?? "image/png", cost: data?.usage?.cost ?? 0 };
+}
+
 // Danh sách model trên OpenRouter để UI chọn theo khâu. type=text (kịch bản/ý tưởng) | image (vẽ/mockup).
 export async function listModels(type: "text" | "image" = "text"): Promise<{ id: string; name: string }[]> {
   const key = KEY();
