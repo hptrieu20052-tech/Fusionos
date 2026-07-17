@@ -46,7 +46,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const items = (await db.execute(sql`
     SELECT product_title, variant, personalization, qty, buyer_files, mockup_key, image_url
-    FROM order_items WHERE order_id = ${params.id}::uuid ORDER BY created_at
+    FROM order_items WHERE order_id = ${params.id}::uuid ORDER BY id
   `)).rows as { product_title: string | null; variant: string | null; personalization: string | null; qty: number; buyer_files: unknown; mockup_key: string | null; image_url: string | null }[];
 
   // ===== Text: Seller · Order ID · từng item (title + personalization label:value + qty) · note khách =====
