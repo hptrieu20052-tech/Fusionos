@@ -385,6 +385,29 @@ export const userActions = pgTable("user_actions", {
   enabled: boolean("enabled").notNull().default(true),
 }, (t) => [primaryKey({ columns: [t.userId, t.actionKey] })]);
 
+// ---------- BOOK STUDIO (AI) ----------
+// Một "đầu sách" chạy qua các khâu: idea → script → characters → simulation → mockup → ready.
+export const bookTitles = pgTable("book_titles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  occasion: text("occasion"),          // dịp/ngách: 1st birthday, sleep book...
+  audience: text("audience"),          // đối tượng/tuổi
+  status: text("status").notNull().default("idea"), // idea|script|characters|simulation|mockup|ready
+  concept: jsonb("concept"),           // { hook, angle, usp, outline[] }
+  personalization: jsonb("personalization"), // biến cá nhân hoá {name, character, dedication...}
+  brief: jsonb("brief"),               // input brief đã dùng để sinh
+  ownerId: uuid("owner_id").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const bookPages = pgTable("book_pages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  titleId: uuid("title_id").notNull().references(() => bookTitles.id, { onDelete: "cascade" }),
+  pageNo: integer("page_no").notNull(),
+  textTemplate: text("text_template"),           // lời văn, chứa {name}...
+  illustrationBrief: text("illustration_brief"), // mô tả cảnh để vẽ (không chứa chữ)
+}, (t) => [index("idx_bookpages_title").on(t.titleId)]);
+
 // ---------- DESIGN REVIEWS (chấm điểm KPI) ----------
 export const reviewDecisionEnum = pgEnum("review_decision", ["approve", "request_fix", "reject"]);
 

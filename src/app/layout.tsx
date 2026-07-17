@@ -50,6 +50,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     ...(stores ? [{ href: "/stores", label: "nav.stores", icon: "stores", section: "System" }] : []),
     // Support nằm trong dropdown "Seller Hub" (cùng Products) — xem canSupport truyền xuống AppShell.
     ...(settings ? [{ href: "/settings", label: "nav.settings", icon: "settings", section: "System" }] : []),
+    ...(isAdmin ? [{ href: "/books", label: "nav.aiAgent", icon: "ai", section: "System" }] : []),
     ...(isAdmin ? [{ href: "/admin", label: "nav.admin", icon: "admin", section: "System" }] : []),
   ] : [];
 

@@ -1,0 +1,53 @@
+import { NextRequest, NextResponse } from "next/server";
+import { db, schema } from "@/lib/db";
+import { eq, asc } from "drizzle-orm";
+import { getSession } from "@/lib/auth";
+
+export const dynamic = "force-dynamic";
+
+async function guard() {
+  const s = await getSession();
+  return s?.role === "admin" ? s : null;
+}
+
+// GET /api/books/[id] — chi tiết đầu sách + các trang
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  if (!(await guard())) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const [title] = await db.select().from(schema.bookTitles).where(eq(schema.bookTitles.id, params.id)).limit(1);
+  if (!title) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  const pages = await db.select({
+    id: schema.bookPages.id, pageNo: schema.bookPages.pageNo,
+    textTemplate: schema.bookPages.textTemplate, illustrationBrief: schema.bookPages.illustrationBrief,
+  }).from(schema.bookPages).where(eq(schema.bookPages.titleId, params.id)).orderBy(asc(schema.bookPages.pageNo));
+  return NextResponse.json({ ok: true, title, pages });
+}
+
+// PATCH /api/books/[id] — sửa tên/trạng thái/concept; hoặc thay toàn bộ pages { pages:[{page_no,text,illustration}] }
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!(await guard())) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const b = await req.json().catch(() => null);
+  if (!b) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
+
+  const patch: Record<string, unknown> = { updatedAt: new Date() };
+  if (typeof b.name === "string" && b.name.trim()) patch.name = b.name.trim();
+  if (typeof b.status === "string") patch.status = b.status;
+  if (b.concept !== undefined) patch.concept = b.concept;
+  if (b.personalization !== undefined) patch.personalization = b.personalization;
+  await db.update(schema.bookTitles).set(patch).where(eq(schema.bookTitles.id, params.id));
+
+  // Thay toàn bộ trang nếu client gửi mảng pages
+  if (Array.isArray(b.pages)) {
+    await db.delete(schema.bookPages).where(eq(schema.bookPages.titleId, params.id));
+    const rows = (b.pages as { page_no?: number; text?: string; illustration?: string }[])
+      .map((p, i) => ({ titleId: params.id, pageNo: Number(p.page_no) || i + 1, textTemplate: p.text ?? "", illustrationBrief: p.illustration ?? "" }));
+    if (rows.length) await db.insert(schema.bookPages).values(rows);
+  }
+  return NextResponse.json({ ok: true });
+}
+
+// DELETE /api/books/[id]
+export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+  if (!(await guard())) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  await db.delete(schema.bookTitles).where(eq(schema.bookTitles.id, params.id));
+  return NextResponse.json({ ok: true });
+}

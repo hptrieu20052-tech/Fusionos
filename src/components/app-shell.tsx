@@ -14,6 +14,7 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
   designs: IconArtwork, reviews: IconEye, statsOrders: IconReport,
   statsDesigners: IconReport, finance: IconWallet, stores: IconStore,
   settings: IconSettings, admin: IconProducts, support: IconSupport,
+  ai: IconGrid,
 };
 
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };

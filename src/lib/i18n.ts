@@ -18,6 +18,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "nav.settings": { vi: "Cài đặt", en: "Settings" },
   "nav.skuMapping": { vi: "SKU Mapping", en: "SKU Mapping" },
   "nav.admin": { vi: "Quản trị", en: "Admin" },
+  "nav.aiAgent": { vi: "AI Agent", en: "AI Agent" },
   "nav.logout": { vi: "Đăng xuất", en: "Log out" },
   // Settings
   "s.title": { vi: "Cài đặt hệ thống", en: "System settings" },
