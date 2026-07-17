@@ -1409,14 +1409,17 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
         {it.files && it.files.length > 0 && (
           <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 700 }}>Customer photos · {it.files.length}</div>
-            {it.files.map((f, i) => (
+            {it.files.map((f, i) => {
+              const thumb = f.url.replace(/ipf_fullxfull/i, "ipf_300x300"); // hiện nhẹ; tải là bản full
+              return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--line)", borderRadius: 10, padding: "6px 9px", background: "#fff" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={f.url} alt={f.name} onClick={() => setZoom(f.url)} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 7, cursor: "zoom-in", background: "#EEF1F5" }} />
+                <img src={thumb} alt={f.name} loading="lazy" onClick={() => setZoom(f.url)} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 7, cursor: "zoom-in", background: "#EEF1F5" }} />
                 <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.name}>{f.name}</span>
-                <a href={f.url} download={f.name} target="_blank" rel="noreferrer" title="Download" style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 8, border: "1px solid var(--line)", color: "var(--muted)", flexShrink: 0 }}><IconDownload width={14} height={14} /></a>
+                <a href={`/api/etsy-file?url=${encodeURIComponent(f.url)}&name=${encodeURIComponent(f.name)}`} title="Download full image" style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 8, border: "1px solid var(--line)", color: "var(--muted)", flexShrink: 0 }}><IconDownload width={14} height={14} /></a>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {it.productUrl && (
