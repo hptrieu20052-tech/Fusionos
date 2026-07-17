@@ -1380,9 +1380,13 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
         {(() => {
           const parts = splitVariant(it.variant as string | null);
           const pz = decodeEntities((it.personalization ?? "").trim());
-          // Personalization GỘP vào Variants: thêm 1 dòng nếu chưa nằm sẵn trong variant.
+          // Personalization GỘP vào Variants — nhưng KHÔNG thêm nếu nội dung đã nằm sẵn trong variant
+          // (personalization thường là ghép các field đã có trong variant → thêm nữa sẽ LẶP).
+          const varDecoded = decodeEntities(it.variant ?? "");
+          const pzPieces = pz.split(" · ").map((s) => s.trim()).filter(Boolean);
+          const pzRedundant = pzPieces.length > 0 && pzPieces.every((pc) => varDecoded.includes(pc.slice(0, 25)));
           const lines: { label: string | null; value: string }[] = parts.map((v: VariantPart) => ({ label: v.label ?? null, value: v.value }));
-          if (pz && !parts.some((p) => (p.value || "").includes(pz.slice(0, 20)))) lines.push({ label: t("o.personalization"), value: pz });
+          if (pz && !pzRedundant) lines.push({ label: t("o.personalization"), value: pz });
           if (!lines.length) return null;
           // Click cả vùng để copy toàn bộ (label: value) — gửi designer làm mẫu nhanh.
           const copyDetails = () => {
