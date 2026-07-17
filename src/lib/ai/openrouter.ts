@@ -37,10 +37,29 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
   catch { throw new Error("Model trả về không phải JSON hợp lệ: " + cleaned.slice(0, 200)); }
 }
 
+// Danh sách model trên OpenRouter để UI chọn theo khâu. type=text (kịch bản/ý tưởng) | image (vẽ/mockup).
+export async function listModels(type: "text" | "image" = "text"): Promise<{ id: string; name: string }[]> {
+  const key = KEY();
+  const res = await fetch("https://openrouter.ai/api/v1/models", { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(20000) });
+  const j = (await res.json().catch(() => ({}))) as { data?: { id?: string; name?: string; architecture?: { output_modalities?: string[]; modality?: string } }[] };
+  const data = Array.isArray(j?.data) ? j.data : [];
+  const want = type === "image" ? "image" : "text";
+  return data
+    .filter((m) => {
+      const out = m?.architecture?.output_modalities;
+      if (Array.isArray(out)) return out.includes(want);
+      // fallback: modality dạng "text+image->text"
+      const mod = m?.architecture?.modality ?? "";
+      return mod.split("->")[1]?.includes(want) ?? (want === "text");
+    })
+    .map((m) => ({ id: String(m.id), name: String(m.name ?? m.id) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export type BookIdea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 
 // Ý TƯỞNG: brief → nhiều concept đầu sách.
-export async function generateBookIdeas(brief: { occasion?: string; audience?: string; pages?: number; notes?: string; count?: number }): Promise<BookIdea[]> {
+export async function generateBookIdeas(brief: { occasion?: string; audience?: string; pages?: number; notes?: string; count?: number; model?: string }): Promise<BookIdea[]> {
   const n = Math.min(Math.max(brief.count ?? 4, 1), 8);
   const pages = brief.pages ?? 12;
   const system = "Bạn là chuyên gia sáng tạo sách thiếu nhi personalized bán trên Etsy/TikTok (keepsake baby books, birthday book, sleep book…). Trả lời DUY NHẤT bằng JSON.";
@@ -58,14 +77,14 @@ Mỗi ý tưởng cần:
 - outline: mảng ${pages} câu ngắn, mỗi câu = nội dung 1 trang
 
 Trả JSON đúng dạng: {"ideas":[{"name":"","hook":"","angle":"","usp":"","outline":["",""]}]}`;
-  const out = await orChatJSON<{ ideas: BookIdea[] }>(system, user, { maxTokens: 4000 });
+  const out = await orChatJSON<{ ideas: BookIdea[] }>(system, user, { maxTokens: 4000, model: brief.model });
   return (out.ideas ?? []).map((i) => ({ name: i.name ?? "", hook: i.hook ?? "", angle: i.angle ?? "", usp: i.usp ?? "", outline: Array.isArray(i.outline) ? i.outline : [] }));
 }
 
 export type BookScriptPage = { page_no: number; text: string; illustration: string };
 
 // KỊCH BẢN: concept đã chọn → lời văn + brief minh hoạ từng trang.
-export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[] }, opts?: { pages?: number; vars?: string[] }): Promise<BookScriptPage[]> {
+export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[] }, opts?: { pages?: number; vars?: string[]; model?: string }): Promise<BookScriptPage[]> {
   const pages = opts?.pages ?? concept.outline?.length ?? 12;
   const vars = (opts?.vars && opts.vars.length ? opts.vars : ["name"]);
   const system = "Bạn viết kịch bản sách thiếu nhi personalized. Lời văn ấm áp, hợp trẻ nhỏ, ngắn gọn mỗi trang. Trả lời DUY NHẤT bằng JSON.";
@@ -80,6 +99,6 @@ Yêu cầu:
 - Mỗi trang: text (lời văn tiếng Anh), illustration (mô tả cảnh cho hoạ sĩ/AI vẽ: bối cảnh, nhân vật, cảm xúc — TUYỆT ĐỐI KHÔNG chứa chữ/tên trong tranh).
 
 Trả JSON: {"pages":[{"page_no":1,"text":"","illustration":""}]}`;
-  const out = await orChatJSON<{ pages: BookScriptPage[] }>(system, user, { maxTokens: 5000 });
+  const out = await orChatJSON<{ pages: BookScriptPage[] }>(system, user, { maxTokens: 5000, model: opts?.model });
   return (out.pages ?? []).map((p, i) => ({ page_no: Number(p.page_no) || i + 1, text: p.text ?? "", illustration: p.illustration ?? "" }));
 }

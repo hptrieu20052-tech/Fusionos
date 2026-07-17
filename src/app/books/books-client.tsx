@@ -12,6 +12,36 @@ const btnBlue = { ...btn, background: "var(--blue)", color: "#fff" };
 const btnGhost = { ...btn, background: "#fff", border: "1px solid var(--line)", color: "var(--ink)" };
 const STATUS_COLOR: Record<string, string> = { idea: "#8a6d00", script: "#0e6bd6", characters: "#7a3fb0", simulation: "#0e8a5f", mockup: "#c2410c", ready: "#12703c" };
 
+// Gọi API + hiện ĐÚNG mã lỗi (thay vì gộp thành "network"). 404 = chưa deploy; 502/500 = lỗi server/OpenRouter.
+type ApiResult = { ok?: boolean; error?: string; [k: string]: unknown };
+async function api(url: string, method = "GET", body?: unknown): Promise<ApiResult> {
+  try {
+    const r = await fetch(url, { method, headers: body ? { "Content-Type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+    const raw = await r.text();
+    let j: ApiResult | null = null;
+    try { j = JSON.parse(raw); } catch { /* không phải JSON */ }
+    if (j) return j;
+    return { ok: false, error: `HTTP ${r.status}${r.status === 404 ? " — API chưa deploy" : ""}${raw ? " · " + raw.slice(0, 140) : ""}` };
+  } catch (e) {
+    return { ok: false, error: "network: " + String((e as Error)?.message ?? e).slice(0, 140) };
+  }
+}
+
+const lsGet = (k: string) => { try { return localStorage.getItem(k) ?? ""; } catch { return ""; } };
+const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* ignore */ } };
+
+// Bộ chọn AI model cho khâu (lấy list từ OpenRouter). "" = dùng model mặc định ở env.
+function ModelPicker({ models, value, onChange, label = "AI model" }: { models: { id: string; name: string }[]; value: string; onChange: (v: string) => void; label?: string }) {
+  return (
+    <label style={{ fontSize: 12, fontWeight: 600, display: "block" }}>{label}
+      <select value={value} onChange={(e) => onChange(e.target.value)} style={{ ...inp, marginTop: 4 }}>
+        <option value="">— Mặc định (env) —</option>
+        {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </select>
+    </label>
+  );
+}
+
 export default function BooksClient() {
   const [titles, setTitles] = useState<Title[]>([]);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -19,12 +49,16 @@ export default function BooksClient() {
   const [msg, setMsg] = useState("");
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 5000); };
-  const loadList = () => fetch("/api/books").then((r) => r.json()).then((j) => { if (j.ok) setTitles(j.titles); });
-  useEffect(() => { loadList(); }, []);
+  const [textModels, setTextModels] = useState<{ id: string; name: string }[]>([]);
+  const loadList = () => api("/api/books").then((j) => { if (j.ok) setTitles(j.titles as Title[]); });
+  useEffect(() => {
+    loadList();
+    api("/api/books/models?type=text").then((j) => { if (j.ok) setTextModels((j.models as { id: string; name: string }[]) ?? []); });
+  }, []);
 
   const openDetail = async (id: string) => {
-    const j = await fetch(`/api/books/${id}`).then((r) => r.json());
-    if (j.ok) setDetail(j); else flash("✗ " + (j.error ?? "Lỗi"));
+    const j = await api(`/api/books/${id}`);
+    if (j.ok) setDetail(j as unknown as Detail); else flash("✗ " + (j.error ?? "Lỗi"));
   };
 
   return (
@@ -40,10 +74,10 @@ export default function BooksClient() {
       <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Ý tưởng → Kịch bản (MVP‑1). Mô phỏng &amp; Mockup ở bước sau.</div>
       {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: msg.startsWith("✗") ? "var(--red)" : "var(--green)" }}>{msg}</div>}
 
-      {detail ? <DetailView detail={detail} reload={() => openDetail(detail.title.id)} flash={flash} />
+      {detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
         : <ListView titles={titles} open={openDetail} />}
 
-      {showNew && <NewBookModal close={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); loadList(); openDetail(id); }} flash={flash} />}
+      {showNew && <NewBookModal models={textModels} close={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); loadList(); openDetail(id); }} flash={flash} />}
     </div>
   );
 }
@@ -65,26 +99,29 @@ function ListView({ titles, open }: { titles: Title[]; open: (id: string) => voi
   );
 }
 
-function NewBookModal({ close, onCreated, flash }: { close: () => void; onCreated: (id: string) => void; flash: (m: string) => void }) {
+function NewBookModal({ close, onCreated, flash, models }: { close: () => void; onCreated: (id: string) => void; flash: (m: string) => void; models: { id: string; name: string }[] }) {
   const [brief, setBrief] = useState({ occasion: "", audience: "", pages: 12, notes: "", count: 4 });
   const [busy, setBusy] = useState(false);
   const [ideas, setIdeas] = useState<Idea[]>([]);
+  const [model, setModel] = useState("");
+  useEffect(() => { setModel(lsGet("bs_text_model")); }, []);
 
   const gen = async () => {
     setBusy(true); setIdeas([]);
-    const j = await fetch("/api/books/ideas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(brief) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    lsSet("bs_text_model", model);
+    const j = await api("/api/books/ideas", "POST", { ...brief, model: model || undefined });
     setBusy(false);
-    if (j.ok) setIdeas(j.ideas ?? []); else flash("✗ " + (j.error ?? "Lỗi sinh ý tưởng"));
+    if (j.ok) setIdeas((j.ideas as Idea[]) ?? []); else flash("✗ " + (j.error ?? "Lỗi sinh ý tưởng"));
   };
   const create = async (idea: Idea) => {
     setBusy(true);
-    const j = await fetch("/api/books", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    const j = await api("/api/books", "POST", {
       name: idea.name, occasion: brief.occasion, audience: brief.audience,
       concept: { hook: idea.hook, angle: idea.angle, usp: idea.usp, outline: idea.outline },
       brief,
-    }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    });
     setBusy(false);
-    if (j.ok) onCreated(j.id); else flash("✗ " + (j.error ?? "Lỗi tạo"));
+    if (j.ok) onCreated(j.id as string); else flash("✗ " + (j.error ?? "Lỗi tạo"));
   };
 
   return (
@@ -100,6 +137,7 @@ function NewBookModal({ close, onCreated, flash }: { close: () => void; onCreate
           <label style={{ fontSize: 12, fontWeight: 600 }}>Số trang<input type="number" style={{ ...inp, marginTop: 4 }} value={brief.pages} onChange={(e) => setBrief({ ...brief, pages: Number(e.target.value) || 12 })} /></label>
           <label style={{ fontSize: 12, fontWeight: 600 }}>Số ý tưởng<input type="number" style={{ ...inp, marginTop: 4 }} value={brief.count} onChange={(e) => setBrief({ ...brief, count: Number(e.target.value) || 4 })} /></label>
           <label style={{ fontSize: 12, fontWeight: 600, gridColumn: "1 / -1" }}>Ghi chú<input style={{ ...inp, marginTop: 4 }} placeholder="phong cách, chủ đề riêng…" value={brief.notes} onChange={(e) => setBrief({ ...brief, notes: e.target.value })} /></label>
+          <div style={{ gridColumn: "1 / -1" }}><ModelPicker models={models} value={model} onChange={setModel} label="AI viết ý tưởng/kịch bản" /></div>
         </div>
         <button style={{ ...btnBlue, marginTop: 12, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Đang nghĩ…" : "✨ Sinh ý tưởng"}</button>
 
@@ -122,21 +160,24 @@ function NewBookModal({ close, onCreated, flash }: { close: () => void; onCreate
   );
 }
 
-function DetailView({ detail, reload, flash }: { detail: Detail; reload: () => void; flash: (m: string) => void }) {
+function DetailView({ detail, reload, flash, models }: { detail: Detail; reload: () => void; flash: (m: string) => void; models: { id: string; name: string }[] }) {
   const concept = (detail.title.concept ?? {}) as { hook?: string; angle?: string; usp?: string; outline?: string[] };
   const [pages, setPages] = useState<Page[]>(detail.pages.map((p) => ({ page_no: p.pageNo, text: p.textTemplate ?? "", illustration: p.illustrationBrief ?? "" })));
   const [busy, setBusy] = useState(false);
+  const [model, setModel] = useState("");
+  useEffect(() => { setModel(lsGet("bs_text_model")); }, []);
 
   const genScript = async () => {
     setBusy(true);
-    const j = await fetch(`/api/books/${detail.title.id}/script`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    lsSet("bs_text_model", model);
+    const j = await api(`/api/books/${detail.title.id}/script`, "POST", { model: model || undefined });
     setBusy(false);
-    if (j.ok) { setPages(j.pages ?? []); flash("✓ Đã sinh kịch bản"); reload(); }
+    if (j.ok) { setPages((j.pages as Page[]) ?? []); flash("✓ Đã sinh kịch bản"); reload(); }
     else flash("✗ " + (j.error ?? "Lỗi sinh kịch bản"));
   };
   const save = async () => {
     setBusy(true);
-    const j = await fetch(`/api/books/${detail.title.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pages }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await api(`/api/books/${detail.title.id}`, "PATCH", { pages });
     setBusy(false);
     flash(j.ok ? "✓ Đã lưu" : "✗ " + (j.error ?? "Lỗi lưu"));
   };
@@ -156,7 +197,11 @@ function DetailView({ detail, reload, flash }: { detail: Detail; reload: () => v
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>Kịch bản {pages.length ? `· ${pages.length} trang` : ""}</h3>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={model} onChange={(e) => setModel(e.target.value)} title="AI viết kịch bản" style={{ ...inp, width: 190, fontSize: 12, padding: "7px 9px" }}>
+            <option value="">— Model mặc định —</option>
+            {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
           <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={genScript}>{busy ? "Đang viết…" : pages.length ? "↻ Sinh lại" : "✨ Sinh kịch bản"}</button>
           {pages.length > 0 && <button style={{ ...btnBlue, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={save}>Lưu</button>}
         </div>

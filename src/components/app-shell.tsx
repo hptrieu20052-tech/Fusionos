@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
-  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing, IconBell,
+  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing, IconBell, IconSparkle,
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 
@@ -14,7 +14,7 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
   designs: IconArtwork, reviews: IconEye, statsOrders: IconReport,
   statsDesigners: IconReport, finance: IconWallet, stores: IconStore,
   settings: IconSettings, admin: IconProducts, support: IconSupport,
-  ai: IconGrid,
+  ai: IconSparkle,
 };
 
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
@@ -38,6 +38,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   const initials = user.name.split(" ").map((w) => w[0]).slice(-2).join("").toUpperCase();
   const [moreOpen, setMoreOpen] = useState(false);
   const [prodOpen, setProdOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [mobileHub, setMobileHub] = useState(false); // nhóm Seller Hub trên mobile (thu gọn/mở)
@@ -45,7 +46,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Đóng drawer + mọi dropdown khi chuyển trang + khoá scroll nền khi drawer mở.
   // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
   useEffect(() => {
-    setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false);
+    setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false);
     const hubPaths = ["/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
     setMobileHub(hubPaths.some((p) => path.startsWith(p)));
   }, [path]);
@@ -55,13 +56,13 @@ export default function AppShell({ user, links, children, canProducts = false, c
   }, [mobileOpen]);
   // Click ra ngoài dropdown (Products / More) thì đóng
   useEffect(() => {
-    if (!prodOpen && !moreOpen) return;
+    if (!prodOpen && !moreOpen && !aiOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement)?.closest?.(".topnav-more")) { setProdOpen(false); setMoreOpen(false); }
+      if (!(e.target as HTMLElement)?.closest?.(".topnav-more")) { setProdOpen(false); setMoreOpen(false); setAiOpen(false); }
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
-  }, [prodOpen, moreOpen]);
+  }, [prodOpen, moreOpen, aiOpen]);
 
   // HÂM NÓNG sau idle: Vercel Hobby cho lambda ngủ sau vài phút không có request →
   // click đầu tiên khi quay lại bị cold start 2–5s. Khi tab visible trở lại (hoặc window focus),
@@ -87,6 +88,29 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Dropdown "Seller Hub" (gộp Products + Templates + Support) — sau "Design Studio"; hiện khi có quyền products HOẶC support.
   const hasDesigns = links.some((l) => !l.more && l.href === "/designs");
   const hubActive = ["/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
+  // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
+  const aiActive = ["/books", "/ai-image"].some((h) => path.startsWith(h));
+  const aiAgentDropdown = user.role === "admin" ? (
+    <div key="__aiagent" className="topnav-more">
+      <button className={`topnav-item${aiActive ? " active" : ""}`} onClick={() => setAiOpen((v) => !v)}>
+        <span className="topnav-ic"><IconSparkle width={17} height={17} /></span>
+        AI Agent <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
+      </button>
+      {aiOpen && (
+        <div className="topnav-more-menu" onClick={() => setAiOpen(false)}>
+          <Link href="/books" prefetch className={`topnav-more-item${isActive("/books") ? " active" : ""}`}>
+            <span className="topnav-ic"><IconArtwork width={16} height={16} /></span>
+            Gen Book
+          </Link>
+          <Link href="/ai-image" prefetch className={`topnav-more-item${isActive("/ai-image") ? " active" : ""}`}>
+            <span className="topnav-ic"><IconSparkle width={16} height={16} /></span>
+            Gen Image
+          </Link>
+        </div>
+      )}
+    </div>
+  ) : null;
+
   const productsDropdown = (canProducts || canSupport || canMarketing || canFinanceTiktok) ? (
     <div key="__sellerhub" className="topnav-more">
       <button className={`topnav-item${hubActive ? " active" : ""}`} onClick={() => setProdOpen((v) => !v)}>
@@ -143,10 +167,11 @@ export default function AppShell({ user, links, children, canProducts = false, c
                   {t(l.label)}
                 </Link>
               );
-              // Products dropdown nằm ngay sau "Design Studio"
-              return l.href === "/designs" && productsDropdown ? [el, productsDropdown] : [el];
+              // AI Agent + Seller Hub dropdown nằm ngay sau "Design Studio"
+              return l.href === "/designs" ? [el, aiAgentDropdown, productsDropdown].filter(Boolean) as JSX.Element[] : [el];
             })}
-            {/* Fallback: nếu người này không thấy Design Studio thì vẫn hiện Products (nếu có quyền) */}
+            {/* Fallback: nếu người này không thấy Design Studio thì vẫn hiện AI Agent / Products (nếu có quyền) */}
+            {!hasDesigns && aiAgentDropdown}
             {!hasDesigns && productsDropdown}
             {links.some((l) => l.more) && (
               <div className="topnav-more">

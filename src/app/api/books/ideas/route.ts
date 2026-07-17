@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
       pages: Number(b?.pages) || undefined,
       notes: b?.notes ? String(b.notes) : undefined,
       count: Number(b?.count) || undefined,
+      model: b?.model ? String(b.model) : undefined,
     });
     return NextResponse.json({ ok: true, ideas });
   } catch (e) {

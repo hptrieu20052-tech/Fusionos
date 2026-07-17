@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     const pages = await generateBookScript(
       { name: title.name, angle: concept.angle, outline: concept.outline },
-      { pages: Number(b?.pages) || undefined, vars: Array.isArray(b?.vars) ? b.vars : undefined },
+      { pages: Number(b?.pages) || undefined, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined },
     );
     await db.delete(schema.bookPages).where(eq(schema.bookPages.titleId, params.id));
     if (pages.length) {
