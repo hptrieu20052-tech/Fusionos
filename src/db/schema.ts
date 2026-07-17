@@ -86,7 +86,8 @@ export const orders = pgTable("orders", {
   platformFee: numeric("platform_fee", { precision: 12, scale: 2 }).notNull().default("0"),
   currency: text("currency").notNull().default("USD"),
   orderLabel: text("order_label"),
-  note: text("note"),
+  note: text("note"),                 // note NỘI BỘ (staff tự ghi)
+  buyerNote: text("buyer_note"),      // note của KHÁCH (message from buyer trên Etsy) — hiện nền cam, read-only
   // TikTok: "TIKTOK" (Fulfilled by TikTok — get label để đẩy nhà in) | "SELLER" (mình tự ship). Null = không rõ / sàn khác.
   shippingType: text("shipping_type"),
   // Label TikTok Shipping đã lấy về + lưu R2: [{ packageId, trackingNumber, key, url, fetchedAt }]. Gửi link cho supplier.

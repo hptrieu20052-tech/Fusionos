@@ -55,7 +55,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         fillIf("city", dup.city, s(o.city));
         fillIf("state", dup.state, s(o.state));
         fillIf("zip", dup.zip, s(o.zip));
-        fillIf("note", dup.note, s(o.note));
+        fillIf("buyerNote", dup.buyerNote, s(o.note)); // note KHÁCH vào cột riêng buyer_note
         if (s(o.country) && (!dup.country || dup.country === "United States")) {
           if (s(o.country) !== dup.country) patch.country = s(o.country);
         }
@@ -75,9 +75,12 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
             if (!ex) continue;
             const ip: Record<string, unknown> = {};
             if (s(inIt.title) && blank(ex.productTitle)) ip.productTitle = s(inIt.title);
-            if (s(inIt.variant) && blank(ex.variant)) ip.variant = s(inIt.variant);
+            // Variant/Personalization: điền khi trống HOẶC khi bản mới ĐẦY ĐỦ hơn (dài hơn) → chữa đơn cũ bị cắt cụt khi re-sync.
+            const inVar = s(inIt.variant);
+            if (inVar && (blank(ex.variant) || inVar.length > (ex.variant?.length ?? 0))) ip.variant = inVar;
             if (s(inIt.imageUrl) && blank(ex.imageUrl)) ip.imageUrl = s(inIt.imageUrl);
-            if (s(inIt.personalization) && blank(ex.personalization)) ip.personalization = s(inIt.personalization);
+            const inPz = s(inIt.personalization);
+            if (inPz && (blank(ex.personalization) || inPz.length > (ex.personalization?.length ?? 0))) ip.personalization = inPz;
             if (s(inIt.listingId) && !ex.etsyListingId) ip.etsyListingId = s(inIt.listingId);
             const inPrice = num(inIt.price);
             if (inPrice > 0 && (!ex.unitPrice || Number(ex.unitPrice) === 0)) ip.unitPrice = (inPrice / fx).toFixed(2);
@@ -108,7 +111,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         addr1: s(o.addr1), addr2: s(o.addr2), city: s(o.city), state: s(o.state), zip: s(o.zip),
         country: s(o.country) ?? "United States",
         total: (total / fx).toFixed(2), platformFee: (num(o.fee) / fx).toFixed(2),
-        note: s(o.note),
+        buyerNote: s(o.note), // note KHÁCH → cột riêng (note nội bộ do staff tự ghi)
         orderedAt: new Date(),
       }).onConflictDoNothing().returning();
       if (!order) { skipped++; continue; } // request song song đã insert trước → coi như trùng

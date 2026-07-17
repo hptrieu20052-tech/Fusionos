@@ -39,9 +39,15 @@ export default function AppShell({ user, links, children, canProducts = false, c
   const [prodOpen, setProdOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [mobileHub, setMobileHub] = useState(false); // nhóm Seller Hub trên mobile (thu gọn/mở)
 
-  // Đóng drawer + mọi dropdown khi chuyển trang + khoá scroll nền khi drawer mở
-  useEffect(() => { setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); }, [path]);
+  // Đóng drawer + mọi dropdown khi chuyển trang + khoá scroll nền khi drawer mở.
+  // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
+  useEffect(() => {
+    setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false);
+    const hubPaths = ["/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
+    setMobileHub(hubPaths.some((p) => path.startsWith(p)));
+  }, [path]);
   useEffect(() => {
     document.body.style.overflow = mobileOpen ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
@@ -208,37 +214,34 @@ export default function AppShell({ user, links, children, canProducts = false, c
                   {t(l.label)}
                 </Link>
               );
-              // Sau "Design Studio": chèn nhóm Seller Hub (Products + Templates + Customer Messages + Marketing) theo quyền
+              // Sau "Design Studio": chèn nhóm Seller Hub thu gọn (bấm để mở) — gom Products/Templates/Customer Messages/Marketing/Finance.
               if (l.href === "/designs" && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
-                return [el,
+                const hubItems = [
                   ...(canProducts ? [
-                    <Link key="__mp" href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
+                    { href: "/tiktok-products", icon: <IconBox width={18} height={18} />, label: "Manage Products Tiktok" },
+                    { href: "/tiktok-templates", icon: <IconGrid width={18} height={18} />, label: "Manage Templates Tiktok" },
+                  ] : []),
+                  ...(canSupport ? [{ href: "/support", icon: <IconSupport width={18} height={18} />, label: "Customer Messages Tiktok" }] : []),
+                  ...(canMarketing ? [{ href: "/marketing", icon: <IconMarketing width={18} height={18} />, label: "Marketing Tiktok" }] : []),
+                  ...(canFinanceTiktok ? [{ href: "/tiktok-finance", icon: <IconWallet width={18} height={18} />, label: "Finance Tiktok" }] : []),
+                ];
+                const hubActive = hubItems.some((h) => isActive(h.href));
+                return [el,
+                  <div key="__hub">
+                    <button type="button" onClick={() => setMobileHub((v) => !v)}
+                      className={`mobile-nav-item${hubActive ? " active" : ""}`}
+                      style={{ width: "100%", background: "none", border: 0, font: "inherit", cursor: "pointer", textAlign: "left" }}>
                       <span className="topnav-ic"><IconBox width={18} height={18} /></span>
-                      Manage Products Tiktok
-                    </Link>,
-                    <Link key="__mt" href="/tiktok-templates" prefetch className={`mobile-nav-item${isActive("/tiktok-templates") ? " active" : ""}`}>
-                      <span className="topnav-ic"><IconGrid width={18} height={18} /></span>
-                      Manage Templates Tiktok
-                    </Link>,
-                  ] : []),
-                  ...(canSupport ? [
-                    <Link key="__ms" href="/support" prefetch className={`mobile-nav-item${isActive("/support") ? " active" : ""}`}>
-                      <span className="topnav-ic"><IconSupport width={18} height={18} /></span>
-                      Customer Messages Tiktok
-                    </Link>,
-                  ] : []),
-                  ...(canMarketing ? [
-                    <Link key="__mk" href="/marketing" prefetch className={`mobile-nav-item${isActive("/marketing") ? " active" : ""}`}>
-                      <span className="topnav-ic"><IconMarketing width={18} height={18} /></span>
-                      Marketing Tiktok
-                    </Link>,
-                  ] : []),
-                  ...(canFinanceTiktok ? [
-                    <Link key="__mf" href="/tiktok-finance" prefetch className={`mobile-nav-item${isActive("/tiktok-finance") ? " active" : ""}`}>
-                      <span className="topnav-ic"><IconWallet width={18} height={18} /></span>
-                      Finance Tiktok
-                    </Link>,
-                  ] : []),
+                      Seller Hub
+                      <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>{mobileHub ? "▾" : "▸"}</span>
+                    </button>
+                    {mobileHub && hubItems.map((h) => (
+                      <Link key={h.href} href={h.href} prefetch className={`mobile-nav-item${isActive(h.href) ? " active" : ""}`} style={{ paddingLeft: 34 }}>
+                        <span className="topnav-ic">{h.icon}</span>
+                        {h.label}
+                      </Link>
+                    ))}
+                  </div>,
                 ];
               }
               return [el];

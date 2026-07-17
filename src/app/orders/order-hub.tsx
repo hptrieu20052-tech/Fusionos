@@ -81,7 +81,7 @@ type Order = {
   id: string; external_id: string; platform: string; status: string; ordered_at: string;
   buyer_first: string | null; buyer_last: string | null;
   addr1: string | null; addr2: string | null; city: string | null; state: string | null; zip: string | null; country: string;
-  total: string; platform_fee: string; seller_name: string | null; store_name: string | null; order_label: string | null; note: string | null; shipping_type?: string | null;
+  total: string; platform_fee: string; seller_name: string | null; store_name: string | null; order_label: string | null; note: string | null; buyer_note?: string | null; shipping_type?: string | null;
   tiktok_labels?: { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string }[] | null;
   items: Item[];
 };
@@ -1073,6 +1073,13 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                 </div>
               )}
               <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ") || t("o.noAddress")}</span></div>
+              {/* Note của KHÁCH (message from buyer trên Etsy) — nền cam, click để copy. */}
+              {o.buyer_note && (
+                <div title="Click to copy customer note" onClick={(e) => { e.stopPropagation(); copyText(o.buyer_note!); }}
+                  style={{ marginTop: 8, background: "#FFF3E6", border: "1px solid #F6D8B8", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: "#8A5A1E", lineHeight: 1.55, whiteSpace: "pre-wrap", cursor: "pointer" }}>
+                  {o.buyer_note}
+                </div>
+              )}
               {/* Tài chính đơn */}
               <div className="o2-fin">
                 <div className="c"><span className="k">{t("o.total")}</span><span className="v">{money(o.total)}</span></div>
