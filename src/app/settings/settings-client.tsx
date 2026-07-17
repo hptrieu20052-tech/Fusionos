@@ -8,9 +8,22 @@ import { useConfirm } from "@/components/confirm-provider";
 import { SupplierLogo } from "@/components/supplier-logo";
 
 type Ff = { id: string; name: string; method: string; apiEndpoint: string | null; credentials: string | null; shopId: string | null; identifier: string | null; hasWebhookSecret: boolean; autoPush: boolean; status: string; logoUrl?: string | null };
-type Revealed = { apiEndpoint: string; webhookSecret: string; apiKey: string; shopId: string; identifier: string; sheetId: string; tab: string };
+type Revealed = { apiEndpoint: string; webhookSecret: string; apiKey: string; shopId: string; identifier: string; sheetId: string; tab: string; warehouse: string; carrier: string };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; productType: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean };
 const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 11, font: "inherit", fontSize: 12.5 } as const;
+
+// Ô nhập có nút con mắt ở CUỐI ô: giá trị đã lưu hiện sẵn (che dạng ••••), bấm mắt để xem. Dùng cho token/secret.
+function EyeInput({ value, onChange, placeholder, width }: { value: string; onChange: (v: string) => void; placeholder: string; width?: number }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: "relative", ...(width ? { width } : { flex: 1, minWidth: 180 }) }}>
+      <input type={show ? "text" : "password"} autoComplete="off" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder}
+        style={{ ...inp, width: "100%", paddingRight: 34, boxSizing: "border-box", fontFamily: "ui-monospace,monospace" }} />
+      <button type="button" tabIndex={-1} onClick={() => setShow((s) => !s)} title={show ? "Hide" : "Show"}
+        style={{ position: "absolute", right: 4, top: "50%", transform: "translateY(-50%)", background: "none", border: 0, cursor: "pointer", fontSize: 13, lineHeight: 1, color: "var(--muted)", padding: 3 }}>{show ? "🙈" : "👁"}</button>
+    </div>
+  );
+}
 
 
 export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin: boolean }) {
@@ -19,7 +32,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
   const [tab, setTab] = useState<"api" | "sku">("api");
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [maps, setMaps] = useState<Map[]>([]);
-  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string; identifier: string; logoKey: string }>>({});
+  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string; identifier: string; warehouse: string; carrier: string; logoKey: string }>>({});
   const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "", sheetId: "", tab: "", logoKey: "" });
   const [revealed, setRevealed] = useState<Record<string, Revealed | undefined>>({});
   const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
@@ -29,7 +42,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
 
   const setE = (id: string, field: string, value: string) =>
     setEdit((prev) => {
-      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", logoKey: "" };
+      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", warehouse: "", carrier: "", logoKey: "" };
       return { ...prev, [id]: { ...base, [field]: value } };
     });
 
@@ -51,10 +64,21 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
   const load = () => fetch("/api/fulfillers").then((r) => r.json()).then((j) => { if (j.ok) { setFfs(j.fulfillers); setMaps(j.mappings ?? []); } });
   useEffect(() => { load(); }, []);
 
+  // Mở/đóng form Edit. Khi MỞ: nạp sẵn giá trị đã lưu (thật) vào các ô để sửa trực tiếp.
+  async function toggleEdit(id: string) {
+    const willOpen = !editOpen[id];
+    setEditOpen((p) => ({ ...p, [id]: willOpen }));
+    if (!willOpen) return;
+    const j = await fetch("/api/fulfillers/reveal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json()).catch(() => ({ ok: false }));
+    if (j.ok) setEdit((prev) => ({ ...prev, [id]: {
+      apiEndpoint: j.apiEndpoint ?? "", apiKey: j.apiKey ?? "", webhookSecret: j.webhookSecret ?? "",
+      shopId: j.shopId ?? "", identifier: j.identifier ?? "", warehouse: j.warehouse ?? "", carrier: j.carrier ?? "", logoKey: "",
+    } }));
+  }
   async function saveFf(id: string) {
     const e = edit[id]; if (!e) return;
     const j = await fetch("/api/fulfillers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
-    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", logoKey: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
+    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", warehouse: "", carrier: "", logoKey: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
   }
   async function listShops(id: string) {
     const token = edit[id]?.apiKey;
@@ -130,7 +154,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                 {f.shopId && <span className="badge b-ship">Shop ID: {f.shopId}</span>}
                 {f.identifier && <span className="badge b-ship">ID: {f.identifier}</span>}
                 {f.hasWebhookSecret ? <span className="badge b-ship">{t("s.hasWebhook")}</span> : <span className="badge b-mut">{t("s.noWebhook")}</span>}
-                {isAdmin && <button type="button" onClick={() => setEditOpen((p) => ({ ...p, [f.id]: !p[f.id] }))}
+                {isAdmin && <button type="button" onClick={() => toggleEdit(f.id)}
                   style={{ marginLeft: "auto", background: "var(--card)", border: "1px solid var(--line)", borderRadius: 9, padding: "5px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12, color: "var(--blue)" }}>
                   {editOpen[f.id] ? t("set.close") : <><IconPencil width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("c.edit")}</>}
                 </button>}
@@ -154,13 +178,15 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                 <div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                   <input placeholder={isMerchize ? "Base URL (…/bo-api)" : (f.apiEndpoint ?? "API endpoint")} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setE(f.id, "apiEndpoint", e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
-                  <input placeholder={isMerchize ? "API Key (x-api-key)" : t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(e) => setE(f.id, "apiKey", e.target.value)} style={{ ...inp, width: 200 }} />
+                  <EyeInput placeholder={isMerchize ? "API Key (x-api-key)" : t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(v) => setE(f.id, "apiKey", v)} width={200} />
                   {isMerchize && <input placeholder="Identifier (vd hello.com)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 160 }} />}
+                  {isMerchize && <input placeholder="Warehouse (vd TX1)" value={edit[f.id]?.warehouse ?? ""} onChange={(e) => setE(f.id, "warehouse", e.target.value)} style={{ ...inp, width: 120 }} />}
+                  {isMerchize && <input placeholder="Carrier (vd USPS Ground Advantage)" value={edit[f.id]?.carrier ?? ""} onChange={(e) => setE(f.id, "carrier", e.target.value)} style={{ ...inp, width: 210 }} />}
                   {f.name.toLowerCase().includes("printify") && <>
                     <input placeholder="Shop ID" value={edit[f.id]?.shopId ?? ""} onChange={(e) => setE(f.id, "shopId", e.target.value)} style={{ ...inp, width: 110 }} />
                     <button type="button" onClick={() => listShops(f.id)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>{t("s.getShop")}</button>
                   </>}
-                  <input placeholder={t("s.webhookNew")} value={edit[f.id]?.webhookSecret ?? ""} onChange={(e) => setE(f.id, "webhookSecret", e.target.value)} style={{ ...inp, width: 150 }} />
+                  <EyeInput placeholder={t("s.webhookNew")} value={edit[f.id]?.webhookSecret ?? ""} onChange={(v) => setE(f.id, "webhookSecret", v)} width={160} />
                   {/* Favicon supplier — hiện ảnh hiện tại, upload để đổi */}
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "1px dashed var(--line)", borderRadius: 11, padding: "7px 12px", cursor: "pointer", fontSize: 12, fontWeight: 700, color: edit[f.id]?.logoKey ? "var(--green)" : "var(--muted)" }}>
                     <SupplierLogo name={f.name} src={f.logoUrl} size={18} />

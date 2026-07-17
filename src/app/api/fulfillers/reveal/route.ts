@@ -27,5 +27,7 @@ export async function POST(req: NextRequest) {
     identifier: c.identifier != null ? String(c.identifier) : "",
     sheetId: c.sheetId != null ? String(c.sheetId) : "",
     tab: c.tab != null ? String(c.tab) : "",
+    warehouse: c.warehouse != null ? String(c.warehouse) : "",
+    carrier: c.carrier != null ? String(c.carrier) : "",
   });
 }

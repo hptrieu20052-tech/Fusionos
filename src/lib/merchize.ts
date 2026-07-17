@@ -140,6 +140,39 @@ export async function createMerchizeOrder(baseUrl: string, apiKey: string, paylo
   return { orderCode, raw: data };
 }
 
+export type MerchizeTiktokPayload = {
+  order_id: string; identifier: string;
+  shipping_info: { shipping_provider: string; shipping_label: string; merchize_warehouse: string; tracking_number: string };
+  tags?: string[]; items: MerchizeItem[];
+};
+
+/**
+ * Tạo đơn TIKTOK SHIPPING trên Merchize — POST /order/external/tiktok-shipping/orders/catalog (x-api-key).
+ * Đơn "Ship by TikTok" đã có label + tracking của TikTok → Merchize chỉ in & dán nhãn,
+ * KHÔNG cần địa chỉ khách (địa chỉ bị TikTok che sao, đẩy qua endpoint external sẽ bị từ chối).
+ */
+export async function createMerchizeTiktokOrder(baseUrl: string, apiKey: string, payload: MerchizeTiktokPayload): Promise<{ orderCode: string; raw: unknown }> {
+  const url = `${clean(baseUrl)}/order/external/tiktok-shipping/orders/catalog`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Merchize TikTok-Shipping create HTTP ${res.status}: ${text.slice(0, 400)}`);
+  const data = text ? JSON.parse(text) : {};
+  if (data && data.success === false) {
+    throw new Error(`Merchize từ chối đơn TikTok: ${JSON.stringify(data.message ?? data.error ?? data).slice(0, 400)}`);
+  }
+  const inner = (data.data ?? data.resource ?? data) as Record<string, unknown>;
+  const nested = (inner?.data && typeof inner.data === "object" ? inner.data : {}) as Record<string, unknown>;
+  const orderCode = String(
+    inner?.code ?? inner?.order_code ?? nested?.code ?? nested?.order_code ??
+    inner?._id ?? inner?.id ?? data?.order_code ?? "",
+  );
+  return { orderCode, raw: data };
+}
+
 /**
  * Lấy tracking đơn Merchize — TỰ ĐỘNG FALLBACK.
  *

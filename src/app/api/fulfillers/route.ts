@@ -60,8 +60,8 @@ export async function PATCH(req: NextRequest) {
   const patch: Record<string, unknown> = {};
   if (typeof b.apiEndpoint === "string") patch.apiEndpoint = b.apiEndpoint || null;
   if (typeof b.webhookSecret === "string" && b.webhookSecret) patch.webhookSecret = b.webhookSecret;
-  // Credentials: gộp apiKey (token) + shopId (cho Printify). Giữ giá trị cũ nếu chỉ đổi 1 phần.
-  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "") || (b.identifier !== undefined && b.identifier !== "")) {
+  // Credentials: gộp apiKey (token) + shopId (Printify) + identifier + warehouse/carrier (Merchize TikTok Shipping). Giữ giá trị cũ nếu chỉ đổi 1 phần.
+  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "") || (b.identifier !== undefined && b.identifier !== "") || (b.warehouse !== undefined && b.warehouse !== "") || (b.carrier !== undefined && b.carrier !== "")) {
     const [cur] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.id)).limit(1);
     const prev = (cur?.credentials ?? {}) as Record<string, unknown>;
     patch.credentials = {
@@ -69,6 +69,8 @@ export async function PATCH(req: NextRequest) {
       ...(b.apiKey ? { apiKey: b.apiKey } : {}),
       ...(b.shopId !== undefined && b.shopId !== "" ? { shopId: String(b.shopId) } : {}),
       ...(b.identifier !== undefined && b.identifier !== "" ? { identifier: String(b.identifier) } : {}),
+      ...(b.warehouse !== undefined && b.warehouse !== "" ? { warehouse: String(b.warehouse) } : {}),
+      ...(b.carrier !== undefined && b.carrier !== "" ? { carrier: String(b.carrier) } : {}),
     };
   }
   if (typeof b.autoPush === "boolean") patch.autoPush = b.autoPush;

@@ -1,6 +1,6 @@
 import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPrintAreas } from "@/lib/printify";
 import { createCompassupOrder, type CompassupCred, type CompassupItem } from "@/lib/compassup";
-import { createMerchizeOrder, pushMerchizeOrder } from "@/lib/merchize";
+import { createMerchizeOrder, createMerchizeTiktokOrder, pushMerchizeOrder } from "@/lib/merchize";
 import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, calcPrintwayPrice, type PwOrderItem } from "@/lib/printway-api";
 import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
 import { createOnosOrder, type OnosItem } from "@/lib/onos";
@@ -434,6 +434,36 @@ function merchizeAdapter(): FulfillerAdapter {
 
       const o = ctx.order;
       const extNumber = (o.orderLabel && o.orderLabel.trim()) ? o.orderLabel.trim() : o.externalId; // TênStore-IDĐơn
+      const url = (u?: string | null) => (typeof u === "string" && /^https?:\/\//i.test(u.trim())) ? u.trim() : undefined;
+      const items = ctx.lines.map((l) => ({
+        product_id: l.productId || undefined,
+        sku: l.internalSku || undefined,
+        merchize_sku: l.fulfillerSku,
+        quantity: l.qty,
+        price: l.price,
+        currency: l.currency || "USD",
+        image: url(l.image),
+        design_front: url(l.designFront),
+        design_back: url(l.designBack),
+        design_sleeve: url(l.designSleeve),
+        design_hood: url(l.designHood),
+      }));
+
+      // ===== Đơn SHIP-BY-TIKTOK: dùng endpoint tiktok-shipping (label + tracking của TikTok, KHÔNG cần địa chỉ khách) =====
+      if (o.shippingType === "TIKTOK" && o.labelUrl) {
+        const cr = c as Record<string, unknown>;
+        const warehouse = String(cr.warehouse ?? cr.merchizeWarehouse ?? "").trim();
+        const carrier = (String(cr.carrier ?? cr.shippingProvider ?? "").trim()) || "USPS Ground Advantage";
+        if (!warehouse) return { ...simulate("merchize"), reason: 'Đơn TikTok Shipping: chưa cấu hình Merchize warehouse. Thêm vào credentials Merchize: {"warehouse":"NJ"} (mã kho Merchize của bạn) → đơn KHÔNG lên nhà in.' };
+        if (!o.shippingTracking) return { ...simulate("merchize"), reason: "Đơn TikTok chưa có tracking number — lấy label TikTok trước rồi đẩy lại." };
+        const rtt = await createMerchizeTiktokOrder(baseUrl, apiKey, {
+          order_id: extNumber, identifier,
+          shipping_info: { shipping_provider: carrier, shipping_label: o.labelUrl, merchize_warehouse: warehouse, tracking_number: o.shippingTracking },
+          items,
+        });
+        return { externalFfId: rtt.orderCode, simulated: false, raw: rtt.raw, reason: "Đẩy qua TikTok-Shipping catalog (Merchize in & dán nhãn TikTok, không cần địa chỉ khách)." };
+      }
+
       const res = await createMerchizeOrder(baseUrl, apiKey, {
         order_id: extNumber,
         identifier,
@@ -448,22 +478,7 @@ function merchizeAdapter(): FulfillerAdapter {
           email: o.email || undefined,
           phone: o.phone || undefined,
         },
-        items: ctx.lines.map((l) => {
-          const url = (u?: string | null) => (typeof u === "string" && /^https?:\/\//i.test(u.trim())) ? u.trim() : undefined;
-          return {
-            product_id: l.productId || undefined,
-            sku: l.internalSku || undefined,
-            merchize_sku: l.fulfillerSku,
-            quantity: l.qty,
-            price: l.price,
-            currency: l.currency || "USD",
-            image: url(l.image),
-            design_front: url(l.designFront),
-            design_back: url(l.designBack),
-            design_sleeve: url(l.designSleeve),
-            design_hood: url(l.designHood),
-          };
-        }),
+        items,
       });
       // KHÔNG AUTO-PAY (mặc định): bước push = CONFIRM đi sản xuất → Merchize trừ balance ngay.
       // Đơn giờ chỉ TẠO Ở DRAFT — người phụ trách kiểm tra rồi tự confirm trên web Merchize.
