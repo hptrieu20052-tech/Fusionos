@@ -453,7 +453,12 @@ function merchizeAdapter(): FulfillerAdapter {
       if (o.shippingType === "TIKTOK" && o.labelUrl) {
         const cr = c as Record<string, unknown>;
         const warehouse = String(cr.warehouse ?? cr.merchizeWarehouse ?? "").trim();
-        const carrier = (String(cr.carrier ?? cr.shippingProvider ?? "").trim()) || "USPS Ground Advantage";
+        // Merchize TikTok Shipping CHỈ nhận: USPS, FedEx, Evri, Royal Mail. Chuẩn hoá về tên gốc (vd "USPS Ground Advantage" → "USPS").
+        const rawCarrier = (String(cr.carrier ?? cr.shippingProvider ?? "").trim()).toLowerCase();
+        const carrier = rawCarrier.includes("fedex") ? "FedEx"
+          : rawCarrier.includes("evri") ? "Evri"
+          : rawCarrier.includes("royal") ? "Royal Mail"
+          : "USPS"; // mặc định + mọi biến thể USPS (Ground Advantage, First Class…)
         if (!warehouse) return { ...simulate("merchize"), reason: 'Đơn TikTok Shipping: chưa cấu hình Merchize warehouse. Thêm vào credentials Merchize: {"warehouse":"NJ"} (mã kho Merchize của bạn) → đơn KHÔNG lên nhà in.' };
         if (!o.shippingTracking) return { ...simulate("merchize"), reason: "Đơn TikTok chưa có tracking number — lấy label TikTok trước rồi đẩy lại." };
         const rtt = await createMerchizeTiktokOrder(baseUrl, apiKey, {
