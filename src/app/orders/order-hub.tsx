@@ -862,9 +862,11 @@ function DuplicateModal({ init, close, onConfirm }: {
 function SendDesigner({ order, designers, flash, reload }: { order: Order; designers: { id: string; name: string; team: string | null }[]; flash: (m: string) => void; reload: () => void }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmResend, setConfirmResend] = useState(false); // đã gửi rồi → bắt xác nhận trước khi gửi lại (tránh gửi trùng)
   const teamDesigners = designers.filter((d) => order.seller_team && d.team === order.seller_team);
+  const close = () => { setOpen(false); setConfirmResend(false); };
   const send = async (d: { id: string; name: string }) => {
-    setOpen(false); setBusy(true);
+    close(); setBusy(true);
     try {
       const r = await fetch(`/api/orders/${order.id}/send-designer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designerId: d.id }) });
       const raw = await r.text();
@@ -878,20 +880,30 @@ function SendDesigner({ order, designers, flash, reload }: { order: Order; desig
     } finally { setBusy(false); }
   };
   const sent = !!order.designer_sent_to;
+  // Tone nền rõ ràng khác nhau: ĐÃ GỬI = xanh đậm đầy nền + viền đậm; CHƯA GỬI = xanh nhạt.
+  const btnStyle = sent
+    ? { color: "#12703C", borderColor: "#7CC79A", background: "#CFEED9" }
+    : { color: "#0e8a5f", borderColor: "#BFE3CC", background: "#EAF7F0" };
+  const designerList = teamDesigners.length ? teamDesigners.map((d) => (
+    <button key={d.id} type="button" onClick={() => send(d)} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: 0, padding: "8px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{d.name}</button>
+  )) : <div style={{ padding: "9px 11px", fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>No designer in this team has a Telegram chat ID yet. Admin sets it in Staff.</div>;
   return (
     <div style={{ position: "relative" }}>
       <button type="button" onClick={() => setOpen((v) => !v)} disabled={busy}
-        style={{ ...btnGhost, width: "100%", color: sent ? "#1E8E4E" : "#0e8a5f", borderColor: "#BFE3CC", background: sent ? "#E7F6EC" : "#EAF7F0", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: busy ? "wait" : "pointer" }}
+        style={{ ...btnGhost, width: "100%", ...btnStyle, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: busy ? "wait" : "pointer" }}
         title={sent ? `Sent to ${order.designer_sent_to}` : "Send order to designer via Telegram"}>
-        <IconSend width={13} height={13} /> {busy ? "Sending…" : sent ? `Sent · ${order.designer_sent_to}` : "Send to Designer"} <span style={{ fontSize: 10 }}>▾</span>
+        {sent && !busy ? <IconCheck width={14} height={14} /> : <IconSend width={13} height={13} />} {busy ? "Sending…" : sent ? `Sent · ${order.designer_sent_to}` : "Send to Designer"} <span style={{ fontSize: 10 }}>▾</span>
       </button>
       {open && (
         <>
-          <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setOpen(false)} />
-          <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 8px 24px rgba(20,30,50,.14)", minWidth: 190, padding: 6 }}>
-            {teamDesigners.length ? teamDesigners.map((d) => (
-              <button key={d.id} type="button" onClick={() => send(d)} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: 0, padding: "8px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{d.name}</button>
-            )) : <div style={{ padding: "9px 11px", fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>No designer in this team has a Telegram chat ID yet. Admin sets it in Staff.</div>}
+          <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={close} />
+          <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 8px 24px rgba(20,30,50,.14)", minWidth: 200, padding: 6 }}>
+            {sent && !confirmResend ? (
+              <div style={{ padding: "4px 4px 2px" }}>
+                <div style={{ padding: "6px 9px", fontSize: 12.5, color: "#12703C", lineHeight: 1.45 }}>✓ Đã gửi cho <b>{order.designer_sent_to}</b>.<br />Gửi lại sẽ tạo tin trùng.</div>
+                <button type="button" onClick={() => setConfirmResend(true)} style={{ display: "block", width: "100%", textAlign: "center", background: "#FBEAE7", color: "var(--red)", border: "1px solid #F3C6C0", padding: "7px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 700, marginTop: 4 }}>Gửi lại (chọn designer)</button>
+              </div>
+            ) : designerList}
           </div>
         </>
       )}

@@ -4,7 +4,7 @@ import { sql, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { inScope } from "@/lib/scope";
-import { splitVariant } from "@/lib/variant-display";
+import { splitVariant, decodeEntities } from "@/lib/variant-display";
 import { sendTelegram, sendTelegramMediaGroup } from "@/lib/telegram";
 import { fileUrl } from "@/lib/storage";
 
@@ -60,11 +60,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const mockups: string[] = [];   // ảnh mẫu sản phẩm (mockup) — gửi trước
   const photos: string[] = [];    // ảnh khách upload — gửi sau
   for (const it of items) {
-    lines.push(`<b>${esc(it.product_title || "(no title)")}</b> · SL ${it.qty}`);
     const parts = splitVariant(it.variant);
     for (const p of parts) lines.push(p.label ? `• ${esc(p.label)}: <b>${esc(p.value)}</b>` : `• <b>${esc(p.value)}</b>`);
-    const pz = (it.personalization ?? "").trim();
-    if (pz && !parts.some((p) => (p.value || "").includes(pz.slice(0, 20)))) lines.push(`• Personalization: <b>${esc(pz)}</b>`);
+    // Personalization thường là GHÉP các field đã có trong variant → chỉ thêm nếu CHƯA nằm trong variant (giống UI order-hub, tránh lặp).
+    const pz = decodeEntities((it.personalization ?? "").trim());
+    const varDecoded = decodeEntities(it.variant ?? "");
+    const pzPieces = pz.split(" · ").map((s) => s.trim()).filter(Boolean);
+    const pzRedundant = pzPieces.length > 0 && pzPieces.every((pc) => varDecoded.includes(pc.slice(0, 25)));
+    if (pz && !pzRedundant) lines.push(`• Personalization: <b>${esc(pz)}</b>`);
+    lines.push(`• Số lượng: <b>${it.qty}</b>`);
     lines.push("");
     // Mockup (ảnh mẫu SP)
     const mk = (it.mockup_key ? fileUrl(it.mockup_key) : null) || it.image_url;
@@ -74,18 +78,26 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     for (const f of files) if (f?.url) photos.push(toFull(f.url));
   }
   if (order.buyer_note && order.buyer_note.trim()) lines.push(`📝 <b>Note khách:</b> ${esc(order.buyer_note.trim())}`);
-  if (mockups.length) lines.push(`🖼 Kèm mockup + ${photos.length} ảnh khách`);
 
-  const text = lines.join("\n").slice(0, 4000);
+  const text = lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
   const album = [...mockups, ...photos]; // mockup trước → ảnh khách sau
+  // Độ dài caption tính theo text HIỂN THỊ (bỏ thẻ HTML) — giới hạn caption Telegram là 1024.
+  const plainLen = text.replace(/<[^>]+>/g, "").length;
 
   try {
-    const t1 = await sendTelegram(designer.chat, text);
-    if (!t1.ok) return NextResponse.json({ ok: false, error: "Telegram: " + (t1.error ?? "failed") }, { status: 502 });
     let photoErr = "";
-    if (album.length) {
-      const t2 = await sendTelegramMediaGroup(designer.chat, album.slice(0, 50), `Mockup + ảnh khách · order #${label}`);
-      if (!t2.ok) photoErr = t2.error ?? "photo failed";
+    // DỒN 1 TIN: có ảnh + caption ≤ 1024 → gửi album kèm luôn nội dung làm caption, KHÔNG gửi tin text riêng.
+    if (album.length && plainLen <= 1024) {
+      const t = await sendTelegramMediaGroup(designer.chat, album.slice(0, 50), text);
+      if (!t.ok) return NextResponse.json({ ok: false, error: "Telegram: " + (t.error ?? "failed") }, { status: 502 });
+    } else {
+      // Không có ảnh, hoặc nội dung quá dài để làm caption → gửi tin text (kèm album riêng nếu có).
+      const t1 = await sendTelegram(designer.chat, text.slice(0, 4000));
+      if (!t1.ok) return NextResponse.json({ ok: false, error: "Telegram: " + (t1.error ?? "failed") }, { status: 502 });
+      if (album.length) {
+        const t2 = await sendTelegramMediaGroup(designer.chat, album.slice(0, 50));
+        if (!t2.ok) photoErr = t2.error ?? "photo failed";
+      }
     }
     await db.update(schema.orders).set({ designerSentTo: designer.name, designerSentAt: new Date() }).where(eq(schema.orders.id, order.id));
     return NextResponse.json({ ok: true, designer: designer.name, photos: photos.length, mockups: mockups.length, photoWarn: photoErr || undefined });
