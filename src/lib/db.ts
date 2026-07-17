@@ -11,7 +11,9 @@ const pool =
   globalForDb.pool ??
   new Pool({
     connectionString: process.env.DATABASE_URL,
-    max: isServerless ? 1 : 10,
+    // Cần >1 để các truy vấn Promise.all trong 1 request chạy SONG SONG (max:1 ép chúng xếp hàng, mất tác dụng).
+    // An toàn khi DATABASE_URL trỏ Supabase Transaction Pooler (port 6543).
+    max: isServerless ? 4 : 10,
     idleTimeoutMillis: isServerless ? 10_000 : 30_000,
     connectionTimeoutMillis: 10_000,
   });

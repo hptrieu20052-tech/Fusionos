@@ -123,7 +123,7 @@ function trackingUrl(carrier: string | null, num: string): string {
 
 export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false, isSeller = false, canChangeStatus = false, canDuplicate = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean; isSeller?: boolean; canChangeStatus?: boolean; canDuplicate?: boolean }) {
   const searchParams = useSearchParams();
-  const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: Opt[]; fulfillers: { id: string; name: string }[]; designers?: { id: string; name: string; team: string | null }[] } | null>(null);
+  const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: Opt[]; fulfillers: { id: string; name: string }[]; designers?: { id: string; name: string; team: string | null }[]; filterStores?: Opt[]; filterFulfillers?: { id: string; name: string }[]; filterMarketplaces?: { platform: string }[] } | null>(null);
   // Khởi tạo trạng thái ngay từ URL (?status=new) để chỉ gọi API 1 lần đúng bộ lọc, tránh race đè dữ liệu
   const [status, setStatus] = useState(() => {
     const s = searchParams.get("status");
@@ -334,7 +334,8 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
           {data.sellers.length > 0 && (
             <div className="field">
               <label>{t("c.seller")}</label>
-              <select value={sellerId} onChange={(e) => { setSellerId(e.target.value); setPage(1); }}>
+              {/* Đổi seller → xoá luôn Store/Marketplace/Supplier đang chọn để các ô sau co lại theo seller mới */}
+              <select value={sellerId} onChange={(e) => { setSellerId(e.target.value); setStoreId(""); setPlatform(""); setFulfillerId(""); setPage(1); }}>
                 <option value="">{t("o.allWord")}</option>
                 {data.sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
@@ -342,23 +343,24 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
           )}
           <div className="field">
             <label>{t("c.store")}</label>
-            <select value={storeId} onChange={(e) => { setStoreId(e.target.value); setPage(1); }}>
+            <select value={storeId} onChange={(e) => { setStoreId(e.target.value); setPlatform(""); setFulfillerId(""); setPage(1); }}>
               <option value="">{t("o.allWord")}</option>
-              {data.stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {(data.filterStores ?? data.stores).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div className="field">
             <label>{t("c.marketplace")}</label>
-            <select value={platform} onChange={(e) => { setPlatform(e.target.value); setPage(1); }}>
+            <select value={platform} onChange={(e) => { setPlatform(e.target.value); setFulfillerId(""); setPage(1); }}>
               <option value="">{t("o.allWord")}</option>
-              <option value="tiktok">TikTok</option><option value="amazon">Amazon</option><option value="etsy">Etsy</option>
+              {(data.filterMarketplaces?.length ? data.filterMarketplaces.map((m) => m.platform) : ["tiktok", "amazon", "etsy"])
+                .map((p) => <option key={p} value={p}>{({ tiktok: "TikTok", amazon: "Amazon", etsy: "Etsy" } as Record<string, string>)[p] ?? p}</option>)}
             </select>
           </div>
           <div className="field">
             <label>{t("c.supplier")}</label>
             <select value={fulfillerId} onChange={(e) => { setFulfillerId(e.target.value); setPage(1); }}>
               <option value="">{t("o.allWord")}</option>
-              {(data.fulfillers ?? []).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              {(data.filterFulfillers ?? data.fulfillers ?? []).map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
             </select>
           </div>
           <div className="field">
@@ -900,8 +902,8 @@ function SendDesigner({ order, designers, flash, reload }: { order: Order; desig
           <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 8px 24px rgba(20,30,50,.14)", minWidth: 200, padding: 6 }}>
             {sent && !confirmResend ? (
               <div style={{ padding: "4px 4px 2px" }}>
-                <div style={{ padding: "6px 9px", fontSize: 12.5, color: "#12703C", lineHeight: 1.45 }}>✓ Đã gửi cho <b>{order.designer_sent_to}</b>.<br />Gửi lại sẽ tạo tin trùng.</div>
-                <button type="button" onClick={() => setConfirmResend(true)} style={{ display: "block", width: "100%", textAlign: "center", background: "#FBEAE7", color: "var(--red)", border: "1px solid #F3C6C0", padding: "7px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 700, marginTop: 4 }}>Gửi lại (chọn designer)</button>
+                <div style={{ padding: "6px 9px", fontSize: 12.5, color: "#12703C", lineHeight: 1.45 }}>✓ Already sent to <b>{order.designer_sent_to}</b>.<br />Resending will create a duplicate.</div>
+                <button type="button" onClick={() => setConfirmResend(true)} style={{ display: "block", width: "100%", textAlign: "center", background: "#FBEAE7", color: "var(--red)", border: "1px solid #F3C6C0", padding: "7px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 700, marginTop: 4 }}>Resend (choose designer)</button>
               </div>
             ) : designerList}
           </div>
