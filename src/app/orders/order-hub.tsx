@@ -121,7 +121,7 @@ function trackingUrl(carrier: string | null, num: string): string {
   return `https://parcelsapp.com/en/tracking/${num}`;
 }
 
-export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false, canChangeStatus = false, canDuplicate = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean; canChangeStatus?: boolean; canDuplicate?: boolean }) {
+export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false, isSeller = false, canChangeStatus = false, canDuplicate = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean; isSeller?: boolean; canChangeStatus?: boolean; canDuplicate?: boolean }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: Opt[]; fulfillers: { id: string; name: string }[]; designers?: { id: string; name: string; team: string | null }[] } | null>(null);
   // Khởi tạo trạng thái ngay từ URL (?status=new) để chỉ gọi API 1 lần đúng bộ lọc, tránh race đè dữ liệu
@@ -425,7 +425,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
 
       {/* Cards */}
       {data.orders.map((o) => (
-        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin} canDuplicate={canDuplicate} designers={data.designers ?? []}
+        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin} isSeller={isSeller} canDuplicate={canDuplicate} designers={data.designers ?? []}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
           reload={load} flash={flash} openDup={(id, label) => setDupFor({ id, label })} copyText={copyText}
           fulfillers={data.fulfillers} />
@@ -862,13 +862,20 @@ function DuplicateModal({ init, close, onConfirm }: {
 function SendDesigner({ order, designers, flash, reload }: { order: Order; designers: { id: string; name: string; team: string | null }[]; flash: (m: string) => void; reload: () => void }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  const teamDesigners = order.seller_team ? designers.filter((d) => d.team === order.seller_team) : designers;
+  const teamDesigners = designers.filter((d) => order.seller_team && d.team === order.seller_team);
   const send = async (d: { id: string; name: string }) => {
     setOpen(false); setBusy(true);
-    const j = await fetch(`/api/orders/${order.id}/send-designer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designerId: d.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    setBusy(false);
-    if (j.ok) { flash(`✓ Sent to ${j.designer}${j.photos ? ` · ${j.photos} photo(s)` : ""}${j.photoWarn ? ` (photo error: ${j.photoWarn})` : ""}`); reload(); }
-    else flash("✗ " + (j.error ?? "Error"));
+    try {
+      const r = await fetch(`/api/orders/${order.id}/send-designer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designerId: d.id }) });
+      const raw = await r.text();
+      let j: { ok?: boolean; designer?: string; photos?: number; photoWarn?: string; error?: string } | null = null;
+      try { j = JSON.parse(raw); } catch { /* không phải JSON */ }
+      if (j?.ok) { flash(`✓ Sent to ${j.designer}${j.photos ? ` · ${j.photos} photo(s)` : ""}${j.photoWarn ? ` (photo error: ${j.photoWarn})` : ""}`); reload(); }
+      else if (j) flash("✗ " + (j.error ?? `HTTP ${r.status}`));
+      else flash(`✗ HTTP ${r.status}${r.status === 404 ? " — API send-designer chưa được deploy" : ""}`);
+    } catch (e) {
+      flash("✗ " + (String((e as Error)?.message ?? e).slice(0, 120) || "network"));
+    } finally { setBusy(false); }
   };
   const sent = !!order.designer_sent_to;
   return (
@@ -892,8 +899,8 @@ function SendDesigner({ order, designers, flash, reload }: { order: Order; desig
   );
 }
 
-function OrderCard({ o, canEdit, canPushFf, isAdmin, canDuplicate = false, designers = [], selected, onToggleSel, reload, flash, openDup, copyText, fulfillers }: {
-  o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; canDuplicate?: boolean; designers?: { id: string; name: string; team: string | null }[]; selected: boolean; onToggleSel: () => void;
+function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplicate = false, designers = [], selected, onToggleSel, reload, flash, openDup, copyText, fulfillers }: {
+  o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; isSeller?: boolean; canDuplicate?: boolean; designers?: { id: string; name: string; team: string | null }[]; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
   openDup: (id: string, label: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
 }) {
@@ -1274,7 +1281,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, canDuplicate = false, desig
           </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", flexShrink: 0 }}>
           {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
-          <SendDesigner order={o} designers={designers} flash={flash} reload={reload} />
+          {isSeller && <SendDesigner order={o} designers={designers} flash={flash} reload={reload} />}
           {(isAdmin || canDuplicate) && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "")} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
       </div>

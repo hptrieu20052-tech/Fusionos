@@ -24,6 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const designerId = String(b?.designerId ?? "");
   if (!designerId) return NextResponse.json({ ok: false, error: "designerId required" }, { status: 400 });
 
+  try {
   // Đơn + seller (tên + team)
   const order = (await db.execute(sql`
     SELECT o.id, o.external_id, o.order_label, o.buyer_note, o.seller_id,
@@ -89,6 +90,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     await db.update(schema.orders).set({ designerSentTo: designer.name, designerSentAt: new Date() }).where(eq(schema.orders.id, order.id));
     return NextResponse.json({ ok: true, designer: designer.name, photos: photos.length, mockups: mockups.length, photoWarn: photoErr || undefined });
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "telegram: " + String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
+  }
+  } catch (e) {
+    // Lỗi DB (thiếu cột migration, kết nối…) → luôn trả JSON để client hiện đúng lý do, không phải "network".
+    return NextResponse.json({ ok: false, error: "server: " + String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
 }
