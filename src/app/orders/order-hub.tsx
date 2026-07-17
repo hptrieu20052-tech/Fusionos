@@ -1414,13 +1414,20 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
           <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 700 }}>Customer photos · {it.files.length}</div>
             {it.files.map((f, i) => {
-              const thumb = f.url.replace(/ipf_fullxfull/i, "ipf_300x300"); // hiện nhẹ; tải là bản full
+              const full = (f.url || "").replace(/ipf_\d+x\d+/i, "ipf_fullxfull");   // luôn bản gốc để zoom/tải
+              const thumb = full.replace(/ipf_fullxfull/i, "ipf_340x270");           // bản nhỏ để hiển thị nhẹ
+              // Dọn tên: bỏ phần dung lượng dính đuôi (vd "IMG_6908.JPG23.42 kb" → "IMG_6908.JPG").
+              let name = (f.name || "").replace(/\s*\d+(\.\d+)?\s*(kb|mb|gb)\s*$/i, "").trim();
+              if (!/\.(jpe?g|png|webp|gif|heic|heif|pdf)$/i.test(name)) {
+                const m = name.match(/[\w.\-()]+?\.(?:jpe?g|png|webp|gif|heic|heif|pdf)/i);
+                name = m ? m[0] : (full.split("?")[0].split("/").pop() || "photo.jpg");
+              }
               return (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--line)", borderRadius: 10, padding: "6px 9px", background: "#fff" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={thumb} alt={f.name} loading="lazy" onClick={() => setZoom(f.url)} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 7, cursor: "zoom-in", background: "#EEF1F5" }} />
-                <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.name}>{f.name}</span>
-                <a href={`/api/etsy-file?url=${encodeURIComponent(f.url)}&name=${encodeURIComponent(f.name)}`} title="Download full image" style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 8, border: "1px solid var(--line)", color: "var(--muted)", flexShrink: 0 }}><IconDownload width={14} height={14} /></a>
+                <img src={thumb} alt={name} loading="lazy" onClick={() => setZoom(full)} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 7, cursor: "zoom-in", background: "#EEF1F5" }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={name}>{name}</span>
+                <a href={`/api/etsy-file?url=${encodeURIComponent(full)}&name=${encodeURIComponent(name)}`} title="Download full image" style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 8, border: "1px solid var(--line)", color: "var(--muted)", flexShrink: 0 }}><IconDownload width={14} height={14} /></a>
               </div>
               );
             })}

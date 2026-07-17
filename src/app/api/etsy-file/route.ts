@@ -11,16 +11,25 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   const sp = new URL(req.url).searchParams;
-  const url = sp.get("url") ?? "";
-  const name = (sp.get("name") || "photo.jpg").replace(/[\r\n"]/g, "").slice(0, 150);
-  if (!/^https:\/\/i\.etsystatic\.com\//i.test(url)) return NextResponse.json({ ok: false, error: "invalid url" }, { status: 400 });
+  const raw = sp.get("url") ?? "";
+  if (!/^https:\/\/i\.etsystatic\.com\//i.test(raw)) return NextResponse.json({ ok: false, error: "invalid url" }, { status: 400 });
+  // Luôn tải bản gốc fullxfull (dù link truyền vào là thumbnail).
+  const url = raw.replace(/ipf_\d+x\d+/i, "ipf_fullxfull");
+  // Dọn tên: bỏ dung lượng dính đuôi + đảm bảo có đuôi ảnh.
+  let name = (sp.get("name") || "").replace(/[\r\n"]/g, "").replace(/\s*\d+(\.\d+)?\s*(kb|mb|gb)\s*$/i, "").trim();
   try {
     const r = await fetch(url, { signal: AbortSignal.timeout(20000) });
     if (!r.ok) return NextResponse.json({ ok: false, error: `upstream ${r.status}` }, { status: 502 });
+    const ct = r.headers.get("content-type") ?? "image/jpeg";
+    if (!/\.(jpe?g|png|webp|gif|heic|heif|pdf)$/i.test(name)) {
+      const ext = /png/i.test(ct) ? "png" : /webp/i.test(ct) ? "webp" : /gif/i.test(ct) ? "gif" : /pdf/i.test(ct) ? "pdf" : "jpg";
+      name = (name || (url.split("?")[0].split("/").pop() || "photo")).replace(/\.[^.]*$/, "") + "." + ext;
+    }
+    name = name.slice(0, 150);
     const buf = await r.arrayBuffer();
     return new NextResponse(buf, {
       headers: {
-        "Content-Type": r.headers.get("content-type") ?? "image/jpeg",
+        "Content-Type": ct,
         "Content-Disposition": `attachment; filename="${name}"`,
         "Cache-Control": "private, max-age=3600",
       },
