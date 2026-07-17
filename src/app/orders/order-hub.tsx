@@ -867,16 +867,16 @@ function SendDesigner({ order, designers, flash, reload }: { order: Order; desig
     setOpen(false); setBusy(true);
     const j = await fetch(`/api/orders/${order.id}/send-designer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ designerId: d.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setBusy(false);
-    if (j.ok) { flash(`✓ Đã gửi ${j.designer}${j.photos ? ` · ${j.photos} ảnh` : ""}${j.photoWarn ? ` (ảnh lỗi: ${j.photoWarn})` : ""}`); reload(); }
+    if (j.ok) { flash(`✓ Sent to ${j.designer}${j.photos ? ` · ${j.photos} photo(s)` : ""}${j.photoWarn ? ` (photo error: ${j.photoWarn})` : ""}`); reload(); }
     else flash("✗ " + (j.error ?? "Error"));
   };
   const sent = !!order.designer_sent_to;
   return (
     <div style={{ position: "relative" }}>
       <button type="button" onClick={() => setOpen((v) => !v)} disabled={busy}
-        style={{ ...btnGhost, color: sent ? "#1E8E4E" : "#0e8a5f", borderColor: "#BFE3CC", background: sent ? "#E7F6EC" : "#EAF7F0", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6, cursor: busy ? "wait" : "pointer" }}
-        title={sent ? `Đã gửi ${order.designer_sent_to}` : "Gửi đơn cho designer qua Telegram"}>
-        <IconSend width={13} height={13} /> {busy ? "Đang gửi…" : sent ? `Đã gửi · ${order.designer_sent_to}` : "Gửi Designer"} <span style={{ fontSize: 10 }}>▾</span>
+        style={{ ...btnGhost, width: "100%", color: sent ? "#1E8E4E" : "#0e8a5f", borderColor: "#BFE3CC", background: sent ? "#E7F6EC" : "#EAF7F0", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, cursor: busy ? "wait" : "pointer" }}
+        title={sent ? `Sent to ${order.designer_sent_to}` : "Send order to designer via Telegram"}>
+        <IconSend width={13} height={13} /> {busy ? "Sending…" : sent ? `Sent · ${order.designer_sent_to}` : "Send to Designer"} <span style={{ fontSize: 10 }}>▾</span>
       </button>
       {open && (
         <>
@@ -884,7 +884,7 @@ function SendDesigner({ order, designers, flash, reload }: { order: Order; desig
           <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 8px 24px rgba(20,30,50,.14)", minWidth: 190, padding: 6 }}>
             {teamDesigners.length ? teamDesigners.map((d) => (
               <button key={d.id} type="button" onClick={() => send(d)} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: 0, padding: "8px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{d.name}</button>
-            )) : <div style={{ padding: "9px 11px", fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>Team chưa có designer nào (kèm Telegram chat ID). Admin điền chat ID ở bảng Staff.</div>}
+            )) : <div style={{ padding: "9px 11px", fontSize: 12, color: "var(--muted)", lineHeight: 1.4 }}>No designer in this team has a Telegram chat ID yet. Admin sets it in Staff.</div>}
           </div>
         </>
       )}
@@ -1272,9 +1272,9 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, canDuplicate = false, desig
               </>
             )}
           </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", flexShrink: 0 }}>
+          {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
           <SendDesigner order={o} designers={designers} flash={flash} reload={reload} />
-          {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
           {(isAdmin || canDuplicate) && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "")} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
       </div>
