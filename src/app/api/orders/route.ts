@@ -120,6 +120,7 @@ export async function GET(req: NextRequest) {
       imageUrl: (i.image_url as string | null) ?? null,
       productUrl: (i.product_url as string | null) ?? null,
       variant: (i.variant as string | null) ?? null,
+      files: Array.isArray(i.buyer_files) ? (i.buyer_files as { name: string; url: string }[]) : [],
       ...(i.design_id ? { suggests: [], custom: false, baseDesign: null }
                       : (suggestMap.get(i.id as string) ?? { suggests: [], custom: false, baseDesign: null })),
     })),

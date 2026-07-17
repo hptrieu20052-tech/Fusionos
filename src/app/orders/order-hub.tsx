@@ -15,6 +15,7 @@ type Item = {
   design_id: string | null; design_sku: number | null; design_title: string | null; personalization: string | null;
   special_print: boolean; designThumb: string | null; mockupUrl: string | null;
   imageUrl?: string | null; productUrl?: string | null; variant?: string | null;
+  files?: { name: string; url: string }[]; // ảnh khách upload trên Etsy (thumbnail + tải)
   designSides?: { kind: string; label: string; thumb: string | null; original: string | null }[];
   suggests?: Suggest[];
   custom?: boolean;
@@ -119,7 +120,7 @@ function trackingUrl(carrier: string | null, num: string): string {
   return `https://parcelsapp.com/en/tracking/${num}`;
 }
 
-export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false, canChangeStatus = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean; canChangeStatus?: boolean }) {
+export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = false, canChangeStatus = false, canDuplicate = false }: { canEdit?: boolean; canPushFf?: boolean; ownOnly?: boolean; isAdmin?: boolean; canChangeStatus?: boolean; canDuplicate?: boolean }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState<{ orders: Order[]; counts: Record<string, number>; total: number; sellers: { id: string; name: string }[]; stores: Opt[]; fulfillers: { id: string; name: string }[] } | null>(null);
   // Khởi tạo trạng thái ngay từ URL (?status=new) để chỉ gọi API 1 lần đúng bộ lọc, tránh race đè dữ liệu
@@ -423,7 +424,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
 
       {/* Cards */}
       {data.orders.map((o) => (
-        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin}
+        <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin} canDuplicate={canDuplicate}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
           reload={load} flash={flash} openDup={(id, label) => setDupFor({ id, label })} copyText={copyText}
           fulfillers={data.fulfillers} />
@@ -856,8 +857,8 @@ function DuplicateModal({ init, close, onConfirm }: {
   );
 }
 
-function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, reload, flash, openDup, copyText, fulfillers }: {
-  o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; selected: boolean; onToggleSel: () => void;
+function OrderCard({ o, canEdit, canPushFf, isAdmin, canDuplicate = false, selected, onToggleSel, reload, flash, openDup, copyText, fulfillers }: {
+  o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; canDuplicate?: boolean; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
   openDup: (id: string, label: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
 }) {
@@ -1073,22 +1074,15 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
                 </div>
               )}
               <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ") || t("o.noAddress")}</span></div>
-              {/* Note của KHÁCH (message from buyer trên Etsy) — nền cam, click để copy. */}
-              {o.buyer_note && (
-                <div title="Click to copy customer note" onClick={(e) => { e.stopPropagation(); copyText(o.buyer_note!); }}
-                  style={{ marginTop: 8, background: "#FFF3E6", border: "1px solid #F6D8B8", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: "#8A5A1E", lineHeight: 1.55, whiteSpace: "pre-wrap", cursor: "pointer" }}>
-                  {o.buyer_note}
-                </div>
-              )}
+              {/* Note khách/seller đã dời xuống khu item (dưới Variants) — xem ItemRow. */}
               {/* Tài chính đơn */}
               <div className="o2-fin">
                 <div className="c"><span className="k">{t("o.total")}</span><span className="v">{money(o.total)}</span></div>
                 <div className="c"><span className="k">{t("o.fee")}</span><span className="v">{money(o.platform_fee)}</span></div>
                 <div className="c net"><span className="k">{t("o.afterFee")}</span><span className="v">{money(Number(o.total) - Number(o.platform_fee))}</span></div>
               </div>
-              {/* Vùng thao tác: ghi chú + tracking/chi phí */}
+              {/* Vùng thao tác: tracking/chi phí */}
               <div className="o2-actions">
-                <OrderNote order={o} canEdit={canEdit} onSaved={reload} flash={flash} />
               {/* Tracking / chi phí — seller cũng xem được nếu đơn đã đẩy; chỉ người có quyền đẩy mới nhập tay */}
               {detail && ((detail.ffOrders?.length ?? 0) > 0 || canPushFf) && (
                 <div className="o2-track">
@@ -1245,7 +1239,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
           </div>
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexShrink: 0 }}>
           {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
-          {isAdmin && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "")} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
+          {(isAdmin || canDuplicate) && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "")} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
       </div>
       {showIssue && <IssueModal order={o} fulfillers={fulfillers}
@@ -1260,6 +1254,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, selected, onToggleSel, relo
           showPicker={canPushFf && !!detail && canCreate && !!ffSel}
           reviewLine={canPushFf ? reviewLine : null}
           fulfillerId={ffSel} pickerSeed={variants}
+          order={o} showNotes={idx === 0}
           line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
           setLine={(v) => setLines({ ...lines, [it.id]: v })} />;
       })}
@@ -1302,12 +1297,13 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   );
 }
 
-function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine, reviewLine = null }: {
+function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine, reviewLine = null, order, showNotes = false }: {
   it: Item; onSaved: () => void; flash: (m: string) => void; canEdit?: boolean;
   showPicker?: boolean; fulfillerId?: string; pickerSeed?: Variant[];
   line?: { mappingId: string; qty: number; unitCost?: number }; setLine?: (v: { mappingId: string; qty: number; unitCost?: number }) => void;
   /** Đơn ĐÃ ĐẨY (status=created): dòng đã gửi nhà in → hiện panel CHỈ ĐỌC để đối chiếu */
   reviewLine?: { product: string; variant: string | null; sku: string; qty: number } | null;
+  order?: Order; showNotes?: boolean; // Note cấp đơn — chỉ hiện dưới item đầu tiên
 }) {
   const { t } = useLang();
   const [sideIdx, setSideIdx] = useState(0); // mặt đang xem lớn (design nhiều mặt: photo book 24 trang, calendar 26 mặt)
@@ -1383,20 +1379,20 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
             decodeEntities() để đơn CŨ trong DB (còn dính &quot;) cũng hiện đúng, không cần backfill. */}
         {(() => {
           const parts = splitVariant(it.variant as string | null);
-          if (!parts.length) return null;
-          // Copy full variants dạng "label: value" mỗi dòng (kèm personalization nếu có) — gửi designer làm mẫu cho nhanh.
+          const pz = decodeEntities((it.personalization ?? "").trim());
+          // Personalization GỘP vào Variants: thêm 1 dòng nếu chưa nằm sẵn trong variant.
+          const lines: { label: string | null; value: string }[] = parts.map((v: VariantPart) => ({ label: v.label ?? null, value: v.value }));
+          if (pz && !parts.some((p) => (p.value || "").includes(pz.slice(0, 20)))) lines.push({ label: t("o.personalization"), value: pz });
+          if (!lines.length) return null;
+          // Click cả vùng để copy toàn bộ (label: value) — gửi designer làm mẫu nhanh.
           const copyDetails = () => {
-            const lines = parts.map((v: VariantPart) => (v.label ? `${v.label}: ${v.value}` : v.value));
-            const pz = (it.personalization ?? "").trim();
-            if (pz && !parts.some((p) => (p.value || "").includes(pz))) lines.push(`Personalization: ${pz}`);
-            navigator.clipboard?.writeText(lines.join("\n"));
+            navigator.clipboard?.writeText(lines.map((v) => (v.label ? `${v.label}: ${v.value}` : v.value)).join("\n"));
             flash(t("d.copied"));
           };
           return (
-            // Cả khối Variants là 1 vùng nền màu — click bất kỳ đâu trong vùng là copy toàn bộ (label: value).
             <div onClick={copyDetails} title="Click to copy all details"
               style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.5, background: "#EEF4FF", border: "1px solid #D5E3FB", borderRadius: 9, padding: "8px 11px", cursor: "pointer" }}>
-              {parts.map((v: VariantPart, i: number) => (
+              {lines.map((v, i) => (
                 <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {v.label && <span style={{ color: "var(--muted)", fontWeight: 500, flexShrink: 0 }}>{v.label}</span>}
                   <span style={{ color: "var(--ink)", fontWeight: 700 }}>{v.value}</span>
@@ -1405,6 +1401,20 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
             </div>
           );
         })()}
+        {/* Ảnh khách upload (Etsy) — thumbnail + tải, bố cục như Etsy */}
+        {it.files && it.files.length > 0 && (
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 700 }}>Customer photos · {it.files.length}</div>
+            {it.files.map((f, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--line)", borderRadius: 10, padding: "6px 9px", background: "#fff" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={f.url} alt={f.name} onClick={() => setZoom(f.url)} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 7, cursor: "zoom-in", background: "#EEF1F5" }} />
+                <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={f.name}>{f.name}</span>
+                <a href={f.url} download={f.name} target="_blank" rel="noreferrer" title="Download" style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 8, border: "1px solid var(--line)", color: "var(--muted)", flexShrink: 0 }}><IconDownload width={14} height={14} /></a>
+              </div>
+            ))}
+          </div>
+        )}
         {it.productUrl && (
           <a href={it.productUrl} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11.5, color: "#E0913C", fontWeight: 700, textDecoration: "none", marginTop: 3 }}>
             {t("o.viewOnEtsy")} ↗
@@ -1415,7 +1425,24 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
           {it.internal_sku && <span>SKU: <b style={{ color: "var(--ink)" }}>{it.internal_sku}</b></span>}
           <span>{t("o.price")}: <b style={{ color: "var(--ink)" }}>{money(it.unit_price)}</b></span>
         </div>
-        <Personalization it={it} onSaved={onSaved} flash={flash} />
+        {/* Note khách (nền cam) ở TRÊN — Note seller (nền đỏ) ở dưới. Chỉ hiện dưới item đầu (note cấp đơn). */}
+        {showNotes && order && (
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+            {order.buyer_note && (
+              <div title="Click to copy customer note" onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(order.buyer_note!); flash(t("d.copied")); }}
+                style={{ background: "#FFF3E6", border: "1px solid #F6D8B8", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: "#8A5A1E", lineHeight: 1.55, whiteSpace: "pre-wrap", cursor: "pointer" }}>
+                <b style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, display: "block", marginBottom: 3, opacity: 0.8 }}>Customer note</b>
+                {order.buyer_note}
+              </div>
+            )}
+            {canEdit ? <SellerNote order={order} onSaved={onSaved} flash={flash} /> : (order.note && (
+              <div style={{ background: "#FDECEC", border: "1px solid #F3C6C0", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: "#B03A34", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+                <b style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, display: "block", marginBottom: 3, opacity: 0.85 }}>Seller note</b>
+                {order.note}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {/* Gán design — nhãn DesignId gắn liền + preview bên dưới (theo mẫu) */}
       <div className="o2-assigncol">
@@ -1784,7 +1811,8 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
   );
 }
 
-function OrderNote({ order, canEdit, onSaved, flash }: { order: Order; canEdit: boolean; onSaved: () => void; flash: (m: string) => void }) {
+// Note của SELLER (nội bộ) — nền đỏ, nút "Add Note From Seller". Nằm dưới Note khách trong khu item.
+function SellerNote({ order, onSaved, flash }: { order: Order; onSaved: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
   const [editing, setEditing] = useState(false);
   const [v, setV] = useState(order.note ?? "");
@@ -1793,52 +1821,21 @@ function OrderNote({ order, canEdit, onSaved, flash }: { order: Order; canEdit: 
     if (j.ok) { flash(t("o.savedNote")); setEditing(false); onSaved(); } else flash("✗ " + (j.error ?? "Error"));
   };
   if (editing) return (
-    <div style={{ display: "flex", gap: 8, marginTop: 8, maxWidth: 560 }}>
+    <div style={{ display: "flex", gap: 8, maxWidth: 560 }}>
       <input autoFocus value={v} onChange={(e) => setV(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save()}
-        placeholder={t("o.notePlaceholder")} style={{ ...inp, flex: 1 }} />
+        placeholder="Note from seller…" style={{ ...inp, flex: 1 }} />
       <button onClick={save} style={btnBlue}>{t("c.save")}</button>
       <button onClick={() => setEditing(false)} style={btnGhost}>{t("c.cancel")}</button>
     </div>
   );
   return order.note ? (
-    <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginTop: 8, background: "var(--blue-soft)", borderRadius: 10, padding: "7px 14px", fontSize: 13, maxWidth: 560 }}>
-      <span>{order.note}</span>
-      {canEdit && <button onClick={() => { setV(order.note ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: 12, padding: 0 }}>{t("c.edit")}</button>}
+    <div style={{ background: "#FDECEC", border: "1px solid #F3C6C0", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: "#B03A34", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+      <b style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, display: "block", marginBottom: 3, opacity: 0.85 }}>Seller note</b>
+      {order.note}
+      <button onClick={() => { setV(order.note ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "#B03A34", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 8, fontWeight: 700, textDecoration: "underline" }}>{t("c.edit")}</button>
     </div>
-  ) : canEdit ? (
-    <button onClick={() => setEditing(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 8, background: "none", border: "1px dashed var(--line)", color: "var(--muted)", borderRadius: 8, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>+ {t("o.addNote")}</button>
-  ) : null;
-}
-
-function Personalization({ it, onSaved, flash }: { it: Item; onSaved: () => void; flash: (m: string) => void }) {
-  const { t } = useLang();
-  const [editing, setEditing] = useState(false);
-  const [v, setV] = useState(it.personalization ?? "");
-  const save = async () => {
-    const j = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ personalization: v }) }).then((r) => r.json());
-    if (j.ok) { flash(t("o.savedPerso")); setEditing(false); onSaved(); } else flash("✗ " + (j.error ?? "Error"));
-  };
-  if (editing) return (
-    <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-      <textarea autoFocus value={v} onChange={(e) => setV(e.target.value)} rows={2}
-        placeholder={t("o.persoPlaceholder")} style={{ ...inp, flex: 1, resize: "vertical" }} />
-      <span style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <button onClick={save} style={btnBlue}>{t("c.save")}</button>
-        <button onClick={() => setEditing(false)} style={btnGhost}>{t("c.cancel")}</button>
-      </span>
-    </div>
-  );
-  return (
-    <div style={{ marginTop: 6, fontSize: 13 }}>
-      {/* Etsy "Custom options" giờ nằm sẵn trong variant (tách dòng như trên Etsy) → không hiện lại
-          ô vàng nữa cho khỏi lặp. Chỉ hiện khi nội dung KHÔNG có trong variant (staff tự thêm tay). */}
-      {it.personalization && !decodeEntities(it.variant).includes(decodeEntities(it.personalization).slice(0, 20))
-        ? <span style={{ background: "var(--amber-soft)", borderRadius: 8, padding: "4px 10px", display: "inline-block" }}>
-            <b>{t("o.personalization")}:</b> {decodeEntities(it.personalization)}
-            <button onClick={() => { setV(it.personalization ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", fontSize: 12, marginLeft: 8, padding: 0 }}>{t("c.edit")}</button>
-          </span>
-        : <button onClick={() => setEditing(true)} style={{ background: "none", border: "none", color: "var(--muted)", cursor: "pointer", fontSize: 12, padding: 0, textDecoration: "underline" }}>+ {t("o.addPersonalization")}</button>}
-    </div>
+  ) : (
+    <button onClick={() => setEditing(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#FDECEC", border: "1px dashed #F3C6C0", color: "#B03A34", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", alignSelf: "flex-start" }}>+ Add Note From Seller</button>
   );
 }
 

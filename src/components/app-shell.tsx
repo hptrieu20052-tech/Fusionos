@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
-  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing,
+  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing, IconBell,
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 
@@ -169,6 +169,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
               </div>
             )}
           </nav>
+          <NotificationBell />
           <div className="topnav-user" style={{ position: "relative" }}>
             <button type="button" className="topnav-avatar-btn" onClick={() => setUserOpen((v) => !v)} aria-label="Account menu">
               <div className="user-avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit", display: "block" }} /> : initials}</div>
@@ -230,7 +231,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
                   <div key="__hub">
                     <button type="button" onClick={() => setMobileHub((v) => !v)}
                       className={`mobile-nav-item${hubActive ? " active" : ""}`}
-                      style={{ width: "100%", background: "none", border: 0, font: "inherit", cursor: "pointer", textAlign: "left" }}>
+                      style={{ width: "100%", background: "none", border: 0, fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
                       <span className="topnav-ic"><IconBox width={18} height={18} /></span>
                       Seller Hub
                       <span style={{ marginLeft: "auto", fontSize: 12, opacity: 0.7 }}>{mobileHub ? "▾" : "▸"}</span>
@@ -297,5 +298,57 @@ function BackToTop() {
         <path d="M6 14l6-6 6 6" />
       </svg>
     </button>
+  );
+}
+
+// ===== Chuông thông báo — hiện tại chỉ báo khi có bản EXTENSION mới (admin publish) =====
+function NotificationBell() {
+  const [open, setOpen] = useState(false);
+  const [ver, setVer] = useState<{ version: string; notes?: string } | null>(null);
+  const [seen, setSeen] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    try { setSeen(localStorage.getItem("fusion_seen_ext_ver")); } catch { /* ignore */ }
+    fetch("/api/extension/version", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { if (alive && j?.version) setVer({ version: String(j.version), notes: j.notes }); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  // Có bản mới nếu version tải về khác với version user đã xem lần cuối.
+  const hasNew = !!(ver && ver.version && ver.version !== seen);
+  const markSeen = () => { if (ver?.version) { try { localStorage.setItem("fusion_seen_ext_ver", ver.version); } catch { /* ignore */ } setSeen(ver.version); } };
+
+  return (
+    <div style={{ position: "relative", marginRight: 6 }}>
+      <button type="button" aria-label="Notifications" onClick={() => { setOpen((v) => !v); if (!open) markSeen(); }}
+        style={{ position: "relative", width: 38, height: 38, borderRadius: 10, border: "1px solid var(--line)", background: "var(--card)", cursor: "pointer", display: "grid", placeItems: "center", color: "var(--muted)" }}>
+        <IconBell width={18} height={18} />
+        {hasNew && <span style={{ position: "absolute", top: 7, right: 8, width: 8, height: 8, borderRadius: "50%", background: "#E5484D", border: "2px solid var(--card)" }} />}
+      </button>
+      {open && (
+        <>
+          <div style={{ position: "fixed", inset: 0, zIndex: 94 }} onClick={() => setOpen(false)} />
+          <div className="topnav-more-menu" style={{ minWidth: 288, right: 0, zIndex: 95 }}>
+            <div style={{ padding: "9px 13px 7px", borderBottom: "1px solid var(--line)", fontWeight: 800, fontSize: 13 }}>Notifications</div>
+            {ver ? (
+              <a href="/extension/" target="_blank" rel="noreferrer" className="topnav-more-item" style={{ alignItems: "flex-start", gap: 9, whiteSpace: "normal", padding: "10px 13px" }}>
+                <span className="topnav-ic" style={{ marginTop: 1 }}><IconBox width={17} height={17} /></span>
+                <span>
+                  <span style={{ fontWeight: 700, fontSize: 12.5 }}>Fusion Etsy Extension v{ver.version}</span>
+                  <span style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                    {hasNew ? "New version available — click to download & update ↗" : (ver.notes && ver.notes !== "bundled" ? ver.notes : "You're on the latest version.")}
+                  </span>
+                </span>
+              </a>
+            ) : (
+              <div style={{ padding: "14px 13px", fontSize: 12.5, color: "var(--muted)" }}>No new notifications.</div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

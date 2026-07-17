@@ -7,6 +7,7 @@ import { decodeEntities } from "@/lib/variant-display";
 export type InItem = {
   title?: string; sku?: string; qty?: number; price?: number;
   variant?: string; personalization?: string; listingId?: string; productUrl?: string; imageUrl?: string;
+  files?: { name: string; url: string }[]; // ảnh khách upload trên Etsy
 };
 export type InOrder = {
   externalId?: string; buyerFirst?: string; buyerLast?: string;
@@ -82,6 +83,10 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
             const inPz = s(inIt.personalization);
             if (inPz && (blank(ex.personalization) || inPz.length > (ex.personalization?.length ?? 0))) ip.personalization = inPz;
             if (s(inIt.listingId) && !ex.etsyListingId) ip.etsyListingId = s(inIt.listingId);
+            // Ảnh khách upload: điền khi chưa có, hoặc khi bản mới có NHIỀU ảnh hơn.
+            const inFiles = Array.isArray(inIt.files) ? inIt.files : [];
+            const exFiles = Array.isArray(ex.buyerFiles) ? (ex.buyerFiles as unknown[]) : [];
+            if (inFiles.length && inFiles.length >= exFiles.length) ip.buyerFiles = inFiles;
             const inPrice = num(inIt.price);
             if (inPrice > 0 && (!ex.unitPrice || Number(ex.unitPrice) === 0)) ip.unitPrice = (inPrice / fx).toFixed(2);
             if (Object.keys(ip).length) { await db.update(schema.orderItems).set(ip).where(eq(schema.orderItems.id, ex.id)); itemUpdated = true; }
@@ -129,6 +134,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
           etsyListingId: s(it.listingId),
           productUrl: s(it.productUrl),
           imageUrl: s(it.imageUrl),
+          buyerFiles: Array.isArray(it.files) && it.files.length ? it.files : null,
         });
       }
       created++;

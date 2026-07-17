@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  // Nhân bản đơn chỉ dành cho admin (staff/seller đã ẩn ở UI)
-  if (session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // Nhân bản đơn: admin + support (seller vẫn ẩn ở UI)
+  if (session.role !== "admin" && session.role !== "support") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const o = (await db.execute(sql`SELECT * FROM orders WHERE id = ${params.id}::uuid`)).rows[0] as Record<string, unknown> | undefined;
   if (!o) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });

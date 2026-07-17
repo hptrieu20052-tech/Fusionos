@@ -118,6 +118,7 @@ export const orderItems = pgTable("order_items", {
   productUrl: text("product_url"),
   etsyListingId: text("etsy_listing_id"),
   mockupKey: text("mockup_key"),
+  buyerFiles: jsonb("buyer_files"), // ảnh khách upload trên Etsy: [{name,url}]
 }, (t) => [
   index("idx_items_order").on(t.orderId),
   index("idx_items_design").on(t.designId),
