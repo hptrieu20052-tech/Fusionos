@@ -48,8 +48,8 @@ export async function orGenerateImage(prompt: string, refDataUrls: string[], opt
     model: opts?.model ?? IMAGE_MODEL(),
     prompt,
     output_format: opts?.outputFormat ?? "png",
-    quality: opts?.quality ?? "high",
   };
+  if (opts?.quality) body.quality = opts.quality;          // không ép → dùng mặc định model (nhanh hơn)
   if (opts?.aspectRatio) body.aspect_ratio = opts.aspectRatio;
   if (opts?.resolution) body.resolution = opts.resolution;
   const refs = refDataUrls.filter(Boolean);

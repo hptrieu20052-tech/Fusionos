@@ -40,8 +40,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     // Kích thước in: Page 3450×2550 (tỉ lệ 23:17). Cover 7470×3000 (~2.49:1) — làm ở khâu cover riêng.
     // Sinh đúng TỈ LỆ; số px chính xác resize ở khâu Export.
+    // KHÔNG ép 2K để tránh vượt ~100s gateway timeout (502). Sinh đúng TỈ LỆ ở size mặc định model → nhanh hơn;
+    // số px in chính xác (3450×2550) sẽ upscale ở khâu Export.
     const model = b?.model ? String(b.model) : undefined;
-    const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png", aspectRatio: "23:17", resolution: "2K" });
+    const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png", aspectRatio: "23:17" });
 
     const key = `book-illustrations/${params.id}-p${pageNo}-${Date.now()}.png`;
     await writeFile(key, Buffer.from(img.b64, "base64"), img.mediaType || "image/png");

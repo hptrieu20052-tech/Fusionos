@@ -21,7 +21,11 @@ async function api(url: string, method = "GET", body?: unknown): Promise<ApiResu
     let j: ApiResult | null = null;
     try { j = JSON.parse(raw); } catch { /* không phải JSON */ }
     if (j) return j;
-    return { ok: false, error: `HTTP ${r.status}${r.status === 404 ? " — API chưa deploy" : ""}${raw ? " · " + raw.slice(0, 140) : ""}` };
+    const isHtml = /^\s*</.test(raw);
+    const note = r.status === 404 ? " — API chưa deploy"
+      : (r.status === 502 || r.status === 504) ? " — hết giờ (ảnh sinh quá lâu). Đổi sang model ảnh NHANH (Google nano‑banana) hoặc vẽ từng trang."
+      : isHtml ? "" : (raw ? " · " + raw.slice(0, 120) : "");
+    return { ok: false, error: `HTTP ${r.status}${note}` };
   } catch (e) {
     return { ok: false, error: "network: " + String((e as Error)?.message ?? e).slice(0, 140) };
   }
@@ -187,6 +191,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const [busyPage, setBusyPage] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const [busyAll, setBusyAll] = useState(false);
+  const [previewName, setPreviewName] = useState("Emma"); // tên xem thử để thay {name} khi preview
 
   useEffect(() => { setModel(lsGet("bs_text_model")); setImgModel(lsGet("bs_image_model")); }, []);
   useEffect(() => { api("/api/books/models?type=image").then((j) => { if (j.ok) setImgModels((j.models as { id: string; name: string }[]) ?? []); }); }, []);
@@ -271,6 +276,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
             <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadRef(f); e.target.value = ""; }} />
           </label>
           <input value={stylePrompt} onChange={(e) => setStyleP(e.target.value)} onBlur={saveStyle} placeholder="Style chung (vd soft watercolor, pastel…)" style={{ ...inp, flex: 1, minWidth: 150, fontSize: 12.5 }} />
+          <input value={previewName} onChange={(e) => setPreviewName(e.target.value)} placeholder="Tên xem thử" title="Thay {name} khi xem trước" style={{ ...inp, width: 120, fontSize: 12.5 }} />
           <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="AI vẽ ảnh" style={{ ...inp, width: 200, fontSize: 12, padding: "7px 9px" }}>
             <option value="">— Model ảnh mặc định —</option>
             <ModelOptions models={imgModels} />
@@ -297,8 +303,17 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
                 </div>
                 <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
                   {illus[p.page_no]
-                    // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={illus[p.page_no]} alt={`p${p.page_no}`} style={{ width: "100%", borderRadius: 8, border: "1px solid var(--line)", display: "block" }} />
+                    ? (
+                      <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={illus[p.page_no]} alt={`p${p.page_no}`} style={{ width: "100%", display: "block" }} />
+                        {p.text.trim() && (
+                          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "linear-gradient(transparent, rgba(0,0,0,.62))", color: "#fff", fontSize: 9.5, padding: "16px 7px 6px", lineHeight: 1.3, textAlign: "center", fontWeight: 600, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>
+                            {p.text.replace(/\{name\}/gi, previewName || "Emma")}
+                          </div>
+                        )}
+                      </div>
+                    )
                     : <div style={{ height: 110, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Chưa vẽ</div>}
                   <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no || busyAll} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Đang vẽ…" : illus[p.page_no] ? "↻ Vẽ lại" : "🎨 Vẽ"}</button>
                 </div>
