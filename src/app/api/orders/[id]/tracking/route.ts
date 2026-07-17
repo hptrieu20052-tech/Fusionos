@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 import { markShippedOnTracking } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +49,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       cost,
       trackingSyncedAt: patch.trackingNumber ? new Date() : ffo.trackingSyncedAt,
     }).where(eq(schema.fulfillmentOrders.id, ffo.id));
-    if (patch.trackingNumber) { await autoPushEtsyTracking(params.id); await markShippedOnTracking(params.id); } // CÓ TRACKING mới nhảy Shipped (bug cũ: thiếu {} → sửa SĐT/cost cũng làm đơn Shipped)
+    if (patch.trackingNumber) { await autoPushEtsyTracking(params.id); await autoPushTiktokTracking(params.id); await markShippedOnTracking(params.id); } // CÓ TRACKING mới nhảy Shipped + đẩy Etsy/TikTok (bug cũ: thiếu {} → sửa SĐT/cost cũng làm đơn Shipped)
     return NextResponse.json({ ok: true, id: ffo.id, updated: true });
   }
 

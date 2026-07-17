@@ -106,8 +106,8 @@ async function tick(req: NextRequest) {
         WHERE o.platform='tiktok' AND o.shipping_type='SELLER'
           AND fo.tracking_number IS NOT NULL AND fo.tiktok_tracking_pushed_at IS NULL
           AND o.status NOT IN ('cancel','trash')
-          AND o.ordered_at > now() - interval '20 days'
-        LIMIT 10
+          AND o.ordered_at > now() - interval '60 days'
+        LIMIT 200
       `)).rows as { id: string }[];
       for (const r of rows) {
         if (Date.now() > deadline) break;
