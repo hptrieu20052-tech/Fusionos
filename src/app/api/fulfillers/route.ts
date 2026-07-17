@@ -61,17 +61,20 @@ export async function PATCH(req: NextRequest) {
   if (typeof b.apiEndpoint === "string") patch.apiEndpoint = b.apiEndpoint || null;
   if (typeof b.webhookSecret === "string" && b.webhookSecret) patch.webhookSecret = b.webhookSecret;
   // Credentials: gộp apiKey (token) + shopId (Printify) + identifier + warehouse/carrier (Merchize TikTok Shipping). Giữ giá trị cũ nếu chỉ đổi 1 phần.
-  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "") || (b.identifier !== undefined && b.identifier !== "") || (b.warehouse !== undefined && b.warehouse !== "") || (b.carrier !== undefined && b.carrier !== "")) {
+  // apiKey/shopId/identifier: ô rỗng = KHÔNG đổi (tránh xoá nhầm token). warehouse/carrier: gửi ô (kể cả rỗng) = ĐẶT đúng giá trị đó, rỗng = XOÁ.
+  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "") || (b.identifier !== undefined && b.identifier !== "") || typeof b.warehouse === "string" || typeof b.carrier === "string") {
     const [cur] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.id)).limit(1);
     const prev = (cur?.credentials ?? {}) as Record<string, unknown>;
-    patch.credentials = {
+    const next: Record<string, unknown> = {
       ...prev,
       ...(b.apiKey ? { apiKey: b.apiKey } : {}),
       ...(b.shopId !== undefined && b.shopId !== "" ? { shopId: String(b.shopId) } : {}),
       ...(b.identifier !== undefined && b.identifier !== "" ? { identifier: String(b.identifier) } : {}),
-      ...(b.warehouse !== undefined && b.warehouse !== "" ? { warehouse: String(b.warehouse) } : {}),
-      ...(b.carrier !== undefined && b.carrier !== "" ? { carrier: String(b.carrier) } : {}),
     };
+    // warehouse/carrier: cho phép XOÁ khi để trống
+    if (typeof b.warehouse === "string") { const w = b.warehouse.trim(); if (w) next.warehouse = w; else delete next.warehouse; }
+    if (typeof b.carrier === "string") { const c = b.carrier.trim(); if (c) next.carrier = c; else delete next.carrier; }
+    patch.credentials = next;
   }
   if (typeof b.autoPush === "boolean") patch.autoPush = b.autoPush;
   if (typeof b.logoKey === "string" && b.logoKey) patch.logoKey = b.logoKey;

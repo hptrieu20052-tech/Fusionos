@@ -452,14 +452,18 @@ function merchizeAdapter(): FulfillerAdapter {
       // ===== Đơn SHIP-BY-TIKTOK: dùng endpoint tiktok-shipping (label + tracking của TikTok, KHÔNG cần địa chỉ khách) =====
       if (o.shippingType === "TIKTOK" && o.labelUrl) {
         const cr = c as Record<string, unknown>;
-        const warehouse = String(cr.warehouse ?? cr.merchizeWarehouse ?? "").trim();
+        // Warehouse Merchize NHÚNG trong merchize_sku: [PRODUCT][REGION][số], vd MPTT`VN`000000AA04 → VN, MPTT`US`... → US.
+        // Ưu tiên đọc từ SKU (đúng theo từng sản phẩm); không đọc được mới fallback về warehouse cấu hình ở fulfiller.
+        const skuRegion = (sku: string) => (sku.match(/^[A-Z]+?(VN|US|UK|GB|EU|CN|AU|CA|MX)(?=\d)/)?.[1]) ?? "";
+        const cfgWarehouse = String(cr.warehouse ?? cr.merchizeWarehouse ?? "").trim();
+        const warehouse = skuRegion(String(items[0]?.merchize_sku ?? "")) || cfgWarehouse;
         // Merchize TikTok Shipping CHỈ nhận: USPS, FedEx, Evri, Royal Mail. Chuẩn hoá về tên gốc (vd "USPS Ground Advantage" → "USPS").
         const rawCarrier = (String(cr.carrier ?? cr.shippingProvider ?? "").trim()).toLowerCase();
         const carrier = rawCarrier.includes("fedex") ? "FedEx"
           : rawCarrier.includes("evri") ? "Evri"
           : rawCarrier.includes("royal") ? "Royal Mail"
           : "USPS"; // mặc định + mọi biến thể USPS (Ground Advantage, First Class…)
-        if (!warehouse) return { ...simulate("merchize"), reason: 'Đơn TikTok Shipping: chưa cấu hình Merchize warehouse. Thêm vào credentials Merchize: {"warehouse":"NJ"} (mã kho Merchize của bạn) → đơn KHÔNG lên nhà in.' };
+        if (!warehouse) return { ...simulate("merchize"), reason: `Không xác định được warehouse Merchize cho SKU ${items[0]?.merchize_sku ?? "?"} (SKU không nhúng mã kho VN/US…). Điền Warehouse ở Settings → Fulfillers → Merchize → đơn KHÔNG lên nhà in.` };
         if (!o.shippingTracking) return { ...simulate("merchize"), reason: "Đơn TikTok chưa có tracking number — lấy label TikTok trước rồi đẩy lại." };
         const rtt = await createMerchizeTiktokOrder(baseUrl, apiKey, {
           order_id: extNumber, identifier,
