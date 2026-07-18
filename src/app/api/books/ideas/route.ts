@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
   try {
     // Ảnh tham khảo đối thủ (data URL) → THU NHỎ 768px cho nhẹ + đỡ tốn token vision. Tối đa 3 ảnh.
-    const rawRefs = Array.isArray(b?.refImages) ? (b.refImages as string[]).filter((s) => typeof s === "string" && s.startsWith("data:")).slice(0, 3) : [];
+    const rawRefs = Array.isArray(b?.refImages) ? (b.refImages as string[]).filter((s) => typeof s === "string" && s.startsWith("data:")).slice(0, 6) : [];
     const refImages: string[] = [];
     if (rawRefs.length) {
       const sharp = (await import("sharp")).default;

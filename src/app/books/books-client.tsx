@@ -34,6 +34,7 @@ const DEFAULT_VARS: Var[] = [
   { key: "city", label: "Thành phố", value: "" },
   { key: "hobby", label: "Sở thích", value: "" },
 ];
+const MAX_REFS = 6; // số ảnh tham khảo đối thủ tối đa
 
 // Thay {key}/[key] trong preview.
 function fill(tpl: string, vars: Var[]): string {
@@ -125,25 +126,31 @@ export default function BooksClient() {
       {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: msg.startsWith("✗") ? "var(--red)" : "var(--green)" }}>{msg}</div>}
 
       {detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
-        : <ListView titles={titles} open={openDetail} />}
+        : <ListView titles={titles} open={openDetail} reload={loadList} flash={flash} />}
 
       {showNew && <NewBookModal models={textModels} close={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); loadList(); openDetail(id); }} flash={flash} />}
     </div>
   );
 }
 
-function ListView({ titles, open }: { titles: Title[]; open: (id: string) => void }) {
+function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id: string) => void; reload: () => void; flash: (m: string) => void }) {
+  const del = async (t: Title) => {
+    if (typeof window !== "undefined" && !window.confirm(`Xoá đầu sách "${t.name}"? Thao tác này không khôi phục được.`)) return;
+    const j = await api(`/api/books/${t.id}`, "DELETE");
+    if (j.ok) { flash("✓ Đã xoá đầu sách"); reload(); } else flash("✗ " + (j.error ?? "Lỗi xoá"));
+  };
   if (!titles.length) return <div className="panel empty" style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Chưa có đầu sách nào. Bấm <b>+ New Book</b> để bắt đầu.</div>;
   return (
     <div style={{ display: "grid", gap: 10 }}>
       {titles.map((t) => (
-        <button key={t.id} onClick={() => open(t.id)} style={{ ...btnGhost, textAlign: "left", padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ flex: 1 }}>
+        <div key={t.id} style={{ ...btnGhost, cursor: "default", textAlign: "left", padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div onClick={() => open(t.id)} style={{ flex: 1, cursor: "pointer", minWidth: 0 }}>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</div>
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{[t.occasion, t.audience].filter(Boolean).join(" · ") || "—"}</div>
           </div>
           <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[t.status] ?? "#555", textTransform: "uppercase", letterSpacing: ".4px" }}>{t.status}</span>
-        </button>
+          <button onClick={() => del(t)} title="Xoá đầu sách" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--red)", borderColor: "var(--line)" }}>Xoá</button>
+        </div>
       ))}
     </div>
   );
@@ -154,17 +161,30 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
   const [busy, setBusy] = useState(false);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [model, setModel] = useState("");
-  const [refs, setRefs] = useState<string[]>([]); // ảnh listing đối thủ (data URL), tối đa 3
+  const [refs, setRefs] = useState<string[]>([]); // ảnh listing đối thủ (data URL)
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
   useEffect(() => { setModel(lsGet("bs_text_model")); }, []);
 
   const addRefs = (files: FileList) => {
-    const room = 3 - refs.length;
+    const room = MAX_REFS - refs.length;
     const list = Array.from(files).slice(0, Math.max(0, room));
     list.forEach((f) => {
       const r = new FileReader();
-      r.onload = () => setRefs((cur) => (cur.length >= 3 ? cur : [...cur, String(r.result)]));
+      r.onload = () => setRefs((cur) => (cur.length >= MAX_REFS ? cur : [...cur, String(r.result)]));
       r.readAsDataURL(f);
     });
+  };
+  // Import ảnh từ LINK (listing Etsy/Amazon/web hoặc link ảnh trực tiếp). Server đọc og:image, loại video.
+  const importFromLink = async () => {
+    const u = importUrl.trim();
+    if (!u) return;
+    if (refs.length >= MAX_REFS) { flash(`✗ Đã đủ ${MAX_REFS} ảnh`); return; }
+    setImporting(true);
+    const j = await api("/api/books/import-image", "POST", { url: u });
+    setImporting(false);
+    if (j.ok && j.dataUrl) { setRefs((cur) => (cur.length >= MAX_REFS ? cur : [...cur, String(j.dataUrl)])); setImportUrl(""); }
+    else flash("✗ " + (j.error ?? "Lỗi lấy ảnh từ link"));
   };
 
   const gen = async () => {
@@ -202,7 +222,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
             <input type="number" style={{ ...inp, marginTop: 4 }} value={brief.pages} onChange={(e) => setBrief({ ...brief, pages: Number(e.target.value) || 12 })} />
           </label>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Ảnh tham khảo đối thủ <span style={{ color: "var(--muted)", fontWeight: 400 }}>(tuỳ chọn, tối đa 3 — AI đọc để đề xuất ý tưởng cạnh tranh)</span></div>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Ảnh tham khảo đối thủ <span style={{ color: "var(--muted)", fontWeight: 400 }}>(tuỳ chọn, tối đa {MAX_REFS} — AI đọc để đề xuất ý tưởng cạnh tranh)</span></div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               {refs.map((u, i) => (
                 <div key={i} style={{ position: "relative" }}>
@@ -211,13 +231,20 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
                   <button onClick={() => setRefs((cur) => cur.filter((_, idx) => idx !== i))} title="Xoá" style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 999, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: 0 }}>✕</button>
                 </div>
               ))}
-              {refs.length < 3 && (
-                <label style={{ width: 56, height: 56, display: "grid", placeItems: "center", borderRadius: 8, border: "1px dashed var(--line)", color: "var(--blue)", fontSize: 22, cursor: "pointer" }} title="Thêm ảnh đối thủ">
+              {refs.length < MAX_REFS && (
+                <label style={{ width: 56, height: 56, display: "grid", placeItems: "center", borderRadius: 8, border: "1px dashed var(--line)", color: "var(--blue)", fontSize: 22, cursor: "pointer" }} title="Tải ảnh từ máy">
                   +
                   <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) addRefs(e.target.files); e.target.value = ""; }} />
                 </label>
               )}
             </div>
+            {refs.length < MAX_REFS && (
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <input value={importUrl} onChange={(e) => setImportUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); importFromLink(); } }}
+                  placeholder="Dán link listing Etsy / Amazon / web… (tự lấy ảnh, bỏ video)" style={{ ...inp, flex: 1, fontSize: 12.5, padding: "8px 11px" }} />
+                <button onClick={importFromLink} disabled={importing || !importUrl.trim()} style={{ ...btnGhost, whiteSpace: "nowrap", opacity: (importing || !importUrl.trim()) ? 0.6 : 1 }}>{importing ? "Đang lấy…" : "Nhập từ link"}</button>
+              </div>
+            )}
             {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Lưu ý: chọn model text có hỗ trợ ảnh (Claude/GPT‑4o/Gemini) để đọc được ảnh.</div>}
           </div>
           <details style={{ fontSize: 12 }}>
@@ -348,7 +375,6 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const [illus, setIllus] = useState<Record<number, string>>({});
   const [busyPage, setBusyPage] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [busyAll, setBusyAll] = useState(false);
 
   const previewName = (vars.find((v) => v.key === "name")?.value || "Emma");
 
@@ -393,7 +419,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     } else flash("✗ " + (j.error ?? "Lỗi dựng khung"));
   };
 
-  // Bước 2 — Ráp prompt chi tiết (deterministic, nhanh). Lưu Bible trước để chắc chắn dùng bản mới nhất.
+  // Ráp prompt chi tiết cho MỌI trang (deterministic, nhanh — không gọi model ảnh nên không quá tải).
   const composeAll = async () => {
     setBusy(true);
     await api(`/api/books/${id}`, "PATCH", { bible });
@@ -405,6 +431,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       flash("✓ Đã ráp prompt chi tiết");
     } else flash("✗ " + (j.error ?? "Lỗi ráp prompt"));
   };
+  // Ráp prompt chi tiết cho 1 trang. Lưu Bible trước để dùng bản mới nhất.
   const composeOne = async (i: number, pageNo: number) => {
     await api(`/api/books/${id}`, "PATCH", { bible });
     const j = await api(`/api/books/${id}/compose`, "POST", { pageNo, baked });
@@ -436,11 +463,6 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     setBusyPage(null);
     if (j.ok) setIllus((m) => ({ ...m, [pageNo]: j.url as string }));
     else flash(`✗ trang ${pageNo}: ` + (j.error ?? "Lỗi vẽ"));
-  };
-  const illustrateAll = async () => {
-    setBusyAll(true);
-    for (const p of pages) { await illustrate(p.page_no); }
-    setBusyAll(false); flash("✓ Vẽ xong (kiểm tra + vẽ lại trang lỗi nếu cần)");
   };
 
   return (
@@ -479,9 +501,9 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }} title="AI vẽ chữ thẳng vào ảnh (giống mẫu). Tắt = chừa vùng trống để overlay chữ.">
             <input type="checkbox" checked={baked} onChange={(e) => setBaked(e.target.checked)} /> AI vẽ chữ vào ảnh
           </label>
-          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Ráp Bible + brief + chữ → prompt chi tiết cho mọi trang">Ráp prompt tất cả</button>
-          <button style={{ ...btnBlue, opacity: (busyAll || busyPage !== null) ? 0.6 : 1 }} disabled={busyAll || busyPage !== null} onClick={illustrateAll}>{busyAll ? "Đang vẽ…" : "🎨 Vẽ tất cả"}</button>
-          <details style={{ fontSize: 12 }}>
+          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Ráp Bible + brief + chữ → prompt chi tiết cho mọi trang (không vẽ, không quá tải)">Ráp prompt tất cả</button>
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Vẽ từng trang bên dưới (tránh quá tải).</span>
+          <details style={{ fontSize: 12, marginLeft: "auto" }}>
             <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600, listStyle: "none" }}>⚙ Model AI</summary>
             <div style={{ display: "grid", gap: 6, marginTop: 6, minWidth: 210 }}>
               <select value={model} onChange={(e) => setModel(e.target.value)} title="AI viết ý tưởng/kịch bản" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
@@ -537,7 +559,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
                       </div>
                     )
                     : <div style={{ height: 110, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Chưa vẽ</div>}
-                  <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no || busyAll} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Đang vẽ…" : illus[p.page_no] ? "↻ Vẽ lại" : "🎨 Vẽ"}</button>
+                  <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Đang vẽ…" : illus[p.page_no] ? "↻ Vẽ lại" : "🎨 Vẽ"}</button>
                 </div>
               </div>
             ))}
