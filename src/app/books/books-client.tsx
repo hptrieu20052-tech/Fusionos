@@ -30,16 +30,16 @@ const DEFAULT_BIBLE: Bible = {
   restrictions: "- No copyrighted characters, costumes, symbols or logos\n- No distorted hands, fingers, faces or body proportions\n- No misspelled text\n- No extra children except those described in the scene\n- No dark or frightening atmosphere\n- No harsh yellow color cast\n- No overly cartoonish or exaggerated proportions\n- Generate the flat page artwork only — no page mockup, no hands holding the book, no surrounding background",
 };
 const DEFAULT_VARS: Var[] = [
-  { key: "photo", label: "Ảnh nhân vật", value: "", type: "image" },
-  { key: "name", label: "Tên bé", value: "", type: "text" },
-  { key: "age", label: "Tuổi", value: "", type: "text" },
-  { key: "city", label: "Thành phố", value: "", type: "text" },
-  { key: "hobby", label: "Sở thích", value: "", type: "text" },
+  { key: "photo", label: "Character photo", value: "", type: "image" },
+  { key: "name", label: "Child's name", value: "", type: "text" },
+  { key: "age", label: "Age", value: "", type: "text" },
+  { key: "city", label: "City", value: "", type: "text" },
+  { key: "hobby", label: "Hobby", value: "", type: "text" },
 ];
 // Đảm bảo có 1 biến ẢNH nhân vật: nếu chưa có biến image mà book còn characterRefKey (bản cũ) → chèn vào.
 function seedImageVar(base: Var[], refKey?: string | null, refUrl?: string | null): Var[] {
   if (base.some((v) => v.type === "image")) return base;
-  if (refKey) return [{ key: "photo", label: "Ảnh nhân vật", type: "image", imageKey: refKey, imageUrl: refUrl ?? undefined }, ...base];
+  if (refKey) return [{ key: "photo", label: "Character photo", type: "image", imageKey: refKey, imageUrl: refUrl ?? undefined }, ...base];
   return base;
 }
 const MAX_REFS = 4; // số ảnh tham khảo đối thủ tối đa (nén ~448px, giữ payload nhẹ để không timeout)
@@ -84,8 +84,8 @@ async function api(url: string, method = "GET", body?: unknown): Promise<ApiResu
     try { j = JSON.parse(raw); } catch { /* không phải JSON */ }
     if (j) return j;
     const isHtml = /^\s*</.test(raw);
-    const note = r.status === 404 ? " — API chưa deploy"
-      : (r.status === 502 || r.status === 504) ? " — hết giờ (model quá chậm hoặc kết quả quá dài). Đổi sang model NHANH hơn (text: Claude Haiku/Gemini Flash · ảnh: Google nano‑banana), hoặc giảm số trang / vẽ từng trang."
+    const note = r.status === 404 ? " — API not deployed"
+      : (r.status === 502 || r.status === 504) ? " — timed out (model too slow or output too long). Try a faster model (text: Claude Haiku/Gemini Flash · image: Google nano‑banana), or draw pages one at a time."
       : isHtml ? "" : (raw ? " · " + raw.slice(0, 120) : "");
     return { ok: false, error: `HTTP ${r.status}${note}` };
   } catch (e) {
@@ -136,7 +136,7 @@ export default function BooksClient() {
 
   const openDetail = async (id: string) => {
     const j = await api(`/api/books/${id}`);
-    if (j.ok) setDetail(j as unknown as Detail); else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) setDetail(j as unknown as Detail); else flash("✗ " + (j.error ?? "Error"));
   };
 
   return (
@@ -145,11 +145,11 @@ export default function BooksClient() {
         <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>✨ Book Studio</h2>
         <span style={{ fontSize: 11, fontWeight: 700, color: "#7a3fb0", background: "#F3EAFB", border: "1px solid #E3D0F5", borderRadius: 999, padding: "2px 9px" }}>AI · Beta</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          {detail && <button style={btnGhost} onClick={() => { setDetail(null); loadList(); }}>← Danh sách</button>}
+          {detail && <button style={btnGhost} onClick={() => { setDetail(null); loadList(); }}>← List</button>}
           {!detail && <button style={btnBlue} onClick={() => setShowNew(true)}>+ New Book</button>}
         </div>
       </div>
-      <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Kịch bản → Prompt chi tiết → Custom ảnh/tên → Gen ảnh từng trang.</div>
+      <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Script → Detailed prompt → Custom photo/name → Generate each page.</div>
       {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: msg.startsWith("✗") ? "var(--red)" : "var(--green)" }}>{msg}</div>}
 
       {detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
@@ -162,11 +162,11 @@ export default function BooksClient() {
 
 function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id: string) => void; reload: () => void; flash: (m: string) => void }) {
   const del = async (t: Title) => {
-    if (typeof window !== "undefined" && !window.confirm(`Xoá đầu sách "${t.name}"? Thao tác này không khôi phục được.`)) return;
+    if (typeof window !== "undefined" && !window.confirm(`Delete book "${t.name}"? This cannot be undone.`)) return;
     const j = await api(`/api/books/${t.id}`, "DELETE");
-    if (j.ok) { flash("✓ Đã xoá đầu sách"); reload(); } else flash("✗ " + (j.error ?? "Lỗi xoá"));
+    if (j.ok) { flash("✓ Book deleted"); reload(); } else flash("✗ " + (j.error ?? "Delete error"));
   };
-  if (!titles.length) return <div className="panel empty" style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Chưa có đầu sách nào. Bấm <b>+ New Book</b> để bắt đầu.</div>;
+  if (!titles.length) return <div className="panel empty" style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No books yet. Click <b>+ New Book</b> to start.</div>;
   return (
     <div style={{ display: "grid", gap: 10 }}>
       {titles.map((t) => (
@@ -176,7 +176,7 @@ function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id:
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{[t.occasion, t.audience].filter(Boolean).join(" · ") || "—"}</div>
           </div>
           <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[t.status] ?? "#555", textTransform: "uppercase", letterSpacing: ".4px" }}>{t.status}</span>
-          <button onClick={() => del(t)} title="Xoá đầu sách" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--red)", borderColor: "var(--line)" }}>Xoá</button>
+          <button onClick={() => del(t)} title="Delete book" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--red)", borderColor: "var(--line)" }}>Delete</button>
         </div>
       ))}
     </div>
@@ -193,7 +193,6 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
   const [refs, setRefs] = useState<string[]>([]); // ảnh listing đối thủ (data URL)
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
-  const [analysis, setAnalysis] = useState(""); // đoạn AI đọc được từ ảnh đối thủ (để hiện cho user thấy)
   useEffect(() => { setModel(lsGet("bs_text_model")); }, []);
 
   const addRefs = (files: FileList) => {
@@ -209,34 +208,34 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
   const importFromLink = async () => {
     const u = importUrl.trim();
     if (!u) return;
-    if (refs.length >= MAX_REFS) { flash(`✗ Đã đủ ${MAX_REFS} ảnh`); return; }
+    if (refs.length >= MAX_REFS) { flash(`✗ Max ${MAX_REFS} images`); return; }
     setImporting(true);
     const j = await api("/api/books/import-image", "POST", { url: u });
     setImporting(false);
     if (j.ok && j.dataUrl) { const small = await downscaleImage(String(j.dataUrl)); setRefs((cur) => (cur.length >= MAX_REFS ? cur : [...cur, small])); setImportUrl(""); }
     else {
-      const raw = String(j.error ?? "Lỗi lấy ảnh từ link");
-      const msg = /\b50[24]\b|hết giờ|timeout/i.test(raw) ? "Link chặn bot / quá hạn — tải ảnh thủ công bằng nút +" : raw;
+      const raw = String(j.error ?? "Couldn't fetch image from link");
+      const msg = /\b50[24]\b|hết giờ|timeout/i.test(raw) ? "Link blocked / timed out — upload the image manually with +" : raw;
       flash("✗ Import: " + msg);
     }
   };
 
   const gen = async () => {
-    setBusy(true); setIdeas([]); setAnalysis("");
+    setBusy(true); setIdeas([]);
     lsSet("bs_text_model", model);
-    // BƯỚC RIÊNG (best-effort): phân tích ảnh đối thủ → text. Lỗi/chậm thì bỏ qua, vẫn sinh ý tưởng.
+    // BƯỚC RIÊNG (best-effort): phân tích ảnh đối thủ → text đưa vào ý tưởng. Lỗi/chậm thì bỏ qua.
     let comp = "";
     if (refs.length) {
       const a = await api("/api/books/analyze-refs", "POST", { images: refs, notes: brief.notes });
-      if (a.ok && a.analysis) { comp = String(a.analysis); setAnalysis(comp); }
-      else flash("⚠ Không phân tích được ảnh — vẫn sinh ý tưởng từ mô tả" + (a.error ? ` (${String(a.error).slice(0, 60)})` : ""));
+      if (a.ok && a.analysis) comp = String(a.analysis);
+      else flash("⚠ Couldn't analyze images — generating ideas from the description" + (a.error ? ` (${String(a.error).slice(0, 60)})` : ""));
     }
     const j = await api("/api/books/ideas", "POST", { ...brief, competitor: comp || undefined, model: model || undefined });
     setBusy(false);
     if (j.ok) {
       setIdeas((j.ideas as Idea[]) ?? []);
-      if (comp) flash("✓ Đã phân tích ảnh đối thủ & bám ngách khi sinh ý tưởng");
-    } else flash("✗ " + (j.error ?? "Lỗi sinh ý tưởng"));
+      if (comp) flash("✓ Analyzed competitor images & matched the niche");
+    } else flash("✗ " + (j.error ?? "Ideas error"));
   };
   const create = async (idea: Idea) => {
     setBusy(true);
@@ -246,43 +245,43 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
       brief: { ...brief, pages: product.pageCount }, productKey,
     });
     setBusy(false);
-    if (j.ok) onCreated(j.id as string); else flash("✗ " + (j.error ?? "Lỗi tạo"));
+    if (j.ok) onCreated(j.id as string); else flash("✗ " + (j.error ?? "Create error"));
   };
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,35,.5)", zIndex: 50, display: "grid", placeItems: "center", padding: 16 }} onClick={close}>
       <div style={{ background: "#fff", borderRadius: 14, width: "min(720px,100%)", maxHeight: "90vh", overflow: "auto", padding: 20 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>New Book — Ý tưởng</h3>
+          <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>New Book — Ideas</h3>
           <button style={{ ...btnGhost, marginLeft: "auto", padding: "5px 11px" }} onClick={close}>✕</button>
         </div>
         <div style={{ display: "grid", gap: 12 }}>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Loại sản phẩm
+          <label style={{ fontSize: 12, fontWeight: 600 }}>Product type
             <select value={productKey} onChange={(e) => { const p = getBookProduct(e.target.value); setProductKey(p.key); setBrief((b) => ({ ...b, pages: p.pageCount })); }} style={{ ...inp, marginTop: 4 }}>
               {BOOK_PRODUCTS.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
             </select>
-            <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>Cố định khổ &amp; số trang: trang {product.pageW}×{product.pageH}px · cover {product.coverW}×{product.coverH}px · {product.pageCount} trang.</span>
+            <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>Fixed size &amp; pages: page {product.pageW}×{product.pageH}px · cover {product.coverW}×{product.coverH}px · {product.pageCount} pages.</span>
           </label>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Mô tả cuốn sách
+          <label style={{ fontSize: 12, fontWeight: 600 }}>Book description <span style={{ color: "var(--muted)", fontWeight: 400 }}>(type in any language)</span>
             <textarea rows={3} style={{ ...inp, marginTop: 4, resize: "vertical", lineHeight: 1.5 }}
-              placeholder="Sách gì, cho ai, phong cách nào… vd: Sách sinh nhật đầu đời cho bé ~1 tuổi, phong cách storybook ấm áp, tông pastel."
+              placeholder="What book, for whom, what style… e.g. First-birthday keepsake book for a ~1yo, warm storybook style, pastel tones."
               value={brief.notes} onChange={(e) => setBrief({ ...brief, notes: e.target.value })} />
           </label>
-          <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Số trang <span style={{ color: "var(--muted)", fontWeight: 400 }}>(theo sản phẩm)</span>
-            <input type="number" readOnly value={product.pageCount} title="Số trang cố định theo loại sản phẩm" style={{ ...inp, marginTop: 4, background: "#F4F5F8", color: "var(--muted)" }} />
+          <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Pages <span style={{ color: "var(--muted)", fontWeight: 400 }}>(by product)</span>
+            <input type="number" readOnly value={product.pageCount} title="Page count is fixed by product type" style={{ ...inp, marginTop: 4, background: "#F4F5F8", color: "var(--muted)" }} />
           </label>
           <div>
-            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Ảnh tham khảo đối thủ <span style={{ color: "var(--muted)", fontWeight: 400 }}>(tuỳ chọn, tối đa {MAX_REFS} — AI đọc để đề xuất ý tưởng cạnh tranh)</span></div>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Competitor images <span style={{ color: "var(--muted)", fontWeight: 400 }}>(optional · max {MAX_REFS})</span></div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               {refs.map((u, i) => (
                 <div key={i} style={{ position: "relative" }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={u} alt={`ref${i}`} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />
-                  <button onClick={() => setRefs((cur) => cur.filter((_, idx) => idx !== i))} title="Xoá" style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 999, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: 0 }}>✕</button>
+                  <button onClick={() => setRefs((cur) => cur.filter((_, idx) => idx !== i))} title="Remove" style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 999, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: 0 }}>✕</button>
                 </div>
               ))}
               {refs.length < MAX_REFS && (
-                <label style={{ width: 56, height: 56, display: "grid", placeItems: "center", borderRadius: 8, border: "1px dashed var(--line)", color: "var(--blue)", fontSize: 22, cursor: "pointer" }} title="Tải ảnh từ máy">
+                <label style={{ width: 56, height: 56, display: "grid", placeItems: "center", borderRadius: 8, border: "1px dashed var(--line)", color: "var(--blue)", fontSize: 22, cursor: "pointer" }} title="Upload from device">
                   +
                   <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) addRefs(e.target.files); e.target.value = ""; }} />
                 </label>
@@ -291,30 +290,23 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
             {refs.length < MAX_REFS && (
               <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                 <input value={importUrl} onChange={(e) => setImportUrl(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); importFromLink(); } }}
-                  placeholder="Dán link listing Etsy / Amazon / web… (tự lấy ảnh, bỏ video)" style={{ ...inp, flex: 1, fontSize: 12.5, padding: "8px 11px" }} />
-                <button onClick={importFromLink} disabled={importing || !importUrl.trim()} style={{ ...btnGhost, whiteSpace: "nowrap", opacity: (importing || !importUrl.trim()) ? 0.6 : 1 }}>{importing ? "Đang lấy…" : "Nhập từ link"}</button>
+                  placeholder="Paste Etsy / Amazon / web listing link… (auto-grabs image, skips video)" style={{ ...inp, flex: 1, fontSize: 12.5, padding: "8px 11px" }} />
+                <button onClick={importFromLink} disabled={importing || !importUrl.trim()} style={{ ...btnGhost, whiteSpace: "nowrap", opacity: (importing || !importUrl.trim()) ? 0.6 : 1 }}>{importing ? "Loading…" : "Import link"}</button>
               </div>
             )}
-            {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Ảnh được phân tích ở một bước riêng (model xem‑ảnh) rồi đưa vào ý tưởng. Nếu phân tích ảnh lỗi/chậm, hệ thống vẫn sinh ý tưởng từ mô tả.</div>}
+            {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Images are analyzed in a separate step (vision model) then fed into ideas. If analysis fails/slows, ideas are still generated from the description.</div>}
           </div>
           <details style={{ fontSize: 12 }}>
-            <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600 }}>⚙ Tuỳ chọn (số ý tưởng · model AI)</summary>
+            <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600 }}>⚙ Options (idea count · AI model)</summary>
             <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Số ý tưởng
+              <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Idea count
                 <input type="number" style={{ ...inp, marginTop: 4 }} value={brief.count} onChange={(e) => setBrief({ ...brief, count: Number(e.target.value) || 4 })} />
               </label>
-              <ModelPicker models={models} value={model} onChange={setModel} label="AI viết ý tưởng/kịch bản" />
+              <ModelPicker models={models} value={model} onChange={setModel} label="AI for ideas / script" />
             </div>
           </details>
         </div>
-        <button style={{ ...btnBlue, marginTop: 14, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Đang nghĩ…" : "✨ Sinh ý tưởng"}</button>
-
-        {analysis && (
-          <div style={{ marginTop: 14, border: "1px solid #CFE6D6", background: "#F3F8F4", borderRadius: 10, padding: 11 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "#12703c", marginBottom: 4 }}>AI đọc được từ ảnh đối thủ</div>
-            <div style={{ fontSize: 12, color: "var(--ink)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{analysis}</div>
-          </div>
-        )}
+        <button style={{ ...btnBlue, marginTop: 14, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Thinking…" : "✨ Generate ideas"}</button>
 
         {ideas.length > 0 && (
           <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
@@ -324,8 +316,8 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
                 <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>{idea.hook}</div>
                 <div style={{ fontSize: 12, marginTop: 6 }}><b>Angle:</b> {idea.angle}</div>
                 <div style={{ fontSize: 12, marginTop: 2 }}><b>USP:</b> {idea.usp}</div>
-                {idea.outline?.length > 0 && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>Tóm tắt: {idea.outline.slice(0, 3).join(" · ")}{idea.outline.length > 3 ? "…" : ""}</div>}
-                <button style={{ ...btnBlue, marginTop: 10, padding: "7px 14px", fontSize: 12.5, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => create(idea)}>Chọn &amp; tạo →</button>
+                {idea.outline?.length > 0 && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>Summary: {idea.outline.slice(0, 3).join(" · ")}{idea.outline.length > 3 ? "…" : ""}</div>}
+                <button style={{ ...btnBlue, marginTop: 10, padding: "7px 14px", fontSize: 12.5, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => create(idea)}>Select &amp; create →</button>
               </div>
             ))}
           </div>
@@ -351,21 +343,21 @@ function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: B
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, marginBottom: 12, background: "#FCFCFF" }}>
       <button onClick={() => setOpen((v) => !v)} style={{ ...btnGhost, border: 0, width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 8, background: "transparent" }}>
         <span style={{ fontWeight: 800, fontSize: 14 }}>Style Bible</span>
-        <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 500 }}>— giữ nhân vật &amp; phong cách nhất quán mọi trang</span>
+        <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 500 }}>— keeps character &amp; style consistent across all pages</span>
         <span style={{ marginLeft: "auto", fontSize: 12 }}>{open ? "▲" : "▼"}</span>
       </button>
       {open && (
         <div style={{ padding: "0 14px 14px", display: "grid", gap: 10 }}>
           <div style={{ display: "flex", gap: 8 }}>
-            <button style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }} onClick={() => setBible({ ...DEFAULT_BIBLE, ...bible, wardrobe: bible.wardrobe ?? "" })}>Đổ mẫu mặc định</button>
-            <button style={{ ...btnBlue, padding: "6px 12px", fontSize: 12, marginLeft: "auto" }} onClick={onSave}>Lưu Bible</button>
+            <button style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }} onClick={() => setBible({ ...DEFAULT_BIBLE, ...bible, wardrobe: bible.wardrobe ?? "" })}>Load default</button>
+            <button style={{ ...btnBlue, padding: "6px 12px", fontSize: 12, marginLeft: "auto" }} onClick={onSave}>Save Bible</button>
           </div>
-          {F("character", "Nhân vật (khoá mặt)", 5, "đặc điểm mặt/tóc/mắt… + {age}")}
-          {F("wardrobe", "Trang phục / đạo cụ cố định", 2, "vd bộ pyjama sao xanh teal (để trống nếu không có)")}
-          {F("artStyle", "Phong cách vẽ", 3)}
-          {F("palette", "Bảng màu", 1)}
-          <button onClick={() => setAdv((v) => !v)} style={{ ...btnGhost, border: 0, background: "transparent", padding: 0, fontSize: 12, color: "var(--blue)", textAlign: "left", cursor: "pointer" }}>{adv ? "▲ Ẩn nâng cao" : "▼ Nâng cao (quy tắc chữ · cấm · khổ)"}</button>
-          {adv && <>{F("textStyle", "Quy tắc chữ", 3)}{F("restrictions", "Danh sách cấm", 5)}{F("format", "Khổ trang / chất lượng", 2)}</>}
+          {F("character", "Character (face lock)", 5, "face/hair/eyes features… + {age}")}
+          {F("wardrobe", "Fixed outfit / props", 2, "e.g. teal star pajamas (leave empty if none)")}
+          {F("artStyle", "Art style", 3)}
+          {F("palette", "Color palette", 1)}
+          <button onClick={() => setAdv((v) => !v)} style={{ ...btnGhost, border: 0, background: "transparent", padding: 0, fontSize: 12, color: "var(--blue)", textAlign: "left", cursor: "pointer" }}>{adv ? "▲ Hide advanced" : "▼ Advanced (text rules · restrictions · format)"}</button>
+          {adv && <>{F("textStyle", "Text rules", 3)}{F("restrictions", "Restrictions", 5)}{F("format", "Page size / quality", 2)}</>}
         </div>
       )}
     </div>
@@ -380,12 +372,12 @@ function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setV
   const uploadImg = async (i: number, file: File) => {
     setUpIdx(i);
     const t = await api(`/api/books/${bookId}/reference-url`, "POST", { contentType: file.type || "image/png" });
-    if (!t.ok) { flash("✗ " + (t.error ?? "Lỗi")); setUpIdx(null); return; }
+    if (!t.ok) { flash("✗ " + (t.error ?? "Error")); setUpIdx(null); return; }
     try {
       const put = await fetch(t.url as string, { method: (t.method as string) || "PUT", headers: { "Content-Type": file.type || "image/png" }, body: file });
       if (!put.ok) throw new Error("upload HTTP " + put.status);
       patch(i, { imageKey: String(t.key), imageUrl: String(t.publicUrl || "") });
-      flash("✓ Đã tải ảnh biến — nhớ Lưu");
+      flash("✓ Image uploaded — remember to Save");
     } catch (e) { flash("✗ upload: " + String((e as Error)?.message ?? e).slice(0, 80)); }
     setUpIdx(null);
   };
@@ -399,14 +391,14 @@ function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setV
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 14, marginBottom: 12, background: "#fff", overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", borderBottom: "1px solid #EEF0F5", background: "#FAFBFF", flexWrap: "wrap" }}>
-        <span style={{ fontWeight: 800, fontSize: 14 }}>Biến cá nhân hoá</span>
-        <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1, minWidth: 120 }}>Chữ hoặc ảnh — thay khi gen & giữ nhân vật</span>
-        <button style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", value: "", type: "text" }])}>+ Chữ</button>
-        <button style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", type: "image" }])}>+ Ảnh</button>
-        <button style={{ ...btnBlue, padding: "6px 13px", fontSize: 12 }} onClick={onSave}>Lưu</button>
+        <span style={{ fontWeight: 800, fontSize: 14 }}>Personalization variables</span>
+        <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1, minWidth: 120 }}>Text or image — swapped at gen time & keeps character</span>
+        <button style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", value: "", type: "text" }])}>+ Text</button>
+        <button style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", type: "image" }])}>+ Image</button>
+        <button style={{ ...btnBlue, padding: "6px 13px", fontSize: 12 }} onClick={onSave}>Save</button>
       </div>
 
-      {vars.length === 0 && <div style={{ padding: 18, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>Chưa có biến. Bấm <b>+ Chữ</b> / <b>+ Ảnh</b> để thêm.</div>}
+      {vars.length === 0 && <div style={{ padding: 18, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No variables yet. Click <b>+ Text</b> / <b>+ Image</b> to add.</div>}
 
       {vars.map((v, i) => {
         const isImg = v.type === "image";
@@ -414,17 +406,17 @@ function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setV
         return (
           <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: i ? "1px solid #F0F2F7" : "none" }}>
             <div style={{ display: "inline-flex", background: "#EEF1F7", borderRadius: 999, padding: 3, gap: 2, flexShrink: 0 }}>
-              <button style={seg(!isImg)} onClick={() => patch(i, { type: "text" })}>Chữ</button>
-              <button style={seg(isImg)} onClick={() => patch(i, { type: "image" })}>Ảnh</button>
+              <button style={seg(!isImg)} onClick={() => patch(i, { type: "text" })}>Text</button>
+              <button style={seg(isImg)} onClick={() => patch(i, { type: "image" })}>Image</button>
             </div>
 
             <div style={{ flex: 1, minWidth: 0 }}>
-              <input value={v.label ?? ""} onChange={(e) => setV(i, "label", e.target.value)} placeholder="Nhãn (vd Tên bố)" style={{ ...bareInp, fontWeight: 600 }} />
+              <input value={v.label ?? ""} onChange={(e) => setV(i, "label", e.target.value)} placeholder="Label (e.g. Dad's name)" style={{ ...bareInp, fontWeight: 600 }} />
               <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 4, paddingLeft: 2 }}>
                 <span style={{ fontSize: 11, color: isDup ? "var(--red)" : "var(--faint)", fontFamily: "ui-monospace, monospace" }}>{"{"}</span>
                 <input value={v.key} onChange={(e) => setV(i, "key", e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))} placeholder="key" style={{ border: 0, background: "transparent", outline: "none", fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: isDup ? "var(--red)" : "var(--muted)", padding: 0, width: 130 }} />
                 <span style={{ fontSize: 11, color: isDup ? "var(--red)" : "var(--faint)", fontFamily: "ui-monospace, monospace" }}>{"}"}</span>
-                {isDup && <span style={{ fontSize: 10.5, color: "var(--red)", marginLeft: 6, fontWeight: 600 }}>⚠ trùng key — đổi tên khác</span>}
+                {isDup && <span style={{ fontSize: 10.5, color: "var(--red)", marginLeft: 6, fontWeight: 600 }}>⚠ duplicate key — rename it</span>}
               </div>
             </div>
 
@@ -435,15 +427,15 @@ function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setV
                     // eslint-disable-next-line @next/next/no-img-element
                     ? <img src={v.imageUrl} alt="ref" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 9, border: "1px solid var(--line)" }} />
                     : <span style={{ width: 40, height: 40, display: "grid", placeItems: "center", borderRadius: 9, border: "1.5px dashed var(--line)", color: "var(--muted)", fontSize: 16 }}>+</span>}
-                  <span style={{ fontSize: 12.5, color: "var(--blue)", fontWeight: 700 }}>{upIdx === i ? "Đang tải…" : v.imageUrl ? "Đổi ảnh" : "Tải ảnh"}</span>
+                  <span style={{ fontSize: 12.5, color: "var(--blue)", fontWeight: 700 }}>{upIdx === i ? "Uploading…" : v.imageUrl ? "Change image" : "Upload image"}</span>
                   <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImg(i, f); e.target.value = ""; }} />
                 </label>
               ) : (
-                <input value={v.value ?? ""} onChange={(e) => setV(i, "value", e.target.value)} placeholder="Giá trị (vd Lisa)" style={bareInp} />
+                <input value={v.value ?? ""} onChange={(e) => setV(i, "value", e.target.value)} placeholder="Value (e.g. Lisa)" style={bareInp} />
               )}
             </div>
 
-            <button title="Xoá biến" onClick={() => setVars(vars.filter((_, idx) => idx !== i))} style={{ border: 0, background: "transparent", color: "var(--faint)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 4, flexShrink: 0 }}>×</button>
+            <button title="Delete variable" onClick={() => setVars(vars.filter((_, idx) => idx !== i))} style={{ border: 0, background: "transparent", color: "var(--faint)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 4, flexShrink: 0 }}>×</button>
           </div>
         );
       })}
@@ -478,7 +470,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   // ---- Bible + Vars ----
   const [bible, setBible] = useState<Bible>(detail.title.bible ?? {});
   const [vars, setVars] = useState<Var[]>(seedImageVar(detail.title.vars && detail.title.vars.length ? detail.title.vars : DEFAULT_VARS, detail.title.characterRefKey, detail.title.characterRefUrl));
-  const [baked, setBaked] = useState(true);
+  const baked = true; // mặc định AI vẽ chữ vào ảnh (bỏ toggle)
   // ---- Gen Image state ----
   const [imgModels, setImgModels] = useState<{ id: string; name: string }[]>([]);
   const [imgModel, setImgModel] = useState("");
@@ -502,25 +494,25 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     setBusy(true); lsSet("bs_text_model", model);
     const j = await api(`/api/books/${id}/script`, "POST", { model: model || undefined, vars: vars.map((v) => v.key).filter(Boolean) });
     setBusy(false);
-    if (j.ok) { const ps = (j.pages as Page[]) ?? []; setPages(ps.map((p) => ({ ...p, prompt: "" }))); flash("✓ Đã sinh kịch bản"); reload(); }
-    else flash("✗ " + (j.error ?? "Lỗi sinh kịch bản"));
+    if (j.ok) { const ps = (j.pages as Page[]) ?? []; setPages(ps.map((p) => ({ ...p, prompt: "" }))); flash("✓ Script generated"); reload(); }
+    else flash("✗ " + (j.error ?? "Script error"));
   };
   const save = async () => {
     setBusy(true);
     const j = await api(`/api/books/${id}`, "PATCH", { pages });
     setBusy(false);
-    flash(j.ok ? "✓ Đã lưu" : "✗ " + (j.error ?? "Lỗi lưu"));
+    flash(j.ok ? "✓ Saved" : "✗ " + (j.error ?? "Save error"));
   };
   const setPage = (i: number, k: "text" | "illustration" | "prompt", v: string) => setPages((ps) => ps.map((p, idx) => idx === i ? { ...p, [k]: v } : p));
 
-  const saveBible = async () => { const j = await api(`/api/books/${id}`, "PATCH", { bible }); flash(j.ok ? "✓ Đã lưu Bible" : "✗ " + (j.error ?? "Lỗi")); };
+  const saveBible = async () => { const j = await api(`/api/books/${id}`, "PATCH", { bible }); flash(j.ok ? "✓ Bible saved" : "✗ " + (j.error ?? "Error")); };
   const saveVars = async () => {
     // Đồng bộ ảnh nhân vật chính (biến image đầu tiên) sang characterRefKey để tương thích bản cũ + tránh vẽ trùng ảnh.
     const firstImg = vars.find((v) => v.type === "image" && v.imageKey);
     const body: Record<string, unknown> = { vars };
     if (firstImg?.imageKey) body.characterRefKey = firstImg.imageKey;
     const j = await api(`/api/books/${id}`, "PATCH", body);
-    flash(j.ok ? "✓ Đã lưu biến" : "✗ " + (j.error ?? "Lỗi"));
+    flash(j.ok ? "✓ Variables saved" : "✗ " + (j.error ?? "Error"));
   };
   // ✨ AI tự dựng Style Bible + bộ biến THEO CHỦ ĐỀ (giải bài toán "1 form cho vô số chủ đề").
   const setupAI = async () => {
@@ -531,10 +523,10 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       setBible((j.bible as Bible) ?? {});
       const vs = ((j.vars as Var[]) ?? []).map((v) => ({ ...v, value: v.value ?? "", type: v.type === "image" ? "image" as const : "text" as const }));
       // Luôn có ít nhất 1 biến ẢNH nhân vật (kể cả khi AI quên).
-      const withImg = vs.some((v) => v.type === "image") ? vs : [{ key: "photo", label: "Ảnh nhân vật", value: "", type: "image" as const }, ...vs];
+      const withImg = vs.some((v) => v.type === "image") ? vs : [{ key: "photo", label: "Character photo", value: "", type: "image" as const }, ...vs];
       setVars(withImg);
-      flash("✓ AI đã dựng Bible + biến theo chủ đề — kiểm tra & chỉnh lại nếu cần");
-    } else flash("✗ " + (j.error ?? "Lỗi dựng khung"));
+      flash("✓ AI built Bible + variables — review & tweak if needed");
+    } else flash("✗ " + (j.error ?? "Setup error"));
   };
 
   // Ráp prompt chi tiết cho MỌI trang (deterministic, nhanh — không gọi model ảnh nên không quá tải).
@@ -546,15 +538,15 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     if (j.ok) {
       const map = new Map((j.prompts as { pageNo: number; prompt: string }[]).map((x) => [x.pageNo, x.prompt]));
       setPages((ps) => ps.map((p) => ({ ...p, prompt: map.get(p.page_no) ?? p.prompt })));
-      flash("✓ Đã ráp prompt chi tiết");
-    } else flash("✗ " + (j.error ?? "Lỗi ráp prompt"));
+      flash("✓ Prompts composed");
+    } else flash("✗ " + (j.error ?? "Compose error"));
   };
   // Ráp prompt chi tiết cho 1 trang. Lưu Bible trước để dùng bản mới nhất.
   const composeOne = async (i: number, pageNo: number) => {
     await api(`/api/books/${id}`, "PATCH", { bible });
     const j = await api(`/api/books/${id}/compose`, "POST", { pageNo, baked });
-    if (j.ok) { const pr = (j.prompts as { prompt: string }[])[0]?.prompt ?? ""; setPage(i, "prompt", pr); flash(`✓ Ráp prompt trang ${pageNo}`); }
-    else flash("✗ " + (j.error ?? "Lỗi"));
+    if (j.ok) { const pr = (j.prompts as { prompt: string }[])[0]?.prompt ?? ""; setPage(i, "prompt", pr); flash(`✓ Prompt composed · page ${pageNo}`); }
+    else flash("✗ " + (j.error ?? "Error"));
   };
 
   const illustrate = async (pageNo: number) => {
@@ -567,49 +559,45 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     }
     setBusyPage(null);
     if (j.ok) setIllus((m) => ({ ...m, [pageNo]: j.url as string }));
-    else flash(`✗ trang ${pageNo}: ` + (j.error ?? "Lỗi vẽ"));
+    else flash(`✗ page ${pageNo}: ` + (j.error ?? "Draw error"));
   };
 
   return (
     <div>
-      <StepCard n={1} title={`Chủ đề: ${detail.title.name}`} desc={[detail.title.occasion, detail.title.audience].filter(Boolean).join(" · ") || undefined}>
+      <StepCard n={1} title={`Theme: ${detail.title.name}`} desc={[detail.title.occasion, detail.title.audience].filter(Boolean).join(" · ") || undefined}>
         {concept.hook ? <div style={{ fontSize: 13, color: "var(--ink)" }}>{concept.hook}</div>
-          : <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Chủ đề đã tạo từ ý tưởng. Sang bước 2 để dựng bộ khung.</div>}
+          : <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Theme created from the idea. Go to step 2 to build the kit.</div>}
       </StepCard>
 
-      <StepCard n={2} title="Bộ khung chủ đề — Style Bible + Biến"
-        desc="AI tự dựng theo chủ đề (nhân vật · trang phục · phong cách · màu · cấm) rồi bạn chỉnh. Khối này ráp vào MỌI trang → giữ nhân vật nhất quán."
-        right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "AI đang dựng…" : "✨ AI dựng theo chủ đề"}</button>}>
+      <StepCard n={2} title="Theme kit — Style Bible + Variables"
+        desc="AI builds it from the theme (character · outfit · style · colors · restrictions), then you tweak. This block is applied to EVERY page → keeps the character consistent."
+        right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : "✨ AI build from theme"}</button>}>
         <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
         <VarsPanel vars={vars} setVars={setVars} onSave={saveVars} bookId={id} flash={flash} />
       </StepCard>
 
-      <StepCard n={3} title="Kịch bản → Prompt chi tiết → Vẽ" desc="Sinh kịch bản từng trang, ráp prompt sâu, rồi vẽ. Trang lỗi chỉ cần vẽ lại riêng trang đó.">
+      <StepCard n={3} title="Script → Detailed prompt → Draw" desc="Generate the script per page, compose deep prompts, then draw. A failed page only needs redrawing on its own.">
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-        <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>Kịch bản {pages.length ? `· ${pages.length} trang` : ""}</h3>
+        <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>Script {pages.length ? `· ${pages.length} pages` : ""}</h3>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={genScript}>{busy ? "Đang viết…" : pages.length ? "↻ Sinh lại" : "✨ Sinh kịch bản"}</button>
-          {pages.length > 0 && <button style={{ ...btnBlue, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={save}>Lưu</button>}
+          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={genScript}>{busy ? "Writing…" : pages.length ? "↻ Regenerate" : "✨ Generate script"}</button>
+          {pages.length > 0 && <button style={{ ...btnBlue, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={save}>Save</button>}
         </div>
       </div>
 
       {pages.length > 0 && (
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 12, background: "#FAFBFF" }}>
-          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Ảnh nhân vật đặt ở <b>Biến (bước 2)</b>.</span>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }} title="AI vẽ chữ thẳng vào ảnh (giống mẫu). Tắt = chừa vùng trống để overlay chữ.">
-            <input type="checkbox" checked={baked} onChange={(e) => setBaked(e.target.checked)} /> AI vẽ chữ vào ảnh
-          </label>
-          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Ráp Bible + brief + chữ → prompt chi tiết cho mọi trang (không vẽ, không quá tải)">Ráp prompt tất cả</button>
-          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Vẽ từng trang bên dưới (tránh quá tải).</span>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 12, background: "#FAFBFF" }}>
+          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Compose Bible + brief + text → detailed prompt for every page (no drawing, no overload)">🧱 Compose all prompts</button>
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Then draw each page below — one at a time to avoid overload.</span>
           <details style={{ fontSize: 12, marginLeft: "auto" }}>
-            <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600, listStyle: "none" }}>⚙ Model AI</summary>
+            <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600, listStyle: "none" }}>⚙ AI models</summary>
             <div style={{ display: "grid", gap: 6, marginTop: 6, minWidth: 210 }}>
-              <select value={model} onChange={(e) => setModel(e.target.value)} title="AI viết ý tưởng/kịch bản" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
-                <option value="">— Model text (viết) mặc định —</option>
+              <select value={model} onChange={(e) => setModel(e.target.value)} title="AI for ideas/script" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
+                <option value="">— Default text model —</option>
                 <ModelOptions models={models} />
               </select>
-              <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="AI vẽ ảnh" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
-                <option value="">— Model ảnh (vẽ) mặc định —</option>
+              <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="AI for drawing" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
+                <option value="">— Default image model —</option>
                 <ModelOptions models={imgModels} />
               </select>
             </div>
@@ -617,7 +605,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         </div>
       )}
 
-      {pages.length === 0 ? <div className="panel empty" style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>Chưa có kịch bản. Bấm <b>Sinh kịch bản</b> để AI viết từng trang.</div>
+      {pages.length === 0 ? <div className="panel empty" style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>No script yet. Click <b>Generate script</b> to have AI write each page.</div>
         : (
           <div style={{ display: "grid", gap: 10 }}>
             {pages.map((p, i) => (
@@ -625,22 +613,22 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
                 <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 13 }}>#{p.page_no}</div>
                 <div style={{ display: "grid", gap: 8 }}>
                   <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Lời văn (có thể chèn {"{name}"})</div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Text (can insert {"{name}"})</div>
                     <textarea value={p.text} onChange={(e) => setPage(i, "text", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Brief minh hoạ (cảnh vẽ)</div>
+                    <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Illustration brief (scene)</div>
                     <textarea value={p.illustration} onChange={(e) => setPage(i, "illustration", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
                   </div>
                   <details>
                     <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>
-                      Prompt chi tiết {p.prompt ? "✓" : "(chưa ráp)"} — bấm để xem/sửa
+                      Detailed prompt {p.prompt ? "✓" : "(not composed)"} — click to view/edit
                     </summary>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
-                      <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(i, p.page_no)}>🧱 Ráp lại prompt này</button>
-                      {p.prompt && <span style={{ fontSize: 10.5, color: "var(--faint)" }}>còn placeholder {"{name}"}… → thay lúc gen</span>}
+                      <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(i, p.page_no)}>🧱 Recompose this prompt</button>
+                      {p.prompt && <span style={{ fontSize: 10.5, color: "var(--faint)" }}>has {"{name}"} placeholders… → replaced at gen</span>}
                     </div>
-                    <textarea value={p.prompt ?? ""} onChange={(e) => setPage(i, "prompt", e.target.value)} rows={8} placeholder="Bấm 🧱 Ráp để tự sinh, hoặc gõ tay prompt chuẩn vàng…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+                    <textarea value={p.prompt ?? ""} onChange={(e) => setPage(i, "prompt", e.target.value)} rows={8} placeholder="Click 🧱 Compose to auto-generate, or type a gold-standard prompt…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
                   </details>
                 </div>
                 <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
@@ -649,21 +637,16 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
                       <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={illus[p.page_no]} alt={`p${p.page_no}`} style={{ width: "100%", display: "block" }} />
-                        {!baked && p.text.trim() && (
-                          <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "linear-gradient(transparent, rgba(0,0,0,.62))", color: "#fff", fontSize: 9.5, padding: "16px 7px 6px", lineHeight: 1.3, textAlign: "center", fontWeight: 600, textShadow: "0 1px 2px rgba(0,0,0,.5)" }}>
-                            {fill(p.text, vars)}
-                          </div>
-                        )}
                       </div>
                     )
-                    : <div style={{ height: 110, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Chưa vẽ</div>}
-                  <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Đang vẽ…" : illus[p.page_no] ? "↻ Vẽ lại" : "🎨 Vẽ"}</button>
+                    : <div style={{ height: 110, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Not drawn</div>}
+                  <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Drawing…" : illus[p.page_no] ? "↻ Redraw" : "🎨 Draw"}</button>
                 </div>
               </div>
             ))}
           </div>
         )}
-      <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>Tên preview: <b>{previewName}</b> (đổi ở ô giá trị của biến <code>name</code>).</div>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>Preview name: <b>{previewName}</b> (edit the value of the <code>name</code> variable).</div>
       </StepCard>
     </div>
   );

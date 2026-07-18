@@ -109,8 +109,8 @@ export async function generateBookIdeas(brief: { occasion?: string; audience?: s
   const pages = brief.pages ?? 12;
   const refs = (brief.refImages ?? []).filter(Boolean);
   const comp = (brief.competitor ?? "").trim();
-  const system = "Bạn là chuyên gia sáng tạo sách thiếu nhi personalized bán trên Etsy/TikTok (keepsake baby books, birthday book, sleep book…). Trả lời DUY NHẤT bằng JSON.";
-  const user = `Sinh ${n} ý tưởng đầu sách KHÁC NHAU.
+  const system = "Bạn là chuyên gia sáng tạo sách thiếu nhi personalized bán trên Etsy/TikTok (keepsake baby books, birthday book, sleep book…). Trả lời DUY NHẤT bằng JSON. TOÀN BỘ nội dung sinh ra (name, hook, angle, usp, outline) BẮT BUỘC bằng TIẾNG ANH — dù người dùng mô tả bằng tiếng Việt (sản phẩm bán cho khách nói tiếng Anh).";
+  const user = `Sinh ${n} ý tưởng đầu sách KHÁC NHAU (mọi trường trả về bằng TIẾNG ANH).
 Dịp/ngách: ${brief.occasion || "tuỳ bạn đề xuất"}
 Đối tượng: ${brief.audience || "trẻ nhỏ / quà tặng cha mẹ"}
 Số trang: ${pages}

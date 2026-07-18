@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { generateBookScript } from "@/lib/ai/openrouter";
+import { getBookProduct } from "@/lib/book-products";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -16,10 +17,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
   const b = await req.json().catch(() => ({}));
   const concept = (title.concept ?? {}) as { angle?: string; outline?: string[] };
+  const briefObj = (title.brief ?? {}) as { pages?: number };
+  // Số trang CHUẨN theo SẢN PHẨM (Hardcover = 24). request > product > brief > 12. KHÔNG lấy theo outline.
+  const product = getBookProduct(title.productKey);
+  const pageCount = Number(b?.pages) || product.pageCount || Number(briefObj.pages) || 12;
   try {
     const pages = await generateBookScript(
       { name: title.name, angle: concept.angle, outline: concept.outline },
-      { pages: Number(b?.pages) || undefined, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined },
+      { pages: pageCount, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined },
     );
     await db.delete(schema.bookPages).where(eq(schema.bookPages.titleId, params.id));
     if (pages.length) {

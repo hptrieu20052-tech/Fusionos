@@ -30,14 +30,23 @@ export async function POST(req: NextRequest) {
   const model = process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4o-mini";
   const system = "Bạn là chuyên gia phân tích sản phẩm sách/quà personalized bán trên Etsy/TikTok. Nhìn KỸ ảnh listing đối thủ và mô tả CỤ THỂ những gì THẤY trong ảnh. Trả lời DUY NHẤT bằng JSON.";
   const user = `Bối cảnh sản phẩm đang làm: ${b?.notes || "(không)"}
-Có ${imgs.length} ảnh listing đối thủ đính kèm. Hãy:
-1) Với TỪNG ảnh, mô tả 1 dòng: chủ đề/ngách, nhân vật chính, phong cách vẽ, tông màu, chữ/tiêu đề nổi bật nếu có, bố cục.
-2) Rút ra ngách chung + điểm mạnh của họ.
-3) 2-3 gạch đầu dòng gợi ý cách LÀM KHÁC BIỆT.
-Bám sát ĐÚNG nội dung ảnh, không bịa. Trả JSON: {"analysis":"..."}`;
+Có ${imgs.length} ảnh listing đối thủ đính kèm. Trong trường "analysis", viết VĂN BẢN THƯỜNG tiếng Việt, dùng xuống dòng và gạch đầu dòng "-", gồm:
+- Mỗi ảnh 1 dòng: chủ đề/ngách · nhân vật chính · phong cách vẽ · tông màu · chữ/tiêu đề nổi bật (nếu có) · bố cục.
+- 1 dòng "Ngách chung:" + điểm mạnh của họ.
+- 2-3 dòng "Gợi ý khác biệt:" cách làm nổi hơn.
+Bám sát ĐÚNG nội dung ảnh, không bịa. QUAN TRỌNG: "analysis" là MỘT chuỗi văn bản dễ đọc, TUYỆT ĐỐI KHÔNG lồng JSON/object bên trong.
+Trả JSON đúng dạng: {"analysis":"...(văn bản nhiều dòng)..."}`;
   try {
-    const out = await orChatJSON<{ analysis: string }>(system, user, { model, images: imgs, maxTokens: 700, temperature: 0.5 });
-    return NextResponse.json({ ok: true, analysis: String(out?.analysis || "").slice(0, 1500), count: imgs.length });
+    const out = await orChatJSON<{ analysis?: unknown }>(system, user, { model, images: imgs, maxTokens: 700, temperature: 0.5 });
+    // Ưu tiên chuỗi; nếu model lỡ trả object thì gỡ thành text dễ đọc thay vì JSON thô.
+    const flatten = (v: unknown): string => {
+      if (typeof v === "string") return v;
+      if (Array.isArray(v)) return v.map(flatten).join("\n");
+      if (v && typeof v === "object") return Object.entries(v as Record<string, unknown>).map(([k, val]) => `- ${k}: ${flatten(val)}`).join("\n");
+      return String(v ?? "");
+    };
+    const analysis = (typeof out?.analysis === "string" ? out.analysis : flatten(out?.analysis ?? out)).slice(0, 1800);
+    return NextResponse.json({ ok: true, analysis, count: imgs.length });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) }, { status: 502 });
   }
