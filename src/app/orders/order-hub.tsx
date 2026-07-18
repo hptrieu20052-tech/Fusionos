@@ -1610,8 +1610,9 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
                 <div key={sg.designId} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 8 }}>
                   <div style={{ marginBottom: 6 }}>{reasonBadge(sg, t)}</div>
                   {sg.thumb && (
-                    <div className="o2-dpreview checker" onClick={() => setZoom(sg.thumb)} title={t("o.clickEnlarge")}>
-                      <img src={sg.thumb} alt="" />
+                    // GIỮ TỈ LỆ GỐC (không ép vuông) → nhìn hình dáng biết ngay hoodie/tshirt/… không cần bấm.
+                    <div className="checker" onClick={() => setZoom(sg.thumb)} title={t("o.clickEnlarge")} style={{ width: 120, maxWidth: "100%", borderRadius: 12, overflow: "hidden", border: "1px solid var(--line)", cursor: "zoom-in" }}>
+                      <img src={sg.thumb} alt="" style={{ width: "100%", height: "auto", display: "block" }} />
                     </div>
                   )}
                   <button onClick={() => assign(sg.skuCode)} disabled={busy} style={{ marginTop: 6, width: "100%", background: "var(--green)", color: "#fff", border: "none", borderRadius: 9, padding: "8px 12px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
