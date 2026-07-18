@@ -62,7 +62,6 @@ const str = (v: unknown): string | null => {
 };
 
 const MAX_SUGGESTS = 3;
-const NAME_MIN_SCORE = 0.3;
 
 /** Học từ lịch sử: key (listing hoặc sku) → các design đã dùng, xếp theo SỐ LẦN DÙNG giảm dần. */
 async function learn(column: "etsy_listing_id" | "internal_sku", keys: string[]) {
@@ -91,39 +90,6 @@ async function learn(column: "etsy_listing_id" | "internal_sku", keys: string[])
   return byKey;
 }
 
-/** Fallback: khớp tên sản phẩm với tên design bằng pg_trgm (dùng index idx_designs_title_trgm). */
-async function matchByName(titles: string[]) {
-  const byTitle = new Map<string, Suggest[]>();
-  if (!titles.length) return byTitle;
-
-  const rows = (await db.execute(sql`
-    SELECT q.title AS key, d.id, d.sku_code, d.title, d.personalize, df.thumb_key,
-           similarity(d.title, q.title) AS sim
-    FROM unnest(ARRAY[${sql.join(titles.map((t) => sql`${t}`), sql`, `)}]::text[]) AS q(title)
-    JOIN designs d ON d.title % q.title
-    LEFT JOIN LATERAL (
-      SELECT thumb_key FROM design_files
-      WHERE design_id = d.id AND thumb_key IS NOT NULL LIMIT 1
-    ) df ON TRUE
-    WHERE similarity(d.title, q.title) >= ${NAME_MIN_SCORE}
-    ORDER BY q.title, sim DESC
-    LIMIT 400
-  `)).rows as {
-    key: string; id: string; sku_code: number; title: string;
-    personalize: boolean; thumb_key: string | null; sim: number;
-  }[];
-
-  for (const r of rows) {
-    const list = byTitle.get(r.key) ?? byTitle.set(r.key, []).get(r.key)!;
-    if (list.length >= MAX_SUGGESTS) continue;
-    list.push({
-      designId: r.id, skuCode: r.sku_code, title: r.title,
-      thumb: fileUrl(r.thumb_key), reason: "name", score: Number(r.sim),
-    });
-  }
-  return byTitle;
-}
-
 const toSuggest = (r: LearnedRow, reason: SuggestReason): Suggest => ({
   designId: r.design_id, skuCode: r.sku_code, title: r.title,
   thumb: fileUrl(r.thumb_key), reason, hits: r.hits,
@@ -135,18 +101,14 @@ export async function suggestForItems(items: SuggestInput[]): Promise<Map<string
 
   const listingIds = Array.from(new Set(items.map((i) => str(i.etsy_listing_id)).filter(Boolean) as string[]));
   const skus = Array.from(new Set(items.map((i) => str(i.internal_sku)).filter(Boolean) as string[]));
-  const titles = Array.from(new Set(items.map((i) => str(i.product_title)).filter(Boolean) as string[]));
-
-  const [byListing, bySku, byName] = await Promise.all([
+  const [byListing, bySku] = await Promise.all([
     learn("etsy_listing_id", listingIds).catch(() => new Map<string, LearnedRow[]>()),
     learn("internal_sku", skus).catch(() => new Map<string, LearnedRow[]>()),
-    matchByName(titles).catch(() => new Map<string, Suggest[]>()),
   ]);
 
   for (const it of items) {
     const lid = str(it.etsy_listing_id);
     const sku = str(it.internal_sku);
-    const title = str(it.product_title);
 
     const learnedListing = (lid && byListing.get(lid)) || [];
     const learnedSku = (sku && bySku.get(sku)) || [];
@@ -183,9 +145,9 @@ export async function suggestForItems(items: SuggestInput[]): Promise<Map<string
       suggests.push(s);
     };
 
+    // CHỈ gợi ý khi khớp LISTING (100% chuẩn: listing này từng gán đúng design này).
+    // BỎ khớp theo SKU (hẹp) và khớp TÊN (fuzzy % < 100%) — yêu cầu: chỉ suggest bản đúng 100%.
     for (const r of learnedListing) push(toSuggest(r, "listing"));
-    for (const r of learnedSku) push(toSuggest(r, "sku"));
-    for (const s of (title && byName.get(title)) || []) push(s);
 
     out.set(it.id, { suggests, custom: false, baseDesign: null });
   }

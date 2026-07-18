@@ -355,12 +355,11 @@ function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: B
   );
 }
 
-// ===== Panel: BIẾN CÁ NHÂN HOÁ (add custom tên/tuổi/…) =====
+// ===== Panel: BIẾN CÁ NHÂN HOÁ (Chữ / Ảnh) — thiết kế gọn, hiện đại =====
 function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setVars: (v: Var[]) => void; onSave: () => void; bookId: string; flash: (m: string) => void }) {
   const [upIdx, setUpIdx] = useState<number | null>(null);
   const setV = (i: number, k: keyof Var, val: string) => setVars(vars.map((v, idx) => idx === i ? { ...v, [k]: val } : v));
   const patch = (i: number, p: Partial<Var>) => setVars(vars.map((v, idx) => idx === i ? { ...v, ...p } : v));
-  const small: React.CSSProperties = { ...inp, fontSize: 12, padding: "6px 9px" };
   const uploadImg = async (i: number, file: File) => {
     setUpIdx(i);
     const t = await api(`/api/books/${bookId}/reference-url`, "POST", { contentType: file.type || "image/png" });
@@ -369,47 +368,68 @@ function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setV
       const put = await fetch(t.url as string, { method: (t.method as string) || "PUT", headers: { "Content-Type": file.type || "image/png" }, body: file });
       if (!put.ok) throw new Error("upload HTTP " + put.status);
       patch(i, { imageKey: String(t.key), imageUrl: String(t.publicUrl || "") });
-      flash("✓ Đã tải ảnh biến — nhớ Lưu biến");
+      flash("✓ Đã tải ảnh biến — nhớ Lưu");
     } catch (e) { flash("✗ upload: " + String((e as Error)?.message ?? e).slice(0, 80)); }
     setUpIdx(null);
   };
+  // Đếm key để cảnh báo trùng.
+  const dupKeys = new Set<string>();
+  const seen = new Set<string>();
+  for (const v of vars) { const k = (v.key || "").trim(); if (!k) continue; if (seen.has(k)) dupKeys.add(k); else seen.add(k); }
+  const seg = (active: boolean): React.CSSProperties => ({ padding: "4px 12px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, cursor: "pointer", border: 0, background: active ? "#fff" : "transparent", color: active ? "var(--blue)" : "var(--muted)", boxShadow: active ? "0 1px 2px rgba(0,0,0,.10)" : "none" });
+  const bareInp: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 9, padding: "7px 10px", font: "inherit", fontSize: 13, width: "100%", boxSizing: "border-box", background: "#fff" };
+
   return (
-    <div style={{ border: "1px solid var(--line)", borderRadius: 12, marginBottom: 12, padding: 12, background: "#FAFBFF" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+    <div style={{ border: "1px solid var(--line)", borderRadius: 14, marginBottom: 12, background: "#fff", overflow: "hidden" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", borderBottom: "1px solid #EEF0F5", background: "#FAFBFF", flexWrap: "wrap" }}>
         <span style={{ fontWeight: 800, fontSize: 14 }}>Biến cá nhân hoá</span>
-        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>— Chữ hoặc ẢNH (bé/bố/mẹ…). Biến ảnh dùng làm reference giữ nhân vật khi vẽ.</span>
-        <button style={{ ...btnGhost, marginLeft: "auto", padding: "5px 10px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", value: "", type: "text" }])}>+ Chữ</button>
-        <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", type: "image" }])}>+ Ảnh</button>
-        <button style={{ ...btnBlue, padding: "5px 10px", fontSize: 12 }} onClick={onSave}>Lưu biến</button>
+        <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1, minWidth: 120 }}>Chữ hoặc ảnh — thay khi gen & giữ nhân vật</span>
+        <button style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", value: "", type: "text" }])}>+ Chữ</button>
+        <button style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", type: "image" }])}>+ Ảnh</button>
+        <button style={{ ...btnBlue, padding: "6px 13px", fontSize: 12 }} onClick={onSave}>Lưu</button>
       </div>
-      <div style={{ display: "grid", gap: 6 }}>
-        {vars.map((v, i) => {
-          const isImg = v.type === "image";
-          return (
-            <div key={i} style={{ display: "grid", gridTemplateColumns: "104px 1fr 72px 1fr 28px", gap: 6, alignItems: "center" }}>
-              <input value={v.key} onChange={(e) => setV(i, "key", e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))} placeholder="key" style={small} />
-              <input value={v.label ?? ""} onChange={(e) => setV(i, "label", e.target.value)} placeholder="nhãn" style={small} />
-              <select value={v.type ?? "text"} onChange={(e) => patch(i, { type: e.target.value as "text" | "image" })} style={small}>
-                <option value="text">Chữ</option>
-                <option value="image">Ảnh</option>
-              </select>
+
+      {vars.length === 0 && <div style={{ padding: 18, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>Chưa có biến. Bấm <b>+ Chữ</b> / <b>+ Ảnh</b> để thêm.</div>}
+
+      {vars.map((v, i) => {
+        const isImg = v.type === "image";
+        const isDup = !!v.key && dupKeys.has(v.key.trim());
+        return (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderTop: i ? "1px solid #F0F2F7" : "none" }}>
+            <div style={{ display: "inline-flex", background: "#EEF1F7", borderRadius: 999, padding: 3, gap: 2, flexShrink: 0 }}>
+              <button style={seg(!isImg)} onClick={() => patch(i, { type: "text" })}>Chữ</button>
+              <button style={seg(isImg)} onClick={() => patch(i, { type: "image" })}>Ảnh</button>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <input value={v.label ?? ""} onChange={(e) => setV(i, "label", e.target.value)} placeholder="Nhãn (vd Tên bố)" style={{ ...bareInp, fontWeight: 600 }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 2, marginTop: 4, paddingLeft: 2 }}>
+                <span style={{ fontSize: 11, color: isDup ? "var(--red)" : "var(--faint)", fontFamily: "ui-monospace, monospace" }}>{"{"}</span>
+                <input value={v.key} onChange={(e) => setV(i, "key", e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))} placeholder="key" style={{ border: 0, background: "transparent", outline: "none", fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: isDup ? "var(--red)" : "var(--muted)", padding: 0, width: 130 }} />
+                <span style={{ fontSize: 11, color: isDup ? "var(--red)" : "var(--faint)", fontFamily: "ui-monospace, monospace" }}>{"}"}</span>
+                {isDup && <span style={{ fontSize: 10.5, color: "var(--red)", marginLeft: 6, fontWeight: 600 }}>⚠ trùng key — đổi tên khác</span>}
+              </div>
+            </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
               {isImg ? (
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: upIdx === i ? "wait" : "pointer" }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 9, cursor: upIdx === i ? "wait" : "pointer" }}>
                   {v.imageUrl
                     // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={v.imageUrl} alt="ref" style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)" }} />
-                    : <span style={{ width: 34, height: 34, display: "grid", placeItems: "center", borderRadius: 6, border: "1px dashed var(--line)", color: "var(--muted)", fontSize: 10 }}>Ảnh</span>}
-                  <span style={{ fontSize: 11.5, color: "var(--blue)", fontWeight: 600 }}>{upIdx === i ? "Đang tải…" : v.imageUrl ? "Đổi ảnh" : "Tải ảnh"}</span>
+                    ? <img src={v.imageUrl} alt="ref" style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 9, border: "1px solid var(--line)" }} />
+                    : <span style={{ width: 40, height: 40, display: "grid", placeItems: "center", borderRadius: 9, border: "1.5px dashed var(--line)", color: "var(--muted)", fontSize: 16 }}>+</span>}
+                  <span style={{ fontSize: 12.5, color: "var(--blue)", fontWeight: 700 }}>{upIdx === i ? "Đang tải…" : v.imageUrl ? "Đổi ảnh" : "Tải ảnh"}</span>
                   <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImg(i, f); e.target.value = ""; }} />
                 </label>
               ) : (
-                <input value={v.value ?? ""} onChange={(e) => setV(i, "value", e.target.value)} placeholder="giá trị (Liam)" style={small} />
+                <input value={v.value ?? ""} onChange={(e) => setV(i, "value", e.target.value)} placeholder="Giá trị (vd Lisa)" style={bareInp} />
               )}
-              <button style={{ ...btnGhost, padding: "5px 0", fontSize: 12 }} title="Xoá" onClick={() => setVars(vars.filter((_, idx) => idx !== i))}>✕</button>
             </div>
-          );
-        })}
-      </div>
+
+            <button title="Xoá biến" onClick={() => setVars(vars.filter((_, idx) => idx !== i))} style={{ border: 0, background: "transparent", color: "var(--faint)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 4, flexShrink: 0 }}>×</button>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -492,7 +512,10 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     setBusySetup(false);
     if (j.ok) {
       setBible((j.bible as Bible) ?? {});
-      setVars(((j.vars as Var[]) ?? []).map((v) => ({ ...v, value: v.value ?? "" })));
+      const vs = ((j.vars as Var[]) ?? []).map((v) => ({ ...v, value: v.value ?? "", type: v.type === "image" ? "image" as const : "text" as const }));
+      // Luôn có ít nhất 1 biến ẢNH nhân vật (kể cả khi AI quên).
+      const withImg = vs.some((v) => v.type === "image") ? vs : [{ key: "photo", label: "Ảnh nhân vật", value: "", type: "image" as const }, ...vs];
+      setVars(withImg);
       flash("✓ AI đã dựng Bible + biến theo chủ đề — kiểm tra & chỉnh lại nếu cần");
     } else flash("✗ " + (j.error ?? "Lỗi dựng khung"));
   };

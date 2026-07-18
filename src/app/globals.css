@@ -373,7 +373,7 @@ a.kpi:hover,a.pipe-card:hover{box-shadow:0 10px 26px rgba(13,76,155,.18),0 2px 6
 
 /* Nav "Thêm" dropdown — gom các mục chưa dùng thường xuyên */
 .topnav-more{position:relative}
-.topnav-more-menu{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(13,76,155,.16);padding:6px;min-width:210px;z-index:95;display:flex;flex-direction:column;gap:2px}
+.topnav-more-menu{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(13,76,155,.16);padding:6px;width:max-content;min-width:150px;z-index:95;display:flex;flex-direction:column;gap:2px}
 .topnav-more-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;text-decoration:none;color:var(--ink);font-size:13.5px;font-weight:600;white-space:nowrap}
 .topnav-more-item:hover{background:var(--blue-soft);color:var(--blue)}
 .topnav-more-item.active{background:var(--blue-soft);color:var(--blue)}

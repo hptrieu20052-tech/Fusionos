@@ -121,10 +121,10 @@ Mỗi ý tưởng cần:
 - hook: 1 câu chốt hạ vì sao khách mua
 - angle: góc bán / cảm xúc chính
 - usp: điểm khác biệt so với sách cùng loại (đặc biệt so với đối thủ nếu có ảnh)
-- outline: mảng ${pages} câu ngắn, mỗi câu = nội dung 1 trang
+- outline: mảng 4–6 câu TÓM TẮT diễn biến chính (KHÔNG cần đủ ${pages} trang — kịch bản chi tiết sẽ viết ở bước sau)
 
 Trả JSON đúng dạng: {"ideas":[{"name":"","hook":"","angle":"","usp":"","outline":["",""]}]}`;
-  const out = await orChatJSON<{ ideas: BookIdea[] }>(system, user, { maxTokens: 4000, model: brief.model, images: refs });
+  const out = await orChatJSON<{ ideas: BookIdea[] }>(system, user, { maxTokens: 3000, model: brief.model, images: refs });
   return (out.ideas ?? []).map((i) => ({ name: i.name ?? "", hook: i.hook ?? "", angle: i.angle ?? "", usp: i.usp ?? "", outline: Array.isArray(i.outline) ? i.outline : [] }));
 }
 
@@ -194,7 +194,7 @@ export function defaultBible(): BookBible {
   };
 }
 
-export type BookSetup = { bible: BookBible; vars: { key: string; label: string }[] };
+export type BookSetup = { bible: BookBible; vars: { key: string; label: string; type?: "text" | "image" }[] };
 
 // AI TỰ DỰNG Style Bible + bộ biến TỪ CHỦ ĐỀ. Đây là lời giải "1 form cho vô số chủ đề":
 // form chỉ nhận mô tả chủ đề, AI sinh phần riêng (nhân vật/trang phục/màu/cấm + biến hợp chủ đề).
@@ -217,8 +217,14 @@ Sinh JSON đúng dạng:
     "restrictions": "danh sách cấm phù hợp: an toàn trẻ em, không nhân vật/bản quyền, không lỗi tay/mặt, không chữ sai, flat artwork only… (gạch đầu dòng)",
     "format": "Single horizontal landscape page, aspect ratio 23:17 (print 3450×2550px at 300 DPI). Premium published picture-book quality."
   },
-  "vars": [ {"key":"name","label":"Tên bé"}, {"key":"age","label":"Tuổi"}, … 3-6 biến HỢP CHỦ ĐỀ (vd màu tóc, con vật biển yêu thích, siêu năng lực, thành phố…) ]
-}`;
+  "vars": [ {"key":"name","label":"Tên bé","type":"text"}, {"key":"age","label":"Tuổi","type":"text"}, … 3-6 biến HỢP CHỦ ĐỀ ]
+}
+
+QUY TẮC BIẾN (quan trọng):
+- Mỗi biến có "type": "text" hoặc "image".
+- Dùng "image" cho MỌI NHÂN VẬT có ẢNH THẬT của khách. Nếu chủ đề là "custom photo / face reference / dùng ảnh khách", HOẶC có nhiều người (bé, bố, mẹ, ông bà, thú cưng), thì BẮT BUỘC thêm biến ảnh cho TỪNG người: vd {"key":"babyPhoto","label":"Ảnh bé","type":"image"}, {"key":"dadPhoto","label":"Ảnh bố","type":"image"}, {"key":"momPhoto","label":"Ảnh mẹ","type":"image"}.
+- Các biến còn lại (tên, tuổi, màu tóc, biệt danh, lời chúc…) để "type":"text".
+- KHÔNG bỏ sót ảnh: chủ đề có bao nhiêu người dùng ảnh thật thì có bấy nhiêu biến "image".`;
   const out = await orChatJSON<BookSetup>(system, user, { maxTokens: 2500, model: opts?.model });
   const d = defaultBible();
   const rb = (out?.bible ?? {}) as BookBible;
@@ -233,9 +239,12 @@ Sinh JSON đúng dạng:
   };
   const seen = new Set<string>();
   const vars = (Array.isArray(out?.vars) ? out.vars : [])
-    .map((v) => ({ key: String(v?.key ?? "").replace(/[^a-zA-Z0-9_]/g, ""), label: String(v?.label ?? v?.key ?? "") }))
+    .map((v) => ({ key: String(v?.key ?? "").replace(/[^a-zA-Z0-9_]/g, ""), label: String(v?.label ?? v?.key ?? ""), type: (v?.type === "image" ? "image" : "text") as "text" | "image" }))
     .filter((v) => v.key && !seen.has(v.key) && (seen.add(v.key), true));
-  if (!vars.some((v) => v.key === "name")) vars.unshift({ key: "name", label: "Tên bé" });
+  if (!vars.some((v) => v.key === "name")) vars.unshift({ key: "name", label: "Tên bé", type: "text" });
+  // Bảo hiểm: chủ đề dùng ẢNH thật mà AI quên → thêm biến ảnh nhân vật.
+  const usesPhoto = /photo|ảnh|anh khach|custom photo|face|reference|chân dung|hình thật/i.test(`${concept.name} ${concept.notes ?? ""} ${concept.occasion ?? ""}`);
+  if (usesPhoto && !vars.some((v) => v.type === "image")) vars.unshift({ key: "photo", label: "Ảnh nhân vật", type: "image" });
   return { bible, vars };
 }
 
