@@ -5,9 +5,14 @@ const KEY = () => (process.env.OPENROUTER_API_KEY ?? "").trim();
 const TEXT_MODEL = () => (process.env.OPENROUTER_TEXT_MODEL ?? "anthropic/claude-3.5-sonnet").trim();
 
 // Gọi chat completions, ÉP trả JSON object. Ném lỗi rõ ràng để UI hiện.
-export async function orChatJSON<T>(system: string, user: string, opts?: { model?: string; maxTokens?: number; temperature?: number }): Promise<T> {
+export async function orChatJSON<T>(system: string, user: string, opts?: { model?: string; maxTokens?: number; temperature?: number; images?: string[] }): Promise<T> {
   const key = KEY();
   if (!key) throw new Error("OPENROUTER_API_KEY chưa cấu hình trong env (Vercel → Settings → Environment Variables).");
+  // Nếu có ảnh (data URL) → gửi multimodal: [text, image_url…]. Model text phải hỗ trợ vision.
+  const imgs = (opts?.images ?? []).filter(Boolean);
+  const userContent = imgs.length
+    ? [{ type: "text", text: user }, ...imgs.map((u) => ({ type: "image_url", image_url: { url: u } }))]
+    : user;
   const res = await fetch(OR_CHAT, {
     method: "POST",
     headers: {
@@ -18,7 +23,7 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
     },
     body: JSON.stringify({
       model: opts?.model ?? TEXT_MODEL(),
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
+      messages: [{ role: "system", content: system }, { role: "user", content: userContent }],
       response_format: { type: "json_object" },
       max_tokens: opts?.maxTokens ?? 3000,
       temperature: opts?.temperature ?? 0.8,
@@ -91,25 +96,27 @@ export async function listModels(type: "text" | "image" = "text"): Promise<{ id:
 export type BookIdea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 
 // Ý TƯỞNG: brief → nhiều concept đầu sách.
-export async function generateBookIdeas(brief: { occasion?: string; audience?: string; pages?: number; notes?: string; count?: number; model?: string }): Promise<BookIdea[]> {
+export async function generateBookIdeas(brief: { occasion?: string; audience?: string; pages?: number; notes?: string; count?: number; model?: string; refImages?: string[] }): Promise<BookIdea[]> {
   const n = Math.min(Math.max(brief.count ?? 4, 1), 8);
   const pages = brief.pages ?? 12;
+  const refs = (brief.refImages ?? []).filter(Boolean);
   const system = "Bạn là chuyên gia sáng tạo sách thiếu nhi personalized bán trên Etsy/TikTok (keepsake baby books, birthday book, sleep book…). Trả lời DUY NHẤT bằng JSON.";
   const user = `Sinh ${n} ý tưởng đầu sách KHÁC NHAU.
 Dịp/ngách: ${brief.occasion || "tuỳ bạn đề xuất"}
 Đối tượng: ${brief.audience || "trẻ nhỏ / quà tặng cha mẹ"}
 Số trang: ${pages}
 Ghi chú: ${brief.notes || "không"}
+${refs.length ? `\nCÓ ĐÍNH KÈM ${refs.length} ẢNH LISTING ĐỐI THỦ để tham khảo. Hãy đọc phong cách, ngách, bố cục, điểm bán của họ; rồi đề xuất ý tưởng CẠNH TRANH & KHÁC BIỆT hơn (tận dụng điểm mạnh, tránh sao chép). Nêu rõ điểm khác biệt ở "usp".` : ""}
 
 Mỗi ý tưởng cần:
 - name: tên sách tiếng Anh hấp dẫn, chuẩn Etsy SEO
 - hook: 1 câu chốt hạ vì sao khách mua
 - angle: góc bán / cảm xúc chính
-- usp: điểm khác biệt so với sách cùng loại
+- usp: điểm khác biệt so với sách cùng loại (đặc biệt so với đối thủ nếu có ảnh)
 - outline: mảng ${pages} câu ngắn, mỗi câu = nội dung 1 trang
 
 Trả JSON đúng dạng: {"ideas":[{"name":"","hook":"","angle":"","usp":"","outline":["",""]}]}`;
-  const out = await orChatJSON<{ ideas: BookIdea[] }>(system, user, { maxTokens: 4000, model: brief.model });
+  const out = await orChatJSON<{ ideas: BookIdea[] }>(system, user, { maxTokens: 4000, model: brief.model, images: refs });
   return (out.ideas ?? []).map((i) => ({ name: i.name ?? "", hook: i.hook ?? "", angle: i.angle ?? "", usp: i.usp ?? "", outline: Array.isArray(i.outline) ? i.outline : [] }));
 }
 
@@ -171,6 +178,51 @@ export function defaultBible(): BookBible {
       "- No harsh yellow color cast\n- No overly cartoonish or exaggerated proportions\n" +
       "- Generate the flat page artwork only — no page mockup, no hands holding the book, no surrounding background",
   };
+}
+
+export type BookSetup = { bible: BookBible; vars: { key: string; label: string }[] };
+
+// AI TỰ DỰNG Style Bible + bộ biến TỪ CHỦ ĐỀ. Đây là lời giải "1 form cho vô số chủ đề":
+// form chỉ nhận mô tả chủ đề, AI sinh phần riêng (nhân vật/trang phục/màu/cấm + biến hợp chủ đề).
+export async function generateBookSetup(concept: { name: string; occasion?: string; audience?: string; angle?: string; notes?: string }, opts?: { model?: string }): Promise<BookSetup> {
+  const system = "Bạn là art director sách tranh thiếu nhi personalized (in KDP/Story Book). Từ CHỦ ĐỀ, dựng 'Style Bible' (khối mô tả khoá nhân vật + phong cách để MỌI trang nhất quán) và đề xuất bộ BIẾN cá nhân hoá HỢP CHỦ ĐỀ. Trả lời DUY NHẤT bằng JSON. Mọi trường trong bible viết bằng TIẾNG ANH (để đưa thẳng vào prompt vẽ); label của biến có thể tiếng Việt.";
+  const user = `Chủ đề: "${concept.name}".
+Dịp/ngách: ${concept.occasion || "(tự suy luận)"}
+Đối tượng: ${concept.audience || "trẻ nhỏ / quà tặng"}
+Góc: ${concept.angle || ""}
+Ghi chú: ${concept.notes || ""}
+
+Sinh JSON đúng dạng:
+{
+  "bible": {
+    "character": "đặc điểm NHÂN VẬT CHÍNH hợp chủ đề, khoá mặt theo ảnh reference; giữ placeholder {age} nếu tuổi quan trọng; gạch đầu dòng",
+    "wardrobe": "trang phục/đạo cụ CỐ ĐỊNH đặc trưng chủ đề (vd đuôi tiên cá lấp lánh / áo choàng siêu anh hùng); để '' nếu chủ đề không cần",
+    "artStyle": "phong cách vẽ (premium children's storybook digital painting…)",
+    "palette": "bảng màu chủ đạo hợp chủ đề, liệt kê 4-6 màu",
+    "textStyle": "quy tắc chữ baked: elegant child-friendly serif, dark navy on clean light area, correctly spelled, not over faces, no page numbers",
+    "restrictions": "danh sách cấm phù hợp: an toàn trẻ em, không nhân vật/bản quyền, không lỗi tay/mặt, không chữ sai, flat artwork only… (gạch đầu dòng)",
+    "format": "Single horizontal landscape page, aspect ratio 23:17 (print 3450×2550px at 300 DPI). Premium published picture-book quality."
+  },
+  "vars": [ {"key":"name","label":"Tên bé"}, {"key":"age","label":"Tuổi"}, … 3-6 biến HỢP CHỦ ĐỀ (vd màu tóc, con vật biển yêu thích, siêu năng lực, thành phố…) ]
+}`;
+  const out = await orChatJSON<BookSetup>(system, user, { maxTokens: 2500, model: opts?.model });
+  const d = defaultBible();
+  const rb = (out?.bible ?? {}) as BookBible;
+  const bible: BookBible = {
+    format: rb.format?.trim() || d.format,
+    character: rb.character?.trim() || d.character,
+    wardrobe: typeof rb.wardrobe === "string" ? rb.wardrobe : (d.wardrobe ?? ""),
+    artStyle: rb.artStyle?.trim() || d.artStyle,
+    palette: rb.palette?.trim() || d.palette,
+    textStyle: rb.textStyle?.trim() || d.textStyle,
+    restrictions: rb.restrictions?.trim() || d.restrictions,
+  };
+  const seen = new Set<string>();
+  const vars = (Array.isArray(out?.vars) ? out.vars : [])
+    .map((v) => ({ key: String(v?.key ?? "").replace(/[^a-zA-Z0-9_]/g, ""), label: String(v?.label ?? v?.key ?? "") }))
+    .filter((v) => v.key && !seen.has(v.key) && (seen.add(v.key), true));
+  if (!vars.some((v) => v.key === "name")) vars.unshift({ key: "name", label: "Tên bé" });
+  return { bible, vars };
 }
 
 // Ráp PROMPT CHI TIẾT cho 1 trang từ Bible + brief cảnh + lời văn. Có cấu trúc như prompt "chuẩn vàng".

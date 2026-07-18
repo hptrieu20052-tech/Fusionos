@@ -154,12 +154,23 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
   const [busy, setBusy] = useState(false);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [model, setModel] = useState("");
+  const [refs, setRefs] = useState<string[]>([]); // ảnh listing đối thủ (data URL), tối đa 3
   useEffect(() => { setModel(lsGet("bs_text_model")); }, []);
+
+  const addRefs = (files: FileList) => {
+    const room = 3 - refs.length;
+    const list = Array.from(files).slice(0, Math.max(0, room));
+    list.forEach((f) => {
+      const r = new FileReader();
+      r.onload = () => setRefs((cur) => (cur.length >= 3 ? cur : [...cur, String(r.result)]));
+      r.readAsDataURL(f);
+    });
+  };
 
   const gen = async () => {
     setBusy(true); setIdeas([]);
     lsSet("bs_text_model", model);
-    const j = await api("/api/books/ideas", "POST", { ...brief, model: model || undefined });
+    const j = await api("/api/books/ideas", "POST", { ...brief, model: model || undefined, refImages: refs });
     setBusy(false);
     if (j.ok) setIdeas((j.ideas as Idea[]) ?? []); else flash("✗ " + (j.error ?? "Lỗi sinh ý tưởng"));
   };
@@ -188,6 +199,25 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
           <label style={{ fontSize: 12, fontWeight: 600 }}>Số ý tưởng<input type="number" style={{ ...inp, marginTop: 4 }} value={brief.count} onChange={(e) => setBrief({ ...brief, count: Number(e.target.value) || 4 })} /></label>
           <label style={{ fontSize: 12, fontWeight: 600, gridColumn: "1 / -1" }}>Ghi chú<input style={{ ...inp, marginTop: 4 }} placeholder="phong cách, chủ đề riêng…" value={brief.notes} onChange={(e) => setBrief({ ...brief, notes: e.target.value })} /></label>
           <div style={{ gridColumn: "1 / -1" }}><ModelPicker models={models} value={model} onChange={setModel} label="AI viết ý tưởng/kịch bản" /></div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Ảnh tham khảo đối thủ <span style={{ color: "var(--muted)", fontWeight: 400 }}>(tuỳ chọn, tối đa 3 — AI đọc để đề xuất ý tưởng cạnh tranh)</span></div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {refs.map((u, i) => (
+                <div key={i} style={{ position: "relative" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u} alt={`ref${i}`} style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />
+                  <button onClick={() => setRefs((cur) => cur.filter((_, idx) => idx !== i))} title="Xoá" style={{ position: "absolute", top: -6, right: -6, width: 18, height: 18, borderRadius: 999, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 11, lineHeight: 1, padding: 0 }}>✕</button>
+                </div>
+              ))}
+              {refs.length < 3 && (
+                <label style={{ width: 56, height: 56, display: "grid", placeItems: "center", borderRadius: 8, border: "1px dashed var(--line)", color: "var(--blue)", fontSize: 22, cursor: "pointer" }} title="Thêm ảnh đối thủ">
+                  +
+                  <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) addRefs(e.target.files); e.target.value = ""; }} />
+                </label>
+              )}
+            </div>
+            {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Lưu ý: chọn model text có hỗ trợ ảnh (Claude/GPT‑4o/Gemini) để đọc được ảnh.</div>}
+          </div>
         </div>
         <button style={{ ...btnBlue, marginTop: 12, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Đang nghĩ…" : "✨ Sinh ý tưởng"}</button>
 
@@ -211,8 +241,11 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
 }
 
 // ===== Panel: STYLE BIBLE (khai báo 1 lần, ráp vào mọi trang) =====
+// Gọn: mặc định chỉ hiện phần hay chỉnh (nhân vật/trang phục/phong cách/màu). Phần khung cố định
+// (quy tắc chữ/cấm/khổ) giấu trong "Nâng cao" — AI đã điền sẵn, ít khi phải sửa.
 function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void }) {
   const [open, setOpen] = useState(false);
+  const [adv, setAdv] = useState(false);
   const F = (k: keyof Bible, label: string, rows = 2, ph = "") => (
     <div>
       <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>{label}</div>
@@ -222,8 +255,8 @@ function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: B
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, marginBottom: 12, background: "#FCFCFF" }}>
       <button onClick={() => setOpen((v) => !v)} style={{ ...btnGhost, border: 0, width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 8, background: "transparent" }}>
-        <span style={{ fontWeight: 800, fontSize: 14 }}>📖 Style Bible</span>
-        <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 500 }}>— khối bí kíp giữ nhân vật &amp; phong cách nhất quán mọi trang</span>
+        <span style={{ fontWeight: 800, fontSize: 14 }}>Style Bible</span>
+        <span style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 500 }}>— giữ nhân vật &amp; phong cách nhất quán mọi trang</span>
         <span style={{ marginLeft: "auto", fontSize: 12 }}>{open ? "▲" : "▼"}</span>
       </button>
       {open && (
@@ -236,9 +269,8 @@ function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: B
           {F("wardrobe", "Trang phục / đạo cụ cố định", 2, "vd bộ pyjama sao xanh teal (để trống nếu không có)")}
           {F("artStyle", "Phong cách vẽ", 3)}
           {F("palette", "Bảng màu", 1)}
-          {F("textStyle", "Quy tắc chữ (baked vào ảnh)", 3)}
-          {F("restrictions", "Danh sách cấm", 5)}
-          {F("format", "Khổ trang / chất lượng", 2)}
+          <button onClick={() => setAdv((v) => !v)} style={{ ...btnGhost, border: 0, background: "transparent", padding: 0, fontSize: 12, color: "var(--blue)", textAlign: "left", cursor: "pointer" }}>{adv ? "▲ Ẩn nâng cao" : "▼ Nâng cao (quy tắc chữ · cấm · khổ)"}</button>
+          {adv && <>{F("textStyle", "Quy tắc chữ", 3)}{F("restrictions", "Danh sách cấm", 5)}{F("format", "Khổ trang / chất lượng", 2)}</>}
         </div>
       )}
     </div>
@@ -270,11 +302,29 @@ function VarsPanel({ vars, setVars, onSave }: { vars: Var[]; setVars: (v: Var[])
   );
 }
 
+// Thẻ BƯỚC đánh số — cho luồng Gen Book rõ ràng, đúng thứ tự.
+function StepCard({ n, title, desc, right, children }: { n: number; title: string; desc?: string; right?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 14, padding: 14, marginBottom: 14, background: "#fff" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+        <span style={{ width: 24, height: 24, borderRadius: 999, background: "var(--blue)", color: "#fff", display: "grid", placeItems: "center", fontSize: 12.5, fontWeight: 800, flexShrink: 0 }}>{n}</span>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontWeight: 800, fontSize: 14.5 }}>{title}</div>
+          {desc && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>{desc}</div>}
+        </div>
+        {right && <div style={{ marginLeft: "auto" }}>{right}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function DetailView({ detail, reload, flash, models }: { detail: Detail; reload: () => void; flash: (m: string) => void; models: { id: string; name: string }[] }) {
   const id = detail.title.id;
   const concept = (detail.title.concept ?? {}) as { hook?: string; angle?: string; usp?: string; outline?: string[] };
   const [pages, setPages] = useState<Page[]>(detail.pages.map((p) => ({ page_no: p.pageNo, text: p.textTemplate ?? "", illustration: p.illustrationBrief ?? "", prompt: p.promptTemplate ?? "" })));
   const [busy, setBusy] = useState(false);
+  const [busySetup, setBusySetup] = useState(false);
   const [model, setModel] = useState("");
   // ---- Bible + Vars ----
   const [bible, setBible] = useState<Bible>(detail.title.bible ?? {});
@@ -320,6 +370,17 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
 
   const saveBible = async () => { const j = await api(`/api/books/${id}`, "PATCH", { bible }); flash(j.ok ? "✓ Đã lưu Bible" : "✗ " + (j.error ?? "Lỗi")); };
   const saveVars = async () => { const j = await api(`/api/books/${id}`, "PATCH", { vars }); flash(j.ok ? "✓ Đã lưu biến" : "✗ " + (j.error ?? "Lỗi")); };
+  // ✨ AI tự dựng Style Bible + bộ biến THEO CHỦ ĐỀ (giải bài toán "1 form cho vô số chủ đề").
+  const setupAI = async () => {
+    setBusySetup(true); lsSet("bs_text_model", model);
+    const j = await api(`/api/books/${id}/setup`, "POST", { model: model || undefined });
+    setBusySetup(false);
+    if (j.ok) {
+      setBible((j.bible as Bible) ?? {});
+      setVars(((j.vars as Var[]) ?? []).map((v) => ({ ...v, value: v.value ?? "" })));
+      flash("✓ AI đã dựng Bible + biến theo chủ đề — kiểm tra & chỉnh lại nếu cần");
+    } else flash("✗ " + (j.error ?? "Lỗi dựng khung"));
+  };
 
   // Bước 2 — Ráp prompt chi tiết (deterministic, nhanh). Lưu Bible trước để chắc chắn dùng bản mới nhất.
   const composeAll = async () => {
@@ -373,22 +434,22 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
 
   return (
     <div>
-      <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 15, marginBottom: 14 }}>
-        <div style={{ fontWeight: 800, fontSize: 16 }}>{detail.title.name}</div>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>{[detail.title.occasion, detail.title.audience].filter(Boolean).join(" · ") || "—"}</div>
-        {concept.hook && <div style={{ fontSize: 13, marginTop: 8 }}>{concept.hook}</div>}
-      </div>
+      <StepCard n={1} title={`Chủ đề: ${detail.title.name}`} desc={[detail.title.occasion, detail.title.audience].filter(Boolean).join(" · ") || undefined}>
+        {concept.hook ? <div style={{ fontSize: 13, color: "var(--ink)" }}>{concept.hook}</div>
+          : <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Chủ đề đã tạo từ ý tưởng. Sang bước 2 để dựng bộ khung.</div>}
+      </StepCard>
 
-      <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
-      <VarsPanel vars={vars} setVars={setVars} onSave={saveVars} />
+      <StepCard n={2} title="Bộ khung chủ đề — Style Bible + Biến"
+        desc="AI tự dựng theo chủ đề (nhân vật · trang phục · phong cách · màu · cấm) rồi bạn chỉnh. Khối này ráp vào MỌI trang → giữ nhân vật nhất quán."
+        right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "AI đang dựng…" : "✨ AI dựng theo chủ đề"}</button>}>
+        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
+        <VarsPanel vars={vars} setVars={setVars} onSave={saveVars} />
+      </StepCard>
 
+      <StepCard n={3} title="Kịch bản → Prompt chi tiết → Vẽ" desc="Sinh kịch bản từng trang, ráp prompt sâu, rồi vẽ. Trang lỗi chỉ cần vẽ lại riêng trang đó.">
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>Kịch bản {pages.length ? `· ${pages.length} trang` : ""}</h3>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <select value={model} onChange={(e) => setModel(e.target.value)} title="AI viết kịch bản" style={{ ...inp, width: 200, fontSize: 12, padding: "7px 9px" }}>
-            <option value="">— Model text mặc định —</option>
-            <ModelOptions models={models} />
-          </select>
           <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={genScript}>{busy ? "Đang viết…" : pages.length ? "↻ Sinh lại" : "✨ Sinh kịch bản"}</button>
           {pages.length > 0 && <button style={{ ...btnBlue, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={save}>Lưu</button>}
         </div>
@@ -405,14 +466,23 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
             <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadRef(f); e.target.value = ""; }} />
           </label>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }} title="AI vẽ chữ thẳng vào ảnh (giống mẫu). Tắt = chừa vùng trống để overlay chữ.">
-            <input type="checkbox" checked={baked} onChange={(e) => setBaked(e.target.checked)} /> AI vẽ chữ vào ảnh (baked)
+            <input type="checkbox" checked={baked} onChange={(e) => setBaked(e.target.checked)} /> AI vẽ chữ vào ảnh
           </label>
-          <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="AI vẽ ảnh" style={{ ...inp, width: 190, fontSize: 12, padding: "7px 9px" }}>
-            <option value="">— Model ảnh mặc định —</option>
-            <ModelOptions models={imgModels} />
-          </select>
-          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Ráp Bible + brief + chữ → prompt chi tiết cho mọi trang">🧱 Ráp prompt tất cả</button>
+          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Ráp Bible + brief + chữ → prompt chi tiết cho mọi trang">Ráp prompt tất cả</button>
           <button style={{ ...btnBlue, opacity: (busyAll || busyPage !== null) ? 0.6 : 1 }} disabled={busyAll || busyPage !== null} onClick={illustrateAll}>{busyAll ? "Đang vẽ…" : "🎨 Vẽ tất cả"}</button>
+          <details style={{ fontSize: 12 }}>
+            <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600, listStyle: "none" }}>⚙ Model AI</summary>
+            <div style={{ display: "grid", gap: 6, marginTop: 6, minWidth: 210 }}>
+              <select value={model} onChange={(e) => setModel(e.target.value)} title="AI viết ý tưởng/kịch bản" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
+                <option value="">— Model text (viết) mặc định —</option>
+                <ModelOptions models={models} />
+              </select>
+              <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="AI vẽ ảnh" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
+                <option value="">— Model ảnh (vẽ) mặc định —</option>
+                <ModelOptions models={imgModels} />
+              </select>
+            </div>
+          </details>
         </div>
       )}
 
@@ -431,7 +501,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
                     <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Brief minh hoạ (cảnh vẽ)</div>
                     <textarea value={p.illustration} onChange={(e) => setPage(i, "illustration", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
                   </div>
-                  <details open={!!p.prompt}>
+                  <details>
                     <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>
                       Prompt chi tiết {p.prompt ? "✓" : "(chưa ráp)"} — bấm để xem/sửa
                     </summary>
@@ -463,6 +533,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
           </div>
         )}
       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>Tên preview: <b>{previewName}</b> (đổi ở ô giá trị của biến <code>name</code>).</div>
+      </StepCard>
     </div>
   );
 }
