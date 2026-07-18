@@ -34,7 +34,26 @@ const DEFAULT_VARS: Var[] = [
   { key: "city", label: "Thành phố", value: "" },
   { key: "hobby", label: "Sở thích", value: "" },
 ];
-const MAX_REFS = 6; // số ảnh tham khảo đối thủ tối đa
+const MAX_REFS = 4; // số ảnh tham khảo đối thủ tối đa (nén ~448px, giữ payload nhẹ để không timeout)
+
+// Nén ảnh NGAY TRÊN TRÌNH DUYỆT xuống ~448px (JPEG) → payload nhỏ, model vision xử lý nhanh, đỡ timeout.
+function downscaleImage(dataUrl: string, max = 448): Promise<string> {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (Math.max(w, h) > max) { const s = max / Math.max(w, h); w = Math.round(w * s); h = Math.round(h * s); }
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        const ctx = c.getContext("2d"); if (!ctx) { resolve(dataUrl); return; }
+        ctx.drawImage(img, 0, 0, w, h);
+        try { resolve(c.toDataURL("image/jpeg", 0.72)); } catch { resolve(dataUrl); }
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    } catch { resolve(dataUrl); }
+  });
+}
 
 // Thay {key}/[key] trong preview.
 function fill(tpl: string, vars: Var[]): string {
@@ -171,7 +190,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
     const list = Array.from(files).slice(0, Math.max(0, room));
     list.forEach((f) => {
       const r = new FileReader();
-      r.onload = () => setRefs((cur) => (cur.length >= MAX_REFS ? cur : [...cur, String(r.result)]));
+      r.onload = () => { downscaleImage(String(r.result)).then((small) => setRefs((cur) => (cur.length >= MAX_REFS ? cur : [...cur, small]))); };
       r.readAsDataURL(f);
     });
   };
@@ -183,7 +202,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
     setImporting(true);
     const j = await api("/api/books/import-image", "POST", { url: u });
     setImporting(false);
-    if (j.ok && j.dataUrl) { setRefs((cur) => (cur.length >= MAX_REFS ? cur : [...cur, String(j.dataUrl)])); setImportUrl(""); }
+    if (j.ok && j.dataUrl) { const small = await downscaleImage(String(j.dataUrl)); setRefs((cur) => (cur.length >= MAX_REFS ? cur : [...cur, small])); setImportUrl(""); }
     else {
       const raw = String(j.error ?? "Lỗi lấy ảnh từ link");
       const msg = /\b50[24]\b|hết giờ|timeout/i.test(raw) ? "Link chặn bot / quá hạn — tải ảnh thủ công bằng nút +" : raw;
@@ -274,7 +293,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
                 <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>{idea.hook}</div>
                 <div style={{ fontSize: 12, marginTop: 6 }}><b>Angle:</b> {idea.angle}</div>
                 <div style={{ fontSize: 12, marginTop: 2 }}><b>USP:</b> {idea.usp}</div>
-                {idea.outline?.length > 0 && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>{idea.outline.length} trang: {idea.outline.slice(0, 3).join(" · ")}{idea.outline.length > 3 ? "…" : ""}</div>}
+                {idea.outline?.length > 0 && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>Tóm tắt: {idea.outline.slice(0, 3).join(" · ")}{idea.outline.length > 3 ? "…" : ""}</div>}
                 <button style={{ ...btnBlue, marginTop: 10, padding: "7px 14px", fontSize: 12.5, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => create(idea)}>Chọn &amp; tạo →</button>
               </div>
             ))}
