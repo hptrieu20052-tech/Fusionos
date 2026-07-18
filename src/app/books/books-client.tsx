@@ -4,10 +4,10 @@ import { useEffect, useState } from "react";
 type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; updatedAt: string };
 type Idea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 type Bible = { format?: string; character?: string; wardrobe?: string; artStyle?: string; palette?: string; textStyle?: string; restrictions?: string };
-type Var = { key: string; label?: string; value?: string };
+type Var = { key: string; label?: string; value?: string; type?: "text" | "image"; imageKey?: string; imageUrl?: string };
 type Page = { page_no: number; text: string; illustration: string; prompt?: string };
 type Detail = {
-  title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefUrl?: string | null; stylePrompt?: string | null; bible?: Bible | null; vars?: Var[] | null };
+  title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefKey?: string | null; characterRefUrl?: string | null; stylePrompt?: string | null; bible?: Bible | null; vars?: Var[] | null };
   pages: { pageNo: number; textTemplate: string | null; illustrationBrief: string | null; promptTemplate?: string | null }[];
   assets?: Record<number, string | null>;
 };
@@ -29,11 +29,18 @@ const DEFAULT_BIBLE: Bible = {
   restrictions: "- No copyrighted characters, costumes, symbols or logos\n- No distorted hands, fingers, faces or body proportions\n- No misspelled text\n- No extra children except those described in the scene\n- No dark or frightening atmosphere\n- No harsh yellow color cast\n- No overly cartoonish or exaggerated proportions\n- Generate the flat page artwork only — no page mockup, no hands holding the book, no surrounding background",
 };
 const DEFAULT_VARS: Var[] = [
-  { key: "name", label: "Tên bé", value: "" },
-  { key: "age", label: "Tuổi", value: "" },
-  { key: "city", label: "Thành phố", value: "" },
-  { key: "hobby", label: "Sở thích", value: "" },
+  { key: "photo", label: "Ảnh nhân vật", value: "", type: "image" },
+  { key: "name", label: "Tên bé", value: "", type: "text" },
+  { key: "age", label: "Tuổi", value: "", type: "text" },
+  { key: "city", label: "Thành phố", value: "", type: "text" },
+  { key: "hobby", label: "Sở thích", value: "", type: "text" },
 ];
+// Đảm bảo có 1 biến ẢNH nhân vật: nếu chưa có biến image mà book còn characterRefKey (bản cũ) → chèn vào.
+function seedImageVar(base: Var[], refKey?: string | null, refUrl?: string | null): Var[] {
+  if (base.some((v) => v.type === "image")) return base;
+  if (refKey) return [{ key: "photo", label: "Ảnh nhân vật", type: "image", imageKey: refKey, imageUrl: refUrl ?? undefined }, ...base];
+  return base;
+}
 const MAX_REFS = 4; // số ảnh tham khảo đối thủ tối đa (nén ~448px, giữ payload nhẹ để không timeout)
 
 // Nén ảnh NGAY TRÊN TRÌNH DUYỆT xuống ~448px (JPEG) → payload nhỏ, model vision xử lý nhanh, đỡ timeout.
@@ -342,25 +349,59 @@ function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: B
 }
 
 // ===== Panel: BIẾN CÁ NHÂN HOÁ (add custom tên/tuổi/…) =====
-function VarsPanel({ vars, setVars, onSave }: { vars: Var[]; setVars: (v: Var[]) => void; onSave: () => void }) {
+function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setVars: (v: Var[]) => void; onSave: () => void; bookId: string; flash: (m: string) => void }) {
+  const [upIdx, setUpIdx] = useState<number | null>(null);
   const setV = (i: number, k: keyof Var, val: string) => setVars(vars.map((v, idx) => idx === i ? { ...v, [k]: val } : v));
+  const patch = (i: number, p: Partial<Var>) => setVars(vars.map((v, idx) => idx === i ? { ...v, ...p } : v));
+  const small: React.CSSProperties = { ...inp, fontSize: 12, padding: "6px 9px" };
+  const uploadImg = async (i: number, file: File) => {
+    setUpIdx(i);
+    const t = await api(`/api/books/${bookId}/reference-url`, "POST", { contentType: file.type || "image/png" });
+    if (!t.ok) { flash("✗ " + (t.error ?? "Lỗi")); setUpIdx(null); return; }
+    try {
+      const put = await fetch(t.url as string, { method: (t.method as string) || "PUT", headers: { "Content-Type": file.type || "image/png" }, body: file });
+      if (!put.ok) throw new Error("upload HTTP " + put.status);
+      patch(i, { imageKey: String(t.key), imageUrl: String(t.publicUrl || "") });
+      flash("✓ Đã tải ảnh biến — nhớ Lưu biến");
+    } catch (e) { flash("✗ upload: " + String((e as Error)?.message ?? e).slice(0, 80)); }
+    setUpIdx(null);
+  };
   return (
     <div style={{ border: "1px solid var(--line)", borderRadius: 12, marginBottom: 12, padding: 12, background: "#FAFBFF" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <span style={{ fontWeight: 800, fontSize: 14 }}>🧩 Biến cá nhân hoá</span>
-        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>— thay {"{name}"} / {"{age}"}… lúc gen (và preview)</span>
-        <button style={{ ...btnGhost, marginLeft: "auto", padding: "5px 10px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", value: "" }])}>+ Biến</button>
+        <span style={{ fontWeight: 800, fontSize: 14 }}>Biến cá nhân hoá</span>
+        <span style={{ fontSize: 11.5, color: "var(--muted)" }}>— Chữ hoặc ẢNH (bé/bố/mẹ…). Biến ảnh dùng làm reference giữ nhân vật khi vẽ.</span>
+        <button style={{ ...btnGhost, marginLeft: "auto", padding: "5px 10px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", value: "", type: "text" }])}>+ Chữ</button>
+        <button style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", type: "image" }])}>+ Ảnh</button>
         <button style={{ ...btnBlue, padding: "5px 10px", fontSize: 12 }} onClick={onSave}>Lưu biến</button>
       </div>
       <div style={{ display: "grid", gap: 6 }}>
-        {vars.map((v, i) => (
-          <div key={i} style={{ display: "grid", gridTemplateColumns: "120px 1fr 1fr 30px", gap: 6, alignItems: "center" }}>
-            <input value={v.key} onChange={(e) => setV(i, "key", e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))} placeholder="key (name)" style={{ ...inp, fontSize: 12, padding: "6px 9px" }} />
-            <input value={v.label ?? ""} onChange={(e) => setV(i, "label", e.target.value)} placeholder="nhãn (Tên bé)" style={{ ...inp, fontSize: 12, padding: "6px 9px" }} />
-            <input value={v.value ?? ""} onChange={(e) => setV(i, "value", e.target.value)} placeholder="giá trị (Liam)" style={{ ...inp, fontSize: 12, padding: "6px 9px" }} />
-            <button style={{ ...btnGhost, padding: "5px 0", fontSize: 12 }} title="Xoá" onClick={() => setVars(vars.filter((_, idx) => idx !== i))}>✕</button>
-          </div>
-        ))}
+        {vars.map((v, i) => {
+          const isImg = v.type === "image";
+          return (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "104px 1fr 72px 1fr 28px", gap: 6, alignItems: "center" }}>
+              <input value={v.key} onChange={(e) => setV(i, "key", e.target.value.replace(/[^a-zA-Z0-9_]/g, ""))} placeholder="key" style={small} />
+              <input value={v.label ?? ""} onChange={(e) => setV(i, "label", e.target.value)} placeholder="nhãn" style={small} />
+              <select value={v.type ?? "text"} onChange={(e) => patch(i, { type: e.target.value as "text" | "image" })} style={small}>
+                <option value="text">Chữ</option>
+                <option value="image">Ảnh</option>
+              </select>
+              {isImg ? (
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: upIdx === i ? "wait" : "pointer" }}>
+                  {v.imageUrl
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={v.imageUrl} alt="ref" style={{ width: 34, height: 34, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)" }} />
+                    : <span style={{ width: 34, height: 34, display: "grid", placeItems: "center", borderRadius: 6, border: "1px dashed var(--line)", color: "var(--muted)", fontSize: 10 }}>Ảnh</span>}
+                  <span style={{ fontSize: 11.5, color: "var(--blue)", fontWeight: 600 }}>{upIdx === i ? "Đang tải…" : v.imageUrl ? "Đổi ảnh" : "Tải ảnh"}</span>
+                  <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImg(i, f); e.target.value = ""; }} />
+                </label>
+              ) : (
+                <input value={v.value ?? ""} onChange={(e) => setV(i, "value", e.target.value)} placeholder="giá trị (Liam)" style={small} />
+              )}
+              <button style={{ ...btnGhost, padding: "5px 0", fontSize: 12 }} title="Xoá" onClick={() => setVars(vars.filter((_, idx) => idx !== i))}>✕</button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -392,15 +433,13 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const [model, setModel] = useState("");
   // ---- Bible + Vars ----
   const [bible, setBible] = useState<Bible>(detail.title.bible ?? {});
-  const [vars, setVars] = useState<Var[]>(detail.title.vars && detail.title.vars.length ? detail.title.vars : DEFAULT_VARS);
+  const [vars, setVars] = useState<Var[]>(seedImageVar(detail.title.vars && detail.title.vars.length ? detail.title.vars : DEFAULT_VARS, detail.title.characterRefKey, detail.title.characterRefUrl));
   const [baked, setBaked] = useState(true);
   // ---- Gen Image state ----
   const [imgModels, setImgModels] = useState<{ id: string; name: string }[]>([]);
   const [imgModel, setImgModel] = useState("");
-  const [refUrl, setRefUrl] = useState<string | null>(detail.title.characterRefUrl ?? null);
   const [illus, setIllus] = useState<Record<number, string>>({});
   const [busyPage, setBusyPage] = useState<number | null>(null);
-  const [uploading, setUploading] = useState(false);
 
   const previewName = (vars.find((v) => v.key === "name")?.value || "Emma");
 
@@ -408,9 +447,8 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   useEffect(() => { api("/api/books/models?type=image").then((j) => { if (j.ok) setImgModels((j.models as { id: string; name: string }[]) ?? []); }); }, []);
   // Đồng bộ khi detail reload
   useEffect(() => {
-    setRefUrl(detail.title.characterRefUrl ?? null);
     setBible(detail.title.bible ?? {});
-    if (detail.title.vars && detail.title.vars.length) setVars(detail.title.vars);
+    setVars(seedImageVar(detail.title.vars && detail.title.vars.length ? detail.title.vars : DEFAULT_VARS, detail.title.characterRefKey, detail.title.characterRefUrl));
     const m: Record<number, string> = {};
     for (const [k, v] of Object.entries(detail.assets ?? {})) if (v) m[Number(k)] = v as string;
     setIllus(m);
@@ -432,7 +470,14 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const setPage = (i: number, k: "text" | "illustration" | "prompt", v: string) => setPages((ps) => ps.map((p, idx) => idx === i ? { ...p, [k]: v } : p));
 
   const saveBible = async () => { const j = await api(`/api/books/${id}`, "PATCH", { bible }); flash(j.ok ? "✓ Đã lưu Bible" : "✗ " + (j.error ?? "Lỗi")); };
-  const saveVars = async () => { const j = await api(`/api/books/${id}`, "PATCH", { vars }); flash(j.ok ? "✓ Đã lưu biến" : "✗ " + (j.error ?? "Lỗi")); };
+  const saveVars = async () => {
+    // Đồng bộ ảnh nhân vật chính (biến image đầu tiên) sang characterRefKey để tương thích bản cũ + tránh vẽ trùng ảnh.
+    const firstImg = vars.find((v) => v.type === "image" && v.imageKey);
+    const body: Record<string, unknown> = { vars };
+    if (firstImg?.imageKey) body.characterRefKey = firstImg.imageKey;
+    const j = await api(`/api/books/${id}`, "PATCH", body);
+    flash(j.ok ? "✓ Đã lưu biến" : "✗ " + (j.error ?? "Lỗi"));
+  };
   // ✨ AI tự dựng Style Bible + bộ biến THEO CHỦ ĐỀ (giải bài toán "1 form cho vô số chủ đề").
   const setupAI = async () => {
     setBusySetup(true); lsSet("bs_text_model", model);
@@ -465,19 +510,6 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     else flash("✗ " + (j.error ?? "Lỗi"));
   };
 
-  const uploadRef = async (file: File) => {
-    setUploading(true);
-    const t = await api(`/api/books/${id}/reference-url`, "POST", { contentType: file.type || "image/png" });
-    if (!t.ok) { flash("✗ " + (t.error ?? "Lỗi")); setUploading(false); return; }
-    try {
-      const put = await fetch(t.url as string, { method: (t.method as string) || "PUT", headers: { "Content-Type": file.type || "image/png" }, body: file });
-      if (!put.ok) throw new Error("upload HTTP " + put.status);
-      const p = await api(`/api/books/${id}`, "PATCH", { characterRefKey: t.key });
-      if (p.ok) { flash("✓ Đã tải ảnh nhân vật"); reload(); } else flash("✗ " + (p.error ?? "Lỗi lưu"));
-    } catch (e) { flash("✗ upload: " + String((e as Error)?.message ?? e).slice(0, 100)); }
-    setUploading(false);
-  };
-
   const illustrate = async (pageNo: number) => {
     setBusyPage(pageNo); lsSet("bs_image_model", imgModel);
     const payload = { pageNo, model: imgModel || undefined, baked, vars };
@@ -502,7 +534,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         desc="AI tự dựng theo chủ đề (nhân vật · trang phục · phong cách · màu · cấm) rồi bạn chỉnh. Khối này ráp vào MỌI trang → giữ nhân vật nhất quán."
         right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "AI đang dựng…" : "✨ AI dựng theo chủ đề"}</button>}>
         <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
-        <VarsPanel vars={vars} setVars={setVars} onSave={saveVars} />
+        <VarsPanel vars={vars} setVars={setVars} onSave={saveVars} bookId={id} flash={flash} />
       </StepCard>
 
       <StepCard n={3} title="Kịch bản → Prompt chi tiết → Vẽ" desc="Sinh kịch bản từng trang, ráp prompt sâu, rồi vẽ. Trang lỗi chỉ cần vẽ lại riêng trang đó.">
@@ -516,14 +548,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
 
       {pages.length > 0 && (
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 12, background: "#FAFBFF" }}>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: uploading ? "wait" : "pointer" }}>
-            {refUrl
-              // eslint-disable-next-line @next/next/no-img-element
-              ? <img src={refUrl} alt="ref" style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />
-              : <span style={{ width: 52, height: 52, display: "grid", placeItems: "center", borderRadius: 8, border: "1px dashed var(--line)", color: "var(--muted)", fontSize: 11 }}>Ref</span>}
-            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)" }}>{uploading ? "Đang tải…" : refUrl ? "Đổi ảnh nhân vật" : "Tải ảnh nhân vật (reference)"}</span>
-            <input type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadRef(f); e.target.value = ""; }} />
-          </label>
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Ảnh nhân vật đặt ở <b>Biến (bước 2)</b>.</span>
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 600, cursor: "pointer" }} title="AI vẽ chữ thẳng vào ảnh (giống mẫu). Tắt = chừa vùng trống để overlay chữ.">
             <input type="checkbox" checked={baked} onChange={(e) => setBaked(e.target.checked)} /> AI vẽ chữ vào ảnh
           </label>
