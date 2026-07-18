@@ -58,7 +58,7 @@ async function api(url: string, method = "GET", body?: unknown): Promise<ApiResu
     if (j) return j;
     const isHtml = /^\s*</.test(raw);
     const note = r.status === 404 ? " — API chưa deploy"
-      : (r.status === 502 || r.status === 504) ? " — hết giờ (ảnh sinh quá lâu). Đổi sang model ảnh NHANH (Google nano‑banana) hoặc vẽ từng trang."
+      : (r.status === 502 || r.status === 504) ? " — hết giờ (model quá chậm hoặc kết quả quá dài). Đổi sang model NHANH hơn (text: Claude Haiku/Gemini Flash · ảnh: Google nano‑banana), hoặc giảm số trang / vẽ từng trang."
       : isHtml ? "" : (raw ? " · " + raw.slice(0, 120) : "");
     return { ok: false, error: `HTTP ${r.status}${note}` };
   } catch (e) {
@@ -184,7 +184,11 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
     const j = await api("/api/books/import-image", "POST", { url: u });
     setImporting(false);
     if (j.ok && j.dataUrl) { setRefs((cur) => (cur.length >= MAX_REFS ? cur : [...cur, String(j.dataUrl)])); setImportUrl(""); }
-    else flash("✗ " + (j.error ?? "Lỗi lấy ảnh từ link"));
+    else {
+      const raw = String(j.error ?? "Lỗi lấy ảnh từ link");
+      const msg = /\b50[24]\b|hết giờ|timeout/i.test(raw) ? "Link chặn bot / quá hạn — tải ảnh thủ công bằng nút +" : raw;
+      flash("✗ Import: " + msg);
+    }
   };
 
   const gen = async () => {
@@ -192,7 +196,10 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
     lsSet("bs_text_model", model);
     const j = await api("/api/books/ideas", "POST", { ...brief, model: model || undefined, refImages: refs });
     setBusy(false);
-    if (j.ok) setIdeas((j.ideas as Idea[]) ?? []); else flash("✗ " + (j.error ?? "Lỗi sinh ý tưởng"));
+    if (j.ok) {
+      setIdeas((j.ideas as Idea[]) ?? []);
+      if (Number(j.imagesUsed) > 0) flash(`✓ Đã phân tích ${j.imagesUsed} ảnh đối thủ bằng model xem ảnh (${String(j.usedModel ?? "").split("/").pop()})`);
+    } else flash("✗ " + (j.error ?? "Lỗi sinh ý tưởng"));
   };
   const create = async (idea: Idea) => {
     setBusy(true);
@@ -245,7 +252,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
                 <button onClick={importFromLink} disabled={importing || !importUrl.trim()} style={{ ...btnGhost, whiteSpace: "nowrap", opacity: (importing || !importUrl.trim()) ? 0.6 : 1 }}>{importing ? "Đang lấy…" : "Nhập từ link"}</button>
               </div>
             )}
-            {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Lưu ý: chọn model text có hỗ trợ ảnh (Claude/GPT‑4o/Gemini) để đọc được ảnh.</div>}
+            {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Khi có ảnh, hệ thống tự dùng model xem‑ảnh (Claude) để phân tích đối thủ — không phụ thuộc model bạn chọn ở Tuỳ chọn.</div>}
           </div>
           <details style={{ fontSize: 12 }}>
             <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600 }}>⚙ Tuỳ chọn (số ý tưởng · model AI)</summary>

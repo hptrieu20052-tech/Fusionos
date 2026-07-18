@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { getUploadTarget } from "@/lib/storage";
+import { getUploadTarget, fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -13,5 +13,5 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const ext = (ct.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "").slice(0, 5) || "png";
   const key = `book-refs/${params.id}-${Date.now()}.${ext}`;
   const target = await getUploadTarget(key, ct);
-  return NextResponse.json({ ok: true, url: target.url, method: target.method, key });
+  return NextResponse.json({ ok: true, url: target.url, method: target.method, key, publicUrl: fileUrl(key) });
 }

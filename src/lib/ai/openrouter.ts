@@ -13,23 +13,31 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
   const userContent = imgs.length
     ? [{ type: "text", text: user }, ...imgs.map((u) => ({ type: "image_url", image_url: { url: u } }))]
     : user;
-  const res = await fetch(OR_CHAT, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://fusionos.app",
-      "X-Title": "FUSION Book Studio",
-    },
-    body: JSON.stringify({
-      model: opts?.model ?? TEXT_MODEL(),
-      messages: [{ role: "system", content: system }, { role: "user", content: userContent }],
-      response_format: { type: "json_object" },
-      max_tokens: opts?.maxTokens ?? 3000,
-      temperature: opts?.temperature ?? 0.8,
-    }),
-    signal: AbortSignal.timeout(90000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(OR_CHAT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${key}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://fusionos.app",
+        "X-Title": "FUSION Book Studio",
+      },
+      body: JSON.stringify({
+        model: opts?.model ?? TEXT_MODEL(),
+        messages: [{ role: "system", content: system }, { role: "user", content: userContent }],
+        response_format: { type: "json_object" },
+        max_tokens: opts?.maxTokens ?? 3000,
+        temperature: opts?.temperature ?? 0.8,
+      }),
+      // Fail SỚM (75s) trước mốc ~100s của Cloudflare → trả lỗi JSON rõ ràng thay vì gateway 502.
+      signal: AbortSignal.timeout(75000),
+    });
+  } catch (e) {
+    const m = String((e as Error)?.message ?? e);
+    if (/abort|timeout|signal|timed out/i.test(m)) throw new Error("Model text phản hồi quá lâu (>75s). Đổi Model text (⚙ Model AI) sang con NHANH: Claude Haiku / Gemini Flash / GPT‑4o‑mini; hoặc giảm số trang.");
+    throw new Error("Lỗi gọi OpenRouter: " + m.slice(0, 160));
+  }
   const text = await res.text();
   if (!res.ok) throw new Error(`OpenRouter HTTP ${res.status}: ${text.slice(0, 300)}`);
   let data: { choices?: { message?: { content?: string } }[] };
@@ -139,8 +147,14 @@ Yêu cầu:
 - illustration: mô tả cảnh TIẾNG ANH, CHI TIẾT (3–5 câu) như đạo diễn hình: bối cảnh cụ thể, tư thế + cảm xúc nhân vật chính, các vật thể/đạo cụ trong khung, ánh sáng/không khí, và GỢI Ý chừa một vùng nền dịu ở một phía để đặt chữ. KHÔNG mô tả chữ/tên xuất hiện trong tranh (chữ sẽ do khâu prompt xử lý riêng).
 
 Trả JSON: {"pages":[{"page_no":1,"text":"","illustration":""}]}`;
-  const out = await orChatJSON<{ pages: BookScriptPage[] }>(system, user, { maxTokens: 5000, model: opts?.model });
-  return (out.pages ?? []).map((p, i) => ({ page_no: Number(p.page_no) || i + 1, text: p.text ?? "", illustration: p.illustration ?? "" }));
+  const out = await orChatJSON<Record<string, unknown>>(system, user, { maxTokens: 6000, model: opts?.model });
+  // Chịu lỗi dạng: {pages:[…]} | mảng trực tiếp | object có 1 mảng bất kỳ (một số model đặt key khác).
+  const asArr = (x: unknown): BookScriptPage[] | null => (Array.isArray(x) ? (x as BookScriptPage[]) : null);
+  const arr: BookScriptPage[] = asArr((out as { pages?: unknown })?.pages)
+    ?? asArr(out)
+    ?? (asArr(Object.values(out ?? {}).find((v) => Array.isArray(v))) ?? []);
+  if (!arr.length) throw new Error("Model không trả về trang nào — thử đổi Model text (⚙ Model AI) sang Claude/GPT mạnh hơn, hoặc bấm lại.");
+  return arr.map((p, i) => ({ page_no: Number(p?.page_no) || i + 1, text: p?.text ?? "", illustration: p?.illustration ?? "" }));
 }
 
 // ===== STYLE BIBLE + COMPOSER (prompt chi tiết từng trang) =====

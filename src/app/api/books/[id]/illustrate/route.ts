@@ -23,16 +23,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!page) return NextResponse.json({ ok: false, error: "page not found" }, { status: 404 });
 
   try {
-    // Ảnh reference → THU NHỎ 768px rồi base64 (ảnh gốc vài MB gửi mỗi request → nặng + timeout).
+    // Ảnh reference: gộp ảnh nhân vật (legacy) + ẢNH của các BIẾN kiểu image (bé/bố/mẹ…). Tối đa 4, thu nhỏ 768px.
+    const refKeys: string[] = [];
+    if (title.characterRefKey) refKeys.push(title.characterRefKey);
+    for (const v of (Array.isArray(title.vars) ? (title.vars as { type?: string; imageKey?: string }[]) : [])) {
+      if (v && v.type === "image" && v.imageKey && !refKeys.includes(v.imageKey)) refKeys.push(v.imageKey);
+    }
     const refs: string[] = [];
-    if (title.characterRefKey) {
-      const buf = await readFile(title.characterRefKey);
-      let refBuf = buf;
+    for (const key of refKeys.slice(0, 4)) {
       try {
-        const sharp = (await import("sharp")).default;
-        refBuf = await sharp(buf).rotate().resize(768, 768, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
-      } catch { /* resize lỗi → dùng ảnh gốc */ }
-      refs.push(`data:image/jpeg;base64,${refBuf.toString("base64")}`);
+        const buf = await readFile(key);
+        let refBuf = buf;
+        try {
+          const sharp = (await import("sharp")).default;
+          refBuf = await sharp(buf).rotate().resize(768, 768, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 82 }).toBuffer();
+        } catch { /* resize lỗi → dùng ảnh gốc */ }
+        refs.push(`data:image/jpeg;base64,${refBuf.toString("base64")}`);
+      } catch { /* đọc ảnh lỗi → bỏ qua ref này */ }
     }
     // PROMPT CHI TIẾT: dùng prompt_template đã ráp (Bước 2) nếu có; nếu chưa thì ráp tại chỗ từ Bible + brief + text.
     const baked = b?.baked !== false;

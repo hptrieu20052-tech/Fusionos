@@ -25,16 +25,20 @@ export async function POST(req: NextRequest) {
         } catch { refImages.push(u); /* thu nhỏ lỗi → dùng ảnh gốc */ }
       }
     }
+    // Có ảnh đối thủ → BẮT BUỘC dùng model XEM ĐƯỢC ẢNH (nhiều model text không đọc ảnh → bỏ qua ảnh).
+    const hasImgs = refImages.length > 0;
+    const visionModel = process.env.OPENROUTER_VISION_MODEL || "anthropic/claude-3.5-sonnet";
+    const useModel = hasImgs ? visionModel : (b?.model ? String(b.model) : undefined);
     const ideas = await generateBookIdeas({
       occasion: b?.occasion ? String(b.occasion) : undefined,
       audience: b?.audience ? String(b.audience) : undefined,
       pages: Number(b?.pages) || undefined,
       notes: b?.notes ? String(b.notes) : undefined,
       count: Number(b?.count) || undefined,
-      model: b?.model ? String(b.model) : undefined,
+      model: useModel,
       refImages,
     });
-    return NextResponse.json({ ok: true, ideas });
+    return NextResponse.json({ ok: true, ideas, imagesUsed: refImages.length, usedModel: useModel });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 502 });
   }

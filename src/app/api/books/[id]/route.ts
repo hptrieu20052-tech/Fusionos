@@ -25,7 +25,10 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     .from(schema.bookAssets).where(eq(schema.bookAssets.titleId, params.id));
   const assets: Record<number, string | null> = {};
   for (const a of assetRows) assets[a.pageNo] = fileUrl(a.storageKey);
-  return NextResponse.json({ ok: true, title: { ...title, characterRefUrl: fileUrl(title.characterRefKey) }, pages, assets });
+  // Biến ảnh: gắn URL hiển thị từ imageKey.
+  const rawVars = Array.isArray(title.vars) ? (title.vars as { type?: string; imageKey?: string }[]) : [];
+  const vars = rawVars.map((v) => (v && v.type === "image" && v.imageKey ? { ...v, imageUrl: fileUrl(v.imageKey) } : v));
+  return NextResponse.json({ ok: true, title: { ...title, vars, characterRefUrl: fileUrl(title.characterRefKey) }, pages, assets });
 }
 
 // PATCH /api/books/[id] — sửa tên/trạng thái/concept; hoặc thay toàn bộ pages { pages:[{page_no,text,illustration}] }

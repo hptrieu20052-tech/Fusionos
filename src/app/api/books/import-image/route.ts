@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!/^https?:\/\/[^\s]+\.[^\s]+/i.test(url)) return NextResponse.json({ ok: false, error: "Link không hợp lệ" }, { status: 400 });
 
   try {
-    const res = await fetch(url, { headers: { "User-Agent": UA, "Accept": "text/html,application/xhtml+xml,image/*,*/*" }, redirect: "follow", signal: AbortSignal.timeout(15000) });
+    const res = await fetch(url, { headers: { "User-Agent": UA, "Accept": "text/html,application/xhtml+xml,image/*,*/*" }, redirect: "follow", signal: AbortSignal.timeout(12000) });
     if (!res.ok) return NextResponse.json({ ok: false, error: `Tải trang lỗi HTTP ${res.status}` }, { status: 502 });
     const ct = (res.headers.get("content-type") || "").toLowerCase();
 
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       const imgUrl = pickImageUrl(html, url);
       // Loại video: listing (Etsy…) có thể có video → chỉ lấy ẢNH.
       if (!imgUrl || isVideo(imgUrl)) return NextResponse.json({ ok: false, error: "Không tìm thấy ẢNH trong link (bỏ qua video). Thử link ảnh trực tiếp." }, { status: 404 });
-      const ir = await fetch(imgUrl, { headers: { "User-Agent": UA, "Referer": url, "Accept": "image/*,*/*" }, redirect: "follow", signal: AbortSignal.timeout(15000) });
+      const ir = await fetch(imgUrl, { headers: { "User-Agent": UA, "Referer": url, "Accept": "image/*,*/*" }, redirect: "follow", signal: AbortSignal.timeout(12000) });
       if (!ir.ok) return NextResponse.json({ ok: false, error: `Tải ảnh lỗi HTTP ${ir.status}` }, { status: 502 });
       if ((ir.headers.get("content-type") || "").toLowerCase().startsWith("video/")) return NextResponse.json({ ok: false, error: "Nội dung lấy được là video, không phải ảnh." }, { status: 400 });
       imgBuf = Buffer.from(await ir.arrayBuffer());
