@@ -220,11 +220,18 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
   const gen = async () => {
     setBusy(true); setIdeas([]);
     lsSet("bs_text_model", model);
-    const j = await api("/api/books/ideas", "POST", { ...brief, model: model || undefined, refImages: refs });
+    // BƯỚC RIÊNG (best-effort): phân tích ảnh đối thủ → text. Lỗi/chậm thì bỏ qua, vẫn sinh ý tưởng.
+    let extra = "";
+    if (refs.length) {
+      const a = await api("/api/books/analyze-refs", "POST", { images: refs, notes: brief.notes });
+      if (a.ok && a.analysis) extra = "\n\n[Phân tích ảnh listing đối thủ]\n" + String(a.analysis);
+      else flash("⚠ Không phân tích được ảnh — vẫn sinh ý tưởng từ mô tả" + (a.error ? ` (${String(a.error).slice(0, 60)})` : ""));
+    }
+    const j = await api("/api/books/ideas", "POST", { ...brief, notes: (brief.notes || "") + extra, model: model || undefined });
     setBusy(false);
     if (j.ok) {
       setIdeas((j.ideas as Idea[]) ?? []);
-      if (Number(j.imagesUsed) > 0) flash(`✓ Đã phân tích ${j.imagesUsed} ảnh đối thủ bằng model xem ảnh (${String(j.usedModel ?? "").split("/").pop()})`);
+      if (extra) flash("✓ Đã đưa phân tích ảnh đối thủ vào ý tưởng");
     } else flash("✗ " + (j.error ?? "Lỗi sinh ý tưởng"));
   };
   const create = async (idea: Idea) => {
@@ -278,7 +285,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
                 <button onClick={importFromLink} disabled={importing || !importUrl.trim()} style={{ ...btnGhost, whiteSpace: "nowrap", opacity: (importing || !importUrl.trim()) ? 0.6 : 1 }}>{importing ? "Đang lấy…" : "Nhập từ link"}</button>
               </div>
             )}
-            {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Khi có ảnh, hệ thống tự dùng model xem‑ảnh (Claude) để phân tích đối thủ — không phụ thuộc model bạn chọn ở Tuỳ chọn.</div>}
+            {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Ảnh được phân tích ở một bước riêng (model xem‑ảnh) rồi đưa vào ý tưởng. Nếu phân tích ảnh lỗi/chậm, hệ thống vẫn sinh ý tưởng từ mô tả.</div>}
           </div>
           <details style={{ fontSize: 12 }}>
             <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600 }}>⚙ Tuỳ chọn (số ý tưởng · model AI)</summary>
