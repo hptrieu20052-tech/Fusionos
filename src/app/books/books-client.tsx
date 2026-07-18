@@ -589,19 +589,22 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 12, background: "#FAFBFF" }}>
           <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Compose Bible + brief + text → detailed prompt for every page (no drawing, no overload)">🧱 Compose all prompts</button>
           <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Then draw each page below — one at a time to avoid overload.</span>
-          <details style={{ fontSize: 12, marginLeft: "auto" }}>
-            <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600, listStyle: "none" }}>⚙ AI models</summary>
-            <div style={{ display: "grid", gap: 6, marginTop: 6, minWidth: 210 }}>
-              <select value={model} onChange={(e) => setModel(e.target.value)} title="AI for ideas/script" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
-                <option value="">— Default text model —</option>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ display: "grid", gap: 3 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>✍️ Text model · writing</span>
+              <select value={model} onChange={(e) => setModel(e.target.value)} title="Model for ideas & script" style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 190 }}>
+                <option value="">— Default —</option>
                 <ModelOptions models={models} />
               </select>
-              <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="AI for drawing" style={{ ...inp, fontSize: 12, padding: "6px 9px" }}>
-                <option value="">— Default image model —</option>
+            </label>
+            <label style={{ display: "grid", gap: 3 }}>
+              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>🎨 Image model · drawing</span>
+              <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="Model for drawing pages" style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 190 }}>
+                <option value="">— Default —</option>
                 <ModelOptions models={imgModels} />
               </select>
-            </div>
-          </details>
+            </label>
+          </div>
         </div>
       )}
 
