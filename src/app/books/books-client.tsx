@@ -192,14 +192,16 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
           <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>New Book — Ý tưởng</h3>
           <button style={{ ...btnGhost, marginLeft: "auto", padding: "5px 11px" }} onClick={close}>✕</button>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Dịp / ngách<input style={{ ...inp, marginTop: 4 }} placeholder="vd 1st birthday, sleep book…" value={brief.occasion} onChange={(e) => setBrief({ ...brief, occasion: e.target.value })} /></label>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Đối tượng<input style={{ ...inp, marginTop: 4 }} placeholder="vd bé 0–1 tuổi / quà tặng" value={brief.audience} onChange={(e) => setBrief({ ...brief, audience: e.target.value })} /></label>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Số trang<input type="number" style={{ ...inp, marginTop: 4 }} value={brief.pages} onChange={(e) => setBrief({ ...brief, pages: Number(e.target.value) || 12 })} /></label>
-          <label style={{ fontSize: 12, fontWeight: 600 }}>Số ý tưởng<input type="number" style={{ ...inp, marginTop: 4 }} value={brief.count} onChange={(e) => setBrief({ ...brief, count: Number(e.target.value) || 4 })} /></label>
-          <label style={{ fontSize: 12, fontWeight: 600, gridColumn: "1 / -1" }}>Ghi chú<input style={{ ...inp, marginTop: 4 }} placeholder="phong cách, chủ đề riêng…" value={brief.notes} onChange={(e) => setBrief({ ...brief, notes: e.target.value })} /></label>
-          <div style={{ gridColumn: "1 / -1" }}><ModelPicker models={models} value={model} onChange={setModel} label="AI viết ý tưởng/kịch bản" /></div>
-          <div style={{ gridColumn: "1 / -1" }}>
+        <div style={{ display: "grid", gap: 12 }}>
+          <label style={{ fontSize: 12, fontWeight: 600 }}>Mô tả cuốn sách
+            <textarea rows={3} style={{ ...inp, marginTop: 4, resize: "vertical", lineHeight: 1.5 }}
+              placeholder="Sách gì, cho ai, phong cách nào… vd: Sách sinh nhật đầu đời cho bé ~1 tuổi, phong cách storybook ấm áp, tông pastel."
+              value={brief.notes} onChange={(e) => setBrief({ ...brief, notes: e.target.value })} />
+          </label>
+          <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Số trang
+            <input type="number" style={{ ...inp, marginTop: 4 }} value={brief.pages} onChange={(e) => setBrief({ ...brief, pages: Number(e.target.value) || 12 })} />
+          </label>
+          <div>
             <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Ảnh tham khảo đối thủ <span style={{ color: "var(--muted)", fontWeight: 400 }}>(tuỳ chọn, tối đa 3 — AI đọc để đề xuất ý tưởng cạnh tranh)</span></div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               {refs.map((u, i) => (
@@ -218,8 +220,17 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
             </div>
             {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Lưu ý: chọn model text có hỗ trợ ảnh (Claude/GPT‑4o/Gemini) để đọc được ảnh.</div>}
           </div>
+          <details style={{ fontSize: 12 }}>
+            <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600 }}>⚙ Tuỳ chọn (số ý tưởng · model AI)</summary>
+            <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Số ý tưởng
+                <input type="number" style={{ ...inp, marginTop: 4 }} value={brief.count} onChange={(e) => setBrief({ ...brief, count: Number(e.target.value) || 4 })} />
+              </label>
+              <ModelPicker models={models} value={model} onChange={setModel} label="AI viết ý tưởng/kịch bản" />
+            </div>
+          </details>
         </div>
-        <button style={{ ...btnBlue, marginTop: 12, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Đang nghĩ…" : "✨ Sinh ý tưởng"}</button>
+        <button style={{ ...btnBlue, marginTop: 14, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Đang nghĩ…" : "✨ Sinh ý tưởng"}</button>
 
         {ideas.length > 0 && (
           <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
