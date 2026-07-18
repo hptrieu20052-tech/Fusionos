@@ -94,8 +94,8 @@ export const IconArtwork = (p: P) => (
 );
 export const IconBook = (p: P) => (
   <svg {...base} {...p}>
-    <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H12v16H5.5A1.5 1.5 0 0 0 4 20.5z" />
-    <path d="M20 4.5A1.5 1.5 0 0 0 18.5 3H12v16h6.5a1.5 1.5 0 0 1 1.5 1.5z" />
+    <rect x="5" y="4" width="14" height="16" rx="1.5" />
+    <path d="M9 4v16" />
   </svg>
 );
 export const IconEye = (p: P) => (
