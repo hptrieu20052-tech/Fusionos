@@ -28,9 +28,13 @@ export async function POST(req: NextRequest) {
   } catch { imgs.push(...raw); }
 
   const model = process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4o-mini";
-  const system = "Bạn là chuyên gia phân tích sản phẩm sách thiếu nhi personalized bán trên Etsy/TikTok. Xem ảnh listing đối thủ và tóm tắt NGẮN GỌN. Trả lời DUY NHẤT bằng JSON.";
+  const system = "Bạn là chuyên gia phân tích sản phẩm sách/quà personalized bán trên Etsy/TikTok. Nhìn KỸ ảnh listing đối thủ và mô tả CỤ THỂ những gì THẤY trong ảnh. Trả lời DUY NHẤT bằng JSON.";
   const user = `Bối cảnh sản phẩm đang làm: ${b?.notes || "(không)"}
-Xem các ảnh listing đối thủ đính kèm. Trả JSON: {"analysis":"3-5 gạch đầu dòng NGẮN: phong cách/ngách của họ, điểm mạnh, và cơ hội để mình KHÁC BIỆT hơn"}`;
+Có ${imgs.length} ảnh listing đối thủ đính kèm. Hãy:
+1) Với TỪNG ảnh, mô tả 1 dòng: chủ đề/ngách, nhân vật chính, phong cách vẽ, tông màu, chữ/tiêu đề nổi bật nếu có, bố cục.
+2) Rút ra ngách chung + điểm mạnh của họ.
+3) 2-3 gạch đầu dòng gợi ý cách LÀM KHÁC BIỆT.
+Bám sát ĐÚNG nội dung ảnh, không bịa. Trả JSON: {"analysis":"..."}`;
   try {
     const out = await orChatJSON<{ analysis: string }>(system, user, { model, images: imgs, maxTokens: 700, temperature: 0.5 });
     return NextResponse.json({ ok: true, analysis: String(out?.analysis || "").slice(0, 1500), count: imgs.length });

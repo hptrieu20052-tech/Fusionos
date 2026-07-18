@@ -393,6 +393,7 @@ export const bookTitles = pgTable("book_titles", {
   occasion: text("occasion"),          // dịp/ngách: 1st birthday, sleep book...
   audience: text("audience"),          // đối tượng/tuổi
   status: text("status").notNull().default("idea"), // idea|script|characters|simulation|mockup|ready
+  productKey: text("product_key"),     // loại sản phẩm in (hardcover_photo_book_8x8…) — khoá khổ/số trang/nối trang
   concept: jsonb("concept"),           // { hook, angle, usp, outline[] }
   personalization: jsonb("personalization"), // biến cá nhân hoá {name, character, dedication...}
   brief: jsonb("brief"),               // input brief đã dùng để sinh

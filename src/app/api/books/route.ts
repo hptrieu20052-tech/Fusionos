@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
     status: "idea",
     concept: b.concept ?? null,
     brief: b.brief ?? null,
+    productKey: b.productKey ? String(b.productKey) : null,
     ownerId: s.sub,
   }).returning({ id: schema.bookTitles.id });
   return NextResponse.json({ ok: true, id: row.id });

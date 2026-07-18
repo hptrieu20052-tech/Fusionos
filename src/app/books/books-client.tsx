@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { BOOK_PRODUCTS, getBookProduct } from "@/lib/book-products";
 
 type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; updatedAt: string };
 type Idea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
@@ -183,13 +184,16 @@ function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id:
 }
 
 function NewBookModal({ close, onCreated, flash, models }: { close: () => void; onCreated: (id: string) => void; flash: (m: string) => void; models: { id: string; name: string }[] }) {
-  const [brief, setBrief] = useState({ occasion: "", audience: "", pages: 12, notes: "", count: 4 });
+  const [productKey, setProductKey] = useState(BOOK_PRODUCTS[0].key);
+  const product = getBookProduct(productKey);
+  const [brief, setBrief] = useState({ occasion: "", audience: "", pages: getBookProduct(BOOK_PRODUCTS[0].key).pageCount, notes: "", count: 4 });
   const [busy, setBusy] = useState(false);
   const [ideas, setIdeas] = useState<Idea[]>([]);
   const [model, setModel] = useState("");
   const [refs, setRefs] = useState<string[]>([]); // ảnh listing đối thủ (data URL)
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
+  const [analysis, setAnalysis] = useState(""); // đoạn AI đọc được từ ảnh đối thủ (để hiện cho user thấy)
   useEffect(() => { setModel(lsGet("bs_text_model")); }, []);
 
   const addRefs = (files: FileList) => {
@@ -218,20 +222,20 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
   };
 
   const gen = async () => {
-    setBusy(true); setIdeas([]);
+    setBusy(true); setIdeas([]); setAnalysis("");
     lsSet("bs_text_model", model);
     // BƯỚC RIÊNG (best-effort): phân tích ảnh đối thủ → text. Lỗi/chậm thì bỏ qua, vẫn sinh ý tưởng.
-    let extra = "";
+    let comp = "";
     if (refs.length) {
       const a = await api("/api/books/analyze-refs", "POST", { images: refs, notes: brief.notes });
-      if (a.ok && a.analysis) extra = "\n\n[Phân tích ảnh listing đối thủ]\n" + String(a.analysis);
+      if (a.ok && a.analysis) { comp = String(a.analysis); setAnalysis(comp); }
       else flash("⚠ Không phân tích được ảnh — vẫn sinh ý tưởng từ mô tả" + (a.error ? ` (${String(a.error).slice(0, 60)})` : ""));
     }
-    const j = await api("/api/books/ideas", "POST", { ...brief, notes: (brief.notes || "") + extra, model: model || undefined });
+    const j = await api("/api/books/ideas", "POST", { ...brief, competitor: comp || undefined, model: model || undefined });
     setBusy(false);
     if (j.ok) {
       setIdeas((j.ideas as Idea[]) ?? []);
-      if (extra) flash("✓ Đã đưa phân tích ảnh đối thủ vào ý tưởng");
+      if (comp) flash("✓ Đã phân tích ảnh đối thủ & bám ngách khi sinh ý tưởng");
     } else flash("✗ " + (j.error ?? "Lỗi sinh ý tưởng"));
   };
   const create = async (idea: Idea) => {
@@ -239,7 +243,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
     const j = await api("/api/books", "POST", {
       name: idea.name, occasion: brief.occasion, audience: brief.audience,
       concept: { hook: idea.hook, angle: idea.angle, usp: idea.usp, outline: idea.outline },
-      brief,
+      brief: { ...brief, pages: product.pageCount }, productKey,
     });
     setBusy(false);
     if (j.ok) onCreated(j.id as string); else flash("✗ " + (j.error ?? "Lỗi tạo"));
@@ -253,13 +257,19 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
           <button style={{ ...btnGhost, marginLeft: "auto", padding: "5px 11px" }} onClick={close}>✕</button>
         </div>
         <div style={{ display: "grid", gap: 12 }}>
+          <label style={{ fontSize: 12, fontWeight: 600 }}>Loại sản phẩm
+            <select value={productKey} onChange={(e) => { const p = getBookProduct(e.target.value); setProductKey(p.key); setBrief((b) => ({ ...b, pages: p.pageCount })); }} style={{ ...inp, marginTop: 4 }}>
+              {BOOK_PRODUCTS.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
+            </select>
+            <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 400 }}>Cố định khổ &amp; số trang: trang {product.pageW}×{product.pageH}px · cover {product.coverW}×{product.coverH}px · {product.pageCount} trang.</span>
+          </label>
           <label style={{ fontSize: 12, fontWeight: 600 }}>Mô tả cuốn sách
             <textarea rows={3} style={{ ...inp, marginTop: 4, resize: "vertical", lineHeight: 1.5 }}
               placeholder="Sách gì, cho ai, phong cách nào… vd: Sách sinh nhật đầu đời cho bé ~1 tuổi, phong cách storybook ấm áp, tông pastel."
               value={brief.notes} onChange={(e) => setBrief({ ...brief, notes: e.target.value })} />
           </label>
-          <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Số trang
-            <input type="number" style={{ ...inp, marginTop: 4 }} value={brief.pages} onChange={(e) => setBrief({ ...brief, pages: Number(e.target.value) || 12 })} />
+          <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Số trang <span style={{ color: "var(--muted)", fontWeight: 400 }}>(theo sản phẩm)</span>
+            <input type="number" readOnly value={product.pageCount} title="Số trang cố định theo loại sản phẩm" style={{ ...inp, marginTop: 4, background: "#F4F5F8", color: "var(--muted)" }} />
           </label>
           <div>
             <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Ảnh tham khảo đối thủ <span style={{ color: "var(--muted)", fontWeight: 400 }}>(tuỳ chọn, tối đa {MAX_REFS} — AI đọc để đề xuất ý tưởng cạnh tranh)</span></div>
@@ -298,6 +308,13 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
           </details>
         </div>
         <button style={{ ...btnBlue, marginTop: 14, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Đang nghĩ…" : "✨ Sinh ý tưởng"}</button>
+
+        {analysis && (
+          <div style={{ marginTop: 14, border: "1px solid #CFE6D6", background: "#F3F8F4", borderRadius: 10, padding: 11 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "#12703c", marginBottom: 4 }}>AI đọc được từ ảnh đối thủ</div>
+            <div style={{ fontSize: 12, color: "var(--ink)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{analysis}</div>
+          </div>
+        )}
 
         {ideas.length > 0 && (
           <div style={{ marginTop: 16, display: "grid", gap: 10 }}>

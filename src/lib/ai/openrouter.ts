@@ -104,17 +104,19 @@ export async function listModels(type: "text" | "image" = "text"): Promise<{ id:
 export type BookIdea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 
 // Ý TƯỞNG: brief → nhiều concept đầu sách.
-export async function generateBookIdeas(brief: { occasion?: string; audience?: string; pages?: number; notes?: string; count?: number; model?: string; refImages?: string[] }): Promise<BookIdea[]> {
+export async function generateBookIdeas(brief: { occasion?: string; audience?: string; pages?: number; notes?: string; count?: number; model?: string; refImages?: string[]; competitor?: string }): Promise<BookIdea[]> {
   const n = Math.min(Math.max(brief.count ?? 4, 1), 8);
   const pages = brief.pages ?? 12;
   const refs = (brief.refImages ?? []).filter(Boolean);
+  const comp = (brief.competitor ?? "").trim();
   const system = "Bạn là chuyên gia sáng tạo sách thiếu nhi personalized bán trên Etsy/TikTok (keepsake baby books, birthday book, sleep book…). Trả lời DUY NHẤT bằng JSON.";
   const user = `Sinh ${n} ý tưởng đầu sách KHÁC NHAU.
 Dịp/ngách: ${brief.occasion || "tuỳ bạn đề xuất"}
 Đối tượng: ${brief.audience || "trẻ nhỏ / quà tặng cha mẹ"}
 Số trang: ${pages}
 Ghi chú: ${brief.notes || "không"}
-${refs.length ? `\nCÓ ĐÍNH KÈM ${refs.length} ẢNH LISTING ĐỐI THỦ để tham khảo. Hãy đọc phong cách, ngách, bố cục, điểm bán của họ; rồi đề xuất ý tưởng CẠNH TRANH & KHÁC BIỆT hơn (tận dụng điểm mạnh, tránh sao chép). Nêu rõ điểm khác biệt ở "usp".` : ""}
+${comp ? `\n===== PHÂN TÍCH ẢNH ĐỐI THỦ (BÁM SÁT) =====\n${comp}\n→ Ý tưởng của bạn PHẢI cùng NGÁCH / THỂ LOẠI với đối thủ ở trên (vd họ làm sách nàng tiên cá thì bạn cũng làm cùng ngách đó), nhưng KHÁC BIỆT & hấp dẫn hơn. Ghi rõ điểm khác biệt ở "usp". TUYỆT ĐỐI không lạc sang ngách khác.\n` : ""}
+${refs.length ? `\nCÓ ĐÍNH KÈM ${refs.length} ẢNH LISTING ĐỐI THỦ. Đọc phong cách, ngách, bố cục, điểm bán; đề xuất ý tưởng CẠNH TRANH & KHÁC BIỆT (tránh sao chép).` : ""}
 
 Mỗi ý tưởng cần:
 - name: tên sách tiếng Anh hấp dẫn, chuẩn Etsy SEO
