@@ -397,7 +397,9 @@ export const bookTitles = pgTable("book_titles", {
   personalization: jsonb("personalization"), // biến cá nhân hoá {name, character, dedication...}
   brief: jsonb("brief"),               // input brief đã dùng để sinh
   characterRefKey: text("character_ref_key"),  // ảnh reference nhân vật/style (R2) — mỏ neo nhất quán
-  stylePrompt: text("style_prompt"),           // gợi ý style chung áp cho mọi trang
+  stylePrompt: text("style_prompt"),           // gợi ý style chung áp cho mọi trang (legacy → nay gộp vào bible.artStyle)
+  bible: jsonb("bible"),                        // STYLE BIBLE: {character, wardrobe, artStyle, palette, textStyle, restrictions, format} — khai báo 1 lần, ráp vào MỌI trang
+  vars: jsonb("vars"),                          // biến cá nhân hoá: [{key,label,value}] — thay [name]/[age]/[city]/[hobby] lúc gen
   ownerId: uuid("owner_id").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -406,8 +408,9 @@ export const bookPages = pgTable("book_pages", {
   id: uuid("id").primaryKey().defaultRandom(),
   titleId: uuid("title_id").notNull().references(() => bookTitles.id, { onDelete: "cascade" }),
   pageNo: integer("page_no").notNull(),
-  textTemplate: text("text_template"),           // lời văn, chứa {name}...
-  illustrationBrief: text("illustration_brief"), // mô tả cảnh để vẽ (không chứa chữ)
+  textTemplate: text("text_template"),           // lời văn, chứa [name]...
+  illustrationBrief: text("illustration_brief"), // mô tả cảnh để vẽ (brief chi tiết)
+  promptTemplate: text("prompt_template"),       // PROMPT CHI TIẾT đã ráp (Bible + brief + text + restrictions), còn placeholder — sửa được
 }, (t) => [index("idx_bookpages_title").on(t.titleId)]);
 // Ảnh minh hoạ đã sinh cho từng trang (1 dòng/trang; vẽ lại thì thay).
 export const bookAssets = pgTable("book_assets", {

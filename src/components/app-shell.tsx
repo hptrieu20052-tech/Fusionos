@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
-  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing, IconBell, IconSparkle,
+  IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing, IconBell, IconSparkle, IconBook,
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 
@@ -99,11 +99,11 @@ export default function AppShell({ user, links, children, canProducts = false, c
       {aiOpen && (
         <div className="topnav-more-menu" onClick={() => setAiOpen(false)}>
           <Link href="/books" prefetch className={`topnav-more-item${isActive("/books") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconArtwork width={16} height={16} /></span>
+            <span className="topnav-ic"><IconBook width={16} height={16} /></span>
             Gen Book
           </Link>
           <Link href="/ai-image" prefetch className={`topnav-more-item${isActive("/ai-image") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconSparkle width={16} height={16} /></span>
+            <span className="topnav-ic"><IconArtwork width={16} height={16} /></span>
             Gen Image
           </Link>
         </div>

@@ -119,7 +119,7 @@ export type BookScriptPage = { page_no: number; text: string; illustration: stri
 export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[] }, opts?: { pages?: number; vars?: string[]; model?: string }): Promise<BookScriptPage[]> {
   const pages = opts?.pages ?? concept.outline?.length ?? 12;
   const vars = (opts?.vars && opts.vars.length ? opts.vars : ["name"]);
-  const system = "Bạn viết kịch bản sách thiếu nhi personalized. Lời văn ấm áp, hợp trẻ nhỏ, ngắn gọn mỗi trang. Trả lời DUY NHẤT bằng JSON.";
+  const system = "Bạn viết kịch bản sách tranh thiếu nhi personalized (in KDP/Story Book). Lời văn ấm áp, hợp trẻ nhỏ, ngắn gọn mỗi trang. Brief minh hoạ phải CHI TIẾT, ĐIỆN ẢNH để AI vẽ đẹp. Trả lời DUY NHẤT bằng JSON.";
   const user = `Viết kịch bản đầy đủ cho cuốn: "${concept.name}".
 Góc: ${concept.angle || ""}
 Outline có sẵn:
@@ -128,9 +128,93 @@ ${(concept.outline ?? []).map((o, i) => `${i + 1}. ${o}`).join("\n") || "(tự t
 Yêu cầu:
 - Đúng ${pages} trang.
 - Biến cá nhân hoá chèn dạng {${vars.join("}, {")}} (vd {name}) vào lời văn khi hợp lý.
-- Mỗi trang: text (lời văn tiếng Anh), illustration (mô tả cảnh cho hoạ sĩ/AI vẽ: bối cảnh, nhân vật, cảm xúc — TUYỆT ĐỐI KHÔNG chứa chữ/tên trong tranh).
+- text: lời văn TIẾNG ANH, 1–3 câu/trang, giọng ấm áp hợp trẻ nhỏ.
+- illustration: mô tả cảnh TIẾNG ANH, CHI TIẾT (3–5 câu) như đạo diễn hình: bối cảnh cụ thể, tư thế + cảm xúc nhân vật chính, các vật thể/đạo cụ trong khung, ánh sáng/không khí, và GỢI Ý chừa một vùng nền dịu ở một phía để đặt chữ. KHÔNG mô tả chữ/tên xuất hiện trong tranh (chữ sẽ do khâu prompt xử lý riêng).
 
 Trả JSON: {"pages":[{"page_no":1,"text":"","illustration":""}]}`;
   const out = await orChatJSON<{ pages: BookScriptPage[] }>(system, user, { maxTokens: 5000, model: opts?.model });
   return (out.pages ?? []).map((p, i) => ({ page_no: Number(p.page_no) || i + 1, text: p.text ?? "", illustration: p.illustration ?? "" }));
+}
+
+// ===== STYLE BIBLE + COMPOSER (prompt chi tiết từng trang) =====
+// Bible = khối "bí kíp" khai báo 1 LẦN cho mỗi tựa, ráp y hệt vào MỌI trang → giữ nhân vật/phong cách nhất quán.
+export type BookBible = {
+  format?: string;       // khổ trang + chất lượng
+  character?: string;    // đặc điểm nhân vật (khoá mặt)
+  wardrobe?: string;     // trang phục/đạo cụ cố định (để trống nếu không có)
+  artStyle?: string;     // phong cách vẽ
+  palette?: string;      // bảng màu
+  textStyle?: string;    // quy tắc chữ (baked vào ảnh)
+  restrictions?: string; // danh sách cấm
+};
+
+// Bible mặc định cho sách tranh personalized trẻ nhỏ — admin chỉnh lại theo từng tựa.
+export function defaultBible(): BookBible {
+  return {
+    format:
+      "Single horizontal landscape page, aspect ratio 23:17 (print 3450×2550px at 300 DPI). " +
+      "Premium, professionally published children's picture-book quality. Keep the child's face and all text safely inside the trim margins.",
+    character:
+      "- approximately {age} years old\n- the SAME face, hair color, hairstyle and skin tone as the attached reference photo\n- soft round cheeks\n- warm, gentle, cheerful expression\n- realistic toddler body proportions\n- kind, curious and caring personality",
+    wardrobe: "",
+    artStyle:
+      "Premium magical children's storybook digital painting. Soft cinematic lighting, expressive but gentle facial features, " +
+      "realistic fabric texture, detailed dreamy backgrounds, warm golden highlights, polished professional illustration quality.",
+    palette: "deep navy blue, soft sky blue, warm cream, teal blue, glowing golden accents",
+    textStyle:
+      "Use a clear, elegant, child-friendly serif font. Dark navy text on a clean, light-colored area. " +
+      "All words correctly spelled, easy to read and professionally typeset. Do not place text over faces or visually busy areas. " +
+      "Do not add page titles, page numbers, or any extra words.",
+    restrictions:
+      "- No copyrighted characters, costumes, symbols or logos\n- No distorted hands, fingers, faces or body proportions\n" +
+      "- No misspelled text\n- No extra children except those described in the scene\n- No dark or frightening atmosphere\n" +
+      "- No harsh yellow color cast\n- No overly cartoonish or exaggerated proportions\n" +
+      "- Generate the flat page artwork only — no page mockup, no hands holding the book, no surrounding background",
+  };
+}
+
+// Ráp PROMPT CHI TIẾT cho 1 trang từ Bible + brief cảnh + lời văn. Có cấu trúc như prompt "chuẩn vàng".
+// baked=true → hướng dẫn AI vẽ chữ thẳng vào tranh; baked=false → chừa vùng trống, không vẽ chữ (để overlay).
+export function buildMasterPrompt(opts: { bookName: string; bible?: BookBible | null; brief: string; text: string; hasRef: boolean; baked?: boolean }): string {
+  const B = { ...defaultBible(), ...(opts.bible ?? {}) };
+  const baked = opts.baked !== false;
+  const S: string[] = [];
+  S.push(`Create a horizontal children's storybook page for "${opts.bookName}".`);
+  S.push(`\nPAGE FORMAT:\n${B.format}`);
+  S.push(
+    `\nIMPORTANT CHARACTER CONSISTENCY:\n` +
+    (opts.hasRef ? "Use the attached photograph of the child as the exact character reference.\n" : "") +
+    `Preserve the child's recognizable features:\n${B.character}\n` +
+    "Transform the child into a polished storybook illustration while keeping the face clearly recognizable. " +
+    "Do not create a different child. Do not change the child's age, hair color, hairstyle, eye color, skin tone or face shape.",
+  );
+  if ((B.wardrobe ?? "").trim()) S.push(`\nWARDROBE & PROPS (identical on every page):\n${B.wardrobe}`);
+  S.push(`\nART STYLE:\n${B.artStyle}\nColor palette: ${B.palette}`);
+  S.push(`\nSCENE:\n${opts.brief || "(describe the scene for this page)"}`);
+  const text = (opts.text ?? "").trim();
+  if (baked && text) {
+    S.push(
+      `\nTEXT (render exactly, baked into the artwork):\n${B.textStyle}\n` +
+      `Place this exact English text on the page:\n"${text}"\n` +
+      "Leave a clean, softly-colored area for the text, away from the face and busy areas.",
+    );
+  } else if (text) {
+    S.push(`\nTEXT AREA:\nLeave a clean, softly-colored empty area (upper or lower third) for a text caption to be overlaid later. Do NOT render any text, letters or words in the image.`);
+  }
+  S.push(`\nRESTRICTIONS:\n${B.restrictions}`);
+  return S.join("\n");
+}
+
+// Thay biến cá nhân hoá vào prompt/chữ. Nhận cả {key} và [key] (không phân biệt hoa/thường).
+export function resolveVars(tpl: string, vars: { key: string; value?: string }[] | null | undefined): string {
+  let out = tpl ?? "";
+  for (const v of vars ?? []) {
+    const key = String(v.key ?? "").trim();
+    if (!key) continue;
+    const val = String(v.value ?? "").trim();
+    if (!val) continue;
+    const esc = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    out = out.replace(new RegExp(`[\\{\\[]\\s*${esc}\\s*[\\}\\]]`, "gi"), val);
+  }
+  return out;
 }

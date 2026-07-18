@@ -92,6 +92,12 @@ export const IconArtwork = (p: P) => (
     <path d="m21 16-5-5L5 21" />
   </svg>
 );
+export const IconBook = (p: P) => (
+  <svg {...base} {...p}>
+    <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H12v16H5.5A1.5 1.5 0 0 0 4 20.5z" />
+    <path d="M20 4.5A1.5 1.5 0 0 0 18.5 3H12v16h6.5a1.5 1.5 0 0 1 1.5 1.5z" />
+  </svg>
+);
 export const IconEye = (p: P) => (
   <svg {...base} {...p}>
     <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
@@ -237,6 +243,14 @@ export const IconTrash = (p: P) => (
 export const IconSparkle = (p: P) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={15} height={15} {...p}>
     <path d="M12 2l1.9 5.6L19.5 9.5l-5.6 1.9L12 17l-1.9-5.6L4.5 9.5l5.6-1.9L12 2zM19 15l.9 2.6L22.5 18.5l-2.6.9L19 22l-.9-2.6-2.6-.9 2.6-.9L19 15z" />
+  </svg>
+);
+// AI Agent — 3 ngôi sao 4 cánh ĐẶC, cạnh cong lõm (kiểu sparkle chunky).
+export const IconAiStars = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="currentColor" width={17} height={17} {...p}>
+    <path d="M9 4 Q9 11 16 11 Q9 11 9 18 Q9 11 2 11 Q9 11 9 4 Z" />
+    <path d="M18.5 2.6 Q18.5 5.6 21.5 5.6 Q18.5 5.6 18.5 8.6 Q18.5 5.6 15.5 5.6 Q18.5 5.6 18.5 2.6 Z" />
+    <path d="M18 14.4 Q18 18 21.6 18 Q18 18 18 21.6 Q18 18 14.4 18 Q18 18 18 14.4 Z" />
   </svg>
 );
 export const IconPin = (p: P) => (

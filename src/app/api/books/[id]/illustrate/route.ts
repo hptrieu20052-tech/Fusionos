@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
-import { orGenerateImage } from "@/lib/ai/openrouter";
+import { orGenerateImage, buildMasterPrompt, resolveVars, BookBible } from "@/lib/ai/openrouter";
 import { readFile, writeFile, fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -34,21 +34,30 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       } catch { /* resize lỗi → dùng ảnh gốc */ }
       refs.push(`data:image/jpeg;base64,${refBuf.toString("base64")}`);
     }
-    const style = (title.stylePrompt ?? "").trim();
-    const prompt = [
-      page.illustrationBrief ?? "",
-      style ? `Art style: ${style}.` : "Children's book illustration style.",
-      refs.length ? "Keep the SAME main character (baby) design, face and style as the reference image, consistent across pages." : "",
-      "Compose with the main character in the upper-center area and leave a calmer, less-busy space in the bottom third for a text caption to be overlaid later.",
-      "No text, letters or words in the image.",
-    ].filter(Boolean).join(" ");
+    // PROMPT CHI TIẾT: dùng prompt_template đã ráp (Bước 2) nếu có; nếu chưa thì ráp tại chỗ từ Bible + brief + text.
+    const baked = b?.baked !== false;
+    const rawPrompt = (page.promptTemplate ?? "").trim() || buildMasterPrompt({
+      bookName: title.name,
+      bible: (title.bible ?? null) as BookBible | null,
+      brief: page.illustrationBrief ?? "",
+      text: page.textTemplate ?? "",
+      hasRef: refs.length > 0,
+      baked,
+    });
+    // THAY BIẾN: title.vars + override từ request (vd previewName → {name}) → prompt cuối cùng gửi model.
+    type Var = { key: string; value?: string };
+    const titleVars = Array.isArray(title.vars) ? (title.vars as Var[]) : [];
+    const reqVars = Array.isArray(b?.vars) ? (b.vars as Var[]) : [];
+    const mergedVars = [...titleVars.filter((v) => !reqVars.some((r) => r.key === v.key)), ...reqVars];
+    const prompt = resolveVars(rawPrompt, mergedVars);
 
     // Kích thước in: Page 3450×2550 (tỉ lệ 23:17). Cover 7470×3000 (~2.49:1) — làm ở khâu cover riêng.
     // Sinh đúng TỈ LỆ; số px chính xác resize ở khâu Export.
     // KHÔNG ép 2K để tránh vượt ~100s gateway timeout (502). Sinh đúng TỈ LỆ ở size mặc định model → nhanh hơn;
     // số px in chính xác (3450×2550) sẽ upscale ở khâu Export.
     const model = b?.model ? String(b.model) : undefined;
-    const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png", aspectRatio: "23:17" });
+    // Dùng tỉ lệ CHUẨN 4:3 (gần 23:17, mọi model nhận) để tránh model treo với tỉ lệ lạ; crop đúng 3450×2550 ở Export.
+    const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png", aspectRatio: "4:3" });
 
     const key = `book-illustrations/${params.id}-p${pageNo}-${Date.now()}.png`;
     await writeFile(key, Buffer.from(img.b64, "base64"), img.mediaType || "image/png");
