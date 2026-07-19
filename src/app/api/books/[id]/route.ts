@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq, asc } from "drizzle-orm";
+import { eq, and, asc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { fileUrl } from "@/lib/storage";
 
@@ -48,6 +48,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (b.cover !== undefined) patch.cover = b.cover;   // Bìa wraparound {text,brief,prompt} (jsonb)
   if (b.vars !== undefined) patch.vars = b.vars;      // biến cá nhân hoá (jsonb)
   await db.update(schema.bookTitles).set(patch).where(eq(schema.bookTitles.id, params.id));
+
+  // TỰ LƯU 1 TRANG (onBlur): UPDATE đúng 1 dòng, KHÔNG xoá bảng → tránh khoảng trống gây "page not found" khi vừa sửa vừa vẽ.
+  if (b.page && typeof b.page === "object" && !Array.isArray(b.pages)) {
+    const pg = b.page as { page_no?: number; text?: string; illustration?: string; prompt?: string };
+    const pageNo = Number(pg.page_no);
+    const set: Record<string, unknown> = {};
+    if (typeof pg.text === "string") set.textTemplate = pg.text;
+    if (typeof pg.illustration === "string") set.illustrationBrief = pg.illustration;
+    if (typeof pg.prompt === "string") set.promptTemplate = pg.prompt;
+    if (Number.isFinite(pageNo) && Object.keys(set).length) {
+      await db.update(schema.bookPages).set(set)
+        .where(and(eq(schema.bookPages.titleId, params.id), eq(schema.bookPages.pageNo, pageNo)));
+    }
+  }
 
   // Thay toàn bộ trang nếu client gửi mảng pages (giữ prompt chi tiết nếu client gửi kèm)
   if (Array.isArray(b.pages)) {

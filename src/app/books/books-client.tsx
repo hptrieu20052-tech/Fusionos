@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { BOOK_PRODUCTS, getBookProduct, genBlocks } from "@/lib/book-products";
 
 type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; updatedAt: string };
@@ -335,9 +335,30 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
 // ===== Panel: STYLE BIBLE (khai báo 1 lần, ráp vào mọi trang) =====
 // Gọn: mặc định chỉ hiện phần hay chỉnh (nhân vật/trang phục/phong cách/màu). Phần khung cố định
 // (quy tắc chữ/cấm/khổ) giấu trong "Nâng cao" — AI đã điền sẵn, ít khi phải sửa.
-function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void }) {
+function BiblePanel({ bible, setBible, onSave, flash }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void; flash: (m: string) => void }) {
   const [open, setOpen] = useState(false);
   const [adv, setAdv] = useState(false);
+  const [styleBusy, setStyleBusy] = useState(false);
+  // Rút PHONG CÁCH VẼ từ ảnh mẫu (đối thủ / ảnh bạn thích) → điền thẳng Art style · Palette · Text rules.
+  const analyzeStyle = async (files: FileList) => {
+    const arr = Array.from(files).slice(0, 3);
+    setStyleBusy(true);
+    try {
+      const imgs: string[] = [];
+      for (const f of arr) {
+        const dataUrl: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f); });
+        imgs.push(await downscaleImage(dataUrl, 512));
+      }
+      const j = await api("/api/books/analyze-refs", "POST", { mode: "style", images: imgs });
+      if (j.ok && j.style) {
+        const s = j.style as { artStyle?: string; palette?: string; textStyle?: string; character?: string; mood?: string; summary?: string };
+        const art = [s.artStyle, s.character ? `Character rendering: ${s.character}` : "", s.mood ? `Mood: ${s.mood}` : ""].filter(Boolean).join(" ");
+        setBible({ ...bible, artStyle: art || bible.artStyle, palette: s.palette || bible.palette, textStyle: s.textStyle || bible.textStyle });
+        flash(`✓ Style captured${s.summary ? " · " + s.summary : ""} — review & Save Bible`);
+      } else flash("✗ " + (j.error ?? "Style analysis failed"));
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e).slice(0, 80)); }
+    setStyleBusy(false);
+  };
   const F = (k: keyof Bible, label: string, rows = 2, ph = "") => (
     <div>
       <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>{label}</div>
@@ -357,6 +378,12 @@ function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: B
             <button style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }} onClick={() => setBible({ ...DEFAULT_BIBLE, ...bible, wardrobe: bible.wardrobe ?? "" })}>Load default</button>
             <button style={{ ...btnBlue, padding: "6px 12px", fontSize: 12, marginLeft: "auto" }} onClick={onSave}>Save Bible</button>
           </div>
+          <label style={{ border: "1px dashed var(--blue)", borderRadius: 10, padding: "9px 12px", display: "flex", alignItems: "center", gap: 8, cursor: styleBusy ? "default" : "pointer", background: "#F5F9FF", fontSize: 12 }}>
+            <span style={{ fontSize: 15 }}>🎨</span>
+            <span style={{ fontWeight: 800, color: "var(--blue)" }}>{styleBusy ? "Analyzing style…" : "Match a reference style"}</span>
+            <span style={{ color: "var(--muted)" }}>— upload a sample illustration; AI reads its look and fills Art style · Palette · Text rules to match.</span>
+            <input type="file" accept="image/*" multiple disabled={styleBusy} style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) analyzeStyle(e.target.files); e.target.value = ""; }} />
+          </label>
           {F("character", "Character (face lock)", 5, "face/hair/eyes features… + {age}")}
           {F("wardrobe", "Fixed outfit / props", 2, "e.g. teal star pajamas (leave empty if none)")}
           {F("artStyle", "Art style", 3)}
@@ -545,6 +572,17 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     setBusy(false);
     flash(j.ok ? "✓ Saved" : "✗ " + (j.error ?? "Save error"));
   };
+  // Tự lưu khi rời ô (onBlur) — UPDATE đúng 1 trang (không xoá cả bảng → không kẹt "page not found" khi vừa sửa vừa vẽ).
+  const lastSavedPage = useRef<Record<number, string>>({});
+  const savePage = async (pageNo: number) => {
+    const p = pages.find((x) => x.page_no === pageNo);
+    if (!p) return;
+    const snap = JSON.stringify({ t: p.text, i: p.illustration, pr: p.prompt });
+    if (lastSavedPage.current[pageNo] === snap) return;
+    lastSavedPage.current[pageNo] = snap;
+    const j = await api(`/api/books/${id}`, "PATCH", { page: { page_no: pageNo, text: p.text, illustration: p.illustration, prompt: p.prompt ?? "" } });
+    flash(j.ok ? "✓ Saved" : "✗ " + (j.error ?? "Save error"));
+  };
   const setPage = (i: number, k: "text" | "illustration" | "prompt", v: string) => setPages((ps) => ps.map((p, idx) => idx === i ? { ...p, [k]: v } : p));
 
   const saveBible = async () => { const j = await api(`/api/books/${id}`, "PATCH", { bible }); flash(j.ok ? "✓ Bible saved" : "✗ " + (j.error ?? "Error")); };
@@ -595,7 +633,15 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   };
 
   // ---- COVER: lưu / ráp prompt / vẽ (lưu trước để bản mới nhất được dùng) ----
-  const saveCover = async () => { const j = await api(`/api/books/${id}`, "PATCH", { cover }); flash(j.ok ? "✓ Cover saved" : "✗ " + (j.error ?? "Error")); };
+  const saveCover = async () => { const j = await api(`/api/books/${id}`, "PATCH", { cover }); lastSavedCover.current = JSON.stringify(cover); flash(j.ok ? "✓ Cover saved" : "✗ " + (j.error ?? "Error")); };
+  const lastSavedCover = useRef("");
+  const autoSaveCover = async () => {
+    const snap = JSON.stringify(cover);
+    if (snap === lastSavedCover.current) return;
+    lastSavedCover.current = snap;
+    const j = await api(`/api/books/${id}`, "PATCH", { cover });
+    flash(j.ok ? "✓ Saved" : "✗ " + (j.error ?? "Error"));
+  };
   const composeCover = async () => {
     await api(`/api/books/${id}`, "PATCH", { cover });
     const j = await api(`/api/books/${id}/compose`, "POST", { pageNo: 0, baked });
@@ -627,18 +673,18 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       <div style={{ display: "grid", gap: 8 }}>
         <div>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Text (can insert {"{name}"})</div>
-          <textarea value={p.text} onChange={(e) => setPage(i, "text", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
+          <textarea value={p.text} onChange={(e) => setPage(i, "text", e.target.value)} onBlur={() => savePage(p.page_no)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
         </div>
         <div>
           <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Illustration brief (scene)</div>
-          <textarea value={p.illustration} onChange={(e) => setPage(i, "illustration", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
+          <textarea value={p.illustration} onChange={(e) => setPage(i, "illustration", e.target.value)} onBlur={() => savePage(p.page_no)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
         </div>
         <details>
           <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>Detailed prompt {p.prompt ? "✓" : "(not composed)"} — click to view/edit</summary>
           <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
             <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(i, p.page_no)}>🧱 Recompose this prompt</button>
           </div>
-          <textarea value={p.prompt ?? ""} onChange={(e) => setPage(i, "prompt", e.target.value)} rows={8} placeholder="Click 🧱 Compose to auto-generate, or type a gold-standard prompt…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+          <textarea value={p.prompt ?? ""} onChange={(e) => setPage(i, "prompt", e.target.value)} onBlur={() => savePage(p.page_no)} rows={8} placeholder="Click 🧱 Compose to auto-generate, or type a gold-standard prompt…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
         </details>
       </div>
       <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
@@ -660,16 +706,16 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
           <div style={{ fontWeight: 700, fontSize: 12 }}>Pages {L}–{R} · one connected illustration</div>
           <div>
             <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Illustration brief — ONE continuous scene across both pages</div>
-            <textarea value={lp.illustration} onChange={(e) => setPage(iL, "illustration", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} placeholder="Describe ONE scene spanning the whole spread; it will flow across the gutter." />
+            <textarea value={lp.illustration} onChange={(e) => setPage(iL, "illustration", e.target.value)} onBlur={() => savePage(L)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} placeholder="Describe ONE scene spanning the whole spread; it will flow across the gutter." />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <div>
               <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Left text · #{L}</div>
-              <textarea value={lp.text} onChange={(e) => setPage(iL, "text", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
+              <textarea value={lp.text} onChange={(e) => setPage(iL, "text", e.target.value)} onBlur={() => savePage(L)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
             </div>
             <div>
               <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Right text · #{R}</div>
-              <textarea value={rp.text} onChange={(e) => setPage(iR, "text", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
+              <textarea value={rp.text} onChange={(e) => setPage(iR, "text", e.target.value)} onBlur={() => savePage(R)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
             </div>
           </div>
           <details>
@@ -677,7 +723,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
             <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
               <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(iL, L)}>🧱 Recompose spread prompt</button>
             </div>
-            <textarea value={lp.prompt ?? ""} onChange={(e) => setPage(iL, "prompt", e.target.value)} rows={8} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+            <textarea value={lp.prompt ?? ""} onChange={(e) => setPage(iL, "prompt", e.target.value)} onBlur={() => savePage(L)} rows={8} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
           </details>
         </div>
         <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
@@ -707,7 +753,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       <StepCard n={2} title="Theme kit — Style Bible + Variables"
         desc="AI builds it from the theme (character · outfit · style · colors · restrictions), then you tweak. This block is applied to EVERY page → keeps the character consistent."
         right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : "✨ AI build from theme"}</button>}>
-        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
+        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} flash={flash} />
         <VarsPanel vars={vars} setVars={setVars} onSave={saveVars} bookId={id} flash={flash} />
       </StepCard>
 
@@ -749,18 +795,18 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
             <div style={{ fontWeight: 800, fontSize: 13 }}>Cover — one wraparound ({product.coverW}×{product.coverH}px → cover_back + cover_front)</div>
             <div>
               <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Title text (baked on the front · can insert {"{name}"})</div>
-              <textarea value={cover.text ?? ""} onChange={(e) => setCover((c) => ({ ...c, text: e.target.value }))} rows={2} placeholder={detail.title.name} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
+              <textarea value={cover.text ?? ""} onChange={(e) => setCover((c) => ({ ...c, text: e.target.value }))} onBlur={autoSaveCover} rows={2} placeholder={detail.title.name} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
             </div>
             <div>
               <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Illustration brief (wraparound scene — front on right, back continues on left)</div>
-              <textarea value={cover.brief ?? ""} onChange={(e) => setCover((c) => ({ ...c, brief: e.target.value }))} rows={2} placeholder="e.g. Sunset ocean with a lighthouse and sailboat; hero + pet on the right, the same seascape continuing calmly on the left." style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
+              <textarea value={cover.brief ?? ""} onChange={(e) => setCover((c) => ({ ...c, brief: e.target.value }))} onBlur={autoSaveCover} rows={2} placeholder="e.g. Sunset ocean with a lighthouse and sailboat; hero + pet on the right, the same seascape continuing calmly on the left." style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
             </div>
             <details>
               <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>Detailed prompt {cover.prompt ? "✓" : "(not composed)"} — click to view/edit</summary>
               <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
                 <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={composeCover}>🧱 Recompose cover prompt</button>
               </div>
-              <textarea value={cover.prompt ?? ""} onChange={(e) => setCover((c) => ({ ...c, prompt: e.target.value }))} rows={7} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+              <textarea value={cover.prompt ?? ""} onChange={(e) => setCover((c) => ({ ...c, prompt: e.target.value }))} onBlur={autoSaveCover} rows={7} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
             </details>
             <div><button style={{ ...btnGhost, fontSize: 11.5, padding: "5px 12px" }} onClick={saveCover}>Save cover</button></div>
           </div>

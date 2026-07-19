@@ -28,6 +28,37 @@ export async function POST(req: NextRequest) {
   } catch { imgs.push(...raw); }
 
   const model = process.env.OPENROUTER_VISION_MODEL || "openai/gpt-4o-mini";
+
+  // ===== CHẾ ĐỘ "STYLE": rút PHONG CÁCH VẼ từ ảnh mẫu → điền thẳng vào Style Bible =====
+  if (b?.mode === "style") {
+    const sysS = "You are an expert children's-book art director. Study the reference illustration(s) VERY carefully and describe the VISUAL STYLE precisely enough that another artist could reproduce it on new pages. Reply ONLY as JSON. Answer in ENGLISH.";
+    const userS = `There are ${imgs.length} reference image(s) attached${b?.notes ? ` (context: ${b.notes})` : ""}. Extract the shared drawing style (ignore the specific subject/characters). Return EXACTLY this JSON — each value a concrete, reusable instruction, no vague adjectives alone:
+{
+  "artStyle": "medium + linework + shading + rendering + lighting (e.g. 'soft watercolor storybook painting, minimal or no outlines, gentle color washes, dreamy diffused light, subtle paper texture')",
+  "palette": "3-6 dominant colors, comma separated",
+  "textStyle": "the TITLE/typography look seen on the cover: font family kind (serif/script/rounded), color, outline/shadow, placement",
+  "character": "how characters are drawn: proportions, face style, cuteness/realism level, eyes, cheeks",
+  "mood": "overall mood/atmosphere in a few words",
+  "summary": "1 short human-readable line naming the style"
+}
+Base every field ONLY on what you actually see. Do NOT nest objects; every value is a plain string.`;
+    try {
+      const out = await orChatJSON<Record<string, unknown>>(sysS, userS, { model, images: imgs, maxTokens: 700, temperature: 0.3 });
+      const str = (v: unknown): string => typeof v === "string" ? v : v == null ? "" : (Array.isArray(v) ? v.map(str).join(", ") : Object.values(v as Record<string, unknown>).map(str).join(" · "));
+      const style = {
+        artStyle: str(out?.artStyle).slice(0, 600),
+        palette: str(out?.palette).slice(0, 300),
+        textStyle: str(out?.textStyle).slice(0, 400),
+        character: str(out?.character).slice(0, 500),
+        mood: str(out?.mood).slice(0, 200),
+        summary: str(out?.summary).slice(0, 200),
+      };
+      return NextResponse.json({ ok: true, style, count: imgs.length });
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) }, { status: 502 });
+    }
+  }
+
   const system = "Bạn là chuyên gia phân tích sản phẩm sách/quà personalized bán trên Etsy/TikTok. Nhìn KỸ ảnh listing đối thủ và mô tả CỤ THỂ những gì THẤY trong ảnh. Trả lời DUY NHẤT bằng JSON.";
   const user = `Bối cảnh sản phẩm đang làm: ${b?.notes || "(không)"}
 Có ${imgs.length} ảnh listing đối thủ đính kèm. Trong trường "analysis", viết VĂN BẢN THƯỜNG tiếng Việt, dùng xuống dòng và gạch đầu dòng "-", gồm:

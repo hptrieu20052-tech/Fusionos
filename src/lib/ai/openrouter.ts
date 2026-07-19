@@ -284,16 +284,41 @@ export function buildMasterPrompt(opts: { bookName: string; bible?: BookBible | 
   return S.join("\n");
 }
 
-// Thay biến cá nhân hoá vào prompt/chữ. Nhận cả {key} và [key] (không phân biệt hoa/thường).
-export function resolveVars(tpl: string, vars: { key: string; value?: string }[] | null | undefined): string {
+// Thay biến cá nhân hoá vào prompt/chữ. Nhận {key}/[key], {label}/[label], và các PLACEHOLDER AI hay tự đặt
+// như [Child's Name], {childName}, [Pet's Name]… (không phân biệt hoa/thường, dấu nháy, gạch dưới).
+export function resolveVars(tpl: string, vars: { key: string; value?: string; label?: string }[] | null | undefined): string {
   let out = tpl ?? "";
-  for (const v of vars ?? []) {
-    const key = String(v.key ?? "").trim();
-    if (!key) continue;
+  const list = vars ?? [];
+  const norm = (s: string) => String(s ?? "").toLowerCase().replace(/['’`]/g, "").replace(/[_\s]+/g, " ").trim();
+
+  // 1) Thay theo {key}/[key] và {label}/[label].
+  for (const v of list) {
     const val = String(v.value ?? "").trim();
     if (!val) continue;
-    const esc = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    out = out.replace(new RegExp(`[\\{\\[]\\s*${esc}\\s*[\\}\\]]`, "gi"), val);
+    for (const token of [v.key, v.label]) {
+      const t = String(token ?? "").trim();
+      if (!t) continue;
+      const esc = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      out = out.replace(new RegExp(`[\\{\\[]\\s*${esc}\\s*[\\}\\]]`, "gi"), () => val);
+    }
+  }
+
+  // 2) Alias: bắt placeholder mô tả (AI/tiêu đề tự đặt) cho biến TÊN bé & THÚ CƯNG.
+  const pick = (re: RegExp) => {
+    const v = list.find((x) => re.test(norm(x.key)) || re.test(norm(x.label ?? "")));
+    return String(v?.value ?? "").trim();
+  };
+  const nameVal = pick(/\bname\b|\bten be\b|\bten\b/);
+  const petVal = pick(/\bpet\b|\bdog\b|\bcat\b|thu cung/);
+  const NAME_SET = new Set(["name", "child name", "childs name", "children name", "childrens name", "kid name", "kids name", "baby name", "babys name", "the child name", "your child name", "your childs name", "first name", "childname", "little ones name"]);
+  const PET_SET = new Set(["pet name", "pets name", "dog name", "dogs name", "cat name", "cats name", "petname", "the pets name", "your pets name"]);
+  if (nameVal || petVal) {
+    out = out.replace(/[\[\{]([^\[\]\{\}]{1,40})[\]\}]/g, (m, inner: string) => {
+      const n = norm(inner);
+      if (nameVal && NAME_SET.has(n)) return nameVal;
+      if (petVal && PET_SET.has(n)) return petVal;
+      return m;
+    });
   }
   return out;
 }
