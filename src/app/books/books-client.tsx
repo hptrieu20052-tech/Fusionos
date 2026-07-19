@@ -145,6 +145,7 @@ export default function BooksClient() {
     api("/api/books/models?type=text").then((j) => { if (j.ok) setTextModels((j.models as { id: string; name: string }[]) ?? []); });
   }, []);
 
+  const [custom, setCustom] = useState<{ cloneId: string; masterId: string } | null>(null);
   const openDetail = async (id: string) => {
     const j = await api(`/api/books/${id}`);
     if (j.ok) setDetail(j as unknown as Detail); else flash("✗ " + (j.error ?? "Error"));
@@ -156,8 +157,8 @@ export default function BooksClient() {
         <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Book Studio</h2>
         <span style={{ fontSize: 11, fontWeight: 700, color: "#7a3fb0", background: "#F3EAFB", border: "1px solid #E3D0F5", borderRadius: 999, padding: "2px 9px" }}>AI · Beta</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          {detail && <button style={btnGhost} onClick={() => { setDetail(null); loadList(); }}>← List</button>}
-          {!detail && <button style={btnBlue} onClick={() => setShowNew(true)}>+ New Book</button>}
+          {(detail || custom) && <button style={btnGhost} onClick={() => { setDetail(null); setCustom(null); loadList(); }}>← List</button>}
+          {!detail && !custom && <button style={btnBlue} onClick={() => setShowNew(true)}>+ New Book</button>}
         </div>
       </div>
       {detail && <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Script → Detailed prompt → Custom photo/name → Generate each page.</div>}
@@ -167,15 +168,16 @@ export default function BooksClient() {
         </div>
       )}
 
-      {detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
-        : <ListView titles={titles} open={openDetail} reload={loadList} flash={flash} />}
+      {custom ? <CustomizeView cloneId={custom.cloneId} masterId={custom.masterId} flash={flash} />
+        : detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
+        : <ListView titles={titles} open={openDetail} reload={loadList} flash={flash} onCustomize={(cloneId, masterId) => setCustom({ cloneId, masterId })} />}
 
       {showNew && <NewBookModal models={textModels} close={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); loadList(); openDetail(id); }} flash={flash} />}
     </div>
   );
 }
 
-function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id: string) => void; reload: () => void; flash: (m: string) => void }) {
+function ListView({ titles, open, reload, flash, onCustomize }: { titles: Title[]; open: (id: string) => void; reload: () => void; flash: (m: string) => void; onCustomize?: (cloneId: string, masterId: string) => void }) {
   const [tab, setTab] = useState<"ideas" | "custom">("ideas");
   useEffect(() => { const v = lsGet("bs_list_tab"); if (v === "custom" || v === "ideas") setTab(v); }, []);
   const del = async (t: Title) => {
@@ -192,7 +194,10 @@ function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id:
   const customize = async (t: Title) => {
     const customer = typeof window !== "undefined" ? (window.prompt("Customer name (for the copy's title):", "") ?? "") : "";
     const j = await api(`/api/books/${t.id}/clone`, "POST", { customer });
-    if (j.ok) { flash("✓ Customer copy created — fill in name & photo, then Draw all"); open(j.id as string); } else flash("✗ " + (j.error ?? "Clone error"));
+    if (j.ok) {
+      flash("✓ Customer copy created — fill in the customer's variables, then Generate");
+      if (onCustomize) onCustomize(j.id as string, t.id); else open(j.id as string);
+    } else flash("✗ " + (j.error ?? "Clone error"));
   };
 
   const row = (t: Title, master: boolean) => (
@@ -531,6 +536,169 @@ function StepCard({ n, title, desc, right, children }: { n: number; title: strin
     </div>
   );
 }
+
+// ===== MÀN CUSTOM CHO KHÁCH: variables khách gửi → 2 CỘT (trái: design gốc · phải: gen mới chỉ thay biến) =====
+function CustomizeView({ cloneId, masterId, flash }: { cloneId: string; masterId: string; flash: (m: string) => void }) {
+  const [master, setMaster] = useState<Detail | null>(null);
+  const [clone, setClone] = useState<Detail | null>(null);
+  const [vars, setVars] = useState<Var[]>([]);
+  const [illus, setIllus] = useState<Record<number, string>>({});
+  const [imgModel, setImgModel] = useState("");
+  const [imgModels, setImgModels] = useState<{ id: string; name: string }[]>([]);
+  const [busyPage, setBusyPage] = useState<number | null>(null);
+  const [drawBusy, setDrawBusy] = useState(false);
+  const [dlBusy, setDlBusy] = useState(false);
+  const stopRef = useRef(false);
+  const lastVars = useRef("__init__");
+
+  useEffect(() => {
+    api(`/api/books/${masterId}`).then((j) => { if (j.ok) setMaster(j as unknown as Detail); });
+    api(`/api/books/${cloneId}`).then((j) => {
+      if (!j.ok) return;
+      const d = j as unknown as Detail;
+      setClone(d);
+      const sv = (d.title.vars ?? []).map((v) => ({ ...v, value: v.value ?? "" }));
+      setVars(sv); lastVars.current = JSON.stringify(sv);
+      const m: Record<number, string> = {};
+      for (const [k, v] of Object.entries(d.assets ?? {})) if (v) m[Number(k)] = v as string;
+      setIllus(m);
+    });
+    api("/api/books/models?type=image").then((j) => { if (j.ok) setImgModels((j.models as { id: string; name: string }[]) ?? []); });
+    setImgModel(lsGet("bs_image_model"));
+  }, [cloneId, masterId]);
+
+  // Tự lưu variables (debounce) — chỉnh xong là lưu, khỏi bấm gì.
+  useEffect(() => {
+    const snap = JSON.stringify(vars);
+    if (lastVars.current === "__init__") { lastVars.current = snap; return; }
+    if (lastVars.current === snap) return;
+    const t = setTimeout(async () => {
+      lastVars.current = snap;
+      const firstImg = vars.find((v) => v.type === "image" && v.imageKey);
+      const body: Record<string, unknown> = { vars };
+      if (firstImg?.imageKey) body.characterRefKey = firstImg.imageKey;
+      const j = await api(`/api/books/${cloneId}`, "PATCH", body);
+      flash(j.ok ? "✓ Variables saved" : "✗ " + (j.error ?? "Error"));
+    }, 700);
+    return () => clearTimeout(t);
+  }, [vars, cloneId, flash]);
+
+  const product = getBookProduct(clone?.title.productKey);
+  const blocks = genBlocks(product);
+  const masterIllus: Record<number, string> = {};
+  if (master) for (const [k, v] of Object.entries(master.assets ?? {})) if (v) masterIllus[Number(k)] = v as string;
+
+  const draw = async (pageNo: number): Promise<boolean> => {
+    setBusyPage(pageNo); lsSet("bs_image_model", imgModel);
+    const payload = { pageNo, model: imgModel || undefined, baked: true, vars };
+    let j = await api(`/api/books/${cloneId}/illustrate`, "POST", payload);
+    if (!j.ok && /\b50[24]\b|timeout|timed out/i.test(String(j.error ?? ""))) j = await api(`/api/books/${cloneId}/illustrate`, "POST", payload);
+    setBusyPage(null);
+    if (j.ok) {
+      const map = (j.urls as Record<string, string> | undefined) ?? { [pageNo]: j.url as string };
+      setIllus((m) => ({ ...m, ...Object.fromEntries(Object.entries(map).map(([k, v]) => [Number(k), v as string])) }));
+      return true;
+    }
+    flash(`✗ ${pageNo === 0 ? "cover" : "page " + pageNo}: ` + (j.error ?? "Draw error"));
+    return false;
+  };
+
+  const blockKey = (blk: GenBlockUi): number => blk.type === "cover" ? 0 : blk.type === "single" ? blk.page : blk.pages[0];
+  const blockDone = (blk: GenBlockUi): boolean => blk.type === "cover" ? !!(illus[0] && illus[-1]) : blk.type === "single" ? !!illus[blk.page] : !!(illus[blk.pages[0]] && illus[blk.pages[1]]);
+
+  const drawAll = async () => {
+    if (drawBusy) { stopRef.current = true; flash("Stopping after this block…"); return; }
+    const todo = blocks.filter((b) => !blockDone(b)).map(blockKey);
+    if (!todo.length) { flash("✓ Everything is already drawn"); return; }
+    setDrawBusy(true); stopRef.current = false;
+    let done = 0, fail = 0;
+    for (let i = 0; i < todo.length; i++) {
+      if (stopRef.current) break;
+      flash(`Drawing block ${i + 1}/${todo.length}…`);
+      (await draw(todo[i])) ? done++ : fail++;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    setDrawBusy(false);
+    if (stopRef.current) flash(`⚠ Stopped — drew ${done} block(s).`);
+    else if (fail) flash(`⚠ Drew ${done}/${todo.length} — ${fail} failed. Click Generate all again to retry.`);
+    else flash(`✓ All drawn (${done} block${done > 1 ? "s" : ""})`);
+  };
+
+  const downloadAll = async () => {
+    if (dlBusy) return;
+    const order: number[] = [];
+    if (illus[0]) order.push(0);
+    if (illus[-1]) order.push(-1);
+    Object.keys(illus).map(Number).filter((n) => n >= 1 && illus[n]).sort((a, z) => a - z).forEach((n) => order.push(n));
+    if (!order.length) { flash("✗ Nothing drawn yet"); return; }
+    setDlBusy(true);
+    for (let i = 0; i < order.length; i++) {
+      flash(`Downloading ${i + 1}/${order.length}…`);
+      const el = document.createElement("a");
+      el.href = `/api/books/${cloneId}/asset?page=${order[i]}`;
+      document.body.appendChild(el); el.click(); el.remove();
+      await new Promise((r) => setTimeout(r, 700));
+    }
+    setDlBusy(false);
+    flash(`✓ Downloaded ${order.length} files`);
+  };
+
+  if (!clone) return <div className="panel empty" style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</div>;
+
+  const cell = (url?: string, h = 96) => url
+    ? <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={url} alt="" style={{ width: "100%", display: "block" }} /></div>
+    : <div style={{ height: h, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 10.5 }}>—</div>;
+
+  return (
+    <div>
+      <StepCard n={1} title={`Customize: ${clone.title.name}`} desc={`Product: ${product.name} · base design on the left stays untouched — generate a personalized copy on the right.`}>
+        <VarsPanel vars={vars} setVars={setVars} bookId={cloneId} flash={flash} />
+      </StepCard>
+
+      <StepCard n={2} title="Original design → Personalized copy" desc="Left: master design (reference). Right: generated with the customer's variables — same script, prompts and style.">
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 12, background: "#FAFBFF" }}>
+          <label style={{ display: "grid", gap: 3 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Image model · drawing</span>
+            <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 180, height: 32, boxSizing: "border-box" }}>
+              <option value="">— Default —</option>
+              <ModelOptions models={imgModels} />
+            </select>
+          </label>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <button style={{ ...btnBlue, padding: "0 14px", height: 32, fontSize: 12.5, background: drawBusy ? "#b45309" : "var(--blue)", opacity: busyPage !== null && !drawBusy ? 0.6 : 1 }} disabled={busyPage !== null && !drawBusy} onClick={drawAll}>
+              {drawBusy ? <><IcStop />Stop</> : <><IcBrush />Generate all (missing)</>}
+            </button>
+            <button style={{ ...btnGhost, padding: "0 14px", height: 32, fontSize: 12.5, opacity: dlBusy ? 0.6 : 1 }} disabled={dlBusy} onClick={downloadAll}><IcDownload />{dlBusy ? "Downloading…" : "Download all"}</button>
+          </div>
+        </div>
+
+        {/* Header 2 cột */}
+        <div style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 110px", gap: 10, padding: "0 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".4px" }}>
+          <div>Block</div><div>Original design</div><div>Personalized (new)</div><div />
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {blocks.map((blk) => {
+            const key = blockKey(blk);
+            const label = blk.type === "cover" ? "Cover" : blk.type === "single" ? `Page ${blk.page}` : `Pages ${blk.pages[0]}–${blk.pages[1]}`;
+            const nos = blk.type === "cover" ? [-1, 0] : blk.type === "single" ? [blk.page] : [blk.pages[0], blk.pages[1]];
+            const busy = busyPage !== null && nos.concat(key).includes(busyPage);
+            return (
+              <div key={label} style={{ display: "grid", gridTemplateColumns: "90px 1fr 1fr 110px", gap: 10, alignItems: "start", border: "1px solid var(--line)", borderRadius: 12, padding: 10, background: "#fff" }}>
+                <div style={{ fontWeight: 800, fontSize: 12.5, color: "var(--muted)" }}>{label}</div>
+                <div style={{ display: "grid", gridTemplateColumns: nos.length > 1 ? "1fr 1fr" : "1fr", gap: 6 }}>{nos.map((n) => <div key={n}>{cell(masterIllus[n])}</div>)}</div>
+                <div style={{ display: "grid", gridTemplateColumns: nos.length > 1 ? "1fr 1fr" : "1fr", gap: 6 }}>{nos.map((n) => <div key={n}>{cell(illus[n])}</div>)}</div>
+                <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 8px", opacity: busy ? 0.6 : 1 }} disabled={busy || drawBusy} onClick={() => draw(key)}>
+                  {busy ? "Drawing…" : blockDone(blk) ? <><IcRefresh />Redo</> : <><IcBrush />Generate</>}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </StepCard>
+    </div>
+  );
+}
+type GenBlockUi = ReturnType<typeof genBlocks>[number];
 
 function DetailView({ detail, reload, flash, models }: { detail: Detail; reload: () => void; flash: (m: string) => void; models: { id: string; name: string }[] }) {
   const id = detail.title.id;
