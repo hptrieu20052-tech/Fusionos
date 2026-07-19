@@ -487,6 +487,9 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const [busySetup, setBusySetup] = useState(false);
   const [styleBusy, setStyleBusy] = useState(false);
   const [model, setModel] = useState("");
+  // Layout chữ trên SPREAD: "split" = chữ 1 bên · tranh 1 bên (kiểu đối thủ) | "both" = trang nào cũng có chữ.
+  const [textLayout, setTextLayout] = useState<"split" | "both">("split");
+  useEffect(() => { const v = lsGet("bs_text_layout"); if (v === "both" || v === "split") setTextLayout(v); }, []);
   // ---- Bible + Vars ----
   const [bible, setBible] = useState<Bible>(detail.title.bible ?? {});
   const [cover, setCover] = useState<Cover>(detail.title.cover ?? {});
@@ -544,7 +547,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     try {
       while (from <= total) {
         const to = from + CHUNK - 1;
-        const j = await api(`/api/books/${id}/script`, "POST", { model: model || undefined, vars: keys, from, to, replace: from === 1 });
+        const j = await api(`/api/books/${id}/script`, "POST", { model: model || undefined, vars: keys, from, to, replace: from === 1, textLayout });
         if (!j.ok) { flash("✗ " + (j.error ?? "Script error")); break; }
         total = Number(j.total) || total;
         const chunk = ((j.pages as Page[]) ?? []).map((p) => ({ ...p, prompt: "" }));
@@ -638,21 +641,6 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     } else flash("✗ " + (j.error ?? "Setup error"));
   };
 
-  // Ráp prompt chi tiết cho MỌI trang (deterministic, nhanh — không gọi model ảnh nên không quá tải).
-  const composeAll = async () => {
-    setBusy(true);
-    await api(`/api/books/${id}`, "PATCH", { bible, cover });
-    const j = await api(`/api/books/${id}/compose`, "POST", { baked });
-    setBusy(false);
-    if (j.ok) {
-      const list = j.prompts as { pageNo: number; prompt: string }[];
-      const map = new Map(list.map((x) => [x.pageNo, x.prompt]));
-      setPages((ps) => ps.map((p) => ({ ...p, prompt: map.get(p.page_no) ?? p.prompt })));
-      const cp = list.find((x) => x.pageNo === 0);
-      if (cp) setCover((c) => ({ ...c, prompt: cp.prompt }));
-      flash("✓ Prompts composed (cover + pages)");
-    } else flash("✗ " + (j.error ?? "Compose error"));
-  };
   // Ráp prompt chi tiết cho 1 trang. Lưu Bible trước để dùng bản mới nhất.
   const composeOne = async (i: number, pageNo: number) => {
     await api(`/api/books/${id}`, "PATCH", { bible });
@@ -807,7 +795,18 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
 
       {pages.length > 0 && (
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 12, background: "#FAFBFF" }}>
-          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Compose Bible + brief + text → detailed prompt for every page (no drawing, no overload)">🧱 Compose all prompts</button>
+          <label style={{ display: "grid", gap: 3 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>📖 Spread text layout</span>
+            <div style={{ display: "inline-flex", background: "#EEF1F6", borderRadius: 999, padding: 3, gap: 2 }}>
+              {([["split", "1 side text · 1 side art"], ["both", "Text on both pages"]] as ["split" | "both", string][]).map(([v, lbl]) => (
+                <button key={v} onClick={() => { setTextLayout(v); lsSet("bs_text_layout", v); }}
+                  title={v === "split" ? "Each spread: full text on one page, main subject on the other (competitor style). Applies at Generate/Regenerate script." : "Each page carries its own short text. Applies at Generate/Regenerate script."}
+                  style={{ padding: "5px 12px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, cursor: "pointer", border: 0, background: textLayout === v ? "#fff" : "transparent", color: textLayout === v ? "var(--blue)" : "var(--muted)", boxShadow: textLayout === v ? "0 1px 2px rgba(0,0,0,.10)" : "none" }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          </label>
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap" }}>
             <label style={{ display: "grid", gap: 3 }}>
               <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>✍️ Text model · writing</span>

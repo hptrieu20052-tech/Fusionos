@@ -32,7 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   try {
     const pages = await generateBookScript(
       { name: title.name, angle: concept.angle, outline: concept.outline },
-      { pages: total, from, to, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined, spreadPairs },
+      { pages: total, from, to, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined, spreadPairs, textLayout: b?.textLayout === "both" ? "both" : "split" },
     );
     if (replace) await db.delete(schema.bookPages).where(eq(schema.bookPages.titleId, params.id));
     if (pages.length) {
