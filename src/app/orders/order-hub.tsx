@@ -1317,7 +1317,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
           showPicker={canPushFf && !!detail && canCreate && !!ffSel}
           reviewLine={canPushFf ? reviewLine : null}
           fulfillerId={ffSel} pickerSeed={variants}
-          order={o} showNotes={idx === 0}
+          order={o} showNotes={idx === o.items.length - 1} /* note cấp đơn: đơn nhiều item → nằm DƯỚI CÙNG (item cuối) */
           line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
           setLine={(v) => setLines({ ...lines, [it.id]: v })} />;
       })}

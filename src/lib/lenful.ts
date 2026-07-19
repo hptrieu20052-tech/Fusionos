@@ -9,7 +9,12 @@ export type LenfulCred = { endpoint?: string | null; userName: string; password:
 // Cache token theo (endpoint + user) trong vòng đời instance — đỡ login mỗi đơn.
 const tokenCache = new Map<string, { token: string; exp: number }>();
 
-const baseOf = (endpoint?: string | null) => (endpoint || "https://s-lencam.lenful.com").replace(/\/+$/, "");
+// Chuẩn hoá base: người dùng lỡ dán cả path (…/api/seller/login, …/api/product…) → tự cắt về gốc domain.
+const baseOf = (endpoint?: string | null) => {
+  let b = (endpoint || "https://s-lencam.lenful.com").trim().replace(/\/+$/, "");
+  b = b.replace(/\/api(\/[a-z0-9/_-]*)?$/i, "");
+  return b || "https://s-lencam.lenful.com";
+};
 
 export async function lenfulToken(cred: LenfulCred): Promise<string> {
   const base = baseOf(cred.endpoint);
@@ -89,21 +94,29 @@ export async function listLenfulProducts(cred: LenfulCred, page = 1, limit = 250
   return { totalPage: Number(j?.pagination?.total_page) || 1, count: Number(j?.pagination?.count) || 0, data: Array.isArray(j?.data) ? j.data : [] };
 }
 
-// Danh sách STORE của seller: GET /api/store → id dùng làm :store_id khi tạo đơn.
+// Danh sách STORE của seller → id dùng làm :store_id khi tạo đơn.
+// Doc không ghi rõ path → TỰ DÒ các path khả dĩ, path nào trả mảng hợp lệ thì dùng.
 export async function listLenfulStores(cred: LenfulCred): Promise<{ id: string; title: string }[]> {
   const base = baseOf(cred.endpoint);
   const token = await lenfulToken(cred);
-  const res = await fetch(`${base}/api/store`, {
-    headers: { Accept: "*/*", Authorization: `Bearer ${token}` },
-    signal: AbortSignal.timeout(20000),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Lenful store list HTTP ${res.status}: ${text.slice(0, 200)}`);
-  let j: unknown; try { j = JSON.parse(text); } catch { throw new Error("Lenful store list: non-JSON"); }
-  // Chịu nhiều dạng: mảng trực tiếp | {data:[…]} | object chứa 1 mảng bất kỳ.
-  const obj = j as Record<string, unknown>;
-  const arr = (Array.isArray(j) ? j : Array.isArray(obj?.data) ? obj.data : Object.values(obj ?? {}).find((v) => Array.isArray(v)) ?? []) as Record<string, unknown>[];
-  return arr.map((s) => ({ id: String(s?.id ?? s?._id ?? ""), title: String(s?.name ?? s?.title ?? s?.domain ?? "store") })).filter((s) => s.id);
+  const paths = ["/api/store", "/api/stores", "/api/store/list", "/api/seller/store", "/api/seller/stores", "/api/store?page=1&limit=50"];
+  let lastErr = "";
+  for (const p of paths) {
+    const res = await fetch(`${base}${p}`, {
+      headers: { Accept: "*/*", Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+    }).catch((e) => { lastErr = String(e?.message ?? e); return null; });
+    if (!res) continue;
+    const text = await res.text();
+    if (!res.ok) { lastErr = `${p} → HTTP ${res.status}`; continue; }
+    let j: unknown; try { j = JSON.parse(text); } catch { lastErr = `${p} → non-JSON`; continue; }
+    const obj = j as Record<string, unknown>;
+    const arr = (Array.isArray(j) ? j : Array.isArray(obj?.data) ? obj.data : Object.values(obj ?? {}).find((v) => Array.isArray(v)) ?? []) as Record<string, unknown>[];
+    const out = arr.map((s) => ({ id: String(s?.id ?? s?._id ?? ""), title: String(s?.name ?? s?.title ?? s?.domain ?? "store") })).filter((s) => s.id);
+    if (out.length) return out;
+    lastErr = `${p} → empty list`;
+  }
+  throw new Error(`Lenful store list: ${lastErr} — mở portal Lenful → Store, ID store là chuỗi 24 ký tự trên URL, dán tay vào ô Store ID.`);
 }
 
 // Chi tiết 1 sản phẩm: GET /api/product/:product_id → có MẢNG variants đầy đủ (mỗi variant 1 SKU riêng).
