@@ -132,31 +132,31 @@ Trả JSON đúng dạng: {"ideas":[{"name":"","hook":"","angle":"","usp":"","ou
 
 export type BookScriptPage = { page_no: number; text: string; illustration: string };
 
-// KỊCH BẢN: concept đã chọn → lời văn + brief minh hoạ từng trang.
-export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[] }, opts?: { pages?: number; vars?: string[]; model?: string }): Promise<BookScriptPage[]> {
-  const pages = opts?.pages ?? concept.outline?.length ?? 12;
+// KỊCH BẢN: concept → lời văn + brief từng trang. Hỗ trợ sinh THEO LÔ (from..to) để sách nhiều trang không timeout.
+export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[] }, opts?: { pages?: number; vars?: string[]; model?: string; from?: number; to?: number }): Promise<BookScriptPage[]> {
+  const total = opts?.pages ?? concept.outline?.length ?? 12;
+  const from = Math.max(1, opts?.from ?? 1);
+  const to = Math.min(total, opts?.to ?? total);
   const vars = (opts?.vars && opts.vars.length ? opts.vars : ["name"]);
-  const system = "Bạn viết kịch bản sách tranh thiếu nhi personalized (in KDP/Story Book). Lời văn ấm áp, hợp trẻ nhỏ, ngắn gọn mỗi trang. Brief minh hoạ phải CHI TIẾT, ĐIỆN ẢNH để AI vẽ đẹp. Trả lời DUY NHẤT bằng JSON.";
-  const user = `Viết kịch bản đầy đủ cho cuốn: "${concept.name}".
-Góc: ${concept.angle || ""}
-Outline có sẵn:
-${(concept.outline ?? []).map((o, i) => `${i + 1}. ${o}`).join("\n") || "(tự triển khai)"}
+  const system = "Bạn viết kịch bản sách tranh thiếu nhi personalized (in KDP/Story Book). Lời văn ấm áp, hợp trẻ nhỏ. Trả lời DUY NHẤT bằng JSON. Mọi nội dung sinh ra bằng TIẾNG ANH.";
+  const user = `Book: "${concept.name}". Angle: ${concept.angle || ""}
+Outline (story arc):
+${(concept.outline ?? []).map((o, i) => `${i + 1}. ${o}`).join("\n") || "(develop freely)"}
 
-Yêu cầu:
-- Đúng ${pages} trang.
-- Biến cá nhân hoá chèn dạng {${vars.join("}, {")}} (vd {name}) vào lời văn khi hợp lý.
-- text: lời văn TIẾNG ANH, 1–3 câu/trang, giọng ấm áp hợp trẻ nhỏ.
-- illustration: mô tả cảnh TIẾNG ANH, CHI TIẾT (3–5 câu) như đạo diễn hình: bối cảnh cụ thể, tư thế + cảm xúc nhân vật chính, các vật thể/đạo cụ trong khung, ánh sáng/không khí, và GỢI Ý chừa một vùng nền dịu ở một phía để đặt chữ. KHÔNG mô tả chữ/tên xuất hiện trong tranh (chữ sẽ do khâu prompt xử lý riêng).
+This book has ${total} pages total. Generate ONLY pages ${from} to ${to} (${to - from + 1} pages), consistent with the outline arc and previous pages.
+- Insert personalization variables as {${vars.join("}, {")}} (e.g. {name}) in the text where natural.
+- text: ENGLISH, 1–3 short sentences per page, warm and child-friendly.
+- illustration: ENGLISH, CONCISE 1–2 sentences (setting · main character pose/emotion · key props · mood). Leave a calm area for a text caption. Do NOT describe any text/name drawn in the scene.
 
-Trả JSON: {"pages":[{"page_no":1,"text":"","illustration":""}]}`;
-  const out = await orChatJSON<Record<string, unknown>>(system, user, { maxTokens: 6000, model: opts?.model });
+Return JSON with the ACTUAL page numbers (${from}..${to}): {"pages":[{"page_no":${from},"text":"","illustration":""}]}`;
+  const out = await orChatJSON<Record<string, unknown>>(system, user, { maxTokens: 4000, model: opts?.model });
   // Chịu lỗi dạng: {pages:[…]} | mảng trực tiếp | object có 1 mảng bất kỳ (một số model đặt key khác).
   const asArr = (x: unknown): BookScriptPage[] | null => (Array.isArray(x) ? (x as BookScriptPage[]) : null);
   const arr: BookScriptPage[] = asArr((out as { pages?: unknown })?.pages)
     ?? asArr(out)
     ?? (asArr(Object.values(out ?? {}).find((v) => Array.isArray(v))) ?? []);
-  if (!arr.length) throw new Error("Model không trả về trang nào — thử đổi Model text (⚙ Model AI) sang Claude/GPT mạnh hơn, hoặc bấm lại.");
-  return arr.map((p, i) => ({ page_no: Number(p?.page_no) || i + 1, text: p?.text ?? "", illustration: p?.illustration ?? "" }));
+  if (!arr.length) throw new Error("Model returned no pages — try a faster/stronger text model, or click again.");
+  return arr.map((p, i) => ({ page_no: Number(p?.page_no) || (from + i), text: p?.text ?? "", illustration: p?.illustration ?? "" }));
 }
 
 // ===== STYLE BIBLE + COMPOSER (prompt chi tiết từng trang) =====

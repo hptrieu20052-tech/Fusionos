@@ -150,7 +150,11 @@ export default function BooksClient() {
         </div>
       </div>
       <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Script → Detailed prompt → Custom photo/name → Generate each page.</div>
-      {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, color: msg.startsWith("✗") ? "var(--red)" : "var(--green)" }}>{msg}</div>}
+      {msg && (
+        <div style={{ position: "fixed", bottom: 22, right: 22, zIndex: 200, maxWidth: 380, padding: "12px 18px", borderRadius: 12, fontSize: 13, fontWeight: 600, color: "#fff", boxShadow: "0 10px 30px rgba(15,23,42,.22)", background: msg.startsWith("✗") ? "var(--red)" : msg.startsWith("⚠") ? "#b45309" : "var(--green)" }}>
+          {msg}
+        </div>
+      )}
 
       {detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
         : <ListView titles={titles} open={openDetail} reload={loadList} flash={flash} />}
@@ -490,12 +494,31 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     setIllus(m);
   }, [detail]);
 
+  // Sinh kịch bản THEO LÔ (6 trang/lần) → sách 24 trang không bao giờ timeout.
   const genScript = async () => {
     setBusy(true); lsSet("bs_text_model", model);
-    const j = await api(`/api/books/${id}/script`, "POST", { model: model || undefined, vars: vars.map((v) => v.key).filter(Boolean) });
-    setBusy(false);
-    if (j.ok) { const ps = (j.pages as Page[]) ?? []; setPages(ps.map((p) => ({ ...p, prompt: "" }))); flash("✓ Script generated"); reload(); }
-    else flash("✗ " + (j.error ?? "Script error"));
+    const keys = vars.map((v) => v.key).filter(Boolean);
+    const CHUNK = 6;
+    let from = 1, total = 999;
+    const acc: Page[] = [];
+    try {
+      while (from <= total) {
+        const to = from + CHUNK - 1;
+        const j = await api(`/api/books/${id}/script`, "POST", { model: model || undefined, vars: keys, from, to, replace: from === 1 });
+        if (!j.ok) { flash("✗ " + (j.error ?? "Script error")); break; }
+        total = Number(j.total) || total;
+        const chunk = ((j.pages as Page[]) ?? []).map((p) => ({ ...p, prompt: "" }));
+        if (!chunk.length) break;
+        acc.push(...chunk);
+        setPages([...acc]);
+        flash(`✍️ Writing pages ${Math.min(acc.length, total)}/${total}…`);
+        from = to + 1;
+      }
+      if (acc.length) flash(`✓ Script generated · ${acc.length} pages`);
+    } finally {
+      setBusy(false);
+      reload();
+    }
   };
   const save = async () => {
     setBusy(true);

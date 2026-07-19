@@ -18,22 +18,26 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const b = await req.json().catch(() => ({}));
   const concept = (title.concept ?? {}) as { angle?: string; outline?: string[] };
   const briefObj = (title.brief ?? {}) as { pages?: number };
-  // Số trang CHUẨN theo SẢN PHẨM (Hardcover = 24). request > product > brief > 12. KHÔNG lấy theo outline.
+  // Tổng số trang CHUẨN theo SẢN PHẨM (Hardcover = 24). request > product > brief > 12.
   const product = getBookProduct(title.productKey);
-  const pageCount = Number(b?.pages) || product.pageCount || Number(briefObj.pages) || 12;
+  const total = Number(b?.pages) || product.pageCount || Number(briefObj.pages) || 12;
+  // SINH THEO LÔ: client gọi nhiều lần với {from,to} để không timeout khi sách nhiều trang.
+  const from = Math.max(1, Number(b?.from) || 1);
+  const to = Math.min(total, Number(b?.to) || total);
+  const replace = b?.replace !== false && from <= 1; // lô đầu (from=1) mới xoá kịch bản cũ
   try {
     const pages = await generateBookScript(
       { name: title.name, angle: concept.angle, outline: concept.outline },
-      { pages: pageCount, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined },
+      { pages: total, from, to, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined },
     );
-    await db.delete(schema.bookPages).where(eq(schema.bookPages.titleId, params.id));
+    if (replace) await db.delete(schema.bookPages).where(eq(schema.bookPages.titleId, params.id));
     if (pages.length) {
       await db.insert(schema.bookPages).values(pages.map((p) => ({
         titleId: params.id, pageNo: p.page_no, textTemplate: p.text, illustrationBrief: p.illustration,
       })));
     }
     await db.update(schema.bookTitles).set({ status: "script", updatedAt: new Date() }).where(eq(schema.bookTitles.id, params.id));
-    return NextResponse.json({ ok: true, pages });
+    return NextResponse.json({ ok: true, pages, total });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 502 });
   }
