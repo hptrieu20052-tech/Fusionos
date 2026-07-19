@@ -160,7 +160,7 @@ export default function BooksClient() {
           {!detail && <button style={btnBlue} onClick={() => setShowNew(true)}>+ New Book</button>}
         </div>
       </div>
-      <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Script → Detailed prompt → Custom photo/name → Generate each page.</div>
+      {detail && <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Script → Detailed prompt → Custom photo/name → Generate each page.</div>}
       {msg && (
         <div style={{ position: "fixed", bottom: 22, right: 22, zIndex: 200, maxWidth: 380, padding: "12px 18px", borderRadius: 12, fontSize: 13, fontWeight: 600, color: "#fff", boxShadow: "0 10px 30px rgba(15,23,42,.22)", background: msg.startsWith("✗") ? "var(--red)" : msg.startsWith("⚠") ? "#b45309" : "var(--green)" }}>
           {msg}
@@ -176,6 +176,8 @@ export default function BooksClient() {
 }
 
 function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id: string) => void; reload: () => void; flash: (m: string) => void }) {
+  const [tab, setTab] = useState<"ideas" | "custom">("ideas");
+  useEffect(() => { const v = lsGet("bs_list_tab"); if (v === "custom" || v === "ideas") setTab(v); }, []);
   const del = async (t: Title) => {
     if (typeof window !== "undefined" && !window.confirm(`Delete book "${t.name}"? This cannot be undone.`)) return;
     const j = await api(`/api/books/${t.id}`, "DELETE");
@@ -214,27 +216,27 @@ function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id:
 
   const masters = titles.filter((t) => t.kind === "master");
   const drafts = titles.filter((t) => t.kind !== "master");
-  if (!titles.length) return <div className="panel empty" style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No books yet. Click <b>+ New Book</b> to start.</div>;
   return (
-    <div style={{ display: "grid", gap: 18 }}>
-      <div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>Custom books</h3>
-          <span style={{ fontSize: 12, color: "var(--muted)" }}>selling designs — master templates, customize a copy for each customer</span>
-        </div>
-        {masters.length
+    <div>
+      {/* 2 MÀN HÌNH dạng tab — nhiều book không bị trôi lẫn nhau. */}
+      <div style={{ display: "inline-flex", background: "#EEF1F6", borderRadius: 12, padding: 4, gap: 3, marginBottom: 14 }}>
+        {([["ideas", `New ideas (${drafts.length})`], ["custom", `Custom books (${masters.length})`]] as ["ideas" | "custom", string][]).map(([v, lbl]) => (
+          <button key={v} onClick={() => { setTab(v); lsSet("bs_list_tab", v); }}
+            style={{ padding: "8px 18px", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", border: 0, background: tab === v ? "#fff" : "transparent", color: tab === v ? "var(--blue)" : "var(--muted)", boxShadow: tab === v ? "0 1px 3px rgba(0,0,0,.12)" : "none" }}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+        {tab === "custom" ? "Selling designs — master templates; customize a copy for each customer order." : "New books being built + customer copies in progress. When a design starts selling, promote it with “To Custom books”."}
+      </div>
+      {tab === "custom"
+        ? (masters.length
           ? <div style={{ display: "grid", gap: 10 }}>{masters.map((t) => row(t, true))}</div>
-          : <div className="panel empty" style={{ padding: 16, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books yet. Finish a book below and click <b>To Custom books</b> to promote it.</div>}
-      </div>
-      <div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>New ideas</h3>
-          <span style={{ fontSize: 12, color: "var(--muted)" }}>new books being built + customer copies in progress</span>
-        </div>
-        {drafts.length
+          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books yet. Finish a book in <b>New ideas</b> and click <b>To Custom books</b> to promote it.</div>)
+        : (drafts.length
           ? <div style={{ display: "grid", gap: 10 }}>{drafts.map((t) => row(t, false))}</div>
-          : <div className="panel empty" style={{ padding: 16, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No new ideas yet. Click <b>+ New Book</b> to start.</div>}
-      </div>
+          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No new ideas yet. Click <b>+ New Book</b> to start.</div>)}
     </div>
   );
 }
