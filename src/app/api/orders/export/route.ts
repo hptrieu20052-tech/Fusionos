@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import { scopeOwnerIds } from "@/lib/scope";
+import { fileUrl } from "@/lib/storage";
 import * as XLSX from "xlsx";
 
 export const dynamic = "force-dynamic";
@@ -38,34 +39,60 @@ export async function GET(req: NextRequest) {
   }
   const where = conds.length ? conds.reduce((a, c) => sql`${a} AND ${c}`) : sql`TRUE`;
 
+  // 1 DÒNG / ITEM (đơn nhiều sản phẩm → nhiều dòng, phần đơn lặp lại) — đủ link design + mockup để fulfill thẳng từ Excel.
   const rows = (await db.execute(sql`
     SELECT o.external_id, o.order_label, o.platform, s.name AS store, u.full_name AS seller,
       o.status, o.ordered_at::date AS ordered_date,
+      oi.product_title, oi.variant, oi.qty, oi.personalization, oi.special_print, oi.internal_sku,
+      d.sku_code AS design_sku, d.title AS design_title,
+      oi.mockup_key,
+      (SELECT string_agg(df.storage_key, '||' ORDER BY df.kind)
+         FROM design_files df WHERE df.design_id = oi.design_id AND df.kind NOT IN ('mockup','video')) AS design_keys,
+      (SELECT df.storage_key FROM design_files df WHERE df.design_id = oi.design_id AND df.kind = 'mockup'
+         ORDER BY df.id LIMIT 1) AS design_mockup_key,
       coalesce(o.buyer_first,'') || ' ' || coalesce(o.buyer_last,'') AS buyer,
       o.addr1, o.addr2, o.city, o.state, o.zip, o.country,
       o.total, o.platform_fee,
       coalesce((SELECT -sum(amount) FROM transactions t WHERE t.order_id = o.id AND t.type='base_cost'),0) AS base_cost,
       fo.tracking_number, fo.tracking_carrier, f.name AS fulfiller, fo.external_ff_id
     FROM orders o
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    LEFT JOIN designs d ON d.id = oi.design_id
     LEFT JOIN users u ON u.id = o.seller_id
     LEFT JOIN stores s ON s.id = o.store_id
     LEFT JOIN LATERAL (SELECT * FROM fulfillment_orders WHERE order_id = o.id ORDER BY created_at DESC LIMIT 1) fo ON TRUE
     LEFT JOIN fulfillers f ON f.id = fo.fulfiller_id
     WHERE ${where}${own}
-    ORDER BY o.ordered_at DESC LIMIT 5000
+    ORDER BY o.ordered_at DESC, oi.id LIMIT 8000
   `)).rows as Record<string, unknown>[];
 
-  const data = rows.map((r) => ({
-    "Order ID": r.external_id, "Order Label": r.order_label ?? "",
-    "Platform": r.platform, "Store": r.store ?? "", "Seller": r.seller ?? "",
-    "Status": r.status, "Order date": String(r.ordered_date ?? "").slice(0, 10),
-    "Guest": r.buyer, "Addr1": r.addr1 ?? "", "Addr2": r.addr2 ?? "",
-    "City": r.city ?? "", "State": r.state ?? "", "ZIP": r.zip ?? "", "Country": r.country,
-    "Total": Number(r.total), "Fee": Number(r.platform_fee),
-    ...(hideProfit ? {} : { "Base Cost": Number(r.base_cost) }),
-    "Fulfiller": r.fulfiller ?? "", "FF Order ID": r.external_ff_id ?? "",
-    "Tracking Number": r.tracking_number ?? "", "Carrier": r.tracking_carrier ?? "",
-  }));
+  // Cột sắp theo LOGIC FULFILL: định danh đơn → sản phẩm + file in → địa chỉ ship → tiền → tracking.
+  const data = rows.map((r) => {
+    const designLinks = String(r.design_keys ?? "").split("||").filter(Boolean).map((k) => fileUrl(k)).filter(Boolean).join(" | ");
+    const mockupLink = fileUrl((r.mockup_key as string) || (r.design_mockup_key as string) || null) ?? "";
+    return {
+      // — ĐỊNH DANH ĐƠN —
+      "Order ID": r.external_id, "Order Label ID": r.order_label ?? "",
+      "Platform": r.platform, "Store": r.store ?? "", "Seller": r.seller ?? "",
+      "Status": r.status, "Order date": String(r.ordered_date ?? "").slice(0, 10),
+      // — SẢN PHẨM + FILE IN —
+      "Product": r.product_title ?? "", "Variant": r.variant ?? "", "Qty": r.qty != null ? Number(r.qty) : "",
+      "Personalization": r.personalization ?? "", "Special Print": r.special_print ? "YES" : "",
+      "Design SKU": r.design_sku != null ? `#${r.design_sku}` : (r.internal_sku ?? ""),
+      "Design Title": r.design_title ?? "",
+      "Design Link": designLinks,
+      "Mockup Link": mockupLink,
+      // — ĐỊA CHỈ SHIP —
+      "Guest": r.buyer, "Addr1": r.addr1 ?? "", "Addr2": r.addr2 ?? "",
+      "City": r.city ?? "", "State": r.state ?? "", "ZIP": r.zip ?? "", "Country": r.country,
+      // — TIỀN —
+      "Total": Number(r.total), "Fee": Number(r.platform_fee),
+      ...(hideProfit ? {} : { "Base Cost": Number(r.base_cost) }),
+      // — FULFILL/TRACKING —
+      "Fulfiller": r.fulfiller ?? "", "FF Order ID": r.external_ff_id ?? "",
+      "Tracking Number": r.tracking_number ?? "", "Carrier": r.tracking_carrier ?? "",
+    };
+  });
 
   const ws = XLSX.utils.json_to_sheet(data);
   ws["!cols"] = Object.keys(data[0] ?? { a: 1 }).map((k) => ({ wch: Math.max(k.length + 2, 14) }));
