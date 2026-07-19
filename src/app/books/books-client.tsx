@@ -20,6 +20,16 @@ const btnBlue = { ...btn, background: "var(--blue)", color: "#fff" };
 const btnGhost = { ...btn, background: "#fff", border: "1px solid var(--line)", color: "var(--ink)" };
 const STATUS_COLOR: Record<string, string> = { idea: "#8a6d00", script: "#0e6bd6", characters: "#7a3fb0", simulation: "#0e8a5f", mockup: "#c2410c", ready: "#12703c" };
 
+// Icon SVG đơn giản (không dùng emoji) — nét mảnh, ăn theo màu chữ của nút.
+const icp = { width: 13, height: 13, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, style: { verticalAlign: "-2px", marginRight: 5 } };
+const IcSpark = () => <svg {...icp}><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2L12 2z" /></svg>;
+const IcBrush = () => <svg {...icp}><path d="M17 3l4 4L8 20H4v-4L17 3z" /></svg>;
+const IcRefresh = () => <svg {...icp}><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6" /></svg>;
+const IcDownload = () => <svg {...icp}><path d="M12 3v12M6 11l6 6 6-6M4 21h16" /></svg>;
+const IcStop = () => <svg {...icp}><rect x="6" y="6" width="12" height="12" rx="1.5" /></svg>;
+const IcLayers = () => <svg {...icp}><path d="M12 2l10 6-10 6L2 8l10-6zM2 16l10 6 10-6" /></svg>;
+const IcBookS = () => <svg {...icp}><path d="M4 4a2 2 0 0 1 2-2h14v18H6a2 2 0 0 0-2 2V4zM20 16H6" /></svg>;
+
 // Bible mặc định (khớp defaultBible() ở server) — bấm "Dùng mẫu" để đổ vào.
 const DEFAULT_BIBLE: Bible = {
   format: "Single horizontal landscape page, aspect ratio 23:17 (print 3450×2550px at 300 DPI). Premium, professionally published children's picture-book quality. Keep the child's face and all text safely inside the trim margins.",
@@ -143,7 +153,7 @@ export default function BooksClient() {
   return (
     <div style={{ padding: "18px 20px", maxWidth: 1100, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>✨ Book Studio</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Book Studio</h2>
         <span style={{ fontSize: 11, fontWeight: 700, color: "#7a3fb0", background: "#F3EAFB", border: "1px solid #E3D0F5", borderRadius: 999, padding: "2px 9px" }}>AI · Beta</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           {detail && <button style={btnGhost} onClick={() => { setDetail(null); loadList(); }}>← List</button>}
@@ -317,7 +327,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
             {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Images are analyzed in a separate step (vision model) then fed into ideas. If analysis fails/slows, ideas are still generated from the description.</div>}
           </div>
           <div style={{ fontSize: 12, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
-            <div style={{ color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>⚙ Options</div>
+            <div style={{ color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>Options</div>
             <div style={{ display: "grid", gap: 10 }}>
               <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Idea count
                 <input type="number" style={{ ...inp, marginTop: 4 }} value={brief.count} onChange={(e) => setBrief({ ...brief, count: Number(e.target.value) || 4 })} />
@@ -326,7 +336,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
             </div>
           </div>
         </div>
-        <button style={{ ...btnBlue, marginTop: 14, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Thinking…" : "✨ Generate ideas"}</button>
+        <button style={{ ...btnBlue, marginTop: 14, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Thinking…" : <><IcSpark />Generate ideas</>}</button>
 
         {ideas.length > 0 && (
           <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
@@ -554,7 +564,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         if (!chunk.length) break;
         acc.push(...chunk);
         setPages([...acc]);
-        flash(`✍️ Writing pages ${Math.min(acc.length, total)}/${total}…`);
+        flash(`Writing pages ${Math.min(acc.length, total)}/${total}…`);
         from = to + 1;
       }
       if (acc.length) {
@@ -566,7 +576,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
           if (jcov.ok) { coverNow = { ...cover, text: String(jcov.text ?? cover.text ?? ""), brief: String(jcov.brief ?? cover.brief ?? "") }; setCover(coverNow); }
         } catch { /* bỏ qua nếu lỗi */ }
         // AUTO ráp prompt chi tiết (cả cover + mọi trang) ngay sau khi có script → khỏi quên bước "Compose all".
-        flash("🧱 Composing detailed prompts…");
+        flash("Composing detailed prompts…");
         await api(`/api/books/${id}`, "PATCH", { bible, cover: coverNow });
         const jc = await api(`/api/books/${id}/compose`, "POST", { baked });
         if (jc.ok) {
@@ -679,7 +689,61 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       // Spread trả 2 URL (trang trái + phải) → cập nhật cả hai. Trang đơn/cover → 1 URL.
       const map = (j.urls as Record<string, string> | undefined) ?? { [pageNo]: j.url as string };
       setIllus((m) => ({ ...m, ...Object.fromEntries(Object.entries(map).map(([k, v]) => [Number(k), v as string])) }));
-    } else flash(`✗ ${pageNo === 0 ? "cover" : "page " + pageNo}: ` + (j.error ?? "Draw error"));
+      return true;
+    }
+    flash(`✗ ${pageNo === 0 ? "cover" : "page " + pageNo}: ` + (j.error ?? "Draw error"));
+    return false;
+  };
+
+  // 🎨 VẼ TẤT CẢ: chạy TUẦN TỰ từng khối (cover → trang đơn → spread) tránh timeout; khối đã có ảnh thì bỏ qua,
+  // khối lỗi vẫn "chưa vẽ" → bấm lại nút là vẽ tiếp đúng phần thiếu. Bấm lần nữa khi đang chạy = dừng.
+  const [drawAllBusy, setDrawAllBusy] = useState(false);
+  const drawAllStop = useRef(false);
+  const drawAll = async () => {
+    if (drawAllBusy) { drawAllStop.current = true; flash("Stopping after this block…"); return; }
+    // Danh sách khối CHƯA vẽ xong (cover thiếu mặt nào cũng tính là chưa xong; spread thiếu 1 trong 2 trang cũng vẽ lại cả cặp).
+    const todo: number[] = [];
+    for (const blk of genBlocks(product)) {
+      if (blk.type === "cover") { if (!illus[0] || !illus[-1]) todo.push(0); }
+      else if (blk.type === "single") { if (!illus[blk.page]) todo.push(blk.page); }
+      else { const [L, R] = blk.pages; if (!illus[L] || !illus[R]) todo.push(L); }
+    }
+    if (!todo.length) { flash("✓ Everything is already drawn"); return; }
+    setDrawAllBusy(true); drawAllStop.current = false;
+    let done = 0, fail = 0;
+    for (let i = 0; i < todo.length; i++) {
+      if (drawAllStop.current) break;
+      flash(`Drawing block ${i + 1}/${todo.length}…`);
+      const ok = await illustrate(todo[i]);
+      if (ok) done++; else fail++;
+      // Nghỉ ngắn giữa các khối cho model/gateway thở — chậm mà chắc.
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    setDrawAllBusy(false);
+    if (drawAllStop.current) flash(`⚠ Stopped — drew ${done} block(s). Click Draw all to continue.`);
+    else if (fail) flash(`⚠ Drew ${done}/${todo.length} — ${fail} failed. Click Draw all again to retry the missing ones.`);
+    else flash(`✓ All drawn (${done} block${done > 1 ? "s" : ""})`);
+  };
+
+  // Tải TẤT CẢ ảnh đã vẽ, tên file chuẩn fulfill: cover_front.jpg · cover_back.jpg · 1.jpg…24.jpg.
+  const [dlBusy, setDlBusy] = useState(false);
+  const downloadAll = async () => {
+    if (dlBusy) return;
+    const order: number[] = [];
+    if (illus[0]) order.push(0);
+    if (illus[-1]) order.push(-1);
+    Object.keys(illus).map(Number).filter((n) => n >= 1 && illus[n]).sort((a, b) => a - b).forEach((n) => order.push(n));
+    if (!order.length) { flash("✗ Nothing drawn yet"); return; }
+    setDlBusy(true);
+    for (let i = 0; i < order.length; i++) {
+      flash(`Downloading ${i + 1}/${order.length}…`);
+      const a = document.createElement("a");
+      a.href = `/api/books/${id}/asset?page=${order[i]}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      await new Promise((r) => setTimeout(r, 700));
+    }
+    setDlBusy(false);
+    flash(`✓ Downloaded ${order.length} files (cover_front · cover_back · 1…${Math.max(...order)})`);
   };
 
   // ---- Render 1 TRANG ĐƠN (bố cục gốc) ----
@@ -698,16 +762,16 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         <details>
           <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>Detailed prompt {p.prompt ? "✓" : "(not composed)"} — click to view/edit</summary>
           <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
-            <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(i, p.page_no)}>🧱 Recompose this prompt</button>
+            <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(i, p.page_no)}><IcLayers />Recompose this prompt</button>
           </div>
-          <textarea value={p.prompt ?? ""} onChange={(e) => setPage(i, "prompt", e.target.value)} onBlur={() => savePage(p.page_no)} rows={8} placeholder="Click 🧱 Compose to auto-generate, or type a gold-standard prompt…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+          <textarea value={p.prompt ?? ""} onChange={(e) => setPage(i, "prompt", e.target.value)} onBlur={() => savePage(p.page_no)} rows={8} placeholder="Auto-composed with the script, or type a gold-standard prompt…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
         </details>
       </div>
       <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
         {illus[p.page_no]
           ? <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={illus[p.page_no]} alt={`p${p.page_no}`} style={{ width: "100%", display: "block" }} /></div>
           : <div style={{ height: 110, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Not drawn</div>}
-        <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Drawing…" : illus[p.page_no] ? "↻ Redraw" : "🎨 Draw"}</button>
+        <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Drawing…" : illus[p.page_no] ? <><IcRefresh />Redraw</> : <><IcBrush />Draw</>}</button>
       </div>
     </div>
   );
@@ -737,9 +801,9 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
           <details>
             <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>Detailed prompt {lp.prompt ? "✓" : "(not composed)"} — click to view/edit</summary>
             <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
-              <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(iL, L)}>🧱 Recompose spread prompt</button>
+              <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(iL, L)}><IcLayers />Recompose spread prompt</button>
             </div>
-            <textarea value={lp.prompt ?? ""} onChange={(e) => setPage(iL, "prompt", e.target.value)} onBlur={() => savePage(L)} rows={8} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+            <textarea value={lp.prompt ?? ""} onChange={(e) => setPage(iL, "prompt", e.target.value)} onBlur={() => savePage(L)} rows={8} placeholder="Auto-composed with the script, or click Recompose…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
           </details>
         </div>
         <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
@@ -753,7 +817,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
               </div>
             ))}
           </div>
-          <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => illustrate(L)}>{busy ? "Drawing…" : (illus[L] || illus[R]) ? "↻ Redraw spread" : "🎨 Draw spread (both pages)"}</button>
+          <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => illustrate(L)}>{busy ? "Drawing…" : (illus[L] || illus[R]) ? <><IcRefresh />Redraw spread</> : <><IcBrush />Draw spread (both pages)</>}</button>
         </div>
       </div>
     );
@@ -768,10 +832,10 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
 
       <StepCard n={2} title="Theme kit — Style Bible + Variables"
         desc="Style is auto-matched from the competitor images you add when creating the book. AI fills the rest from the theme; tweak anything below. This block is applied to EVERY page → keeps the character consistent."
-        right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : "✨ AI build from theme"}</button>}>
+        right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : <><IcSpark />AI build from theme</>}</button>}>
         {/* Thanh STYLE luôn hiển thị: đang theo style nào + nút đổi từ ảnh mẫu (auto lúc Create nếu có ảnh đối thủ). */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--line)", background: "#FAFBFF", borderRadius: 12, padding: "9px 12px", marginBottom: 10, fontSize: 12 }}>
-          <span style={{ fontSize: 15 }}>🎨</span>
+          <span style={{ display: "inline-flex" }}><IcBrush /></span>
           <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={bible.artStyle || ""}>
             <b>Art style:</b> <span style={{ color: "var(--muted)" }}>{(bible.artStyle || "").trim() ? bible.artStyle : "Default storybook style — add a sample image to match a specific look."}</span>
           </span>
@@ -788,7 +852,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>Script {pages.length ? `· ${pages.length} pages` : ""}</h3>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={genScript}>{busy ? "Writing…" : pages.length ? "↻ Regenerate" : "✨ Generate script"}</button>
+          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={genScript}>{busy ? "Writing…" : pages.length ? <><IcRefresh />Regenerate</> : <><IcSpark />Generate script</>}</button>
           {pages.length > 0 && <button style={{ ...btnBlue, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={save}>Save</button>}
         </div>
       </div>
@@ -796,7 +860,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       {pages.length > 0 && (
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 12, background: "#FAFBFF" }}>
           <label style={{ display: "grid", gap: 3 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>📖 Spread text layout</span>
+            <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Spread text layout</span>
             <div style={{ display: "inline-flex", background: "#EEF1F6", borderRadius: 999, padding: 3, gap: 2 }}>
               {([["split", "1 side text · 1 side art"], ["both", "Text on both pages"]] as ["split" | "both", string][]).map(([v, lbl]) => (
                 <button key={v} onClick={() => { setTextLayout(v); lsSet("bs_text_layout", v); }}
@@ -807,16 +871,27 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
               ))}
             </div>
           </label>
+          <button
+            style={{ ...btnBlue, padding: "8px 14px", fontSize: 12.5, background: drawAllBusy ? "#b45309" : "var(--blue)", opacity: busyPage !== null && !drawAllBusy ? 0.6 : 1 }}
+            disabled={busyPage !== null && !drawAllBusy}
+            onClick={drawAll}
+            title="Draws every not-yet-drawn block one at a time (cover → pages → spreads), slow & steady to avoid timeouts. Failed/missing blocks are retried on the next click. Click while running to stop.">
+            {drawAllBusy ? <><IcStop />Stop drawing</> : <><IcBrush />Draw all (missing)</>}
+          </button>
+          <button style={{ ...btnGhost, padding: "8px 14px", fontSize: 12.5, opacity: dlBusy ? 0.6 : 1 }} disabled={dlBusy} onClick={downloadAll}
+            title="Downloads every drawn image with fulfill-ready names: cover_front.jpg · cover_back.jpg · 1.jpg…24.jpg">
+            <IcDownload />{dlBusy ? "Downloading…" : "Download all"}
+          </button>
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap" }}>
             <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>✍️ Text model · writing</span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Text model · writing</span>
               <select value={model} onChange={(e) => setModel(e.target.value)} title="Model for ideas & script" style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 190 }}>
                 <option value="">— Default —</option>
                 <ModelOptions models={models} />
               </select>
             </label>
             <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>🎨 Image model · drawing</span>
+              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Image model · drawing</span>
               <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="Model for drawing pages" style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 190 }}>
                 <option value="">— Default —</option>
                 <ModelOptions models={imgModels} />
@@ -828,7 +903,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
 
       {pages.length > 0 && (
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 10, background: "#fff", display: "grid", gridTemplateColumns: "34px 1fr 320px", gap: 12 }}>
-          <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 16 }}>📕</div>
+          <div style={{ fontWeight: 800, color: "var(--muted)" }}><IcBookS /></div>
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontWeight: 800, fontSize: 13 }}>Cover — one wraparound ({product.coverW}×{product.coverH}px → cover_back + cover_front)</div>
             <div>
@@ -842,9 +917,9 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
             <details>
               <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>Detailed prompt {cover.prompt ? "✓" : "(not composed)"} — click to view/edit</summary>
               <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
-                <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={composeCover}>🧱 Recompose cover prompt</button>
+                <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={composeCover}><IcLayers />Recompose cover prompt</button>
               </div>
-              <textarea value={cover.prompt ?? ""} onChange={(e) => setCover((c) => ({ ...c, prompt: e.target.value }))} onBlur={autoSaveCover} rows={7} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+              <textarea value={cover.prompt ?? ""} onChange={(e) => setCover((c) => ({ ...c, prompt: e.target.value }))} onBlur={autoSaveCover} rows={7} placeholder="Auto-composed with the script, or click Recompose…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
             </details>
           </div>
           <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
@@ -858,7 +933,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
                 </div>
               ))}
             </div>
-            <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === 0) ? 0.6 : 1 }} disabled={busyPage === 0} onClick={drawCover}>{busyPage === 0 ? "Drawing…" : (illus[0] || illus[-1]) ? "↻ Redraw cover" : "🎨 Draw cover (front + back)"}</button>
+            <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === 0) ? 0.6 : 1 }} disabled={busyPage === 0} onClick={drawCover}>{busyPage === 0 ? "Drawing…" : (illus[0] || illus[-1]) ? <><IcRefresh />Redraw cover</> : <><IcBrush />Draw cover (front + back)</>}</button>
           </div>
         </div>
       )}
