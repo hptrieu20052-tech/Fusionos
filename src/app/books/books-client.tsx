@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { BOOK_PRODUCTS, getBookProduct } from "@/lib/book-products";
+import { BOOK_PRODUCTS, getBookProduct, genBlocks } from "@/lib/book-products";
 
 type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; updatedAt: string };
 type Idea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
@@ -8,7 +8,7 @@ type Bible = { format?: string; character?: string; wardrobe?: string; artStyle?
 type Var = { key: string; label?: string; value?: string; type?: "text" | "image"; imageKey?: string; imageUrl?: string };
 type Page = { page_no: number; text: string; illustration: string; prompt?: string };
 type Detail = {
-  title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefKey?: string | null; characterRefUrl?: string | null; stylePrompt?: string | null; bible?: Bible | null; vars?: Var[] | null };
+  title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefKey?: string | null; characterRefUrl?: string | null; stylePrompt?: string | null; bible?: Bible | null; vars?: Var[] | null; productKey?: string | null };
   pages: { pageNo: number; textTemplate: string | null; illustrationBrief: string | null; promptTemplate?: string | null }[];
   assets?: Record<number, string | null>;
 };
@@ -482,6 +482,10 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const [busyPage, setBusyPage] = useState<number | null>(null);
 
   const previewName = (vars.find((v) => v.key === "name")?.value || "Emma");
+  // Bố cục sản phẩm: biết trang nào ghép spread (vẽ nối rồi cắt đôi) để hiện nhãn.
+  const product = getBookProduct(detail.title.productKey);
+  const spreadMate: Record<number, number> = {};
+  for (const blk of genBlocks(product)) if (blk.type === "spread") { spreadMate[blk.pages[0]] = blk.pages[1]; spreadMate[blk.pages[1]] = blk.pages[0]; }
 
   useEffect(() => { setModel(lsGet("bs_text_model")); setImgModel(lsGet("bs_image_model")); }, []);
   useEffect(() => { api("/api/books/models?type=image").then((j) => { if (j.ok) setImgModels((j.models as { id: string; name: string }[]) ?? []); }); }, []);
@@ -581,8 +585,11 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       j = await api(`/api/books/${id}/illustrate`, "POST", payload);
     }
     setBusyPage(null);
-    if (j.ok) setIllus((m) => ({ ...m, [pageNo]: j.url as string }));
-    else flash(`✗ page ${pageNo}: ` + (j.error ?? "Draw error"));
+    if (j.ok) {
+      // Spread trả 2 URL (trang trái + phải) → cập nhật cả hai. Trang đơn/cover → 1 URL.
+      const map = (j.urls as Record<string, string> | undefined) ?? { [pageNo]: j.url as string };
+      setIllus((m) => ({ ...m, ...Object.fromEntries(Object.entries(map).map(([k, v]) => [Number(k), v as string])) }));
+    } else flash(`✗ ${pageNo === 0 ? "cover" : "page " + pageNo}: ` + (j.error ?? "Draw error"));
   };
 
   return (
@@ -611,7 +618,6 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       {pages.length > 0 && (
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 12, background: "#FAFBFF" }}>
           <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={composeAll} title="Compose Bible + brief + text → detailed prompt for every page (no drawing, no overload)">🧱 Compose all prompts</button>
-          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>Then draw each page below — one at a time to avoid overload.</span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap" }}>
             <label style={{ display: "grid", gap: 3 }}>
               <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>✍️ Text model · writing</span>
@@ -631,12 +637,28 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         </div>
       )}
 
+      {pages.length > 0 && (
+        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 172px", gap: 12, marginBottom: 10, background: "#FFFCF3" }}>
+          <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 16 }}>📕</div>
+          <div style={{ alignSelf: "center" }}>
+            <div style={{ fontWeight: 800, fontSize: 13.5 }}>Cover</div>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>Front cover · {product.coverW}×{product.coverH}px · hero portrait + title area, built from the Style Bible.</div>
+          </div>
+          <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
+            {illus[0]
+              ? <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={illus[0]} alt="cover" style={{ width: "100%", display: "block" }} /></div>
+              : <div style={{ height: 84, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Not drawn</div>}
+            <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === 0) ? 0.6 : 1 }} disabled={busyPage === 0} onClick={() => illustrate(0)}>{busyPage === 0 ? "Drawing…" : illus[0] ? "↻ Redraw cover" : "🎨 Draw cover"}</button>
+          </div>
+        </div>
+      )}
+
       {pages.length === 0 ? <div className="panel empty" style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>No script yet. Click <b>Generate script</b> to have AI write each page.</div>
         : (
           <div style={{ display: "grid", gap: 10 }}>
             {pages.map((p, i) => (
               <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 172px", gap: 12 }}>
-                <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 13 }}>#{p.page_no}</div>
+                <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 13 }}>#{p.page_no}{spreadMate[p.page_no] ? <div style={{ fontSize: 9, fontWeight: 700, color: "var(--blue)", marginTop: 3, lineHeight: 1.2 }} title={`Drawn as one connected spread with page ${spreadMate[p.page_no]}`}>⇔{spreadMate[p.page_no]}</div> : null}</div>
                 <div style={{ display: "grid", gap: 8 }}>
                   <div>
                     <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Text (can insert {"{name}"})</div>

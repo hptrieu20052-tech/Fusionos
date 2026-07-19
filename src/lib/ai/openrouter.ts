@@ -252,12 +252,14 @@ QUY TẮC BIẾN (quan trọng):
 
 // Ráp PROMPT CHI TIẾT cho 1 trang từ Bible + brief cảnh + lời văn. Có cấu trúc như prompt "chuẩn vàng".
 // baked=true → hướng dẫn AI vẽ chữ thẳng vào tranh; baked=false → chừa vùng trống, không vẽ chữ (để overlay).
-export function buildMasterPrompt(opts: { bookName: string; bible?: BookBible | null; brief: string; text: string; hasRef: boolean; baked?: boolean }): string {
+export function buildMasterPrompt(opts: { bookName: string; bible?: BookBible | null; brief: string; text: string; hasRef: boolean; baked?: boolean; format?: string }): string {
   const B = { ...defaultBible(), ...(opts.bible ?? {}) };
   const baked = opts.baked !== false;
+  // format override: khổ CHUẨN theo sản phẩm (vuông/ngang/spread/cover) — thắng khổ mặc định trong Bible.
+  const fmt = (opts.format ?? "").trim() || B.format;
   const S: string[] = [];
-  S.push(`Create a horizontal children's storybook page for "${opts.bookName}".`);
-  S.push(`\nPAGE FORMAT:\n${B.format}`);
+  S.push(`Create a children's storybook illustration for "${opts.bookName}".`);
+  S.push(`\nPAGE FORMAT:\n${fmt}`);
   S.push(
     `\nIMPORTANT CHARACTER CONSISTENCY:\n` +
     (opts.hasRef ? "Use the attached photograph of the child as the exact character reference.\n" : "") +
