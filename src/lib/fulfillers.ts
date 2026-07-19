@@ -5,6 +5,8 @@ import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, calcPrintway
 import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
 import { createOnosOrder, type OnosItem } from "@/lib/onos";
 import { createWembroideryOrder, type WemItem, type WemDesign } from "@/lib/wembroidery";
+import { createLenfulOrder, type LenfulDesign, type LenfulItem } from "@/lib/lenful";
+import { createVinawayOrder, type VinawayItem, type VinawaySurface } from "@/lib/vinaway";
 import { getSheetHeaders, appendSheetRow, normHeader } from "@/lib/gsheet";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
@@ -107,7 +109,148 @@ export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   onos: onosAdapter(),
   compassup: compassupAdapter(),
   gearment: makeAdapter("gearment", "Gearment"),
+  lenful: lenfulAdapter(),
+  vinaway: vinawayAdapter(),
 };
+
+/**
+ * Adapter VINAWAY THẬT — api.vinaway.io/api (doc PDF 2026-07).
+ * credentials (ô sẵn có ở Settings):
+ *   Identifier = email đăng nhập Vinaway
+ *   API Key    = password
+ *   (tuỳ chọn trong credentials JSON: type 1|2|3, productionLineId 1 Standard|2 Express, surfaceFront/surfaceBack id vùng in)
+ * lines[].fulfillerSku = "product_id:product_sku_id" (vd "1:101") — kéo id từ GET /products + /product-skus;
+ *   hoặc chỉ product_sku_id nếu mapping có fulfillerProductId riêng.
+ */
+function vinawayAdapter(): FulfillerAdapter {
+  return {
+    slug: "vinaway",
+    label: "Vinaway",
+    async push(ctx) {
+      const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
+      const email = cred.email || cred.identifier || cred.userName || "";
+      const password = cred.password || cred.apiKey || "";
+      if (!email || !password) {
+        return { ...simulate("vinaway"), reason: "Vinaway cần Identifier (email) + API Key (password) trong Settings → order NOT sent to the printer" };
+      }
+      const o = ctx.order;
+      const surfaceFront = Number(cred.surfaceFront) || 1;
+      const surfaceBack = Number(cred.surfaceBack) || 2;
+
+      const items: VinawayItem[] = ctx.lines.map((l) => {
+        // SKU: "product_id:product_sku_id" hoặc sku_id đơn + fulfillerProductId.
+        let productId = 0, skuId = 0;
+        const m = String(l.fulfillerSku || "").match(/^(\d+)\s*[:/|-]\s*(\d+)$/);
+        if (m) { productId = Number(m[1]); skuId = Number(m[2]); }
+        else { skuId = Number(l.fulfillerSku) || 0; productId = Number(l.fulfillerProductId) || 0; }
+        if (!productId || !skuId) {
+          throw new Error(`Vinaway SKU mapping phải là "product_id:product_sku_id" (vd "1:101") — item "${l.internalSku ?? l.fulfillerSku}" chưa đúng. Kéo id từ GET /products và /product-skus của Vinaway.`);
+        }
+        const surfaces: VinawaySurface[] = [];
+        if (l.designFront) surfaces.push({ product_surface_id: surfaceFront, design_png: l.designFront });
+        if (l.designBack) surfaces.push({ product_surface_id: surfaceBack, design_png: l.designBack });
+        return {
+          product_id: productId,
+          product_sku_id: skuId,
+          quantity: l.qty,
+          ...(l.image ? { mockup1: l.image } : {}),
+          ...(surfaces.length ? { productSurfaces: surfaces } : {}),
+        };
+      });
+
+      const res = await createVinawayOrder(
+        { endpoint: ctx.fulfiller.apiEndpoint, email, password },
+        {
+          type: Number(cred.type) || 1,                       // 1 Production
+          external_order_id: orderExtNumber(o),
+          production_line_id: Number(cred.productionLineId) || 1, // 1 Standard · 2 Express
+          customer_name: `${(o.buyerFirst || "").trim()} ${(o.buyerLast || "").trim()}`.trim() || "Customer",
+          address1: o.addr1 || "",
+          city: o.city || "",
+          zip: o.zip || "",
+          country: toISO2(o.country || "") || o.country || "US",
+          state: o.state || "",
+          items,
+        },
+      );
+      return { externalFfId: res.id, simulated: false, raw: res.raw };
+    },
+  };
+}
+
+/**
+ * Adapter LENFUL THẬT — V6 API (s-lencam.lenful.com).
+ * credentials (điền ở Settings, map vào ô sẵn có):
+ *   Identifier  = user_name (email đăng nhập Lenful)
+ *   API Key     = password
+ *   Shop ID     = store_id (path của /api/order/:store_id/create)
+ * lines[].fulfillerSku = product_sku Lenful (từ SKU mapping).
+ * Vị trí in map theo kind design side: front→1, back→2, sleeve trái/phải→5/6, neck→7, full→0.
+ */
+const LENFUL_POS: Record<string, number> = {
+  design_front: 1, front: 1, design_back: 2, back: 2,
+  sleeve_left: 5, left_sleeve: 5, sleeve_right: 6, right_sleeve: 6,
+  neck: 7, design_neck: 7, full: 0, design_full: 0,
+};
+function lenfulAdapter(): FulfillerAdapter {
+  return {
+    slug: "lenful",
+    label: "Lenful",
+    async push(ctx) {
+      const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
+      const userName = cred.userName || cred.user_name || cred.identifier || "";
+      const password = cred.password || cred.apiKey || "";
+      const storeId = cred.storeId || cred.store_id || cred.shopId || "";
+      if (!userName || !password || !storeId) {
+        return { ...simulate("lenful"), reason: "Lenful cần Identifier (user_name) + API Key (password) + Shop ID (store_id) trong Settings → order NOT sent to the printer" };
+      }
+      const o = ctx.order;
+      const items: LenfulItem[] = ctx.lines.map((l) => {
+        // Gom design theo VỊ TRÍ IN — ưu tiên danh sách đầy đủ designSides, fallback front/back/sleeve lẻ.
+        const designs: LenfulDesign[] = [];
+        const seen = new Set<number>();
+        for (const sd of l.designSides ?? []) {
+          const pos = LENFUL_POS[(sd.kind || "").toLowerCase()];
+          if (pos !== undefined && sd.url && !seen.has(pos)) { seen.add(pos); designs.push({ position: pos, link: sd.url }); }
+        }
+        if (!designs.length) {
+          if (l.designFront) designs.push({ position: 1, link: l.designFront });
+          if (l.designBack) designs.push({ position: 2, link: l.designBack });
+          if (l.designSleeve) { designs.push({ position: 5, link: l.designSleeve }); designs.push({ position: 6, link: l.designSleeve }); }
+        }
+        return {
+          design_sku: (l.internalSku || l.fulfillerSku).slice(0, 100),
+          product_sku: l.fulfillerSku,
+          quantity: l.qty,
+          ...(l.image ? { mockups: [l.image] } : {}),
+          ...(designs.length ? { designs } : {}),
+          ...(cred.shipping ? { shippings: [String(cred.shipping)] } : {}),
+        };
+      });
+      const note = ctx.lines.map((l) => (l.personalization || "").trim()).filter(Boolean).join(" | ");
+      const res = await createLenfulOrder(
+        { endpoint: ctx.fulfiller.apiEndpoint, userName, password, storeId },
+        {
+          order_number: orderExtNumber(o),
+          first_name: (o.buyerFirst || "").trim() || "Customer",
+          last_name: (o.buyerLast || "").trim() || undefined,
+          email: o.email || undefined,
+          phone: o.phone || undefined,
+          country_code: toISO2(o.country || "") || o.country || "US",
+          province: o.state || "",
+          city: o.city || "",
+          zip: o.zip || "",
+          address_1: o.addr1 || "",
+          address_2: o.addr2 || undefined,
+          note: note || undefined,
+          platform_label: o.labelUrl || undefined,
+          items,
+        },
+      );
+      return { externalFfId: res.id, simulated: false, raw: res.raw };
+    },
+  };
+}
 
 
 /**

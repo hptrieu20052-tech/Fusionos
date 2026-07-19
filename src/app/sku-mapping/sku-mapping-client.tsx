@@ -270,6 +270,24 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     setMsg(info + (notDone ? t("sk.moreClickAgain") : " · done"));
   }
 
+  // Kéo catalog Lenful (2 pha, bấm lại để mở rộng tiếp variants) → thêm mapping mới
+  async function getSkuLenful() {
+    setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Lenful"));
+    const imp = await fetch("/api/fulfillers/lenful-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
+    refresh();
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} products` + (imp.remaining ? ` · ${imp.remaining} left — click again to continue` : ""));
+  }
+
+  // Kéo catalog Vinaway (products + product-skus → "product_id:sku_id") → thêm mapping mới
+  async function getSkuVinaway() {
+    setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Vinaway"));
+    const imp = await fetch("/api/fulfillers/vinaway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
+    refresh();
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped` + (imp.unmatched ? ` · ${imp.unmatched} unmatched product_id` : ""));
+  }
+
   // Kéo catalog SKU Printway (GET /products/list-sku-catalogs) → thêm mapping mới
   async function getSkuPrintway() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Printway"));
@@ -362,6 +380,12 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("wembroidery") && canEdit && (
               <button onClick={getSkuWembroidery} title="Pull catalog from Wembroidery" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
+            )}
+            {ff.method === "api" && ff.name.toLowerCase().includes("lenful") && canEdit && (
+              <button onClick={getSkuLenful} title="Pull product catalog from Lenful (click again to expand remaining variants)" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
+            )}
+            {ff.method === "api" && ff.name.toLowerCase().includes("vinaway") && canEdit && (
+              <button onClick={getSkuVinaway} title="Pull products + variant SKUs from Vinaway (product_id:sku_id)" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("compassup") && canEdit && (
               <button onClick={() => setCuOpen((v) => !v)} title="Import variants from a Compassup product link" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconPlus width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{cuOpen ? "Close import" : "Import from link"}</button>
