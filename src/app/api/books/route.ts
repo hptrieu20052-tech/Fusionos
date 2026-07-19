@@ -17,7 +17,7 @@ export async function GET() {
   if (!(await guard())) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const rows = await db.select({
     id: schema.bookTitles.id, name: schema.bookTitles.name, occasion: schema.bookTitles.occasion,
-    audience: schema.bookTitles.audience, status: schema.bookTitles.status, updatedAt: schema.bookTitles.updatedAt,
+    audience: schema.bookTitles.audience, status: schema.bookTitles.status, kind: schema.bookTitles.kind, updatedAt: schema.bookTitles.updatedAt,
   }).from(schema.bookTitles).orderBy(desc(schema.bookTitles.updatedAt));
   return NextResponse.json({ ok: true, titles: rows });
 }

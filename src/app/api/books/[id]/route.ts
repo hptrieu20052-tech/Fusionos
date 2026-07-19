@@ -41,6 +41,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (typeof b.name === "string" && b.name.trim()) patch.name = b.name.trim();
   if (typeof b.status === "string") patch.status = b.status;
+  if (b.kind !== undefined) patch.kind = b.kind === "master" ? "master" : null; // 'master' = Scale design · null = draft
   if (b.concept !== undefined) patch.concept = b.concept;
   if (b.personalization !== undefined) patch.personalization = b.personalization;
   if (typeof b.characterRefKey === "string") patch.characterRefKey = b.characterRefKey || null;

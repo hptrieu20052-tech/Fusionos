@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import { BOOK_PRODUCTS, getBookProduct, genBlocks } from "@/lib/book-products";
 
-type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; updatedAt: string };
+type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; kind?: string | null; updatedAt: string };
 type Idea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 type Bible = { format?: string; character?: string; wardrobe?: string; artStyle?: string; palette?: string; textStyle?: string; restrictions?: string };
 type Cover = { text?: string; brief?: string; prompt?: string };
@@ -181,19 +181,60 @@ function ListView({ titles, open, reload, flash }: { titles: Title[]; open: (id:
     const j = await api(`/api/books/${t.id}`, "DELETE");
     if (j.ok) { flash("✓ Book deleted"); reload(); } else flash("✗ " + (j.error ?? "Delete error"));
   };
+  // Chuyển Draft ↔ Scale design.
+  const setKind = async (t: Title, kind: "master" | null) => {
+    const j = await api(`/api/books/${t.id}`, "PATCH", { kind });
+    if (j.ok) { flash(kind === "master" ? "✓ Moved to Custom books" : "✓ Moved back to New ideas"); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+  // Nhân bản từ mẫu → bản cho KHÁCH (giữ script/prompt/style; xoá tên/ảnh để điền của khách).
+  const customize = async (t: Title) => {
+    const customer = typeof window !== "undefined" ? (window.prompt("Customer name (for the copy's title):", "") ?? "") : "";
+    const j = await api(`/api/books/${t.id}/clone`, "POST", { customer });
+    if (j.ok) { flash("✓ Customer copy created — fill in name & photo, then Draw all"); open(j.id as string); } else flash("✗ " + (j.error ?? "Clone error"));
+  };
+
+  const row = (t: Title, master: boolean) => (
+    <div key={t.id} style={{ ...btnGhost, cursor: "default", textAlign: "left", padding: "13px 15px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div onClick={() => open(t.id)} style={{ flex: 1, cursor: "pointer", minWidth: 180 }}>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{[t.occasion, t.audience].filter(Boolean).join(" · ") || "—"}</div>
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[t.status] ?? "#555", textTransform: "uppercase", letterSpacing: ".4px" }}>{t.status}</span>
+      {master ? (
+        <>
+          <button onClick={() => customize(t)} title="Clone this design for a customer order: keeps script/prompts/style, clears name & photo for the new customer" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Customize for customer</button>
+          <button onClick={() => setKind(t, null)} title="Move back to New ideas" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }}>To New ideas</button>
+        </>
+      ) : (
+        <button onClick={() => setKind(t, "master")} title="Mark as a selling design — it moves to Custom books and becomes the master template for customer copies" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--blue)", borderColor: "var(--blue)" }}>To Custom books</button>
+      )}
+      <button onClick={() => del(t)} title="Delete book" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--red)", borderColor: "var(--line)" }}>Delete</button>
+    </div>
+  );
+
+  const masters = titles.filter((t) => t.kind === "master");
+  const drafts = titles.filter((t) => t.kind !== "master");
   if (!titles.length) return <div className="panel empty" style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No books yet. Click <b>+ New Book</b> to start.</div>;
   return (
-    <div style={{ display: "grid", gap: 10 }}>
-      {titles.map((t) => (
-        <div key={t.id} style={{ ...btnGhost, cursor: "default", textAlign: "left", padding: "13px 15px", display: "flex", alignItems: "center", gap: 12 }}>
-          <div onClick={() => open(t.id)} style={{ flex: 1, cursor: "pointer", minWidth: 0 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{[t.occasion, t.audience].filter(Boolean).join(" · ") || "—"}</div>
-          </div>
-          <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[t.status] ?? "#555", textTransform: "uppercase", letterSpacing: ".4px" }}>{t.status}</span>
-          <button onClick={() => del(t)} title="Delete book" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--red)", borderColor: "var(--line)" }}>Delete</button>
+    <div style={{ display: "grid", gap: 18 }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>Custom books</h3>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>selling designs — master templates, customize a copy for each customer</span>
         </div>
-      ))}
+        {masters.length
+          ? <div style={{ display: "grid", gap: 10 }}>{masters.map((t) => row(t, true))}</div>
+          : <div className="panel empty" style={{ padding: 16, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books yet. Finish a book below and click <b>To Custom books</b> to promote it.</div>}
+      </div>
+      <div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>New ideas</h3>
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>new books being built + customer copies in progress</span>
+        </div>
+        {drafts.length
+          ? <div style={{ display: "grid", gap: 10 }}>{drafts.map((t) => row(t, false))}</div>
+          : <div className="panel empty" style={{ padding: 16, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No new ideas yet. Click <b>+ New Book</b> to start.</div>}
+      </div>
     </div>
   );
 }
