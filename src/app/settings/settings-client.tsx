@@ -174,11 +174,18 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                 const isMerchize = f.name.toLowerCase().includes("merchize");
                 const isPrintway = f.name.toLowerCase().includes("printway");
                 const isOnos = f.name.toLowerCase().includes("onos");
+                const isLenful = f.name.toLowerCase().includes("lenful");
+                const isVinaway = f.name.toLowerCase().includes("vinaway");
                 return (
                 <div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
                   <input placeholder={isMerchize ? "Base URL (…/bo-api)" : (f.apiEndpoint ?? "API endpoint")} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setE(f.id, "apiEndpoint", e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
-                  <EyeInput placeholder={isMerchize ? "API Key (x-api-key)" : t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(v) => setE(f.id, "apiKey", v)} width={200} />
+                  <EyeInput placeholder={isMerchize ? "API Key (x-api-key)" : (isLenful || isVinaway) ? "Password (login)" : t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(v) => setE(f.id, "apiKey", v)} width={200} />
+                  {isLenful && <>
+                    <input placeholder="user_name (email login Lenful)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 210 }} />
+                    <input placeholder="Store ID (path /api/order/:store_id)" value={edit[f.id]?.shopId ?? ""} onChange={(e) => setE(f.id, "shopId", e.target.value)} style={{ ...inp, width: 200 }} />
+                  </>}
+                  {isVinaway && <input placeholder="Email (login Vinaway)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 200 }} />}
                   {isMerchize && <input placeholder="Identifier (vd hello.com)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 160 }} />}
                   {isMerchize && <input placeholder="Warehouse (vd TX1)" value={edit[f.id]?.warehouse ?? ""} onChange={(e) => setE(f.id, "warehouse", e.target.value)} style={{ ...inp, width: 120 }} />}
                   {isMerchize && <input placeholder="Carrier (vd USPS Ground Advantage)" value={edit[f.id]?.carrier ?? ""} onChange={(e) => setE(f.id, "carrier", e.target.value)} style={{ ...inp, width: 210 }} />}
