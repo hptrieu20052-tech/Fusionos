@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq, and } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { orGenerateImage, buildMasterPrompt, resolveVars, BookBible } from "@/lib/ai/openrouter";
 import { readFile, writeFile, fileUrl } from "@/lib/storage";
 import {
@@ -20,7 +21,7 @@ type PageRow = { pageNo: number; textTemplate: string | null; illustrationBrief:
 // pageNo 0 = COVER (5370×2850 / 7470×3000). Trang 1 & cuối = vẽ ĐƠN (khổ trang). Cặp giữa = vẽ SPREAD nối rồi CẮT ĐÔI.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const s = await getSession();
-  if (s?.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await can(s, "bookStudio"))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}));
   const pageNo = Number(b?.pageNo);
   if (!Number.isFinite(pageNo) || pageNo < 0) return NextResponse.json({ ok: false, error: "pageNo required" }, { status: 400 });
@@ -130,12 +131,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       const combinedText = baked
         ? [lText && `LEFT half text: "${lText}"`, rText && `RIGHT half text: "${rText}"`].filter(Boolean).join("\n")
         : "";
+      let sharedBrief = (lp?.illustrationBrief ?? "").trim() || "One continuous scene spanning the whole double-page spread.";
+      const textSide = lText && !rText ? "LEFT" : (!lText && rText ? "RIGHT" : null);
+      if (textSide) {
+        const artSide = textSide === "LEFT" ? "RIGHT" : "LEFT";
+        sharedBrief += `\nLAYOUT: the ${textSide} half is the TEXT side — keep it a calm, open, softly-lit part of the same continuous scene (gentle background wash, small ambient details only, NO main characters there). Place the MAIN SUBJECT fully inside the ${artSide} half. Bake the caption text onto the ${textSide} half only, beautifully centered in the open area.`;
+      }
       const stored = (lp?.promptTemplate ?? "").trim();
       const raw = stored
         ? `${stored}\n\nOUTPUT FORMAT (this overrides any size mentioned above):\n${spreadFormatText(product, L, R)}`
         : buildMasterPrompt({
             bookName: title.name, bible,
-            brief: (lp?.illustrationBrief ?? "").trim() || "One continuous scene spanning the whole double-page spread.",
+            brief: sharedBrief,
             text: combinedText, hasRef, baked, format: spreadFormatText(product, L, R),
           });
       const prompt = resolveVars(raw, mergedVars);

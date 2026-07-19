@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq, and, asc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { buildMasterPrompt, BookBible } from "@/lib/ai/openrouter";
 import { getBookProduct, coverFormatText, spreadFormatText, genBlocks } from "@/lib/book-products";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 // Deterministic (không gọi AI) → nhanh, không đụng timeout. Ghi vào book_pages.prompt_template.
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const s = await getSession();
-  if (s?.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await can(s, "bookStudio"))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const [title] = await db.select().from(schema.bookTitles).where(eq(schema.bookTitles.id, params.id)).limit(1);
   if (!title) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
@@ -72,9 +73,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
           ? [lText && `LEFT half text: "${lText}"`, rText && `RIGHT half text: "${rText}"`].filter(Boolean).join("\n")
           : "";
         // 1 CẢNH LIỀN cho cả cặp — lấy brief của trang TRÁI làm cảnh chung (sửa được ở UI spread).
+        let sharedBrief = (lp?.illustrationBrief ?? "").trim() || "One continuous scene spanning the whole double-page spread.";
+        // Chữ 1 bên · tranh 1 bên: nửa có chữ = nền tĩnh dịu, KHÔNG nhân vật chính; chủ thể nằm trọn nửa kia.
+        const textSide = lText && !rText ? "LEFT" : (!lText && rText ? "RIGHT" : null);
+        if (textSide) {
+          const artSide = textSide === "LEFT" ? "RIGHT" : "LEFT";
+          sharedBrief += `\nLAYOUT: the ${textSide} half is the TEXT side — keep it a calm, open, softly-lit part of the same continuous scene (gentle background wash, small ambient details only, NO main characters there). Place the MAIN SUBJECT fully inside the ${artSide} half. Bake the caption text onto the ${textSide} half only, beautifully centered in the open area.`;
+        }
         const prompt = buildMasterPrompt({
           bookName: title.name, bible,
-          brief: (lp?.illustrationBrief ?? "").trim() || "One continuous scene spanning the whole double-page spread.",
+          brief: sharedBrief,
           text: combinedText, hasRef, baked, format: spreadFormatText(product, L, R),
         });
         if (lp) await setPrompt(L, prompt);

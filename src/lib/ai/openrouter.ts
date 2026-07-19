@@ -158,7 +158,7 @@ Return EXACTLY:
 export type BookScriptPage = { page_no: number; text: string; illustration: string };
 
 // KỊCH BẢN: concept → lời văn + brief từng trang. Hỗ trợ sinh THEO LÔ (from..to) để sách nhiều trang không timeout.
-export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[] }, opts?: { pages?: number; vars?: string[]; model?: string; from?: number; to?: number }): Promise<BookScriptPage[]> {
+export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[] }, opts?: { pages?: number; vars?: string[]; model?: string; from?: number; to?: number; spreadPairs?: [number, number][] }): Promise<BookScriptPage[]> {
   const total = opts?.pages ?? concept.outline?.length ?? 12;
   const from = Math.max(1, opts?.from ?? 1);
   const to = Math.min(total, opts?.to ?? total);
@@ -169,7 +169,9 @@ Outline (story arc):
 ${(concept.outline ?? []).map((o, i) => `${i + 1}. ${o}`).join("\n") || "(develop freely)"}
 
 This book has ${total} pages total. Generate ONLY pages ${from} to ${to} (${to - from + 1} pages), consistent with the outline arc and previous pages.
-- Insert personalization variables as {${vars.join("}, {")}} (e.g. {name}) in the text where natural. Use ONLY these placeholders — NEVER invent others (no {photo}, {image}, {petPhoto}…; photos are drawing references, not text).
+${(opts?.spreadPairs ?? []).length ? `DOUBLE-PAGE SPREADS (text one side · art the other): pages ${(opts?.spreadPairs ?? []).map(([a, b]) => `${a}+${b}`).join(", ")} are each drawn as ONE connected artwork.
+For EACH pair: write the FULL text (2–4 short gentle lines, storybook-verse feel) on ONLY ONE page and set the other page's "text" to "" (empty string). Alternate which side carries the text from pair to pair. The pair shares ONE illustration brief (write it on the LEFT page of the pair): place the MAIN SUBJECT on the page WITHOUT text, and describe the text-side half as a calm, open, softly-lit part of the same continuous scene.
+` : ""}- Insert personalization variables as {${vars.join("}, {")}} (e.g. {name}) in the text where natural. Use ONLY these placeholders — NEVER invent others (no {photo}, {image}, {petPhoto}…; photos are drawing references, not text).
 - text: ENGLISH, 1–3 short sentences per page, warm and child-friendly.
 - illustration: ENGLISH, CONCISE 1–2 sentences (setting · main character pose/emotion · key props · mood). Leave a calm area for a text caption. Do NOT describe any text/name drawn in the scene.
 
