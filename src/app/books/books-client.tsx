@@ -2,14 +2,14 @@
 import { useEffect, useState, useRef } from "react";
 import { BOOK_PRODUCTS, getBookProduct, genBlocks } from "@/lib/book-products";
 
-type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; kind?: string | null; updatedAt: string };
+type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; kind?: string | null; sourceId?: string | null; updatedAt: string };
 type Idea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 type Bible = { format?: string; character?: string; wardrobe?: string; artStyle?: string; palette?: string; textStyle?: string; restrictions?: string };
 type Cover = { text?: string; brief?: string; prompt?: string };
 type Var = { key: string; label?: string; value?: string; type?: "text" | "image"; imageKey?: string; imageUrl?: string };
 type Page = { page_no: number; text: string; illustration: string; prompt?: string };
 type Detail = {
-  title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefKey?: string | null; characterRefUrl?: string | null; stylePrompt?: string | null; bible?: Bible | null; vars?: Var[] | null; productKey?: string | null; cover?: Cover | null };
+  title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefKey?: string | null; characterRefUrl?: string | null; stylePrompt?: string | null; bible?: Bible | null; vars?: Var[] | null; productKey?: string | null; cover?: Cover | null; kind?: string | null; sourceId?: string | null };
   pages: { pageNo: number; textTemplate: string | null; illustrationBrief: string | null; promptTemplate?: string | null }[];
   assets?: Record<number, string | null>;
 };
@@ -213,7 +213,12 @@ function ListView({ titles, open, reload, flash, onCustomize }: { titles: Title[
           <button onClick={() => setKind(t, null)} title="Move back to New ideas" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }}>To New ideas</button>
         </>
       ) : (
-        <button onClick={() => setKind(t, "master")} title="Mark as a selling design — it moves to Custom books and becomes the master template for customer copies" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--blue)", borderColor: "var(--blue)" }}>To Custom books</button>
+        <>
+          {t.sourceId && (
+            <button onClick={() => { if (onCustomize) onCustomize(t.id, t.sourceId!); }} title="Reopen the 2-column customize screen (original design vs personalized copy)" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Continue customize</button>
+          )}
+          <button onClick={() => setKind(t, "master")} title="Mark as a selling design — it moves to Custom books and becomes the master template for customer copies" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--blue)", borderColor: "var(--blue)" }}>To Custom books</button>
+        </>
       )}
       <button onClick={() => del(t)} title="Delete book" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--red)", borderColor: "var(--line)" }}>Delete</button>
     </div>
@@ -235,13 +240,49 @@ function ListView({ titles, open, reload, flash, onCustomize }: { titles: Title[
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
         {tab === "custom" ? "Selling designs — master templates; customize a copy for each customer order." : "New books being built + customer copies in progress. When a design starts selling, promote it with “To Custom books”."}
       </div>
+      {tab === "custom" && <ImportDesignBar reload={reload} open={open} flash={flash} />}
       {tab === "custom"
         ? (masters.length
           ? <div style={{ display: "grid", gap: 10 }}>{masters.map((t) => row(t, true))}</div>
-          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books yet. Finish a book in <b>New ideas</b> and click <b>To Custom books</b> to promote it.</div>)
+          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books yet. <b>Import</b> an existing design by its Design ID above, or finish a book in <b>New ideas</b> and click <b>To Custom books</b>.</div>)
         : (drafts.length
           ? <div style={{ display: "grid", gap: 10 }}>{drafts.map((t) => row(t, false))}</div>
           : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No new ideas yet. Click <b>+ New Book</b> to start.</div>)}
+    </div>
+  );
+}
+
+// ===== IMPORT DESIGN CÓ SẴN (Design Studio) → MASTER trong Custom books =====
+// Nhập Design ID (#SKU) → hệ thống lấy các file in (cover_front/back_cover/page_01..24 hoặc book_cover liền)
+// làm ẢNH GỐC; sau đó khai báo variables (giá trị GỐC đang in) là customize được cho từng khách.
+function ImportDesignBar({ reload, open, flash }: { reload: () => void; open: (id: string) => void; flash: (m: string) => void }) {
+  const [sku, setSku] = useState("");
+  const [productKey, setProductKey] = useState(BOOK_PRODUCTS[0].key);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    const n = parseInt(sku.replace(/[^0-9]/g, ""), 10);
+    if (!n) { flash("✗ Enter the Design ID (the #number on the design card)"); return; }
+    setBusy(true);
+    const j = await api("/api/books/import-from-design", "POST", { sku: n, productKey });
+    setBusy(false);
+    if (j.ok) {
+      const miss = (j.missing as string[] | undefined) ?? [];
+      flash(`✓ Imported ${j.mapped} file(s)` + (miss.length ? ` — still missing: ${miss.slice(0, 6).join(", ")}${miss.length > 6 ? "…" : ""}` : ""));
+      setSku(""); reload(); open(j.id as string);
+    } else flash("✗ " + (j.error ?? "Import error"));
+  };
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 14, padding: "12px 14px", marginBottom: 14, background: "#fff", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ minWidth: 200, flex: 1 }}>
+        <div style={{ fontWeight: 800, fontSize: 13.5 }}>Import an existing design</div>
+        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>From Design Studio, by Design ID — its print files (cover_front · back_cover · page_01–24, or a full book_cover) become the master. Then set the variables&apos; <b>original values</b> in the detail screen.</div>
+      </div>
+      <input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Design ID (e.g. 1234)" onKeyDown={(e) => { if (e.key === "Enter") run(); }}
+        style={{ ...inp, width: 150, height: 34, boxSizing: "border-box", fontSize: 13 }} />
+      <select value={productKey} onChange={(e) => setProductKey(e.target.value)} style={{ ...inp, height: 34, boxSizing: "border-box", fontSize: 12.5, maxWidth: 250 }}>
+        {BOOK_PRODUCTS.map((p) => <option key={p.key} value={p.key}>{p.name}</option>)}
+      </select>
+      <button onClick={run} disabled={busy} style={{ ...btnBlue, height: 34, padding: "0 16px", fontSize: 12.5, opacity: busy ? 0.6 : 1 }}>{busy ? "Importing…" : "Import"}</button>
     </div>
   );
 }
@@ -1056,6 +1097,11 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
           </label>
         </div>
         <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
+        {detail.title.kind === "master" && (
+          <div style={{ border: "1px solid #F5E1B0", background: "#FFF9EC", color: "#8a6d00", borderRadius: 12, padding: "9px 13px", fontSize: 12, marginBottom: 10 }}>
+            <b>Master design:</b> set each variable&apos;s <b>Value</b> to the ORIGINAL value printed in this design (e.g. name = &quot;Sadie&quot;). When you customize for a customer, that original gets replaced by the customer&apos;s value.
+          </div>
+        )}
         <VarsPanel vars={vars} setVars={setVars} bookId={id} flash={flash} />
       </StepCard>
 

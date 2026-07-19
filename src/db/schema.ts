@@ -395,6 +395,7 @@ export const bookTitles = pgTable("book_titles", {
   status: text("status").notNull().default("idea"), // idea|script|characters|simulation|mockup|ready
   productKey: text("product_key"),     // loại sản phẩm in (hardcover_photo_book_8x8…) — khoá khổ/số trang/nối trang
   kind: text("kind"),                  // null/'draft' = đang build · 'master' = SCALE DESIGN (đã có sale, làm mẫu custom cho khách)
+  sourceId: uuid("source_id"),         // bản khách clone từ master nào (mở lại màn Customize + remake theo ảnh gốc)
   concept: jsonb("concept"),           // { hook, angle, usp, outline[] }
   personalization: jsonb("personalization"), // biến cá nhân hoá {name, character, dedication...}
   brief: jsonb("brief"),               // input brief đã dùng để sinh

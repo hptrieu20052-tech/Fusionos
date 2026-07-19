@@ -27,6 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     occasion: src.occasion, audience: src.audience,
     status: "script",
     kind: null,                    // bản khách nằm ở khu Drafts/đang làm
+    sourceId: src.id,              // nhớ master gốc → mở lại màn Customize + remake theo ảnh gốc
     productKey: src.productKey,
     concept: src.concept, brief: src.brief,
     bible: src.bible, cover: src.cover,

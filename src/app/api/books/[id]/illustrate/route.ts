@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { orGenerateImage, buildMasterPrompt, resolveVars, BookBible } from "@/lib/ai/openrouter";
@@ -79,6 +79,104 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const sharp = (await import("sharp")).default;
     const urls: Record<number, string> = {};
     let cost = 0;
+
+    // ================= REMAKE MODE (Custom books từ DESIGN CÓ SẴN) =================
+    // Bản khách (sourceId) + block KHÔNG có prompt (design import, không phải AI-made)
+    // → nạp ẢNH GỐC của master làm reference, tái tạo Y HỆT, CHỈ thay biến cá nhân hoá của khách.
+    const storedPromptOf = async (): Promise<string> => {
+      if (blk.type === "cover") return String((title.cover as { prompt?: string } | null)?.prompt ?? "").trim();
+      if (blk.type === "single") return String((await loadPage(blk.page))?.promptTemplate ?? "").trim();
+      return String((await loadPage(blk.pages[0]))?.promptTemplate ?? "").trim();
+    };
+    if (title.sourceId && !(await storedPromptOf())) {
+      const wantNos = blk.type === "cover" ? [-1, 0] : blk.type === "single" ? [blk.page] : [...blk.pages];
+      const mAssets = await db.select({ pageNo: schema.bookAssets.pageNo, storageKey: schema.bookAssets.storageKey })
+        .from(schema.bookAssets)
+        .where(and(eq(schema.bookAssets.titleId, title.sourceId), inArray(schema.bookAssets.pageNo, wantNos)));
+      const mMap = new Map(mAssets.map((a) => [a.pageNo, a.storageKey]));
+      const lack = wantNos.filter((n) => !mMap.has(n));
+      if (lack.length) {
+        return NextResponse.json({ ok: false, error: `Master design chưa có ảnh gốc cho: ${lack.map((n) => n === 0 ? "cover_front" : n === -1 ? "back_cover" : "page " + n).join(", ")} — upload thêm file đó vào design rồi import lại.` }, { status: 400 });
+      }
+
+      // Ghép ẢNH GỐC thành đúng khối vẽ (cover wraparound liền / spread liền / trang đơn) rồi thu nhỏ làm reference.
+      let refBuf: Buffer;
+      if (blk.type === "cover") {
+        const cw = coverPanelW(product);
+        const back = await sharp(await readFile(mMap.get(-1)!)).resize(cw, product.coverH, { fit: "fill" }).png().toBuffer();
+        const front = await sharp(await readFile(mMap.get(0)!)).resize(product.coverW - cw, product.coverH, { fit: "fill" }).png().toBuffer();
+        refBuf = await sharp({ create: { width: product.coverW, height: product.coverH, channels: 3, background: "#fff" } })
+          .composite([{ input: back, left: 0, top: 0 }, { input: front, left: cw, top: 0 }]).png().toBuffer();
+      } else if (blk.type === "spread") {
+        const L = await sharp(await readFile(mMap.get(blk.pages[0])!)).resize(product.pageW, product.pageH, { fit: "fill" }).png().toBuffer();
+        const R = await sharp(await readFile(mMap.get(blk.pages[1])!)).resize(product.pageW, product.pageH, { fit: "fill" }).png().toBuffer();
+        refBuf = await sharp({ create: { width: product.pageW * 2, height: product.pageH, channels: 3, background: "#fff" } })
+          .composite([{ input: L, left: 0, top: 0 }, { input: R, left: product.pageW, top: 0 }]).png().toBuffer();
+      } else {
+        refBuf = await readFile(mMap.get(blk.page)!);
+      }
+      const refSmall = await sharp(refBuf).resize(1600, 1600, { fit: "inside", withoutEnlargement: true }).jpeg({ quality: 90 }).toBuffer();
+      const masterRef = `data:image/jpeg;base64,${refSmall.toString("base64")}`;
+
+      // Danh sách THAY ĐỔI: so biến GỐC của master (value = giá trị đang in) với biến KHÁCH (mergedVars).
+      const [masterTitle] = await db.select().from(schema.bookTitles).where(eq(schema.bookTitles.id, title.sourceId)).limit(1);
+      const masterVars = Array.isArray(masterTitle?.vars) ? (masterTitle!.vars as Var[]) : [];
+      const changes: string[] = [];
+      for (const mv of masterVars) {
+        const cv = mergedVars.find((v) => v.key === mv.key);
+        if (!cv) continue;
+        const label = (mv as { label?: string }).label || mv.key;
+        if ((mv.type ?? "text") === "image") {
+          if (cv.imageKey) changes.push(`Replace the ${label}'s face and appearance to match the attached customer reference photo — keep the pose, outfit, position, size and art style EXACTLY as in the original.`);
+        } else {
+          const orig = String(mv.value ?? "").trim();
+          const next = String(cv.value ?? "").trim();
+          if (orig && next && orig !== next) changes.push(`Replace every occurrence of the text "${orig}" with "${next}" — match the original font, size, color, curvature and placement exactly.`);
+          else if (!orig && next) changes.push(`Set the personalized ${label} text in the design to "${next}" — match the existing text style exactly.`);
+        }
+      }
+      const what = blk.type === "cover"
+        ? `full WRAPAROUND COVER (LEFT half = back cover, RIGHT half = front cover — one continuous image across the center fold)`
+        : blk.type === "spread"
+          ? `DOUBLE-PAGE SPREAD (two pages side by side forming one continuous image)`
+          : `single page`;
+      const format = blk.type === "cover" ? coverFormatText(product) : blk.type === "spread" ? spreadFormatText(product, blk.pages[0], blk.pages[1]) : pageFormatText(product);
+      const prompt =
+        `The FIRST attached image is the ORIGINAL ${what} of a finished children's book design.\n` +
+        `TASK: Recreate this artwork EXACTLY — identical composition, characters, poses, expressions, colors, art style, lighting, background, decorative elements and text layout. ` +
+        `This is a faithful high-fidelity reproduction, NOT a reinterpretation. Do not add, remove, move or restyle anything.\n\n` +
+        `APPLY ONLY these personalization changes:\n` +
+        (changes.length ? changes.map((c, i) => `${i + 1}. ${c}`).join("\n") : "(none provided — reproduce the original exactly)") +
+        `\n\nEverything NOT listed above must stay identical to the original image.\n\n` +
+        `OUTPUT FORMAT (this overrides any size mentioned above):\n${format}`;
+
+      const aspect = blk.type === "cover" ? coverAspect(product) : blk.type === "spread" ? spreadAspect(product) : pageAspect(product);
+      const img = await orGenerateImage(prompt, [masterRef, ...refs.slice(0, 3)], { model, outputFormat: "png", aspectRatio: aspect });
+      cost += img.cost;
+
+      if (blk.type === "cover") {
+        const full = await sharp(Buffer.from(img.b64, "base64")).resize(product.coverW, product.coverH, { fit: "fill" }).png().toBuffer();
+        const cw = coverPanelW(product);
+        const back = await sharp(full).extract({ left: 0, top: 0, width: cw, height: product.coverH }).png().toBuffer();
+        const front = await sharp(full).extract({ left: cw, top: 0, width: product.coverW - cw, height: product.coverH }).png().toBuffer();
+        urls[0] = await saveAsset(0, front);
+        urls[-1] = await saveAsset(-1, back);
+      } else if (blk.type === "spread") {
+        const full = await sharp(Buffer.from(img.b64, "base64")).resize(product.pageW * 2, product.pageH, { fit: "fill" }).png().toBuffer();
+        const left = await sharp(full).extract({ left: 0, top: 0, width: product.pageW, height: product.pageH }).png().toBuffer();
+        const right = await sharp(full).extract({ left: product.pageW, top: 0, width: product.pageW, height: product.pageH }).png().toBuffer();
+        urls[blk.pages[0]] = await saveAsset(blk.pages[0], left);
+        urls[blk.pages[1]] = await saveAsset(blk.pages[1], right);
+      } else {
+        const out = await sharp(Buffer.from(img.b64, "base64")).resize(product.pageW, product.pageH, { fit: "fill" }).png().toBuffer();
+        urls[blk.page] = await saveAsset(blk.page, out);
+      }
+
+      if (title.status === "script") await db.update(schema.bookTitles).set({ status: "simulation", updatedAt: new Date() }).where(eq(schema.bookTitles.id, params.id));
+      const fk = Number(Object.keys(urls)[0]);
+      return NextResponse.json({ ok: true, pageNo, url: urls[fk], urls, cost, remake: true });
+    }
+    // ================= HẾT REMAKE MODE — dưới đây là luồng vẽ theo PROMPT như cũ =================
 
     if (blk.type === "cover") {
       // COVER wraparound LIỀN: vẽ 1 ảnh nối → nửa PHẢI = mặt trước (tiêu đề+nhân vật), nửa TRÁI = mặt sau (cảnh nối tiếp, không chữ). Cắt đôi.
