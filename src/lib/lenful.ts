@@ -17,23 +17,35 @@ export async function lenfulToken(cred: LenfulCred): Promise<string> {
   const hit = tokenCache.get(key);
   if (hit && hit.exp - 60_000 > Date.now()) return hit.token;
 
-  const res = await fetch(`${base}/api/seller/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ user_name: cred.userName, password: cred.password }),
-    signal: AbortSignal.timeout(20000),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Lenful login HTTP ${res.status}: ${text.slice(0, 200)}`);
-  let j: Record<string, unknown>;
-  try { j = JSON.parse(text); } catch { throw new Error("Lenful login: non-JSON response"); }
-  const d = (j?.data ?? j) as Record<string, unknown>;
-  const token = String(d?.access_token ?? "");
-  if (!token) throw new Error("Lenful login: no access_token (" + text.slice(0, 150) + ")");
-  const rawExp = Number(d?.expires) || 0;
-  const exp = rawExp > 1e12 ? rawExp : rawExp > 0 ? rawExp * 1000 : Date.now() + 3600_000;
-  tokenCache.set(key, { token, exp });
-  return token;
+  // Doc Postman khai field dạng "text" = FORM-DATA (server ASP.NET trả 400 validation nếu gửi JSON).
+  // Thử lần lượt: multipart form-data → x-www-form-urlencoded → JSON; dạng nào ăn thì dùng.
+  const attempts: { headers?: Record<string, string>; body: BodyInit }[] = [
+    (() => { const fd = new FormData(); fd.set("user_name", cred.userName); fd.set("password", cred.password); return { body: fd }; })(),
+    { headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ user_name: cred.userName, password: cred.password }).toString() },
+    { headers: { "Content-Type": "application/json" }, body: JSON.stringify({ user_name: cred.userName, password: cred.password }) },
+  ];
+  let lastErr = "";
+  for (const a of attempts) {
+    const res = await fetch(`${base}/api/seller/login`, {
+      method: "POST",
+      headers: { Accept: "*/*", ...(a.headers ?? {}) },
+      body: a.body,
+      signal: AbortSignal.timeout(20000),
+    }).catch((e) => { lastErr = String(e?.message ?? e); return null; });
+    if (!res) continue;
+    const text = await res.text();
+    if (!res.ok) { lastErr = `HTTP ${res.status}: ${text.slice(0, 200)}`; continue; }
+    let j: Record<string, unknown>;
+    try { j = JSON.parse(text); } catch { lastErr = "non-JSON response"; continue; }
+    const d = (j?.data ?? j) as Record<string, unknown>;
+    const token = String(d?.access_token ?? "");
+    if (!token) { lastErr = "no access_token (" + text.slice(0, 150) + ")"; continue; }
+    const rawExp = Number(d?.expires) || 0;
+    const exp = rawExp > 1e12 ? rawExp : rawExp > 0 ? rawExp * 1000 : Date.now() + 3600_000;
+    tokenCache.set(key, { token, exp });
+    return token;
+  }
+  throw new Error(`Lenful login failed: ${lastErr}`);
 }
 
 // Vị trí in Lenful: 0 Full · 1 Front · 2 Back · 3 LeftChest · 4 RightChest · 5 LeftSleeve · 6 RightSleeve · 7 Neck · 8 Full3D

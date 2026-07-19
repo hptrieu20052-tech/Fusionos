@@ -945,8 +945,8 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
   // Chưa gán đủ design cho mọi sản phẩm thì chưa cho chọn nhà fulfill — tránh đẩy đơn thiếu file in.
   const allDesigned = o.items.length > 0 && o.items.every((i) => !!i.design_id);
   // Có nhà DROPSHIP (non-POD) khả dụng → bỏ chặn "cần gán design": đơn dropship không có design.
-  const hasNonPod = (detail?.fulfillerOptions ?? []).some((f) => f.nonPod);
-  const designGateOk = allDesigned || hasNonPod;
+  // GATE CỨNG cho MỌI supplier: đơn phải dán đủ Design ID mới hiện "Fulfilled by" (bỏ ngoại lệ non-POD).
+  const designGateOk = allDesigned;
   const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number; unitCost?: number }>>({});
   const [busy, setBusy] = useState(false);
   const [ship, setShip] = useState({
@@ -1299,7 +1299,8 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
             )}
           </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", flexShrink: 0 }}>
-          {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>}
+          {/* Nút "Bad review" TẠM ẨN theo yêu cầu (flow chưa chốt) — mở lại bằng cách bỏ comment.
+          {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>} */}
           {isSeller && <SendDesigner order={o} designers={designers} flash={flash} reload={reload} />}
           {(isAdmin || canDuplicate) && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "")} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
