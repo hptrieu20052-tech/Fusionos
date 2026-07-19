@@ -17,7 +17,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!title) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
   const b = await req.json().catch(() => ({}));
-  const concept = (title.concept ?? {}) as { angle?: string; outline?: string[] };
+  const concept = (title.concept ?? {}) as { angle?: string; outline?: string[]; hook?: string; usp?: string };
   const briefObj = (title.brief ?? {}) as { pages?: number };
   // Tổng số trang CHUẨN theo SẢN PHẨM (Hardcover = 24). request > product > brief > 12.
   const product = getBookProduct(title.productKey);
@@ -30,9 +30,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const spreadPairs = genBlocks(product).filter((x) => x.type === "spread").map((x) => (x as { pages: [number, number] }).pages)
     .filter(([a, bb]) => bb >= from && a <= to);
   try {
+    // Lô sau NHÌN THẤY lô trước → nối mạch truyện + không lặp hình ảnh/câu chữ (trước đây mỗi lô viết mù → trùng lặp).
+    let prevPages: { page_no: number; text: string }[] = [];
+    if (from > 1) {
+      const rows = await db.select({ pageNo: schema.bookPages.pageNo, textTemplate: schema.bookPages.textTemplate })
+        .from(schema.bookPages).where(eq(schema.bookPages.titleId, params.id));
+      prevPages = rows.filter((r) => r.pageNo >= 1 && r.pageNo < from && (r.textTemplate ?? "").trim())
+        .sort((a, z) => a.pageNo - z.pageNo)
+        .map((r) => ({ page_no: r.pageNo, text: (r.textTemplate ?? "").trim() }));
+    }
     const pages = await generateBookScript(
-      { name: title.name, angle: concept.angle, outline: concept.outline },
-      { pages: total, from, to, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined, spreadPairs, textLayout: b?.textLayout === "both" ? "both" : "split" },
+      { name: title.name, angle: concept.angle, outline: concept.outline, hook: concept.hook, usp: concept.usp },
+      { pages: total, from, to, vars: Array.isArray(b?.vars) ? b.vars : undefined, model: b?.model ? String(b.model) : undefined, spreadPairs, textLayout: b?.textLayout === "both" ? "both" : "split", prevPages },
     );
     if (replace) await db.delete(schema.bookPages).where(eq(schema.bookPages.titleId, params.id));
     if (pages.length) {

@@ -162,15 +162,19 @@ Return EXACTLY:
 export type BookScriptPage = { page_no: number; text: string; illustration: string };
 
 // KỊCH BẢN: concept → lời văn + brief từng trang. Hỗ trợ sinh THEO LÔ (from..to) để sách nhiều trang không timeout.
-export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[] }, opts?: { pages?: number; vars?: string[]; model?: string; from?: number; to?: number; spreadPairs?: [number, number][]; textLayout?: "split" | "both" }): Promise<BookScriptPage[]> {
+export async function generateBookScript(concept: { name: string; angle?: string; outline?: string[]; hook?: string; usp?: string }, opts?: { pages?: number; vars?: string[]; model?: string; from?: number; to?: number; spreadPairs?: [number, number][]; textLayout?: "split" | "both"; prevPages?: { page_no: number; text: string }[] }): Promise<BookScriptPage[]> {
   const total = opts?.pages ?? concept.outline?.length ?? 12;
   const from = Math.max(1, opts?.from ?? 1);
   const to = Math.min(total, opts?.to ?? total);
   const vars = (opts?.vars && opts.vars.length ? opts.vars : ["name"]);
-  const system = "Bạn viết kịch bản sách tranh thiếu nhi personalized (in KDP/Story Book). Lời văn ấm áp, hợp trẻ nhỏ. Trả lời DUY NHẤT bằng JSON. Mọi nội dung sinh ra bằng TIẾNG ANH.";
+  const prev = (opts?.prevPages ?? []).slice(-6);
+  const system = "Bạn là tác giả sách tranh thiếu nhi bán chạy (KDP/personalized). Văn phong ấm nhưng CỤ THỂ và giàu hình ảnh — mỗi trang là một khoảnh khắc đáng nhớ, không sáo rỗng. Trả lời DUY NHẤT bằng JSON. Mọi nội dung sinh ra bằng TIẾNG ANH.";
   const user = `Book: "${concept.name}". Angle: ${concept.angle || ""}
+${concept.hook ? `Hook (what makes THIS book special — weave it through every page): ${concept.hook}` : ""}
+${concept.usp ? `USP: ${concept.usp}` : ""}
 Outline (story arc):
 ${(concept.outline ?? []).map((o, i) => `${i + 1}. ${o}`).join("\n") || "(develop freely)"}
+${prev.length ? `\nSTORY SO FAR (the pages right before this batch — continue the flow, and do NOT reuse their imagery or sentence patterns):\n${prev.map((p) => `p${p.page_no}: ${p.text}`).join("\n")}` : ""}
 
 This book has ${total} pages total. Generate ONLY pages ${from} to ${to} (${to - from + 1} pages), consistent with the outline arc and previous pages.
 ${(opts?.spreadPairs ?? []).length ? `DOUBLE-PAGE SPREADS: pages ${(opts?.spreadPairs ?? []).map(([a, b]) => `${a}+${b}`).join(", ")} are each drawn as ONE connected artwork. The pair shares ONE illustration brief — write it on the LEFT page of the pair: ONE continuous scene flowing across both pages.
@@ -179,10 +183,13 @@ ${(opts?.textLayout ?? "split") === "split"
   : `TEXT LAYOUT (text on both pages): EACH page of the pair gets its own short text (1–3 sentences continuing the story). In the shared brief, keep a calm, uncluttered caption area on EACH half, and keep the main subject away from both caption areas and the center fold.`}
 ` : ""}- Insert personalization variables as {${vars.join("}, {")}} (e.g. {name}) in the text where natural. Use ONLY these placeholders — NEVER invent others (no {photo}, {image}, {petPhoto}…; photos are drawing references, not text).
 - text: ENGLISH, 1–3 short sentences per page, warm and child-friendly.
-- illustration: ENGLISH, CONCISE 1–2 sentences (setting · main character pose/emotion · key props · mood). Leave a calm area for a text caption. Do NOT describe any text/name drawn in the scene.
+- VARIETY (critical): every page must add a NEW concrete micro-moment — an action, a discovery, a playful question, a small surprise, dialogue, or an interaction — never just scenery + feelings. Vary sentence rhythm and openings; consecutive pages must NOT start with the same word or repeat imagery.
+- BAN stock filler ("gentle breeze", "soft moonlight", "warm glow", "love wraps around you") unless the theme demands it — use specific, sensory, theme-tied details instead (what exactly does the character see/hear/touch/do?).
+- ARC: build genuine progression across the book — setup → escalating adventures/moments (each different in place, activity and mood) → emotional peak → satisfying close that calls back to page 1.
+- illustration: ENGLISH, CONCISE 1–2 sentences (setting · main character pose/emotion · key props · mood). Each page's scene must differ clearly from neighbors (location, time of day, activity, camera angle). Leave a calm area for a text caption. Do NOT describe any text/name drawn in the scene.
 
 Return JSON with the ACTUAL page numbers (${from}..${to}): {"pages":[{"page_no":${from},"text":"","illustration":""}]}`;
-  const out = await orChatJSON<Record<string, unknown>>(system, user, { maxTokens: 4000, model: opts?.model });
+  const out = await orChatJSON<Record<string, unknown>>(system, user, { maxTokens: 4000, model: opts?.model, temperature: 0.85 });
   // Chịu lỗi dạng: {pages:[…]} | mảng trực tiếp | object có 1 mảng bất kỳ (một số model đặt key khác).
   const asArr = (x: unknown): BookScriptPage[] | null => (Array.isArray(x) ? (x as BookScriptPage[]) : null);
   const arr: BookScriptPage[] = asArr((out as { pages?: unknown })?.pages)
