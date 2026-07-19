@@ -857,49 +857,50 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         </div>
       </div>
 
-      {pages.length > 0 && (
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 12, background: "#FAFBFF" }}>
-          <label style={{ display: "grid", gap: 3 }}>
-            <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Spread text layout</span>
-            <div style={{ display: "inline-flex", background: "#EEF1F6", borderRadius: 999, padding: 3, gap: 2 }}>
-              {([["split", "1 side text · 1 side art"], ["both", "Text on both pages"]] as ["split" | "both", string][]).map(([v, lbl]) => (
-                <button key={v} onClick={() => { setTextLayout(v); lsSet("bs_text_layout", v); }}
-                  title={v === "split" ? "Each spread: full text on one page, main subject on the other (competitor style). Applies at Generate/Regenerate script." : "Each page carries its own short text. Applies at Generate/Regenerate script."}
-                  style={{ padding: "5px 12px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, cursor: "pointer", border: 0, background: textLayout === v ? "#fff" : "transparent", color: textLayout === v ? "var(--blue)" : "var(--muted)", boxShadow: textLayout === v ? "0 1px 2px rgba(0,0,0,.10)" : "none" }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          </label>
-          <button
-            style={{ ...btnBlue, padding: "8px 14px", fontSize: 12.5, background: drawAllBusy ? "#b45309" : "var(--blue)", opacity: busyPage !== null && !drawAllBusy ? 0.6 : 1 }}
-            disabled={busyPage !== null && !drawAllBusy}
-            onClick={drawAll}
-            title="Draws every not-yet-drawn block one at a time (cover → pages → spreads), slow & steady to avoid timeouts. Failed/missing blocks are retried on the next click. Click while running to stop.">
-            {drawAllBusy ? <><IcStop />Stop drawing</> : <><IcBrush />Draw all (missing)</>}
-          </button>
-          <button style={{ ...btnGhost, padding: "8px 14px", fontSize: 12.5, opacity: dlBusy ? 0.6 : 1 }} disabled={dlBusy} onClick={downloadAll}
-            title="Downloads every drawn image with fulfill-ready names: cover_front.jpg · cover_back.jpg · 1.jpg…24.jpg">
-            <IcDownload />{dlBusy ? "Downloading…" : "Download all"}
-          </button>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Text model · writing</span>
-              <select value={model} onChange={(e) => setModel(e.target.value)} title="Model for ideas & script" style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 190 }}>
-                <option value="">— Default —</option>
-                <ModelOptions models={models} />
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Image model · drawing</span>
-              <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="Model for drawing pages" style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 190 }}>
-                <option value="">— Default —</option>
-                <ModelOptions models={imgModels} />
-              </select>
-            </label>
+      {/* Toolbar LUÔN hiển thị (chọn model được cả trước lần sinh đầu). Thứ tự: Layout → Models → Actions, canh đáy thẳng hàng. */}
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 12, background: "#FAFBFF" }}>
+        <label style={{ display: "grid", gap: 3 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Spread text layout</span>
+          <div style={{ display: "inline-flex", background: "#EEF1F6", borderRadius: 999, padding: 3, gap: 2, height: 32, boxSizing: "border-box", alignItems: "center" }}>
+            {([["split", "1 side text · 1 side art"], ["both", "Text on both pages"]] as ["split" | "both", string][]).map(([v, lbl]) => (
+              <button key={v} onClick={() => { setTextLayout(v); lsSet("bs_text_layout", v); }}
+                title={v === "split" ? "Each spread: full text on one page, main subject on the other (competitor style). Applies at Generate/Regenerate script." : "Each page carries its own short text. Applies at Generate/Regenerate script."}
+                style={{ padding: "4px 12px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, cursor: "pointer", border: 0, background: textLayout === v ? "#fff" : "transparent", color: textLayout === v ? "var(--blue)" : "var(--muted)", boxShadow: textLayout === v ? "0 1px 2px rgba(0,0,0,.10)" : "none" }}>
+                {lbl}
+              </button>
+            ))}
           </div>
-        </div>
-      )}
+        </label>
+        <label style={{ display: "grid", gap: 3 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Text model · writing</span>
+          <select value={model} onChange={(e) => setModel(e.target.value)} title="Model for ideas & script" style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 180, height: 32, boxSizing: "border-box" }}>
+            <option value="">— Default —</option>
+            <ModelOptions models={models} />
+          </select>
+        </label>
+        <label style={{ display: "grid", gap: 3 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Image model · drawing</span>
+          <select value={imgModel} onChange={(e) => setImgModel(e.target.value)} title="Model for drawing pages" style={{ ...inp, fontSize: 12, padding: "6px 9px", minWidth: 180, height: 32, boxSizing: "border-box" }}>
+            <option value="">— Default —</option>
+            <ModelOptions models={imgModels} />
+          </select>
+        </label>
+        {pages.length > 0 && (
+          <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+            <button
+              style={{ ...btnBlue, padding: "0 14px", height: 32, fontSize: 12.5, background: drawAllBusy ? "#b45309" : "var(--blue)", opacity: busyPage !== null && !drawAllBusy ? 0.6 : 1 }}
+              disabled={busyPage !== null && !drawAllBusy}
+              onClick={drawAll}
+              title="Draws every not-yet-drawn block one at a time (cover → pages → spreads), slow & steady to avoid timeouts. Failed/missing blocks are retried on the next click. Click while running to stop.">
+              {drawAllBusy ? <><IcStop />Stop drawing</> : <><IcBrush />Draw all (missing)</>}
+            </button>
+            <button style={{ ...btnGhost, padding: "0 14px", height: 32, fontSize: 12.5, opacity: dlBusy ? 0.6 : 1 }} disabled={dlBusy} onClick={downloadAll}
+              title="Downloads every drawn image with fulfill-ready names: cover_front.jpg · cover_back.jpg · 1.jpg…24.jpg">
+              <IcDownload />{dlBusy ? "Downloading…" : "Download all"}
+            </button>
+          </div>
+        )}
+      </div>
 
       {pages.length > 0 && (
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 10, background: "#fff", display: "grid", gridTemplateColumns: "34px 1fr 320px", gap: 12 }}>
