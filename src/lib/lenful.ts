@@ -77,6 +77,23 @@ export async function listLenfulProducts(cred: LenfulCred, page = 1, limit = 250
   return { totalPage: Number(j?.pagination?.total_page) || 1, count: Number(j?.pagination?.count) || 0, data: Array.isArray(j?.data) ? j.data : [] };
 }
 
+// Danh sách STORE của seller: GET /api/store → id dùng làm :store_id khi tạo đơn.
+export async function listLenfulStores(cred: LenfulCred): Promise<{ id: string; title: string }[]> {
+  const base = baseOf(cred.endpoint);
+  const token = await lenfulToken(cred);
+  const res = await fetch(`${base}/api/store`, {
+    headers: { Accept: "*/*", Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(20000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Lenful store list HTTP ${res.status}: ${text.slice(0, 200)}`);
+  let j: unknown; try { j = JSON.parse(text); } catch { throw new Error("Lenful store list: non-JSON"); }
+  // Chịu nhiều dạng: mảng trực tiếp | {data:[…]} | object chứa 1 mảng bất kỳ.
+  const obj = j as Record<string, unknown>;
+  const arr = (Array.isArray(j) ? j : Array.isArray(obj?.data) ? obj.data : Object.values(obj ?? {}).find((v) => Array.isArray(v)) ?? []) as Record<string, unknown>[];
+  return arr.map((s) => ({ id: String(s?.id ?? s?._id ?? ""), title: String(s?.name ?? s?.title ?? s?.domain ?? "store") })).filter((s) => s.id);
+}
+
 // Chi tiết 1 sản phẩm: GET /api/product/:product_id → có MẢNG variants đầy đủ (mỗi variant 1 SKU riêng).
 export type LenfulVariant = { id?: string; name?: string; full_name?: string; sku?: string; price?: number; base_cost?: number; status?: boolean };
 export async function getLenfulProduct(cred: LenfulCred, productId: string): Promise<{ id: string; name: string; variants: LenfulVariant[] }> {

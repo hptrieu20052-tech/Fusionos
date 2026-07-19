@@ -87,6 +87,14 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
     if (j.ok) setShops((p) => ({ ...p, [id]: j.shops }));
     else { setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? t("set.errLow")) })); }
   }
+  // Liệt kê STORE Lenful (id = :store_id khi tạo đơn) — dùng creds đang gõ trong form, chưa Save vẫn chạy.
+  async function listLenfulStores(id: string) {
+    setShops((p) => ({ ...p, [id]: "loading" }));
+    const j = await fetch("/api/fulfillers/lenful-stores", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: id, userName: edit[id]?.identifier || undefined, password: edit[id]?.apiKey || undefined }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) setShops((p) => ({ ...p, [id]: j.shops }));
+    else setShops((p) => ({ ...p, [id]: "err:" + (j.error ?? t("set.errLow")) }));
+  }
+
   // Đăng ký webhook Printway (order + tracking) trỏ về /api/webhooks/printway
   async function registerPwWebhook(id: string) {
     setMsg("Registering Printway webhook…");
@@ -184,6 +192,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                   {isLenful && <>
                     <input placeholder="user_name (email login Lenful)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 210 }} />
                     <input placeholder="Store ID (path /api/order/:store_id)" value={edit[f.id]?.shopId ?? ""} onChange={(e) => setE(f.id, "shopId", e.target.value)} style={{ ...inp, width: 200 }} />
+                    <button type="button" onClick={() => listLenfulStores(f.id)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Get Store</button>
                   </>}
                   {isVinaway && <input placeholder="Email (login Vinaway)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 200 }} />}
                   {isMerchize && <input placeholder="Identifier (vd hello.com)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 160 }} />}
