@@ -423,11 +423,12 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
       )}
 
       {/* Phân trang trên */}
-      <Pager page={page} pages={pages} setPage={setPage} show={show} setShow={(n) => { setShow(n); setPage(1); }} total={data.total} />
+      <Pager page={page} pages={pages} setPage={(p) => { setPage(p); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); }} show={show} setShow={(n) => { setShow(n); setPage(1); }} total={data.total} />
 
       {/* Cards */}
       {data.orders.map((o) => (
         <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin} isSeller={isSeller} canDuplicate={canDuplicate} designers={data.designers ?? []}
+          patchOrder={(id, patch) => setData((d) => d ? { ...d, orders: d.orders.map((x) => x.id === id ? { ...x, ...patch } : x) } : d)}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
           reload={load} flash={flash} openDup={(id, label) => setDupFor({ id, label })} copyText={copyText}
           fulfillers={data.fulfillers} />
@@ -435,7 +436,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
       {!data.orders.length && <div className="panel empty" style={{ marginTop: 12 }}>{t("o.noMatch")}</div>}
 
       <div style={{ marginTop: 12 }}>
-        <Pager page={page} pages={pages} setPage={setPage} show={show} setShow={(n) => { setShow(n); setPage(1); }} total={data.total} />
+        <Pager page={page} pages={pages} setPage={(p) => { setPage(p); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); }} show={show} setShow={(n) => { setShow(n); setPage(1); }} total={data.total} />
       </div>
 
 
@@ -913,10 +914,11 @@ function SendDesigner({ order, designers, flash, reload }: { order: Order; desig
   );
 }
 
-function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplicate = false, designers = [], selected, onToggleSel, reload, flash, openDup, copyText, fulfillers }: {
+function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplicate = false, designers = [], selected, onToggleSel, reload, flash, openDup, copyText, fulfillers, patchOrder }: {
   o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; isSeller?: boolean; canDuplicate?: boolean; designers?: { id: string; name: string; team: string | null }[]; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
   openDup: (id: string, label: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
+  patchOrder?: (id: string, patch: Partial<Order>) => void;
 }) {
   const { t } = useLang();
   const confirm = useConfirm();
@@ -1071,7 +1073,10 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
       if (j.simulated) flash(t("o.simPushWarn") + (j.reason ?? t("o.checkFfConfig")));
       else if (j.ttLabelWarn) flash("⚠ Pushed, but TikTok label: " + j.ttLabelWarn);
       else flash(t("o.pushedReal"));
-      reload();
+      // GIỮ NGUYÊN card để kiểm tra lại (không reload list làm nó biến mất khỏi tab NEW):
+      // chỉ đổi badge status tại chỗ + refresh chi tiết (push record/tracking). Card sẽ tự về đúng tab khi đổi trang/filter.
+      patchOrder?.(o.id, { status: "created" });
+      loadDetail();
     } else flash("✗ " + (j.error ?? "Error"));
   };
 

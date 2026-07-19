@@ -167,7 +167,7 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
         </div>
       </div>
 
-      <DesignPager page={page} total={total} show={show} setPage={setPage} label={t("d.design")} />
+      <DesignPager page={page} total={total} show={show} setPage={(n) => { setPage(n); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); }} label={t("d.design")} />
 
       {/* Grid card */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(248px,1fr))", gap: 18, marginTop: 14 }}>
@@ -235,7 +235,7 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
         ))}
       </div>
       {!designs.length && <div className="panel empty">{t("d.noMatch")}</div>}
-      <div style={{ marginTop: 16 }}><DesignPager page={page} total={total} show={show} setPage={setPage} label={t("d.design")} /></div>
+      <div style={{ marginTop: 16 }}><DesignPager page={page} total={total} show={show} setPage={(n) => { setPage(n); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); }} label={t("d.design")} /></div>
 
       {sel && <DetailModal detail={sel} canEdit={canEdit} close={() => setSel(null)} reload={() => { load(); }} reopen={openDetail} flash={flash} doUpload={doUpload} />}
       {showCreate && <BulkUploadModal close={() => setShowCreate(false)} reload={load} flash={flash} doUpload={doUpload} sellers={data?.sellers ?? []} designers={data?.designers ?? []} role={role} />}
