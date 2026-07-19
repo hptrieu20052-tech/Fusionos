@@ -350,7 +350,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
 // ===== Panel: STYLE BIBLE (khai báo 1 lần, ráp vào mọi trang) =====
 // Gọn: mặc định chỉ hiện phần hay chỉnh (nhân vật/trang phục/phong cách/màu). Phần khung cố định
 // (quy tắc chữ/cấm/khổ) giấu trong "Nâng cao" — AI đã điền sẵn, ít khi phải sửa.
-function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void }) {
+function BiblePanel({ bible, setBible, onSave, onPickStyle, styleBusy }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void; onPickStyle?: (files: FileList) => void; styleBusy?: boolean }) {
   const [open, setOpen] = useState(false);
   const [adv, setAdv] = useState(false);
   const F = (k: keyof Bible, label: string, rows = 2, ph = "") => (
@@ -368,8 +368,14 @@ function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: B
       </button>
       {open && (
         <div style={{ padding: "0 14px 14px", display: "grid", gap: 10 }}>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }} onClick={() => setBible({ ...DEFAULT_BIBLE, ...bible, wardrobe: bible.wardrobe ?? "" })}>Load default</button>
+            {onPickStyle && (
+              <label style={{ ...btnGhost, padding: "6px 12px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5, cursor: styleBusy ? "default" : "pointer", color: "var(--blue)", opacity: styleBusy ? 0.6 : 1 }} title="Only needed if you didn't add competitor images at create — upload a sample to match its style.">
+                🎨 {styleBusy ? "Reading style…" : "Match a reference style"}
+                <input type="file" accept="image/*" multiple disabled={styleBusy} style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) onPickStyle(e.target.files); e.target.value = ""; }} />
+              </label>
+            )}
             <button style={{ ...btnBlue, padding: "6px 12px", fontSize: 12, marginLeft: "auto" }} onClick={onSave}>Save Bible</button>
           </div>
           {F("character", "Character (face lock)", 5, "face/hair/eyes features… + {age}")}
@@ -385,7 +391,7 @@ function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: B
 }
 
 // ===== Panel: BIẾN CÁ NHÂN HOÁ (Chữ / Ảnh) — thiết kế gọn, hiện đại =====
-function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setVars: (v: Var[]) => void; onSave: () => void; bookId: string; flash: (m: string) => void }) {
+function VarsPanel({ vars, setVars, bookId, flash }: { vars: Var[]; setVars: (v: Var[]) => void; bookId: string; flash: (m: string) => void }) {
   const [upIdx, setUpIdx] = useState<number | null>(null);
   const setV = (i: number, k: keyof Var, val: string) => setVars(vars.map((v, idx) => idx === i ? { ...v, [k]: val } : v));
   const patch = (i: number, p: Partial<Var>) => setVars(vars.map((v, idx) => idx === i ? { ...v, ...p } : v));
@@ -397,7 +403,7 @@ function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setV
       const put = await fetch(t.url as string, { method: (t.method as string) || "PUT", headers: { "Content-Type": file.type || "image/png" }, body: file });
       if (!put.ok) throw new Error("upload HTTP " + put.status);
       patch(i, { imageKey: String(t.key), imageUrl: String(t.publicUrl || "") });
-      flash("✓ Image uploaded — remember to Save");
+      flash("✓ Image uploaded");
     } catch (e) { flash("✗ upload: " + String((e as Error)?.message ?? e).slice(0, 80)); }
     setUpIdx(null);
   };
@@ -412,10 +418,9 @@ function VarsPanel({ vars, setVars, onSave, bookId, flash }: { vars: Var[]; setV
     <div style={{ border: "1px solid var(--line)", borderRadius: 14, marginBottom: 12, background: "#fff", overflow: "hidden" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 14px", borderBottom: "1px solid #EEF0F5", background: "#FAFBFF", flexWrap: "wrap" }}>
         <span style={{ fontWeight: 800, fontSize: 14 }}>Personalization variables</span>
-        <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1, minWidth: 120 }}>Text or image — swapped at gen time & keeps character</span>
+        <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1, minWidth: 120 }}>Text or image — auto-saved as you edit</span>
         <button style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", value: "", type: "text" }])}>+ Text</button>
         <button style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }} onClick={() => setVars([...vars, { key: "", label: "", type: "image" }])}>+ Image</button>
-        <button style={{ ...btnBlue, padding: "6px 13px", fontSize: 12 }} onClick={onSave}>Save</button>
       </div>
 
       {vars.length === 0 && <div style={{ padding: 18, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No variables yet. Click <b>+ Text</b> / <b>+ Image</b> to add.</div>}
@@ -506,14 +511,33 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   useEffect(() => { setModel(lsGet("bs_text_model")); setImgModel(lsGet("bs_image_model")); }, []);
   useEffect(() => { api("/api/books/models?type=image").then((j) => { if (j.ok) setImgModels((j.models as { id: string; name: string }[]) ?? []); }); }, []);
   // Đồng bộ khi detail reload
+  const lastSavedVars = useRef<string>("__init__");
   useEffect(() => {
     setBible(detail.title.bible ?? {});
     setCover(detail.title.cover ?? {});
-    setVars(seedImageVar(detail.title.vars && detail.title.vars.length ? detail.title.vars : DEFAULT_VARS, detail.title.characterRefKey, detail.title.characterRefUrl));
+    const sv = seedImageVar(detail.title.vars && detail.title.vars.length ? detail.title.vars : DEFAULT_VARS, detail.title.characterRefKey, detail.title.characterRefUrl);
+    setVars(sv);
+    lastSavedVars.current = JSON.stringify(sv); // đánh dấu đã khớp server → không tự lưu ngay sau khi load
     const m: Record<number, string> = {};
     for (const [k, v] of Object.entries(detail.assets ?? {})) if (v) m[Number(k)] = v as string;
     setIllus(m);
   }, [detail]);
+
+  // TỰ LƯU biến cá nhân hoá mỗi khi thay đổi (debounce) — khỏi bấm Save.
+  useEffect(() => {
+    const snap = JSON.stringify(vars);
+    if (lastSavedVars.current === "__init__") { lastSavedVars.current = snap; return; }
+    if (lastSavedVars.current === snap) return;
+    const t = setTimeout(async () => {
+      lastSavedVars.current = snap;
+      const firstImg = vars.find((v) => v.type === "image" && v.imageKey);
+      const body: Record<string, unknown> = { vars };
+      if (firstImg?.imageKey) body.characterRefKey = firstImg.imageKey;
+      const j = await api(`/api/books/${id}`, "PATCH", body);
+      flash(j.ok ? "✓ Variables saved" : "✗ " + (j.error ?? "Error"));
+    }, 700);
+    return () => clearTimeout(t);
+  }, [vars, id, flash]);
 
   // Sinh kịch bản THEO LÔ (6 trang/lần) → sách 24 trang không bao giờ timeout.
   const genScript = async () => {
@@ -581,14 +605,6 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const setPage = (i: number, k: "text" | "illustration" | "prompt", v: string) => setPages((ps) => ps.map((p, idx) => idx === i ? { ...p, [k]: v } : p));
 
   const saveBible = async () => { const j = await api(`/api/books/${id}`, "PATCH", { bible }); flash(j.ok ? "✓ Bible saved" : "✗ " + (j.error ?? "Error")); };
-  const saveVars = async () => {
-    // Đồng bộ ảnh nhân vật chính (biến image đầu tiên) sang characterRefKey để tương thích bản cũ + tránh vẽ trùng ảnh.
-    const firstImg = vars.find((v) => v.type === "image" && v.imageKey);
-    const body: Record<string, unknown> = { vars };
-    if (firstImg?.imageKey) body.characterRefKey = firstImg.imageKey;
-    const j = await api(`/api/books/${id}`, "PATCH", body);
-    flash(j.ok ? "✓ Variables saved" : "✗ " + (j.error ?? "Error"));
-  };
   // 🎨 Học PHONG CÁCH VẼ từ ảnh mẫu → điền + LƯU thẳng vào Style Bible (Art style · Palette · Text rules).
   const analyzeStyle = async (files: FileList) => {
     const arr = Array.from(files).slice(0, 3);
@@ -651,7 +667,6 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   };
 
   // ---- COVER: lưu / ráp prompt / vẽ (lưu trước để bản mới nhất được dùng) ----
-  const saveCover = async () => { const j = await api(`/api/books/${id}`, "PATCH", { cover }); lastSavedCover.current = JSON.stringify(cover); flash(j.ok ? "✓ Cover saved" : "✗ " + (j.error ?? "Error")); };
   const lastSavedCover = useRef("");
   const autoSaveCover = async () => {
     const snap = JSON.stringify(cover);
@@ -769,20 +784,10 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       </StepCard>
 
       <StepCard n={2} title="Theme kit — Style Bible + Variables"
-        desc="AI builds it from the theme (character · outfit · style · colors · restrictions), then you tweak. This block is applied to EVERY page → keeps the character consistent."
-        right={<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <label style={{ ...btnGhost, display: "inline-flex", alignItems: "center", gap: 6, cursor: styleBusy ? "default" : "pointer", borderColor: "var(--blue)", color: "var(--blue)", opacity: styleBusy ? 0.6 : 1 }}>
-            🎨 {styleBusy ? "Reading style…" : "Match reference style"}
-            <input type="file" accept="image/*" multiple disabled={styleBusy} style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) analyzeStyle(e.target.files); e.target.value = ""; }} />
-          </label>
-          <button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : "✨ AI build from theme"}</button>
-        </div>}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px dashed var(--blue)", background: "#F5F9FF", borderRadius: 10, padding: "9px 12px", marginBottom: 10, fontSize: 12 }}>
-          <span style={{ fontSize: 15 }}>🎨</span>
-          <span><b style={{ color: "var(--blue)" }}>Tip:</b> to copy a specific look (e.g. a competitor's watercolor or kawaii style), click <b>“Match reference style”</b> above and upload one sample image — AI fills Art style · Palette · Text rules so every page matches it.</span>
-        </div>
-        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
-        <VarsPanel vars={vars} setVars={setVars} onSave={saveVars} bookId={id} flash={flash} />
+        desc="Style is auto-matched from the competitor images you add when creating the book. AI fills the rest from the theme; tweak anything below. This block is applied to EVERY page → keeps the character consistent."
+        right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : "✨ AI build from theme"}</button>}>
+        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} onPickStyle={analyzeStyle} styleBusy={styleBusy} />
+        <VarsPanel vars={vars} setVars={setVars} bookId={id} flash={flash} />
       </StepCard>
 
       <StepCard n={3} title="Script → Detailed prompt → Draw" desc="Generate the script per page, compose deep prompts, then draw. A failed page only needs redrawing on its own.">
@@ -836,7 +841,6 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
               </div>
               <textarea value={cover.prompt ?? ""} onChange={(e) => setCover((c) => ({ ...c, prompt: e.target.value }))} onBlur={autoSaveCover} rows={7} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
             </details>
-            <div><button style={{ ...btnGhost, fontSize: 11.5, padding: "5px 12px" }} onClick={saveCover}>Save cover</button></div>
           </div>
           <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
