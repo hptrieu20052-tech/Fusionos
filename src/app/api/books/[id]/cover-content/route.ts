@@ -25,10 +25,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const brief = (title.brief ?? {}) as { notes?: string };
   const bible = (title.bible ?? {}) as { artStyle?: string; palette?: string };
   try {
+    // Key biến TEXT của sách → AI phải viết title bằng placeholder {key}, không được điền tên thật.
+    const varKeys = (Array.isArray(title.vars) ? (title.vars as { key?: string; type?: string }[]) : [])
+      .filter((v) => v && (v.type ?? "text") !== "image" && String(v.key ?? "").trim())
+      .map((v) => String(v.key).trim());
     const gen = await generateBookCover(
       { name: title.name, occasion: title.occasion ?? undefined, audience: title.audience ?? undefined, angle: concept.angle, notes: brief.notes },
       bible,
-      { model: b?.model ? String(b.model) : undefined },
+      { model: b?.model ? String(b.model) : undefined, varKeys },
     );
     const next = { ...cover, text: gen.text || cover.text || title.name, brief: gen.brief || cover.brief || "" };
     await db.update(schema.bookTitles).set({ cover: next, updatedAt: new Date() }).where(eq(schema.bookTitles.id, params.id));

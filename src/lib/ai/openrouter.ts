@@ -138,9 +138,14 @@ Trả JSON đúng dạng: {"ideas":[{"name":"","hook":"","angle":"","usp":"","ou
 export async function generateBookCover(
   concept: { name: string; occasion?: string; audience?: string; angle?: string; notes?: string },
   bible?: { artStyle?: string; palette?: string } | null,
-  opts?: { model?: string },
+  opts?: { model?: string; varKeys?: string[] },
 ): Promise<{ text: string; brief: string }> {
-  const system = "You are a children's picture-book cover designer. From the theme, write the COVER title (baked on the front) and a wraparound cover SCENE brief. Reply ONLY as JSON, in ENGLISH. Keep the {name} placeholder if the story personalizes a child's name.";
+  // Placeholder theo ĐÚNG key biến của sách — CẤM điền tên thật (đổi biến sau này cover mới ăn theo).
+  const keys = (opts?.varKeys ?? []).filter(Boolean);
+  const phRule = keys.length
+    ? `Personalization placeholders available: ${keys.map((k) => `{${k}}`).join(", ")}. Wherever a personalized value (child's name…) appears in the title, you MUST write the placeholder (e.g. {${keys[0]}}) — NEVER a real example name, even if the theme/notes mention one.`
+    : "Keep the {name} placeholder if the story personalizes a child's name — never write a real example name.";
+  const system = "You are a children's picture-book cover designer. From the theme, write the COVER title (baked on the front) and a wraparound cover SCENE brief. Reply ONLY as JSON, in ENGLISH. " + phRule;
   const user = `Theme/title: "${concept.name}"
 Occasion: ${concept.occasion || "(infer)"}
 Audience: ${concept.audience || "young child / gift"}

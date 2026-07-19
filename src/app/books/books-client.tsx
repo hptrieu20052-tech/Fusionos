@@ -146,6 +146,10 @@ export default function BooksClient() {
   }, []);
 
   const [custom, setCustom] = useState<{ cloneId: string; masterId: string } | null>(null);
+  const [masterView, setMasterView] = useState<string | null>(null);
+  // Tab danh sách nâng lên parent — để "+ New Book" chỉ hiện ở tab New ideas.
+  const [tab, setTab] = useState<"ideas" | "custom">("ideas");
+  useEffect(() => { const v = lsGet("bs_list_tab"); if (v === "custom" || v === "ideas") setTab(v); }, []);
   const openDetail = async (id: string) => {
     const j = await api(`/api/books/${id}`);
     if (j.ok) setDetail(j as unknown as Detail); else flash("✗ " + (j.error ?? "Error"));
@@ -157,8 +161,8 @@ export default function BooksClient() {
         <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>Book Studio</h2>
         <span style={{ fontSize: 11, fontWeight: 700, color: "#7a3fb0", background: "#F3EAFB", border: "1px solid #E3D0F5", borderRadius: 999, padding: "2px 9px" }}>AI · Beta</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          {(detail || custom) && <button style={btnGhost} onClick={() => { setDetail(null); setCustom(null); loadList(); }}>← List</button>}
-          {!detail && !custom && <button style={btnBlue} onClick={() => setShowNew(true)}>+ New Book</button>}
+          {(detail || custom || masterView) && <button style={btnGhost} onClick={() => { setDetail(null); setCustom(null); setMasterView(null); loadList(); }}>← List</button>}
+          {!detail && !custom && !masterView && tab === "ideas" && <button style={btnBlue} onClick={() => setShowNew(true)}>+ New Book</button>}
         </div>
       </div>
       {detail && <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Script → Detailed prompt → Custom photo/name → Generate each page.</div>}
@@ -168,27 +172,21 @@ export default function BooksClient() {
         </div>
       )}
 
-      {custom ? <CustomizeView cloneId={custom.cloneId} masterId={custom.masterId} flash={flash} />
+      {custom ? <CustomizeView cloneId={custom.cloneId} masterId={custom.masterId} flash={flash} openFull={() => { const id = custom.cloneId; setCustom(null); openDetail(id); }} />
+        : masterView ? <MasterView id={masterView} flash={flash} openFull={() => { const id = masterView; setMasterView(null); openDetail(id); }} onCustomize={(cloneId, masterId) => { setMasterView(null); setCustom({ cloneId, masterId }); }} />
         : detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
-        : <ListView titles={titles} open={openDetail} reload={loadList} flash={flash} onCustomize={(cloneId, masterId) => setCustom({ cloneId, masterId })} />}
+        : <ListView titles={titles} tab={tab} setTab={setTab} open={openDetail} openMaster={(id) => setMasterView(id)} reload={loadList} flash={flash} onCustomize={(cloneId, masterId) => setCustom({ cloneId, masterId })} />}
 
       {showNew && <NewBookModal models={textModels} close={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); loadList(); openDetail(id); }} flash={flash} />}
     </div>
   );
 }
 
-function ListView({ titles, open, reload, flash, onCustomize }: { titles: Title[]; open: (id: string) => void; reload: () => void; flash: (m: string) => void; onCustomize?: (cloneId: string, masterId: string) => void }) {
-  const [tab, setTab] = useState<"ideas" | "custom">("ideas");
-  useEffect(() => { const v = lsGet("bs_list_tab"); if (v === "custom" || v === "ideas") setTab(v); }, []);
+function ListView({ titles, tab, setTab, open, openMaster, reload, flash, onCustomize }: { titles: Title[]; tab: "ideas" | "custom"; setTab: (t: "ideas" | "custom") => void; open: (id: string) => void; openMaster?: (id: string) => void; reload: () => void; flash: (m: string) => void; onCustomize?: (cloneId: string, masterId: string) => void }) {
   const del = async (t: Title) => {
     if (typeof window !== "undefined" && !window.confirm(`Delete book "${t.name}"? This cannot be undone.`)) return;
     const j = await api(`/api/books/${t.id}`, "DELETE");
     if (j.ok) { flash("✓ Book deleted"); reload(); } else flash("✗ " + (j.error ?? "Delete error"));
-  };
-  // Chuyển Draft ↔ Scale design.
-  const setKind = async (t: Title, kind: "master" | null) => {
-    const j = await api(`/api/books/${t.id}`, "PATCH", { kind });
-    if (j.ok) { flash(kind === "master" ? "✓ Moved to Custom books" : "✓ Moved back to New ideas"); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
   // Nhân bản từ mẫu → bản cho KHÁCH (giữ script/prompt/style; xoá tên/ảnh để điền của khách).
   const customize = async (t: Title) => {
@@ -202,24 +200,17 @@ function ListView({ titles, open, reload, flash, onCustomize }: { titles: Title[
 
   const row = (t: Title, master: boolean) => (
     <div key={t.id} style={{ ...btnGhost, cursor: "default", textAlign: "left", padding: "13px 15px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      <div onClick={() => open(t.id)} style={{ flex: 1, cursor: "pointer", minWidth: 180 }}>
+      {/* Click theo loại: master → màn master gọn · bản khách → màn customize 2 cột · book thường → editor đầy đủ */}
+      <div onClick={() => master && openMaster ? openMaster(t.id) : t.sourceId && onCustomize ? onCustomize(t.id, t.sourceId!) : open(t.id)} style={{ flex: 1, cursor: "pointer", minWidth: 180 }}>
         <div style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{[t.occasion, t.audience].filter(Boolean).join(" · ") || "—"}</div>
       </div>
       <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[t.status] ?? "#555", textTransform: "uppercase", letterSpacing: ".4px" }}>{t.status}</span>
       {master ? (
-        <>
-          <button onClick={() => customize(t)} title="Clone this design for a customer order: keeps script/prompts/style, clears name & photo for the new customer" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Customize for customer</button>
-          <button onClick={() => setKind(t, null)} title="Move back to New ideas" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12 }}>To New ideas</button>
-        </>
-      ) : (
-        <>
-          {t.sourceId && (
-            <button onClick={() => { if (onCustomize) onCustomize(t.id, t.sourceId!); }} title="Reopen the 2-column customize screen (original design vs personalized copy)" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Continue customize</button>
-          )}
-          <button onClick={() => setKind(t, "master")} title="Mark as a selling design — it moves to Custom books and becomes the master template for customer copies" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--blue)", borderColor: "var(--blue)" }}>To Custom books</button>
-        </>
-      )}
+        <button onClick={() => customize(t)} title="Clone this design for a customer order: keeps everything, clears name & photo for the new customer" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Customize for customer</button>
+      ) : t.sourceId ? (
+        <button onClick={() => { if (onCustomize) onCustomize(t.id, t.sourceId!); }} title="Reopen the 2-column customize screen (original design vs personalized copy)" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Continue customize</button>
+      ) : null}
       <button onClick={() => del(t)} title="Delete book" style={{ ...btnGhost, padding: "6px 11px", fontSize: 12, color: "var(--red)", borderColor: "var(--line)" }}>Delete</button>
     </div>
   );
@@ -238,13 +229,13 @@ function ListView({ titles, open, reload, flash, onCustomize }: { titles: Title[
         ))}
       </div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-        {tab === "custom" ? "Selling designs — master templates; customize a copy for each customer order." : "New books being built + customer copies in progress. When a design starts selling, promote it with “To Custom books”."}
+        {tab === "custom" ? "Selling designs — imported by Design ID; customize a copy for each customer order." : "New books being built + customer copies in progress."}
       </div>
       {tab === "custom" && <ImportDesignBar reload={reload} open={open} flash={flash} />}
       {tab === "custom"
         ? (masters.length
           ? <div style={{ display: "grid", gap: 10 }}>{masters.map((t) => row(t, true))}</div>
-          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books yet. <b>Import</b> an existing design by its Design ID above, or finish a book in <b>New ideas</b> and click <b>To Custom books</b>.</div>)
+          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books yet. <b>Import</b> an existing design by its Design ID above.</div>)
         : (drafts.length
           ? <div style={{ display: "grid", gap: 10 }}>{drafts.map((t) => row(t, false))}</div>
           : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No new ideas yet. Click <b>+ New Book</b> to start.</div>)}
@@ -579,7 +570,7 @@ function StepCard({ n, title, desc, right, children }: { n: number; title: strin
 }
 
 // ===== MÀN CUSTOM CHO KHÁCH: variables khách gửi → 2 CỘT (trái: design gốc · phải: gen mới chỉ thay biến) =====
-function CustomizeView({ cloneId, masterId, flash }: { cloneId: string; masterId: string; flash: (m: string) => void }) {
+function CustomizeView({ cloneId, masterId, flash, openFull }: { cloneId: string; masterId: string; flash: (m: string) => void; openFull?: () => void }) {
   const [master, setMaster] = useState<Detail | null>(null);
   const [clone, setClone] = useState<Detail | null>(null);
   const [vars, setVars] = useState<Var[]>([]);
@@ -692,7 +683,8 @@ function CustomizeView({ cloneId, masterId, flash }: { cloneId: string; masterId
 
   return (
     <div>
-      <StepCard n={1} title={`Customize: ${clone.title.name}`} desc={`Product: ${product.name} · base design on the left stays untouched — generate a personalized copy on the right.`}>
+      <StepCard n={1} title={`Customize: ${clone.title.name}`} desc={`Product: ${product.name} · base design on the left stays untouched — generate a personalized copy on the right.`}
+        right={openFull ? <button style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }} title="Open the full script/prompt editor for this copy" onClick={openFull}>Full editor</button> : undefined}>
         <VarsPanel vars={vars} setVars={setVars} bookId={cloneId} flash={flash} />
       </StepCard>
 
@@ -740,6 +732,89 @@ function CustomizeView({ cloneId, masterId, flash }: { cloneId: string; masterId
   );
 }
 type GenBlockUi = ReturnType<typeof genBlocks>[number];
+
+// ===== MÀN MASTER (Custom books) — gọn: biến GỐC + bộ ảnh design; KHÔNG lẫn UI script của New ideas =====
+function MasterView({ id, flash, openFull, onCustomize }: { id: string; flash: (m: string) => void; openFull: () => void; onCustomize: (cloneId: string, masterId: string) => void }) {
+  const [d, setD] = useState<Detail | null>(null);
+  const [vars, setVars] = useState<Var[]>([]);
+  const [busy, setBusy] = useState(false);
+  const lastVars = useRef("__init__");
+
+  useEffect(() => {
+    api(`/api/books/${id}`).then((j) => {
+      if (!j.ok) { flash("✗ " + (j.error ?? "Error")); return; }
+      const dd = j as unknown as Detail;
+      setD(dd);
+      const sv = (dd.title.vars ?? []).map((v) => ({ ...v, value: v.value ?? "" }));
+      setVars(sv); lastVars.current = JSON.stringify(sv);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // Tự lưu biến (debounce) — value ở đây là GIÁ TRỊ GỐC đang in trong design.
+  useEffect(() => {
+    const snap = JSON.stringify(vars);
+    if (lastVars.current === "__init__") { lastVars.current = snap; return; }
+    if (lastVars.current === snap) return;
+    const t = setTimeout(async () => {
+      lastVars.current = snap;
+      const j = await api(`/api/books/${id}`, "PATCH", { vars });
+      flash(j.ok ? "✓ Variables saved" : "✗ " + (j.error ?? "Error"));
+    }, 700);
+    return () => clearTimeout(t);
+  }, [vars, id, flash]);
+
+  const customize = async () => {
+    if (busy) return;
+    const customer = typeof window !== "undefined" ? (window.prompt("Customer name (for the copy's title):", "") ?? "") : "";
+    setBusy(true);
+    const j = await api(`/api/books/${id}/clone`, "POST", { customer });
+    setBusy(false);
+    if (j.ok) { flash("✓ Customer copy created — fill in the customer's variables, then Generate"); onCustomize(j.id as string, id); }
+    else flash("✗ " + (j.error ?? "Clone error"));
+  };
+
+  if (!d) return <div className="panel empty" style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</div>;
+  const product = getBookProduct(d.title.productKey);
+  const illus: Record<number, string> = {};
+  for (const [k, v] of Object.entries(d.assets ?? {})) if (v) illus[Number(k)] = v as string;
+  const slots: { no: number; label: string }[] = [
+    { no: 0, label: "Cover front" }, { no: -1, label: "Cover back" },
+    ...Array.from({ length: product.pageCount }, (_, i) => ({ no: i + 1, label: `Page ${i + 1}` })),
+  ];
+  const missing = slots.filter((s2) => !illus[s2.no]).length;
+
+  return (
+    <div>
+      <StepCard n={1} title={`Master design: ${d.title.name}`} desc={`Product: ${product.name} · this is the ORIGINAL — it never changes; each customer gets a personalized copy.`}
+        right={
+          <div style={{ display: "flex", gap: 8 }}>
+            <button style={{ ...btnGhost, padding: "7px 13px", fontSize: 12.5 }} title="Open the full script/prompt editor (for masters built in Book Studio)" onClick={openFull}>Full editor</button>
+            <button style={{ ...btnBlue, padding: "7px 14px", fontSize: 12.5, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={customize}>{busy ? "Cloning…" : "Customize for customer"}</button>
+          </div>
+        }>
+        <div style={{ border: "1px solid #F5E1B0", background: "#FFF9EC", color: "#8a6d00", borderRadius: 12, padding: "9px 13px", fontSize: 12, marginBottom: 10 }}>
+          Set each variable&apos;s <b>Value</b> to the ORIGINAL value printed in this design (e.g. name = &quot;Layla&quot;). When customizing, it gets replaced by the customer&apos;s value.
+        </div>
+        <VarsPanel vars={vars} setVars={setVars} bookId={id} flash={flash} />
+      </StepCard>
+
+      <StepCard n={2} title="Original design files" desc={missing ? `${slots.length - missing}/${slots.length} slots have an image — missing slots can't be customized yet (upload them to the source design and re-import, or draw them in the Full editor).` : `All ${slots.length} slots ready.`}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
+          {slots.map((s2) => (
+            <div key={s2.no} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 6, background: "#fff" }}>
+              {illus[s2.no]
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={illus[s2.no]} alt={s2.label} style={{ width: "100%", display: "block", borderRadius: 7, border: "1px solid var(--line)" }} />
+                : <div style={{ height: 90, borderRadius: 7, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 10.5 }}>missing</div>}
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--muted)", marginTop: 5, textAlign: "center" }}>{s2.label}</div>
+            </div>
+          ))}
+        </div>
+      </StepCard>
+    </div>
+  );
+}
 
 function DetailView({ detail, reload, flash, models }: { detail: Detail; reload: () => void; flash: (m: string) => void; models: { id: string; name: string }[] }) {
   const id = detail.title.id;
