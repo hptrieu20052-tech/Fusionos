@@ -249,8 +249,23 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
       concept: { hook: idea.hook, angle: idea.angle, usp: idea.usp, outline: idea.outline },
       brief: { ...brief, pages: product.pageCount }, productKey,
     });
+    if (!j.ok) { setBusy(false); flash("✗ " + (j.error ?? "Create error")); return; }
+    const newId = j.id as string;
+    // TỰ KHỚP PHONG CÁCH từ ảnh đối thủ ngay khi tạo → điền + lưu Style Bible (khỏi phải bấm thủ công).
+    if (refs.length) {
+      try {
+        const a = await api("/api/books/analyze-refs", "POST", { mode: "style", images: refs, notes: brief.notes });
+        if (a.ok && a.style) {
+          const s = a.style as { artStyle?: string; palette?: string; textStyle?: string; character?: string; mood?: string; summary?: string };
+          const art = [s.artStyle, s.character ? `Character rendering: ${s.character}` : "", s.mood ? `Mood: ${s.mood}` : ""].filter(Boolean).join(" ");
+          const nb: Bible = { ...DEFAULT_BIBLE, artStyle: art || DEFAULT_BIBLE.artStyle, palette: s.palette || DEFAULT_BIBLE.palette, textStyle: s.textStyle || DEFAULT_BIBLE.textStyle };
+          await api(`/api/books/${newId}`, "PATCH", { bible: nb });
+          flash(`✓ Style matched from your reference images${s.summary ? " · " + s.summary : ""}`);
+        }
+      } catch { /* lỗi phân tích style → bỏ qua, vẫn tạo sách */ }
+    }
     setBusy(false);
-    if (j.ok) onCreated(j.id as string); else flash("✗ " + (j.error ?? "Create error"));
+    onCreated(newId);
   };
 
   return (
@@ -335,30 +350,9 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
 // ===== Panel: STYLE BIBLE (khai báo 1 lần, ráp vào mọi trang) =====
 // Gọn: mặc định chỉ hiện phần hay chỉnh (nhân vật/trang phục/phong cách/màu). Phần khung cố định
 // (quy tắc chữ/cấm/khổ) giấu trong "Nâng cao" — AI đã điền sẵn, ít khi phải sửa.
-function BiblePanel({ bible, setBible, onSave, flash }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void; flash: (m: string) => void }) {
+function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void }) {
   const [open, setOpen] = useState(false);
   const [adv, setAdv] = useState(false);
-  const [styleBusy, setStyleBusy] = useState(false);
-  // Rút PHONG CÁCH VẼ từ ảnh mẫu (đối thủ / ảnh bạn thích) → điền thẳng Art style · Palette · Text rules.
-  const analyzeStyle = async (files: FileList) => {
-    const arr = Array.from(files).slice(0, 3);
-    setStyleBusy(true);
-    try {
-      const imgs: string[] = [];
-      for (const f of arr) {
-        const dataUrl: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f); });
-        imgs.push(await downscaleImage(dataUrl, 512));
-      }
-      const j = await api("/api/books/analyze-refs", "POST", { mode: "style", images: imgs });
-      if (j.ok && j.style) {
-        const s = j.style as { artStyle?: string; palette?: string; textStyle?: string; character?: string; mood?: string; summary?: string };
-        const art = [s.artStyle, s.character ? `Character rendering: ${s.character}` : "", s.mood ? `Mood: ${s.mood}` : ""].filter(Boolean).join(" ");
-        setBible({ ...bible, artStyle: art || bible.artStyle, palette: s.palette || bible.palette, textStyle: s.textStyle || bible.textStyle });
-        flash(`✓ Style captured${s.summary ? " · " + s.summary : ""} — review & Save Bible`);
-      } else flash("✗ " + (j.error ?? "Style analysis failed"));
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e).slice(0, 80)); }
-    setStyleBusy(false);
-  };
   const F = (k: keyof Bible, label: string, rows = 2, ph = "") => (
     <div>
       <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>{label}</div>
@@ -378,12 +372,6 @@ function BiblePanel({ bible, setBible, onSave, flash }: { bible: Bible; setBible
             <button style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }} onClick={() => setBible({ ...DEFAULT_BIBLE, ...bible, wardrobe: bible.wardrobe ?? "" })}>Load default</button>
             <button style={{ ...btnBlue, padding: "6px 12px", fontSize: 12, marginLeft: "auto" }} onClick={onSave}>Save Bible</button>
           </div>
-          <label style={{ border: "1px dashed var(--blue)", borderRadius: 10, padding: "9px 12px", display: "flex", alignItems: "center", gap: 8, cursor: styleBusy ? "default" : "pointer", background: "#F5F9FF", fontSize: 12 }}>
-            <span style={{ fontSize: 15 }}>🎨</span>
-            <span style={{ fontWeight: 800, color: "var(--blue)" }}>{styleBusy ? "Analyzing style…" : "Match a reference style"}</span>
-            <span style={{ color: "var(--muted)" }}>— upload a sample illustration; AI reads its look and fills Art style · Palette · Text rules to match.</span>
-            <input type="file" accept="image/*" multiple disabled={styleBusy} style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) analyzeStyle(e.target.files); e.target.value = ""; }} />
-          </label>
           {F("character", "Character (face lock)", 5, "face/hair/eyes features… + {age}")}
           {F("wardrobe", "Fixed outfit / props", 2, "e.g. teal star pajamas (leave empty if none)")}
           {F("artStyle", "Art style", 3)}
@@ -498,6 +486,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const [pages, setPages] = useState<Page[]>(detail.pages.map((p) => ({ page_no: p.pageNo, text: p.textTemplate ?? "", illustration: p.illustrationBrief ?? "", prompt: p.promptTemplate ?? "" })));
   const [busy, setBusy] = useState(false);
   const [busySetup, setBusySetup] = useState(false);
+  const [styleBusy, setStyleBusy] = useState(false);
   const [model, setModel] = useState("");
   // ---- Bible + Vars ----
   const [bible, setBible] = useState<Bible>(detail.title.bible ?? {});
@@ -548,9 +537,15 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       }
       if (acc.length) {
         flash(`✓ Script generated · ${acc.length} pages`);
+        // AUTO sinh TIÊU ĐỀ + BRIEF cho BÌA (nếu chưa nhập) → cover không còn trống.
+        let coverNow = cover;
+        try {
+          const jcov = await api(`/api/books/${id}/cover-content`, "POST", { model: model || undefined });
+          if (jcov.ok) { coverNow = { ...cover, text: String(jcov.text ?? cover.text ?? ""), brief: String(jcov.brief ?? cover.brief ?? "") }; setCover(coverNow); }
+        } catch { /* bỏ qua nếu lỗi */ }
         // AUTO ráp prompt chi tiết (cả cover + mọi trang) ngay sau khi có script → khỏi quên bước "Compose all".
         flash("🧱 Composing detailed prompts…");
-        await api(`/api/books/${id}`, "PATCH", { bible, cover });
+        await api(`/api/books/${id}`, "PATCH", { bible, cover: coverNow });
         const jc = await api(`/api/books/${id}/compose`, "POST", { baked });
         if (jc.ok) {
           const list = jc.prompts as { pageNo: number; prompt: string }[];
@@ -594,6 +589,29 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     const j = await api(`/api/books/${id}`, "PATCH", body);
     flash(j.ok ? "✓ Variables saved" : "✗ " + (j.error ?? "Error"));
   };
+  // 🎨 Học PHONG CÁCH VẼ từ ảnh mẫu → điền + LƯU thẳng vào Style Bible (Art style · Palette · Text rules).
+  const analyzeStyle = async (files: FileList) => {
+    const arr = Array.from(files).slice(0, 3);
+    setStyleBusy(true);
+    try {
+      const imgs: string[] = [];
+      for (const f of arr) {
+        const dataUrl: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f); });
+        imgs.push(await downscaleImage(dataUrl, 512));
+      }
+      const j = await api("/api/books/analyze-refs", "POST", { mode: "style", images: imgs });
+      if (j.ok && j.style) {
+        const s = j.style as { artStyle?: string; palette?: string; textStyle?: string; character?: string; mood?: string; summary?: string };
+        const art = [s.artStyle, s.character ? `Character rendering: ${s.character}` : "", s.mood ? `Mood: ${s.mood}` : ""].filter(Boolean).join(" ");
+        const nb: Bible = { ...bible, artStyle: art || bible.artStyle, palette: s.palette || bible.palette, textStyle: s.textStyle || bible.textStyle };
+        setBible(nb);
+        await api(`/api/books/${id}`, "PATCH", { bible: nb });
+        flash(`✓ Style captured & saved${s.summary ? " · " + s.summary : ""}`);
+      } else flash("✗ " + (j.error ?? "Style analysis failed"));
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e).slice(0, 80)); }
+    setStyleBusy(false);
+  };
+
   // ✨ AI tự dựng Style Bible + bộ biến THEO CHỦ ĐỀ (giải bài toán "1 form cho vô số chủ đề").
   const setupAI = async () => {
     setBusySetup(true); lsSet("bs_text_model", model);
@@ -700,7 +718,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const renderSpread = (L: number, iL: number, R: number, iR: number) => {
     const lp = pages[iL]; const rp = pages[iR]; const busy = busyPage === L || busyPage === R;
     return (
-      <div key={`sp${L}-${R}`} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 320px", gap: 12, background: "#F6FAFF" }}>
+      <div key={`sp${L}-${R}`} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 320px", gap: 12, background: "#fff" }}>
         <div style={{ fontWeight: 800, color: "var(--blue)", fontSize: 12, lineHeight: 1.2 }}>#{L}<br />–{R}<div style={{ fontSize: 8.5, fontWeight: 700, marginTop: 3 }}>SPREAD</div></div>
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ fontWeight: 700, fontSize: 12 }}>Pages {L}–{R} · one connected illustration</div>
@@ -752,8 +770,18 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
 
       <StepCard n={2} title="Theme kit — Style Bible + Variables"
         desc="AI builds it from the theme (character · outfit · style · colors · restrictions), then you tweak. This block is applied to EVERY page → keeps the character consistent."
-        right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : "✨ AI build from theme"}</button>}>
-        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} flash={flash} />
+        right={<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <label style={{ ...btnGhost, display: "inline-flex", alignItems: "center", gap: 6, cursor: styleBusy ? "default" : "pointer", borderColor: "var(--blue)", color: "var(--blue)", opacity: styleBusy ? 0.6 : 1 }}>
+            🎨 {styleBusy ? "Reading style…" : "Match reference style"}
+            <input type="file" accept="image/*" multiple disabled={styleBusy} style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) analyzeStyle(e.target.files); e.target.value = ""; }} />
+          </label>
+          <button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : "✨ AI build from theme"}</button>
+        </div>}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px dashed var(--blue)", background: "#F5F9FF", borderRadius: 10, padding: "9px 12px", marginBottom: 10, fontSize: 12 }}>
+          <span style={{ fontSize: 15 }}>🎨</span>
+          <span><b style={{ color: "var(--blue)" }}>Tip:</b> to copy a specific look (e.g. a competitor's watercolor or kawaii style), click <b>“Match reference style”</b> above and upload one sample image — AI fills Art style · Palette · Text rules so every page matches it.</span>
+        </div>
+        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
         <VarsPanel vars={vars} setVars={setVars} onSave={saveVars} bookId={id} flash={flash} />
       </StepCard>
 
@@ -789,7 +817,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       )}
 
       {pages.length > 0 && (
-        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 10, background: "#FFFCF3", display: "grid", gridTemplateColumns: "34px 1fr 320px", gap: 12 }}>
+        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 10, background: "#fff", display: "grid", gridTemplateColumns: "34px 1fr 320px", gap: 12 }}>
           <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 16 }}>📕</div>
           <div style={{ display: "grid", gap: 8 }}>
             <div style={{ fontWeight: 800, fontSize: 13 }}>Cover — one wraparound ({product.coverW}×{product.coverH}px → cover_back + cover_front)</div>

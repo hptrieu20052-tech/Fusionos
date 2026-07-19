@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
   // ===== CHẾ ĐỘ "STYLE": rút PHONG CÁCH VẼ từ ảnh mẫu → điền thẳng vào Style Bible =====
   if (b?.mode === "style") {
     const sysS = "You are an expert children's-book art director. Study the reference illustration(s) VERY carefully and describe the VISUAL STYLE precisely enough that another artist could reproduce it on new pages. Reply ONLY as JSON. Answer in ENGLISH.";
-    const userS = `There are ${imgs.length} reference image(s) attached${b?.notes ? ` (context: ${b.notes})` : ""}. Extract the shared drawing style (ignore the specific subject/characters). Return EXACTLY this JSON — each value a concrete, reusable instruction, no vague adjectives alone:
+    const userS = `There are ${imgs.length} reference image(s) attached${b?.notes ? ` (context: ${b.notes})` : ""}. These may be PRODUCT MOCKUP PHOTOS (a printed book held by a child in a room). Analyze ONLY the printed ILLUSTRATION/artwork on the book cover or page — IGNORE the real photograph around it (the child, hands, room, blanket, camera lighting). Extract the shared DRAWING style of that artwork (ignore the specific subject/characters). Return EXACTLY this JSON — each value a concrete, reusable instruction, no vague adjectives alone:
 {
   "artStyle": "medium + linework + shading + rendering + lighting (e.g. 'soft watercolor storybook painting, minimal or no outlines, gentle color washes, dreamy diffused light, subtle paper texture')",
   "palette": "3-6 dominant colors, comma separated",

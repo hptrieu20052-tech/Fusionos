@@ -19,10 +19,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const b = await req.json().catch(() => ({}));
   const concept = (title.concept ?? {}) as { angle?: string };
   const brief = (title.brief ?? {}) as { notes?: string };
+  // Nếu Bible đã có PHONG CÁCH (khớp từ ảnh mẫu / seller sửa tay) → giữ nguyên, AI chỉ dựng nhân vật/biến/cấm.
+  const cur = (title.bible ?? {}) as { artStyle?: string; palette?: string; textStyle?: string };
+  const keepStyle = { artStyle: cur.artStyle, palette: cur.palette, textStyle: cur.textStyle };
   try {
     const setup = await generateBookSetup(
       { name: title.name, occasion: title.occasion ?? undefined, audience: title.audience ?? undefined, angle: concept.angle, notes: brief.notes },
-      { model: b?.model ? String(b.model) : undefined },
+      { model: b?.model ? String(b.model) : undefined, keepStyle },
     );
     // Giữ lại value cũ nếu biến trùng key (không xoá dữ liệu bạn đã điền).
     const oldVars = Array.isArray(title.vars) ? (title.vars as { key: string; value?: string }[]) : [];

@@ -130,6 +130,31 @@ Trả JSON đúng dạng: {"ideas":[{"name":"","hook":"","angle":"","usp":"","ou
   return (out.ideas ?? []).map((i) => ({ name: i.name ?? "", hook: i.hook ?? "", angle: i.angle ?? "", usp: i.usp ?? "", outline: Array.isArray(i.outline) ? i.outline : [] }));
 }
 
+// BÌA: sinh TIÊU ĐỀ (baked mặt trước) + BRIEF cảnh wraparound từ chủ đề + phong cách (Bible).
+export async function generateBookCover(
+  concept: { name: string; occasion?: string; audience?: string; angle?: string; notes?: string },
+  bible?: { artStyle?: string; palette?: string } | null,
+  opts?: { model?: string },
+): Promise<{ text: string; brief: string }> {
+  const system = "You are a children's picture-book cover designer. From the theme, write the COVER title (baked on the front) and a wraparound cover SCENE brief. Reply ONLY as JSON, in ENGLISH. Keep the {name} placeholder if the story personalizes a child's name.";
+  const user = `Theme/title: "${concept.name}"
+Occasion: ${concept.occasion || "(infer)"}
+Audience: ${concept.audience || "young child / gift"}
+Angle: ${concept.angle || ""}
+Notes: ${concept.notes || ""}
+Art style: ${bible?.artStyle || "(as set)"}
+Palette: ${bible?.palette || ""}
+
+Return EXACTLY:
+{
+  "text": "the cover TITLE to print on the front — short, warm; use {name} where the child's name goes (e.g. \\"God Loves {name} So Much\\"). 1 line, optional short subtitle.",
+  "brief": "ONE continuous wraparound scene. RIGHT half = front: the hero (warm, magical) + a calm clear area for the title. LEFT half = back: the SAME scenery continuing seamlessly, no text, no extra characters. Match the art style & palette above."
+}`;
+  const out = await orChatJSON<{ text?: unknown; brief?: unknown }>(system, user, { maxTokens: 500, model: opts?.model, temperature: 0.6 });
+  const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : String(v)).trim();
+  return { text: str(out?.text).slice(0, 400), brief: str(out?.brief).slice(0, 800) };
+}
+
 export type BookScriptPage = { page_no: number; text: string; illustration: string };
 
 // KỊCH BẢN: concept → lời văn + brief từng trang. Hỗ trợ sinh THEO LÔ (from..to) để sách nhiều trang không timeout.
@@ -200,7 +225,7 @@ export type BookSetup = { bible: BookBible; vars: { key: string; label: string; 
 
 // AI TỰ DỰNG Style Bible + bộ biến TỪ CHỦ ĐỀ. Đây là lời giải "1 form cho vô số chủ đề":
 // form chỉ nhận mô tả chủ đề, AI sinh phần riêng (nhân vật/trang phục/màu/cấm + biến hợp chủ đề).
-export async function generateBookSetup(concept: { name: string; occasion?: string; audience?: string; angle?: string; notes?: string }, opts?: { model?: string }): Promise<BookSetup> {
+export async function generateBookSetup(concept: { name: string; occasion?: string; audience?: string; angle?: string; notes?: string }, opts?: { model?: string; keepStyle?: { artStyle?: string; palette?: string; textStyle?: string } }): Promise<BookSetup> {
   const system = "Bạn là art director sách tranh thiếu nhi personalized (in KDP/Story Book). Từ CHỦ ĐỀ, dựng 'Style Bible' (khối mô tả khoá nhân vật + phong cách để MỌI trang nhất quán) và đề xuất bộ BIẾN cá nhân hoá HỢP CHỦ ĐỀ. Trả lời DUY NHẤT bằng JSON. Mọi trường trong bible viết bằng TIẾNG ANH (để đưa thẳng vào prompt vẽ); label của biến có thể tiếng Việt.";
   const user = `Chủ đề: "${concept.name}".
 Dịp/ngách: ${concept.occasion || "(tự suy luận)"}
@@ -239,6 +264,11 @@ QUY TẮC BIẾN (quan trọng):
     textStyle: rb.textStyle?.trim() || d.textStyle,
     restrictions: rb.restrictions?.trim() || d.restrictions,
   };
+  // GIỮ phong cách đã KHOÁ từ ảnh mẫu (Match reference style) — không để AI vẽ lại style khác.
+  const ks = opts?.keepStyle;
+  if (ks?.artStyle?.trim()) bible.artStyle = ks.artStyle.trim();
+  if (ks?.palette?.trim()) bible.palette = ks.palette.trim();
+  if (ks?.textStyle?.trim()) bible.textStyle = ks.textStyle.trim();
   const seen = new Set<string>();
   const vars = (Array.isArray(out?.vars) ? out.vars : [])
     .map((v) => ({ key: String(v?.key ?? "").replace(/[^a-zA-Z0-9_]/g, ""), label: String(v?.label ?? v?.key ?? ""), type: (v?.type === "image" ? "image" : "text") as "text" | "image" }))
