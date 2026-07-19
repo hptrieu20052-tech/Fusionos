@@ -169,7 +169,7 @@ Outline (story arc):
 ${(concept.outline ?? []).map((o, i) => `${i + 1}. ${o}`).join("\n") || "(develop freely)"}
 
 This book has ${total} pages total. Generate ONLY pages ${from} to ${to} (${to - from + 1} pages), consistent with the outline arc and previous pages.
-- Insert personalization variables as {${vars.join("}, {")}} (e.g. {name}) in the text where natural.
+- Insert personalization variables as {${vars.join("}, {")}} (e.g. {name}) in the text where natural. Use ONLY these placeholders — NEVER invent others (no {photo}, {image}, {petPhoto}…; photos are drawing references, not text).
 - text: ENGLISH, 1–3 short sentences per page, warm and child-friendly.
 - illustration: ENGLISH, CONCISE 1–2 sentences (setting · main character pose/emotion · key props · mood). Leave a calm area for a text caption. Do NOT describe any text/name drawn in the scene.
 
@@ -316,20 +316,23 @@ export function buildMasterPrompt(opts: { bookName: string; bible?: BookBible | 
 
 // Thay biến cá nhân hoá vào prompt/chữ. Nhận {key}/[key], {label}/[label], và các PLACEHOLDER AI hay tự đặt
 // như [Child's Name], {childName}, [Pet's Name]… (không phân biệt hoa/thường, dấu nháy, gạch dưới).
-export function resolveVars(tpl: string, vars: { key: string; value?: string; label?: string }[] | null | undefined): string {
+export function resolveVars(tpl: string, vars: { key: string; value?: string; label?: string; type?: string }[] | null | undefined): string {
   let out = tpl ?? "";
   const list = vars ?? [];
   const norm = (s: string) => String(s ?? "").toLowerCase().replace(/['’`]/g, "").replace(/[_\s]+/g, " ").trim();
 
   // 1) Thay theo {key}/[key] và {label}/[label].
+  //    Biến ẢNH ({photo}, {dadPhoto}…) là reference vẽ — nếu lỡ lọt vào text/prompt thì XÓA token (kèm dòng trống thừa), không để chữ "{photo}" bị nướng vào tranh.
   for (const v of list) {
+    const isImage = v.type === "image";
     const val = String(v.value ?? "").trim();
-    if (!val) continue;
+    if (!isImage && !val) continue;
     for (const token of [v.key, v.label]) {
       const t = String(token ?? "").trim();
       if (!t) continue;
       const esc = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      out = out.replace(new RegExp(`[\\{\\[]\\s*${esc}\\s*[\\}\\]]`, "gi"), () => val);
+      if (isImage) out = out.replace(new RegExp(`[ \\t]*[\\{\\[]\\s*${esc}\\s*[\\}\\]][ \\t]*\\n?`, "gi"), "");
+      else out = out.replace(new RegExp(`[\\{\\[]\\s*${esc}\\s*[\\}\\]]`, "gi"), () => val);
     }
   }
 

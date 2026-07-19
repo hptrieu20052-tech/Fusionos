@@ -542,7 +542,8 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   // Sinh kịch bản THEO LÔ (6 trang/lần) → sách 24 trang không bao giờ timeout.
   const genScript = async () => {
     setBusy(true); lsSet("bs_text_model", model);
-    const keys = vars.map((v) => v.key).filter(Boolean);
+    // Chỉ đưa biến CHỮ cho AI viết văn — biến ẢNH ({photo}…) là reference vẽ, không được chèn vào text.
+    const keys = vars.filter((v) => v.type !== "image").map((v) => v.key).filter(Boolean);
     const CHUNK = 6;
     let from = 1, total = 999;
     const acc: Page[] = [];
