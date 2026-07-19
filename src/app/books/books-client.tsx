@@ -5,10 +5,11 @@ import { BOOK_PRODUCTS, getBookProduct, genBlocks } from "@/lib/book-products";
 type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; updatedAt: string };
 type Idea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 type Bible = { format?: string; character?: string; wardrobe?: string; artStyle?: string; palette?: string; textStyle?: string; restrictions?: string };
+type Cover = { text?: string; brief?: string; prompt?: string };
 type Var = { key: string; label?: string; value?: string; type?: "text" | "image"; imageKey?: string; imageUrl?: string };
 type Page = { page_no: number; text: string; illustration: string; prompt?: string };
 type Detail = {
-  title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefKey?: string | null; characterRefUrl?: string | null; stylePrompt?: string | null; bible?: Bible | null; vars?: Var[] | null; productKey?: string | null };
+  title: { id: string; name: string; status: string; occasion: string | null; audience: string | null; concept: unknown; characterRefKey?: string | null; characterRefUrl?: string | null; stylePrompt?: string | null; bible?: Bible | null; vars?: Var[] | null; productKey?: string | null; cover?: Cover | null };
   pages: { pageNo: number; textTemplate: string | null; illustrationBrief: string | null; promptTemplate?: string | null }[];
   assets?: Record<number, string | null>;
 };
@@ -253,7 +254,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,35,.5)", zIndex: 50, display: "grid", placeItems: "center", padding: 16 }} onClick={close}>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,35,.5)", zIndex: 1000, display: "grid", placeItems: "center", padding: 16 }} onClick={close}>
       <div style={{ background: "#fff", borderRadius: 14, width: "min(720px,100%)", maxHeight: "90vh", overflow: "auto", padding: 20 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
           <h3 style={{ fontSize: 16, fontWeight: 800, margin: 0 }}>New Book — Ideas</h3>
@@ -300,15 +301,15 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
             )}
             {refs.length > 0 && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Images are analyzed in a separate step (vision model) then fed into ideas. If analysis fails/slows, ideas are still generated from the description.</div>}
           </div>
-          <details style={{ fontSize: 12 }}>
-            <summary style={{ cursor: "pointer", color: "var(--muted)", fontWeight: 600 }}>⚙ Options (idea count · AI model)</summary>
-            <div style={{ display: "grid", gap: 10, marginTop: 8 }}>
+          <div style={{ fontSize: 12, borderTop: "1px solid var(--line)", paddingTop: 12 }}>
+            <div style={{ color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>⚙ Options</div>
+            <div style={{ display: "grid", gap: 10 }}>
               <label style={{ fontSize: 12, fontWeight: 600, width: 150 }}>Idea count
                 <input type="number" style={{ ...inp, marginTop: 4 }} value={brief.count} onChange={(e) => setBrief({ ...brief, count: Number(e.target.value) || 4 })} />
               </label>
               <ModelPicker models={models} value={model} onChange={setModel} label="AI for ideas / script" />
             </div>
-          </details>
+          </div>
         </div>
         <button style={{ ...btnBlue, marginTop: 14, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={gen}>{busy ? "Thinking…" : "✨ Generate ideas"}</button>
 
@@ -473,6 +474,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const [model, setModel] = useState("");
   // ---- Bible + Vars ----
   const [bible, setBible] = useState<Bible>(detail.title.bible ?? {});
+  const [cover, setCover] = useState<Cover>(detail.title.cover ?? {});
   const [vars, setVars] = useState<Var[]>(seedImageVar(detail.title.vars && detail.title.vars.length ? detail.title.vars : DEFAULT_VARS, detail.title.characterRefKey, detail.title.characterRefUrl));
   const baked = true; // mặc định AI vẽ chữ vào ảnh (bỏ toggle)
   // ---- Gen Image state ----
@@ -482,16 +484,15 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   const [busyPage, setBusyPage] = useState<number | null>(null);
 
   const previewName = (vars.find((v) => v.key === "name")?.value || "Emma");
-  // Bố cục sản phẩm: biết trang nào ghép spread (vẽ nối rồi cắt đôi) để hiện nhãn.
+  // Bố cục sản phẩm (khoá khổ + cách ghép spread) — dùng để gom thẻ trang.
   const product = getBookProduct(detail.title.productKey);
-  const spreadMate: Record<number, number> = {};
-  for (const blk of genBlocks(product)) if (blk.type === "spread") { spreadMate[blk.pages[0]] = blk.pages[1]; spreadMate[blk.pages[1]] = blk.pages[0]; }
 
   useEffect(() => { setModel(lsGet("bs_text_model")); setImgModel(lsGet("bs_image_model")); }, []);
   useEffect(() => { api("/api/books/models?type=image").then((j) => { if (j.ok) setImgModels((j.models as { id: string; name: string }[]) ?? []); }); }, []);
   // Đồng bộ khi detail reload
   useEffect(() => {
     setBible(detail.title.bible ?? {});
+    setCover(detail.title.cover ?? {});
     setVars(seedImageVar(detail.title.vars && detail.title.vars.length ? detail.title.vars : DEFAULT_VARS, detail.title.characterRefKey, detail.title.characterRefUrl));
     const m: Record<number, string> = {};
     for (const [k, v] of Object.entries(detail.assets ?? {})) if (v) m[Number(k)] = v as string;
@@ -518,7 +519,21 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
         flash(`✍️ Writing pages ${Math.min(acc.length, total)}/${total}…`);
         from = to + 1;
       }
-      if (acc.length) flash(`✓ Script generated · ${acc.length} pages`);
+      if (acc.length) {
+        flash(`✓ Script generated · ${acc.length} pages`);
+        // AUTO ráp prompt chi tiết (cả cover + mọi trang) ngay sau khi có script → khỏi quên bước "Compose all".
+        flash("🧱 Composing detailed prompts…");
+        await api(`/api/books/${id}`, "PATCH", { bible, cover });
+        const jc = await api(`/api/books/${id}/compose`, "POST", { baked });
+        if (jc.ok) {
+          const list = jc.prompts as { pageNo: number; prompt: string }[];
+          const map = new Map(list.map((x) => [x.pageNo, x.prompt]));
+          setPages((ps) => ps.map((p) => ({ ...p, prompt: map.get(p.page_no) ?? p.prompt })));
+          const cp = list.find((x) => x.pageNo === 0);
+          if (cp) setCover((c) => ({ ...c, prompt: cp.prompt }));
+          flash(`✓ Ready · ${acc.length} pages + cover prompts composed`);
+        }
+      }
     } finally {
       setBusy(false);
       reload();
@@ -559,13 +574,16 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
   // Ráp prompt chi tiết cho MỌI trang (deterministic, nhanh — không gọi model ảnh nên không quá tải).
   const composeAll = async () => {
     setBusy(true);
-    await api(`/api/books/${id}`, "PATCH", { bible });
+    await api(`/api/books/${id}`, "PATCH", { bible, cover });
     const j = await api(`/api/books/${id}/compose`, "POST", { baked });
     setBusy(false);
     if (j.ok) {
-      const map = new Map((j.prompts as { pageNo: number; prompt: string }[]).map((x) => [x.pageNo, x.prompt]));
+      const list = j.prompts as { pageNo: number; prompt: string }[];
+      const map = new Map(list.map((x) => [x.pageNo, x.prompt]));
       setPages((ps) => ps.map((p) => ({ ...p, prompt: map.get(p.page_no) ?? p.prompt })));
-      flash("✓ Prompts composed");
+      const cp = list.find((x) => x.pageNo === 0);
+      if (cp) setCover((c) => ({ ...c, prompt: cp.prompt }));
+      flash("✓ Prompts composed (cover + pages)");
     } else flash("✗ " + (j.error ?? "Compose error"));
   };
   // Ráp prompt chi tiết cho 1 trang. Lưu Bible trước để dùng bản mới nhất.
@@ -575,6 +593,16 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     if (j.ok) { const pr = (j.prompts as { prompt: string }[])[0]?.prompt ?? ""; setPage(i, "prompt", pr); flash(`✓ Prompt composed · page ${pageNo}`); }
     else flash("✗ " + (j.error ?? "Error"));
   };
+
+  // ---- COVER: lưu / ráp prompt / vẽ (lưu trước để bản mới nhất được dùng) ----
+  const saveCover = async () => { const j = await api(`/api/books/${id}`, "PATCH", { cover }); flash(j.ok ? "✓ Cover saved" : "✗ " + (j.error ?? "Error")); };
+  const composeCover = async () => {
+    await api(`/api/books/${id}`, "PATCH", { cover });
+    const j = await api(`/api/books/${id}/compose`, "POST", { pageNo: 0, baked });
+    if (j.ok) { const pr = (j.prompts as { pageNo: number; prompt: string }[]).find((x) => x.pageNo === 0)?.prompt ?? ""; setCover((c) => ({ ...c, prompt: pr })); flash("✓ Cover prompt composed"); }
+    else flash("✗ " + (j.error ?? "Error"));
+  };
+  const drawCover = async () => { await api(`/api/books/${id}`, "PATCH", { cover }); await illustrate(0); };
 
   const illustrate = async (pageNo: number) => {
     setBusyPage(pageNo); lsSet("bs_image_model", imgModel);
@@ -590,6 +618,83 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       const map = (j.urls as Record<string, string> | undefined) ?? { [pageNo]: j.url as string };
       setIllus((m) => ({ ...m, ...Object.fromEntries(Object.entries(map).map(([k, v]) => [Number(k), v as string])) }));
     } else flash(`✗ ${pageNo === 0 ? "cover" : "page " + pageNo}: ` + (j.error ?? "Draw error"));
+  };
+
+  // ---- Render 1 TRANG ĐƠN (bố cục gốc) ----
+  const renderSingle = (p: Page, i: number) => (
+    <div key={`s${p.page_no}`} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 172px", gap: 12 }}>
+      <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 13 }}>#{p.page_no}</div>
+      <div style={{ display: "grid", gap: 8 }}>
+        <div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Text (can insert {"{name}"})</div>
+          <textarea value={p.text} onChange={(e) => setPage(i, "text", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
+        </div>
+        <div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Illustration brief (scene)</div>
+          <textarea value={p.illustration} onChange={(e) => setPage(i, "illustration", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
+        </div>
+        <details>
+          <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>Detailed prompt {p.prompt ? "✓" : "(not composed)"} — click to view/edit</summary>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
+            <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(i, p.page_no)}>🧱 Recompose this prompt</button>
+          </div>
+          <textarea value={p.prompt ?? ""} onChange={(e) => setPage(i, "prompt", e.target.value)} rows={8} placeholder="Click 🧱 Compose to auto-generate, or type a gold-standard prompt…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+        </details>
+      </div>
+      <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
+        {illus[p.page_no]
+          ? <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={illus[p.page_no]} alt={`p${p.page_no}`} style={{ width: "100%", display: "block" }} /></div>
+          : <div style={{ height: 110, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Not drawn</div>}
+        <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Drawing…" : illus[p.page_no] ? "↻ Redraw" : "🎨 Draw"}</button>
+      </div>
+    </div>
+  );
+
+  // ---- Render 1 CẶP SPREAD (nạp cả 2 trang, vẽ 1 lần LIỀN MẠCH rồi cắt đôi) ----
+  const renderSpread = (L: number, iL: number, R: number, iR: number) => {
+    const lp = pages[iL]; const rp = pages[iR]; const busy = busyPage === L || busyPage === R;
+    return (
+      <div key={`sp${L}-${R}`} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 320px", gap: 12, background: "#F6FAFF" }}>
+        <div style={{ fontWeight: 800, color: "var(--blue)", fontSize: 12, lineHeight: 1.2 }}>#{L}<br />–{R}<div style={{ fontSize: 8.5, fontWeight: 700, marginTop: 3 }}>SPREAD</div></div>
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 12 }}>Pages {L}–{R} · one connected illustration</div>
+          <div>
+            <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Illustration brief — ONE continuous scene across both pages</div>
+            <textarea value={lp.illustration} onChange={(e) => setPage(iL, "illustration", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} placeholder="Describe ONE scene spanning the whole spread; it will flow across the gutter." />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Left text · #{L}</div>
+              <textarea value={lp.text} onChange={(e) => setPage(iL, "text", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Right text · #{R}</div>
+              <textarea value={rp.text} onChange={(e) => setPage(iR, "text", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
+            </div>
+          </div>
+          <details>
+            <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>Detailed prompt {lp.prompt ? "✓" : "(not composed)"} — click to view/edit</summary>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
+              <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(iL, L)}>🧱 Recompose spread prompt</button>
+            </div>
+            <textarea value={lp.prompt ?? ""} onChange={(e) => setPage(iL, "prompt", e.target.value)} rows={8} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+          </details>
+        </div>
+        <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+            {([[L, `Left · #${L}`], [R, `Right · #${R}`]] as [number, string][]).map(([no, label]) => (
+              <div key={no} style={{ display: "grid", gap: 4 }}>
+                <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</div>
+                {illus[no]
+                  ? <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={illus[no]} alt={label} style={{ width: "100%", display: "block" }} /></div>
+                  : <div style={{ height: 80, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 10.5 }}>Not drawn</div>}
+              </div>
+            ))}
+          </div>
+          <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => illustrate(L)}>{busy ? "Drawing…" : (illus[L] || illus[R]) ? "↻ Redraw spread" : "🎨 Draw spread (both pages)"}</button>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -638,69 +743,64 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       )}
 
       {pages.length > 0 && (
-        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 10, background: "#FFFCF3" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 16 }}>📕</span>
+        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 10, background: "#FFFCF3", display: "grid", gridTemplateColumns: "34px 1fr 320px", gap: 12 }}>
+          <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 16 }}>📕</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            <div style={{ fontWeight: 800, fontSize: 13 }}>Cover — one wraparound ({product.coverW}×{product.coverH}px → cover_back + cover_front)</div>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 13.5 }}>Cover — one wraparound ({product.coverW}×{product.coverH}px)</div>
-              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>Drawn as one continuous scene, then split into <b>cover_back</b> (left) + <b>cover_front</b> (right, with title).</div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Title text (baked on the front · can insert {"{name}"})</div>
+              <textarea value={cover.text ?? ""} onChange={(e) => setCover((c) => ({ ...c, text: e.target.value }))} rows={2} placeholder={detail.title.name} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
             </div>
-            <button style={{ ...btnBlue, fontSize: 11.5, padding: "7px 12px", marginLeft: "auto", opacity: (busyPage === 0) ? 0.6 : 1 }} disabled={busyPage === 0} onClick={() => illustrate(0)}>{busyPage === 0 ? "Drawing…" : (illus[0] || illus[-1]) ? "↻ Redraw cover" : "🎨 Draw cover (front + back)"}</button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {([[-1, "Back (left)"], [0, "Front (right · title)"]] as [number, string][]).map(([no, label]) => (
-              <div key={no} style={{ display: "grid", gap: 4 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</div>
-                {illus[no]
-                  ? <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={illus[no]} alt={label} style={{ width: "100%", display: "block" }} /></div>
-                  : <div style={{ height: 96, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Not drawn</div>}
+            <div>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Illustration brief (wraparound scene — front on right, back continues on left)</div>
+              <textarea value={cover.brief ?? ""} onChange={(e) => setCover((c) => ({ ...c, brief: e.target.value }))} rows={2} placeholder="e.g. Sunset ocean with a lighthouse and sailboat; hero + pet on the right, the same seascape continuing calmly on the left." style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
+            </div>
+            <details>
+              <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>Detailed prompt {cover.prompt ? "✓" : "(not composed)"} — click to view/edit</summary>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
+                <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={composeCover}>🧱 Recompose cover prompt</button>
               </div>
-            ))}
+              <textarea value={cover.prompt ?? ""} onChange={(e) => setCover((c) => ({ ...c, prompt: e.target.value }))} rows={7} placeholder="Auto-composed with the script, or click 🧱 to compose now…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
+            </details>
+            <div><button style={{ ...btnGhost, fontSize: 11.5, padding: "5px 12px" }} onClick={saveCover}>Save cover</button></div>
+          </div>
+          <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+              {([[-1, "Back (left)"], [0, "Front (right · title)"]] as [number, string][]).map(([no, label]) => (
+                <div key={no} style={{ display: "grid", gap: 4 }}>
+                  <div style={{ fontSize: 9.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</div>
+                  {illus[no]
+                    ? <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={illus[no]} alt={label} style={{ width: "100%", display: "block" }} /></div>
+                    : <div style={{ height: 80, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 10.5 }}>Not drawn</div>}
+                </div>
+              ))}
+            </div>
+            <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === 0) ? 0.6 : 1 }} disabled={busyPage === 0} onClick={drawCover}>{busyPage === 0 ? "Drawing…" : (illus[0] || illus[-1]) ? "↻ Redraw cover" : "🎨 Draw cover (front + back)"}</button>
           </div>
         </div>
       )}
 
       {pages.length === 0 ? <div className="panel empty" style={{ padding: 24, textAlign: "center", color: "var(--muted)" }}>No script yet. Click <b>Generate script</b> to have AI write each page.</div>
-        : (
-          <div style={{ display: "grid", gap: 10 }}>
-            {pages.map((p, i) => (
-              <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 172px", gap: 12 }}>
-                <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 13 }}>#{p.page_no}{spreadMate[p.page_no] ? <div style={{ fontSize: 9, fontWeight: 700, color: "var(--blue)", marginTop: 3, lineHeight: 1.2 }} title={`Drawn as one connected spread with page ${spreadMate[p.page_no]}`}>⇔{spreadMate[p.page_no]}</div> : null}</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Text (can insert {"{name}"})</div>
-                    <textarea value={p.text} onChange={(e) => setPage(i, "text", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5 }} />
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", marginBottom: 3 }}>Illustration brief (scene)</div>
-                    <textarea value={p.illustration} onChange={(e) => setPage(i, "illustration", e.target.value)} rows={2} style={{ ...inp, resize: "vertical", lineHeight: 1.5, color: "#555" }} />
-                  </div>
-                  <details>
-                    <summary style={{ fontSize: 11, fontWeight: 700, color: "var(--blue)", cursor: "pointer", userSelect: "none" }}>
-                      Detailed prompt {p.prompt ? "✓" : "(not composed)"} — click to view/edit
-                    </summary>
-                    <div style={{ display: "flex", gap: 8, alignItems: "center", margin: "6px 0 4px" }}>
-                      <button style={{ ...btnGhost, padding: "4px 10px", fontSize: 11 }} onClick={() => composeOne(i, p.page_no)}>🧱 Recompose this prompt</button>
-                      {p.prompt && <span style={{ fontSize: 10.5, color: "var(--faint)" }}>has {"{name}"} placeholders… → replaced at gen</span>}
-                    </div>
-                    <textarea value={p.prompt ?? ""} onChange={(e) => setPage(i, "prompt", e.target.value)} rows={8} placeholder="Click 🧱 Compose to auto-generate, or type a gold-standard prompt…" style={{ ...inp, resize: "vertical", lineHeight: 1.45, fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: "#334" }} />
-                  </details>
-                </div>
-                <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
-                  {illus[p.page_no]
-                    ? (
-                      <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={illus[p.page_no]} alt={`p${p.page_no}`} style={{ width: "100%", display: "block" }} />
-                      </div>
-                    )
-                    : <div style={{ height: 110, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Not drawn</div>}
-                  <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === p.page_no) ? 0.6 : 1 }} disabled={busyPage === p.page_no} onClick={() => illustrate(p.page_no)}>{busyPage === p.page_no ? "Drawing…" : illus[p.page_no] ? "↻ Redraw" : "🎨 Draw"}</button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        : (() => {
+          // Gom trang theo BỐ CỤC sản phẩm: trang 1 & cuối = đơn; cặp giữa = 1 thẻ SPREAD (vẽ 1 lần cho 2 trang).
+          const idxByNo = new Map(pages.map((p, i) => [p.page_no, i]));
+          const covered = new Set<number>();
+          const nodes: React.ReactNode[] = [];
+          for (const blk of genBlocks(product)) {
+            if (blk.type === "cover") continue;
+            if (blk.type === "single") {
+              const i = idxByNo.get(blk.page); if (i == null) continue;
+              covered.add(blk.page); nodes.push(renderSingle(pages[i], i));
+            } else {
+              const [L, R] = blk.pages; const iL = idxByNo.get(L); const iR = idxByNo.get(R);
+              if (iL != null && iR != null) { covered.add(L); covered.add(R); nodes.push(renderSpread(L, iL, R, iR)); }
+              else { if (iL != null) { covered.add(L); nodes.push(renderSingle(pages[iL], iL)); } if (iR != null) { covered.add(R); nodes.push(renderSingle(pages[iR], iR)); } }
+            }
+          }
+          // Trang lẻ không khớp bố cục (sách cũ / số trang lệch) → hiện dạng đơn.
+          pages.forEach((p, i) => { if (!covered.has(p.page_no)) nodes.push(renderSingle(p, i)); });
+          return <div style={{ display: "grid", gap: 10 }}>{nodes}</div>;
+        })()}
       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>Preview name: <b>{previewName}</b> (edit the value of the <code>name</code> variable).</div>
       </StepCard>
     </div>

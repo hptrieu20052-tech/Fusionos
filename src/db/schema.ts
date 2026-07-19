@@ -400,6 +400,7 @@ export const bookTitles = pgTable("book_titles", {
   characterRefKey: text("character_ref_key"),  // ảnh reference nhân vật/style (R2) — mỏ neo nhất quán
   stylePrompt: text("style_prompt"),           // gợi ý style chung áp cho mọi trang (legacy → nay gộp vào bible.artStyle)
   bible: jsonb("bible"),                        // STYLE BIBLE: {character, wardrobe, artStyle, palette, textStyle, restrictions, format} — khai báo 1 lần, ráp vào MỌI trang
+  cover: jsonb("cover"),                         // BÌA wraparound: {text (tiêu đề baked), brief (cảnh), prompt (đã ráp, sửa được)} — vẽ 1 tấm rồi cắt front/back
   vars: jsonb("vars"),                          // biến cá nhân hoá: [{key,label,value}] — thay [name]/[age]/[city]/[hobby] lúc gen
   ownerId: uuid("owner_id").references(() => users.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

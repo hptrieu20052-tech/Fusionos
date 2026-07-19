@@ -81,16 +81,21 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     if (blk.type === "cover") {
       // COVER wraparound LIỀN: vẽ 1 ảnh nối → nửa PHẢI = mặt trước (tiêu đề+nhân vật), nửa TRÁI = mặt sau (cảnh nối tiếp, không chữ). Cắt đôi.
-      const raw = buildMasterPrompt({
-        bookName: title.name, bible,
-        brief:
-          "A single continuous wraparound cover scene.\n" +
-          "RIGHT half = FRONT cover: the hero character (warm, magical) + a clear calm area for the book title.\n" +
-          "LEFT half = BACK cover: the SAME scenery continuing seamlessly (sky, sea, horizon, landscape) with NO title and NO extra characters — a restful open area.\n" +
-          "Blend both halves into ONE unbroken image across the center fold.",
-        text: baked ? title.name : "",
-        hasRef, baked, format: coverFormatText(product),
-      });
+      const cover = (title.cover ?? {}) as { text?: string; brief?: string; prompt?: string };
+      const defaultBrief =
+        "A single continuous wraparound cover scene.\n" +
+        "RIGHT half = FRONT cover: the hero character (warm, magical) + a clear calm area for the book title.\n" +
+        "LEFT half = BACK cover: the SAME scenery continuing seamlessly (sky, sea, horizon, landscape) with NO title and NO extra characters — a restful open area.\n" +
+        "Blend both halves into ONE unbroken image across the center fold.";
+      const stored = (cover.prompt ?? "").trim();
+      const raw = stored
+        ? `${stored}\n\nOUTPUT FORMAT (this overrides any size mentioned above):\n${coverFormatText(product)}`
+        : buildMasterPrompt({
+            bookName: title.name, bible,
+            brief: (cover.brief ?? "").trim() || defaultBrief,
+            text: baked ? ((cover.text ?? "").trim() || title.name) : "",
+            hasRef, baked, format: coverFormatText(product),
+          });
       const prompt = resolveVars(raw, mergedVars);
       const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png", aspectRatio: coverAspect(product) });
       cost += img.cost;
@@ -116,25 +121,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       urls[blk.page] = await saveAsset(blk.page, out);
 
     } else {
-      // SPREAD: vẽ 1 ảnh nối 2 trang rồi CẮT ĐÔI → 2 file trang.
+      // SPREAD: nạp CẢ CẶP (trang L + R) vào AI, vẽ 1 ảnh nối LIỀN MẠCH rồi CẮT ĐÔI → 2 file trang.
+      // Dùng promptTemplate của trang TRÁI (đã ráp thành 1 cảnh liền ở bước compose) nếu có; nếu chưa thì ráp tại chỗ từ 1 cảnh chung.
       const [L, R] = blk.pages;
       const lp = await loadPage(L); const rp = await loadPage(R);
-      const lBrief = (lp?.illustrationBrief ?? "").trim();
-      const rBrief = (rp?.illustrationBrief ?? "").trim();
       const lText = (lp?.textTemplate ?? "").trim();
       const rText = (rp?.textTemplate ?? "").trim();
-      const brief =
-        `This is a single continuous double-page spread.\n` +
-        `LEFT half (page ${L}): ${lBrief || "(scene)"}\n` +
-        `RIGHT half (page ${R}): ${rBrief || "(scene continues)"}\n` +
-        `Blend both halves into ONE seamless landscape scene across the gutter.`;
       const combinedText = baked
-        ? [lText && `LEFT text (place on the left half): "${lText}"`, rText && `RIGHT text (place on the right half): "${rText}"`].filter(Boolean).join("\n")
+        ? [lText && `LEFT half text: "${lText}"`, rText && `RIGHT half text: "${rText}"`].filter(Boolean).join("\n")
         : "";
-      const raw = buildMasterPrompt({
-        bookName: title.name, bible, brief, text: combinedText, hasRef, baked,
-        format: spreadFormatText(product, L, R),
-      });
+      const stored = (lp?.promptTemplate ?? "").trim();
+      const raw = stored
+        ? `${stored}\n\nOUTPUT FORMAT (this overrides any size mentioned above):\n${spreadFormatText(product, L, R)}`
+        : buildMasterPrompt({
+            bookName: title.name, bible,
+            brief: (lp?.illustrationBrief ?? "").trim() || "One continuous scene spanning the whole double-page spread.",
+            text: combinedText, hasRef, baked, format: spreadFormatText(product, L, R),
+          });
       const prompt = resolveVars(raw, mergedVars);
       const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png", aspectRatio: spreadAspect(product) });
       cost += img.cost;

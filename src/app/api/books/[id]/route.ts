@@ -45,6 +45,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (typeof b.characterRefKey === "string") patch.characterRefKey = b.characterRefKey || null;
   if (typeof b.stylePrompt === "string") patch.stylePrompt = b.stylePrompt || null;
   if (b.bible !== undefined) patch.bible = b.bible;   // Style Bible (jsonb)
+  if (b.cover !== undefined) patch.cover = b.cover;   // Bìa wraparound {text,brief,prompt} (jsonb)
   if (b.vars !== undefined) patch.vars = b.vars;      // biến cá nhân hoá (jsonb)
   await db.update(schema.bookTitles).set(patch).where(eq(schema.bookTitles.id, params.id));
 
