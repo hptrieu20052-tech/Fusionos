@@ -19,7 +19,7 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
 
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
 
-export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false, canFinanceTiktok = false }: {
+export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false, canFinanceTiktok = false, canBookStudio = false }: {
   user: { name: string; role: string; avatarUrl?: string | null };
   links: NavLink[];
   children: React.ReactNode;
@@ -27,6 +27,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   canSupport?: boolean;
   canMarketing?: boolean;
   canFinanceTiktok?: boolean;
+  canBookStudio?: boolean;
 }) {
   const path = usePathname();
   const { t } = useLang();
@@ -90,22 +91,27 @@ export default function AppShell({ user, links, children, canProducts = false, c
   const hubActive = ["/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image"].some((h) => path.startsWith(h));
-  const aiAgentDropdown = user.role === "admin" ? (
+  const isAdminUser = user.role === "admin";
+  const aiAgentDropdown = (canBookStudio || isAdminUser) ? (
     <div key="__aiagent" className="topnav-more">
-      <button className={`topnav-item${aiActive ? " active" : ""}`} onClick={() => setAiOpen((v) => !v)}>
+      <button className={`topnav-item${aiActive ? " active" : ""}`} onClick={() => { setProdOpen(false); setMoreOpen(false); setAiOpen((v) => !v); }}>
         <span className="topnav-ic"><IconSparkle width={17} height={17} /></span>
         AI Agent <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
       </button>
       {aiOpen && (
-        <div className="topnav-more-menu" onClick={() => setAiOpen(false)}>
-          <Link href="/books" prefetch className={`topnav-more-item${isActive("/books") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconBook width={16} height={16} /></span>
-            Gen Book
-          </Link>
-          <Link href="/ai-image" prefetch className={`topnav-more-item${isActive("/ai-image") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconArtwork width={16} height={16} /></span>
-            Gen Image
-          </Link>
+        <div className="topnav-more-menu" style={{ minWidth: 0, width: "max-content" }} onClick={() => setAiOpen(false)}>
+          {canBookStudio && (
+            <Link href="/books" prefetch className={`topnav-more-item${isActive("/books") ? " active" : ""}`}>
+              <span className="topnav-ic"><IconBook width={16} height={16} /></span>
+              Gen Book
+            </Link>
+          )}
+          {isAdminUser && (
+            <Link href="/ai-image" prefetch className={`topnav-more-item${isActive("/ai-image") ? " active" : ""}`}>
+              <span className="topnav-ic"><IconArtwork width={16} height={16} /></span>
+              Gen Image
+            </Link>
+          )}
         </div>
       )}
     </div>
@@ -113,7 +119,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
 
   const productsDropdown = (canProducts || canSupport || canMarketing || canFinanceTiktok) ? (
     <div key="__sellerhub" className="topnav-more">
-      <button className={`topnav-item${hubActive ? " active" : ""}`} onClick={() => setProdOpen((v) => !v)}>
+      <button className={`topnav-item${hubActive ? " active" : ""}`} onClick={() => { setAiOpen(false); setMoreOpen(false); setProdOpen((v) => !v); }}>
         <span className="topnav-ic"><IconBox width={17} height={17} /></span>
         Seller Hub <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
       </button>
@@ -175,7 +181,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
             {!hasDesigns && productsDropdown}
             {links.some((l) => l.more) && (
               <div className="topnav-more">
-                <button className={`topnav-item${links.some((l) => l.more && isActive(l.href)) ? " active" : ""}`} onClick={() => setMoreOpen((v) => !v)}>
+                <button className={`topnav-item${links.some((l) => l.more && isActive(l.href)) ? " active" : ""}`} onClick={() => { setAiOpen(false); setProdOpen(false); setMoreOpen((v) => !v); }}>
                   <span className="topnav-ic"><IconGrid width={17} height={17} /></span>
                   {t("nav.more")} <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
                 </button>

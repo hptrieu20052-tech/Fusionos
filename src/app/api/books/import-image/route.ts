@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -26,7 +27,7 @@ function pickImageUrl(html: string, base: string): string {
 // POST /api/books/import-image { url } → { ok, dataUrl } : lấy ảnh từ link listing (Etsy/Amazon/web) hoặc link ảnh trực tiếp.
 export async function POST(req: NextRequest) {
   const s = await getSession();
-  if (s?.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await can(s, "bookStudio"))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}));
   let url = String(b?.url ?? "").trim();
   if (!/^https?:\/\//i.test(url)) url = "https://" + url;

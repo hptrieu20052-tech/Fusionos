@@ -27,13 +27,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const [u] = await db.select({ k: schema.users.avatarKey }).from(schema.users).where(eq(schema.users.id, session.sub)).limit(1);
     avatarUrl = fileUrl(u?.k ?? null);
   }
-  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners, products, support, marketing, financeTiktok] = session
+  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners, products, support, marketing, financeTiktok, bookStudio] = session
     ? await Promise.all([
         can(session, "orders"), can(session, "stores"), can(session, "designs"),
         can(session, "fulfillment"), can(session, "finance"), can(session, "settings"),
         can(session, "reviews"), can(session, "statsDesigners"), can(session, "products"), can(session, "support"), can(session, "marketing"), can(session, "financeTiktok"),
+        can(session, "bookStudio"),
       ])
-    : [false, false, false, false, false, false, false, false, false, false, false, false];
+    : [false, false, false, false, false, false, false, false, false, false, false, false, false];
 
   const isAdmin = session?.role === "admin";
   const links: NavLink[] = session ? [
@@ -61,7 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <LangProvider initial={lang}>
           <ConfirmProvider>
           {session ? (
-            <AppShell user={{ name: session.name, role: session.role, avatarUrl }} links={navLinks} canProducts={products} canSupport={support} canMarketing={marketing} canFinanceTiktok={financeTiktok}>
+            <AppShell user={{ name: session.name, role: session.role, avatarUrl }} links={navLinks} canProducts={products} canSupport={support} canMarketing={marketing} canFinanceTiktok={financeTiktok} canBookStudio={bookStudio}>
               {children}
             </AppShell>
           ) : (

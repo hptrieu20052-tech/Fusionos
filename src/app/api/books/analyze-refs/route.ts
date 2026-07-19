@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { orChatJSON } from "@/lib/ai/openrouter";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,7 @@ export const maxDuration = 60;
 // Bước RIÊNG: xem ảnh listing đối thủ, trả tóm tắt NGẮN (text). Tách khỏi sinh ý tưởng để không chặn luồng.
 export async function POST(req: NextRequest) {
   const s = await getSession();
-  if (s?.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await can(s, "bookStudio"))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => ({}));
   const raw = Array.isArray(b?.images) ? (b.images as string[]).filter((x) => typeof x === "string" && x.startsWith("data:")).slice(0, 4) : [];
   if (!raw.length) return NextResponse.json({ ok: false, error: "no images" }, { status: 400 });

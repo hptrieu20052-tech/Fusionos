@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { desc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
 // Book Studio hiện ADMIN-only (ổn định rồi mở quyền sau).
 async function guard() {
   const s = await getSession();
-  return s?.role === "admin" ? s : null;
+  return (await can(s, "bookStudio")) ? s : null;
 }
 
 // GET /api/books — danh sách đầu sách

@@ -350,7 +350,7 @@ function NewBookModal({ close, onCreated, flash, models }: { close: () => void; 
 // ===== Panel: STYLE BIBLE (khai báo 1 lần, ráp vào mọi trang) =====
 // Gọn: mặc định chỉ hiện phần hay chỉnh (nhân vật/trang phục/phong cách/màu). Phần khung cố định
 // (quy tắc chữ/cấm/khổ) giấu trong "Nâng cao" — AI đã điền sẵn, ít khi phải sửa.
-function BiblePanel({ bible, setBible, onSave, onPickStyle, styleBusy }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void; onPickStyle?: (files: FileList) => void; styleBusy?: boolean }) {
+function BiblePanel({ bible, setBible, onSave }: { bible: Bible; setBible: (b: Bible) => void; onSave: () => void }) {
   const [open, setOpen] = useState(false);
   const [adv, setAdv] = useState(false);
   const F = (k: keyof Bible, label: string, rows = 2, ph = "") => (
@@ -370,12 +370,6 @@ function BiblePanel({ bible, setBible, onSave, onPickStyle, styleBusy }: { bible
         <div style={{ padding: "0 14px 14px", display: "grid", gap: 10 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }} onClick={() => setBible({ ...DEFAULT_BIBLE, ...bible, wardrobe: bible.wardrobe ?? "" })}>Load default</button>
-            {onPickStyle && (
-              <label style={{ ...btnGhost, padding: "6px 12px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5, cursor: styleBusy ? "default" : "pointer", color: "var(--blue)", opacity: styleBusy ? 0.6 : 1 }} title="Only needed if you didn't add competitor images at create — upload a sample to match its style.">
-                🎨 {styleBusy ? "Reading style…" : "Match a reference style"}
-                <input type="file" accept="image/*" multiple disabled={styleBusy} style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) onPickStyle(e.target.files); e.target.value = ""; }} />
-              </label>
-            )}
             <button style={{ ...btnBlue, padding: "6px 12px", fontSize: 12, marginLeft: "auto" }} onClick={onSave}>Save Bible</button>
           </div>
           {F("character", "Character (face lock)", 5, "face/hair/eyes features… + {age}")}
@@ -787,7 +781,18 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       <StepCard n={2} title="Theme kit — Style Bible + Variables"
         desc="Style is auto-matched from the competitor images you add when creating the book. AI fills the rest from the theme; tweak anything below. This block is applied to EVERY page → keeps the character consistent."
         right={<button style={{ ...btnBlue, opacity: busySetup ? 0.6 : 1 }} disabled={busySetup} onClick={setupAI}>{busySetup ? "Building…" : "✨ AI build from theme"}</button>}>
-        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} onPickStyle={analyzeStyle} styleBusy={styleBusy} />
+        {/* Thanh STYLE luôn hiển thị: đang theo style nào + nút đổi từ ảnh mẫu (auto lúc Create nếu có ảnh đối thủ). */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, border: "1px solid var(--line)", background: "#FAFBFF", borderRadius: 12, padding: "9px 12px", marginBottom: 10, fontSize: 12 }}>
+          <span style={{ fontSize: 15 }}>🎨</span>
+          <span style={{ minWidth: 0, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={bible.artStyle || ""}>
+            <b>Art style:</b> <span style={{ color: "var(--muted)" }}>{(bible.artStyle || "").trim() ? bible.artStyle : "Default storybook style — add a sample image to match a specific look."}</span>
+          </span>
+          <label style={{ ...btnGhost, padding: "5px 11px", fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5, cursor: styleBusy ? "default" : "pointer", color: "var(--blue)", whiteSpace: "nowrap", opacity: styleBusy ? 0.6 : 1 }} title="Upload a sample illustration (competitor / your favorite) — AI matches Art style · Palette · Text rules.">
+            {styleBusy ? "Reading style…" : "Change style from image"}
+            <input type="file" accept="image/*" multiple disabled={styleBusy} style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) analyzeStyle(e.target.files); e.target.value = ""; }} />
+          </label>
+        </div>
+        <BiblePanel bible={bible} setBible={setBible} onSave={saveBible} />
         <VarsPanel vars={vars} setVars={setVars} bookId={id} flash={flash} />
       </StepCard>
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { generateBookCover } from "@/lib/ai/openrouter";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,7 @@ export const maxDuration = 60;
 // POST /api/books/[id]/cover-content { model?, force? } → AI sinh { text, brief } cho BÌA, lưu vào title.cover (giữ prompt cũ).
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const s = await getSession();
-  if (s?.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await can(s, "bookStudio"))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const [title] = await db.select().from(schema.bookTitles).where(eq(schema.bookTitles.id, params.id)).limit(1);
   if (!title) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 

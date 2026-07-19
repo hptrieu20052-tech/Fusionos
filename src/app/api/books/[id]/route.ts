@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { eq, and, asc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
 async function guard() {
   const s = await getSession();
-  return s?.role === "admin" ? s : null;
+  return (await can(s, "bookStudio")) ? s : null;
 }
 
 // GET /api/books/[id] — chi tiết đầu sách + các trang
