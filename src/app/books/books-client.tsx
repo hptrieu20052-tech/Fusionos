@@ -638,17 +638,24 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
       )}
 
       {pages.length > 0 && (
-        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, display: "grid", gridTemplateColumns: "34px 1fr 172px", gap: 12, marginBottom: 10, background: "#FFFCF3" }}>
-          <div style={{ fontWeight: 800, color: "var(--muted)", fontSize: 16 }}>📕</div>
-          <div style={{ alignSelf: "center" }}>
-            <div style={{ fontWeight: 800, fontSize: 13.5 }}>Cover</div>
-            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>Front cover · {product.coverW}×{product.coverH}px · hero portrait + title area, built from the Style Bible.</div>
+        <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, marginBottom: 10, background: "#FFFCF3" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 16 }}>📕</span>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 13.5 }}>Cover — one wraparound ({product.coverW}×{product.coverH}px)</div>
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>Drawn as one continuous scene, then split into <b>cover_back</b> (left) + <b>cover_front</b> (right, with title).</div>
+            </div>
+            <button style={{ ...btnBlue, fontSize: 11.5, padding: "7px 12px", marginLeft: "auto", opacity: (busyPage === 0) ? 0.6 : 1 }} disabled={busyPage === 0} onClick={() => illustrate(0)}>{busyPage === 0 ? "Drawing…" : (illus[0] || illus[-1]) ? "↻ Redraw cover" : "🎨 Draw cover (front + back)"}</button>
           </div>
-          <div style={{ display: "grid", gap: 6, alignContent: "start" }}>
-            {illus[0]
-              ? <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={illus[0]} alt="cover" style={{ width: "100%", display: "block" }} /></div>
-              : <div style={{ height: 84, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Not drawn</div>}
-            <button style={{ ...btnGhost, fontSize: 11.5, padding: "6px 10px", opacity: (busyPage === 0) ? 0.6 : 1 }} disabled={busyPage === 0} onClick={() => illustrate(0)}>{busyPage === 0 ? "Drawing…" : illus[0] ? "↻ Redraw cover" : "🎨 Draw cover"}</button>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {([[-1, "Back (left)"], [0, "Front (right · title)"]] as [number, string][]).map(([no, label]) => (
+              <div key={no} style={{ display: "grid", gap: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".3px" }}>{label}</div>
+                {illus[no]
+                  ? <div style={{ borderRadius: 8, overflow: "hidden", border: "1px solid var(--line)", lineHeight: 0 }}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={illus[no]} alt={label} style={{ width: "100%", display: "block" }} /></div>
+                  : <div style={{ height: 96, borderRadius: 8, border: "1px dashed var(--line)", display: "grid", placeItems: "center", color: "var(--faint)", fontSize: 11 }}>Not drawn</div>}
+              </div>
+            ))}
           </div>
         </div>
       )}

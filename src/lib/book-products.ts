@@ -40,6 +40,11 @@ export type GenBlock =
   | { type: "single"; page: number; w: number; h: number }
   | { type: "spread"; pages: [number, number]; w: number; h: number };
 
+// COVER là 1 tấm wraparound LIỀN (như spread): vẽ 1 ảnh coverW×coverH nối liền,
+// NỬA PHẢI = mặt trước (tiêu đề + nhân vật), NỬA TRÁI = mặt sau (cảnh nối tiếp, không chữ),
+// rồi CẮT ĐÔI → cover_front (pageNo 0) + cover_back (pageNo -1).
+export function coverPanelW(p: BookProduct): number { return Math.round(p.coverW / 2); }
+
 export function genBlocks(p: BookProduct): GenBlock[] {
   const out: GenBlock[] = [{ type: "cover", w: p.coverW, h: p.coverH }];
   out.push({ type: "single", page: 1, w: p.pageW, h: p.pageH });
@@ -51,9 +56,9 @@ export function genBlocks(p: BookProduct): GenBlock[] {
   return out;
 }
 
-// Tìm khối chứa 1 trang (dùng ở route illustrate để biết vẽ đơn hay vẽ spread).
+// Tìm khối chứa 1 trang. pageNo 0 (front) & -1 (back) đều thuộc khối COVER (vẽ 1 lần, cắt đôi).
 export function blockForPage(p: BookProduct, pageNo: number): GenBlock | null {
-  if (pageNo === 0) return { type: "cover", w: p.coverW, h: p.coverH };
+  if (pageNo === 0 || pageNo === -1) return { type: "cover", w: p.coverW, h: p.coverH };
   for (const blk of genBlocks(p)) {
     if (blk.type === "single" && blk.page === pageNo) return blk;
     if (blk.type === "spread" && (blk.pages[0] === pageNo || blk.pages[1] === pageNo)) return blk;
@@ -90,5 +95,5 @@ export function spreadFormatText(p: BookProduct, leftPage: number, rightPage: nu
   return `ONE CONTINUOUS DOUBLE-PAGE SPREAD = two ${p.pageW}×${p.pageH}px pages side by side (page ${leftPage} on the LEFT, page ${rightPage} on the RIGHT), total ${p.pageW * 2}×${p.pageH}px, ${nearestAspect(p.pageW * 2, p.pageH)} wide landscape. The artwork MUST flow as ONE continuous scene across the vertical center gutter. Keep faces and all important text away from the vertical center line and the outer edges.`;
 }
 export function coverFormatText(p: BookProduct): string {
-  return `A single WIDE front-cover artwork, printed at ${p.coverW}×${p.coverH}px @300DPI (${nearestAspect(p.coverW, p.coverH)} landscape). Premium hardcover children's book cover: an inviting hero portrait of the main character + a clear, calm area for the book TITLE. Keep important details away from the edges.`;
+  return `ONE CONTINUOUS WRAPAROUND HARDCOVER, printed at ${p.coverW}×${p.coverH}px @300DPI (${nearestAspect(p.coverW, p.coverH)} wide landscape). This single artwork folds into two panels: the RIGHT half is the FRONT cover (an inviting hero portrait of the main character + a clear calm area for the book TITLE), and the LEFT half is the BACK cover (the SAME scene continuing seamlessly — sky, sea, landscape — with NO title and NO extra characters, a restful area). The scene MUST flow as ONE unbroken image across the vertical center fold. Keep the title, faces and important details away from the center fold and the outer edges.`;
 }

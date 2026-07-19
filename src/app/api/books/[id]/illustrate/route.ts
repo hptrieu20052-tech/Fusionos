@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 import { orGenerateImage, buildMasterPrompt, resolveVars, BookBible } from "@/lib/ai/openrouter";
 import { readFile, writeFile, fileUrl } from "@/lib/storage";
 import {
-  getBookProduct, blockForPage,
+  getBookProduct, blockForPage, coverPanelW,
   pageFormatText, spreadFormatText, coverFormatText,
   pageAspect, spreadAspect, coverAspect,
 } from "@/lib/book-products";
@@ -80,18 +80,26 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     let cost = 0;
 
     if (blk.type === "cover") {
-      // COVER: hero + vùng tiêu đề. Không có page row → dựng từ Bible.
+      // COVER wraparound LIỀN: vẽ 1 ảnh nối → nửa PHẢI = mặt trước (tiêu đề+nhân vật), nửa TRÁI = mặt sau (cảnh nối tiếp, không chữ). Cắt đôi.
       const raw = buildMasterPrompt({
         bookName: title.name, bible,
-        brief: "Front cover: an inviting hero portrait of the main character, warm and magical, with a calm clear area reserved for the book title.",
+        brief:
+          "A single continuous wraparound cover scene.\n" +
+          "RIGHT half = FRONT cover: the hero character (warm, magical) + a clear calm area for the book title.\n" +
+          "LEFT half = BACK cover: the SAME scenery continuing seamlessly (sky, sea, horizon, landscape) with NO title and NO extra characters — a restful open area.\n" +
+          "Blend both halves into ONE unbroken image across the center fold.",
         text: baked ? title.name : "",
         hasRef, baked, format: coverFormatText(product),
       });
       const prompt = resolveVars(raw, mergedVars);
       const img = await orGenerateImage(prompt, refs, { model, outputFormat: "png", aspectRatio: coverAspect(product) });
       cost += img.cost;
-      const out = await sharp(Buffer.from(img.b64, "base64")).resize(product.coverW, product.coverH, { fit: "fill" }).png().toBuffer();
-      urls[0] = await saveAsset(0, out);
+      const full = await sharp(Buffer.from(img.b64, "base64")).resize(product.coverW, product.coverH, { fit: "fill" }).png().toBuffer();
+      const cw = coverPanelW(product);
+      const back = await sharp(full).extract({ left: 0, top: 0, width: cw, height: product.coverH }).png().toBuffer();
+      const front = await sharp(full).extract({ left: cw, top: 0, width: product.coverW - cw, height: product.coverH }).png().toBuffer();
+      urls[0] = await saveAsset(0, front);    // pageNo 0  = FRONT (nửa phải)
+      urls[-1] = await saveAsset(-1, back);   // pageNo -1 = BACK (nửa trái)
 
     } else if (blk.type === "single") {
       const page = await loadPage(blk.page);
