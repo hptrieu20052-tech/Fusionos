@@ -7,7 +7,7 @@ import { SupplierLogo } from "@/components/supplier-logo";
 import { useConfirm } from "@/components/confirm-provider";
 import { IconTrash, IconRefresh, IconPlus, IconPin, IconPrinter } from "@/components/icons";
 
-type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null; mapCount?: number; pinnedCount?: number };
+type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null; logoUrl?: string | null; mapCount?: number; pinnedCount?: number };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean; pinned?: boolean; pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null };
 
 const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 12.5, width: "100%" } as const;
@@ -344,7 +344,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "7px 13px", borderRadius: 11, cursor: "pointer", fontSize: 12.5, fontWeight: 700,
               border: active === f.id ? "1.5px solid var(--blue)" : "1px solid var(--line)",
               background: active === f.id ? "var(--blue-soft)" : "var(--card)", color: active === f.id ? "var(--blue)" : "var(--ink)" }}>
-            <SupplierLogo name={f.name} size={18} /> {f.name}
+            <SupplierLogo name={f.name} src={f.logoUrl} size={18} /> {f.name}
             <span style={{ background: active === f.id ? "#fff" : "var(--line)", borderRadius: 6, padding: "1px 6px", fontSize: 11 }}>{countBy(f.id)}</span>
           </button>
         ))}
