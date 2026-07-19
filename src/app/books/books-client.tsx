@@ -683,7 +683,7 @@ function DetailView({ detail, reload, flash, models }: { detail: Detail; reload:
     const payload = { pageNo, model: imgModel || undefined, baked, vars };
     let j = await api(`/api/books/${id}/illustrate`, "POST", payload);
     // Timeout tạm thời (502/504) → tự thử lại 1 lần
-    if (!j.ok && /\b50[24]\b|hết giờ|timeout/i.test(String(j.error ?? ""))) {
+    if (!j.ok && /\b50[24]\b|hết giờ|timeout|timed out/i.test(String(j.error ?? ""))) {
       j = await api(`/api/books/${id}/illustrate`, "POST", payload);
     }
     setBusyPage(null);

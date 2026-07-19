@@ -68,10 +68,11 @@ export function blockForPage(p: BookProduct, pageNo: number): GenBlock | null {
 
 // ---- TỈ LỆ ẢNH cho model (chọn tỉ lệ hỗ trợ GẦN NHẤT; số px in chính xác ép ở khâu resize) ----
 // Model ảnh chỉ nhận 1 số tỉ lệ cố định → chọn cái gần nhất, tránh model treo với tỉ lệ lạ.
+// LƯU Ý: chỉ liệt kê tỉ lệ MỌI model ảnh lớn đều nhận (Gemini KHÔNG nhận 2:1 — spread sẽ dùng 16:9 rồi ép px sau).
 const SUPPORTED_ASPECTS: { s: string; r: number }[] = [
   { s: "9:16", r: 9 / 16 }, { s: "2:3", r: 2 / 3 }, { s: "3:4", r: 3 / 4 }, { s: "4:5", r: 4 / 5 },
   { s: "1:1", r: 1 }, { s: "5:4", r: 5 / 4 }, { s: "4:3", r: 4 / 3 }, { s: "3:2", r: 3 / 2 },
-  { s: "16:9", r: 16 / 9 }, { s: "2:1", r: 2 }, { s: "21:9", r: 21 / 9 },
+  { s: "16:9", r: 16 / 9 }, { s: "21:9", r: 21 / 9 },
 ];
 export function nearestAspect(w: number, h: number): string {
   const target = w / h;

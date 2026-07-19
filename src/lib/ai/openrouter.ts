@@ -71,7 +71,11 @@ export async function orGenerateImage(prompt: string, refDataUrls: string[], opt
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "HTTP-Referer": "https://fusionos.app", "X-Title": "FUSION Book Studio" },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(110000),
+    // 85s < trần gateway ~100s → lỗi trả về là JSON sạch (client tự retry được), không phải 502 HTML của Cloudflare.
+    signal: AbortSignal.timeout(85000),
+  }).catch((e) => {
+    if ((e as Error)?.name === "TimeoutError" || (e as Error)?.name === "AbortError") throw new Error("Image model timed out (>85s) — auto-retry or switch to a faster image model (Gemini Flash Image).");
+    throw e;
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`OpenRouter image HTTP ${res.status}: ${text.slice(0, 300)}`);
