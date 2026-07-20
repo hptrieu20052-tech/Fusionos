@@ -72,6 +72,29 @@ const vFetch = async (url: string, init: RequestInit): Promise<VResp> => {
   }
 };
 
+// DÒ BASE: doc mới ghi gateway.vinaway.io nhưng host đó có thể chưa live (sai cert + "route api/token not found").
+// Thử lần lượt: endpoint user điền → gateway → api (host cũ theo PDF). Base nào login được thì NHỚ để dùng luôn.
+const baseCache = new Map<string, string>();
+const BASE_CANDIDATES = ["https://gateway.vinaway.io", "https://api.vinaway.io"];
+export async function vinawaySession(cred: VinawayCred): Promise<{ base: string; token: string }> {
+  const seen = new Set<string>();
+  const cands = [baseCache.get(cred.email) ?? "", baseOf(cred.endpoint), ...BASE_CANDIDATES]
+    .filter((b) => b && !seen.has(b) && (seen.add(b), true));
+  let lastErr = "";
+  for (const base of cands) {
+    try {
+      const token = await vinawayToken({ ...cred, endpoint: base });
+      baseCache.set(cred.email, base);
+      return { base, token };
+    } catch (e) {
+      lastErr = String((e as Error)?.message ?? e);
+      // Sai email/password thì đổi base cũng vô ích → dừng sớm cho đỡ chậm
+      if (/HTTP 401|HTTP 422|credential|password/i.test(lastErr)) break;
+    }
+  }
+  throw new Error(lastErr || "Vinaway: no reachable API host");
+}
+
 export async function vinawayToken(cred: VinawayCred): Promise<string> {
   const base = baseOf(cred.endpoint);
   const key = `${base}|${cred.email}`;
@@ -120,8 +143,7 @@ export type VinawayOrder = {
 };
 
 export async function createVinawayOrder(cred: VinawayCred, order: VinawayOrder): Promise<{ id: string; raw: unknown }> {
-  const base = baseOf(cred.endpoint);
-  const token = await vinawayToken(cred);
+  const { base, token } = await vinawaySession(cred);
   const res = await vFetch(`${base}/api/orders`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` },
@@ -156,8 +178,7 @@ const flexTotal = (j: unknown, fallback: number): number => {
 
 /** Danh sách SẢN PHẨM (id dùng làm product_id khi tạo đơn) — để ghép "product_id:sku_id" cho mapping. */
 export async function listVinawayProducts(cred: VinawayCred, page = 1, limit = 100): Promise<{ total: number; data: { id: number; name: string; sku?: string }[] }> {
-  const base = baseOf(cred.endpoint);
-  const token = await vinawayToken(cred);
+  const { base, token } = await vinawaySession(cred);
   const res = await vFetch(`${base}/api/products?page=${page}&limit=${limit}`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30000),
@@ -171,8 +192,7 @@ export async function listVinawayProducts(cred: VinawayCred, page = 1, limit = 1
 
 /** Kéo danh sách variant SKU (id dùng làm product_sku_id khi tạo đơn) — phục vụ import SKU mapping. */
 export async function listVinawaySkus(cred: VinawayCred, page = 1, limit = 100): Promise<{ total: number; data: { id: number; sku: string; product_id?: number; product_name?: string; color?: string; size?: string; price?: number }[] }> {
-  const base = baseOf(cred.endpoint);
-  const token = await vinawayToken(cred);
+  const { base, token } = await vinawaySession(cred);
   const res = await vFetch(`${base}/api/product-skus?page=${page}&limit=${limit}`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30000),

@@ -104,6 +104,21 @@ const FF_STATUS_COLORS: Record<string, string> = {
 const fmtDateTime = (v: string | null | undefined) => { if (!v) return ""; const d = new Date(v); return isNaN(d.getTime()) ? "" : d.toLocaleString(); };
 const IMPORT_ITEM: CSSProperties = { display: "flex", alignItems: "center", gap: 11, width: "100%", padding: "9px 10px", background: "none", border: "none", borderRadius: 9, cursor: "pointer", fontSize: 13.5 };
 const IMPORT_SUB: CSSProperties = { fontSize: 11, color: "var(--muted)", fontWeight: 400, marginTop: 1 };
+
+// Logo Excel (phong cách bộ nhận diện 2019–2025) — SVG inline, không phụ thuộc file ngoài.
+const IcExcel = ({ size = 19 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" aria-label="Excel" style={{ flexShrink: 0 }}>
+    <rect x="10" y="3" width="19" height="26" rx="1.6" fill="#fff" />
+    <path d="M19.5 3H27.4A1.6 1.6 0 0 1 29 4.6V9.5H19.5V3Z" fill="#33C481" />
+    <path d="M10 3h9.5v6.5H10z" fill="#21A366" />
+    <path d="M19.5 9.5H29V16H19.5z" fill="#21A366" />
+    <path d="M19.5 16H29v6.5H19.5z" fill="#107C41" />
+    <path d="M19.5 22.5H29v4.9a1.6 1.6 0 0 1-1.6 1.6H19.5V22.5Z" fill="#185C37" />
+    <path d="M10 22.5h9.5v6.5H11.6A1.6 1.6 0 0 1 10 27.4V22.5Z" fill="#107C41" />
+    <rect x="2" y="8.5" width="15" height="15" rx="1.6" fill="#107C41" />
+    <path d="M6.7 12.3l5.6 7.4M12.3 12.3l-5.6 7.4" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+  </svg>
+);
 const SIDE_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 const money = (n: number | string) => "$" + Number(n).toFixed(2);
 const cleanName = (v: string | null | undefined) => (v ?? "").replace(/\s*\([^)]*\)\s*$/, "").trim();
@@ -155,6 +170,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   // đặt sau `if (!data) return ...` sẽ khiến số hook đổi giữa các lần render (React error #310).
   const [dupFor, setDupFor] = useState<{ id: string; label: string } | null>(null);
   const [showTtTracking, setShowTtTracking] = useState(false);
+  const [showExcelImport, setShowExcelImport] = useState(false);
 
   const reqSeq = useRef(0);
   const load = useCallback(async () => {
@@ -250,12 +266,12 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
             {exportMenu && (<>
               <div onClick={() => setExportMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
               <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.14)", minWidth: 300, overflow: "hidden", padding: 6 }}>
-                <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>Excel</div>
+                <div style={{ padding: "6px 10px 4px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px", display: "flex", alignItems: "center", gap: 6 }}><IcExcel size={14} /> Excel</div>
                 <a href={`/api/orders/export${status ? `?status=${status}` : ""}`} onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
-                  <span style={{ fontSize: 19, width: 20, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IconReport width={17} height={17} /></span><div style={{ textAlign: "left" }}><b>{t("o.allOrders")}</b><div style={IMPORT_SUB}>{t("o.withCostTracking")}</div></div>
+                  <span style={{ width: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IcExcel size={19} /></span><div style={{ textAlign: "left" }}><b>{t("o.allOrders")}</b><div style={IMPORT_SUB}>{t("o.withCostTracking")}</div></div>
                 </a>
                 <a href={`/api/orders/export?complete=1${status ? `&status=${status}` : ""}`} onClick={() => setExportMenu(false)} style={{ ...IMPORT_ITEM, textDecoration: "none", color: "var(--ink)" }}>
-                  <span style={{ fontSize: 19, width: 20, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IconCheck width={17} height={17} /></span><div style={{ textAlign: "left" }}><b>{t("o.onlyEligible")}</b><div style={IMPORT_SUB}>{t("o.eligibleDesc")}</div></div>
+                  <span style={{ width: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IcExcel size={19} /></span><div style={{ textAlign: "left" }}><b>{t("o.onlyEligible")}</b><div style={IMPORT_SUB}>{t("o.eligibleDesc")}</div></div>
                 </a>
                 <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>TikTok Shop</div>
                 <button onClick={() => { setExportMenu(false); setShowTtTracking(true); }} style={{ ...IMPORT_ITEM }}>
@@ -299,14 +315,15 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
                     <MarketplaceLogo mk="amazon" size={20} /><div style={{ textAlign: "left" }}><b>Amazon</b><div style={IMPORT_SUB}>{t("o.comingSoon")}</div></div>
                   </button>
                   <div style={{ borderTop: "1px solid var(--line)", margin: "6px 0 4px", padding: "8px 10px 0", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px" }}>{t("o.otherWord")}</div>
-                  <button onClick={() => { setImportMenu(false); excelRef.current?.click(); }} style={IMPORT_ITEM}>
-                    <span style={{ fontSize: 19, width: 20, textAlign: "center", display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IconReport width={17} height={17} /></span><div style={{ textAlign: "left" }}><b>{t("o.excelUpdate")}</b><div style={IMPORT_SUB}>{t("o.trackingCostExisting")}</div></div>
+                  <button onClick={() => { setImportMenu(false); setShowExcelImport(true); }} style={IMPORT_ITEM}>
+                    <span style={{ width: 20, display: "inline-flex", alignItems: "center", justifyContent: "center" }}><IcExcel size={19} /></span><div style={{ textAlign: "left" }}><b>{t("o.excelUpdate")}</b><div style={IMPORT_SUB}>{t("o.trackingCostExisting")}</div></div>
                   </button>
                 </div>
               </>)}
               <input ref={excelRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} disabled={importing}
                 onChange={async (e) => {
                   const file = e.target.files?.[0]; if (!file) return;
+                  setShowExcelImport(false);
                   setImporting(true);
                   const fd = new FormData(); fd.append("file", file);
                   const j = await fetch("/api/orders/import", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
@@ -443,6 +460,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
       {showCreate && <CreateOrderModal close={() => setShowCreate(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
       {dupFor && <DuplicateModal init={dupFor} close={() => setDupFor(null)} onConfirm={cloneOrder} />}
       {showTtTracking && <TtTrackingModal close={() => setShowTtTracking(false)} flash={flash} stores={data.stores} dr={dr} />}
+      {showExcelImport && <ExcelImportModal close={() => setShowExcelImport(false)} importing={importing} pickFile={() => excelRef.current?.click()} />}
       {showEtsy && <EtsyImportModal close={() => setShowEtsy(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
       {showTiktok && <TikTokImportModal close={() => setShowTiktok(false)} reload={load} flash={flash} sellers={data.sellers} stores={data.stores} />}
     </>
@@ -752,6 +770,57 @@ function ManualTracking({ orderId, platform, ff, fulfillerId, fulfillers, flash,
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button onClick={() => setOpen(false)} style={{ ...btnGhost, fontSize: 12 }}>{t("c.cancel")}</button>
         <button onClick={save} disabled={busy} style={{ ...btnBlue, fontSize: 12, opacity: busy ? 0.6 : 1 }}>{busy ? "…" : t("c.save")}</button>
+      </div>
+    </div>
+  );
+}
+
+// Modal "Excel (update)": bước 1 tải TEMPLATE → bước 2 chọn file — support khỏi đoán tên cột.
+function ExcelImportModal({ close, importing, pickFile }: { close: () => void; importing: boolean; pickFile: () => void }) {
+  const COLS = ["Order Label", "Fulfilled By", "Carrier", "Tracking Number", "Tracking URL", "Supplier Order Link", "Base Cost", "Ship Fee"];
+  const downloadTemplate = () => {
+    const csv = COLS.join(",") + "\n" +
+      "ALLENSHOP8094-577485582385516585,Printway,USPS,9400111899223100000000,https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899223100000000,https://printway.io/orders/PW123456,7.85,3.20\n";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
+    a.download = "fulfill_update_template.csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  };
+  const stepNo = (n: number) => (
+    <span style={{ width: 22, height: 22, borderRadius: 999, background: "var(--blue)", color: "#fff", display: "inline-grid", placeItems: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>{n}</span>
+  );
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 300, display: "grid", placeItems: "center" }} onClick={close}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: 460, maxWidth: "94vw", boxShadow: "0 24px 60px rgba(15,23,42,.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}><IcExcel size={20} /> Excel (update) — bulk fulfill info</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 14px" }}>
+          Update tracking, supplier and cost for EXISTING orders — same fields as the manual entry form. One row per order.
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 12 }}>
+          {stepNo(1)}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>Download the template</div>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>
+              Identify each order by <b>Order Label</b> (or an <b>Order ID</b> column). Leave a cell empty to keep the current value. &quot;Fulfilled By&quot; must match a supplier name in Fulfillers.
+            </div>
+            <button onClick={downloadTemplate} style={{ ...btnGhost, fontSize: 12.5, padding: "7px 13px" }}>⬇ Download template (.csv)</button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginBottom: 16 }}>
+          {stepNo(2)}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>Upload the filled file</div>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>.csv or .xlsx — orders with a Tracking Number switch to Shipped and tracking is pushed to Etsy/TikTok automatically.</div>
+            <button onClick={pickFile} disabled={importing} style={{ ...btnBlue, fontSize: 12.5, padding: "7px 15px", opacity: importing ? 0.6 : 1 }}>{importing ? "Importing…" : "Choose file…"}</button>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={close} style={{ ...btnGhost, fontSize: 12.5 }}>Close</button>
+        </div>
       </div>
     </div>
   );
