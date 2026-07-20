@@ -117,11 +117,20 @@ export async function GET(req: NextRequest) {
   });
   let sellers = await cachedRoleUsers("seller");
   let designers = await cachedRoleUsers("designer");
-  // Phạm vi own/team: dropdown chỉ hiện người trong phạm vi
-  if (scopeIds) {
-    const allow = new Set(scopeIds);
-    sellers = sellers.filter((u) => allow.has(u.id));
-    designers = designers.filter((u) => allow.has(u.id));
+  // Phạm vi own/team: dropdown hiện những seller/designer THỰC SỰ xuất hiện trong các design user được thấy
+  // (designer scope own vẫn thấy design của nhiều seller mình vẽ → phải lọc được theo các seller đó;
+  //  lọc theo "user trong phạm vi" như cũ làm dropdown rỗng → filter biến mất).
+  if (scopeIds && scopeIds.length) {
+    const idList = dsql.join(scopeIds.map((x) => dsql`${x}::uuid`), dsql`, `);
+    const vis = (await db.execute(dsql`
+      SELECT DISTINCT d.seller_id, d.designer_id
+      FROM designs d
+      WHERE d.designer_id IN (${idList}) OR d.seller_id IN (${idList}) OR d.creator_id IN (${idList})
+    `)).rows as { seller_id: string | null; designer_id: string | null }[];
+    const visSellers = new Set(vis.map((v) => v.seller_id).filter(Boolean) as string[]);
+    const visDesigners = new Set(vis.map((v) => v.designer_id).filter(Boolean) as string[]);
+    sellers = sellers.filter((u) => visSellers.has(u.id));
+    designers = designers.filter((u) => visDesigners.has(u.id));
   }
   return NextResponse.json({ ok: true, designs: out, total, page, show, sellers, designers, scoped: !!scopeIds });
 }
