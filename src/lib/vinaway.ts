@@ -17,13 +17,25 @@ const baseOf = (endpoint?: string | null) => {
   return b || "https://gateway.vinaway.io";
 };
 
+// fetch có CHẨN ĐOÁN: "fetch failed" của Node giấu nguyên nhân trong e.cause → lôi ra code cụ thể
+// (ENOTFOUND sai domain · ECONNREFUSED/ETIMEDOUT firewall chặn · CERT_* lỗi chứng chỉ TLS…).
+const vFetch = async (url: string, init: RequestInit): Promise<Response> => {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    const err = e as Error & { cause?: { code?: string; message?: string } };
+    const why = err?.cause?.code || err?.cause?.message || err?.message || String(e);
+    throw new Error(`Vinaway: không kết nối được ${url} — ${why}. Nếu là ETIMEDOUT/ECONNREFUSED thì server Vinaway đang chặn IP nước ngoài (Vercel ở Mỹ) — báo Vinaway mở firewall cho server của bạn.`);
+  }
+};
+
 export async function vinawayToken(cred: VinawayCred): Promise<string> {
   const base = baseOf(cred.endpoint);
   const key = `${base}|${cred.email}`;
   const hit = tokenCache.get(key);
   if (hit && hit.exp - 60_000 > Date.now()) return hit.token;
 
-  const res = await fetch(`${base}/api/token`, {
+  const res = await vFetch(`${base}/api/token`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify({ email: cred.email, password: cred.password }),
@@ -67,7 +79,7 @@ export type VinawayOrder = {
 export async function createVinawayOrder(cred: VinawayCred, order: VinawayOrder): Promise<{ id: string; raw: unknown }> {
   const base = baseOf(cred.endpoint);
   const token = await vinawayToken(cred);
-  const res = await fetch(`${base}/api/orders`, {
+  const res = await vFetch(`${base}/api/orders`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(order),
@@ -103,7 +115,7 @@ const flexTotal = (j: unknown, fallback: number): number => {
 export async function listVinawayProducts(cred: VinawayCred, page = 1, limit = 100): Promise<{ total: number; data: { id: number; name: string; sku?: string }[] }> {
   const base = baseOf(cred.endpoint);
   const token = await vinawayToken(cred);
-  const res = await fetch(`${base}/api/products?page=${page}&limit=${limit}`, {
+  const res = await vFetch(`${base}/api/products?page=${page}&limit=${limit}`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30000),
   });
@@ -118,7 +130,7 @@ export async function listVinawayProducts(cred: VinawayCred, page = 1, limit = 1
 export async function listVinawaySkus(cred: VinawayCred, page = 1, limit = 100): Promise<{ total: number; data: { id: number; sku: string; product_id?: number; product_name?: string; color?: string; size?: string; price?: number }[] }> {
   const base = baseOf(cred.endpoint);
   const token = await vinawayToken(cred);
-  const res = await fetch(`${base}/api/product-skus?page=${page}&limit=${limit}`, {
+  const res = await vFetch(`${base}/api/product-skus?page=${page}&limit=${limit}`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30000),
   });
