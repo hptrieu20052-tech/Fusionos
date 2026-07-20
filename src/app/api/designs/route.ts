@@ -52,8 +52,9 @@ export async function GET(req: NextRequest) {
       // Gõ SỐ → tìm theo ID (#skuCode) chính xác, HOẶC số đứng riêng trong tên
       // (tránh dính chuỗi số dài trong title auto-gen như ...0829122).
       const idNum = Number(clean);
+      // sku_code là int4 → số quá 2,147,483,647 (VD dán nhầm ID đơn hàng) phải bỏ vế so sánh, tránh lỗi Postgres 22003 "out of range".
       parts.push(or(
-        Number.isSafeInteger(idNum) ? eq(schema.designs.skuCode, idNum) : dsql`false`,
+        Number.isSafeInteger(idNum) && idNum <= 2_147_483_647 ? eq(schema.designs.skuCode, idNum) : dsql`false`,
         dsql`${schema.designs.title} ~ ${"(^|[^0-9])" + clean + "([^0-9]|$)"}`,
       )!);
     } else {

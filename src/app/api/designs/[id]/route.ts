@@ -85,6 +85,18 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "designs")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   if (!(await hasAction(session, "designs.delete"))) return NextResponse.json({ ok: false, error: "forbidden: delete" }, { status: 403 });
+  // Design đang GẮN VÀO ĐƠN → FK chặn (23503). Báo rõ ràng thay vì lỗi 500 khó hiểu, kèm vài mã đơn để user biết gỡ ở đâu.
+  const { sql } = await import("drizzle-orm");
+  const used = (await db.execute(sql`
+    SELECT o.external_id FROM order_items oi JOIN orders o ON o.id = oi.order_id
+    WHERE oi.design_id = ${params.id}::uuid LIMIT 5
+  `)).rows as { external_id: string }[];
+  if (used.length) {
+    return NextResponse.json({
+      ok: false,
+      error: `This design is assigned to ${used.length >= 5 ? "5+" : used.length} order(s) (e.g. #${used.map((u) => u.external_id).slice(0, 3).join(", #")}). Unassign it from those orders first, then delete.`,
+    }, { status: 400 });
+  }
   await db.delete(schema.designs).where(eq(schema.designs.id, params.id));
   return NextResponse.json({ ok: true });
 }
