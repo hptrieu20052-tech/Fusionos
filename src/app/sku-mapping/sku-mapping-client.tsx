@@ -286,6 +286,8 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped` + (imp.unmatched ? ` · ${imp.unmatched} unmatched product_id` : ""));
+    // Response Vinaway thiếu field (không tên SP / không sku code) → hiện MẪU THÔ để copy gửi admin map lại field.
+    if (imp.note && typeof window !== "undefined" && /Response Vinaway/.test(String(imp.note))) window.prompt("Vinaway response sample — copy & gửi admin:", String(imp.note));
   }
 
   // Kéo catalog SKU Printway (GET /products/list-sku-catalogs) → thêm mapping mới

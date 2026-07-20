@@ -72,50 +72,69 @@ const vFetch = async (url: string, init: RequestInit): Promise<VResp> => {
   }
 };
 
-// DÒ BASE: doc mới ghi gateway.vinaway.io nhưng host đó có thể chưa live (sai cert + "route api/token not found").
-// Thử lần lượt: endpoint user điền → gateway → api (host cũ theo PDF). Base nào login được thì NHỚ để dùng luôn.
-const baseCache = new Map<string, string>();
+// DÒ HOST + PREFIX: doc ghi gateway.vinaway.io/api/token nhưng cURL mẫu là {{baseUrl}}/token —
+// tức prefix "/api" có thể có hoặc không, và host thật có thể là api.vinaway.io (PDF cũ).
+// Thử: (endpoint user điền → gateway → api) × (/api → gốc) × (JSON body → query string).
+// Login được ở đâu thì NHỚ prefix đó cho mọi lời gọi sau (orders/products/skus).
+const apiCache = new Map<string, string>(); // email → API PREFIX hoạt động (vd https://api.vinaway.io/api)
 const BASE_CANDIDATES = ["https://gateway.vinaway.io", "https://api.vinaway.io"];
-export async function vinawaySession(cred: VinawayCred): Promise<{ base: string; token: string }> {
-  const seen = new Set<string>();
-  const cands = [baseCache.get(cred.email) ?? "", baseOf(cred.endpoint), ...BASE_CANDIDATES]
-    .filter((b) => b && !seen.has(b) && (seen.add(b), true));
+
+async function tokenAt(api: string, cred: VinawayCred): Promise<string> {
+  const key = `${api}|${cred.email}`;
+  const hit = tokenCache.get(key);
+  if (hit && hit.exp - 60_000 > Date.now()) return hit.token;
+  const q = `email=${encodeURIComponent(cred.email)}&password=${encodeURIComponent(cred.password)}`;
+  const attempts: { url: string; body?: string; headers: Record<string, string> }[] = [
+    { url: `${api}/token`, body: JSON.stringify({ email: cred.email, password: cred.password }), headers: { "Content-Type": "application/json", Accept: "application/json" } },
+    { url: `${api}/token?${q}`, headers: { Accept: "application/json" } },
+  ];
   let lastErr = "";
-  for (const base of cands) {
-    try {
-      const token = await vinawayToken({ ...cred, endpoint: base });
-      baseCache.set(cred.email, base);
-      return { base, token };
-    } catch (e) {
-      lastErr = String((e as Error)?.message ?? e);
-      // Sai email/password thì đổi base cũng vô ích → dừng sớm cho đỡ chậm
-      if (/HTTP 401|HTTP 422|credential|password/i.test(lastErr)) break;
+  for (const a of attempts) {
+    const res = await vFetch(a.url, { method: "POST", headers: a.headers, body: a.body, signal: AbortSignal.timeout(20000) })
+      .catch((e) => { lastErr = String((e as Error)?.message ?? e); return null; });
+    if (!res) continue;
+    const text = await res.text();
+    if (!res.ok) { lastErr = `Vinaway token HTTP ${res.status}: ${text.slice(0, 200)}`; continue; }
+    let j: Record<string, unknown>;
+    try { j = JSON.parse(text); } catch { lastErr = "Vinaway token: non-JSON response"; continue; }
+    const token = String(j?.access_token ?? "");
+    if (!token) { lastErr = "Vinaway token: no access_token (" + text.slice(0, 150) + ")"; continue; }
+    const ttl = (Number(j?.expires_in) || 18000) * 1000;
+    tokenCache.set(key, { token, exp: Date.now() + ttl });
+    return token;
+  }
+  throw new Error(lastErr || "Vinaway token failed");
+}
+
+export async function vinawaySession(cred: VinawayCred): Promise<{ api: string; token: string }> {
+  // Prefix đã dò được lần trước → dùng ngay
+  const cachedApi = apiCache.get(cred.email);
+  if (cachedApi) {
+    try { return { api: cachedApi, token: await tokenAt(cachedApi, cred) }; }
+    catch { apiCache.delete(cred.email); /* hết hạn/đổi hạ tầng → dò lại */ }
+  }
+  const seenB = new Set<string>();
+  const bases = [baseOf(cred.endpoint), ...BASE_CANDIDATES].filter((b) => b && !seenB.has(b) && (seenB.add(b), true));
+  let lastErr = "";
+  for (const base of bases) {
+    for (const api of [`${base}/api`, base]) {
+      try {
+        const token = await tokenAt(api, cred);
+        apiCache.set(cred.email, api);
+        return { api, token };
+      } catch (e) {
+        lastErr = String((e as Error)?.message ?? e);
+        // Sai email/password (401/422) → đổi host/prefix cũng vô ích, dừng sớm
+        if (/HTTP 401|HTTP 422/i.test(lastErr)) throw new Error(lastErr + " — kiểm tra lại email/password Vinaway trong Settings.");
+      }
     }
   }
   throw new Error(lastErr || "Vinaway: no reachable API host");
 }
 
+// Giữ tương thích chỗ khác từng import vinawayToken
 export async function vinawayToken(cred: VinawayCred): Promise<string> {
-  const base = baseOf(cred.endpoint);
-  const key = `${base}|${cred.email}`;
-  const hit = tokenCache.get(key);
-  if (hit && hit.exp - 60_000 > Date.now()) return hit.token;
-
-  const res = await vFetch(`${base}/api/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ email: cred.email, password: cred.password }),
-    signal: AbortSignal.timeout(20000),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Vinaway token HTTP ${res.status}: ${text.slice(0, 200)}`);
-  let j: Record<string, unknown>;
-  try { j = JSON.parse(text); } catch { throw new Error("Vinaway token: non-JSON response"); }
-  const token = String(j?.access_token ?? "");
-  if (!token) throw new Error("Vinaway token: no access_token (" + text.slice(0, 150) + ")");
-  const ttl = (Number(j?.expires_in) || 18000) * 1000;
-  tokenCache.set(key, { token, exp: Date.now() + ttl });
-  return token;
+  return (await vinawaySession(cred)).token;
 }
 
 export type VinawaySurface = { product_surface_id: number; design_png: string };
@@ -143,8 +162,8 @@ export type VinawayOrder = {
 };
 
 export async function createVinawayOrder(cred: VinawayCred, order: VinawayOrder): Promise<{ id: string; raw: unknown }> {
-  const { base, token } = await vinawaySession(cred);
-  const res = await vFetch(`${base}/api/orders`, {
+  const { api, token } = await vinawaySession(cred);
+  const res = await vFetch(`${api}/orders`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(order),
@@ -176,38 +195,52 @@ const flexTotal = (j: unknown, fallback: number): number => {
   return Number(o.total ?? p.total ?? p.count ?? 0) || fallback;
 };
 
+// Bóc field MỀM: response Vinaway không có doc → thử mọi tên field Laravel hay dùng (kể cả object lồng).
+const str = (v: unknown): string => (v == null ? "" : String(v)).trim();
+const firstStr = (...vals: unknown[]): string | undefined => { for (const v of vals) { const s = str(v); if (s) return s; } return undefined; };
+const firstNum = (...vals: unknown[]): number | undefined => { for (const v of vals) { const n = Number(v); if (Number.isFinite(n) && n > 0) return n; } return undefined; };
+
 /** Danh sách SẢN PHẨM (id dùng làm product_id khi tạo đơn) — để ghép "product_id:sku_id" cho mapping. */
-export async function listVinawayProducts(cred: VinawayCred, page = 1, limit = 100): Promise<{ total: number; data: { id: number; name: string; sku?: string }[] }> {
-  const { base, token } = await vinawaySession(cred);
-  const res = await vFetch(`${base}/api/products?page=${page}&limit=${limit}`, {
+export async function listVinawayProducts(cred: VinawayCred, page = 1, limit = 100): Promise<{ total: number; data: { id: number; name: string; sku?: string }[]; sample?: string }> {
+  const { api, token } = await vinawaySession(cred);
+  const res = await vFetch(`${api}/products?page=${page}&limit=${limit}`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30000),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Vinaway products HTTP ${res.status}: ${text.slice(0, 200)}`);
   const j = JSON.parse(text) as unknown;
-  const data = flexList(j).map((p) => ({ id: Number(p?.id) || 0, name: String(p?.name ?? p?.title ?? ""), sku: p?.sku ? String(p.sku) : undefined })).filter((p) => p.id);
-  return { total: flexTotal(j, data.length), data };
+  const raw = flexList(j);
+  const data = raw.map((p) => ({
+    id: Number(p?.id) || 0,
+    name: firstStr(p?.name, p?.title, p?.product_name, p?.productName) ?? "",
+    sku: firstStr(p?.sku, p?.code, p?.sku_code),
+  })).filter((p) => p.id);
+  return { total: flexTotal(j, data.length), data, sample: raw.length ? JSON.stringify(raw[0]).slice(0, 600) : undefined };
 }
 
 /** Kéo danh sách variant SKU (id dùng làm product_sku_id khi tạo đơn) — phục vụ import SKU mapping. */
-export async function listVinawaySkus(cred: VinawayCred, page = 1, limit = 100): Promise<{ total: number; data: { id: number; sku: string; product_id?: number; product_name?: string; color?: string; size?: string; price?: number }[] }> {
-  const { base, token } = await vinawaySession(cred);
-  const res = await vFetch(`${base}/api/product-skus?page=${page}&limit=${limit}`, {
+export async function listVinawaySkus(cred: VinawayCred, page = 1, limit = 100): Promise<{ total: number; data: { id: number; sku: string; product_id?: number; product_name?: string; color?: string; size?: string; price?: number }[]; sample?: string }> {
+  const { api, token } = await vinawaySession(cred);
+  const res = await vFetch(`${api}/product-skus?page=${page}&limit=${limit}`, {
     headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(30000),
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`Vinaway product-skus HTTP ${res.status}: ${text.slice(0, 200)}`);
   const j = JSON.parse(text) as unknown;
-  const data = flexList(j).map((v) => ({
-    id: Number(v?.id) || 0,
-    sku: String(v?.sku ?? v?.code ?? ""),
-    product_id: Number(v?.product_id) || undefined,
-    product_name: v?.product_name ? String(v.product_name) : undefined,
-    color: v?.color ? String(v.color) : undefined,
-    size: v?.size ? String(v.size) : undefined,
-    price: Number(v?.price) || undefined,
-  })).filter((v) => v.id);
-  return { total: flexTotal(j, data.length), data };
+  const raw = flexList(j);
+  const data = raw.map((v) => {
+    const prod = (v?.product ?? {}) as Record<string, unknown>;
+    return {
+      id: Number(v?.id) || 0,
+      sku: firstStr(v?.sku, v?.code, v?.sku_code, v?.skuCode, v?.name) ?? "",
+      product_id: firstNum(v?.product_id, prod?.id, v?.productId),
+      product_name: firstStr(v?.product_name, prod?.name, prod?.title, v?.productName),
+      color: firstStr(v?.color, v?.color_name, (v?.attributes as Record<string, unknown>)?.color),
+      size: firstStr(v?.size, v?.size_name, (v?.attributes as Record<string, unknown>)?.size),
+      price: firstNum(v?.price, v?.base_price, v?.basePrice, v?.cost, prod?.price),
+    };
+  }).filter((v) => v.id);
+  return { total: flexTotal(j, data.length), data, sample: raw.length ? JSON.stringify(raw[0]).slice(0, 600) : undefined };
 }

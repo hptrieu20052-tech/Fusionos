@@ -31,16 +31,20 @@ export async function POST(req: NextRequest) {
   try {
     // ---- 1. Sản phẩm: map name → product_id ----
     const pidByName = new Map<string, number>();
+    let sampleProduct: string | undefined;
     for (let page = 1; page <= 20; page++) {
       const r = await listVinawayProducts(cred, page, 100);
+      if (!sampleProduct) sampleProduct = r.sample;
       for (const p of r.data) if (p?.name) pidByName.set(p.name.trim().toLowerCase(), p.id);
       if (r.data.length < 100 || Date.now() - start > 15000) break;
     }
 
     // ---- 2. Variant SKUs ----
-    const rows: { id: number; sku: string; product_id?: number; product_name?: string; color?: string; size?: string }[] = [];
+    const rows: { id: number; sku: string; product_id?: number; product_name?: string; color?: string; size?: string; price?: number }[] = [];
+    let sampleSku: string | undefined;
     for (let page = 1; page <= 40; page++) {
       const r = await listVinawaySkus(cred, page, 100);
+      if (!sampleSku) sampleSku = r.sample;
       rows.push(...r.data);
       if (r.data.length < 100 || Date.now() - start > 35000) break;
     }
@@ -66,7 +70,7 @@ export async function POST(req: NextRequest) {
         fulfillerProduct: it.product_name?.slice(0, 200) || null,
         variant: [it.color, it.size].filter(Boolean).join(" / ").slice(0, 120) || null,
         fulfillerProductId: String(it.id),
-        baseCost: "0", shipCost: "0",
+        baseCost: it.price != null ? it.price.toFixed(2) : "0", shipCost: "0",
       });
     }
     for (let i = 0; i < toInsert.length; i += 500) {
@@ -74,9 +78,18 @@ export async function POST(req: NextRequest) {
       created += r.length;
     }
 
+    // Dữ liệu về nhưng THIẾU (không tên/không sku code) → đính kèm MẪU THÔ để biết field thật tên gì.
+    const nameless = rows.length && rows.every((x) => !x.product_name);
+    const skuless = rows.length && rows.every((x) => !x.sku);
+    const notes: string[] = [];
+    if (unmatched) notes.push(`${unmatched} SKU không khớp được product_id theo tên — sửa fulfillerSku thành "product_id:sku_id" thủ công.`);
+    if (nameless || skuless) {
+      notes.push(`Response Vinaway thiếu field quen thuộc — gửi admin 2 mẫu này: SKU=${(sampleSku ?? "?").slice(0, 350)} · PRODUCT=${(sampleProduct ?? "?").slice(0, 350)}`);
+    }
     return NextResponse.json({
       ok: true, created, found: rows.length, skipped: rows.length - toInsert.length, unmatched,
-      note: unmatched ? `${unmatched} SKU không khớp được product_id theo tên — các dòng đó cần sửa fulfillerSku thành "product_id:sku_id" thủ công.` : undefined,
+      note: notes.join(" | ") || undefined,
+      sampleSku, sampleProduct,
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 500 });
