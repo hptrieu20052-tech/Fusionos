@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { desc, eq, inArray, and, or, ilike, sql as dsql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
-import { scopeOwnerIds } from "@/lib/scope";
+import { scopeOwnerIds, resolveScope } from "@/lib/scope";
 import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -19,13 +19,21 @@ export async function GET(req: NextRequest) {
   const page = Math.max(Number(sp.get("page") ?? 1), 1);
 
   const parts = [] as ReturnType<typeof eq>[];
+  const scope = await resolveScope(session, "designs");
   const scopeIds = await scopeOwnerIds(session, "designs");
   if (scopeIds && scopeIds.length) {
     const idList = dsql.join(scopeIds.map((x) => dsql`${x}::uuid`), dsql`, `);
-    // SIẾT THEO VAI (chốt 2026-07-20): scope own/team match theo VAI của user —
-    // DESIGNER chỉ thấy design do designer/người-upload trong phạm vi làm (không dính design của seller team do người ngoài vẽ);
-    // SELLER chỉ thấy design của seller trong phạm vi. Role khác (support…) giữ đủ 3 vế như cũ.
-    if (session.role === "designer") {
+    // PHẠM VI (chốt 2026-07-20):
+    // · scope TEAM = "dữ liệu THUẦN trong team": có người của team tham gia, VÀ seller lẫn designer (nếu có gán)
+    //   đều phải thuộc team → không bao giờ thấy tên/dữ liệu team khác. Design lai 2 team chỉ admin/scope all thấy.
+    // · scope OWN = theo VAI: designer thấy design mình vẽ/upload; seller thấy design shop mình.
+    if (scope === "team") {
+      parts.push(dsql`(
+        (${schema.designs.designerId} IN (${idList}) OR ${schema.designs.sellerId} IN (${idList}) OR ${schema.designs.creatorId} IN (${idList}))
+        AND (${schema.designs.sellerId} IS NULL OR ${schema.designs.sellerId} IN (${idList}))
+        AND (${schema.designs.designerId} IS NULL OR ${schema.designs.designerId} IN (${idList}))
+      )` as never);
+    } else if (session.role === "designer") {
       parts.push(dsql`(${schema.designs.designerId} IN (${idList}) OR ${schema.designs.creatorId} IN (${idList}))` as never);
     } else if (session.role === "seller") {
       parts.push(dsql`(${schema.designs.sellerId} IN (${idList}) OR ${schema.designs.creatorId} IN (${idList}))` as never);
@@ -134,12 +142,14 @@ export async function GET(req: NextRequest) {
     // Giới hạn theo KHOẢNG NGÀY đang xem — tránh seller/designer của design cũ ngoài khoảng "lọt" vào dropdown.
     const dFrom = sp.get("from") ? dsql` AND d.created_at >= ${sp.get("from")}::date` : dsql``;
     const dTo = sp.get("to") ? dsql` AND d.created_at < (${sp.get("to")}::date + 1)` : dsql``;
-    // CÙNG điều kiện siết-theo-vai như lưới — dropdown phản chiếu đúng những design user thấy.
-    const roleCond = session.role === "designer"
-      ? dsql`(d.designer_id IN (${idList}) OR d.creator_id IN (${idList}))`
-      : session.role === "seller"
-        ? dsql`(d.seller_id IN (${idList}) OR d.creator_id IN (${idList}))`
-        : dsql`(d.designer_id IN (${idList}) OR d.seller_id IN (${idList}) OR d.creator_id IN (${idList}))`;
+    // CÙNG điều kiện phạm vi như lưới — dropdown phản chiếu đúng những design user thấy.
+    const roleCond = scope === "team"
+      ? dsql`((d.designer_id IN (${idList}) OR d.seller_id IN (${idList}) OR d.creator_id IN (${idList})) AND (d.seller_id IS NULL OR d.seller_id IN (${idList})) AND (d.designer_id IS NULL OR d.designer_id IN (${idList})))`
+      : session.role === "designer"
+        ? dsql`(d.designer_id IN (${idList}) OR d.creator_id IN (${idList}))`
+        : session.role === "seller"
+          ? dsql`(d.seller_id IN (${idList}) OR d.creator_id IN (${idList}))`
+          : dsql`(d.designer_id IN (${idList}) OR d.seller_id IN (${idList}) OR d.creator_id IN (${idList}))`;
     const vis = (await db.execute(dsql`
       SELECT DISTINCT d.seller_id, d.designer_id
       FROM designs d
