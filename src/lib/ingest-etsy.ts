@@ -69,11 +69,22 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         if (inItems.length) {
           const exItems = await db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, dup.id));
           const blank = (v: unknown) => !v || String(v).trim() === "" || String(v).startsWith("Etsy order ");
+          // MATCH ITEM 1-1, mỗi item DB chỉ được khớp MỘT LẦN.
+          // BUG CŨ (nguy hiểm): đơn có 2+ item CÙNG listing → find() theo listingId trỏ cả 2 vào item đầu,
+          // luật "dài hơn thì đè" biến 2 item khác size/tên cá nhân hoá thành GIỐNG HỆT NHAU → in sai cho khách.
+          const used = new Set<string>();
+          const matchFor = (inIt: InItem, i: number) => {
+            // Cùng số lượng item → khớp theo THỨ TỰ (ổn định giữa API/extension, phân biệt được 2 item cùng listing)
+            if (exItems.length === inItems.length && exItems[i] && !used.has(exItems[i].id)) return exItems[i];
+            const lid = s(inIt.listingId);
+            if (lid) { const e = exItems.find((x) => !used.has(x.id) && x.etsyListingId === lid); if (e) return e; }
+            return exItems.find((x) => !used.has(x.id)) ?? null;
+          };
           for (let i = 0; i < inItems.length; i++) {
             const inIt = inItems[i];
-            const ex = (exItems.length === 1 && inItems.length === 1) ? exItems[0]
-              : ((s(inIt.listingId) && exItems.find((e) => e.etsyListingId && e.etsyListingId === s(inIt.listingId))) || exItems[i]);
+            const ex = matchFor(inIt, i);
             if (!ex) continue;
+            used.add(ex.id);
             const ip: Record<string, unknown> = {};
             if (s(inIt.title) && blank(ex.productTitle)) ip.productTitle = s(inIt.title);
             // Variant/Personalization: điền khi trống HOẶC khi bản mới ĐẦY ĐỦ hơn (dài hơn) → chữa đơn cũ bị cắt cụt khi re-sync.
