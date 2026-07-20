@@ -63,7 +63,8 @@ export type LenfulItem = {
   designs?: LenfulDesign[];
   embroidereds?: LenfulDesign[];
   request_clone?: boolean;
-  shippings?: string[];
+  /** BẮT BUỘC — mã ship theo ưu tiên: 0 Standard · 1 Ground · 2 Express · 3 3-Days · 4 Special · 5 US Island · 6 WW Standard · 7 By Platform · 8 By Seller */
+  shippings?: number[];
 };
 export type LenfulOrder = {
   order_number: string;

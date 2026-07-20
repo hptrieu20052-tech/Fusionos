@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ---- 2. Variant SKUs ----
-    const rows: { id: number; sku: string; product_name?: string; color?: string; size?: string }[] = [];
+    const rows: { id: number; sku: string; product_id?: number; product_name?: string; color?: string; size?: string }[] = [];
     for (let page = 1; page <= 40; page++) {
       const r = await listVinawaySkus(cred, page, 100);
       rows.push(...r.data);
@@ -55,7 +55,8 @@ export async function POST(req: NextRequest) {
       const sku = (it.sku ?? "").trim() || String(it.id);
       if (!sku || haveSku.has(sku)) continue;
       haveSku.add(sku);
-      const pid = pidByName.get((it.product_name ?? "").trim().toLowerCase());
+      // Ưu tiên product_id trả thẳng trong response; fallback ghép theo tên sản phẩm.
+      const pid = it.product_id || pidByName.get((it.product_name ?? "").trim().toLowerCase());
       if (!pid) unmatched++;
       toInsert.push({
         internalSku: sku, fulfillerId: ff.id,

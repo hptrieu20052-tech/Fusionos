@@ -158,18 +158,23 @@ function vinawayAdapter(): FulfillerAdapter {
         };
       });
 
+      const note = ctx.lines.map((l) => (l.personalization || "").trim()).filter(Boolean).join(" | ");
       const res = await createVinawayOrder(
         { endpoint: ctx.fulfiller.apiEndpoint, email, password },
         {
           type: Number(cred.type) || 1,                       // 1 Production
           external_order_id: orderExtNumber(o),
           production_line_id: Number(cred.productionLineId) || 1, // 1 Standard · 2 Express
+          note_seller: note || undefined,
           customer_name: `${(o.buyerFirst || "").trim()} ${(o.buyerLast || "").trim()}`.trim() || "Customer",
           address1: o.addr1 || "",
+          address2: o.addr2 || "",
           city: o.city || "",
           zip: o.zip || "",
           country: toISO2(o.country || "") || o.country || "US",
           state: o.state || "",
+          email: o.email || undefined,
+          tel: o.phone || undefined,
           items,
         },
       );
@@ -205,6 +210,11 @@ function lenfulAdapter(): FulfillerAdapter {
         return { ...simulate("lenful"), reason: "Lenful cần Identifier (user_name) + API Key (password) + Shop ID (store_id) trong Settings → order NOT sent to the printer" };
       }
       const o = ctx.order;
+      // shippings BẮT BUỘC (mảng MÃ SỐ theo thứ tự ưu tiên): 0 Standard · 1 Ground · 2 Express · 3 3-Days
+      // · 4 Special · 5 US Island · 6 WW Standard · 7 Shipping By Platform · 8 Shipping By Seller.
+      // Override qua Settings cred.shipping ("0" hoặc "0,1,2"); mặc định: có nhãn TikTok → [7], còn lại [0,1,2].
+      const shipCfg = String(cred.shipping ?? "").split(/[,\s]+/).map((x) => parseInt(x, 10)).filter((n) => Number.isFinite(n) && n >= 0 && n <= 8);
+      const shippings = shipCfg.length ? shipCfg : (o.labelUrl ? [7] : [0, 1, 2]);
       const items: LenfulItem[] = ctx.lines.map((l) => {
         // Gom design theo VỊ TRÍ IN — ưu tiên danh sách đầy đủ designSides, fallback front/back/sleeve lẻ.
         const designs: LenfulDesign[] = [];
@@ -224,7 +234,7 @@ function lenfulAdapter(): FulfillerAdapter {
           quantity: l.qty,
           ...(l.image ? { mockups: [l.image] } : {}),
           ...(designs.length ? { designs } : {}),
-          ...(cred.shipping ? { shippings: [String(cred.shipping)] } : {}),
+          shippings,
         };
       });
       const note = ctx.lines.map((l) => (l.personalization || "").trim()).filter(Boolean).join(" | ");
