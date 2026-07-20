@@ -72,18 +72,48 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
           // MATCH ITEM 1-1, mỗi item DB chỉ được khớp MỘT LẦN.
           // BUG CŨ (nguy hiểm): đơn có 2+ item CÙNG listing → find() theo listingId trỏ cả 2 vào item đầu,
           // luật "dài hơn thì đè" biến 2 item khác size/tên cá nhân hoá thành GIỐNG HỆT NHAU → in sai cho khách.
+          // Thứ tự ưu tiên: (1) listingId KHÔNG mơ hồ · (2) nhiều item cùng listing → theo VỊ TRÍ trong nhóm đó
+          // · (3) index chỉ khi không mâu thuẫn listing · (4) item chưa gán listing. Tuyệt đối không "mượn" item listing khác.
           const used = new Set<string>();
           const matchFor = (inIt: InItem, i: number) => {
-            // Cùng số lượng item → khớp theo THỨ TỰ (ổn định giữa API/extension, phân biệt được 2 item cùng listing)
-            if (exItems.length === inItems.length && exItems[i] && !used.has(exItems[i].id)) return exItems[i];
             const lid = s(inIt.listingId);
-            if (lid) { const e = exItems.find((x) => !used.has(x.id) && x.etsyListingId === lid); if (e) return e; }
-            return exItems.find((x) => !used.has(x.id)) ?? null;
+            if (lid) {
+              const cands = exItems.filter((x) => !used.has(x.id) && x.etsyListingId === lid);
+              if (cands.length === 1) return cands[0];
+              if (cands.length > 1) {
+                const byIdx = exItems.length === inItems.length ? exItems[i] : null;
+                return byIdx && cands.includes(byIdx) ? byIdx : cands[0];
+              }
+            }
+            if (exItems.length === inItems.length && exItems[i] && !used.has(exItems[i].id)) {
+              const e = exItems[i];
+              if (!lid || !e.etsyListingId || e.etsyListingId === lid) return e; // index KHÔNG được cãi listing
+            }
+            return exItems.find((x) => !used.has(x.id) && (!lid || !x.etsyListingId)) ?? null;
           };
           for (let i = 0; i < inItems.length; i++) {
             const inIt = inItems[i];
             const ex = matchFor(inIt, i);
-            if (!ex) continue;
+            if (!ex) {
+              // Đơn trong DB THIẾU item so với sàn (harvest cũ gộp/thiếu) → BỔ SUNG, không bỏ rơi item của khách.
+              if (s(inIt.title) && exItems.length + 0 < inItems.length) {
+                await db.insert(schema.orderItems).values({
+                  orderId: dup.id,
+                  productTitle: s(inIt.title)!,
+                  internalSku: s(inIt.sku),
+                  qty: num(inIt.qty) || 1,
+                  unitPrice: (num(inIt.price) / fx).toFixed(2),
+                  variant: s(inIt.variant),
+                  personalization: s(inIt.personalization),
+                  etsyListingId: s(inIt.listingId),
+                  productUrl: s(inIt.productUrl),
+                  imageUrl: s(inIt.imageUrl),
+                  buyerFiles: Array.isArray(inIt.files) && inIt.files.length ? inIt.files : null,
+                });
+                itemUpdated = true;
+              }
+              continue;
+            }
             used.add(ex.id);
             const ip: Record<string, unknown> = {};
             if (s(inIt.title) && blank(ex.productTitle)) ip.productTitle = s(inIt.title);
