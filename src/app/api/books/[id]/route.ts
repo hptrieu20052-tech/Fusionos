@@ -12,9 +12,20 @@ async function guard() {
   return (await can(s, "bookStudio")) ? s : null;
 }
 
+// PHẠM VI theo Permissions (resource "bookStudio"): scope own/team → chỉ đụng được book của owner trong phạm vi.
+async function inScope(s: NonNullable<Awaited<ReturnType<typeof guard>>>, id: string): Promise<boolean> {
+  const { scopeOwnerIds } = await import("@/lib/scope");
+  const ids = await scopeOwnerIds(s, "bookStudio");
+  if (!ids) return true;
+  const [t] = await db.select({ ownerId: schema.bookTitles.ownerId }).from(schema.bookTitles).where(eq(schema.bookTitles.id, id)).limit(1);
+  return !!t && !!t.ownerId && ids.includes(t.ownerId);
+}
+
 // GET /api/books/[id] — chi tiết đầu sách + các trang
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  if (!(await guard())) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const s = await guard();
+  if (!s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await inScope(s, params.id))) return NextResponse.json({ ok: false, error: "forbidden (outside your scope)" }, { status: 403 });
   const [title] = await db.select().from(schema.bookTitles).where(eq(schema.bookTitles.id, params.id)).limit(1);
   if (!title) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const pages = await db.select({
@@ -34,7 +45,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 // PATCH /api/books/[id] — sửa tên/trạng thái/concept; hoặc thay toàn bộ pages { pages:[{page_no,text,illustration}] }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!(await guard())) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const s = await guard();
+  if (!s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await inScope(s, params.id))) return NextResponse.json({ ok: false, error: "forbidden (outside your scope)" }, { status: 403 });
   const b = await req.json().catch(() => null);
   if (!b) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
 
@@ -77,7 +90,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
 // DELETE /api/books/[id]
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  if (!(await guard())) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const s = await guard();
+  if (!s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await inScope(s, params.id))) return NextResponse.json({ ok: false, error: "forbidden (outside your scope)" }, { status: 403 });
   await db.delete(schema.bookTitles).where(eq(schema.bookTitles.id, params.id));
   return NextResponse.json({ ok: true });
 }

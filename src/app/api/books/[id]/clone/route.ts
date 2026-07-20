@@ -13,6 +13,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (!s || !(await can(s, "bookStudio"))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const [src] = await db.select().from(schema.bookTitles).where(eq(schema.bookTitles.id, params.id)).limit(1);
   if (!src) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  // PHẠM VI theo Permissions (bookStudio): scope own/team → chỉ clone được master trong phạm vi.
+  {
+    const { scopeOwnerIds } = await import("@/lib/scope");
+    const ids = await scopeOwnerIds(s, "bookStudio");
+    if (ids && (!src.ownerId || !ids.includes(src.ownerId))) {
+      return NextResponse.json({ ok: false, error: "forbidden (outside your scope)" }, { status: 403 });
+    }
+  }
 
   const b = await req.json().catch(() => ({}));
   const customer = String(b?.customer ?? "").trim();

@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { BOOK_PRODUCTS, getBookProduct, genBlocks } from "@/lib/book-products";
+import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 
-type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; kind?: string | null; sourceId?: string | null; updatedAt: string };
+type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; kind?: string | null; sourceId?: string | null; updatedAt: string; createdAt?: string | null; ownerId?: string | null; ownerName?: string | null };
+type Owner = { id: string; name: string };
 type Idea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
 type Bible = { format?: string; character?: string; wardrobe?: string; artStyle?: string; palette?: string; textStyle?: string; restrictions?: string };
 type Cover = { text?: string; brief?: string; prompt?: string };
@@ -139,7 +141,11 @@ export default function BooksClient() {
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 5000); };
   const [textModels, setTextModels] = useState<{ id: string; name: string }[]>([]);
-  const loadList = () => api("/api/books").then((j) => { if (j.ok) setTitles(j.titles as Title[]); });
+  const [owners, setOwners] = useState<Owner[]>([]);
+  const [scoped, setScoped] = useState(false);
+  const loadList = () => api("/api/books").then((j) => {
+    if (j.ok) { setTitles(j.titles as Title[]); setOwners((j.owners as Owner[]) ?? []); setScoped(!!j.scoped); }
+  });
   useEffect(() => {
     loadList();
     api("/api/books/models?type=text").then((j) => { if (j.ok) setTextModels((j.models as { id: string; name: string }[]) ?? []); });
@@ -175,24 +181,35 @@ export default function BooksClient() {
       {custom ? <CustomizeView cloneId={custom.cloneId} masterId={custom.masterId} flash={flash} openFull={() => { const id = custom.cloneId; setCustom(null); openDetail(id); }} />
         : masterView ? <MasterView id={masterView} flash={flash} openFull={() => { const id = masterView; setMasterView(null); openDetail(id); }} onCustomize={(cloneId, masterId) => { setMasterView(null); setCustom({ cloneId, masterId }); }} />
         : detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
-        : <ListView titles={titles} tab={tab} setTab={setTab} open={openDetail} openMaster={(id) => setMasterView(id)} reload={loadList} flash={flash} onCustomize={(cloneId, masterId) => setCustom({ cloneId, masterId })} />}
+        : <ListView titles={titles} owners={owners} scoped={scoped} tab={tab} setTab={setTab} open={openDetail} openMaster={(id) => setMasterView(id)} reload={loadList} flash={flash} onCustomize={(cloneId, masterId) => setCustom({ cloneId, masterId })} />}
 
       {showNew && <NewBookModal models={textModels} close={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); loadList(); openDetail(id); }} flash={flash} />}
     </div>
   );
 }
 
-function ListView({ titles, tab, setTab, open, openMaster, reload, flash, onCustomize }: { titles: Title[]; tab: "ideas" | "custom"; setTab: (t: "ideas" | "custom") => void; open: (id: string) => void; openMaster?: (id: string) => void; reload: () => void; flash: (m: string) => void; onCustomize?: (cloneId: string, masterId: string) => void }) {
+function ListView({ titles, owners, scoped, tab, setTab, open, openMaster, reload, flash, onCustomize }: { titles: Title[]; owners: Owner[]; scoped: boolean; tab: "ideas" | "custom"; setTab: (t: "ideas" | "custom") => void; open: (id: string) => void; openMaster?: (id: string) => void; reload: () => void; flash: (m: string) => void; onCustomize?: (cloneId: string, masterId: string) => void }) {
+  // Filter theo SELLER (admin) + KHOẢNG NGÀY (mặc định 30 ngày) + phân trang 20 book/trang.
+  const PER_PAGE = 20;
+  const [owner, setOwner] = useState("");
+  const [dr, setDr] = useState<RangeValue | null>({ range: "30d" });
+  const [pg, setPg] = useState(1);
+  useEffect(() => { setPg(1); }, [tab, owner, dr]);
   const del = async (t: Title) => {
     if (typeof window !== "undefined" && !window.confirm(`Delete book "${t.name}"? This cannot be undone.`)) return;
     const j = await api(`/api/books/${t.id}`, "DELETE");
     if (j.ok) { flash("✓ Book deleted"); reload(); } else flash("✗ " + (j.error ?? "Delete error"));
   };
   // Nhân bản từ mẫu → bản cho KHÁCH (giữ script/prompt/style; xoá tên/ảnh để điền của khách).
-  const customize = async (t: Title) => {
-    const customer = typeof window !== "undefined" ? (window.prompt("Customer name (for the copy's title):", "") ?? "") : "";
+  const [askT, setAskT] = useState<Title | null>(null);
+  const [cloneBusy, setCloneBusy] = useState(false);
+  const customize = async (t: Title, customer: string) => {
+    if (cloneBusy) return;
+    setCloneBusy(true);
     const j = await api(`/api/books/${t.id}/clone`, "POST", { customer });
+    setCloneBusy(false);
     if (j.ok) {
+      setAskT(null);
       flash("✓ Customer copy created — fill in the customer's variables, then Generate");
       if (onCustomize) onCustomize(j.id as string, t.id); else open(j.id as string);
     } else flash("✗ " + (j.error ?? "Clone error"));
@@ -203,11 +220,11 @@ function ListView({ titles, tab, setTab, open, openMaster, reload, flash, onCust
       {/* Click theo loại: master → màn master gọn · bản khách → màn customize 2 cột · book thường → editor đầy đủ */}
       <div onClick={() => master && openMaster ? openMaster(t.id) : t.sourceId && onCustomize ? onCustomize(t.id, t.sourceId!) : open(t.id)} style={{ flex: 1, cursor: "pointer", minWidth: 180 }}>
         <div style={{ fontWeight: 700, fontSize: 14 }}>{t.name}</div>
-        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{[t.occasion, t.audience].filter(Boolean).join(" · ") || "—"}</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{[!scoped ? t.ownerName : null, t.occasion, t.audience].filter(Boolean).join(" · ") || "—"}</div>
       </div>
       <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[t.status] ?? "#555", textTransform: "uppercase", letterSpacing: ".4px" }}>{t.status}</span>
       {master ? (
-        <button onClick={() => customize(t)} title="Clone this design for a customer order: keeps everything, clears name & photo for the new customer" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Customize for customer</button>
+        <button onClick={() => setAskT(t)} title="Clone this design for a customer order: keeps everything, clears name & photo for the new customer" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Customize for customer</button>
       ) : t.sourceId ? (
         <button onClick={() => { if (onCustomize) onCustomize(t.id, t.sourceId!); }} title="Reopen the 2-column customize screen (original design vs personalized copy)" style={{ ...btnBlue, padding: "6px 12px", fontSize: 12 }}>Continue customize</button>
       ) : null}
@@ -215,30 +232,99 @@ function ListView({ titles, tab, setTab, open, openMaster, reload, flash, onCust
     </div>
   );
 
-  const masters = titles.filter((t) => t.kind === "master");
-  const drafts = titles.filter((t) => t.kind !== "master");
+  // Áp filter seller + khoảng ngày (theo ngày TẠO book).
+  const range = dr ? rangeToDates(dr) : null;
+  const inFilter = (t: Title) => {
+    if (owner && t.ownerId !== owner) return false;
+    if (range) {
+      const c = String(t.createdAt ?? t.updatedAt ?? "").slice(0, 10);
+      if (c && (c < range.from || c > range.to)) return false;
+    }
+    return true;
+  };
+  const vis = titles.filter(inFilter);
+  // Master ở tab Custom books; BẢN KHÁCH (sourceId) cũng ở Custom books — xếp ngay dưới master gốc.
+  // New ideas chỉ còn sách Ý TƯỞNG thật.
+  const masters = vis.filter((t) => t.kind === "master");
+  const copies = vis.filter((t) => t.kind !== "master" && t.sourceId);
+  const drafts = vis.filter((t) => t.kind !== "master" && !t.sourceId);
+  const copiesOf = (m: Title) => copies.filter((c) => c.sourceId === m.id);
+  const orphans = copies.filter((c) => !masters.some((m) => m.id === c.sourceId));
+
+  // Hàng BẢN KHÁCH — thụt vào dưới master, gọn hơn hàng thường.
+  const copyRow = (t: Title) => (
+    <div key={t.id} style={{ ...btnGhost, cursor: "default", textAlign: "left", padding: "9px 13px", marginLeft: 26, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#FAFBFF" }}>
+      <div onClick={() => { if (onCustomize && t.sourceId) onCustomize(t.id, t.sourceId); }} style={{ flex: 1, cursor: "pointer", minWidth: 160, display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: "var(--blue)", background: "#E8F0FE", borderRadius: 999, padding: "2px 8px", letterSpacing: ".4px" }}>COPY</span>
+        <span style={{ fontWeight: 650, fontSize: 13 }}>{t.name}</span>
+      </div>
+      <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[t.status] ?? "#555", textTransform: "uppercase", letterSpacing: ".4px" }}>{t.status}</span>
+      <button onClick={() => { if (onCustomize && t.sourceId) onCustomize(t.id, t.sourceId); }} style={{ ...btnBlue, padding: "5px 11px", fontSize: 11.5 }}>Continue customize</button>
+      <button onClick={() => del(t)} title="Delete copy" style={{ ...btnGhost, padding: "5px 10px", fontSize: 11.5, color: "var(--red)", borderColor: "var(--line)" }}>Delete</button>
+    </div>
+  );
+  // Phân trang 20 book/trang (theo tab đang mở).
+  const totalItems = tab === "custom" ? masters.length : drafts.length;
+  const totalPg = Math.max(1, Math.ceil(totalItems / PER_PAGE));
+  const pgSafe = Math.min(pg, totalPg);
+  const pageSlice = <T,>(arr: T[]) => arr.slice((pgSafe - 1) * PER_PAGE, pgSafe * PER_PAGE);
+  const goPg = (n: number) => { setPg(n); if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const pager = totalItems > PER_PAGE ? (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 16 }}>
+      <button style={{ ...btnGhost, padding: "6px 13px", fontSize: 12, opacity: pgSafe <= 1 ? 0.45 : 1 }} disabled={pgSafe <= 1} onClick={() => goPg(pgSafe - 1)}>← Prev</button>
+      <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 700 }}>Page {pgSafe}/{totalPg} · {totalItems} books</span>
+      <button style={{ ...btnGhost, padding: "6px 13px", fontSize: 12, opacity: pgSafe >= totalPg ? 0.45 : 1 }} disabled={pgSafe >= totalPg} onClick={() => goPg(pgSafe + 1)}>Next →</button>
+    </div>
+  ) : null;
+
   return (
     <div>
-      {/* 2 MÀN HÌNH dạng tab — nhiều book không bị trôi lẫn nhau. */}
-      <div style={{ display: "inline-flex", background: "#EEF1F6", borderRadius: 12, padding: 4, gap: 3, marginBottom: 14 }}>
-        {([["ideas", `New ideas (${drafts.length})`], ["custom", `Custom books (${masters.length})`]] as ["ideas" | "custom", string][]).map(([v, lbl]) => (
-          <button key={v} onClick={() => { setTab(v); lsSet("bs_list_tab", v); }}
-            style={{ padding: "8px 18px", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", border: 0, background: tab === v ? "#fff" : "transparent", color: tab === v ? "var(--blue)" : "var(--muted)", boxShadow: tab === v ? "0 1px 3px rgba(0,0,0,.12)" : "none" }}>
-            {lbl}
-          </button>
-        ))}
+      {/* Tabs + bộ lọc: seller (admin) + khoảng ngày (mặc định 30 ngày). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <div style={{ display: "inline-flex", background: "#EEF1F6", borderRadius: 12, padding: 4, gap: 3 }}>
+          {([["ideas", `New ideas (${drafts.length})`], ["custom", `Custom books (${masters.length})`]] as ["ideas" | "custom", string][]).map(([v, lbl]) => (
+            <button key={v} onClick={() => { setTab(v); lsSet("bs_list_tab", v); }}
+              style={{ padding: "8px 18px", borderRadius: 9, fontSize: 13, fontWeight: 700, cursor: "pointer", border: 0, background: tab === v ? "#fff" : "transparent", color: tab === v ? "var(--blue)" : "var(--muted)", boxShadow: tab === v ? "0 1px 3px rgba(0,0,0,.12)" : "none" }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {!scoped && owners.length > 1 && (
+            <select value={owner} onChange={(e) => setOwner(e.target.value)} style={{ ...inp, width: "auto", minWidth: 150, height: 34, boxSizing: "border-box", fontSize: 12.5 }}>
+              <option value="">All sellers</option>
+              {owners.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </select>
+          )}
+          <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr(null)} />
+        </div>
       </div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-        {tab === "custom" ? "Selling designs — imported by Design ID; customize a copy for each customer order." : "New books being built + customer copies in progress."}
+        {tab === "custom" ? "Selling designs (masters) with their customer copies underneath — customize a copy for each order." : "New books being built."}
       </div>
       {tab === "custom" && <ImportDesignBar reload={reload} open={open} flash={flash} />}
       {tab === "custom"
-        ? (masters.length
-          ? <div style={{ display: "grid", gap: 10 }}>{masters.map((t) => row(t, true))}</div>
-          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books yet. <b>Import</b> an existing design by its Design ID above.</div>)
+        ? (masters.length || orphans.length
+          ? <div style={{ display: "grid", gap: 10 }}>
+              {pageSlice(masters).map((t) => (
+                <div key={t.id} style={{ display: "grid", gap: 8 }}>
+                  {row(t, true)}
+                  {copiesOf(t).map(copyRow)}
+                </div>
+              ))}
+              {orphans.length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px", marginTop: 6 }}>Customer copies (master deleted)</div>
+                  {orphans.map((t) => <div key={t.id} style={{ marginLeft: -26 }}>{copyRow(t)}</div>)}
+                </>
+              )}
+            </div>
+          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No custom books{owner || dr ? " match the current filters" : ""}. <b>Import</b> an existing design by its Design ID above.</div>)
         : (drafts.length
-          ? <div style={{ display: "grid", gap: 10 }}>{drafts.map((t) => row(t, false))}</div>
-          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No new ideas yet. Click <b>+ New Book</b> to start.</div>)}
+          ? <div style={{ display: "grid", gap: 10 }}>{pageSlice(drafts).map((t) => row(t, false))}</div>
+          : <div className="panel empty" style={{ padding: 26, textAlign: "center", color: "var(--muted)", fontSize: 12.5 }}>No new ideas{owner || dr ? " match the current filters" : ""}. Click <b>+ New Book</b> to start.</div>)}
+      {pager}
+      {askT && <CustomerNameModal title={askT.name} busy={cloneBusy} onOk={(n) => customize(askT, n)} onClose={() => setAskT(null)} />}
     </div>
   );
 }
@@ -552,6 +638,25 @@ function VarsPanel({ vars, setVars, bookId, flash }: { vars: Var[]; setVars: (v:
   );
 }
 
+// Modal hỏi TÊN KHÁCH khi tạo bản customize — thay window.prompt (hộp thoại trình duyệt xấu, dễ tưởng lỗi).
+function CustomerNameModal({ title, busy, onOk, onClose }: { title: string; busy: boolean; onOk: (name: string) => void; onClose: () => void }) {
+  const [name, setName] = useState("");
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 300, display: "grid", placeItems: "center" }} onClick={busy ? undefined : onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 20, width: 400, maxWidth: "92vw", boxShadow: "0 24px 60px rgba(15,23,42,.25)" }}>
+        <div style={{ fontWeight: 800, fontSize: 15.5 }}>Customize for customer</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", margin: "3px 0 13px" }}>{title}</div>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Customer name (e.g. Oliva)"
+          onKeyDown={(e) => { if (e.key === "Enter" && !busy) onOk(name.trim()); }} style={inp} />
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 15 }}>
+          <button style={{ ...btnGhost, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={onClose}>Cancel</button>
+          <button style={{ ...btnBlue, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => onOk(name.trim())}>{busy ? "Creating…" : "Create copy"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Thẻ BƯỚC đánh số — cho luồng Gen Book rõ ràng, đúng thứ tự.
 function StepCard({ n, title, desc, right, children }: { n: number; title: string; desc?: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
@@ -764,13 +869,13 @@ function MasterView({ id, flash, openFull, onCustomize }: { id: string; flash: (
     return () => clearTimeout(t);
   }, [vars, id, flash]);
 
-  const customize = async () => {
+  const [ask, setAsk] = useState(false);
+  const customize = async (customer: string) => {
     if (busy) return;
-    const customer = typeof window !== "undefined" ? (window.prompt("Customer name (for the copy's title):", "") ?? "") : "";
     setBusy(true);
     const j = await api(`/api/books/${id}/clone`, "POST", { customer });
     setBusy(false);
-    if (j.ok) { flash("✓ Customer copy created — fill in the customer's variables, then Generate"); onCustomize(j.id as string, id); }
+    if (j.ok) { setAsk(false); flash("✓ Customer copy created — fill in the customer's variables, then Generate"); onCustomize(j.id as string, id); }
     else flash("✗ " + (j.error ?? "Clone error"));
   };
 
@@ -790,7 +895,7 @@ function MasterView({ id, flash, openFull, onCustomize }: { id: string; flash: (
         right={
           <div style={{ display: "flex", gap: 8 }}>
             <button style={{ ...btnGhost, padding: "7px 13px", fontSize: 12.5 }} title="Open the full script/prompt editor (for masters built in Book Studio)" onClick={openFull}>Full editor</button>
-            <button style={{ ...btnBlue, padding: "7px 14px", fontSize: 12.5, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={customize}>{busy ? "Cloning…" : "Customize for customer"}</button>
+            <button style={{ ...btnBlue, padding: "7px 14px", fontSize: 12.5, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={() => setAsk(true)}>{busy ? "Cloning…" : "Customize for customer"}</button>
           </div>
         }>
         <div style={{ border: "1px solid #F5E1B0", background: "#FFF9EC", color: "#8a6d00", borderRadius: 12, padding: "9px 13px", fontSize: 12, marginBottom: 10 }}>
@@ -812,6 +917,7 @@ function MasterView({ id, flash, openFull, onCustomize }: { id: string; flash: (
           ))}
         </div>
       </StepCard>
+      {ask && <CustomerNameModal title={d.title.name} busy={busy} onOk={(n) => customize(n)} onClose={() => setAsk(false)} />}
     </div>
   );
 }

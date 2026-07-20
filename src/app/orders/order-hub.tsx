@@ -312,7 +312,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
                   const j = await fetch("/api/orders/import", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
                   setImporting(false); e.target.value = "";
                   if (j.ok) {
-                    flash(t("o.excelResult").replace("{rows}", String(j.rows)).replace("{t}", String(j.trackingUpdated)).replace("{c}", String(j.costUpdated)) + (j.errors?.length ? t("o.errorsSuffix").replace("{n}", String(j.errors.length)) : ""));
+                    flash(t("o.excelResult").replace("{rows}", String(j.rows)).replace("{t}", String(j.trackingUpdated)).replace("{c}", String(j.costUpdated)) + (j.ffUpdated ? ` · ${j.ffUpdated} fulfill` : "") + (j.errors?.length ? t("o.errorsSuffix").replace("{n}", String(j.errors.length)) : ""));
                     if (j.errors?.length) await confirm({ message: t("o.importErrLines") + j.errors.join("\n"), info: true });
                     load();
                   } else flash("✗ " + (j.error ?? t("o.importError")));

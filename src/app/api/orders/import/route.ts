@@ -6,15 +6,18 @@ import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import * as XLSX from "xlsx";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
+import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 
 export const dynamic = "force-dynamic";
 
 /**
- * POST /api/orders/import — nhận file Excel (multipart "file"), cập nhật hàng loạt:
+ * POST /api/orders/import — nhận file Excel/CSV (multipart "file"), cập nhật hàng loạt cho ĐƠN CÓ SẴN.
  * Cột nhận diện đơn: "Order ID" (external_id) hoặc "Order Label".
- * Cột cập nhật (có cột nào xử lý cột đó):
- *  - "Tracking Number" (+ "Carrier"): lưu tracking, đơn → shipped
- *  - "Base Cost": điều chỉnh sổ để tổng base_cost của đơn = giá trị này (ghi bút toán chênh lệch)
+ * Cột cập nhật (có cột nào xử lý cột đó — đúng bộ trường của form nhập tay):
+ *  - "Fulfilled By": tên nhà in (đúng tên trong Fulfillers) — gán/đổi supplier cho bản ghi fulfill
+ *  - "Tracking Number" (+ "Carrier"): lưu tracking, đơn → shipped, tự đẩy Etsy/TikTok
+ *  - "Tracking URL" · "Supplier Order Link"
+ *  - "Base Cost" · "Ship Fee": lưu vào bản ghi fulfill (cost = base + ship) + điều chỉnh sổ base_cost
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -36,13 +39,17 @@ export async function POST(req: NextRequest) {
     return "";
   };
 
-  let trackingUpdated = 0, costUpdated = 0;
+  // Map TÊN nhà in → id cho cột "Fulfilled By"
+  const ffRows = await db.select({ id: schema.fulfillers.id, name: schema.fulfillers.name }).from(schema.fulfillers);
+  const ffByName = new Map(ffRows.map((f) => [f.name.trim().toLowerCase(), f.id]));
+
+  let trackingUpdated = 0, costUpdated = 0, ffUpdated = 0;
   const errors: string[] = [];
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const ext = pick(r, ["orderid", "externalid", "mãđơn", "madon"]);
-    const label = pick(r, ["orderlabel", "label"]);
+    const label = pick(r, ["orderlabel", "label", "orderlabelid"]);
     if (!ext && !label) { errors.push(`Dòng ${i + 2}: thiếu Order ID / Order Label`); continue; }
 
     const [order] = (await db.execute(sql`
@@ -51,34 +58,72 @@ export async function POST(req: NextRequest) {
     `)).rows as { id: string; store_id: string | null; seller_id: string | null; status: string }[];
     if (!order) { errors.push(`Dòng ${i + 2}: không tìm thấy đơn ${ext || label}`); continue; }
 
-    // --- Tracking ---
+    // --- Các trường fulfill (đúng form nhập tay) ---
+    const supName = pick(r, ["fulfilledby", "fulfiller", "supplier", "nhàin", "nhain"]);
     const trk = pick(r, ["trackingnumber", "tracking", "trackingno"]);
     const carrier = pick(r, ["carrier", "trackingcarrier", "hãngvậnchuyển"]);
-    if (trk) {
-      const [fo] = (await db.execute(sql`
-        SELECT id FROM fulfillment_orders WHERE order_id = ${order.id}::uuid ORDER BY created_at DESC LIMIT 1
-      `)).rows as { id: string }[];
+    const turl = pick(r, ["trackingurl", "trackurl", "tracklink", "trackinglink", "track"]);
+    const slink = pick(r, ["supplierorderlink", "supplierlink", "supplierorderurl", "orderlink"]);
+    const bcRaw = pick(r, ["basecost", "cost", "giávốn", "giavon"]);
+    const shipRaw = pick(r, ["shipfee", "shipcost", "shipping", "shippingfee", "phíship", "phiship"]);
+
+    const supId = supName ? ffByName.get(supName.toLowerCase()) : undefined;
+    if (supName && !supId) { errors.push(`Dòng ${i + 2}: không có nhà in "${supName}" trong Fulfillers`); continue; }
+    const bc = bcRaw !== "" ? Number(bcRaw) : null;
+    const sc = shipRaw !== "" ? Number(shipRaw) : null;
+    if (bcRaw !== "" && (!Number.isFinite(bc!) || bc! < 0)) { errors.push(`Dòng ${i + 2}: Base Cost không hợp lệ (${bcRaw})`); continue; }
+    if (shipRaw !== "" && (!Number.isFinite(sc!) || sc! < 0)) { errors.push(`Dòng ${i + 2}: Ship Fee không hợp lệ (${shipRaw})`); continue; }
+
+    const hasFf = !!(supId || trk || carrier || turl || slink || bc != null || sc != null);
+    if (hasFf) {
+      const fos = (await db.execute(sql`
+        SELECT id, fulfiller_id, base_cost, ship_cost FROM fulfillment_orders WHERE order_id = ${order.id}::uuid ORDER BY created_at DESC
+      `)).rows as { id: string; fulfiller_id: string; base_cost: string | null; ship_cost: string | null }[];
+      const fo = supId ? (fos.find((x) => x.fulfiller_id === supId) ?? fos[0]) : fos[0];
+
       if (fo) {
+        const newBase = bc != null ? bc.toFixed(2) : fo.base_cost;
+        const newShip = sc != null ? sc.toFixed(2) : fo.ship_cost;
+        const newCost = bc != null || sc != null ? (Number(newBase ?? 0) + Number(newShip ?? 0)).toFixed(2) : null;
         await db.execute(sql`
-          UPDATE fulfillment_orders SET tracking_number=${trk}, tracking_carrier=${carrier || null},
-            status='shipped', tracking_synced_at=NOW() WHERE id=${fo.id}::uuid`);
+          UPDATE fulfillment_orders SET
+            fulfiller_id = COALESCE(${supId ?? null}::uuid, fulfiller_id),
+            tracking_number = COALESCE(${trk || null}, tracking_number),
+            tracking_carrier = COALESCE(${carrier || null}, tracking_carrier),
+            tracking_url = COALESCE(${turl || null}, tracking_url),
+            supplier_order_url = COALESCE(${slink || null}, supplier_order_url),
+            base_cost = ${newBase}, ship_cost = ${newShip},
+            cost = COALESCE(${newCost}, cost),
+            status = CASE WHEN ${trk || null}::text IS NOT NULL THEN 'shipped' ELSE status END,
+            tracking_synced_at = CASE WHEN ${trk || null}::text IS NOT NULL THEN NOW() ELSE tracking_synced_at END
+          WHERE id = ${fo.id}::uuid`);
+        ffUpdated++;
       } else {
+        // Chưa có bản ghi fulfill → BẮT BUỘC cột "Fulfilled By" để biết tạo cho nhà in nào
+        if (!supId) { errors.push(`Dòng ${i + 2}: đơn ${ext || label} chưa có bản ghi fulfill — thêm cột "Fulfilled By" (tên nhà in) để tạo mới`); continue; }
         await db.execute(sql`
-          INSERT INTO fulfillment_orders (order_id, fulfiller_id, status, tracking_number, tracking_carrier, tracking_synced_at)
-          SELECT ${order.id}::uuid, id, 'shipped', ${trk}, ${carrier || null}, NOW() FROM fulfillers LIMIT 1`);
+          INSERT INTO fulfillment_orders (order_id, fulfiller_id, status, external_ff_id, tracking_number, tracking_carrier, tracking_url, supplier_order_url, base_cost, ship_cost, cost, pushed_at, tracking_synced_at)
+          VALUES (${order.id}::uuid, ${supId}::uuid, ${trk ? "shipped" : "pushed"}, ${"MANUAL-" + Date.now() + "-" + i},
+            ${trk || null}, ${carrier || null}, ${turl || null}, ${slink || null},
+            ${bc != null ? bc.toFixed(2) : null}, ${sc != null ? sc.toFixed(2) : null},
+            ${((bc ?? 0) + (sc ?? 0)).toFixed(2)}, NOW(), ${trk ? sql`NOW()` : sql`NULL`})`);
+        ffUpdated++;
       }
+    }
+
+    // --- Tracking → đơn shipped + tự đẩy Etsy/TikTok ---
+    if (trk) {
       if (!["delivered", "cancel", "trash"].includes(order.status)) {
         await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
         await autoPushEtsyTracking(order.id);
+        await autoPushTiktokTracking(order.id).catch(() => { /* đơn không phải TikTok → bỏ qua */ });
       }
       trackingUpdated++;
     }
 
-    // --- Base cost: chỉnh tổng sổ = giá trị file ---
-    const bcRaw = pick(r, ["basecost", "cost", "giávốn", "giavon"]);
+    // --- Base cost: chỉnh tổng sổ = giá trị file (bcRaw đã đọc + validate ở trên) ---
     if (bcRaw !== "") {
       const target = Number(bcRaw);
-      if (isNaN(target) || target < 0) { errors.push(`Dòng ${i + 2}: Base Cost không hợp lệ (${bcRaw})`); continue; }
       const cur = Number(((await db.execute(sql`
         SELECT coalesce(-sum(amount),0)::numeric s FROM transactions WHERE order_id=${order.id}::uuid AND type='base_cost'
       `)).rows[0] as { s: string }).s);
@@ -95,5 +140,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, rows: rows.length, trackingUpdated, costUpdated, errors: errors.slice(0, 30) });
+  return NextResponse.json({ ok: true, rows: rows.length, trackingUpdated, costUpdated, ffUpdated, errors: errors.slice(0, 30) });
 }

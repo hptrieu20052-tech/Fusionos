@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { desc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
+import { scopeOwnerIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -12,15 +13,32 @@ async function guard() {
   return (await can(s, "bookStudio")) ? s : null;
 }
 
-// GET /api/books — danh sách đầu sách
+// GET /api/books — danh sách đầu sách.
+// PHẠM VI theo cấu hình Permissions (resource "bookStudio"): View full = tất cả · View team's = book của
+// người cùng team · Own only = book của mình. Admin luôn full.
 export async function GET() {
-  if (!(await guard())) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const s = await guard();
+  if (!s) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const scopeIds = await scopeOwnerIds(s, "bookStudio");
+  const own = !!scopeIds;
+  const { eq, inArray } = await import("drizzle-orm");
   const rows = await db.select({
     id: schema.bookTitles.id, name: schema.bookTitles.name, occasion: schema.bookTitles.occasion,
     audience: schema.bookTitles.audience, status: schema.bookTitles.status, kind: schema.bookTitles.kind,
-    sourceId: schema.bookTitles.sourceId, updatedAt: schema.bookTitles.updatedAt,
-  }).from(schema.bookTitles).orderBy(desc(schema.bookTitles.updatedAt));
-  return NextResponse.json({ ok: true, titles: rows });
+    sourceId: schema.bookTitles.sourceId, updatedAt: schema.bookTitles.updatedAt, createdAt: schema.bookTitles.createdAt,
+    ownerId: schema.bookTitles.ownerId, ownerName: schema.users.fullName,
+  }).from(schema.bookTitles)
+    .leftJoin(schema.users, eq(schema.users.id, schema.bookTitles.ownerId))
+    .where(scopeIds && scopeIds.length ? inArray(schema.bookTitles.ownerId, scopeIds) : undefined)
+    .orderBy(desc(schema.bookTitles.updatedAt));
+  // Danh sách owner (seller) cho filter — chỉ hữu ích với admin (own thì luôn là chính mình).
+  const seen = new Set<string>();
+  const owners: { id: string; name: string }[] = [];
+  for (const r of rows) {
+    if (r.ownerId && !seen.has(r.ownerId)) { seen.add(r.ownerId); owners.push({ id: r.ownerId, name: r.ownerName ?? "?" }); }
+  }
+  owners.sort((a, z) => a.name.localeCompare(z.name));
+  return NextResponse.json({ ok: true, titles: rows, owners, scoped: own });
 }
 
 // POST /api/books — tạo đầu sách từ concept đã chọn
