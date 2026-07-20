@@ -22,11 +22,20 @@ export async function GET(req: NextRequest) {
   const scopeIds = await scopeOwnerIds(session, "designs");
   if (scopeIds && scopeIds.length) {
     const idList = dsql.join(scopeIds.map((x) => dsql`${x}::uuid`), dsql`, `);
-    parts.push(dsql`(
-      ${schema.designs.designerId} IN (${idList})
-      OR ${schema.designs.sellerId} IN (${idList})
-      OR ${schema.designs.creatorId} IN (${idList})
-    )` as never);
+    // SIẾT THEO VAI (chốt 2026-07-20): scope own/team match theo VAI của user —
+    // DESIGNER chỉ thấy design do designer/người-upload trong phạm vi làm (không dính design của seller team do người ngoài vẽ);
+    // SELLER chỉ thấy design của seller trong phạm vi. Role khác (support…) giữ đủ 3 vế như cũ.
+    if (session.role === "designer") {
+      parts.push(dsql`(${schema.designs.designerId} IN (${idList}) OR ${schema.designs.creatorId} IN (${idList}))` as never);
+    } else if (session.role === "seller") {
+      parts.push(dsql`(${schema.designs.sellerId} IN (${idList}) OR ${schema.designs.creatorId} IN (${idList}))` as never);
+    } else {
+      parts.push(dsql`(
+        ${schema.designs.designerId} IN (${idList})
+        OR ${schema.designs.sellerId} IN (${idList})
+        OR ${schema.designs.creatorId} IN (${idList})
+      )` as never);
+    }
   }
   const q = sp.get("q")?.trim();
   if (q) {
@@ -122,10 +131,19 @@ export async function GET(req: NextRequest) {
   //  lọc theo "user trong phạm vi" như cũ làm dropdown rỗng → filter biến mất).
   if (scopeIds && scopeIds.length) {
     const idList = dsql.join(scopeIds.map((x) => dsql`${x}::uuid`), dsql`, `);
+    // Giới hạn theo KHOẢNG NGÀY đang xem — tránh seller/designer của design cũ ngoài khoảng "lọt" vào dropdown.
+    const dFrom = sp.get("from") ? dsql` AND d.created_at >= ${sp.get("from")}::date` : dsql``;
+    const dTo = sp.get("to") ? dsql` AND d.created_at < (${sp.get("to")}::date + 1)` : dsql``;
+    // CÙNG điều kiện siết-theo-vai như lưới — dropdown phản chiếu đúng những design user thấy.
+    const roleCond = session.role === "designer"
+      ? dsql`(d.designer_id IN (${idList}) OR d.creator_id IN (${idList}))`
+      : session.role === "seller"
+        ? dsql`(d.seller_id IN (${idList}) OR d.creator_id IN (${idList}))`
+        : dsql`(d.designer_id IN (${idList}) OR d.seller_id IN (${idList}) OR d.creator_id IN (${idList}))`;
     const vis = (await db.execute(dsql`
       SELECT DISTINCT d.seller_id, d.designer_id
       FROM designs d
-      WHERE d.designer_id IN (${idList}) OR d.seller_id IN (${idList}) OR d.creator_id IN (${idList})
+      WHERE ${roleCond}${dFrom}${dTo}
     `)).rows as { seller_id: string | null; designer_id: string | null }[];
     const visSellers = new Set(vis.map((v) => v.seller_id).filter(Boolean) as string[]);
     const visDesigners = new Set(vis.map((v) => v.designer_id).filter(Boolean) as string[]);

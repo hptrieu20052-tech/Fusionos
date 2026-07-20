@@ -146,7 +146,7 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
             <input placeholder={t("d.searchPlaceholder")} value={q}
               onChange={(e) => { setQ(e.target.value); setPage(1); }} />
           </div>
-          {!(data?.scoped && (data?.sellers ?? []).length <= 1) && (
+          {/* Luôn hiện cả 2 filter (user scoped cũng cần lọc trong phạm vi của mình) */}
           <div className="field">
             <label>{t("c.seller")}</label>
             <select value={sellerId} onChange={(e) => { setSellerId(e.target.value); setPage(1); }}>
@@ -154,8 +154,6 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
               {(data?.sellers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          )}
-          {!(data?.scoped && (data?.designers ?? []).length <= 1) && (
           <div className="field">
             <label>{t("c.designer")}</label>
             <select value={designerId} onChange={(e) => { setDesignerId(e.target.value); setPage(1); }}>
@@ -163,7 +161,6 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
               {(data?.designers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          )}
         </div>
       </div>
 
