@@ -70,7 +70,9 @@ export async function POST(req: NextRequest) {
         fulfillerProduct: it.product_name?.slice(0, 200) || null,
         variant: [it.color, it.size].filter(Boolean).join(" / ").slice(0, 120) || null,
         fulfillerProductId: String(it.id),
-        baseCost: it.price != null ? it.price.toFixed(2) : "0", shipCost: "0",
+        // Vinaway trả giá theo CENT (600 = $6.00 — amount_total 2470 trong doc = $24.70): số nguyên → chia 100.
+        baseCost: it.price != null ? (Number.isInteger(it.price) ? (it.price / 100).toFixed(2) : it.price.toFixed(2)) : "0",
+        shipCost: "0",
       });
     }
     for (let i = 0; i < toInsert.length; i += 500) {
