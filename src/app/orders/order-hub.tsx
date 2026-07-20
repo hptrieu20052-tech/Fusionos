@@ -153,6 +153,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const [platform, setPlatform] = useState("");
   const [fulfillerId, setFulfillerId] = useState("");
   const [designF, setDesignF] = useState(""); // "" | assigned | unassigned
+  const [ffData, setFfData] = useState("");   // "" | no_tracking | no_cost — chốt sổ đơn thiếu dữ liệu fulfill
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" });
   const [page, setPage] = useState(1); const [show, setShow] = useState(20);
   const [msg, setMsg] = useState("");
@@ -183,11 +184,12 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
     if (platform) p.set("platform", platform);
     if (fulfillerId) p.set("fulfillerId", fulfillerId);
     if (designF) p.set("design", designF);
+    if (ffData) p.set("ffdata", ffData);
     if (dr) { const d = rangeToDates(dr); p.set("from", d.from); p.set("to", d.to); }
     const j = await fetch(`/api/orders?${p}`).then((r) => r.json());
     if (my !== reqSeq.current) return; // bỏ response cũ nếu đã có request mới hơn
     if (j.ok) setData(j);
-  }, [page, show, status, sellerId, storeId, q, platform, fulfillerId, designF, dr]);
+  }, [page, show, status, sellerId, storeId, q, platform, fulfillerId, designF, ffData, dr]);
   useEffect(() => { load(); }, [load]);
   // AUTO-SYNC NGẦM: kéo trạng thái · tracking · chi phí từ TẤT CẢ nhà in.
   // Chạy ngay khi mở trang, rồi lặp mỗi 60s. Server tự throttle (FF_POLL_THROTTLE_MS, mặc định 2')
@@ -386,6 +388,14 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
               <option value="">{t("o.allWord")}</option>
               <option value="assigned">{t("o.designAssigned")}</option>
               <option value="unassigned">{t("o.designUnassigned")}</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Fulfill data</label>
+            <select value={ffData} onChange={(e) => { setFfData(e.target.value); setPage(1); }}>
+              <option value="">{t("o.allWord")}</option>
+              <option value="no_tracking">Missing tracking</option>
+              <option value="no_cost">Missing cost</option>
             </select>
           </div>
         </div>

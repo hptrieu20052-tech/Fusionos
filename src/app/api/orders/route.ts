@@ -34,6 +34,13 @@ export async function GET(req: NextRequest) {
   const dz = sp.get("design");
   const cDesign = dz === "assigned" ? sql`NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.design_id IS NULL)`
     : dz === "unassigned" ? sql`EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.design_id IS NULL)` : null;
+  // Lọc DỮ LIỆU FULFILL để chốt sổ: đơn ĐÃ push nhưng còn thiếu tracking / thiếu cost.
+  const fd = sp.get("ffdata");
+  const cFfData = fd === "no_tracking"
+    ? sql`EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id AND fo2.tracking_number IS NULL)`
+    : fd === "no_cost"
+      ? sql`EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id AND coalesce(fo2.cost, 0) = 0)`
+      : null;
   const q = sp.get("q")?.trim();
   const like = "%" + (q ?? "") + "%";
   const cQ = q ? sql`(
@@ -49,7 +56,7 @@ export async function GET(req: NextRequest) {
     const f = list.filter(Boolean) as ReturnType<typeof sql>[];
     return f.length ? f.reduce((a, c) => sql`${a} AND ${c}`) : sql`TRUE`;
   };
-  const conds = [cScope, cStore, cPlatform, cFulfiller, cDesign, cQ, cFrom, cTo].filter(Boolean) as ReturnType<typeof sql>[];
+  const conds = [cScope, cStore, cPlatform, cFulfiller, cDesign, cFfData, cQ, cFrom, cTo].filter(Boolean) as ReturnType<typeof sql>[];
   // Điều kiện KHÔNG gồm status → dùng cho đếm pill (mỗi tab đếm trong cùng bộ lọc hiện tại)
   const baseWhere = conds.length ? conds.reduce((a, c) => sql`${a} AND ${c}`) : sql`TRUE`;
 
