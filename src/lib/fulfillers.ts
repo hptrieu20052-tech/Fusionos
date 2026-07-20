@@ -486,13 +486,17 @@ function printifyAdapter(): FulfillerAdapter {
       // Blueprint đặt tên vùng in rất khác nhau: front / front_side / default / back /
       // cover / page 1 / page_01 / inside_1 ... → match theo SỐ trước, rồi tới TỪ KHOÁ.
       const pad2 = (n: number) => String(n).padStart(2, "0");
+      // Blueprint LỊCH hay đặt tên vùng in theo THÁNG CHỮ (january…december / jan…dec) → quy về số tháng.
+      const MONTH_NAMES = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
       const kindsForPosition = (pos: string): string[] => {
         const p = pos.toLowerCase();
         const out: string[] = [];
-        const n = Number(p.match(/(\d+)/)?.[1] ?? 0);
+        const digit = Number(p.match(/(\d+)/)?.[1] ?? 0);
+        const mi = MONTH_NAMES.findIndex((m) => p.includes(m) || new RegExp(`\\b${m.slice(0, 3)}\\b`).test(p));
+        const n = digit >= 1 && digit <= 24 ? digit : mi >= 0 ? mi + 1 : 0;
         if (n >= 1 && n <= 24) {
-          if (p.includes("month") || p.includes("cal")) out.push(`month_${pad2(n)}`, `grid_${pad2(n)}`, `page_${pad2(n)}`);
-          else if (p.includes("grid")) out.push(`grid_${pad2(n)}`, `month_${pad2(n)}`);
+          if (p.includes("grid")) out.push(`grid_${pad2(n)}`, `month_${pad2(n)}`);
+          else if (mi >= 0 || p.includes("month") || p.includes("cal")) out.push(`month_${pad2(n)}`, `grid_${pad2(n)}`, `page_${pad2(n)}`);
           else out.push(`page_${pad2(n)}`, `month_${pad2(n)}`, `grid_${pad2(n)}`);
         }
         if (p.includes("sleeve") && p.includes("left")) out.push("sleeve_left");
@@ -532,7 +536,18 @@ function printifyAdapter(): FulfillerAdapter {
           const primary = byKind.get("design_front") ?? byKind.get("book_cover") ?? byKind.get("cover_front")
             ?? sides.slice().sort((a, b) => a.kind.localeCompare(b.kind))[0];
           if (!primary) throw new Error(`SKU ${l.fulfillerSku}: card design chưa có file mặt in nào — Printify yêu cầu ít nhất 1 ảnh.`);
+          // Card NHIỀU mặt (lịch/photo book) mà không map được vùng nào → DỪNG, không đẩy sản phẩm chỉ có 1 ảnh.
+          if (sides.length > 1) {
+            throw new Error(`SKU ${l.fulfillerSku}: blueprint có vùng in [${positions.slice(0, 8).join(", ")}${positions.length > 8 ? "…" : ""}] nhưng không khớp được với các mặt design [${sides.map((x) => x.kind).slice(0, 8).join(", ")}${sides.length > 8 ? "…" : ""}]. KHÔNG đẩy để tránh sản phẩm thiếu trang — gửi admin tên vùng in này để bổ sung rule map.`);
+          }
           plan.push({ position: positions[0], side: primary });
+        }
+        // CHỐNG ĐẨY THIẾU TRANG (lỗi lịch chỉ có cover): còn vùng in TRỐNG và còn mặt design CHƯA DÙNG
+        // → tên vùng của blueprint không khớp rule map → DỪNG báo rõ, tuyệt đối không tạo product thiếu trang.
+        const unmatchedPos = positions.filter((pos) => !plan.some((x) => x.position === pos));
+        const unusedKinds = Array.from(byKind.keys()).filter((k) => !used.has(k));
+        if (unmatchedPos.length && unusedKinds.length) {
+          throw new Error(`SKU ${l.fulfillerSku}: ${unmatchedPos.length} vùng in chưa có ảnh [${unmatchedPos.slice(0, 10).join(", ")}${unmatchedPos.length > 10 ? "…" : ""}] trong khi design còn mặt chưa dùng [${unusedKinds.slice(0, 10).join(", ")}${unusedKinds.length > 10 ? "…" : ""}]. KHÔNG đẩy để tránh sản phẩm thiếu trang — gửi admin thông tin này để bổ sung rule map.`);
         }
 
         const uploaded = await mapLimit(plan, 5, (x) => uploadImageByUrl(token, `${l.fulfillerSku}-${x.side.kind}`, x.side.url));
