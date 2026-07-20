@@ -282,12 +282,28 @@ function flashshipAdapter(): FulfillerAdapter {
       const printType = (Number(cred.printType) === 2 ? 2 : 1) as 1 | 2;
       const shipment = [1, 2, 3, 4, 6].includes(Number(cred.shipment)) ? Number(cred.shipment) : 1;
 
+      // Map ĐỦ MỌI MẶT IN từ designSides của card (trước đây chỉ gửi front/back → đơn có TAY ÁO/neck bị thiếu design).
+      const FS_FIELD: Record<string, keyof FsProduct> = {
+        design_front: "printer_design_front_url", front: "printer_design_front_url",
+        design_back: "printer_design_back_url", back: "printer_design_back_url",
+        sleeve_left: "printer_design_left_url", left_sleeve: "printer_design_left_url",
+        sleeve_right: "printer_design_right_url", right_sleeve: "printer_design_right_url",
+        neck: "printer_design_neck_url", design_neck: "printer_design_neck_url",
+        neck_inner: "printer_design_neck_inner_url",
+        pocket: "printer_design_pocket_url",
+        hood: "printer_design_hood_url", design_hood: "printer_design_hood_url",
+      };
       const products: FsProduct[] = ctx.lines.map((l) => {
         const p: FsProduct = { variant_id: Number(l.fulfillerSku) || 0, quantity: l.qty, printType };
-        if (l.designFront) p.printer_design_front_url = l.designFront;
-        if (l.designBack) p.printer_design_back_url = l.designBack;
-        if (l.designHood) p.printer_design_hood_url = l.designHood;
-        if (l.designSleeve) { p.printer_design_left_url = l.designSleeve; p.printer_design_right_url = l.designSleeve; }
+        for (const sd of l.designSides ?? []) {
+          const field = FS_FIELD[(sd.kind || "").toLowerCase()];
+          if (field && sd.url && !p[field]) (p as unknown as Record<string, unknown>)[field] = sd.url;
+        }
+        // Fallback kiểu cũ (card chưa có designSides)
+        if (l.designFront && !p.printer_design_front_url) p.printer_design_front_url = l.designFront;
+        if (l.designBack && !p.printer_design_back_url) p.printer_design_back_url = l.designBack;
+        if (l.designHood && !p.printer_design_hood_url) p.printer_design_hood_url = l.designHood;
+        if (l.designSleeve && !p.printer_design_left_url && !p.printer_design_right_url) { p.printer_design_left_url = l.designSleeve; p.printer_design_right_url = l.designSleeve; }
         if (l.image) p.mockup_front_url = l.image;
         return p;
       });

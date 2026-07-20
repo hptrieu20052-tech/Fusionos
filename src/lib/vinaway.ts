@@ -17,15 +17,58 @@ const baseOf = (endpoint?: string | null) => {
   return b || "https://gateway.vinaway.io";
 };
 
+// Response tối giản dùng chung cho fetch chuẩn lẫn đường vòng https.
+type VResp = { ok: boolean; status: number; text: () => Promise<string> };
+
+// ĐƯỜNG VÒNG khi cert Vinaway sai host (ERR_TLS_CERT_ALTNAME_INVALID — cert của gateway.vinaway.io
+// không cấp cho chính domain đó): gọi bằng node:https với rejectUnauthorized=false, CHỈ áp cho Vinaway.
+async function insecureFetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string }): Promise<VResp> {
+  const { request } = await import("node:https");
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const req = request({
+      hostname: u.hostname, port: Number(u.port) || 443, path: u.pathname + u.search,
+      method: init.method || "GET", headers: init.headers,
+      rejectUnauthorized: false, servername: u.hostname,
+      timeout: 30000,
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => resolve({
+        ok: (res.statusCode ?? 500) >= 200 && (res.statusCode ?? 500) < 300,
+        status: res.statusCode ?? 0,
+        text: async () => Buffer.concat(chunks).toString("utf8"),
+      }));
+    });
+    req.on("timeout", () => req.destroy(new Error("timeout 30s")));
+    req.on("error", reject);
+    if (init.body) req.write(init.body);
+    req.end();
+  });
+}
+
 // fetch có CHẨN ĐOÁN: "fetch failed" của Node giấu nguyên nhân trong e.cause → lôi ra code cụ thể
 // (ENOTFOUND sai domain · ECONNREFUSED/ETIMEDOUT firewall chặn · CERT_* lỗi chứng chỉ TLS…).
-const vFetch = async (url: string, init: RequestInit): Promise<Response> => {
+// Lỗi CERT/ALTNAME → tự thử lại qua insecureFetch (bỏ verify TLS) để không kẹt vì cert Vinaway cấu hình sai.
+const vFetch = async (url: string, init: RequestInit): Promise<VResp> => {
   try {
     return await fetch(url, init);
   } catch (e) {
     const err = e as Error & { cause?: { code?: string; message?: string } };
-    const why = err?.cause?.code || err?.cause?.message || err?.message || String(e);
-    throw new Error(`Vinaway: không kết nối được ${url} — ${why}. Nếu là ETIMEDOUT/ECONNREFUSED thì server Vinaway đang chặn IP nước ngoài (Vercel ở Mỹ) — báo Vinaway mở firewall cho server của bạn.`);
+    const code = String(err?.cause?.code ?? "");
+    const detail = String(err?.cause?.message ?? err?.message ?? e);
+    if (/CERT|ALTNAME|TLS|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(code + " " + detail)) {
+      try {
+        return await insecureFetch(url, {
+          method: init.method as string | undefined,
+          headers: init.headers as Record<string, string> | undefined,
+          body: typeof init.body === "string" ? init.body : undefined,
+        });
+      } catch (e2) {
+        throw new Error(`Vinaway: cert TLS sai host (${code}) và gọi đường vòng cũng lỗi — ${String((e2 as Error)?.message ?? e2).slice(0, 200)}`);
+      }
+    }
+    throw new Error(`Vinaway: không kết nối được ${url} — ${code || detail}. Nếu là ETIMEDOUT/ECONNREFUSED thì server Vinaway đang chặn IP nước ngoài (Vercel ở Mỹ) — báo Vinaway mở firewall cho server của bạn.`);
   }
 };
 
