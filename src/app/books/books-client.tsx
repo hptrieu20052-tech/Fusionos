@@ -168,7 +168,6 @@ export default function BooksClient() {
         <span style={{ fontSize: 11, fontWeight: 700, color: "#7a3fb0", background: "#F3EAFB", border: "1px solid #E3D0F5", borderRadius: 999, padding: "2px 9px" }}>AI · Beta</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
           {(detail || custom || masterView) && <button style={btnGhost} onClick={() => { setDetail(null); setCustom(null); setMasterView(null); loadList(); }}>← List</button>}
-          {!detail && !custom && !masterView && tab === "ideas" && <button style={btnBlue} onClick={() => setShowNew(true)}>+ New Book</button>}
         </div>
       </div>
       {detail && <div className="sub" style={{ marginBottom: 14, color: "var(--muted)", fontSize: 12.5 }}>Script → Detailed prompt → Custom photo/name → Generate each page.</div>}
@@ -181,14 +180,14 @@ export default function BooksClient() {
       {custom ? <CustomizeView cloneId={custom.cloneId} masterId={custom.masterId} flash={flash} openFull={() => { const id = custom.cloneId; setCustom(null); openDetail(id); }} />
         : masterView ? <MasterView id={masterView} flash={flash} openFull={() => { const id = masterView; setMasterView(null); openDetail(id); }} onCustomize={(cloneId, masterId) => { setMasterView(null); setCustom({ cloneId, masterId }); }} />
         : detail ? <DetailView detail={detail} models={textModels} reload={() => openDetail(detail.title.id)} flash={flash} />
-        : <ListView titles={titles} owners={owners} scoped={scoped} tab={tab} setTab={setTab} open={openDetail} openMaster={(id) => setMasterView(id)} reload={loadList} flash={flash} onCustomize={(cloneId, masterId) => setCustom({ cloneId, masterId })} />}
+        : <ListView titles={titles} owners={owners} scoped={scoped} tab={tab} setTab={setTab} open={openDetail} openMaster={(id) => setMasterView(id)} reload={loadList} flash={flash} onCustomize={(cloneId, masterId) => setCustom({ cloneId, masterId })} onNewBook={() => setShowNew(true)} />}
 
       {showNew && <NewBookModal models={textModels} close={() => setShowNew(false)} onCreated={(id) => { setShowNew(false); loadList(); openDetail(id); }} flash={flash} />}
     </div>
   );
 }
 
-function ListView({ titles, owners, scoped, tab, setTab, open, openMaster, reload, flash, onCustomize }: { titles: Title[]; owners: Owner[]; scoped: boolean; tab: "ideas" | "custom"; setTab: (t: "ideas" | "custom") => void; open: (id: string) => void; openMaster?: (id: string) => void; reload: () => void; flash: (m: string) => void; onCustomize?: (cloneId: string, masterId: string) => void }) {
+function ListView({ titles, owners, scoped, tab, setTab, open, openMaster, reload, flash, onCustomize, onNewBook }: { titles: Title[]; owners: Owner[]; scoped: boolean; tab: "ideas" | "custom"; setTab: (t: "ideas" | "custom") => void; open: (id: string) => void; openMaster?: (id: string) => void; reload: () => void; flash: (m: string) => void; onCustomize?: (cloneId: string, masterId: string) => void; onNewBook?: () => void }) {
   // Filter theo SELLER (admin) + KHOẢNG NGÀY (mặc định 30 ngày) + phân trang 20 book/trang.
   const PER_PAGE = 20;
   const [owner, setOwner] = useState("");
@@ -291,12 +290,13 @@ function ListView({ titles, owners, scoped, tab, setTab, open, openMaster, reloa
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {!scoped && owners.length > 1 && (
-            <select value={owner} onChange={(e) => setOwner(e.target.value)} style={{ ...inp, width: "auto", minWidth: 150, height: 34, boxSizing: "border-box", fontSize: 12.5 }}>
+            <select value={owner} onChange={(e) => setOwner(e.target.value)} style={{ ...inp, width: "auto", minWidth: 150, height: 38, boxSizing: "border-box", fontSize: 12.5 }}>
               <option value="">All sellers</option>
               {owners.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
             </select>
           )}
           <DateRangePicker value={dr ?? { range: "" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr(null)} />
+          {tab === "ideas" && onNewBook && <button style={{ ...btnBlue, height: 38, padding: "0 16px" }} onClick={onNewBook}>+ New Book</button>}
         </div>
       </div>
       <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
