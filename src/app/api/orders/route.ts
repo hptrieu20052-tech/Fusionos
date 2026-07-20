@@ -35,11 +35,20 @@ export async function GET(req: NextRequest) {
   const cDesign = dz === "assigned" ? sql`NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.design_id IS NULL)`
     : dz === "unassigned" ? sql`EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.design_id IS NULL)` : null;
   // Lọc DỮ LIỆU FULFILL để chốt sổ: đơn ĐÃ push nhưng còn thiếu tracking / thiếu cost.
+  // Tự loại đơn Cancel/Trash — đơn hủy không bao giờ có tracking/cost, chỉ gây nhiễu khi chốt.
   const fd = sp.get("ffdata");
+  // Quét TẤT CẢ đơn (trừ Cancel/Trash): đơn chưa có bản ghi fulfill nào cũng tính là thiếu —
+  // phủ luôn nhóm fulfill CSV/tay mới chỉ đổi status (điểm mù cũ).
   const cFfData = fd === "no_tracking"
-    ? sql`EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id AND fo2.tracking_number IS NULL)`
+    ? sql`(o.status NOT IN ('cancel','trash') AND (
+        NOT EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id)
+        OR EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id AND fo2.tracking_number IS NULL)
+      ))`
     : fd === "no_cost"
-      ? sql`EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id AND coalesce(fo2.cost, 0) = 0)`
+      ? sql`(o.status NOT IN ('cancel','trash') AND (
+          NOT EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id)
+          OR EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id AND coalesce(fo2.cost, 0) = 0)
+        ))`
       : null;
   const q = sp.get("q")?.trim();
   const like = "%" + (q ?? "") + "%";
