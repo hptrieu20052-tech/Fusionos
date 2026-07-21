@@ -75,37 +75,57 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
           // Thứ tự ưu tiên: (1) listingId KHÔNG mơ hồ · (2) nhiều item cùng listing → theo VỊ TRÍ trong nhóm đó
           // · (3) index chỉ khi không mâu thuẫn listing · (4) item chưa gán listing. Tuyệt đối không "mượn" item listing khác.
           const used = new Set<string>();
+          const guessedLid = new Set<string>(); // listing đã từng ghép ĐOÁN MÒ → slot còn lại của nó KHÔNG được tin
           const lower = (v: unknown) => String(v ?? "").trim().toLowerCase();
-          const matchFor = (inIt: InItem, i: number) => {
+          type ExItem = (typeof exItems)[number];
+          // matchFor trả kèm cờ `confirmed`: TRUE = ghép chắc chắn bằng NỘI DUNG (listing riêng, hoặc
+          // personalization/variant riêng biệt). FALSE = chỉ đoán theo VỊ TRÍ vì mơ hồ.
+          // v87: khi confirmed=false thì TUYỆT ĐỐI không ghi personalization/variant — để tránh ca
+          // "đơn nhiều item CÙNG listing, tên trống + Etsy đảo thứ tự" gán tên vào nhầm dòng.
+          const matchFor = (inIt: InItem, i: number): { ex: ExItem | null; confirmed: boolean } => {
             const lid = s(inIt.listingId);
             if (lid) {
               const cands = exItems.filter((x) => !used.has(x.id) && x.etsyListingId === lid);
-              if (cands.length === 1) return cands[0];
+              // "chỉ còn 1 ứng viên" chỉ CHẮC CHẮN nếu listing này chưa từng bị đoán mò
+              // (nếu slot kia đã bị 1 lần đoán chiếm thì slot còn lại cũng là hệ quả của phỏng đoán).
+              if (cands.length === 1) return { ex: cands[0], confirmed: !guessedLid.has(lid) };
               if (cands.length > 1) {
                 // NHIỀU item cùng listing: Etsy KHÔNG cam kết thứ tự giữa 2 lần sync → khớp theo
-                // NỘI DUNG trước (personalization rồi variant trùng), chỉ khi bí mới rơi về vị trí.
-                // (Bug 4121474496: chiều re-sync trả đảo thứ tự → khớp vị trí ghép ACHILLES vào dòng ATLAS.)
+                // NỘI DUNG trước (personalization rồi variant trùng). Trùng duy nhất = CHẮC CHẮN.
                 const pz = lower(inIt.personalization);
-                const byPz = pz ? cands.filter((x) => lower(x.personalization) === pz) : [];
-                if (byPz.length === 1) return byPz[0];
-                let pool = byPz.length > 1 ? byPz : cands;
+                if (pz) {
+                  const byPz = cands.filter((x) => lower(x.personalization) === pz);
+                  if (byPz.length === 1) return { ex: byPz[0], confirmed: true };
+                  if (byPz.length > 1) {
+                    // trùng cả tên → dùng variant tách tiếp trong nhóm trùng tên
+                    const vr = lower(inIt.variant);
+                    const byVr = vr ? byPz.filter((x) => lower(x.variant) === vr) : [];
+                    if (byVr.length === 1) return { ex: byVr[0], confirmed: true };
+                    return { ex: byPz[i % byPz.length] && byPz.includes(exItems[i]) ? exItems[i] : byPz[0], confirmed: true }; // trùng hệt nhau → ghép sao cũng ra kết quả y hệt (vô hại)
+                  }
+                }
                 const vr = lower(inIt.variant);
-                const byVr = vr ? pool.filter((x) => lower(x.variant) === vr) : [];
-                if (byVr.length === 1) return byVr[0];
-                if (byVr.length > 1) pool = byVr;
+                if (vr) {
+                  const byVr = cands.filter((x) => lower(x.variant) === vr);
+                  if (byVr.length === 1) return { ex: byVr[0], confirmed: true };
+                }
+                // KHÔNG phân biệt được bằng nội dung → đoán theo vị trí NHƯNG đánh dấu chưa chắc.
                 const byIdx = exItems.length === inItems.length ? exItems[i] : null;
-                return byIdx && pool.includes(byIdx) ? byIdx : pool[0];
+                const guess = byIdx && cands.includes(byIdx) ? byIdx : cands[0];
+                guessedLid.add(lid); // listing này đã phải đoán → slot còn lại của nó cũng không được tin
+                return { ex: guess, confirmed: false };
               }
             }
             if (exItems.length === inItems.length && exItems[i] && !used.has(exItems[i].id)) {
               const e = exItems[i];
-              if (!lid || !e.etsyListingId || e.etsyListingId === lid) return e; // index KHÔNG được cãi listing
+              if (!lid || !e.etsyListingId || e.etsyListingId === lid) return { ex: e, confirmed: !!lid }; // có listing khớp vị trí thì tạm tin; không listing = đoán
             }
-            return exItems.find((x) => !used.has(x.id) && (!lid || !x.etsyListingId)) ?? null;
+            const fb = exItems.find((x) => !used.has(x.id) && (!lid || !x.etsyListingId)) ?? null;
+            return { ex: fb, confirmed: false };
           };
           for (let i = 0; i < inItems.length; i++) {
             const inIt = inItems[i];
-            const ex = matchFor(inIt, i);
+            const { ex, confirmed } = matchFor(inIt, i);
             if (!ex) {
               // Đơn trong DB THIẾU item so với sàn (harvest cũ gộp/thiếu) → BỔ SUNG, không bỏ rơi item của khách.
               if (s(inIt.title) && exItems.length + 0 < inItems.length) {
@@ -129,17 +149,15 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
             used.add(ex.id);
             const ip: Record<string, unknown> = {};
             if (s(inIt.title) && blank(ex.productTitle)) ip.productTitle = s(inIt.title);
-            // Variant/Personalization: chỉ đè khi bản cũ TRỐNG hoặc là ĐOẠN ĐẦU bị cắt cụt của bản mới
-            // ("ACHIL…" → "ACHILLES" vẫn tự lành). Hai giá trị KHÁC HẲN nhau → giữ nguyên tuyệt đối:
-            // luật "dài hơn thì đè" cũ từng biến ATLAS thành ACHILLES khi Etsy đảo thứ tự item (đơn 4121474496).
-            const stem = (v: unknown) => String(v ?? "").trim().replace(/(\.\.\.|…)$/, "").toLowerCase();
-            const safeUpgrade = (cur: string | null | undefined, nv: string | null) =>
-              !!nv && (blank(cur) || (nv.length > (cur ?? "").length && stem(cur) !== "" && stem(nv).startsWith(stem(cur))));
+            // v87 — VARIANT/PERSONALIZATION: chỉ điền khi ô đang TRỐNG *và* ghép được XÁC NHẬN (confirmed).
+            // Thực tế push lại luôn ra ĐỦ hoặc KHÔNG (không có bản cụt cần "nối dài") → đã có giá trị thì
+            // KHÓA CỨNG, không bao giờ đè. Và không confirmed (đơn nhiều item cùng listing, không phân biệt
+            // được bằng nội dung) thì KHÔNG đoán theo vị trí để điền → tránh gán tên vào nhầm dòng.
             const inVar = s(inIt.variant);
-            if (safeUpgrade(ex.variant, inVar)) ip.variant = inVar;
+            if (confirmed && blank(ex.variant) && inVar) ip.variant = inVar;
             if (s(inIt.imageUrl) && blank(ex.imageUrl)) ip.imageUrl = s(inIt.imageUrl);
             const inPz = s(inIt.personalization);
-            if (safeUpgrade(ex.personalization, inPz)) ip.personalization = inPz;
+            if (confirmed && blank(ex.personalization) && inPz) ip.personalization = inPz;
             if (s(inIt.listingId) && !ex.etsyListingId) ip.etsyListingId = s(inIt.listingId);
             // Ảnh khách upload: điền khi chưa có, hoặc khi bản mới có NHIỀU ảnh hơn.
             const inFiles = Array.isArray(inIt.files) ? inIt.files : [];
