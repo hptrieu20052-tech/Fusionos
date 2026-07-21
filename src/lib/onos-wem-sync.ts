@@ -194,8 +194,14 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
         } catch (e) { if (errors.length < 5) errors.push(`${ff.name} track: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
       }
 
-      // 2) COST cho đơn còn $0 (fees là Estimate cho tới khi Compassup chốt)
-      for (const ffo of open.filter((f) => Number(f.cost ?? 0) <= 0).slice(0, 20)) {
+      // 2) COST — poll CẢ đơn ĐÃ CÓ cost, không chỉ đơn $0.
+      // BUG CŨ: chỉ hỏi đơn cost=0 → đơn push xong Compassup THÊM DỊCH VỤ (giá chốt cao hơn giá lúc push)
+      // thì FUSION giữ mãi giá cũ → sổ thiếu chi phí. Ưu tiên đơn $0 trước, còn lại xoay vòng ngẫu nhiên để phủ dần.
+      const costQueue = [
+        ...open.filter((f) => Number(f.cost ?? 0) <= 0),
+        ...open.filter((f) => Number(f.cost ?? 0) > 0).sort(() => Math.random() - 0.5),
+      ].slice(0, 25);
+      for (const ffo of costQueue) {
         if (Date.now() - started > BUDGET_MS) break;
         try {
           const { total } = await getCompassupFees(cCred, ffo.externalFfId!);
