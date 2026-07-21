@@ -10,6 +10,21 @@ const inp = { padding: "9px 12px", border: "1px solid var(--line)", borderRadius
 const money = (v: unknown) => "$" + (Math.round(Math.abs(Number(v ?? 0)) * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 const TX_TYPES = ["revenue","base_cost","shipping","platform_fee","ads","sample","salary","tool","refund","other"];
+
+// Logo Excel (bộ nhận diện 2019–2025) — SVG inline, đồng bộ với menu Export bên Orders.
+const IcExcel = ({ size = 17 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 32 32" aria-label="Excel" style={{ flexShrink: 0 }}>
+    <rect x="10" y="3" width="19" height="26" rx="1.6" fill="#fff" />
+    <path d="M19.5 3H27.4A1.6 1.6 0 0 1 29 4.6V9.5H19.5V3Z" fill="#33C481" />
+    <path d="M10 3h9.5v6.5H10z" fill="#21A366" />
+    <path d="M19.5 9.5H29V16H19.5z" fill="#21A366" />
+    <path d="M19.5 16H29v6.5H19.5z" fill="#107C41" />
+    <path d="M19.5 22.5H29v4.9a1.6 1.6 0 0 1-1.6 1.6H19.5V22.5Z" fill="#185C37" />
+    <path d="M10 22.5h9.5v6.5H11.6A1.6 1.6 0 0 1 10 27.4V22.5Z" fill="#107C41" />
+    <rect x="2" y="8.5" width="15" height="15" rx="1.6" fill="#107C41" />
+    <path d="M6.7 12.3l5.6 7.4M12.3 12.3l-5.6 7.4" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" fill="none" />
+  </svg>
+);
 export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const { t: tr } = useLang();
   const [days, setDays] = useState(30);
@@ -40,7 +55,13 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
 
   return (
     <>
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        {/* CSV FULFILLMENT COST theo shop (mọi sàn, TẤT CẢ đơn kể cả New/Cancel) — theo đúng khoảng ngày đang xem */}
+        <a href={`/api/finance/export?${dr ? (() => { const { from, to } = rangeToDates(dr); return `from=${from}&to=${to}`; })() : `days=${days}`}`}
+          title="Download CSV: fulfillment cost per shop (all marketplaces, ALL orders incl. New/Cancel) — Marketplace · Store · Revenue · Platform fee · Base/Ship/Other cost · Profit"
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "1px solid var(--line)", background: "#fff", borderRadius: 11, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, color: "var(--ink)", textDecoration: "none" }}>
+          <IcExcel /> Export CSV
+        </a>
         <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
       </div>
 
