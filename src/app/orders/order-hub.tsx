@@ -334,7 +334,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
                   const j = await fetch("/api/orders/import", { method: "POST", body: fd }).then((r) => r.json()).catch(() => ({ ok: false, error: t("o.netError") }));
                   setImporting(false); e.target.value = "";
                   if (j.ok) {
-                    flash(t("o.excelResult").replace("{rows}", String(j.rows)).replace("{t}", String(j.trackingUpdated)).replace("{c}", String(j.costUpdated)) + (j.ffUpdated ? ` · ${j.ffUpdated} fulfill` : "") + (j.errors?.length ? t("o.errorsSuffix").replace("{n}", String(j.errors.length)) : ""));
+                    flash(t("o.excelResult").replace("{rows}", String(j.rows)).replace("{t}", String(j.trackingUpdated)).replace("{c}", String(j.costUpdated)) + (j.ffUpdated ? ` · ${j.ffUpdated} fulfill` : "") + (j.createdFulfillers?.length ? ` · new supplier: ${(j.createdFulfillers as string[]).join(", ")}` : "") + (j.errors?.length ? t("o.errorsSuffix").replace("{n}", String(j.errors.length)) : ""));
                     if (j.errors?.length) await confirm({ message: t("o.importErrLines") + j.errors.join("\n"), info: true });
                     load();
                   } else flash("✗ " + (j.error ?? t("o.importError")));
@@ -792,8 +792,9 @@ function ManualTracking({ orderId, platform, ff, fulfillerId, fulfillers, flash,
 function ExcelImportModal({ close, importing, pickFile }: { close: () => void; importing: boolean; pickFile: () => void }) {
   const COLS = ["Order Label", "Fulfilled By", "Carrier", "Tracking Number", "Tracking URL", "Supplier Order Link", "Base Cost", "Ship Fee"];
   const downloadTemplate = () => {
+    // Tracking mẫu bọc ="..." — mở bằng Excel vẫn giữ nguyên là TEXT, không bị đổi thành 9.4E+21 (mất số cuối).
     const csv = COLS.join(",") + "\n" +
-      "ALLENSHOP8094-577485582385516585,Printway,USPS,9400111899223100000000,https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899223100000000,https://printway.io/orders/PW123456,7.85,3.20\n";
+      'ALLENSHOP8094-577485582385516585,Printway,USPS,"=""9400111899223100000000""",https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899223100000000,https://printway.io/orders/PW123456,7.85,3.20\n';
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }));
     a.download = "fulfill_update_template.csv";
@@ -816,7 +817,7 @@ function ExcelImportModal({ close, importing, pickFile }: { close: () => void; i
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 13 }}>Download the template</div>
             <div style={{ fontSize: 11.5, color: "var(--muted)", marginBottom: 7 }}>
-              Identify each order by <b>Order Label</b> (or an <b>Order ID</b> column). Leave a cell empty to keep the current value. &quot;Fulfilled By&quot; must match a supplier name in Fulfillers.
+              Identify each order by <b>Order Label</b> or <b>Order ID</b> (either value works in either column). Leave a cell empty to keep the current value. &quot;Fulfilled By&quot; must match a supplier name in Fulfillers. <b>Tracking:</b> format the column as TEXT — if Excel shows 9.4E+21 the digits are lost, re-enter the code.
             </div>
             <button onClick={downloadTemplate} style={{ ...btnGhost, fontSize: 12.5, padding: "7px 13px" }}>⬇ Download template (.csv)</button>
           </div>

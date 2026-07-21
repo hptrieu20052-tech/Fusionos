@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
 
   let trackingUpdated = 0, costUpdated = 0, ffUpdated = 0;
   const errors: string[] = [];
+  const createdFulfillers: string[] = [];
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
@@ -53,11 +54,16 @@ export async function POST(req: NextRequest) {
     const label = pick(r, ["orderlabel", "label", "orderlabelid"]);
     if (!ext && !label) { errors.push(`Dòng ${i + 2}: thiếu Order ID / Order Label`); continue; }
 
+    // NHẬN DIỆN LINH HOẠT: support hay điền Order ID vào cột Order Label (và ngược lại) →
+    // giá trị nào cũng thử cả 3 kiểu: external_id · order_label · phần SAU DẤU "-" cuối (label SHOP-123 → 123).
+    const key = (ext || label).trim();
+    const tail = key.includes("-") ? key.slice(key.lastIndexOf("-") + 1) : key;
     const [order] = (await db.execute(sql`
       SELECT id, store_id, seller_id, status FROM orders
-      WHERE ${ext ? sql`external_id = ${ext}` : sql`order_label = ${label}`} LIMIT 1
+      WHERE external_id = ${key} OR order_label = ${key} OR external_id = ${tail}
+      ORDER BY ordered_at DESC LIMIT 1
     `)).rows as { id: string; store_id: string | null; seller_id: string | null; status: string }[];
-    if (!order) { errors.push(`Dòng ${i + 2}: không tìm thấy đơn ${ext || label}`); continue; }
+    if (!order) { errors.push(`Dòng ${i + 2}: không tìm thấy đơn ${key}`); continue; }
 
     // --- Các trường fulfill (đúng form nhập tay) ---
     const supName = pick(r, ["fulfilledby", "fulfiller", "supplier", "nhàin", "nhain"]);
@@ -68,8 +74,24 @@ export async function POST(req: NextRequest) {
     const bcRaw = pick(r, ["basecost", "cost", "giávốn", "giavon"]);
     const shipRaw = pick(r, ["shipfee", "shipcost", "shipping", "shippingfee", "phíship", "phiship"]);
 
-    const supId = supName ? ffByName.get(supName.toLowerCase()) : undefined;
-    if (supName && !supId) { errors.push(`Dòng ${i + 2}: không có nhà in "${supName}" trong Fulfillers`); continue; }
+    // CHẶN TRACKING BỊ EXCEL PHÁ: mã dài mở bằng Excel bị đổi thành 9.30012E+21 (MẤT chữ số cuối,
+    // không cứu được) → từ chối kèm hướng dẫn, tuyệt đối không lưu mã rác rồi đẩy lên sàn.
+    if (trk && (/\d\.\d+e\+?\d+/i.test(trk) || !/^[A-Za-z0-9\- ]{4,40}$/.test(trk))) {
+      errors.push(`Dòng ${i + 2}: Tracking "${trk}" không hợp lệ — Excel đã đổi số dài thành dạng khoa học. Format cột Tracking thành TEXT (hoặc gõ ="mã..." ), nhập lại mã thật rồi import lại dòng này.`);
+      continue;
+    }
+    let supId = supName ? ffByName.get(supName.toLowerCase()) : undefined;
+    if (supName && !supId) {
+      // Nhà in CHƯA CÓ trong hệ thống → TỰ TẠO (method "excel" — supplier không API, đúng ca fulfill tay).
+      // Cẩn thận gõ đúng tên: sai chính tả sẽ sinh nhà in thừa (xoá trong Settings → Fulfillers).
+      try {
+        const [nf] = await db.insert(schema.fulfillers).values({ name: supName, method: "excel" }).onConflictDoNothing().returning({ id: schema.fulfillers.id });
+        const id = nf?.id
+          ?? ((await db.execute(sql`SELECT id FROM fulfillers WHERE lower(name) = ${supName.toLowerCase()} LIMIT 1`)).rows[0] as { id: string } | undefined)?.id;
+        if (id) { supId = id; ffByName.set(supName.toLowerCase(), id); if (nf?.id) createdFulfillers.push(supName); }
+      } catch { /* rơi xuống lỗi dưới */ }
+      if (!supId) { errors.push(`Dòng ${i + 2}: không tạo được nhà in "${supName}"`); continue; }
+    }
     const bc = bcRaw !== "" ? Number(bcRaw) : null;
     const sc = shipRaw !== "" ? Number(shipRaw) : null;
     if (bcRaw !== "" && (!Number.isFinite(bc!) || bc! < 0)) { errors.push(`Dòng ${i + 2}: Base Cost không hợp lệ (${bcRaw})`); continue; }
@@ -141,5 +163,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, rows: rows.length, trackingUpdated, costUpdated, ffUpdated, errors: errors.slice(0, 30) });
+  return NextResponse.json({ ok: true, rows: rows.length, trackingUpdated, costUpdated, ffUpdated, createdFulfillers, errors: errors.slice(0, 30) });
 }
