@@ -1,3 +1,5 @@
+// Đơn SPLIT (Duplicate/Split) mang external_id dạng "<id>-CLONE-n" — gọi API TikTok phải dùng mã đơn THẬT.
+const platformExtId = (ext: string) => ext.replace(/-CLONE-\d+$/, "");
 import { db, schema } from "@/lib/db";
 import { eq, sql } from "drizzle-orm";
 import { ttGetValidCfg, ttGetPackageIdsForOrder, ttGetShippingDocument, ttCreatePackage, ttGetShippingServices } from "@/lib/tiktok-shop";
@@ -28,21 +30,21 @@ export async function fetchAndStoreTiktokLabels(orderInternalId: string, opts?: 
 
   try {
     const cfg = await ttGetValidCfg(order.storeId, cred);
-    let pkgs = await ttGetPackageIdsForOrder(cfg, order.externalId);
+    let pkgs = await ttGetPackageIdsForOrder(cfg, platformExtId(order.externalId));
 
     // AUTO-ARRANGE: chưa có package + được phép → tạo package = MUA NHÃN ($3.95). Idempotent qua tiktok_arranged_at.
     if (!pkgs.length && opts?.autoArrange) {
       const locked = await db.execute(sql`UPDATE orders SET tiktok_arranged_at = now() WHERE id = ${order.id} AND tiktok_arranged_at IS NULL RETURNING id`);
       if (!locked.rows.length) {
         // tiến trình khác đang/đã arrange → đọc lại package
-        pkgs = await ttGetPackageIdsForOrder(cfg, order.externalId);
+        pkgs = await ttGetPackageIdsForOrder(cfg, platformExtId(order.externalId));
         if (!pkgs.length) return { ok: false, labels: [], reason: "arrange đang chạy ở tiến trình khác — thử lại sau chốc lát" };
       } else {
         try {
-          const svc = await ttGetShippingServices(cfg, order.externalId).catch(() => ({ serviceId: null }));
-          const cp = await ttCreatePackage(cfg, order.externalId, svc.serviceId);
+          const svc = await ttGetShippingServices(cfg, platformExtId(order.externalId)).catch(() => ({ serviceId: null }));
+          const cp = await ttCreatePackage(cfg, platformExtId(order.externalId), svc.serviceId);
           if (!cp.packageId) throw new Error("Create Package: không trả về package id");
-          pkgs = await ttGetPackageIdsForOrder(cfg, order.externalId);
+          pkgs = await ttGetPackageIdsForOrder(cfg, platformExtId(order.externalId));
           if (!pkgs.length) pkgs = [{ id: cp.packageId }];
         } catch (e) {
           await db.update(schema.orders).set({ tiktokArrangedAt: null }).where(eq(schema.orders.id, order.id)); // mở khoá để retry
@@ -68,7 +70,7 @@ export async function fetchAndStoreTiktokLabels(orderInternalId: string, opts?: 
       const res = await fetch(docUrl, { signal: AbortSignal.timeout(25000) });
       if (!res.ok) throw new Error(`download label failed: HTTP ${res.status}`);
       const buf = Buffer.from(await res.arrayBuffer());
-      const key = `tiktok-labels/${order.externalId}-${pkg.id}.pdf`;
+      const key = `tiktok-labels/${platformExtId(order.externalId)}-${pkg.id}.pdf`;
       await writeFile(key, buf, "application/pdf");
       labels.push({
         packageId: pkg.id,

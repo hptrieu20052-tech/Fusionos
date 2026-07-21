@@ -3,8 +3,13 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 
 // Khi đơn có tracking (webhook fulfiller trả về / nhập tay / import) → tự chuyển sang "shipped".
 // Chỉ nâng từ các trạng thái trước đó; KHÔNG đụng đơn đã shipped/delivered/trash/cancel.
+// ĐƠN TÁCH NHIỀU NHÀ IN: chỉ Shipped khi TẤT CẢ bản ghi fulfill đã có tracking
+// (1 bản ghi = hành vi cũ; tránh đơn 2 nhà mới ship nửa đã báo khách "đã giao hết").
 export async function markShippedOnTracking(orderId: string) {
   try {
+    const ffs = await db.select({ tn: schema.fulfillmentOrders.trackingNumber })
+      .from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, orderId));
+    if (ffs.length > 1 && ffs.some((f) => !f.tn)) return; // còn nhà chưa trả tracking → chưa Shipped
     await db.update(schema.orders)
       .set({ status: "shipped" })
       .where(and(

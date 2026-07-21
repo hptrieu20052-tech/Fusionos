@@ -169,7 +169,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
   const [bulkStatus, setBulkStatus] = useState("shipped");
   // Duplicate: hộp xác nhận + sửa Order label. PHẢI khai ở đây, cùng cụm hook —
   // đặt sau `if (!data) return ...` sẽ khiến số hook đổi giữa các lần render (React error #310).
-  const [dupFor, setDupFor] = useState<{ id: string; label: string } | null>(null);
+  const [dupFor, setDupFor] = useState<{ id: string; label: string; items: Item[] } | null>(null);
   const [showTtTracking, setShowTtTracking] = useState(false);
   const [showExcelImport, setShowExcelImport] = useState(false);
 
@@ -234,13 +234,16 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
     if (n > 0) load();
   };
 
-  const cloneOrder = async (id: string, orderLabel: string) => {
+  const cloneOrder = async (id: string, orderLabel: string, itemIds?: string[]) => {
     const j = await fetch(`/api/orders/${id}/clone`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderLabel }),
+      body: JSON.stringify({ orderLabel, itemIds }),
     }).then((r) => r.json()).catch(() => ({ ok: false }));
     setDupFor(null);
-    if (j.ok) { flash(t("o.cloned") + j.order.externalId); load(); } else flash("✗ " + (j.error ?? t("o.errorWord")));
+    if (j.ok) {
+      flash((j.split ? "✓ Split — revenue divided between the 2 orders · " : t("o.cloned")) + j.order.externalId);
+      load();
+    } else flash("✗ " + (j.error ?? t("o.errorWord")));
   };
   const toggleSel = (id: string) => {
     const n = new Set(selIds);
@@ -457,7 +460,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
         <OrderCard key={o.id} o={o} canEdit={canEdit} canPushFf={canPushFf} isAdmin={isAdmin} isSeller={isSeller} canDuplicate={canDuplicate} designers={data.designers ?? []}
           patchOrder={(id, patch) => setData((d) => d ? { ...d, orders: d.orders.map((x) => x.id === id ? { ...x, ...patch } : x) } : d)}
           selected={selIds.has(o.id)} onToggleSel={() => toggleSel(o.id)}
-          reload={load} flash={flash} openDup={(id, label) => setDupFor({ id, label })} copyText={copyText}
+          reload={load} flash={flash} openDup={(id, label, items) => setDupFor({ id, label, items })} copyText={copyText}
           fulfillers={data.fulfillers} />
       ))}
       {!data.orders.length && <div className="panel empty" style={{ marginTop: 12 }}>{t("o.noMatch")}</div>}
@@ -903,9 +906,9 @@ function TtTrackingModal({ close, flash, stores, dr }: {
 }
 
 function DuplicateModal({ init, close, onConfirm }: {
-  init: { id: string; label: string };
+  init: { id: string; label: string; items: Item[] };
   close: () => void;
-  onConfirm: (id: string, label: string) => Promise<void>;
+  onConfirm: (id: string, label: string, itemIds?: string[]) => Promise<void>;
 }) {
   const { t } = useLang();
   const [label, setLabel] = useState(init.label ? `${init.label}-CLONE` : "");
@@ -962,9 +965,9 @@ function SendDesigner({ order, designers, flash, reload }: { order: Order; desig
     } finally { setBusy(false); }
   };
   const sent = !!order.designer_sent_to;
-  // Tone nền rõ ràng khác nhau: ĐÃ GỬI = xanh đậm đầy nền + viền đậm; CHƯA GỬI = xanh nhạt.
+  // ĐÃ GỬI = TÍM (dấu hiệu "xong việc" thống nhất toàn card) · CHƯA GỬI = xanh nhạt.
   const btnStyle = sent
-    ? { color: "#12703C", borderColor: "#7CC79A", background: "#CFEED9" }
+    ? { color: "#7a3fb0", borderColor: "#D9BFF0", background: "#F3EAFB" }
     : { color: "#0e8a5f", borderColor: "#BFE3CC", background: "#EAF7F0" };
   const designerList = teamDesigners.length ? teamDesigners.map((d) => (
     <button key={d.id} type="button" onClick={() => send(d)} style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: 0, padding: "8px 11px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: "var(--ink)" }}>{d.name}</button>
@@ -996,7 +999,7 @@ function SendDesigner({ order, designers, flash, reload }: { order: Order; desig
 function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplicate = false, designers = [], selected, onToggleSel, reload, flash, openDup, copyText, fulfillers, patchOrder }: {
   o: Order; canEdit: boolean; canPushFf: boolean; isAdmin: boolean; isSeller?: boolean; canDuplicate?: boolean; designers?: { id: string; name: string; team: string | null }[]; selected: boolean; onToggleSel: () => void;
   reload: () => void; flash: (m: string) => void;
-  openDup: (id: string, label: string) => void; copyText: (v: string) => void; fulfillers: Opt[];
+  openDup: (id: string, label: string, items: Item[]) => void; copyText: (v: string) => void; fulfillers: Opt[];
   patchOrder?: (id: string, patch: Partial<Order>) => void;
 }) {
   const { t } = useLang();
@@ -1017,16 +1020,25 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
       .catch(() => flash("✗ Load tabs failed"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ffSel, selFfIsGsheet]);
-  const canCreate = ["new", "has_issues"].includes(o.status); // chỉ đơn NEW / Has issues mới đẩy được
+  const canCreateBase = ["new", "has_issues"].includes(o.status); // đơn NEW / Has issues đẩy như cũ
   // REVIEW: đơn vừa đẩy xong (status = created) → giữ nguyên panel variant + design nhưng KHOÁ,
   // để support đối chiếu đã đẩy đúng variant/design chưa. Sang in_production trở đi thì ẩn.
   const isReview = o.status === "created";
   // Chưa gán đủ design cho mọi sản phẩm thì chưa cho chọn nhà fulfill — tránh đẩy đơn thiếu file in.
-  const allDesigned = o.items.length > 0 && o.items.every((i) => !!i.design_id);
+  // Item qty 0 = đã tách sang đơn khác (Duplicate/Split) → khỏi cần design, khỏi fulfill từ đơn này.
+  const liveItems = o.items.filter((i) => (i.qty ?? 0) >= 1);
+  const allDesigned = liveItems.length > 0 && liveItems.every((i) => !!i.design_id);
   // Có nhà DROPSHIP (non-POD) khả dụng → bỏ chặn "cần gán design": đơn dropship không có design.
   // GATE CỨNG cho MỌI supplier: đơn phải dán đủ Design ID mới hiện "Fulfilled by" (bỏ ngoại lệ non-POD).
   const designGateOk = allDesigned;
   const [lines, setLines] = useState<Record<string, { mappingId: string; qty: number; unitCost?: number }>>({});
+  // ĐƠN TÁCH NHIỀU NHÀ IN: item → tên nhà đã đẩy (từ lines của các bản ghi fulfill).
+  const pushedBy = new Map<string, string>();
+  for (const f of detail?.ffOrders ?? []) for (const l of f.lines ?? []) if (l.itemId) pushedBy.set(l.itemId, f.fulfillerName);
+  // Tick chọn item đẩy ĐỢT NÀY (mặc định chọn) — bỏ tick item sẽ đẩy nhà khác ở đợt sau.
+  const [pick, setPick] = useState<Record<string, boolean>>({});
+  // Đơn "created" nhưng còn item CHƯA đẩy → vẫn cho chọn nhà in đẩy tiếp phần còn lại.
+  const canCreate = canCreateBase || (o.status === "created" && !!detail && o.items.some((it) => !pushedBy.has(it.id)));
   const [busy, setBusy] = useState(false);
   const [ship, setShip] = useState({
     buyerFirst: o.buyer_first ?? "", buyerLast: o.buyer_last ?? "", addr1: o.addr1 ?? "", addr2: o.addr2 ?? "",
@@ -1101,10 +1113,12 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
     }
     setLines(init);
   };
-  const complete = !!ffSel && !!detail && detail.items.length > 0 && (!selFfIsGsheet || !!gsheetTab) &&
-    detail.items.every((it) => lines[it.id]?.mappingId && lines[it.id]?.qty >= 1);
+  // CHỈ item qty ≥ 1 + được tick + CHƯA đẩy mới thuộc đợt push này (qty 0 = đã tách sang đơn khác).
+  const selItems = detail ? detail.items.filter((it) => (it.qty ?? 0) >= 1 && !pushedBy.has(it.id) && (pick[it.id] ?? true)) : [];
+  const complete = !!ffSel && !!detail && selItems.length > 0 && (!selFfIsGsheet || !!gsheetTab) &&
+    selItems.every((it) => lines[it.id]?.mappingId && lines[it.id]?.qty >= 1);
   const estCost = complete && detail
-    ? detail.items.reduce((tot, it) => { const l = lines[it.id]; const uc = l.unitCost ?? variants.find((x) => x.id === l.mappingId)?.unitCost ?? 0; return tot + uc * l.qty; }, 0)
+    ? selItems.reduce((tot, it) => { const l = lines[it.id]; const uc = l.unitCost ?? variants.find((x) => x.id === l.mappingId)?.unitCost ?? 0; return tot + uc * l.qty; }, 0)
     : null;
   // Printway: gọi calculate-price lấy GIÁ THẬT (mapping không có giá) — debounce, huỷ khi đổi lựa chọn
   const [pwEst, setPwEst] = useState<number | null>(null);
@@ -1114,7 +1128,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
     if (!complete || !detail || !isPwFf) return;
     const payload = {
       fulfillerId: ffSel, country: ship.country, state: ship.state,
-      lines: detail.items.map((it) => ({ mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })),
+      lines: selItems.map((it) => ({ mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })),
     };
     const ctl = new AbortController();
     const tm = setTimeout(() => {
@@ -1132,7 +1146,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
       const s1 = await fetch(`/api/orders/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ship) }).then((r) => r.json());
       if (!s1.ok) { setBusy(false); return flash("✗ " + (s1.error ?? "")); }
     }
-    const body = { orderId: o.id, fulfillerId: ffSel, gsheetTab: gsheetTab || undefined, lines: detail.items.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })) };
+    const body = { orderId: o.id, fulfillerId: ffSel, gsheetTab: gsheetTab || undefined, lines: selItems.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })) };
     // 5xx/non-JSON (Cloudflare 502, Vercel rollout...) → retry 1 lần sau 2.5s.
     // An toàn: adapter Printway check đơn đã tồn tại theo order_name trước khi tạo → không double.
     const doPush = () => fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -1362,7 +1376,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                       <SupplierLogo name={(detail.ffOrders ?? [])[0]?.fulfillerName ?? ""} size={15} />{t("o.fulfilledBy")}
                     </label>
-                    <input readOnly value={(detail.ffOrders ?? [])[0]?.fulfillerName ?? ""} style={{ ...inp, width: "100%", background: "#F2F5F9", color: "var(--muted)", cursor: "default" }} />
+                    <input readOnly value={(detail.ffOrders ?? []).map((f) => f.fulfillerName).join(" + ") || ""} style={{ ...inp, width: "100%", background: "#F2F5F9", color: "var(--muted)", cursor: "default" }} />
                   </div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)", background: "#F7F9FC", border: "1px dashed var(--line)", borderRadius: 8, padding: "8px 10px" }}>
                     {t("o.reviewPushed")}
@@ -1381,7 +1395,26 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
           {/* Nút "Bad review" TẠM ẨN theo yêu cầu (flow chưa chốt) — mở lại bằng cách bỏ comment.
           {canEdit && <button onClick={() => setShowIssue(true)} style={{ ...btnGhost, color: "var(--red)", borderColor: "#F3C6C0", background: "var(--red-soft)", fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}><IconWarn width={14} height={14} /> {t("iss.badReview")}</button>} */}
           {isSeller && <SendDesigner order={o} designers={designers} flash={flash} reload={reload} />}
-          {(isAdmin || canDuplicate) && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "")} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
+          {/* SELLER tự chốt ĐÃ GIAO — chỉ hiện khi đơn ĐÃ CÓ TRACKING. Sau khi DELIVERED → nút TÍM ("xong việc"). */}
+          {(detail?.ffOrders ?? []).some((f) => !!f.trackingNumber) && !["cancel", "trash"].includes(o.status) && (
+            o.status === "delivered" ? (
+              <span style={{ ...btnGhost, cursor: "default", color: "#7a3fb0", borderColor: "#D9BFF0", background: "#F3EAFB", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                <IconCheck width={13} height={13} /> Delivered
+              </span>
+            ) : (
+              <button
+                onClick={async () => {
+                  if (!(await confirm({ message: `Mark order #${o.external_id} as DELIVERED?` }))) return;
+                  const j = await fetch(`/api/orders/${o.id}/mark-delivered`, { method: "POST" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+                  if (j.ok) { flash("✓ Marked as delivered"); patchOrder?.(o.id, { status: "delivered" }); loadDetail(); }
+                  else flash("✗ " + (j.error ?? "Error"));
+                }}
+                style={{ ...btnGhost, color: "#12703C", borderColor: "#BFE0BF", background: "#EAF3EA", fontWeight: 700 }}>
+                <IconCheck width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} /> Mark delivered
+              </button>
+            )
+          )}
+          {(isAdmin || canDuplicate) && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "", o.items)} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
         </div>
       </div>
       {showIssue && <IssueModal order={o} fulfillers={fulfillers}
@@ -1389,16 +1422,24 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
 
       {/* Items — chỉ hiển thị sản phẩm + gán design (variant đã dời lên cột phải) */}
       {o.items.map((it, idx) => {
-        // Đơn đã đẩy → dựng lại dòng ĐÃ ĐẨY của đúng item (ưu tiên itemId; đơn cũ chưa lưu itemId → khớp theo thứ tự)
-        const pl = (detail?.ffOrders ?? [])[0]?.lines ?? [];
-        const reviewLine = isReview ? (pl.find((l) => l.itemId === it.id) ?? pl[idx] ?? null) : null;
+        // Đơn đã đẩy → dựng lại dòng ĐÃ ĐẨY của đúng item — quét MỌI bản ghi (đơn tách nhiều nhà in);
+        // đơn cũ chưa lưu itemId → khớp theo thứ tự (chỉ khi có đúng 1 bản ghi).
+        const plAll = (detail?.ffOrders ?? []).flatMap((f) => f.lines ?? []);
+        const plFirst = (detail?.ffOrders ?? []).length === 1 ? ((detail?.ffOrders ?? [])[0]?.lines ?? []) : [];
+        const itemExcluded = (it.qty ?? 0) < 1; // qty 0 = đã tách sang đơn khác
+        const reviewLine = isReview && !itemExcluded ? (plAll.find((l) => l.itemId === it.id) ?? plFirst[idx] ?? null) : null;
+        const itemPushed = pushedBy.has(it.id);
         return <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} canEdit={canEdit}
-          showPicker={canPushFf && !!detail && canCreate && !!ffSel}
+          excluded={itemExcluded}
+          showPicker={canPushFf && !!detail && canCreate && !!ffSel && !itemPushed && !itemExcluded}
           reviewLine={canPushFf ? reviewLine : null}
           fulfillerId={ffSel} pickerSeed={variants}
           order={o} showNotes={idx === o.items.length - 1} /* note cấp đơn: đơn nhiều item → nằm DƯỚI CÙNG (item cuối) */
           line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
-          setLine={(v) => setLines({ ...lines, [it.id]: v })} />;
+          setLine={(v) => setLines({ ...lines, [it.id]: v })}
+          pushSel={pick[it.id] ?? true}
+          setPushSel={canPushFf && !!detail && canCreate && !!ffSel && !itemPushed && o.items.filter((x) => !pushedBy.has(x.id)).length > 1 ? (v) => setPick({ ...pick, [it.id]: v }) : undefined}
+          pushedTo={pushedBy.get(it.id) ?? null} />;
       })}
       {canPushFf && detail && canCreate && ffSel && selFfIsGsheet && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
@@ -1413,7 +1454,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 16, marginTop: 14, paddingTop: 14, borderTop: "1px dashed var(--line)", flexWrap: "wrap" }}>
           {complete
             ? <span style={{ fontSize: 13.5 }}>{t("o.estCost")}: <b style={{ color: "var(--green)" }}>{money(pwEst ?? estCost!)}</b>{pwEst != null && <span style={{ fontSize: 10.5, color: "var(--muted)", marginLeft: 5 }}>(Printway live)</span>}</span>
-            : <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{t("o.needComplete").replace("{n}", String(detail.items.length))}</span>}
+            : <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{t("o.needComplete").replace("{n}", String(selItems.length || detail.items.filter((x) => !pushedBy.has(x.id)).length))}</span>}
           <button onClick={createOrder} disabled={!complete || busy} style={{ ...btnBlue, padding: "12px 34px", fontSize: 14.5, opacity: !complete || busy ? 0.5 : 1 }}>
             {busy ? t("o.creating") : t("o.pushFfOrder")}
           </button>
@@ -1439,13 +1480,17 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   );
 }
 
-function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine, reviewLine = null, order, showNotes = false }: {
+function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine, reviewLine = null, order, showNotes = false, pushSel = true, setPushSel, pushedTo = null, excluded = false }: {
   it: Item; onSaved: () => void; flash: (m: string) => void; canEdit?: boolean;
   showPicker?: boolean; fulfillerId?: string; pickerSeed?: Variant[];
   line?: { mappingId: string; qty: number; unitCost?: number }; setLine?: (v: { mappingId: string; qty: number; unitCost?: number }) => void;
   /** Đơn ĐÃ ĐẨY (status=created): dòng đã gửi nhà in → hiện panel CHỈ ĐỌC để đối chiếu */
   reviewLine?: { product: string; variant: string | null; sku: string; qty: number } | null;
   order?: Order; showNotes?: boolean; // Note cấp đơn — chỉ hiện dưới item đầu tiên
+  /** ĐƠN TÁCH NHIỀU NHÀ IN: tick chọn item đẩy đợt này; pushedTo = item đã nằm ở bản ghi nhà nào */
+  pushSel?: boolean; setPushSel?: (v: boolean) => void; pushedTo?: string | null;
+  /** Qty 0 = item đã TÁCH sang đơn khác (Duplicate/Split) — dim + tag, không fulfill từ đơn này */
+  excluded?: boolean;
 }) {
   const { t } = useLang();
   const [sideIdx, setSideIdx] = useState(0); // mặt đang xem lớn (design nhiều mặt: photo book 24 trang, calendar 26 mặt)
@@ -1580,8 +1625,26 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
             {t("o.viewOnEtsy")} ↗
           </a>
         )}
-        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", color: "var(--muted)", marginTop: 5, fontSize: 12.5 }}>
-          <span>{t("o.qtyLabel")}: <b style={{ color: "var(--ink)" }}>{it.qty}</b></span>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center", color: "var(--muted)", marginTop: 5, fontSize: 12.5 }}>
+          {/* Qty SỬA TẠI CHỖ (admin/support): flow tách đơn 2 supplier — dup rồi set 0 để loại item khỏi đơn.
+              Đổi qty → server tự chia lại doanh thu giữa đơn gốc và bản CLONE. */}
+          {canEdit ? (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+              {t("o.qtyLabel")}:
+              <input type="number" min={0} max={999} defaultValue={it.qty} key={`${it.id}-${it.qty}`}
+                title="0 = item is excluded from this order (split flow) — revenue is auto re-divided with the clone order"
+                onBlur={async (e) => {
+                  const q = Number(e.target.value);
+                  if (!Number.isInteger(q) || q < 0 || q === it.qty) { e.target.value = String(it.qty); return; }
+                  const j = await fetch(`/api/order-items/${it.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ qty: q }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+                  if (j.ok) { flash(q === 0 ? "✓ Qty 0 — excluded from this order (revenue re-divided)" : "✓ Qty saved"); onSaved(); }
+                  else { e.target.value = String(it.qty); flash("✗ " + (j.error ?? "Error")); }
+                }}
+                style={{ ...inp, width: 58, padding: "3px 6px", fontSize: 12.5, fontWeight: 700, textAlign: "center", color: "var(--ink)" }} />
+            </span>
+          ) : (
+            <span>{t("o.qtyLabel")}: <b style={{ color: "var(--ink)" }}>{it.qty}</b></span>
+          )}
           {it.internal_sku && <span>SKU: <b style={{ color: "var(--ink)" }}>{it.internal_sku}</b></span>}
           <span>{t("o.price")}: <b style={{ color: "var(--ink)" }}>{money(it.unit_price)}</b></span>
         </div>
@@ -1710,11 +1773,34 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
         )}
       </div>
       {showPicker && fulfillerId && (
-        <div style={{ flex: "1 1 300px", minWidth: 260, background: "#FFF6F4", border: "1px solid #F6D9D0", borderRadius: 12, padding: "12px 14px" }}>
-          <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", marginBottom: 8 }}>{t("o.chooseVariantPush")}</div>
-          <VariantPicker fulfillerId={fulfillerId} seed={pickerSeed}
-            line={line ?? { mappingId: "", qty: it.qty }}
-            setLine={setLine ?? (() => {})} />
+        <div style={{ flex: "1 1 300px", minWidth: 260, background: pushSel ? "#FFF6F4" : "#F7F8FA", border: `1px solid ${pushSel ? "#F6D9D0" : "var(--line)"}`, borderRadius: 12, padding: "12px 14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".3px", color: "var(--muted)", flex: 1 }}>{t("o.chooseVariantPush")}</div>
+            {setPushSel && (
+              <label title="Untick to leave this item for ANOTHER supplier — push it in a second batch after this one" style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: pushSel ? "var(--ink)" : "var(--muted)", whiteSpace: "nowrap" }}>
+                <input type="checkbox" checked={pushSel} onChange={(e) => setPushSel(e.target.checked)} style={{ width: 14, height: 14, accentColor: "var(--blue)", cursor: "pointer" }} />
+                Push this item
+              </label>
+            )}
+          </div>
+          {pushSel
+            ? <VariantPicker fulfillerId={fulfillerId} seed={pickerSeed}
+                line={line ?? { mappingId: "", qty: it.qty }}
+                setLine={setLine ?? (() => {})} />
+            : <div style={{ fontSize: 12, color: "var(--muted)", padding: "6px 2px" }}>Skipped this batch — after pushing, pick another supplier to push this item.</div>}
+        </div>
+      )}
+      {/* Item qty 0 — đã TÁCH sang đơn khác (Duplicate/Split): không fulfill từ đơn này */}
+      {excluded && (
+        <div style={{ flex: "1 1 300px", minWidth: 260, background: "#F7F8FA", border: "1px dashed var(--line)", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 8, opacity: 0.8 }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--muted)" }}>Qty 0 — split to another order, not fulfilled here</span>
+        </div>
+      )}
+      {/* Item ĐÃ ĐẨY ở bản ghi khác (đơn tách nhiều nhà in) — khoá lại, chỉ báo nhà nào */}
+      {!excluded && !showPicker && !reviewLine && pushedTo && (
+        <div style={{ flex: "1 1 300px", minWidth: 260, background: "#F3F8F4", border: "1px solid #CFE6D6", borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+          <IconCheck width={15} height={15} style={{ color: "#2E7D46", flexShrink: 0 }} />
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: "#2E7D46" }}>Pushed to {pushedTo}</span>
         </div>
       )}
       {/* ĐÃ ĐẨY — panel CHỈ ĐỌC, cùng chỗ với panel chọn variant, để đối chiếu variant/SKU/SL đã gửi */}

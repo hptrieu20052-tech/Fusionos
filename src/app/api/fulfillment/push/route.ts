@@ -36,7 +36,8 @@ async function handlePush(req: NextRequest) {
 
   const [order] = await db.select().from(schema.orders).where(eq(schema.orders.id, b.orderId)).limit(1);
   if (!order) return NextResponse.json({ ok: false, error: "order not found" }, { status: 404 });
-  if (!["new", "has_issues"].includes(order.status)) {
+  // Đơn TÁCH NHIỀU NHÀ IN: cho push tiếp khi status "created" nếu vẫn còn item CHƯA đẩy (kiểm ở dưới).
+  if (!["new", "has_issues", "created"].includes(order.status)) {
     return NextResponse.json({ ok: false, error: `order is in ${order.status} status — cannot push` }, { status: 409 });
   }
   if (!order.addr1 || !order.buyerLast) {
@@ -94,13 +95,28 @@ async function handlePush(req: NextRequest) {
   const pushLines: PushLine[] = [];
   // Lưu kèm itemId + mappingId để card đơn ĐÃ ĐẨY dựng lại được panel review (chỉ đọc)
   const pushedLines: { itemId: string; mappingId: string; product: string; variant: string | null; sku: string; qty: number }[] = [];
+  // Item đã nằm trong bản ghi fulfill trước đó (đơn tách nhiều nhà in) — cấm đẩy ĐÚP.
+  const priorFf = await db.select({ id: schema.fulfillmentOrders.id, lines: schema.fulfillmentOrders.lines })
+    .from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, order.id));
+  const alreadyPushed = new Set(
+    priorFf.flatMap((p) => Array.isArray(p.lines) ? (p.lines as { itemId?: string }[]).map((l) => l.itemId).filter(Boolean) as string[] : []),
+  );
+
   if (Array.isArray(b.lines) && b.lines.length) {
-    if (b.lines.length !== items.length) {
-      return NextResponse.json({ ok: false, error: "missing variant selection for some items" }, { status: 400 });
+    // PUSH TỪNG PHẦN: không bắt đủ mọi item — đơn 2 item có thể đẩy 2 nhà in khác nhau, mỗi đợt một phần.
+    if (b.lines.length > items.length) {
+      return NextResponse.json({ ok: false, error: "more lines than order items" }, { status: 400 });
     }
     const mapIds = b.lines.map((l: { mappingId: string }) => l.mappingId).filter(Boolean);
-    if (mapIds.length !== items.length) {
-      return NextResponse.json({ ok: false, error: "each item must have style/size/color selected (fulfiller SKU)" }, { status: 400 });
+    if (mapIds.length !== b.lines.length) {
+      return NextResponse.json({ ok: false, error: "each selected item must have style/size/color selected (fulfiller SKU)" }, { status: 400 });
+    }
+    // Đơn đã "created" (đã push 1 phần) → CHỈ được đẩy item chưa push; đẩy lại phải xoá bản ghi cũ trước.
+    for (const l of b.lines as { itemId: string }[]) {
+      if (alreadyPushed.has(l.itemId)) {
+        const it = items.find((x) => x.id === l.itemId);
+        return NextResponse.json({ ok: false, error: `item "${(it?.productTitle ?? l.itemId).slice(0, 60)}" was already pushed in another fulfillment record — delete that record (✕) first if you want to re-push it` }, { status: 409 });
+      }
     }
     const chosen = await db.select().from(schema.skuMappings)
       .where(and(eq(schema.skuMappings.fulfillerId, ff.id), inArray(schema.skuMappings.id, mapIds)));
@@ -110,6 +126,8 @@ async function handlePush(req: NextRequest) {
       const m = chosen.find((x) => x.id === l.mappingId);
       const qty = Number(l.qty);
       if (!it) return NextResponse.json({ ok: false, error: "item doesn't belong to this order" }, { status: 400 });
+      // Item qty 0 = ĐÃ TÁCH sang đơn khác (Duplicate/Split) — cấm đẩy từ đơn này.
+      if ((it.qty ?? 0) < 1) return NextResponse.json({ ok: false, error: `item "${it.productTitle.slice(0, 60)}" has qty 0 (split to another order) — cannot push it from this order` }, { status: 400 });
       if (!m) return NextResponse.json({ ok: false, error: "variant doesn't belong to the selected fulfiller" }, { status: 400 });
       if (!Number.isInteger(qty) || qty < 1) return NextResponse.json({ ok: false, error: "qty must be ≥ 1" }, { status: 400 });
       baseSum += Number(m.baseCost) * qty;
@@ -121,19 +139,25 @@ async function handlePush(req: NextRequest) {
     }
     lineNote = " · " + parts.join(", ");
   } else {
-    // Chế độ cũ: tự khớp theo internal_sku
-    const skus = items.map((i) => i.internalSku).filter(Boolean) as string[];
+    // Chế độ cũ: tự khớp theo internal_sku — đẩy TẤT CẢ item, nên cấm dùng khi đơn đã push 1 phần.
+    if (alreadyPushed.size) {
+      return NextResponse.json({ ok: false, error: "this order already has a fulfillment record — select the remaining items (with variants) to push the rest" }, { status: 409 });
+    }
+    // Item qty 0 (đã tách sang đơn khác) → bỏ qua, không đẩy.
+    const liveItems = items.filter((i) => (i.qty ?? 0) >= 1);
+    if (!liveItems.length) return NextResponse.json({ ok: false, error: "all items have qty 0 (split away) — nothing to push from this order" }, { status: 400 });
+    const skus = liveItems.map((i) => i.internalSku).filter(Boolean) as string[];
     const maps = skus.length
       ? await db.select().from(schema.skuMappings).where(and(eq(schema.skuMappings.fulfillerId, ff.id), inArray(schema.skuMappings.internalSku, skus)))
       : [];
-    const missing = items.filter((i) => !i.internalSku || !maps.find((m) => m.internalSku === i.internalSku));
+    const missing = liveItems.filter((i) => !i.internalSku || !maps.find((m) => m.internalSku === i.internalSku));
     if (missing.length) {
       return NextResponse.json({
         ok: false,
         error: `SKU chưa mapping với ${ff.name}: ${missing.map((m) => m.internalSku ?? m.productTitle).join(", ")}`,
       }, { status: 400 });
     }
-    for (const i of items) {
+    for (const i of liveItems) {
       const m = maps.find((x) => x.internalSku === i.internalSku)!;
       baseSum += Number(m.baseCost) * i.qty;
       shipSum += Number(m.shipCost) * i.qty;

@@ -7,6 +7,7 @@ import { hasAction } from "@/lib/actions";
 import * as XLSX from "xlsx";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
+import { markShippedOnTracking } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -111,10 +112,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // --- Tracking → đơn shipped + tự đẩy Etsy/TikTok ---
+    // --- Tracking → đơn shipped (qua luật chung: đơn tách nhiều nhà chỉ Shipped khi ĐỦ tracking) + tự đẩy Etsy/TikTok ---
     if (trk) {
       if (!["delivered", "cancel", "trash"].includes(order.status)) {
-        await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
+        await markShippedOnTracking(order.id);
         await autoPushEtsyTracking(order.id);
         await autoPushTiktokTracking(order.id).catch(() => { /* đơn không phải TikTok → bỏ qua */ });
       }

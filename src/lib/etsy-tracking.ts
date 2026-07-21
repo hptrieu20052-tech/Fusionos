@@ -1,3 +1,5 @@
+// Đơn SPLIT (Duplicate/Split) mang external_id dạng "<id>-CLONE-n" — khi gọi API sàn phải dùng mã đơn THẬT.
+const platformExtId = (ext: string) => ext.replace(/-CLONE-\d+$/, "");
 import { db, schema } from "@/lib/db";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { getValidCfg, createReceiptShipment, etsyCarrier } from "@/lib/etsy";
@@ -44,7 +46,7 @@ export async function pushEtsyTrackingForOrder(orderId: string, opts: { sendBcc?
     try {
       // Tránh gửi trùng cùng 1 mã tracking trong 1 lần chạy
       if (!doneCodes.has(code)) {
-        await createReceiptShipment(cfg, order.externalId, { trackingCode: code, carrierName: etsyCarrier(f.carrier), sendBcc: opts.sendBcc });
+        await createReceiptShipment(cfg, platformExtId(order.externalId), { trackingCode: code, carrierName: etsyCarrier(f.carrier), sendBcc: opts.sendBcc });
         doneCodes.add(code);
         pushed++;
       } else skipped++;

@@ -1,3 +1,5 @@
+// Đơn SPLIT (Duplicate/Split) mang external_id dạng "<id>-CLONE-n" — gọi API TikTok phải dùng mã đơn THẬT.
+const platformExtId = (ext: string) => ext.replace(/-CLONE-\d+$/, "");
 import { db, schema } from "@/lib/db";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { ttGetValidCfg, ttGetOrderDetail, ttShipPackage } from "@/lib/tiktok-shop";
@@ -37,7 +39,7 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
   // Lấy line_item_ids + shipping_provider_id từ order detail
   let lineItemIds: string[] = [], providerId = "";
   try {
-    const orders = await ttGetOrderDetail(cfg, [order.externalId]);
+    const orders = await ttGetOrderDetail(cfg, [platformExtId(order.externalId)]);
     const d = orders[0] as Record<string, unknown> | undefined;
     lineItemIds = (((d?.line_items ?? []) as Record<string, unknown>[])).map((x) => String(x.id ?? "")).filter(Boolean);
     providerId = String(d?.shipping_provider_id ?? "");
@@ -51,7 +53,7 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
     if (!code) continue;
     try {
       if (!done.has(code)) {
-        await ttShipPackage(cfg, { orderId: order.externalId, orderLineItemIds: lineItemIds, trackingNumber: code, providerId });
+        await ttShipPackage(cfg, { orderId: platformExtId(order.externalId), orderLineItemIds: lineItemIds, trackingNumber: code, providerId });
         done.add(code); pushed++;
       }
       await db.update(schema.fulfillmentOrders).set({ tiktokTrackingPushedAt: new Date() }).where(eq(schema.fulfillmentOrders.id, f.id));
