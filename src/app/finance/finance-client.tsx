@@ -32,6 +32,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const [data, setData] = useState<{ totals: { revenue: number; fee: number; cost: number; profit: number; orders: number }; byType: Row[]; daily: Row[]; bySeller: Row[]; byStore: Row[]; byPlatform: Row[]; bySupplier: Row[] } | null>(null);
   const [form, setForm] = useState({ type: "ads", amount: "", note: "" });
   const [msg, setMsg] = useState("");
+  const [showExport, setShowExport] = useState(false);
 
   const load = useCallback(() => {
     const q = dr ? (() => { const { from, to } = rangeToDates(dr); return `from=${from}&to=${to}`; })() : `days=${days}`;
@@ -56,14 +57,14 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   return (
     <>
       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        {/* CSV FULFILLMENT COST theo shop (mọi sàn, TẤT CẢ đơn kể cả New/Cancel) — theo đúng khoảng ngày đang xem */}
-        <a href={`/api/finance/export?${dr ? (() => { const { from, to } = rangeToDates(dr); return `from=${from}&to=${to}`; })() : `days=${days}`}`}
-          title="Download CSV: fulfillment cost per shop (all marketplaces, ALL orders incl. New/Cancel) — Marketplace · Store · Revenue · Platform fee · Base/Ship/Other cost · Profit"
-          style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "1px solid var(--line)", background: "#fff", borderRadius: 11, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, color: "var(--ink)", textDecoration: "none" }}>
+        {/* Export CHI TIẾT TỪNG ĐƠN — bấm mở hộp CHỌN KHOẢNG NGÀY trước rồi mới tải */}
+        <button onClick={() => setShowExport(true)}
+          style={{ display: "inline-flex", alignItems: "center", gap: 7, border: "1px solid var(--line)", background: "#fff", borderRadius: 11, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, color: "var(--ink)", cursor: "pointer" }}>
           <IcExcel /> Export CSV
-        </a>
+        </button>
         <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
       </div>
+      {showExport && <ExportCsvModal defFrom={rangeToDates(dr ?? { range: "30d" }).from} defTo={rangeToDates(dr ?? { range: "30d" }).to} close={() => setShowExport(false)} />}
 
       <div className="kpis kpis-5">
         <div className="kpi"><div className="l">{tr("fin.revenue")}</div><div className="v" style={{ color: "var(--green)" }}>{money(revenue)}</div></div>
@@ -198,5 +199,45 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
         </div>
       </div>
     </>
+  );
+}
+
+// Hộp CHỌN KHOẢNG NGÀY trước khi export — mặc định theo range đang xem trên picker.
+// File tải về là CHI TIẾT TỪNG ĐƠN (16 cột, gồm cả đơn New/Cancel) từ /api/finance/export.
+function ExportCsvModal({ defFrom, defTo, close }: { defFrom: string; defTo: string; close: () => void }) {
+  const [from, setFrom] = useState(defFrom);
+  const [to, setTo] = useState(defTo);
+  const valid = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to;
+  return (
+    <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: 400, maxWidth: "92vw", boxShadow: "0 18px 50px rgba(15,23,42,.25)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, fontSize: 15, marginBottom: 4 }}>
+          <IcExcel size={20} /> Export orders detail (CSV)
+        </div>
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+          One row per order — includes ALL orders (New &amp; Cancel too). Revenue · fees · base/ship/other cost · profit.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+          <label style={{ display: "grid", gap: 5, fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>
+            From
+            <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={inp} />
+          </label>
+          <label style={{ display: "grid", gap: 5, fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>
+            To
+            <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={inp} />
+          </label>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button onClick={close}
+            style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 11, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>
+            Cancel
+          </button>
+          <a href={valid ? `/api/finance/export?from=${from}&to=${to}` : undefined} onClick={() => { if (valid) close(); }} aria-disabled={!valid}
+            style={{ display: "inline-flex", alignItems: "center", gap: 7, background: valid ? "var(--ink)" : "#B9C0CE", color: "#fff", borderRadius: 11, padding: "9px 18px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", cursor: valid ? "pointer" : "not-allowed", pointerEvents: valid ? "auto" : "none" }}>
+            Download CSV
+          </a>
+        </div>
+      </div>
+    </div>
   );
 }
