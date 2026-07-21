@@ -1660,10 +1660,7 @@ function ItemRow({ it, onSaved, flash, canEdit = true, showPicker = false, fulfi
               </div>
             )}
             {canEdit ? <SellerNote order={order} onSaved={onSaved} flash={flash} /> : (order.note && (
-              <div style={{ background: "#FDECEC", border: "1px solid #F3C6C0", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: "#B03A34", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
-                <b style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, display: "block", marginBottom: 3, opacity: 0.85 }}>Seller note</b>
-                {order.note}
-              </div>
+              <SellerNoteBox note={order.note} />
             ))}
           </div>
         )}
@@ -2060,6 +2057,27 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
 }
 
 // Note của SELLER (nội bộ) — nền đỏ, nút "Add Note From Seller". Nằm dưới Note khách trong khu item.
+// Hộp Seller note NỔI BẬT cho support: viền đỏ đậm + vạch đỏ trái + badge đỏ có icon cảnh báo,
+// chữ to đậm hơn — dùng chung cho cả bản chỉ-đọc và bản có nút Edit.
+export function SellerNoteBox({ note, onEdit, editLabel }: { note: string; onEdit?: () => void; editLabel?: string }) {
+  return (
+    <div style={{ background: "linear-gradient(180deg,#FFF1F0,#FFE3E0)", border: "1.5px solid #E8938C", borderLeft: "5px solid #D93025", borderRadius: 10, padding: "10px 13px", boxShadow: "0 2px 10px rgba(217,48,37,.15)" }}>
+      <b style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#D93025", color: "#fff", fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.6, borderRadius: 6, padding: "3px 9px", marginBottom: 7 }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" />
+        </svg>
+        Seller note
+      </b>
+      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#8C1D18", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+        {note}
+        {onEdit && (
+          <button onClick={onEdit} style={{ background: "none", border: "none", color: "#B03A34", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 8, fontWeight: 700, textDecoration: "underline", verticalAlign: "baseline" }}>{editLabel ?? "Edit"}</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SellerNote({ order, onSaved, flash }: { order: Order; onSaved: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
   const [editing, setEditing] = useState(false);
@@ -2077,11 +2095,7 @@ function SellerNote({ order, onSaved, flash }: { order: Order; onSaved: () => vo
     </div>
   );
   return order.note ? (
-    <div style={{ background: "#FDECEC", border: "1px solid #F3C6C0", borderRadius: 10, padding: "9px 12px", fontSize: 12.5, color: "#B03A34", lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
-      <b style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.3, display: "block", marginBottom: 3, opacity: 0.85 }}>Seller note</b>
-      {order.note}
-      <button onClick={() => { setV(order.note ?? ""); setEditing(true); }} style={{ background: "none", border: "none", color: "#B03A34", cursor: "pointer", fontSize: 12, padding: 0, marginLeft: 8, fontWeight: 700, textDecoration: "underline" }}>{t("c.edit")}</button>
-    </div>
+    <SellerNoteBox note={order.note} editLabel={t("c.edit")} onEdit={() => { setV(order.note ?? ""); setEditing(true); }} />
   ) : (
     <button onClick={() => setEditing(true)} style={{ display: "inline-flex", alignItems: "center", gap: 5, background: "#FDECEC", border: "1px dashed #F3C6C0", color: "#B03A34", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", alignSelf: "flex-start" }}>+ Add Note From Seller</button>
   );
