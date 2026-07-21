@@ -75,14 +75,26 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
           // Thứ tự ưu tiên: (1) listingId KHÔNG mơ hồ · (2) nhiều item cùng listing → theo VỊ TRÍ trong nhóm đó
           // · (3) index chỉ khi không mâu thuẫn listing · (4) item chưa gán listing. Tuyệt đối không "mượn" item listing khác.
           const used = new Set<string>();
+          const lower = (v: unknown) => String(v ?? "").trim().toLowerCase();
           const matchFor = (inIt: InItem, i: number) => {
             const lid = s(inIt.listingId);
             if (lid) {
               const cands = exItems.filter((x) => !used.has(x.id) && x.etsyListingId === lid);
               if (cands.length === 1) return cands[0];
               if (cands.length > 1) {
+                // NHIỀU item cùng listing: Etsy KHÔNG cam kết thứ tự giữa 2 lần sync → khớp theo
+                // NỘI DUNG trước (personalization rồi variant trùng), chỉ khi bí mới rơi về vị trí.
+                // (Bug 4121474496: chiều re-sync trả đảo thứ tự → khớp vị trí ghép ACHILLES vào dòng ATLAS.)
+                const pz = lower(inIt.personalization);
+                const byPz = pz ? cands.filter((x) => lower(x.personalization) === pz) : [];
+                if (byPz.length === 1) return byPz[0];
+                let pool = byPz.length > 1 ? byPz : cands;
+                const vr = lower(inIt.variant);
+                const byVr = vr ? pool.filter((x) => lower(x.variant) === vr) : [];
+                if (byVr.length === 1) return byVr[0];
+                if (byVr.length > 1) pool = byVr;
                 const byIdx = exItems.length === inItems.length ? exItems[i] : null;
-                return byIdx && cands.includes(byIdx) ? byIdx : cands[0];
+                return byIdx && pool.includes(byIdx) ? byIdx : pool[0];
               }
             }
             if (exItems.length === inItems.length && exItems[i] && !used.has(exItems[i].id)) {
@@ -117,12 +129,17 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
             used.add(ex.id);
             const ip: Record<string, unknown> = {};
             if (s(inIt.title) && blank(ex.productTitle)) ip.productTitle = s(inIt.title);
-            // Variant/Personalization: điền khi trống HOẶC khi bản mới ĐẦY ĐỦ hơn (dài hơn) → chữa đơn cũ bị cắt cụt khi re-sync.
+            // Variant/Personalization: chỉ đè khi bản cũ TRỐNG hoặc là ĐOẠN ĐẦU bị cắt cụt của bản mới
+            // ("ACHIL…" → "ACHILLES" vẫn tự lành). Hai giá trị KHÁC HẲN nhau → giữ nguyên tuyệt đối:
+            // luật "dài hơn thì đè" cũ từng biến ATLAS thành ACHILLES khi Etsy đảo thứ tự item (đơn 4121474496).
+            const stem = (v: unknown) => String(v ?? "").trim().replace(/(\.\.\.|…)$/, "").toLowerCase();
+            const safeUpgrade = (cur: string | null | undefined, nv: string | null) =>
+              !!nv && (blank(cur) || (nv.length > (cur ?? "").length && stem(cur) !== "" && stem(nv).startsWith(stem(cur))));
             const inVar = s(inIt.variant);
-            if (inVar && (blank(ex.variant) || inVar.length > (ex.variant?.length ?? 0))) ip.variant = inVar;
+            if (safeUpgrade(ex.variant, inVar)) ip.variant = inVar;
             if (s(inIt.imageUrl) && blank(ex.imageUrl)) ip.imageUrl = s(inIt.imageUrl);
             const inPz = s(inIt.personalization);
-            if (inPz && (blank(ex.personalization) || inPz.length > (ex.personalization?.length ?? 0))) ip.personalization = inPz;
+            if (safeUpgrade(ex.personalization, inPz)) ip.personalization = inPz;
             if (s(inIt.listingId) && !ex.etsyListingId) ip.etsyListingId = s(inIt.listingId);
             // Ảnh khách upload: điền khi chưa có, hoặc khi bản mới có NHIỀU ảnh hơn.
             const inFiles = Array.isArray(inIt.files) ? inIt.files : [];

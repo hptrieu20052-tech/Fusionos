@@ -14,7 +14,10 @@ const pool =
     // Cần >1 để các truy vấn Promise.all trong 1 request chạy SONG SONG (max:1 ép chúng xếp hàng, mất tác dụng).
     // An toàn khi DATABASE_URL trỏ Supabase Transaction Pooler (port 6543).
     max: isServerless ? 4 : 10,
-    idleTimeoutMillis: isServerless ? 10_000 : 30_000,
+    // Fluid Compute giữ instance sống lâu → giữ connection 60s (trước là 10s) + keepAlive
+    // để click sau quãng nghỉ ngắn KHÔNG phải bắt tay TCP/TLS/auth lại với Supabase (~0.5–1s mỗi lần).
+    idleTimeoutMillis: 60_000,
+    keepAlive: true,
     connectionTimeoutMillis: 10_000,
   });
 

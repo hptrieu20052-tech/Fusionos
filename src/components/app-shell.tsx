@@ -81,7 +81,21 @@ export default function AppShell({ user, links, children, canProducts = false, c
     warm(); // lần load đầu cũng hâm luôn
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", warm);
-    return () => { document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", warm); };
+    // TAB MỞ NGUYÊN không chuyển tab → không có sự kiện focus/visibility khi user quay lại máy.
+    // Bắt cử động chuột/phím ĐẦU TIÊN sau ≥60s im lặng để hâm nóng ngay — tay chạm chuột
+    // trước khi click thật 1–2s nên lambda + connection DB kịp ấm.
+    let lastAct = Date.now();
+    const onAct = () => {
+      const now = Date.now();
+      if (now - lastAct >= 60_000) warm();
+      lastAct = now;
+    };
+    window.addEventListener("pointermove", onAct, { passive: true });
+    window.addEventListener("keydown", onAct, { passive: true });
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible); window.removeEventListener("focus", warm);
+      window.removeEventListener("pointermove", onAct); window.removeEventListener("keydown", onAct);
+    };
   }, []);
 
   if (isLogin) return <>{children}</>;

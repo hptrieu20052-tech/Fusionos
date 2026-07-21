@@ -206,11 +206,16 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
         if (!stop && j?.updated > 0) load();
       } catch { /* im lặng — poll ngầm không được làm phiền người dùng */ }
     };
-    tick();
+    // NHƯỜNG ĐƯỜNG cho người dùng: job sync nặng (poll mọi nhà in) KHÔNG nổ ngay lúc mở trang /
+    // quay lại tab nữa — hoãn 8s để những click đầu tiên không phải xếp hàng chờ connection DB
+    // sau job nặng (mỗi instance chỉ 4 connection → sync chạy trước là click bị đơ vài giây).
+    let delayId: ReturnType<typeof setTimeout> | undefined;
+    const tickSoon = () => { clearTimeout(delayId); delayId = setTimeout(tick, 8_000); };
+    tickSoon();
     const id = setInterval(tick, 60_000);
-    const onVis = () => { if (!document.hidden) tick(); };
+    const onVis = () => { if (!document.hidden) tickSoon(); };
     document.addEventListener("visibilitychange", onVis);
-    return () => { stop = true; clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+    return () => { stop = true; clearInterval(id); clearTimeout(delayId); document.removeEventListener("visibilitychange", onVis); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
