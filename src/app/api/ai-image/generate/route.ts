@@ -70,7 +70,8 @@ export async function POST(req: NextRequest) {
   if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(image) && !/^https?:\/\/\S+$/i.test(image)) return NextResponse.json({ ok: false, error: "Cần ảnh nguồn (tải lên hoặc dán link http)" }, { status: 400 });
   if (mode === "redesign" && !prompt) return NextResponse.json({ ok: false, error: "Redesign cần nhập yêu cầu thiết kế lại" }, { status: 400 });
 
-  const chroma = CHROMA[String(b?.chroma ?? "green")] ?? CHROMA.green;
+  // Màu nền trung gian CHẠY ẨN (mặc định hồng — hiếm design có sẵn nên ít bị thủng). autoChromaKey vẫn tự dò màu thật.
+  const chroma = CHROMA[String(b?.chroma ?? "magenta")] ?? CHROMA.magenta;
   const fullPrompt = buildPrompt(mode, chroma, prompt);
   const aspect = b?.aspectRatio && b.aspectRatio !== "auto" ? String(b.aspectRatio) : undefined;
 

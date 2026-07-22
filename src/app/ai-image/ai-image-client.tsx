@@ -8,11 +8,6 @@ const TABS: { key: Mode; label: string; desc: string; icon: string }[] = [
   { key: "redesign", label: "Redesign", desc: "Thiết kế lại theo yêu cầu → PNG nền TRONG SUỐT, sẵn sàng in.", icon: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" },
 ];
 const RATIOS = ["auto", "1:1", "4:5", "3:4", "2:3", "16:9", "9:16"];
-const CHROMAS: { key: string; label: string; swatch: string }[] = [
-  { key: "green", label: "Xanh lá", swatch: "#00D000" },
-  { key: "magenta", label: "Hồng", swatch: "#FF00FF" },
-  { key: "blue", label: "Xanh dương", swatch: "#0047FF" },
-];
 
 const box: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 14, background: "#fff", padding: 18 };
 const lab: React.CSSProperties = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 5 };
@@ -25,7 +20,6 @@ export function GenImageClient() {
   const [link, setLink] = useState("");
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("auto");
-  const [chroma, setChroma] = useState("green");
   const [autoFb, setAutoFb] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -67,7 +61,7 @@ export function GenImageClient() {
     try {
       const j = await fetch("/api/ai-image/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, image: srcData, prompt, model: model || undefined, aspectRatio: ratio, chroma, autoFallback: autoFb }),
+        body: JSON.stringify({ mode, image: srcData, prompt, model: model || undefined, aspectRatio: ratio, autoFallback: autoFb }),
       }).then((r) => r.json());
       if (j.ok) { setResult({ url: j.url, dataUrl: j.dataUrl, cost: j.cost ?? 0, usedModel: j.usedModel }); setMsg(j.usedModel && model && j.usedModel !== model && j.usedModel !== "default" ? `↻ Model bạn chọn bị từ chối — đã tự chuyển sang: ${j.usedModel}` : ""); }
       else setMsg("✗ " + (j.error ?? "Lỗi"));
@@ -81,9 +75,8 @@ export function GenImageClient() {
         <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0 }}>Gen Image</h1>
         <span style={{ fontSize: 11, fontWeight: 700, background: "#EEE9FB", color: "#6D48C9", borderRadius: 999, padding: "3px 10px" }}>AI Agent · beta</span>
       </div>
-      <div style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Xử lý ảnh design bằng AI (OpenRouter).</div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 8, marginTop: 14, marginBottom: 16, flexWrap: "wrap" }}>
         {TABS.map((tb) => (
           <button key={tb.key} onClick={() => { setMode(tb.key); setResult(null); setMsg(""); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1.5px solid ${mode === tb.key ? "var(--blue)" : "var(--line)"}`, background: mode === tb.key ? "var(--blue-soft)" : "#fff", color: mode === tb.key ? "var(--blue)" : "var(--ink)", borderRadius: 11, padding: "9px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
@@ -92,7 +85,6 @@ export function GenImageClient() {
           </button>
         ))}
       </div>
-      <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>{tab.desc}</div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         {/* Nguồn + tuỳ chọn */}
@@ -135,8 +127,7 @@ export function GenImageClient() {
               style={{ ...ctl, resize: "vertical" }} />
           </div>
 
-          {/* Hàng tuỳ chọn: model + tỷ lệ + màu nền trung gian (áp cho CẢ 3 mode → đều ra nền trong suốt) */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 8, marginTop: 12 }}>
             <div>
               <label style={lab}>Model AI ({models.length || "…"})</label>
               <select value={model} onChange={(e) => setModel(e.target.value)} style={ctl}>
@@ -150,14 +141,7 @@ export function GenImageClient() {
                 {RATIOS.map((r) => <option key={r} value={r}>{r === "auto" ? "Tự động" : r}</option>)}
               </select>
             </div>
-            <div>
-              <label style={lab}>Màu nền trung gian</label>
-              <select value={chroma} onChange={(e) => setChroma(e.target.value)} style={ctl}>
-                {CHROMAS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-              </select>
-            </div>
           </div>
-          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Nền trung gian chỉ để tách trong suốt — kết quả LUÔN là PNG nền trong suốt. Chọn màu KHÁC màu chính trong design (design nhiều xanh lá → chọn Hồng) để tách sạch, không thủng.</div>
 
           <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, fontSize: 12.5, cursor: "pointer", color: "var(--ink)" }}>
             <input type="checkbox" checked={autoFb} onChange={(e) => setAutoFb(e.target.checked)} style={{ width: 15, height: 15, accentColor: "var(--blue)" }} />
