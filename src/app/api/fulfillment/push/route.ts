@@ -222,6 +222,7 @@ async function handlePush(req: NextRequest) {
         buyerFirst: order.buyerFirst, buyerLast: order.buyerLast,
         addr1: order.addr1, addr2: order.addr2, city: order.city,
         state: order.state, zip: order.zip, country: order.country,
+        platform: order.platform,
         labelUrl: ttLabelUrl, shippingTracking: ttTracking,
         shippingType: order.shippingType,
       },

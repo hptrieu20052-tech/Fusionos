@@ -52,6 +52,8 @@ export type PushCtx = {
     addr1: string | null; addr2: string | null; city: string | null;
     state: string | null; zip: string | null; country: string | null;
     phone?: string | null; email?: string | null;
+    /** Sàn của đơn: etsy | tiktok | amazon… — Merchize cần tag "tiktok" cho đơn TikTok Shop. */
+    platform?: string | null;
     /** CHỈ đơn Ship-by-TikTok: link nhãn TikTok (R2) + tracking → gửi supplier. Đơn khác luôn undefined. */
     labelUrl?: string | null; shippingTracking?: string | null;
     /** TIKTOK | SELLER (đơn TikTok) — map sang PLATFORM/SELLER cho Google Sheet */
@@ -461,7 +463,7 @@ function pushEmail(raw: string | null | undefined): string {
 function pushPhone(raw: string | null | undefined): string {
   const digits = (raw ?? "").replace(/\D/g, "");
   if (digits.length >= 8 && digits.length <= 15) return digits;
-  return "0000000000";
+  return "123456789"; // SĐT mặc định cho Printway khi đơn không có phone (theo yêu cầu)
 }
 
 /**
@@ -714,6 +716,9 @@ function merchizeAdapter(): FulfillerAdapter {
 
       const o = ctx.order;
       const extNumber = (o.orderLabel && o.orderLabel.trim()) ? o.orderLabel.trim() : o.externalId; // TênStore-IDĐơn
+      // Đơn TikTok Shop → Merchize BẮT BUỘC tag "tiktok" (áp cho cả đơn ship-by-tiktok lẫn đơn Merchize tự ship).
+      const isTiktokShop = String(o.platform ?? "").toLowerCase() === "tiktok" || o.shippingType === "TIKTOK";
+      const merchizeTags = isTiktokShop ? ["tiktok"] : undefined;
       const url = (u?: string | null) => (typeof u === "string" && /^https?:\/\//i.test(u.trim())) ? u.trim() : undefined;
       const items = ctx.lines.map((l) => ({
         product_id: l.productId || undefined,
@@ -748,6 +753,7 @@ function merchizeAdapter(): FulfillerAdapter {
         const rtt = await createMerchizeTiktokOrder(baseUrl, apiKey, {
           order_id: extNumber, identifier,
           shipping_info: { shipping_provider: carrier, shipping_label: o.labelUrl, merchize_warehouse: warehouse, tracking_number: o.shippingTracking },
+          tags: ["tiktok"], // đơn ship-by-tiktok luôn là đơn TikTok Shop
           items,
         });
         return { externalFfId: rtt.orderCode, simulated: false, raw: rtt.raw, reason: "Đẩy qua TikTok-Shipping catalog (Merchize in & dán nhãn TikTok, không cần địa chỉ khách)." };
@@ -767,6 +773,7 @@ function merchizeAdapter(): FulfillerAdapter {
           email: o.email || undefined,
           phone: o.phone || undefined,
         },
+        ...(merchizeTags ? { tags: merchizeTags } : {}),
         items,
       });
       // KHÔNG AUTO-PAY (mặc định): bước push = CONFIRM đi sản xuất → Merchize trừ balance ngay.
