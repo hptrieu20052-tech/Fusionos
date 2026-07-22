@@ -6,7 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
-import { markShippedOnTracking } from "@/lib/order-status";
+import { markShippedOnTracking, rebalanceOrderCost } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +49,10 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       cost,
       trackingSyncedAt: patch.trackingNumber ? new Date() : ffo.trackingSyncedAt,
     }).where(eq(schema.fulfillmentOrders.id, ffo.id));
+    // ĐỒNG BỘ SỔ: sửa base/ship cost tay phải ghi lại bút toán base_cost (Dashboard/Finance tính từ transactions).
+    // Bug cũ: chỉ cập nhật fulfillment_orders → sổ giữ giá cũ → thống kê sai (vd import lỗi 46294 sửa còn 25.09
+    // nhưng Dashboard vẫn cộng 46294). rebalanceOrderCost cân bút toán = ĐÚNG tổng cost các bản ghi fulfill.
+    if (patch.baseCost != null || patch.shipCost != null) await rebalanceOrderCost(params.id, "Manual cost edit — reconciled ledger");
     if (patch.trackingNumber) { await autoPushEtsyTracking(params.id); await autoPushTiktokTracking(params.id); await markShippedOnTracking(params.id); } // CÓ TRACKING mới nhảy Shipped + đẩy Etsy/TikTok (bug cũ: thiếu {} → sửa SĐT/cost cũng làm đơn Shipped)
     return NextResponse.json({ ok: true, id: ffo.id, updated: true });
   }
@@ -62,6 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     ...patch, cost, pushedAt: new Date(),
     trackingSyncedAt: patch.trackingNumber ? new Date() : null,
   }).returning();
+  if (patch.baseCost != null || patch.shipCost != null) await rebalanceOrderCost(params.id, "Manual cost entry — reconciled ledger");
   if (patch.trackingNumber) { await autoPushEtsyTracking(params.id); await markShippedOnTracking(params.id); } // CÓ TRACKING mới nhảy Shipped (bug cũ: thiếu {} → sửa SĐT/cost cũng làm đơn Shipped)
   return NextResponse.json({ ok: true, id: row.id, created: true });
 }
