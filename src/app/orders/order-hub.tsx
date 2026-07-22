@@ -1013,7 +1013,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
   const promptFn = usePrompt();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [showIssue, setShowIssue] = useState(false);
-  const [dupItemFor, setDupItemFor] = useState<{ id: string; title: string } | null>(null); // NHÂN BẢN ITEM: item đang chọn số bản
+  const [showDupItem, setShowDupItem] = useState(false); // NHÂN BẢN ITEM: mở modal chọn item + số bản
   const [ffSel, setFfSel] = useState("");
   // Google Sheet fulfiller: chọn tab lúc đẩy (Hướng B)
   const [gsheetTabs, setGsheetTabs] = useState<string[]>([]);
@@ -1422,14 +1422,15 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
             )
           )}
           {(isAdmin || canDuplicate) && <button onClick={() => openDup(o.id, (o.order_label as string) ?? "", o.items)} style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>{t("o.dup")}</button>}
-          {/* Đơn 1 item: nút NHÂN BẢN ITEM ở góc phải trên (cạnh Duplicate). Đơn nhiều item → nút nằm ở từng dòng. */}
-          {(isAdmin || canDuplicate) && o.items.length === 1 && (
-            <button onClick={() => setDupItemFor({ id: o.items[0].id, title: decodeEntities(o.items[0].product_title as string) })}
+          {/* NHÂN BẢN ITEM — LUÔN ở góc phải trên (cạnh Duplicate) cho mọi đơn. Đơn nhiều item thì
+              chọn item nào cần nhân ngay trong modal → nhất quán, không còn chỗ trên chỗ dưới. */}
+          {(isAdmin || canDuplicate) && o.items.length > 0 && (
+            <button onClick={() => setShowDupItem(true)}
               style={{ ...btnGhost, color: "var(--blue)", borderColor: "var(--blue)", background: "var(--blue-soft)", fontWeight: 700 }}>＋ Dup item</button>
           )}
         </div>
       </div>
-      {dupItemFor && <DupItemModal item={dupItemFor} close={() => setDupItemFor(null)} flash={flash} onDone={reload} />}
+      {showDupItem && <DupItemModal items={o.items} close={() => setShowDupItem(false)} flash={flash} onDone={reload} />}
       {showIssue && <IssueModal order={o} fulfillers={fulfillers}
         close={() => setShowIssue(false)} flash={flash} onSaved={reload} />}
 
@@ -1444,8 +1445,6 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
         const itemPushed = pushedBy.has(it.id);
         return <ItemRow key={it.id} it={it} onSaved={reload} flash={flash} canEdit={canEdit}
           canDup={isAdmin || canDuplicate}
-          rowDup={(isAdmin || canDuplicate) && o.items.length > 1}
-          onDupItem={() => setDupItemFor({ id: it.id, title: decodeEntities(it.product_title as string) })}
           excluded={itemExcluded}
           showPicker={canPushFf && !!detail && canCreate && !!ffSel && !itemPushed && !itemExcluded}
           reviewLine={canPushFf ? reviewLine : null}
@@ -1496,8 +1495,8 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   );
 }
 
-function ItemRow({ it, onSaved, flash, canEdit = true, canDup = false, rowDup = false, onDupItem, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine, reviewLine = null, order, showNotes = false, pushSel = true, setPushSel, pushedTo = null, excluded = false }: {
-  it: Item; onSaved: () => void; flash: (m: string) => void; canEdit?: boolean; canDup?: boolean; rowDup?: boolean; onDupItem?: () => void;
+function ItemRow({ it, onSaved, flash, canEdit = true, canDup = false, showPicker = false, fulfillerId = "", pickerSeed = [], line, setLine, reviewLine = null, order, showNotes = false, pushSel = true, setPushSel, pushedTo = null, excluded = false }: {
+  it: Item; onSaved: () => void; flash: (m: string) => void; canEdit?: boolean; canDup?: boolean;
   showPicker?: boolean; fulfillerId?: string; pickerSeed?: Variant[];
   line?: { mappingId: string; qty: number; unitCost?: number }; setLine?: (v: { mappingId: string; qty: number; unitCost?: number }) => void;
   /** Đơn ĐÃ ĐẨY (status=created): dòng đã gửi nhà in → hiện panel CHỈ ĐỌC để đối chiếu */
@@ -1665,14 +1664,6 @@ function ItemRow({ it, onSaved, flash, canEdit = true, canDup = false, rowDup = 
           )}
           {it.internal_sku && <span>SKU: <b style={{ color: "var(--ink)" }}>{it.internal_sku}</b></span>}
           <span>{t("o.price")}: <b style={{ color: "var(--ink)" }}>{money(it.unit_price)}</b></span>
-          {/* NHÂN BẢN ITEM (support/admin) — đơn NHIỀU item hiện nút ở từng dòng để không nhầm item.
-              Đơn 1 item thì nút nằm ở góc phải trên (cạnh Duplicate). Mở modal chọn số bản rồi mới dup. */}
-          {rowDup && onDupItem && (
-            <button onClick={onDupItem} title="Duplicate this item within the order (for qty with several personalizations)"
-              style={{ display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid var(--blue)", background: "var(--blue-soft)", color: "var(--blue)", borderRadius: 8, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-              ＋ Dup item
-            </button>
-          )}
         </div>
         {multiWarn && (
           <div style={{ marginTop: 8, display: "flex", alignItems: "flex-start", gap: 7, background: "#FFF7E6", border: "1px solid #F5D48A", borderLeft: "4px solid #E0A320", borderRadius: 9, padding: "8px 11px", fontSize: 12, color: "#8A5A1E", lineHeight: 1.5 }}>
@@ -2090,37 +2081,62 @@ function CreateOrderModal({ close, reload, flash, sellers, stores }: {
 }
 
 // Note của SELLER (nội bộ) — nền đỏ, nút "Add Note From Seller". Nằm dưới Note khách trong khu item.
-// Modal NHÂN BẢN ITEM: chọn số bản sao rồi mới dup. Mỗi bản = 1 item qty=1, chưa gán design.
-// (support/admin) — ca khách gói nhiều personalization vào 1 dòng qty>1.
-function DupItemModal({ item, close, flash, onDone }: { item: { id: string; title: string }; close: () => void; flash: (m: string) => void; onDone: () => void }) {
+// Modal NHÂN BẢN ITEM: (1) chọn ITEM cần nhân (nếu đơn nhiều item) → (2) chọn SỐ BẢN → Duplicate.
+// Mỗi bản = 1 dòng qty=1, chưa gán design. (support/admin) — ca khách gói nhiều personalization 1 dòng.
+function DupItemModal({ items, close, flash, onDone }: { items: Item[]; close: () => void; flash: (m: string) => void; onDone: () => void }) {
+  const [sel, setSel] = useState(items[0]?.id ?? "");
   const [count, setCount] = useState(2);
   const [busy, setBusy] = useState(false);
+  const chosen = items.find((x) => x.id === sel) ?? items[0];
   const go = async () => {
+    if (!sel) return;
     setBusy(true);
-    const j = await fetch(`/api/order-items/${item.id}/duplicate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch(`/api/order-items/${sel}/duplicate`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ count }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setBusy(false);
     if (j.ok) { flash(`✓ Đã tạo thêm ${j.count} bản — chỉnh qty & gán design riêng cho từng dòng`); onDone(); close(); }
     else flash("✗ " + (j.error ?? "Error"));
   };
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: 420, maxWidth: "92vw", boxShadow: "0 18px 50px rgba(15,23,42,.25)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: 440, maxWidth: "92vw", boxShadow: "0 18px 50px rgba(15,23,42,.25)" }}>
         <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>＋ Nhân bản item</div>
         <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.55, marginBottom: 14 }}>
-          <b style={{ color: "var(--ink)" }}>{item.title}</b><br />
-          Tạo thêm số bản sao (mỗi bản là 1 dòng qty=1, chưa gán design) để tách 1 đơn nhiều personalization thành nhiều dòng, gán design riêng cho từng cái.
+          Tạo thêm bản sao (mỗi bản là 1 dòng qty=1, chưa gán design) để tách 1 đơn nhiều personalization thành nhiều dòng, gán design riêng cho từng cái.
         </div>
+        {/* Bước 1 — chọn item (đơn 1 item thì chỉ hiện tên, khỏi chọn) */}
+        {items.length > 1 ? (
+          <>
+            <label style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>Chọn item cần nhân</label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16, maxHeight: 220, overflowY: "auto" }}>
+              {items.map((x) => (
+                <label key={x.id} style={{ display: "flex", gap: 9, alignItems: "flex-start", border: `1.5px solid ${sel === x.id ? "var(--blue)" : "var(--line)"}`, background: sel === x.id ? "var(--blue-soft)" : "#fff", borderRadius: 10, padding: "9px 11px", cursor: "pointer" }}>
+                  <input type="radio" name="dupitem" checked={sel === x.id} onChange={() => setSel(x.id)} style={{ marginTop: 2, accentColor: "var(--blue)" }} />
+                  <span style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+                    <span style={{ color: "var(--ink)", fontWeight: 600 }}>{decodeEntities(x.product_title as string)}</span>
+                    {x.variant && <span style={{ display: "block", color: "var(--muted)", fontSize: 11.5 }}>{decodeEntities(splitVariant(x.variant as string).map((v) => v.value).join(" · "))}</span>}
+                    <span style={{ color: "var(--muted)", fontSize: 11 }}>Qty {x.qty} · {money(x.unit_price)}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div style={{ fontSize: 12.5, background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px", marginBottom: 16 }}>
+            <b style={{ color: "var(--ink)" }}>{decodeEntities((chosen?.product_title as string) ?? "")}</b>
+          </div>
+        )}
+        {/* Bước 2 — chọn số bản */}
         <label style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>Số bản sao thêm</label>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
           <button onClick={() => setCount((c) => Math.max(1, c - 1))} style={{ width: 38, height: 38, borderRadius: 10, border: "1px solid var(--line)", background: "#fff", fontSize: 20, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>−</button>
           <input type="number" min={1} max={20} value={count} onChange={(e) => setCount(Math.min(20, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
             style={{ ...inp, width: 80, textAlign: "center", fontSize: 16, fontWeight: 800 }} />
           <button onClick={() => setCount((c) => Math.min(20, c + 1))} style={{ width: 38, height: 38, borderRadius: 10, border: "1px solid var(--line)", background: "#fff", fontSize: 20, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>＋</button>
-          <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 4 }}>→ tổng {count + 1} dòng</span>
+          <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 4 }}>→ item này thành {count + 1} dòng</span>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button onClick={close} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 11, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>Hủy</button>
-          <button onClick={go} disabled={busy} style={{ ...btnBlue, padding: "9px 20px", opacity: busy ? 0.6 : 1 }}>{busy ? "…" : `Duplicate ×${count}`}</button>
+          <button onClick={go} disabled={busy || !sel} style={{ ...btnBlue, padding: "9px 20px", opacity: busy || !sel ? 0.6 : 1 }}>{busy ? "…" : `Duplicate ×${count}`}</button>
         </div>
       </div>
     </div>
