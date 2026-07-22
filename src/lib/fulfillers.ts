@@ -7,6 +7,7 @@ import { createOnosOrder, type OnosItem } from "@/lib/onos";
 import { createWembroideryOrder, type WemItem, type WemDesign } from "@/lib/wembroidery";
 import { createLenfulOrder, type LenfulDesign, type LenfulItem } from "@/lib/lenful";
 import { createVinawayOrder, type VinawayItem, type VinawaySurface } from "@/lib/vinaway";
+import { createHogotoOrder } from "@/lib/hogoto";
 import { getSheetHeaders, appendSheetRow, normHeader } from "@/lib/gsheet";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
@@ -111,7 +112,102 @@ export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   gearment: makeAdapter("gearment", "Gearment"),
   lenful: lenfulAdapter(),
   vinaway: vinawayAdapter(),
+  hogotopod: hogotoAdapter(),
+  hogoto: hogotoAdapter(),
 };
+
+/**
+ * Adapter HOGOTO POD THẬT — POST /v1/partner/order/store (X-API-Key + X-Tenant).
+ * credentials (Settings → Fulfillers): apiKey = API Key; (tuỳ chọn) tenant, shippingMethod mặc định.
+ * MAPPING mỗi SKU:
+ *   fulfillerSku  = Product Code Hogoto (vd "P201")
+ *   variant       = Size (vd "12 x 16 inch")  — hoặc đặt trong extraJson.size
+ *   extraJson     = { productType, colorCode, positionCode, size?, shippingMethod? }
+ *       productType  vd "EMBROIDERY" | "PRINT_3D" (theo loại SP Hogoto)
+ *       colorCode    vd "AS_DESIGN" hoặc mã màu gingham
+ *       positionCode vd "CENTER" (thêu) | "ALL_OVER_PRINT" (in 3D)
+ * Design: mặt design đầu tiên của card → designUrl; ảnh item → mockupUrl.
+ * Đơn Ship-by-TikTok: tự kèm shippingLabel (label + tracking) + shippingMethod TIKTOK.
+ */
+function hogotoAdapter(): FulfillerAdapter {
+  return {
+    slug: "hogotopod",
+    label: "Hogoto POD",
+    async push(ctx) {
+      const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
+      const apiKey = cred.apiKey || "";
+      if (!apiKey || !ctx.fulfiller.apiEndpoint) {
+        return { ...simulate("hogotopod"), reason: "Hogoto POD cần API endpoint + API Key (Settings → Fulfillers) → order NOT sent to the printer" };
+      }
+      const tenant = cred.tenant || "fulfillment";
+      const o = ctx.order;
+      const shipType = (o.shippingType || "").toUpperCase();
+      const isTiktok = shipType.includes("TIKTOK") || !!o.labelUrl;
+
+      let shippingMethod = cred.shippingMethod || (isTiktok ? "TIKTOK" : "FAST_US_SHIPPING");
+
+      const products = ctx.lines.map((l) => {
+        const ex = (l.extra ?? {}) as Record<string, unknown>;
+        const productCode = String(l.fulfillerSku || "").trim();
+        if (!productCode) throw new Error(`Hogoto: item "${l.internalSku ?? ""}" chưa map Product Code (vd P201) vào ô Fulfiller SKU.`);
+        const size = String(ex.size || l.variant || "").trim();
+        const productType = String(ex.productType || l.fulfillerProduct || "").trim();
+        const colorCode = String(ex.colorCode || "AS_DESIGN").trim();
+        const positionCode = String(ex.positionCode || "CENTER").trim();
+        if (ex.shippingMethod) shippingMethod = String(ex.shippingMethod);
+        // Design: ưu tiên mặt design đầu tiên của card, else designFront; mockup = ảnh item.
+        const designUrl = (l.designSides && l.designSides[0]?.url) || l.designFront || null;
+        const designAttachments = designUrl ? [{
+          positionCode, designUrl, designEmbUrl: null, mockupUrl: l.image ?? null,
+          note: l.personalization || null, glitterColors: null, embroidery3DColors: null, fabricPatterns: null, outline: null,
+        }] : [];
+        return {
+          colorCode,
+          designAttachments,
+          positionCode: null as string | null,
+          productCode,
+          ...(productType ? { productType } : {}),
+          quantity: l.qty,
+          size,
+        };
+      });
+
+      const body: Record<string, unknown> = {
+        address: {
+          addressText2: o.addr2 || "",
+          city: o.city || "",
+          country: toISO2(o.country) || "US",
+          details: o.addr1 || "",
+          state: usStateAbbr(o.state || "") || (o.state || ""),
+          zip: o.zip || "",
+        },
+        customerNote: ctx.lines.map((l) => (l.personalization || "").trim()).filter(Boolean).join(" | ") || null,
+        autoDeposit: true,
+        products,
+        recipient: {
+          email: o.email || "",
+          firstName: o.buyerFirst || "",
+          lastName: o.buyerLast || "",
+          note: null,
+          phone: o.phone || "",
+        },
+        referenceCode: orderExtNumber(o),
+        shippingMethod,
+      };
+      // Ship-by-TikTok: đưa nhãn + tracking cho Hogoto (đúng luồng đơn TikTok mình giữ label).
+      if (isTiktok && (o.labelUrl || o.shippingTracking)) {
+        body.shippingLabel = {
+          contentType: null, labelUrl: o.labelUrl || null, providerCode: null,
+          trackingNumber: o.shippingTracking || null, trackingNumberByTiktok: o.shippingTracking || null,
+          type: null, needScanLabel: true,
+        };
+      }
+
+      const res = await createHogotoOrder({ endpoint: ctx.fulfiller.apiEndpoint, apiKey, tenant }, body);
+      return { externalFfId: res.orderCode, simulated: false, raw: res.raw, baseCost: res.baseCost, shipCost: res.shipCost };
+    },
+  };
+}
 
 /**
  * Adapter VINAWAY THẬT — api.vinaway.io/api (doc PDF 2026-07).
