@@ -12,12 +12,12 @@ type Data = {
   uScopes: { userId: string; resource: string; scope: string }[];
 };
 
-const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", products: "Products", reviews: "Scoring", statsDesigners: "Designer Stats", finance: "Finance", hr: "Staff", stores: "Stores", support: "Customer Messages", marketing: "Marketing", financeTiktok: "Finance (TikTok)", bookStudio: "Book Studio (AI)", settings: "Settings" };
+const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", products: "Products", reviews: "Scoring", statsDesigners: "Designer Stats", finance: "Finance", hr: "Staff", stores: "Stores", support: "Customer Messages", marketing: "Marketing", financeTiktok: "Finance (TikTok)", bookStudio: "Book Studio (AI)", genImage: "Gen Image", settings: "Settings" };
 // Bố cục bảng quyền — đồng điệu với Menu. Ẩn fulfillment/reviews/statsDesigners (module vẫn tồn tại, route vẫn chạy). Gộp Seller Hub.
 const PERM_SECTIONS: { title: string | null; grouped?: boolean; mods: string[] }[] = [
   { title: null, mods: ["dashboard", "orders", "designs"] },
-  // AI Agent — Book Studio (beta): bật cho seller nào được dùng thử.
-  { title: "AI Agent (beta)", mods: ["bookStudio"] },
+  // AI Agent — Book Studio + Gen Image (beta): bật cho seller nào được dùng thử.
+  { title: "AI Agent (beta)", mods: ["bookStudio", "genImage"] },
   // Seller Hub: 1 dòng set CHUNG cho Products + Customer Messages + Marketing.
   { title: "Seller Hub", grouped: true, mods: ["products", "support", "marketing", "financeTiktok"] },
   { title: null, mods: ["finance", "stores", "hr", "settings"] },

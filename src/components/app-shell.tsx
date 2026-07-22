@@ -19,7 +19,7 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
 
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
 
-export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false, canFinanceTiktok = false, canBookStudio = false }: {
+export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false, canFinanceTiktok = false, canBookStudio = false, canGenImage = false }: {
   user: { name: string; role: string; avatarUrl?: string | null };
   links: NavLink[];
   children: React.ReactNode;
@@ -28,6 +28,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   canMarketing?: boolean;
   canFinanceTiktok?: boolean;
   canBookStudio?: boolean;
+  canGenImage?: boolean;
 }) {
   const path = usePathname();
   const { t } = useLang();
@@ -106,7 +107,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
-  const aiAgentDropdown = (canBookStudio || isAdminUser) ? (
+  const aiAgentDropdown = (canBookStudio || canGenImage || isAdminUser) ? (
     <div key="__aiagent" className="topnav-more">
       <button className={`topnav-item${aiActive ? " active" : ""}`} onClick={() => { setProdOpen(false); setMoreOpen(false); setAiOpen((v) => !v); }}>
         <span className="topnav-ic"><IconSparkle width={17} height={17} /></span>
@@ -120,7 +121,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
               Gen Book
             </Link>
           )}
-          {isAdminUser && (
+          {(canGenImage || isAdminUser) && (
             <Link href="/ai-image" prefetch className={`topnav-more-item${isActive("/ai-image") ? " active" : ""}`}>
               <span className="topnav-ic"><IconArtwork width={16} height={16} /></span>
               Gen Image
