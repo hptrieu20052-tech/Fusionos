@@ -122,7 +122,10 @@ export async function ttExchangeToken(appKey: string, appSecret: string, p: { au
   const q = p.authCode
     ? `app_key=${appKey}&app_secret=${appSecret}&auth_code=${encodeURIComponent(p.authCode)}&grant_type=authorized_code`
     : `app_key=${appKey}&app_secret=${appSecret}&refresh_token=${encodeURIComponent(p.refreshToken!)}&grant_type=refresh_token`;
-  const r = await fetch(`${TT_AUTH}/api/v2/token/get?${q}`, ft());
+  // ĐỔI auth_code → /token/get; REFRESH token → /token/refresh (endpoint KHÁC NHAU).
+  // Bug cũ: refresh cũng gọi /token/get → TikTok trả 98001004 invalid params khi access token hết hạn.
+  const path = p.authCode ? "/api/v2/token/get" : "/api/v2/token/refresh";
+  const r = await fetch(`${TT_AUTH}${path}?${q}`, ft());
   const j = (await r.json().catch(() => ({}))) as { code?: number; message?: string; data?: Record<string, unknown> };
   if (!r.ok || j.code !== 0 || !j.data?.access_token) {
     throw new Error(`TikTok token failed: HTTP ${r.status} code=${j.code} ${j.message ?? ""}`.trim());
