@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 
 type Mode = "clone" | "bgremove" | "redesign";
 const TABS: { key: Mode; label: string; desc: string; icon: string }[] = [
-  { key: "clone", label: "Clone", desc: "Chép lại ảnh gần như y hệt — tái tạo design sắc nét, giữ nguyên bố cục / màu / chữ.", icon: "M8 4h10a2 2 0 0 1 2 2v10M16 8H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2Z" },
-  { key: "bgremove", label: "Tách nền", desc: "Đổi nền qua màu phản quang rồi tách sạch → PNG nền trong suốt, viền gọn.", icon: "M3 3h7v7H3zM14 14h7v7h-7zM14 3h7v7h-7zM3 14h7v7H3z" },
-  { key: "redesign", label: "Redesign", desc: "Thiết kế lại theo yêu cầu bạn nhập, giữ chất lượng in.", icon: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" },
+  { key: "clone", label: "Clone", desc: "Bóc lấy design in (bỏ áo/nền ảnh), tái tạo sắc nét → PNG nền TRONG SUỐT.", icon: "M8 4h10a2 2 0 0 1 2 2v10M16 8H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2Z" },
+  { key: "bgremove", label: "Tách nền", desc: "Tách chủ thể khỏi nền → PNG nền TRONG SUỐT, viền gọn.", icon: "M3 3h7v7H3zM14 14h7v7h-7zM14 3h7v7h-7zM3 14h7v7H3z" },
+  { key: "redesign", label: "Redesign", desc: "Thiết kế lại theo yêu cầu → PNG nền TRONG SUỐT, sẵn sàng in.", icon: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" },
 ];
 const RATIOS = ["auto", "1:1", "4:5", "3:4", "2:3", "16:9", "9:16"];
 const CHROMAS: { key: string; label: string; swatch: string }[] = [
@@ -135,8 +135,8 @@ export function GenImageClient() {
               style={{ ...ctl, resize: "vertical" }} />
           </div>
 
-          {/* Hàng tuỳ chọn: model + tỷ lệ (+ màu chroma nếu tách nền) */}
-          <div style={{ display: "grid", gridTemplateColumns: mode === "bgremove" ? "1fr 1fr 1fr" : "2fr 1fr", gap: 8, marginTop: 12 }}>
+          {/* Hàng tuỳ chọn: model + tỷ lệ + màu nền trung gian (áp cho CẢ 3 mode → đều ra nền trong suốt) */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginTop: 12 }}>
             <div>
               <label style={lab}>Model AI ({models.length || "…"})</label>
               <select value={model} onChange={(e) => setModel(e.target.value)} style={ctl}>
@@ -150,16 +150,14 @@ export function GenImageClient() {
                 {RATIOS.map((r) => <option key={r} value={r}>{r === "auto" ? "Tự động" : r}</option>)}
               </select>
             </div>
-            {mode === "bgremove" && (
-              <div>
-                <label style={lab}>Màu tách nền</label>
-                <select value={chroma} onChange={(e) => setChroma(e.target.value)} style={ctl}>
-                  {CHROMAS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-                </select>
-              </div>
-            )}
+            <div>
+              <label style={lab}>Màu nền trung gian</label>
+              <select value={chroma} onChange={(e) => setChroma(e.target.value)} style={ctl}>
+                {CHROMAS.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+              </select>
+            </div>
           </div>
-          {mode === "bgremove" && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Chọn màu KHÁC với màu chính trong design (vd design nhiều xanh lá thì chọn Hồng) để tách sạch nhất.</div>}
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Nền trung gian chỉ để tách trong suốt — kết quả LUÔN là PNG nền trong suốt. Chọn màu KHÁC màu chính trong design (design nhiều xanh lá → chọn Hồng) để tách sạch, không thủng.</div>
 
           <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, fontSize: 12.5, cursor: "pointer", color: "var(--ink)" }}>
             <input type="checkbox" checked={autoFb} onChange={(e) => setAutoFb(e.target.checked)} style={{ width: 15, height: 15, accentColor: "var(--blue)" }} />
