@@ -63,7 +63,8 @@ export async function refundOrderCost(orderId: string, note: string) {
     await db.insert(schema.transactions).values({
       type: "base_cost", amount: (-bal).toFixed(2),
       orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
-      note, occurredAt: new Date().toISOString().slice(0, 10),
+      // Ghi chi phí theo NGÀY KÉO ĐƠN VỀ (ordered_at) để trùng mốc với doanh thu — báo cáo theo ngày mới khớp.
+      note, occurredAt: (ord?.orderedAt ? new Date(ord.orderedAt) : new Date()).toISOString().slice(0, 10),
     });
     return true;
   } catch { return false; }
@@ -101,7 +102,8 @@ export async function rebalanceOrderCost(orderId: string, note = "Cost adjustmen
       type: "base_cost", amount: (target - cur).toFixed(2),
       orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
       note,
-      occurredAt: new Date().toISOString().slice(0, 10),
+      // Theo NGÀY KÉO ĐƠN VỀ (ordered_at) để cost trùng mốc doanh thu.
+      occurredAt: (ord?.orderedAt ? new Date(ord.orderedAt) : new Date()).toISOString().slice(0, 10),
     });
     return true;
   } catch { return false; }

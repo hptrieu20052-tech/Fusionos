@@ -271,7 +271,8 @@ async function handlePush(req: NextRequest) {
     type: "base_cost", amount: (-finalCost).toFixed(2),
     orderId: order.id, storeId: order.storeId, sellerId: order.sellerId,
     note: `${ff.name} · ${externalFfId}${lineNote}`,
-    occurredAt: new Date().toISOString().slice(0, 10),
+    // Chi phí ghi theo NGÀY KÉO ĐƠN VỀ (ordered_at) — trùng mốc doanh thu.
+    occurredAt: (order.orderedAt ? new Date(order.orderedAt) : new Date()).toISOString().slice(0, 10),
   });
 
   return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost: finalCost, simulated: pushRes.simulated, reason: pushRes.reason });
