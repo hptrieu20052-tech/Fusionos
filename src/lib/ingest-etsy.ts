@@ -33,6 +33,8 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
 
   // Đơn đã ship/hoàn tất/huỷ trên sàn → KHÔNG tạo mới (đơn cũ hệ thống trước); đơn đã có vẫn merge bình thường
   const SHIPPED_LIKE = /shipped|in_transit|delivered|completed|cancel/i;
+  // HUỶ / HOÀN TIỀN TOÀN BỘ / void → không kéo về (bug cũ: chỉ bắt "cancel", để lọt "fully refunded").
+  const CANCEL_LIKE = /cancel|refund|void|declined|chargeback/i;
 
   // Blocklist đơn hệ thống CŨ — hỏi DB 1 lần cho cả lô, không hỏi từng đơn
   const blocked = await ignoredSet(orders.map((o) => String(o.externalId ?? "")));
@@ -45,6 +47,12 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
       const [dup] = await db.select().from(schema.orders)
         .where(and(eq(schema.orders.platform, platform as never), eq(schema.orders.externalId, ext))).limit(1);
       if (dup) {
+        // Đơn đã HUỶ / HOÀN TIỀN TOÀN BỘ trên sàn (dù trước đó kéo về lúc còn active) →
+        // đánh dấu CANCEL để loại khỏi việc + hết cảnh báo "assign design", không merge/đẩy nữa.
+        if (o.platformStatus && CANCEL_LIKE.test(String(o.platformStatus)) && !["cancel", "trash"].includes(dup.status)) {
+          await db.update(schema.orders).set({ status: "cancel" as never, platformStatus: s(o.platformStatus), updatedAt: new Date() }).where(eq(schema.orders.id, dup.id));
+          updated++; continue;
+        }
         // MERGE: đơn đã có → chỉ điền field còn TRỐNG (đơn kéo lần đầu từ list thiếu địa chỉ,
         // mở chi tiết trên Etsy rồi Push lại là địa chỉ/total/note tự vào — không đè dữ liệu đã sửa tay).
         const patch: Record<string, unknown> = {};
@@ -78,6 +86,14 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
           const guessedLid = new Set<string>(); // listing đã từng ghép ĐOÁN MÒ → slot còn lại của nó KHÔNG được tin
           const lower = (v: unknown) => String(v ?? "").trim().toLowerCase();
           type ExItem = (typeof exItems)[number];
+          // Đếm số item CÙNG listing ở DB và ở bản push. CHỈ suy luận "còn 1 slot → chắc chắn" khi
+          // hai bên KHỚP SỐ LƯỢNG (nếu DB thiếu/thừa item của listing đó thì slot còn lại có thể là
+          // của item KHÁC → cấm điền, tránh in nhầm — phát hiện qua mô phỏng 500k đơn).
+          const dbLidCount = new Map<string, number>();
+          for (const x of exItems) { const k = x.etsyListingId ?? "∅"; dbLidCount.set(k, (dbLidCount.get(k) ?? 0) + 1); }
+          const inLidCount = new Map<string, number>();
+          for (const it of inItems) { const k = s(it.listingId) ?? "∅"; inLidCount.set(k, (inLidCount.get(k) ?? 0) + 1); }
+          const cleanGroup = (lid: string) => !guessedLid.has(lid) && (inLidCount.get(lid) ?? 0) === (dbLidCount.get(lid) ?? 0);
           // matchFor trả kèm cờ `confirmed`: TRUE = ghép chắc chắn bằng NỘI DUNG (listing riêng, hoặc
           // personalization/variant riêng biệt). FALSE = chỉ đoán theo VỊ TRÍ vì mơ hồ.
           // v87: khi confirmed=false thì TUYỆT ĐỐI không ghi personalization/variant — để tránh ca
@@ -86,9 +102,9 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
             const lid = s(inIt.listingId);
             if (lid) {
               const cands = exItems.filter((x) => !used.has(x.id) && x.etsyListingId === lid);
-              // "chỉ còn 1 ứng viên" chỉ CHẮC CHẮN nếu listing này chưa từng bị đoán mò
-              // (nếu slot kia đã bị 1 lần đoán chiếm thì slot còn lại cũng là hệ quả của phỏng đoán).
-              if (cands.length === 1) return { ex: cands[0], confirmed: !guessedLid.has(lid) };
+              // "chỉ còn 1 ứng viên" chỉ CHẮC CHẮN khi số item cùng listing KHỚP (không thiếu/thừa)
+              // và listing chưa từng bị đoán mò.
+              if (cands.length === 1) return { ex: cands[0], confirmed: cleanGroup(lid) };
               if (cands.length > 1) {
                 // NHIỀU item cùng listing: Etsy KHÔNG cam kết thứ tự giữa 2 lần sync → khớp theo
                 // NỘI DUNG trước (personalization rồi variant trùng). Trùng duy nhất = CHẮC CHẮN.
@@ -104,24 +120,26 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
                     return { ex: byPz[i % byPz.length] && byPz.includes(exItems[i]) ? exItems[i] : byPz[0], confirmed: true }; // trùng hệt nhau → ghép sao cũng ra kết quả y hệt (vô hại)
                   }
                 }
-                const vr = lower(inIt.variant);
-                if (vr) {
-                  const byVr = cands.filter((x) => lower(x.variant) === vr);
-                  if (byVr.length === 1) return { ex: byVr[0], confirmed: true };
-                }
-                // KHÔNG phân biệt được bằng nội dung → đoán theo vị trí NHƯNG đánh dấu chưa chắc.
+                // KHÔNG dùng variant/size để XÁC NHẬN điền tên: variant KHÔNG phải mã định danh —
+                // khi slot đúng bị rớt variant, size lại trỏ trúng slot của item KHÁC cùng size → in nhầm
+                // (mô phỏng 500k phát hiện). Chỉ tin đường loại trừ 1-1 (cands.length===1 + cleanGroup).
+                // KHÔNG phân biệt được bằng tên → đoán theo vị trí NHƯNG đánh dấu chưa chắc.
                 const byIdx = exItems.length === inItems.length ? exItems[i] : null;
                 const guess = byIdx && cands.includes(byIdx) ? byIdx : cands[0];
                 guessedLid.add(lid); // listing này đã phải đoán → slot còn lại của nó cũng không được tin
                 return { ex: guess, confirmed: false };
               }
             }
-            if (exItems.length === inItems.length && exItems[i] && !used.has(exItems[i].id)) {
-              const e = exItems[i];
-              if (!lid || !e.etsyListingId || e.etsyListingId === lid) return { ex: e, confirmed: !!lid }; // có listing khớp vị trí thì tạm tin; không listing = đoán
+            // Khớp theo VỊ TRÍ chỉ được nối 2 item CÙNG TÌNH TRẠNG LISTING (cùng mã, hoặc cùng không có).
+            // Nếu để item không-listing "ăn" slot của item có-listing (hay ngược lại) sẽ làm LỆCH phép
+            // đếm nhóm → suy luận loại trừ sai → in nhầm (mô phỏng 2 triệu đơn phát hiện, cực hiếm).
+            const eqLid = (a: string | null, b: string | null) => (a ?? null) === (b ?? null);
+            if (exItems.length === inItems.length && exItems[i] && !used.has(exItems[i].id) && eqLid(lid, exItems[i].etsyListingId)) {
+              // chỉ CHẮC CHẮN khi đơn đúng 1 item (không thể mơ hồ); nhiều item khớp vị trí = phỏng đoán → không ghi tên.
+              return { ex: exItems[i], confirmed: inItems.length === 1 };
             }
-            const fb = exItems.find((x) => !used.has(x.id) && (!lid || !x.etsyListingId)) ?? null;
-            return { ex: fb, confirmed: false };
+            const fb = exItems.find((x) => !used.has(x.id) && eqLid(lid, x.etsyListingId)) ?? null;
+            return { ex: fb, confirmed: exItems.length === 1 && inItems.length === 1 };
           };
           for (let i = 0; i < inItems.length; i++) {
             const inIt = inItems[i];

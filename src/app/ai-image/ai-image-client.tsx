@@ -20,10 +20,11 @@ export function GenImageClient() {
   const [link, setLink] = useState("");
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("auto");
+  const [redraw, setRedraw] = useState(false); // Clone: AI vẽ lại toàn bộ
   const [autoFb, setAutoFb] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
-  const [result, setResult] = useState<{ url: string | null; dataUrl: string; cost: number; usedModel?: string } | null>(null);
+  const [result, setResult] = useState<{ url: string | null; dataUrl: string; cost: number; usedModel?: string; method?: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [models, setModels] = useState<{ id: string; name: string }[]>([]);
@@ -61,9 +62,9 @@ export function GenImageClient() {
     try {
       const j = await fetch("/api/ai-image/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, image: srcData, prompt, model: model || undefined, aspectRatio: ratio, autoFallback: autoFb }),
+        body: JSON.stringify({ mode, image: srcData, prompt, model: model || undefined, aspectRatio: ratio, autoFallback: autoFb, redraw: mode === "clone" ? redraw : false }),
       }).then((r) => r.json());
-      if (j.ok) { setResult({ url: j.url, dataUrl: j.dataUrl, cost: j.cost ?? 0, usedModel: j.usedModel }); setMsg(j.usedModel && model && j.usedModel !== model && j.usedModel !== "default" ? `↻ Model bạn chọn bị từ chối — đã tự chuyển sang: ${j.usedModel}` : ""); }
+      if (j.ok) { setResult({ url: j.url, dataUrl: j.dataUrl, cost: j.cost ?? 0, usedModel: j.usedModel, method: j.method }); setMsg(j.method === "ai" && j.usedModel && model && j.usedModel !== model && j.usedModel !== "default" ? `↻ Model bạn chọn bị từ chối — đã tự chuyển sang: ${j.usedModel}` : ""); }
       else setMsg("✗ " + (j.error ?? "Lỗi"));
     } catch { setMsg("✗ Lỗi mạng — thử lại"); }
     setBusy(false);
@@ -143,6 +144,12 @@ export function GenImageClient() {
             </div>
           </div>
 
+          {mode === "clone" && (
+            <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, fontSize: 12.5, cursor: "pointer", color: "var(--ink)" }}>
+              <input type="checkbox" checked={redraw} onChange={(e) => setRedraw(e.target.checked)} style={{ width: 15, height: 15, accentColor: "var(--blue)" }} />
+              AI vẽ lại toàn bộ (nét hơn — có thể đổi chi tiết nhỏ)
+            </label>
+          )}
           <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, fontSize: 12.5, cursor: "pointer", color: "var(--ink)" }}>
             <input type="checkbox" checked={autoFb} onChange={(e) => setAutoFb(e.target.checked)} style={{ width: 15, height: 15, accentColor: "var(--blue)" }} />
             Tự đổi model khác nếu bị từ chối (mẫu bản quyền)
@@ -178,7 +185,11 @@ export function GenImageClient() {
               <span style={{ fontSize: 11.5, color: "var(--muted)" }}>~${(result.cost || 0).toFixed(3)}</span>
             </div>
           )}
-          {result?.usedModel && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Model: {result.usedModel}</div>}
+          {result && (
+            result.method === "direct"
+              ? <div style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 600, marginTop: 8 }}>✓ Tách trực tiếp — giữ nguyên nét gốc 100% (không AI)</div>
+              : result.usedModel ? <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>AI model: {result.usedModel}</div> : null
+          )}
         </div>
       </div>
     </div>
