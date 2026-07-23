@@ -622,7 +622,7 @@ function VariantPicker({ fulfillerId, seed, line, setLine, label }: {
           <label>{t("o.skuVariant")}{skuCands.length > 1 ? ` (${skuCands.length})` : ""}</label>
           <select value={line.mappingId} onChange={(e) => { const ch = variants.find((x) => x.id === e.target.value); setLine({ ...line, mappingId: e.target.value, unitCost: ch?.unitCost }); }} style={box}>
             <option value="">—</option>
-            {skuCands.map((vv) => { const lbl = (vv.variant && vv.variant.trim()) || [vv.color, vv.size].filter(meaningful).join(" / "); return <option key={vv.id} value={vv.id}>{lbl ? `${lbl} — ${vv.fulfillerSku}` : vv.fulfillerSku}</option>; })}
+            {skuCands.map((vv) => { const lbl = (vv.variant && vv.variant.trim()) || [vv.color, vv.size].filter(meaningful).join(" / ") || (vv.internalSku && vv.internalSku.trim()); return <option key={vv.id} value={vv.id}>{lbl ? `${lbl} — ${vv.fulfillerSku}` : vv.fulfillerSku}</option>; })}
           </select>
         </div>
       )}
