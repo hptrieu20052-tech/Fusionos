@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from "react";
 
 type Mode = "clone" | "bgremove" | "redesign";
 const TABS: { key: Mode; label: string; desc: string; icon: string }[] = [
-  { key: "clone", label: "Clone", desc: "Bóc lấy design in (bỏ áo/nền ảnh), tái tạo sắc nét → PNG nền TRONG SUỐT.", icon: "M8 4h10a2 2 0 0 1 2 2v10M16 8H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2Z" },
-  { key: "bgremove", label: "Tách nền", desc: "Tách chủ thể khỏi nền → PNG nền TRONG SUỐT, viền gọn.", icon: "M3 3h7v7H3zM14 14h7v7h-7zM14 3h7v7h-7zM3 14h7v7H3z" },
-  { key: "redesign", label: "Redesign", desc: "Thiết kế lại theo yêu cầu → PNG nền TRONG SUỐT, sẵn sàng in.", icon: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" },
+  { key: "clone", label: "Clone", desc: "Extract the printed design (drop the shirt/photo background) and reproduce it clean & sharp → TRANSPARENT PNG.", icon: "M8 4h10a2 2 0 0 1 2 2v10M16 8H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2Z" },
+  { key: "bgremove", label: "Remove BG", desc: "Cut the subject from its background → TRANSPARENT PNG with clean edges.", icon: "M3 3h7v7H3zM14 14h7v7h-7zM14 3h7v7h-7zM3 14h7v7H3z" },
+  { key: "redesign", label: "Redesign", desc: "Redesign per your prompt → print-ready TRANSPARENT PNG.", icon: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" },
 ];
 const RATIOS = ["auto", "1:1", "4:5", "3:4", "2:3", "16:9", "9:16"];
 
@@ -20,8 +20,6 @@ export function GenImageClient() {
   const [link, setLink] = useState("");
   const [prompt, setPrompt] = useState("");
   const [ratio, setRatio] = useState("auto");
-  const [redraw, setRedraw] = useState(false); // Clone: AI vẽ lại toàn bộ
-  const [autoFb, setAutoFb] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [result, setResult] = useState<{ url: string | null; dataUrl: string; cost: number; usedModel?: string; method?: string } | null>(null);
@@ -40,15 +38,15 @@ export function GenImageClient() {
   }, []);
 
   const readFile = (f: File) => {
-    if (!f.type.startsWith("image/")) { setMsg("✗ Chỉ nhận file ảnh (PNG/JPG/WebP)"); return; }
-    if (f.size > 15 * 1024 * 1024) { setMsg("✗ Ảnh quá lớn (>15MB)"); return; }
+    if (!f.type.startsWith("image/")) { setMsg("✗ Image files only (PNG/JPG/WebP)"); return; }
+    if (f.size > 15 * 1024 * 1024) { setMsg("✗ Image too large (>15MB)"); return; }
     const r = new FileReader();
     r.onload = () => { setSrcData(String(r.result)); setSrcName(f.name); setResult(null); setMsg(""); };
     r.readAsDataURL(f);
   };
   const useLink = () => {
     const u = link.trim();
-    if (!/^https?:\/\/\S+/i.test(u)) { setMsg("✗ Link phải bắt đầu bằng http(s)://"); return; }
+    if (!/^https?:\/\/\S+/i.test(u)) { setMsg("✗ Link must start with http(s)://"); return; }
     setSrcData(u); setSrcName(u.split("/").pop() || "link"); setResult(null); setMsg("");
   };
   const clearSrc = () => { setSrcData(""); setSrcName(""); setResult(null); };
@@ -56,17 +54,17 @@ export function GenImageClient() {
   const tab = TABS.find((t) => t.key === mode)!;
 
   const generate = async () => {
-    if (!srcData) { setMsg("✗ Tải lên hoặc dán link 1 ảnh nguồn trước"); return; }
-    if (mode === "redesign" && !prompt.trim()) { setMsg("✗ Nhập yêu cầu thiết kế lại"); return; }
-    setBusy(true); setMsg("Đang xử lý… (10–40s)"); setResult(null);
+    if (!srcData) { setMsg("✗ Upload or paste a source image link first"); return; }
+    if (mode === "redesign" && !prompt.trim()) { setMsg("✗ Enter the redesign prompt"); return; }
+    setBusy(true); setMsg("Processing… (10–40s)"); setResult(null);
     try {
       const j = await fetch("/api/ai-image/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, image: srcData, prompt, model: model || undefined, aspectRatio: ratio, autoFallback: autoFb, redraw: mode === "clone" ? redraw : false }),
+        body: JSON.stringify({ mode, image: srcData, prompt, model: model || undefined, aspectRatio: ratio, autoFallback: true }),
       }).then((r) => r.json());
-      if (j.ok) { setResult({ url: j.url, dataUrl: j.dataUrl, cost: j.cost ?? 0, usedModel: j.usedModel, method: j.method }); setMsg(j.method === "ai" && j.usedModel && model && j.usedModel !== model && j.usedModel !== "default" ? `↻ Model bạn chọn bị từ chối — đã tự chuyển sang: ${j.usedModel}` : ""); }
-      else setMsg("✗ " + (j.error ?? "Lỗi"));
-    } catch { setMsg("✗ Lỗi mạng — thử lại"); }
+      if (j.ok) { setResult({ url: j.url, dataUrl: j.dataUrl, cost: j.cost ?? 0, usedModel: j.usedModel, method: j.method }); setMsg(j.method === "ai" && j.usedModel && model && j.usedModel !== model && j.usedModel !== "default" ? `↻ Your model refused — auto-switched to: ${j.usedModel}` : ""); }
+      else setMsg("✗ " + (j.error ?? "Error"));
+    } catch { setMsg("✗ Network error — try again"); }
     setBusy(false);
   };
 
@@ -91,11 +89,11 @@ export function GenImageClient() {
         {/* Nguồn + tuỳ chọn */}
         <div style={box}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 13 }}>Ảnh nguồn</div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>Source image</div>
             {srcData && (
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => fileRef.current?.click()} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--blue)" }}>Đổi ảnh</button>
-                <button onClick={clearSrc} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--red)" }}>Xoá</button>
+                <button onClick={() => fileRef.current?.click()} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--blue)" }}>Change</button>
+                <button onClick={clearSrc} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--red)" }}>Remove</button>
               </div>
             )}
           </div>
@@ -108,7 +106,7 @@ export function GenImageClient() {
               ? <img src={srcData} alt="" style={{ maxWidth: "100%", maxHeight: 300, objectFit: "contain" }} />
               : <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12.5, padding: 20 }}>
                   <div style={{ fontSize: 30, marginBottom: 6 }}>＋</div>
-                  Kéo-thả hoặc bấm để chọn ảnh<br />PNG / JPG / WebP · ≤ 15MB
+                  Drag & drop or click to choose<br />PNG / JPG / WebP · ≤ 15MB
                 </div>}
           </div>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); e.target.value = ""; }} />
@@ -116,15 +114,15 @@ export function GenImageClient() {
 
           {/* Dán ảnh từ link */}
           <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="…hoặc dán link ảnh (http/https)" style={{ ...ctl, flex: 1 }} onKeyDown={(e) => e.key === "Enter" && useLink()} />
-            <button onClick={useLink} style={{ border: "1px solid var(--line)", background: "#F3F6FB", borderRadius: 10, padding: "0 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>Dùng link</button>
+            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="…or paste an image link (http/https)" style={{ ...ctl, flex: 1 }} onKeyDown={(e) => e.key === "Enter" && useLink()} />
+            <button onClick={useLink} style={{ border: "1px solid var(--line)", background: "#F3F6FB", borderRadius: 10, padding: "0 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>Use link</button>
           </div>
 
           {/* Prompt — mọi mode (redesign bắt buộc) */}
           <div style={{ marginTop: 12 }}>
-            <label style={lab}>{mode === "redesign" ? "Yêu cầu thiết kế lại (bắt buộc)" : "Yêu cầu thêm (tuỳ chọn)"}</label>
+            <label style={lab}>{mode === "redesign" ? "Prompt (required)" : "Prompt (optional)"}</label>
             <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2}
-              placeholder={mode === "redesign" ? "Vd: đổi tông pastel, thêm hoa lá quanh chữ, giữ nguyên tên…" : "Vd: nét sắc hơn, tăng độ tương phản… (để trống cũng được)"}
+              placeholder={mode === "redesign" ? "E.g. pastel tones, add florals around the text, keep the name…" : "E.g. sharper lines, more contrast… (optional)"}
               style={{ ...ctl, resize: "vertical" }} />
           </div>
 
@@ -132,62 +130,51 @@ export function GenImageClient() {
             <div>
               <label style={lab}>Model AI ({models.length || "…"})</label>
               <select value={model} onChange={(e) => setModel(e.target.value)} style={ctl}>
-                {!models.length && <option value="">Đang tải…</option>}
+                {!models.length && <option value="">Loading…</option>}
                 {models.map((m) => <option key={m.id} value={m.id}>{m.name || m.id}</option>)}
               </select>
             </div>
             <div>
-              <label style={lab}>Tỷ lệ khung</label>
+              <label style={lab}>Aspect ratio</label>
               <select value={ratio} onChange={(e) => setRatio(e.target.value)} style={ctl}>
-                {RATIOS.map((r) => <option key={r} value={r}>{r === "auto" ? "Tự động" : r}</option>)}
+                {RATIOS.map((r) => <option key={r} value={r}>{r === "auto" ? "Auto" : r}</option>)}
               </select>
             </div>
           </div>
 
-          {mode === "clone" && (
-            <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, fontSize: 12.5, cursor: "pointer", color: "var(--ink)" }}>
-              <input type="checkbox" checked={redraw} onChange={(e) => setRedraw(e.target.checked)} style={{ width: 15, height: 15, accentColor: "var(--blue)" }} />
-              AI vẽ lại toàn bộ (nét hơn — có thể đổi chi tiết nhỏ)
-            </label>
-          )}
-          <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 12, fontSize: 12.5, cursor: "pointer", color: "var(--ink)" }}>
-            <input type="checkbox" checked={autoFb} onChange={(e) => setAutoFb(e.target.checked)} style={{ width: 15, height: 15, accentColor: "var(--blue)" }} />
-            Tự đổi model khác nếu bị từ chối (mẫu bản quyền)
-          </label>
-
           <button onClick={generate} disabled={busy}
             style={{ marginTop: 14, width: "100%", background: busy ? "#9CB2D8" : "var(--blue)", color: "#fff", border: "none", borderRadius: 11, padding: "11px 0", fontSize: 14, fontWeight: 800, cursor: busy ? "default" : "pointer" }}>
-            {busy ? "Đang xử lý…" : `Chạy ${tab.label}`}
+            {busy ? "Processing…" : `Run ${tab.label}`}
           </button>
           {msg && <div style={{ marginTop: 10, fontSize: 12.5, color: msg.startsWith("✗") ? "var(--red)" : "var(--muted)" }}>{msg}</div>}
         </div>
 
         {/* Kết quả */}
         <div style={box}>
-          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Kết quả</div>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10 }}>Result</div>
           <div style={{ borderRadius: 12, minHeight: 240, display: "flex", alignItems: "center", justifyContent: "center", background: result ? "repeating-conic-gradient(#EDF0F4 0% 25%, #fff 0% 50%) 50%/20px 20px" : "#FAFBFD", border: "1px solid var(--line)", overflow: "hidden" }}>
             {result
               // eslint-disable-next-line @next/next/no-img-element
               ? <img src={result.dataUrl} alt="" style={{ maxWidth: "100%", maxHeight: 460, objectFit: "contain" }} />
-              : <div style={{ color: "var(--muted)", fontSize: 12.5 }}>{busy ? "AI đang vẽ…" : "Kết quả sẽ hiện ở đây"}</div>}
+              : <div style={{ color: "var(--muted)", fontSize: 12.5 }}>{busy ? "AI is drawing…" : "Result will appear here"}</div>}
           </div>
           {result && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
               <a href={result.url ?? result.dataUrl} download={`genimage-${mode}.png`} target="_blank" rel="noreferrer"
                 style={{ flex: 1, textAlign: "center", background: "var(--ink)", color: "#fff", borderRadius: 11, padding: "10px 0", fontSize: 13, fontWeight: 800, textDecoration: "none" }}>
-                ⬇ Tải PNG
+                ⬇ Download PNG
               </a>
-              <button onClick={() => { if (result.dataUrl) { setSrcData(result.dataUrl); setSrcName("kết quả trước"); setResult(null); } }}
-                title="Đưa kết quả này thành ảnh nguồn để xử lý tiếp"
+              <button onClick={() => { if (result.dataUrl) { setSrcData(result.dataUrl); setSrcName("previous result"); setResult(null); } }}
+                title="Use this result as the source for further editing"
                 style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 11, padding: "10px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>
-                Dùng làm nguồn ↻
+                Use as source ↻
               </button>
               <span style={{ fontSize: 11.5, color: "var(--muted)" }}>~${(result.cost || 0).toFixed(3)}</span>
             </div>
           )}
           {result && (
             result.method === "direct"
-              ? <div style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 600, marginTop: 8 }}>✓ Tách trực tiếp — giữ nguyên nét gốc 100% (không AI)</div>
+              ? <div style={{ fontSize: 11.5, color: "var(--green)", fontWeight: 600, marginTop: 8 }}>✓ Direct cut — 100% original quality (no AI)</div>
               : result.usedModel ? <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>AI model: {result.usedModel}</div> : null
           )}
         </div>

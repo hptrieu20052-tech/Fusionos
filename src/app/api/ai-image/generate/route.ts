@@ -25,7 +25,11 @@ const BG = (c: { hex: string; name: string }) =>
 function buildPrompt(mode: string, c: { hex: string; name: string }, extra: string) {
   const tail = extra ? `\n\nAdditional request: ${extra}` : "";
   if (mode === "clone")
-    return `Extract ONLY the printed graphic design from the attached image — ignore the garment, fabric texture, wrinkles, shadows, lighting and any photographic background. Reproduce it as a clean, sharp, flat, high-resolution artwork with IDENTICAL composition, colours, typography and layout. ${BG(c)}${tail}`;
+    return `Recreate the printed graphic design from the attached photo as a CLEAN, SHARP, HIGH-RESOLUTION, print-ready vector-style illustration.
+- Reproduce the SAME artwork faithfully: identical characters, composition, layout, typography and colour scheme.
+- RECONSTRUCT the design so it is COMPLETE and UNDISTORTED: fill in every part that is faded, washed-out, wrinkled, folded, cropped, blurry or hidden by the garment/body; flatten it to a straight front-facing design (remove any warping from the fabric).
+- Crisp clean outlines, smooth SOLID colours, and restore faded/dull colours to BRIGHT vibrant saturated tones. No fabric texture, no photo grain, no shadows, no lighting from the photo.
+- Ignore the T-shirt/garment, the person, the photographic background and any store watermark or colour-swatch label. Output ONLY the isolated design. ${BG(c)}${tail}`;
   if (mode === "bgremove")
     return `Cut out the MAIN SUBJECT / printed design of the attached image, keeping it EXACTLY as-is (same colours, details, size, position, crisp edges). ${BG(c)}${tail}`;
   return `Redesign the printed design from the attached image according to these instructions:\n\n${extra}\n\nOutput a clean, flat, high-resolution, print-ready design. Ignore the garment / photographic background. ${BG(c)}`;
@@ -54,19 +58,26 @@ async function analyzeBorder(buf: Buffer): Promise<{ uniform: boolean; rgb: [num
   return { uniform: avgDist < 42, rgb: [kr, kg, kb] };
 }
 
-/** LÀM NÉT: upscale cạnh dài lên ~2000px (Lanczos) nếu nhỏ + unsharp mask. Giữ alpha. */
+/**
+ * LÀM NÉT — GIỮ NGUYÊN độ phân giải gốc (KHÔNG upscale, vì upscale ảnh raster chỉ làm MỜ, không thêm chi tiết).
+ * Chỉ phóng to khi ảnh QUÁ NHỎ (< 900px) và tối đa 2× để còn dùng in. Unsharp mask MẠNH ở CẠNH (m2 cao),
+ * nhẹ ở vùng phẳng (m1 thấp) → sắc nét mà không nhiễu. Giữ alpha (nền trong suốt).
+ */
 async function enhance(buf: Buffer): Promise<Buffer> {
   const sharp = await getSharp();
   try {
     const meta = await sharp(buf).metadata();
     const w = meta.width ?? 0, h = meta.height ?? 0, longest = Math.max(w, h);
-    let pipe = sharp(buf);
-    if (longest && longest < 2000) pipe = pipe.resize({ ...(w >= h ? { width: 2000 } : { height: 2000 }), kernel: "lanczos3" });
-    return pipe.sharpen({ sigma: 1 }).png().toBuffer();
+    let pipe = sharp(buf, { unlimited: true });
+    if (longest && longest < 900) {
+      const target = Math.min(longest * 2, 1800);
+      pipe = pipe.resize({ ...(w >= h ? { width: target } : { height: target }), kernel: "lanczos3" });
+    }
+    return pipe.sharpen({ sigma: 1, m1: 0.4, m2: 2.6 }).png({ compressionLevel: 9 }).toBuffer();
   } catch { return buf; }
 }
 
-/** Key 1 màu khỏi ảnh (GIỮ NGUYÊN pixel gốc, feather mềm viền) → PNG trong suốt. */
+/** Key 1 màu khỏi ảnh (GIỮ NGUYÊN pixel gốc, feather mềm viền) → PNG trong suốt. Dùng cho nền chroma AI. */
 async function keyColor(buf: Buffer, [kr, kg, kb]: [number, number, number], hard = 55, soft = 120): Promise<Buffer> {
   const sharp = await getSharp();
   const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
@@ -79,6 +90,35 @@ async function keyColor(buf: Buffer, [kr, kg, kb]: [number, number, number], har
   return sharp(data, { raw: { width: info.width, height: info.height, channels: 4 } }).png().toBuffer();
 }
 
+/**
+ * TÁCH NỀN CHUẨN cho design nền đồng đều: FLOOD-FILL từ viền ảnh.
+ * Chỉ xoá vùng nền NỐI với mép ảnh → GIỮ NGUYÊN mọi pixel bên trong (viền đen, vùng tối của design
+ * không bị đục thủng như khi key toàn ảnh). Feather mềm ở ranh giới cho cạnh mượt, không AI vẽ lại → nét gốc 100%.
+ */
+async function floodKey(buf: Buffer, [kr, kg, kb]: [number, number, number], hard = 40, soft = 78): Promise<Buffer> {
+  const sharp = await getSharp();
+  const { data, info } = await sharp(buf).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const w = info.width, h = info.height, n = w * h;
+  const dist = (idx: number) => { const p = idx * 4; const dr = data[p] - kr, dg = data[p + 1] - kg, db = data[p + 2] - kb; return Math.sqrt(dr * dr + dg * dg + db * db); };
+  const bg = new Uint8Array(n);                 // 1 = nền nối với viền
+  const stack = new Int32Array(n);              // stack chỉ số pixel (cấp phát 1 lần)
+  let sp = 0;
+  const seed = (x: number, y: number) => { if (x < 0 || y < 0 || x >= w || y >= h) return; const idx = y * w + x; if (bg[idx]) return; if (dist(idx) <= soft) { bg[idx] = 1; stack[sp++] = idx; } };
+  for (let x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1); }
+  for (let y = 0; y < h; y++) { seed(0, y); seed(w - 1, y); }
+  while (sp > 0) {
+    const idx = stack[--sp], x = idx % w, y = (idx / w) | 0;
+    seed(x + 1, y); seed(x - 1, y); seed(x, y + 1); seed(x, y - 1);
+  }
+  for (let idx = 0; idx < n; idx++) {
+    if (!bg[idx]) continue;                     // pixel BÊN TRONG (không nối viền) → giữ nguyên
+    const d = dist(idx), p = idx * 4;
+    if (d <= hard) data[p + 3] = 0;
+    else if (d < soft) data[p + 3] = Math.round((data[p + 3] * (d - hard)) / (soft - hard));
+  }
+  return sharp(data, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
@@ -89,8 +129,8 @@ export async function POST(req: NextRequest) {
   const image = String(b?.image ?? "").trim();
   const prompt = String(b?.prompt ?? "").trim();
   if (!["clone", "bgremove", "redesign"].includes(mode)) return NextResponse.json({ ok: false, error: "invalid mode" }, { status: 400 });
-  if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(image) && !/^https?:\/\/\S+$/i.test(image)) return NextResponse.json({ ok: false, error: "Cần ảnh nguồn (tải lên hoặc dán link http)" }, { status: 400 });
-  if (mode === "redesign" && !prompt) return NextResponse.json({ ok: false, error: "Redesign cần nhập yêu cầu thiết kế lại" }, { status: 400 });
+  if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(image) && !/^https?:\/\/\S+$/i.test(image)) return NextResponse.json({ ok: false, error: "Source image required (upload or paste an http link)" }, { status: 400 });
+  if (mode === "redesign" && !prompt) return NextResponse.json({ ok: false, error: "Redesign requires a prompt" }, { status: 400 });
 
   const save = async (raw: Buffer, cost: number, usedModel: string, method: string) => {
     const buf = await enhance(raw); // LÀM NÉT mọi kết quả (upscale + unsharp)
@@ -99,18 +139,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, url: fileUrl(key), dataUrl: `data:image/png;base64,${buf.toString("base64")}`, cost, usedModel, method });
   };
 
-  // ---- 1) TÁCH TRỰC TIẾP trên ảnh gốc (giữ nguyên nét) khi nền đồng đều ----
-  // Clone bật "AI vẽ lại" (redraw) → bỏ qua tách trực tiếp, cho AI vẽ lại toàn bộ.
-  const redraw = b?.redraw === true;
-  const wantsDirect = mode === "bgremove" || (mode === "clone" && !prompt && !redraw);
+  // ---- 1) TÁCH TRỰC TIẾP (flood-fill, giữ nét gốc 100%) — CHỈ cho TÁCH NỀN trên ảnh nền đồng đều.
+  //      CLONE thì LUÔN dùng AI tái dựng design (từ ảnh chụp áo/mockup → file vector sạch), không tách trực tiếp.
+  const wantsDirect = mode === "bgremove";
   if (wantsDirect) {
     try {
       const orig = await fetchOriginal(image);
       if (orig) {
         const bd = await analyzeBorder(orig);
         if (bd.uniform) {
-          const out = await keyColor(orig, bd.rgb);
-          return await save(out, 0, "direct-cut (no AI)", "direct");
+          // FLOOD-FILL từ viền: xoá đúng nền, GIỮ NGUYÊN nét + vùng tối bên trong design (không đục thủng).
+          const out = await floodKey(orig, bd.rgb);
+          return await save(out, 0, "direct-cut (flood, no AI)", "direct");
         }
       }
     } catch { /* lỗi phân tích → rơi sang AI */ }
@@ -135,7 +175,7 @@ export async function POST(req: NextRequest) {
     try { img = await orGenerateImage(fullPrompt, [image], { outputFormat: "png", ...(m ? { model: m } : {}), ...(aspect ? { aspectRatio: aspect } : {}) }); usedModel = m || "default"; break; }
     catch (e) { errs.push(`${m || "default"}: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
   }
-  if (!img) return NextResponse.json({ ok: false, error: "Mọi model đều không tạo được (có thể bị chặn bản quyền). Thử ảnh khác/đổi prompt. Chi tiết: " + errs.slice(0, 3).join(" · ") }, { status: 502 });
+  if (!img) return NextResponse.json({ ok: false, error: "All models failed (possibly copyright-blocked). Try another image or change the prompt. Details: " + errs.slice(0, 3).join(" · ") }, { status: 502 });
 
   try {
     let buf: Buffer = Buffer.from(img.b64, "base64");
