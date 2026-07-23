@@ -151,14 +151,14 @@ export default function DesignsClient({ canEdit, role }: { canEdit: boolean; rol
             <label>{t("c.seller")}</label>
             <select value={sellerId} onChange={(e) => { setSellerId(e.target.value); setPage(1); }}>
               <option value="">{t("c.all")}</option>
-              {(data?.sellers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {(data?.assignSellers ?? data?.sellers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
           <div className="field">
             <label>{t("c.designer")}</label>
             <select value={designerId} onChange={(e) => { setDesignerId(e.target.value); setPage(1); }}>
               <option value="">{t("c.all")}</option>
-              {(data?.designers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {(data?.assignDesigners ?? data?.designers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
         </div>

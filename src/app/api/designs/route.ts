@@ -139,6 +139,9 @@ export async function GET(req: NextRequest) {
   let designers = allDesigners;
   let assignSellers = allSellers;       // dropdown GÁN (bulk upload / detail): mọi người trong team, kể cả seller mới chưa có design
   let assignDesigners = allDesigners;
+  // Mọi thành viên CÙNG TEAM (theo users.team) của người xem — dùng cho danh sách GÁN & FILTER, KHÔNG phụ thuộc scope.
+  // (scope OWN như designer chỉ có chính mình trong scopeIds → nếu chỉ dựa scope thì seller mới cùng team bị thiếu.)
+  const teamMemberIds = await cachedTeamMemberIds(session.sub, session.role);
   // Phạm vi own/team: dropdown hiện những seller/designer THỰC SỰ xuất hiện trong các design user được thấy
   // (designer scope own vẫn thấy design của nhiều seller mình vẽ → phải lọc được theo các seller đó;
   //  lọc theo "user trong phạm vi" như cũ làm dropdown rỗng → filter biến mất).
@@ -164,13 +167,31 @@ export async function GET(req: NextRequest) {
     const visDesigners = new Set(vis.map((v) => v.designer_id).filter(Boolean) as string[]);
     sellers = allSellers.filter((u) => visSellers.has(u.id));
     designers = allDesigners.filter((u) => visDesigners.has(u.id));
-    // GÁN: mọi thành viên trong PHẠM VI (team) — kể cả người MỚI chưa có design — cộng người đã xuất hiện
-    // trong design đang thấy (cho designer scope own vốn không có seller cùng team trong scopeIds).
-    const scopeSet = new Set(scopeIds);
-    assignSellers = allSellers.filter((u) => scopeSet.has(u.id) || visSellers.has(u.id));
-    assignDesigners = allDesigners.filter((u) => scopeSet.has(u.id) || visDesigners.has(u.id));
+    // GÁN/FILTER: mọi thành viên CÙNG TEAM (kể cả người MỚI chưa có design) + người trong scope + người đã xuất hiện
+    // trong design đang thấy (giữ được seller mà designer scope own từng vẽ, dù khác team).
+    const allow = new Set<string>([...teamMemberIds, ...scopeIds]);
+    assignSellers = allSellers.filter((u) => allow.has(u.id) || visSellers.has(u.id));
+    assignDesigners = allDesigners.filter((u) => allow.has(u.id) || visDesigners.has(u.id));
   }
   return NextResponse.json({ ok: true, designs: out, total, page, show, sellers, designers, assignSellers, assignDesigners, scoped: !!scopeIds });
+}
+
+// Mọi user id CÙNG TEAM (users.team) với người xem — kể cả seller/designer mới chưa có design.
+// Admin không giới hạn team → trả []. Cache 60s theo user để không truy vấn mỗi lần load.
+const teamMemCache: Record<string, { at: number; ids: string[] }> = {};
+async function cachedTeamMemberIds(userId: string, role: string): Promise<string[]> {
+  if (role === "admin") return [];
+  const c = teamMemCache[userId];
+  if (c && Date.now() - c.at < 60_000) return c.ids;
+  const { sql: s } = await import("drizzle-orm");
+  const rows = (await db.execute(s`
+    SELECT id FROM users
+    WHERE status = 'active' AND role IN ('seller','designer')
+      AND team IS NOT NULL AND team = (SELECT team FROM users WHERE id = ${userId})
+  `)).rows as { id: string }[];
+  const ids = rows.map((r) => r.id);
+  teamMemCache[userId] = { at: Date.now(), ids };
+  return ids;
 }
 
 // Cache danh sách seller/designer (đổi rất ít) trong 60s → giảm 2 truy vấn DB mỗi lần load lưới.
