@@ -133,8 +133,12 @@ export async function GET(req: NextRequest) {
       sides,
     };
   });
-  let sellers = await cachedRoleUsers("seller");
-  let designers = await cachedRoleUsers("designer");
+  const allSellers = await cachedRoleUsers("seller");
+  const allDesigners = await cachedRoleUsers("designer");
+  let sellers = allSellers;             // dropdown LỌC lưới (theo design đang thấy)
+  let designers = allDesigners;
+  let assignSellers = allSellers;       // dropdown GÁN (bulk upload / detail): mọi người trong team, kể cả seller mới chưa có design
+  let assignDesigners = allDesigners;
   // Phạm vi own/team: dropdown hiện những seller/designer THỰC SỰ xuất hiện trong các design user được thấy
   // (designer scope own vẫn thấy design của nhiều seller mình vẽ → phải lọc được theo các seller đó;
   //  lọc theo "user trong phạm vi" như cũ làm dropdown rỗng → filter biến mất).
@@ -158,10 +162,15 @@ export async function GET(req: NextRequest) {
     `)).rows as { seller_id: string | null; designer_id: string | null }[];
     const visSellers = new Set(vis.map((v) => v.seller_id).filter(Boolean) as string[]);
     const visDesigners = new Set(vis.map((v) => v.designer_id).filter(Boolean) as string[]);
-    sellers = sellers.filter((u) => visSellers.has(u.id));
-    designers = designers.filter((u) => visDesigners.has(u.id));
+    sellers = allSellers.filter((u) => visSellers.has(u.id));
+    designers = allDesigners.filter((u) => visDesigners.has(u.id));
+    // GÁN: mọi thành viên trong PHẠM VI (team) — kể cả người MỚI chưa có design — cộng người đã xuất hiện
+    // trong design đang thấy (cho designer scope own vốn không có seller cùng team trong scopeIds).
+    const scopeSet = new Set(scopeIds);
+    assignSellers = allSellers.filter((u) => scopeSet.has(u.id) || visSellers.has(u.id));
+    assignDesigners = allDesigners.filter((u) => scopeSet.has(u.id) || visDesigners.has(u.id));
   }
-  return NextResponse.json({ ok: true, designs: out, total, page, show, sellers, designers, scoped: !!scopeIds });
+  return NextResponse.json({ ok: true, designs: out, total, page, show, sellers, designers, assignSellers, assignDesigners, scoped: !!scopeIds });
 }
 
 // Cache danh sách seller/designer (đổi rất ít) trong 60s → giảm 2 truy vấn DB mỗi lần load lưới.
