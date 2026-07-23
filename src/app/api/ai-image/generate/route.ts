@@ -25,11 +25,21 @@ const BG = (c: { hex: string; name: string }) =>
 function buildPrompt(mode: string, c: { hex: string; name: string }, extra: string) {
   const tail = extra ? `\n\nAdditional request: ${extra}` : "";
   if (mode === "clone")
-    return `Recreate the printed graphic design from the attached photo as a CLEAN, SHARP, HIGH-RESOLUTION, print-ready vector-style illustration.
-- Reproduce the SAME artwork faithfully: identical characters, composition, layout, typography and colour scheme.
-- RECONSTRUCT the design so it is COMPLETE and UNDISTORTED: fill in every part that is faded, washed-out, wrinkled, folded, cropped, blurry or hidden by the garment/body; flatten it to a straight front-facing design (remove any warping from the fabric).
-- Crisp clean outlines, smooth SOLID colours, and restore faded/dull colours to BRIGHT vibrant saturated tones. No fabric texture, no photo grain, no shadows, no lighting from the photo.
-- Ignore the T-shirt/garment, the person, the photographic background and any store watermark or colour-swatch label. Output ONLY the isolated design. ${BG(c)}${tail}`;
+    return `Use the original image as a strict structural reference.
+Recreate the design with the same layout, character positions, proportions, facial expressions, gesture direction, object placement and overall composition.
+
+Preserve the original color palette and visual hierarchy as closely as possible.
+Keep all main elements, message content and storytelling logic unchanged.
+
+Redraw the artwork in a cleaner, sharper graphic tee illustration style with improved line quality, smoother curves, refined shapes and better spacing.
+
+Enhance production quality by simplifying overly complex details, increasing contrast, improving silhouette readability and making the design more suitable for screen printing or POD.
+
+Maintain the same scene density and decorative element placement but reinterpret textures, stroke behavior and micro-details to create a fresh redrawn version.
+
+Typography (if present): keep wording and general style feeling but redraw letterforms with cleaner structure and better balance.
+
+Finish: high-quality vector-like merch design, crisp edges, print-ready. ${BG(c)}${tail}`;
   if (mode === "bgremove")
     return `Cut out the MAIN SUBJECT / printed design of the attached image, keeping it EXACTLY as-is (same colours, details, size, position, crisp edges). ${BG(c)}${tail}`;
   return `Redesign the printed design from the attached image according to these instructions:\n\n${extra}\n\nOutput a clean, flat, high-resolution, print-ready design. Ignore the garment / photographic background. ${BG(c)}`;
@@ -63,17 +73,23 @@ async function analyzeBorder(buf: Buffer): Promise<{ uniform: boolean; rgb: [num
  * Chỉ phóng to khi ảnh QUÁ NHỎ (< 900px) và tối đa 2× để còn dùng in. Unsharp mask MẠNH ở CẠNH (m2 cao),
  * nhẹ ở vùng phẳng (m1 thấp) → sắc nét mà không nhiễu. Giữ alpha (nền trong suốt).
  */
-async function enhance(buf: Buffer): Promise<Buffer> {
+async function enhance(buf: Buffer, strong = false): Promise<Buffer> {
   const sharp = await getSharp();
   try {
     const meta = await sharp(buf).metadata();
     const w = meta.width ?? 0, h = meta.height ?? 0, longest = Math.max(w, h);
     let pipe = sharp(buf, { unlimited: true });
-    if (longest && longest < 900) {
-      const target = Math.min(longest * 2, 1800);
+    // Clone (strong): bản AI vẽ lại thường ~1024px → phóng lên ~2000px cho đủ cỡ in POD.
+    // Tách nền (nhẹ): giữ nguyên độ phân giải gốc, chỉ upscale nếu ảnh quá nhỏ.
+    const upTo = strong ? 2000 : 1800, upIf = strong ? 2000 : 900;
+    if (longest && longest < upIf) {
+      const target = strong ? upTo : Math.min(longest * 2, upTo);
       pipe = pipe.resize({ ...(w >= h ? { width: target } : { height: target }), kernel: "lanczos3" });
     }
-    return pipe.sharpen({ sigma: 1, m1: 0.4, m2: 2.6 }).png({ compressionLevel: 9 }).toBuffer();
+    // Clone (strong=true): LÀM NÉT MẠNH — unsharp gắt ở cạnh (m2 cao) để file nét hẳn.
+    // Tách nền (strong=false): làm nét nhẹ, giữ nguyên nét gốc.
+    const sh = strong ? { sigma: 1.4, m1: 0.2, m2: 3.8 } : { sigma: 0.8, m1: 0.5, m2: 1.6 };
+    return pipe.sharpen(sh).png({ compressionLevel: 9 }).toBuffer();
   } catch { return buf; }
 }
 
@@ -132,25 +148,27 @@ export async function POST(req: NextRequest) {
   if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(image) && !/^https?:\/\/\S+$/i.test(image)) return NextResponse.json({ ok: false, error: "Source image required (upload or paste an http link)" }, { status: 400 });
   if (mode === "redesign" && !prompt) return NextResponse.json({ ok: false, error: "Redesign requires a prompt" }, { status: 400 });
 
-  const save = async (raw: Buffer, cost: number, usedModel: string, method: string) => {
-    const buf = await enhance(raw); // LÀM NÉT mọi kết quả (upscale + unsharp)
+  const save = async (raw: Buffer, cost: number, usedModel: string, method: string, strong = false) => {
+    const buf = await enhance(raw, strong); // LÀM NÉT (Clone = mạnh, Tách nền = nhẹ)
     const key = `ai-image/${mode}-${session.sub}-${Date.now()}.png`;
     await writeFile(key, buf, "image/png");
     return NextResponse.json({ ok: true, url: fileUrl(key), dataUrl: `data:image/png;base64,${buf.toString("base64")}`, cost, usedModel, method });
   };
 
-  // ---- 1) TÁCH TRỰC TIẾP (flood-fill, giữ nét gốc 100%) — CHỈ cho TÁCH NỀN trên ảnh nền đồng đều.
-  //      CLONE thì LUÔN dùng AI tái dựng design (từ ảnh chụp áo/mockup → file vector sạch), không tách trực tiếp.
-  const wantsDirect = mode === "bgremove";
+  // ---- 1) TÁCH TRỰC TIẾP (flood-fill, GIỮ NGUYÊN PIXEL GỐC full-res) khi nền ĐỒNG ĐỀU ----
+  //   • Tách nền: giữ nét gốc (làm nét nhẹ).
+  //   • Clone (không prompt): giữ full-res gốc + LÀM NÉT MẠNH — KHÔNG cho AI vẽ lại (AI xuất ~1024px sẽ GIẢM nét).
+  //   Chỉ Clone-có-prompt hoặc ảnh mockup nền phức tạp mới rơi xuống AI tái dựng.
+  const wantsDirect = mode === "bgremove"; // Clone LUÔN dùng AI redraw (prompt vẽ lại vector) — không tách trực tiếp.
   if (wantsDirect) {
     try {
       const orig = await fetchOriginal(image);
       if (orig) {
         const bd = await analyzeBorder(orig);
         if (bd.uniform) {
-          // FLOOD-FILL từ viền: xoá đúng nền, GIỮ NGUYÊN nét + vùng tối bên trong design (không đục thủng).
+          // Chỉ TÁCH NỀN vào đây → giữ nét gốc, làm nét nhẹ.
           const out = await floodKey(orig, bd.rgb);
-          return await save(out, 0, "direct-cut (flood, no AI)", "direct");
+          return await save(out, 0, "direct-cut (no AI)", "direct");
         }
       }
     } catch { /* lỗi phân tích → rơi sang AI */ }
@@ -181,7 +199,7 @@ export async function POST(req: NextRequest) {
     let buf: Buffer = Buffer.from(img.b64, "base64");
     const bd = await analyzeBorder(buf).catch(() => ({ uniform: true, rgb: [255, 0, 255] as [number, number, number] }));
     try { buf = await keyColor(buf, bd.rgb, 62, 135); } catch { /* key lỗi → giữ ảnh AI */ }
-    return await save(buf, img.cost, usedModel, "ai");
+    return await save(buf, img.cost, usedModel, "ai", mode === "clone");
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 500 });
   }
