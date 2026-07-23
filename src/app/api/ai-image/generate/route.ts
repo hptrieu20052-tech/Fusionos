@@ -2,7 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { orGenerateImage, listModels } from "@/lib/ai/openrouter";
+import { seedreamEdit } from "@/lib/ai/fal";
 import { writeFile, fileUrl } from "@/lib/storage";
+
+// Đổi tỷ lệ khung → kích thước ~2048px cạnh dài (cho Seedream image_size).
+function ratioToSize(r?: string): { width: number; height: number } | undefined {
+  if (!r) return undefined;
+  const M: Record<string, [number, number]> = { "1:1": [1, 1], "4:5": [4, 5], "3:4": [3, 4], "2:3": [2, 3], "16:9": [16, 9], "9:16": [9, 16] };
+  const ab = M[r]; if (!ab) return undefined;
+  const [a, b] = ab, base = 2048;
+  return a >= b ? { width: base, height: Math.round((base * b) / a) } : { width: Math.round((base * a) / b), height: base };
+}
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -190,7 +200,12 @@ export async function POST(req: NextRequest) {
   let usedModel = "";
   const errs: string[] = [];
   for (const m of tryModels) {
-    try { img = await orGenerateImage(fullPrompt, [image], { outputFormat: "png", ...(m ? { model: m } : {}), ...(aspect ? { aspectRatio: aspect } : {}) }); usedModel = m || "default"; break; }
+    try {
+      img = m.startsWith("fal-ai/")
+        ? await seedreamEdit(fullPrompt, [image], { ...(ratioToSize(aspect) ? { imageSize: ratioToSize(aspect)! } : {}) })
+        : await orGenerateImage(fullPrompt, [image], { outputFormat: "png", ...(m ? { model: m } : {}), ...(aspect ? { aspectRatio: aspect } : {}) });
+      usedModel = m || "default"; break;
+    }
     catch (e) { errs.push(`${m || "default"}: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
   }
   if (!img) return NextResponse.json({ ok: false, error: "All models failed (possibly copyright-blocked). Try another image or change the prompt. Details: " + errs.slice(0, 3).join(" · ") }, { status: 502 });

@@ -31,7 +31,7 @@ export function GenImageClient() {
     fetch("/api/books/models?type=image").then((r) => r.json()).then((j) => {
       if (j.ok && Array.isArray(j.models)) {
         setModels(j.models);
-        const def = j.models.find((m: { id: string }) => /gemini.*flash.*image/i.test(m.id)) ?? j.models[0];
+        const def = j.models.find((m: { id: string }) => /seedream/i.test(m.id)) ?? j.models.find((m: { id: string }) => /gemini.*flash.*image/i.test(m.id)) ?? j.models[0];
         setModel((prev) => prev || def?.id || "");
       }
     }).catch(() => {});
@@ -77,7 +77,7 @@ export function GenImageClient() {
 
       <div style={{ display: "flex", gap: 8, marginTop: 14, marginBottom: 16, flexWrap: "wrap" }}>
         {TABS.map((tb) => (
-          <button key={tb.key} onClick={() => { setMode(tb.key); setResult(null); setMsg(""); }}
+          <button key={tb.key} onClick={() => { setMode(tb.key); setResult(null); setMsg(""); setPrompt(""); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1.5px solid ${mode === tb.key ? "var(--blue)" : "var(--line)"}`, background: mode === tb.key ? "var(--blue-soft)" : "#fff", color: mode === tb.key ? "var(--blue)" : "var(--ink)", borderRadius: 11, padding: "9px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={tb.icon} /></svg>
             {tb.label}

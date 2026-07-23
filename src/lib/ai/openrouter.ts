@@ -93,7 +93,7 @@ export async function listModels(type: "text" | "image" = "text"): Promise<{ id:
   const j = (await res.json().catch(() => ({}))) as { data?: { id?: string; name?: string; architecture?: { output_modalities?: string[]; modality?: string } }[] };
   const data = Array.isArray(j?.data) ? j.data : [];
   const want = type === "image" ? "image" : "text";
-  return data
+  const list = data
     .filter((m) => {
       const out = m?.architecture?.output_modalities;
       if (Array.isArray(out)) return out.includes(want);
@@ -103,6 +103,11 @@ export async function listModels(type: "text" | "image" = "text"): Promise<{ id:
     })
     .map((m) => ({ id: String(m.id), name: String(m.name ?? m.id) }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  // Seedream v4 (fal.ai) không có trên OpenRouter — thêm vào ĐẦU danh sách ảnh khi đã cấu hình FAL_KEY.
+  if (want === "image" && (process.env.FAL_KEY ?? "").trim()) {
+    list.unshift({ id: "fal-ai/bytedance/seedream/v4/edit", name: "★ Seedream v4 (fal.ai)" });
+  }
+  return list;
 }
 
 export type BookIdea = { name: string; hook: string; angle: string; usp: string; outline: string[] };
