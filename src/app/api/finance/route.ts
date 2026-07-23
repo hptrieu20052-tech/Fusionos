@@ -56,14 +56,14 @@ export async function GET(req: NextRequest) {
       SELECT o.ordered_at::date d, sum(o.total) rev, sum(o.platform_fee) fee
       FROM orders o WHERE ${ordersWhere} GROUP BY 1`),
     db.execute(sql`
-      SELECT t.occurred_at d, sum(t.amount) FILTER (WHERE t.amount < 0) cost
+      SELECT t.occurred_at d, sum(t.amount) FILTER (WHERE t.type <> 'revenue') cost
       FROM transactions t WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller} GROUP BY 1`),
     // Theo SELLER: rev/fee từ orders + cost từ transactions
     db.execute(sql`
       SELECT u.id, u.full_name name,
         coalesce(sum(o.total),0) rev, coalesce(sum(o.platform_fee),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.seller_id = u.id AND t.amount < 0 AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
+          WHERE t.seller_id = u.id AND t.type <> 'revenue' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
       FROM orders o JOIN users u ON u.id = o.seller_id
       WHERE ${ordersWhere}
       GROUP BY 1,2 ORDER BY rev DESC`),
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
       SELECT s.id, s.name store, s.marketplace, u.full_name seller,
         coalesce(sum(o.total),0) rev, coalesce(sum(o.platform_fee),0) fee, count(*)::int orders,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.store_id = s.id AND t.amount < 0 AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
+          WHERE t.store_id = s.id AND t.type <> 'revenue' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id LEFT JOIN users u ON u.id = o.seller_id
       WHERE ${ordersWhere}
       GROUP BY 1,2,3,4 ORDER BY rev DESC`),
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
       SELECT s.marketplace,
         coalesce(sum(o.total),0) rev, coalesce(sum(o.platform_fee),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t JOIN stores s2 ON s2.id = t.store_id
-          WHERE s2.marketplace = s.marketplace AND t.amount < 0 AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}),0) cost
+          WHERE s2.marketplace = s.marketplace AND t.type <> 'revenue' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id
       WHERE ${ordersWhere}
       GROUP BY 1 ORDER BY rev DESC`),
@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
   const manualRev = (byType.rows as Record<string, unknown>[]).filter((r) => r.type === "revenue").reduce((a, r) => a + Number(r.total ?? 0), 0);
   const revenue = Number(trow.revenue ?? 0) + manualRev;
   const fee = Number(trow.fee ?? 0);
-  const cost = (byType.rows as Record<string, unknown>[]).filter((r) => Number(r.total) < 0).reduce((a, r) => a + Number(r.total), 0);
+  const cost = (byType.rows as Record<string, unknown>[]).filter((r) => r.type !== "revenue").reduce((a, r) => a + Number(r.total), 0);
   const profit = revenue - fee + cost;
 
   // Ghép daily rev + cost theo ngày (đủ mọi ngày trong range để chart liền mạch)
