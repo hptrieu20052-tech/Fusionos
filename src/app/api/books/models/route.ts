@@ -8,7 +8,9 @@ export const dynamic = "force-dynamic";
 // GET /api/books/models?type=text|image → danh sách model OpenRouter cho UI chọn theo khâu.
 export async function GET(req: NextRequest) {
   const s = await getSession();
-  if (!(await can(s, "bookStudio"))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // Cho phép mọi module AI Agent dùng chung danh sách model (Book Studio / Gen Image / Gen Video).
+  const allowed = (await can(s, "bookStudio")) || (await can(s, "genImage")) || (await can(s, "genVideo"));
+  if (!allowed) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const type = req.nextUrl.searchParams.get("type") === "image" ? "image" : "text";
   try {
     const models = await listModels(type);

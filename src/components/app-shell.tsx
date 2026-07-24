@@ -19,7 +19,7 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
 
 export type NavLink = { href: string; label: string; icon: string; section: string; more?: boolean };
 
-export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false, canFinanceTiktok = false, canBookStudio = false, canGenImage = false }: {
+export default function AppShell({ user, links, children, canProducts = false, canSupport = false, canMarketing = false, canFinanceTiktok = false, canBookStudio = false, canGenImage = false, canGenVideo = false }: {
   user: { name: string; role: string; avatarUrl?: string | null };
   links: NavLink[];
   children: React.ReactNode;
@@ -29,6 +29,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   canFinanceTiktok?: boolean;
   canBookStudio?: boolean;
   canGenImage?: boolean;
+  canGenVideo?: boolean;
 }) {
   const path = usePathname();
   const { t } = useLang();
@@ -105,9 +106,9 @@ export default function AppShell({ user, links, children, canProducts = false, c
   const hasDesigns = links.some((l) => !l.more && l.href === "/designs");
   const hubActive = ["/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
-  const aiActive = ["/books", "/ai-image"].some((h) => path.startsWith(h));
+  const aiActive = ["/books", "/ai-image", "/ai-video"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
-  const aiAgentDropdown = (canBookStudio || canGenImage || isAdminUser) ? (
+  const aiAgentDropdown = (canBookStudio || canGenImage || canGenVideo || isAdminUser) ? (
     <div key="__aiagent" className="topnav-more">
       <button className={`topnav-item${aiActive ? " active" : ""}`} onClick={() => { setProdOpen(false); setMoreOpen(false); setAiOpen((v) => !v); }}>
         <span className="topnav-ic"><IconSparkle width={17} height={17} /></span>
@@ -125,6 +126,14 @@ export default function AppShell({ user, links, children, canProducts = false, c
             <Link href="/ai-image" prefetch className={`topnav-more-item${isActive("/ai-image") ? " active" : ""}`}>
               <span className="topnav-ic"><IconArtwork width={16} height={16} /></span>
               Gen Image
+            </Link>
+          )}
+          {(canGenVideo || isAdminUser) && (
+            <Link href="/ai-video" prefetch className={`topnav-more-item${isActive("/ai-video") ? " active" : ""}`}>
+              <span className="topnav-ic">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="14" height="14" rx="2" /><path d="m22 8-6 4 6 4V8Z" /></svg>
+              </span>
+              Gen Video
             </Link>
           )}
         </div>
