@@ -12,7 +12,7 @@ type Data = {
   uScopes: { userId: string; resource: string; scope: string }[];
 };
 
-const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", products: "Products", reviews: "Scoring", statsDesigners: "Designer Stats", finance: "Finance", hr: "Staff", stores: "Stores", support: "Customer Messages", marketing: "Marketing", financeTiktok: "Finance (TikTok)", bookStudio: "Book Studio (AI)", genImage: "Gen Image", genVideo: "Gen Video", settings: "Settings" };
+const MODULE_LABEL: Record<string, string> = { dashboard: "Dashboard", orders: "Orders", fulfillment: "Fulfillment", designs: "Design Studio", products: "Products", reviews: "Scoring", statsDesigners: "Designer Stats", finance: "Finance", hr: "Staff", stores: "Stores", support: "Customer Messages", marketing: "Marketing", financeTiktok: "Finance (TikTok)", bookStudio: "Gen Book", genImage: "Gen Image", genVideo: "Gen Video", settings: "Settings" };
 // Bố cục bảng quyền — đồng điệu với Menu. Ẩn fulfillment/reviews/statsDesigners (module vẫn tồn tại, route vẫn chạy). Gộp Seller Hub.
 const PERM_SECTIONS: { title: string | null; grouped?: boolean; mods: string[] }[] = [
   { title: null, mods: ["dashboard", "orders", "designs"] },
@@ -152,7 +152,7 @@ export function UserFunctionPermission() {
                     const cur = accessOf(mods[0]);
                     rows.push(
                       <div key={`g_${sec.title}`} style={{ display: "grid", gridTemplateColumns: "170px 1fr", alignItems: "center", gap: 12, padding: "9px 14px", borderTop: first ? "none" : "1px solid var(--line)" }}>
-                        <span style={{ fontWeight: 800, fontSize: 13, color: "var(--blue)" }}>{sec.title}{dot(mods.some((m) => isOwn(m)))}</span>
+                        <span style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)" }}>{sec.title}{dot(mods.some((m) => isOwn(m)))}</span>
                         {rowBtns(cur, (v) => mods.forEach((m) => setAccess(m, v)))}
                       </div>
                     );
