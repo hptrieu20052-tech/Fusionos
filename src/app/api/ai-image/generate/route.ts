@@ -55,6 +55,18 @@ Finish: high-quality vector-like merch design, crisp edges, print-ready. ${BG(c)
   return `Redesign the printed design from the attached image according to these instructions:\n\n${extra}\n\nOutput a clean, flat, high-resolution, print-ready design. Ignore the garment / photographic background. ${BG(c)}`;
 }
 
+// CUSTOM: giữ NGUYÊN mẫu gốc (ảnh 1), chỉ thay ảnh/mặt (ảnh 2) và/hoặc đổi tên/chữ.
+function buildCustomPrompt(c: { hex: string; name: string }, name: string, hasPhoto: boolean, extra: string): string {
+  const parts: string[] = [
+    "Use the FIRST attached image as the base design/template. Keep its EXACT layout, composition, art style, colours, line work and every decorative element — change ONLY what is requested below.",
+  ];
+  if (hasPhoto) parts.push("A SECOND image is attached — a custom photo/face. Replace the main character's face/portrait in the design with this person, REDRAWN in the SAME art style, colours and lighting as the original (it must look drawn into the artwork, not a pasted photo).");
+  if (name) parts.push(`Change the personalized name/text in the design to "${name}", matching the original font style, size, colour and placement exactly.`);
+  if (extra) parts.push(`Additional request: ${extra}`);
+  parts.push("Keep everything else identical to the base template. Output a clean, sharp, high-resolution, print-ready design.");
+  return parts.join("\n") + " " + BG(c);
+}
+
 async function getSharp() { const s = (await import("sharp")).default; s.cache(false); return s; }
 
 /** Lấy bytes ảnh gốc từ dataURL hoặc http URL. */
@@ -154,9 +166,15 @@ export async function POST(req: NextRequest) {
   const mode = String(b?.mode ?? "");
   const image = String(b?.image ?? "").trim();
   const prompt = String(b?.prompt ?? "").trim();
-  if (!["clone", "bgremove", "redesign"].includes(mode)) return NextResponse.json({ ok: false, error: "invalid mode" }, { status: 400 });
-  if (!/^data:image\/[a-z0-9.+-]+;base64,/i.test(image) && !/^https?:\/\/\S+$/i.test(image)) return NextResponse.json({ ok: false, error: "Source image required (upload or paste an http link)" }, { status: 400 });
+  const customImage = String(b?.customImage ?? "").trim();  // Custom: ảnh phụ (mặt/ảnh chèn vào design)
+  const customName = String(b?.customName ?? "").trim();     // Custom: tên/chữ mới
+  if (!["clone", "bgremove", "redesign", "custom", "prompt"].includes(mode)) return NextResponse.json({ ok: false, error: "invalid mode" }, { status: 400 });
+  const hasImage = /^data:image\/[a-z0-9.+-]+;base64,/i.test(image) || /^https?:\/\/\S+$/i.test(image);
+  // "Your Prompt": ảnh nguồn KHÔNG bắt buộc (chạy thuần theo prompt); các mode khác BẮT BUỘC ảnh nguồn.
+  if (mode !== "prompt" && !hasImage) return NextResponse.json({ ok: false, error: "Source image required (upload or paste an http link)" }, { status: 400 });
   if (mode === "redesign" && !prompt) return NextResponse.json({ ok: false, error: "Redesign requires a prompt" }, { status: 400 });
+  if (mode === "prompt" && !prompt) return NextResponse.json({ ok: false, error: "Enter your prompt" }, { status: 400 });
+  if (mode === "custom" && !customImage && !customName && !prompt) return NextResponse.json({ ok: false, error: "Custom needs a custom photo, a new name, or instructions" }, { status: 400 });
 
   const save = async (raw: Buffer, cost: number, usedModel: string, method: string, strong = false) => {
     const buf = await enhance(raw, strong); // LÀM NÉT (Clone = mạnh, Tách nền = nhẹ)
@@ -184,9 +202,18 @@ export async function POST(req: NextRequest) {
     } catch { /* lỗi phân tích → rơi sang AI */ }
   }
 
-  // ---- 2) AI (nền phức tạp / redesign / clone có prompt): chroma → key ----
+  // ---- 2) AI (nền phức tạp / redesign / clone có prompt / custom): chroma → key ----
   const chroma = CHROMA[String(b?.chroma ?? "magenta")] ?? CHROMA.magenta; // màu nền trung gian CHẠY ẨN
-  const fullPrompt = buildPrompt(mode, chroma, prompt);
+  const fullPrompt = mode === "custom"
+    ? buildCustomPrompt(chroma, customName, !!customImage, prompt)
+    : mode === "prompt"
+    ? prompt                                     // "Your Prompt": chạy ĐÚNG prompt người dùng nhập, không thêm gì.
+    : buildPrompt(mode, chroma, prompt);
+  // Custom: ảnh 1 = mẫu gốc, ảnh 2 = ảnh/mặt custom (multi-image edit).
+  // "Your Prompt": ảnh nguồn là tham chiếu nếu có (không có cũng chạy text-to-image). Các mode khác: 1 ảnh.
+  const refs = mode === "custom" && customImage
+    ? [image, customImage]
+    : hasImage ? [image] : [];
   const aspect = b?.aspectRatio && b.aspectRatio !== "auto" ? String(b.aspectRatio) : undefined;
 
   const autoFb = b?.autoFallback !== false;
@@ -202,8 +229,8 @@ export async function POST(req: NextRequest) {
   for (const m of tryModels) {
     try {
       img = m.startsWith("fal-ai/")
-        ? await seedreamEdit(fullPrompt, [image], { ...(ratioToSize(aspect) ? { imageSize: ratioToSize(aspect)! } : {}) })
-        : await orGenerateImage(fullPrompt, [image], { outputFormat: "png", ...(m ? { model: m } : {}), ...(aspect ? { aspectRatio: aspect } : {}) });
+        ? await seedreamEdit(fullPrompt, refs, { ...(ratioToSize(aspect) ? { imageSize: ratioToSize(aspect)! } : {}) })
+        : await orGenerateImage(fullPrompt, refs, { outputFormat: "png", ...(m ? { model: m } : {}), ...(aspect ? { aspectRatio: aspect } : {}) });
       usedModel = m || "default"; break;
     }
     catch (e) { errs.push(`${m || "default"}: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
@@ -212,9 +239,12 @@ export async function POST(req: NextRequest) {
 
   try {
     let buf: Buffer = Buffer.from(img.b64, "base64");
-    const bd = await analyzeBorder(buf).catch(() => ({ uniform: true, rgb: [255, 0, 255] as [number, number, number] }));
-    try { buf = await keyColor(buf, bd.rgb, 62, 135); } catch { /* key lỗi → giữ ảnh AI */ }
-    return await save(buf, img.cost, usedModel, "ai", mode === "clone");
+    // "Your Prompt": GIỮ NGUYÊN ảnh AI (không tách nền, không key màu — tôn trọng 100% prompt).
+    if (mode !== "prompt") {
+      const bd = await analyzeBorder(buf).catch(() => ({ uniform: true, rgb: [255, 0, 255] as [number, number, number] }));
+      try { buf = await keyColor(buf, bd.rgb, 62, 135); } catch { /* key lỗi → giữ ảnh AI */ }
+    }
+    return await save(buf, img.cost, usedModel, "ai", mode === "clone" || mode === "custom");
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 500 });
   }

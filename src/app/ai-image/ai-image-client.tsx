@@ -1,11 +1,13 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-type Mode = "clone" | "bgremove" | "redesign";
+type Mode = "clone" | "bgremove" | "redesign" | "custom" | "prompt";
 const TABS: { key: Mode; label: string; desc: string; icon: string }[] = [
   { key: "clone", label: "Clone", desc: "Extract the printed design (drop the shirt/photo background) and reproduce it clean & sharp → TRANSPARENT PNG.", icon: "M8 4h10a2 2 0 0 1 2 2v10M16 8H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2Z" },
   { key: "bgremove", label: "Remove BG", desc: "Cut the subject from its background → TRANSPARENT PNG with clean edges.", icon: "M3 3h7v7H3zM14 14h7v7h-7zM14 3h7v7h-7zM3 14h7v7H3z" },
   { key: "redesign", label: "Redesign", desc: "Redesign per your prompt → print-ready TRANSPARENT PNG.", icon: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" },
+  { key: "custom", label: "Custom", desc: "Personalize a base design: swap in a custom photo and/or change the name/text, keeping the original style.", icon: "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" },
+  { key: "prompt", label: "Your Prompt", desc: "Free mode — the AI simply follows your prompt exactly. A source image is optional (used as reference if provided).", icon: "M4 6h16M4 12h10M4 18h7" },
 ];
 const RATIOS = ["auto", "1:1", "4:5", "3:4", "2:3", "16:9", "9:16"];
 
@@ -24,6 +26,17 @@ export function GenImageClient() {
   const [msg, setMsg] = useState("");
   const [result, setResult] = useState<{ url: string | null; dataUrl: string; cost: number; usedModel?: string; method?: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Custom mode: ảnh phụ (thay mặt/ảnh) + tên/chữ mới
+  const [customData, setCustomData] = useState<string>("");
+  const [customName, setCustomName] = useState<string>("");
+  const customRef = useRef<HTMLInputElement>(null);
+  const readCustom = (f: File) => {
+    if (!f.type.startsWith("image/")) { setMsg("✗ Image files only (PNG/JPG/WebP)"); return; }
+    if (f.size > 15 * 1024 * 1024) { setMsg("✗ Image too large (>15MB)"); return; }
+    const r = new FileReader();
+    r.onload = () => { setCustomData(String(r.result)); setMsg(""); };
+    r.readAsDataURL(f);
+  };
 
   const [models, setModels] = useState<{ id: string; name: string }[]>([]);
   const [model, setModel] = useState("");
@@ -54,13 +67,19 @@ export function GenImageClient() {
   const tab = TABS.find((t) => t.key === mode)!;
 
   const generate = async () => {
-    if (!srcData) { setMsg("✗ Upload or paste a source image link first"); return; }
+    // "Your Prompt": ảnh nguồn KHÔNG bắt buộc — chỉ cần prompt. Các mode khác bắt buộc ảnh.
+    if (mode !== "prompt" && !srcData) { setMsg("✗ Upload or paste a source image link first"); return; }
+    if (mode === "prompt" && !prompt.trim()) { setMsg("✗ Enter your prompt"); return; }
     if (mode === "redesign" && !prompt.trim()) { setMsg("✗ Enter the redesign prompt"); return; }
+    if (mode === "custom" && !customData && !customName.trim() && !prompt.trim()) { setMsg("✗ Custom needs a custom photo, a new name, or instructions"); return; }
     setBusy(true); setMsg("Processing… (10–40s)"); setResult(null);
     try {
       const j = await fetch("/api/ai-image/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode, image: srcData, prompt, model: model || undefined, aspectRatio: ratio, autoFallback: true }),
+        body: JSON.stringify({
+          mode, image: srcData, prompt, model: model || undefined, aspectRatio: ratio, autoFallback: true,
+          ...(mode === "custom" ? { customImage: customData || undefined, customName: customName.trim() || undefined } : {}),
+        }),
       }).then((r) => r.json());
       if (j.ok) { setResult({ url: j.url, dataUrl: j.dataUrl, cost: j.cost ?? 0, usedModel: j.usedModel, method: j.method }); setMsg(j.method === "ai" && j.usedModel && model && j.usedModel !== model && j.usedModel !== "default" ? `↻ Your model refused — auto-switched to: ${j.usedModel}` : ""); }
       else setMsg("✗ " + (j.error ?? "Error"));
@@ -77,7 +96,7 @@ export function GenImageClient() {
 
       <div style={{ display: "flex", gap: 8, marginTop: 14, marginBottom: 16, flexWrap: "wrap" }}>
         {TABS.map((tb) => (
-          <button key={tb.key} onClick={() => { setMode(tb.key); setResult(null); setMsg(""); setPrompt(""); }}
+          <button key={tb.key} onClick={() => { setMode(tb.key); setResult(null); setMsg(""); setPrompt(""); setCustomData(""); setCustomName(""); }}
             style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1.5px solid ${mode === tb.key ? "var(--blue)" : "var(--line)"}`, background: mode === tb.key ? "var(--blue-soft)" : "#fff", color: mode === tb.key ? "var(--blue)" : "var(--ink)", borderRadius: 11, padding: "9px 16px", fontSize: 13.5, fontWeight: 700, cursor: "pointer" }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d={tb.icon} /></svg>
             {tb.label}
@@ -89,7 +108,7 @@ export function GenImageClient() {
         {/* Nguồn + tuỳ chọn */}
         <div style={box}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 13 }}>Source image</div>
+            <div style={{ fontWeight: 700, fontSize: 13 }}>Source image{mode === "prompt" ? " (optional)" : ""}</div>
             {srcData && (
               <div style={{ display: "flex", gap: 6 }}>
                 <button onClick={() => fileRef.current?.click()} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--blue)" }}>Change</button>
@@ -118,11 +137,34 @@ export function GenImageClient() {
             <button onClick={useLink} style={{ border: "1px solid var(--line)", background: "#F3F6FB", borderRadius: 10, padding: "0 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>Use link</button>
           </div>
 
+          {/* Custom: ảnh phụ (thay mặt/ảnh) + tên mới */}
+          {mode === "custom" && (
+            <>
+              <div style={{ marginTop: 12 }}>
+                <label style={lab}>Custom photo (optional) — face / photo to place into the design</label>
+                <div onClick={() => customRef.current?.click()} onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) readCustom(f); }}
+                  style={{ border: "2px dashed var(--line)", borderRadius: 10, minHeight: 96, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", background: "#FAFBFD", overflow: "hidden" }}>
+                  {customData
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={customData} alt="" style={{ maxWidth: "100%", maxHeight: 110, objectFit: "contain" }} />
+                    : <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12 }}>＋ Custom photo (optional)</div>}
+                </div>
+                <input ref={customRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) readCustom(f); e.target.value = ""; }} />
+                {customData && <button onClick={() => setCustomData("")} style={{ marginTop: 6, border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--red)" }}>Remove photo</button>}
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <label style={lab}>Custom name / text (optional)</label>
+                <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder={"E.g. change the name to “Emma”"} style={ctl} />
+              </div>
+            </>
+          )}
+
           {/* Prompt — mọi mode (redesign bắt buộc) */}
           <div style={{ marginTop: 12 }}>
-            <label style={lab}>{mode === "redesign" ? "Prompt (required)" : "Prompt (optional)"}</label>
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2}
-              placeholder={mode === "redesign" ? "E.g. pastel tones, add florals around the text, keep the name…" : "E.g. sharper lines, more contrast… (optional)"}
+            <label style={lab}>{mode === "redesign" || mode === "prompt" ? "Prompt (required)" : mode === "custom" ? "Extra instructions (optional)" : "Prompt (optional)"}</label>
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={mode === "prompt" ? 4 : 2}
+              placeholder={mode === "prompt" ? "Describe exactly what you want the AI to create…" : mode === "redesign" ? "E.g. pastel tones, add florals around the text, keep the name…" : "E.g. sharper lines, more contrast… (optional)"}
               style={{ ...ctl, resize: "vertical" }} />
           </div>
 
