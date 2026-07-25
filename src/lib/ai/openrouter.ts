@@ -103,9 +103,9 @@ export async function listModels(type: "text" | "image" = "text"): Promise<{ id:
     })
     .map((m) => ({ id: String(m.id), name: String(m.name ?? m.id) }))
     .sort((a, b) => a.name.localeCompare(b.name));
-  // Seedream v4 (fal.ai) không có trên OpenRouter — thêm vào ĐẦU danh sách ảnh khi đã cấu hình FAL_KEY.
+  // Seedream v4 (fal.ai) không có trên OpenRouter — thêm vào CUỐI danh sách ảnh khi đã cấu hình FAL_KEY (không ưu tiên).
   if (want === "image" && (process.env.FAL_KEY ?? "").trim()) {
-    list.unshift({ id: "fal-ai/bytedance/seedream/v4/edit", name: "★ Seedream v4 (fal.ai)" });
+    list.push({ id: "fal-ai/bytedance/seedream/v4/edit", name: "Seedream v4 (fal.ai)" });
   }
   return list;
 }

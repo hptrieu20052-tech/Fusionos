@@ -44,7 +44,7 @@ export function GenImageClient() {
     fetch("/api/books/models?type=image").then((r) => r.json()).then((j) => {
       if (j.ok && Array.isArray(j.models)) {
         setModels(j.models);
-        const def = j.models.find((m: { id: string }) => /seedream/i.test(m.id)) ?? j.models.find((m: { id: string }) => /gemini.*flash.*image/i.test(m.id)) ?? j.models[0];
+        const def = j.models.find((m: { id: string }) => /gemini.*flash.*image/i.test(m.id)) ?? j.models[0];
         setModel((prev) => prev || def?.id || "");
       }
     }).catch(() => {});
