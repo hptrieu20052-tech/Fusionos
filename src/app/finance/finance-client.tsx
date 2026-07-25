@@ -56,6 +56,8 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const ordersEst = Number(data.totals.ordersEst ?? 0);
   const isEst = feeEst > 0;
   const FEE_H = isEst ? "Fee (est.)" : "Fee";
+  // Mọi cột Cost trong các bảng dưới = CHI PHÍ FULFILL THUẦN (base + ship + ads/…), KHÔNG gồm phí sàn.
+  const COST_H = "Fulfillment cost";
   const margin = revenue ? (profit / revenue) * 100 : 0;
   const dailyNet = data.daily.map((d) => Number(d.rev) + Number(d.cost));
   const maxAbs = Math.max(...dailyNet.map(Math.abs), 1);
@@ -103,7 +105,8 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{tr("fin.costBreakdown")}</h3>
           <HBarList rows={[
             ...(fee > 0 ? [{ label: isEst ? "Platform fee (est.)" : "Platform fee", value: fee, color: "#C98A3D", suffix: money(fee) }] : []),
-            ...data.byType.filter((t) => Number(t.total) < 0).map((t) => ({
+            // Bỏ 'platform_fee' ở đây vì đã gộp vào dòng Platform fee phía trên → không hiện 2 lần
+            ...data.byType.filter((t) => Number(t.total) < 0 && String(t.type) !== "platform_fee").map((t) => ({
               label: typeLabel(tr, String(t.type)), value: Math.abs(Number(t.total)),
               color: "#CE6B6B", suffix: money(t.total),
             })),
@@ -114,7 +117,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
       <div className="panel">
         <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by store</h3>
         <table style={{ marginTop: 8 }}>
-          <thead><tr><th>Store</th><th>Seller</th><th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>{FEE_H}</th><th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
+          <thead><tr><th>Store</th><th>Seller</th><th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>{FEE_H}</th><th style={{ textAlign: "right" }}>{COST_H}</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
           <tbody>{data.byStore.map((st) => {
             const pf = Number(st.rev) - Number(st.fee) + Number(st.cost);
             return (
@@ -136,7 +139,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
         <div className="panel">
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by seller</h3>
           <table style={{ marginTop: 8 }}>
-            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>{FEE_H}</th><th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
+            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>{FEE_H}</th><th style={{ textAlign: "right" }}>{COST_H}</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
             <tbody>{data.bySeller.map((s) => {
               const pf = Number(s.rev) - Number(s.fee) + Number(s.cost);
               return (
@@ -188,7 +191,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
                   <th>{tr("fin.supplier")}</th>
                   <th style={{ textAlign: "right" }}>{tr("fin.ordersCol")}</th>
                   <th style={{ textAlign: "right" }}>Revenue</th>
-                  <th style={{ textAlign: "right" }}>Cost</th>
+                  <th style={{ textAlign: "right" }}>{COST_H}</th>
                   <th style={{ textAlign: "right" }}>Profit</th>
                 </tr></thead>
                 <tbody>{(data.bySupplier ?? []).map((f) => {

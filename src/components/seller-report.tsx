@@ -67,7 +67,8 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
               <span style={{ color: "var(--muted)" }}>Rev </span><b>{usd(data.money.revenue)}</b>
               {/* Có đơn dùng phí ước tính → nhãn "Fee (est.)" (tiếng Anh, hiện ở cả 2 ngôn ngữ) */}
               <span style={{ color: "var(--muted)" }}>{Number(data.money.feeEst ?? 0) > 0 ? " · Fee (est.) " : " · Fee "}</span>{usd(data.money.fee)}
-              <span style={{ color: "var(--muted)" }}> · Cost </span>{usd(data.money.cost)}
+              {/* Cost ở đây là CHI PHÍ FULFILL THUẦN (base + ship + ads/sample), KHÔNG gồm phí sàn */}
+              <span style={{ color: "var(--muted)" }}> · Fulfillment cost </span>{usd(data.money.cost)}
               {!data.hideProfit && <><span style={{ color: "var(--muted)" }}> · Profit </span><b style={{ color: (data.money.profit ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>{usd(data.money.profit)}</b></>}
             </div>
           )}
@@ -120,7 +121,7 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
                     <>
                       <th style={{ padding: "3px 4px" }}>Revenue</th>
                       <th style={{ padding: "3px 4px" }} title={Number(data.money?.feeEst ?? 0) > 0 ? "Estimated marketplace fee (store % × total) — marketplaces only settle the real fee 7–30 days later" : undefined}>{Number(data.money?.feeEst ?? 0) > 0 ? "Fee (est.)" : "Fee"}</th>
-                      <th style={{ padding: "3px 4px" }} title="Fulfillment cost — base cost + shipping charged per order">Cost</th>
+                      <th style={{ padding: "3px 4px" }} title="Fulfillment cost — base cost + shipping + ads/sample charged per order. Marketplace fee is NOT included here.">Fulfillment cost</th>
                       {!data.hideProfit && <th style={{ padding: "3px 4px" }}>Profit</th>}
                     </>
                   ) : (

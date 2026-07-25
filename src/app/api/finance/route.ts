@@ -63,28 +63,36 @@ export async function GET(req: NextRequest) {
       SELECT t.occurred_at d, sum(t.amount) FILTER (WHERE t.type <> 'revenue') cost
       FROM transactions t WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller} GROUP BY 1`),
     // Theo SELLER: rev/fee từ orders + cost từ transactions
+    // CỘT COST = CHI PHÍ FULFILL THUẦN: loại 'revenue' và loại luôn 'platform_fee'
+    // (bút toán phí sàn nhập tay được cộng sang cột FEE, tuyệt đối KHÔNG nằm trong Cost → không đếm 2 lần).
     db.execute(sql`
       SELECT u.id, u.full_name name,
-        coalesce(sum(o.total),0) rev, coalesce(sum(o.platform_fee),0) fee,
+        coalesce(sum(o.total),0) rev,
+        coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t
+          WHERE t.seller_id = u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.seller_id = u.id AND t.type <> 'revenue' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
+          WHERE t.seller_id = u.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
       FROM orders o JOIN users u ON u.id = o.seller_id
       WHERE ${ordersWhere}
       GROUP BY 1,2 ORDER BY rev DESC`),
     // THEO STORE (chi tiết store của seller): store + marketplace + seller
     db.execute(sql`
       SELECT s.id, s.name store, s.marketplace, u.full_name seller,
-        coalesce(sum(o.total),0) rev, coalesce(sum(o.platform_fee),0) fee, count(*)::int orders,
+        coalesce(sum(o.total),0) rev, count(*)::int orders,
+        coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t
+          WHERE t.store_id = s.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.store_id = s.id AND t.type <> 'revenue' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
+          WHERE t.store_id = s.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id LEFT JOIN users u ON u.id = o.seller_id
       WHERE ${ordersWhere}
       GROUP BY 1,2,3,4 ORDER BY rev DESC`),
     db.execute(sql`
       SELECT s.marketplace,
-        coalesce(sum(o.total),0) rev, coalesce(sum(o.platform_fee),0) fee,
+        coalesce(sum(o.total),0) rev,
+        coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t JOIN stores s2 ON s2.id = t.store_id
+          WHERE s2.marketplace = s.marketplace AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t JOIN stores s2 ON s2.id = t.store_id
-          WHERE s2.marketplace = s.marketplace AND t.type <> 'revenue' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}),0) cost
+          WHERE s2.marketplace = s.marketplace AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id
       WHERE ${ordersWhere}
       GROUP BY 1 ORDER BY rev DESC`),
@@ -114,8 +122,11 @@ export async function GET(req: NextRequest) {
   // Bút toán revenue nhập tay (nếu có) cộng thêm vào doanh thu
   const manualRev = (byType.rows as Record<string, unknown>[]).filter((r) => r.type === "revenue").reduce((a, r) => a + Number(r.total ?? 0), 0);
   const revenue = Number(trow.revenue ?? 0) + manualRev;
-  const fee = Number(trow.fee ?? 0);
-  const cost = (byType.rows as Record<string, unknown>[]).filter((r) => r.type !== "revenue").reduce((a, r) => a + Number(r.total), 0);
+  // Bút toán 'platform_fee' nhập tay (lưu ÂM) → cộng vào FEE, KHÔNG nằm trong Fulfillment cost.
+  const manualFee = (byType.rows as Record<string, unknown>[]).filter((r) => r.type === "platform_fee").reduce((a, r) => a + Math.abs(Number(r.total ?? 0)), 0);
+  const fee = Number(trow.fee ?? 0) + manualFee;
+  // COST = CHI PHÍ FULFILL THUẦN (base_cost/shipping/ads/sample/salary/tool/refund/other) — KHÔNG có phí sàn.
+  const cost = (byType.rows as Record<string, unknown>[]).filter((r) => r.type !== "revenue" && r.type !== "platform_fee").reduce((a, r) => a + Number(r.total), 0);
   const profit = revenue - fee + cost;
 
   // Ghép daily rev + cost theo ngày (đủ mọi ngày trong range để chart liền mạch)
