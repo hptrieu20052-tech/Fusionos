@@ -77,7 +77,10 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
         <div className="kpi"><div className="l">{isEst ? "Platform fee (est.)" : "Platform fee"}</div><div className="v" style={{ color: "var(--red)" }}>{money(fee)}</div>
           {isEst && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2, lineHeight: 1.3 }}>incl. Fee (est.) {money(feeEst)} · {ordersEst} orders</div>}
         </div>
-        <div className="kpi"><div className="l">{tr("fin.totalCost")}</div><div className="v" style={{ color: "var(--red)" }}>{money(Math.abs(cost) + fee)}</div></div>
+        {/* Chi phí Fulfill = base + ship qua supplier. KHÔNG cộng phí sàn (phí sàn đã có card riêng bên trái). */}
+        <div className="kpi"><div className="l">{tr("db.fulfillCost")}</div><div className="v" style={{ color: "#C9760F" }}>{money(Math.abs(cost))}</div>
+          <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2, lineHeight: 1.3 }}>{tr("db.fulfillCostSub")}</div>
+        </div>
         <div className="kpi"><div className="l">{tr("fin.profit")}</div><div className="v" style={{ color: profit >= 0 ? "var(--green)" : "var(--red)" }}>{profit >= 0 ? "" : "-"}{money(profit)}</div></div>
         <div className="kpi"><div className="l">{tr("fin.margin")}</div><div className="v">{margin.toFixed(1)}%</div></div>
       </div>
