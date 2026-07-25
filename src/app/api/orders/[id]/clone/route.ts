@@ -52,7 +52,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     buyerFirst: o.buyer_first as string | null, buyerLast: o.buyer_last as string | null,
     addr1: o.addr1 as string | null, addr2: o.addr2 as string | null, city: o.city as string | null,
     state: o.state as string | null, zip: o.zip as string | null, country: (o.country as string) ?? "United States",
-    total: cloneTotal, platformFee: cloneFee, currency: (o.currency as string) ?? "USD",
+    // Đơn gốc đang là phí ƯỚC TÍNH thì bản clone cũng là ước tính → UI vẫn ghi "Fee (est.)".
+    total: cloneTotal, platformFee: cloneFee, feeEstimated: Boolean(o.fee_estimated), currency: (o.currency as string) ?? "USD",
     orderLabel: label, orderedAt: new Date(),
   }).returning();
 

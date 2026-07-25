@@ -41,6 +41,7 @@ export async function GET(req: NextRequest) {
       o.external_id, coalesce(o.order_label, '') AS order_label, o.status,
       coalesce(o.total, 0)::numeric AS revenue,
       coalesce(o.platform_fee, 0)::numeric AS fee,
+      coalesce(o.fee_estimated, false) AS fee_estimated,
       coalesce(f.base, 0)::numeric AS base_cost,
       coalesce(f.ship, 0)::numeric AS ship_fee,
       coalesce(f.extra, 0)::numeric AS other_fee,
@@ -60,11 +61,12 @@ export async function GET(req: NextRequest) {
     WHERE o.ordered_at::date >= ${FROM} AND o.ordered_at::date <= ${TO}${inSeller}
     ORDER BY o.ordered_at DESC
     LIMIT 20000
-  `)).rows as { d: string; platform: string; store: string; seller: string; external_id: string; order_label: string; status: string; revenue: string; fee: string; base_cost: string; ship_fee: string; other_fee: string; ff_cost: string; suppliers: string; tracking: string }[];
+  `)).rows as { d: string; platform: string; store: string; seller: string; external_id: string; order_label: string; status: string; revenue: string; fee: string; fee_estimated: boolean; base_cost: string; ship_fee: string; other_fee: string; ff_cost: string; suppliers: string; tracking: string }[];
 
   const n2 = (v: unknown) => (Math.round(Number(v ?? 0) * 100) / 100).toFixed(2);
   const esc = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
-  const header = ["Date", "Marketplace", "Store", "Seller", "Order ID", "Order Label", "Status", "Supplier", "Tracking", "Revenue", "Platform Fee", "Base Cost", "Ship Fee", "Other Fee", "Fulfillment Cost", "Profit"];
+  // Fee Type: EST = phí ƯỚC TÍNH theo % của shop (sàn chưa quyết toán) · REAL = phí thật
+  const header = ["Date", "Marketplace", "Store", "Seller", "Order ID", "Order Label", "Status", "Supplier", "Tracking", "Revenue", "Platform Fee", "Fee Type", "Base Cost", "Ship Fee", "Other Fee", "Fulfillment Cost", "Profit"];
   const lines = [header.join(",")];
   const tot = { revenue: 0, fee: 0, base: 0, ship: 0, extra: 0, cost: 0 };
   for (const r of rows) {
@@ -75,13 +77,13 @@ export async function GET(req: NextRequest) {
     lines.push([
       String(r.d).slice(0, 10), esc(r.platform), esc(r.store), esc(r.seller),
       `="${r.external_id}"`, esc(r.order_label), r.status, esc(r.suppliers), r.tracking ? `="${r.tracking}"` : "",
-      n2(revenue), n2(fee), n2(r.base_cost), n2(r.ship_fee), n2(r.other_fee), n2(cost), n2(profit),
+      n2(revenue), n2(fee), r.fee_estimated ? "EST" : "REAL", n2(r.base_cost), n2(r.ship_fee), n2(r.other_fee), n2(cost), n2(profit),
     ].join(","));
   }
   const totProfit = tot.revenue - tot.fee - tot.cost;
   lines.push([
     "TOTAL", "", "", "", `${rows.length} orders`, "", "", "", "",
-    n2(tot.revenue), n2(tot.fee), n2(tot.base), n2(tot.ship), n2(tot.extra), n2(tot.cost), n2(totProfit),
+    n2(tot.revenue), n2(tot.fee), "", n2(tot.base), n2(tot.ship), n2(tot.extra), n2(tot.cost), n2(totProfit),
   ].join(","));
 
   const today = new Date().toISOString().slice(0, 10);

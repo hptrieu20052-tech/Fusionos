@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import * as XLSX from "xlsx";
 import { ignoredSet } from "@/lib/ignored-orders";
+import { estFee, normFeePct } from "@/lib/fee";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -60,14 +61,16 @@ export async function POST(req: NextRequest) {
   if (!file) return NextResponse.json({ ok: false, error: "missing file" }, { status: 400 });
 
   let fxRate = 1;
+  let feePct = 0; // % phí sàn ước tính của shop — file export TikTok không có cột phí
   {
-    const [st] = await db.select({ s: schema.stores.sellerId, fx: schema.stores.fxRate, mk: schema.stores.marketplace }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
+    const [st] = await db.select({ s: schema.stores.sellerId, fx: schema.stores.fxRate, mk: schema.stores.marketplace, fee: schema.stores.feeRate }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
     if (!st) return NextResponse.json({ ok: false, error: "Store not found" }, { status: 404 });
     // Chống chọn nhầm sàn: import tiktok mà trỏ vào shop sàn khác → đơn vào sai shop, không sửa được
     if (st.mk !== "tiktok") return NextResponse.json({ ok: false, error: `That store is not a tiktok store` }, { status: 400 });
     if (!sellerId) sellerId = st?.s ?? null;
     const r = Number(st?.fx ?? 1);
     if (r > 0) fxRate = r;
+    feePct = normFeePct(st?.fee);
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
@@ -199,7 +202,8 @@ export async function POST(req: NextRequest) {
         buyerFirst: g.first || null, buyerLast: g.last || null,
         addr1: g.addr1 || null, addr2: g.addr2 || null, city: g.city || null,
         state: g.state || null, zip: g.zip || null, country: g.country,
-        total: (total / fxRate).toFixed(2), platformFee: "0.00",
+        total: (total / fxRate).toFixed(2),
+        platformFee: estFee(total / fxRate, feePct), feeEstimated: feePct > 0,
         note: g.note || null,
         orderedAt: new Date(),
       }).returning();

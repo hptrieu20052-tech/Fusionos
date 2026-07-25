@@ -10,7 +10,8 @@ type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
   sellerName: string | null; sellerId: string | null; note: string | null; storeUrl: string | null;
   shop?: { live: boolean; checkFailed: boolean; sales: number | null; rating: number | null; reviews: number | null; listings: number | null; age: string | null; status: number | null; checkedAt: string } | null;
-  currency: string; fxRate: string; ingestToken?: string | null; health?: { fxConvertedAt?: string; fxConvertedRate?: number } | null;
+  // feeRate = % phí sàn ƯỚC TÍNH của shop (Etsy & TikTok mặc định 6.5) — sàn không trả phí theo đơn qua API
+  currency: string; fxRate: string; feeRate?: string; ingestToken?: string | null; health?: { fxConvertedAt?: string; fxConvertedRate?: number; feeBackfilledAt?: string; feeBackfilledPct?: number } | null;
   orders30d: number; orders7d: number; revenue30d: number; lastOrderDays: number | null;
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
   etsy?: { hasKeystring: boolean; keystring: string; connected: boolean; shopId: string };
@@ -189,7 +190,7 @@ export function StoresClient({ canAdd, role }: { canAdd: boolean; role: string }
 
 function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: Opt[]; isSeller: boolean; close: () => void; reload: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
-  const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "", storeUrl: "", currency: "USD", fxRate: "1" });
+  const [f, setF] = useState({ name: "", marketplace: "tiktok", connectMethod: "extension", sellerId: "", note: "", storeUrl: "", currency: "USD", fxRate: "1", feeRate: "6.5" });
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     if (!f.name.trim()) return;
@@ -221,6 +222,9 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
         <L label={t("st.shopCurrency")}><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (f.fxRate === "1" ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
         <L label={t("st.fxLabel").replace("{cur}", f.currency)}><input type="number" step="0.0001" value={f.fxRate} disabled={f.currency === "USD"} onChange={(e) => setF({ ...f, fxRate: e.target.value })} placeholder="vd 25400" style={{ ...inp, background: f.currency === "USD" ? "#EDEFF4" : "#fff" }} /></L>
       </div>
+      {/* Fee (est.) — sàn không trả phí theo đơn qua API nên hệ thống ước tính theo % này */}
+      <L label={t("st.feeLabel")}><input type="number" step="0.1" min="0" max="99" value={f.feeRate} onChange={(e) => setF({ ...f, feeRate: e.target.value })} placeholder="6.5" style={inp} /></L>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5, margin: "-2px 0 2px" }}>{t("st.feeHint")}</div>
       <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
       <Actions close={close} onOk={submit} busy={busy} okLabel={t("st.addStore")} disabled={!f.name.trim()} />
     </Modal>
@@ -230,7 +234,7 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
 function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { store: Store; sellers: Opt[]; isSeller: boolean; close: () => void; reload: () => void; flash: (m: string) => void }) {
   const { t } = useLang();
   const confirm = useConfirm();
-  const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "", currency: store.currency ?? "USD", fxRate: store.fxRate ?? "1" });
+  const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "", currency: store.currency ?? "USD", fxRate: store.fxRate ?? "1", feeRate: store.feeRate ?? "6.5" });
   const [cred, setCred] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<{ ok: boolean; message: string } | null>(null);
@@ -342,6 +346,22 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     else flash("✗ " + (j.error ?? t("st.error")));
   }
 
+  // Tính phí ƯỚC TÍNH cho đơn CŨ đang FEE $0.00 (đơn kéo về trước khi bật tính năng này).
+  // An toàn: chỉ đụng đơn FEE = 0 → chạy lại nhiều lần không nhân đôi phí.
+  async function feeBackfill() {
+    const pct = Number(store.feeRate ?? 0);
+    if (!(pct > 0)) { flash(t("st.feeNeedRate")); return; }
+    const done = store.health?.feeBackfilledAt;
+    const warn = t("st.feeBackfillBody").replace("{name}", store.name).replace("{pct}", String(pct))
+      + (done ? "\n\n" + t("st.feeBackfillDoneAt").replace("{time}", new Date(done).toLocaleString()).replace("{pct}", String(store.health?.feeBackfilledPct ?? pct)) : "");
+    if (!(await confirm({ title: t("st.feeBackfillTitle"), message: warn, confirmText: t("c.save"), cancelText: t("c.cancel") }))) return;
+    setBusy(true);
+    const j = await fetch(`/api/stores/${store.id}/fee-backfill`, { method: "POST" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setBusy(false);
+    if (j.ok) { flash(t("st.feeBackfilled").replace("{n}", String(j.orders)).replace("{pct}", String(j.pct))); reload(); close(); }
+    else flash("✗ " + (j.error ?? t("st.error")));
+  }
+
   return (
     <Modal title={<span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><MarketplaceLogo mk={store.marketplace} size={22} /> {store.name}</span>} close={close}>
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -364,6 +384,16 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           </span>
         </div>
       )}
+      {/* Fee (est.) — % phí sàn ước tính + nút tính cho đơn cũ đang FEE $0.00 */}
+      <L label={t("st.feeLabel")}><input type="number" step="0.1" min="0" max="99" value={f.feeRate} onChange={(e) => setF({ ...f, feeRate: e.target.value })} placeholder="6.5" style={inp} /></L>
+      <div style={{ border: "1px solid #F3D08A", background: "#FFF9EC", borderRadius: 10, padding: "10px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <button onClick={feeBackfill} disabled={busy} style={{ ...btnGhost, color: "#9A6B00", borderColor: "#F3D08A", fontWeight: 700, fontSize: 12.5 }}><IconDownload width={12} height={12} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("st.feeBackfill")}</button>
+        <span style={{ fontSize: 11.5, color: "var(--muted)", flex: 1 }}>
+          {store.health?.feeBackfilledAt
+            ? t("st.feeBackfillDoneAt").replace("{time}", new Date(store.health.feeBackfilledAt).toLocaleString()).replace("{pct}", String(store.health.feeBackfilledPct ?? ""))
+            : t("st.feeHint")}
+        </span>
+      </div>
       <L label={t("st.note")}><input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} style={inp} /></L>
 
       {/* Etsy API chính thức (Open API v3) — mỗi store 1 app riêng. Khuyên dùng thay cho extension. */}

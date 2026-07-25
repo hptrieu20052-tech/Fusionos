@@ -45,7 +45,11 @@ export async function GET(req: NextRequest) {
   const [totals, byType, dailyRev, dailyCost, bySeller, byStore, byPlatform, bySupplier] = await Promise.all([
     // Tổng revenue + fee từ orders
     db.execute(sql`
-      SELECT coalesce(sum(o.total),0) revenue, coalesce(sum(o.platform_fee),0) fee, count(*)::int orders
+      SELECT coalesce(sum(o.total),0) revenue, coalesce(sum(o.platform_fee),0) fee,
+        -- Phần phí đang là ƯỚC TÍNH (%) — UI ghi rõ "Fee (est.)" để không nhầm là số quyết toán thật
+        coalesce(sum(o.platform_fee) FILTER (WHERE o.fee_estimated),0) fee_est,
+        count(*) FILTER (WHERE o.fee_estimated)::int orders_est,
+        count(*)::int orders
       FROM orders o WHERE ${ordersWhere}`),
     // Cost theo type (transactions âm; bút toán 'revenue' nhập tay vẫn cộng vào doanh thu qua totals riêng)
     db.execute(sql`
@@ -128,7 +132,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true, days, scoped: !!ownerIds,
-    totals: { revenue, fee, cost, profit, orders: Number(trow.orders ?? 0) },
+    totals: { revenue, fee, cost, profit, orders: Number(trow.orders ?? 0), feeEst: Number(trow.fee_est ?? 0), ordersEst: Number(trow.orders_est ?? 0) },
     byType: byType.rows, daily, bySeller: bySeller.rows, byStore: byStore.rows, byPlatform: byPlatform.rows,
     bySupplier: bySupplier.rows,
   });

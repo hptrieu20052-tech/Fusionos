@@ -29,7 +29,8 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const { t: tr } = useLang();
   const [days, setDays] = useState(30);
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days — chỉnh bằng picker
-  const [data, setData] = useState<{ totals: { revenue: number; fee: number; cost: number; profit: number; orders: number }; byType: Row[]; daily: Row[]; bySeller: Row[]; byStore: Row[]; byPlatform: Row[]; bySupplier: Row[] } | null>(null);
+  // feeEst / ordersEst: phần phí đang là ƯỚC TÍNH theo % của shop (sàn chưa quyết toán)
+  const [data, setData] = useState<{ totals: { revenue: number; fee: number; cost: number; profit: number; orders: number; feeEst?: number; ordersEst?: number }; byType: Row[]; daily: Row[]; bySeller: Row[]; byStore: Row[]; byPlatform: Row[]; bySupplier: Row[] } | null>(null);
   const [form, setForm] = useState({ type: "ads", amount: "", note: "" });
   const [msg, setMsg] = useState("");
   const [showExport, setShowExport] = useState(false);
@@ -50,6 +51,11 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   if (!data) return <div className="panel empty">{tr("c.loading2")}</div>;
 
   const { revenue, fee, cost, profit } = data.totals;
+  // Có đơn nào đang dùng phí ước tính → mọi cột Fee phải ghi rõ "Fee (est.)" (tiếng Anh, cả 2 ngôn ngữ)
+  const feeEst = Number(data.totals.feeEst ?? 0);
+  const ordersEst = Number(data.totals.ordersEst ?? 0);
+  const isEst = feeEst > 0;
+  const FEE_H = isEst ? "Fee (est.)" : "Fee";
   const margin = revenue ? (profit / revenue) * 100 : 0;
   const dailyNet = data.daily.map((d) => Number(d.rev) + Number(d.cost));
   const maxAbs = Math.max(...dailyNet.map(Math.abs), 1);
@@ -68,7 +74,9 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
 
       <div className="kpis kpis-5">
         <div className="kpi"><div className="l">{tr("fin.revenue")}</div><div className="v" style={{ color: "var(--green)" }}>{money(revenue)}</div></div>
-        <div className="kpi"><div className="l">Platform fee</div><div className="v" style={{ color: "var(--red)" }}>{money(fee)}</div></div>
+        <div className="kpi"><div className="l">{isEst ? "Platform fee (est.)" : "Platform fee"}</div><div className="v" style={{ color: "var(--red)" }}>{money(fee)}</div>
+          {isEst && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2, lineHeight: 1.3 }}>incl. Fee (est.) {money(feeEst)} · {ordersEst} orders</div>}
+        </div>
         <div className="kpi"><div className="l">{tr("fin.totalCost")}</div><div className="v" style={{ color: "var(--red)" }}>{money(Math.abs(cost) + fee)}</div></div>
         <div className="kpi"><div className="l">{tr("fin.profit")}</div><div className="v" style={{ color: profit >= 0 ? "var(--green)" : "var(--red)" }}>{profit >= 0 ? "" : "-"}{money(profit)}</div></div>
         <div className="kpi"><div className="l">{tr("fin.margin")}</div><div className="v">{margin.toFixed(1)}%</div></div>
@@ -91,7 +99,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
         <div className="panel">
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{tr("fin.costBreakdown")}</h3>
           <HBarList rows={[
-            ...(fee > 0 ? [{ label: "Platform fee", value: fee, color: "#C98A3D", suffix: money(fee) }] : []),
+            ...(fee > 0 ? [{ label: isEst ? "Platform fee (est.)" : "Platform fee", value: fee, color: "#C98A3D", suffix: money(fee) }] : []),
             ...data.byType.filter((t) => Number(t.total) < 0).map((t) => ({
               label: typeLabel(tr, String(t.type)), value: Math.abs(Number(t.total)),
               color: "#CE6B6B", suffix: money(t.total),
@@ -103,7 +111,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
       <div className="panel">
         <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by store</h3>
         <table style={{ marginTop: 8 }}>
-          <thead><tr><th>Store</th><th>Seller</th><th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>Fee</th><th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
+          <thead><tr><th>Store</th><th>Seller</th><th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>{FEE_H}</th><th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
           <tbody>{data.byStore.map((st) => {
             const pf = Number(st.rev) - Number(st.fee) + Number(st.cost);
             return (
@@ -125,7 +133,7 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
         <div className="panel">
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by seller</h3>
           <table style={{ marginTop: 8 }}>
-            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>Fee</th><th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
+            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>{FEE_H}</th><th style={{ textAlign: "right" }}>Cost</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
             <tbody>{data.bySeller.map((s) => {
               const pf = Number(s.rev) - Number(s.fee) + Number(s.cost);
               return (
@@ -205,27 +213,25 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
 // Hộp CHỌN KHOẢNG NGÀY trước khi export — mặc định theo range đang xem trên picker.
 // File tải về là CHI TIẾT TỪNG ĐƠN (16 cột, gồm cả đơn New/Cancel) từ /api/finance/export.
 function ExportCsvModal({ defFrom, defTo, close }: { defFrom: string; defTo: string; close: () => void }) {
-  const [from, setFrom] = useState(defFrom);
-  const [to, setTo] = useState(defTo);
+  // Dùng CHUNG bộ lịch DateRangePicker của hệ thống (preset Today/7d/30d/This month… + lịch 2 tháng)
+  // thay cho ô date mặc định của trình duyệt — hiện đại & đồng bộ giao diện.
+  const [v, setV] = useState<RangeValue>({ range: "custom", from: defFrom, to: defTo });
+  const { from, to } = rangeToDates(v);
   const valid = /^\d{4}-\d{2}-\d{2}$/.test(from) && /^\d{4}-\d{2}-\d{2}$/.test(to) && from <= to;
+  const pretty = (s: string) => { const [y, m, d] = s.split("-"); return `${d}/${m}/${y}`; };
   return (
     <div onClick={close} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: 400, maxWidth: "92vw", boxShadow: "0 18px 50px rgba(15,23,42,.25)" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: 430, maxWidth: "92vw", boxShadow: "0 18px 50px rgba(15,23,42,.25)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, fontSize: 15, marginBottom: 4 }}>
           <IcExcel size={20} /> Export orders detail (CSV)
         </div>
         <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
           One row per order — includes ALL orders (New &amp; Cancel too). Revenue · fees · base/ship/other cost · profit.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-          <label style={{ display: "grid", gap: 5, fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>
-            From
-            <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} style={inp} />
-          </label>
-          <label style={{ display: "grid", gap: 5, fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>
-            To
-            <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} style={inp} />
-          </label>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>Time range</span>
+          <DateRangePicker value={v} onChange={setV} />
+          <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: "auto" }}>{valid ? `${pretty(from)} → ${pretty(to)}` : "—"}</span>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button onClick={close}

@@ -10,7 +10,7 @@ import DesignerReport from "@/components/designer-report";
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type Pipe = { c: number; q: number };
-type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitCost: number;
+type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitFeeEst?: number; profitCost: number;
   pipeline: { order: { c: number; q: number; prev: number | null }; in_production: Pipe; in_transit: Pipe; delivered: Pipe } };
 
 export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { canDesigns: boolean; canOrders: boolean; isAdmin: boolean }) {
@@ -114,7 +114,8 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
           <Link href="/finance" className="pipe-card" style={{ ...kpiLink, borderTopColor: kpi.profit >= 0 ? "#2FA36B" : "#DB6B5E" }}>
             <div className="pipe-l">{tr("db.kpiProfit")}</div>
             <div className="pipe-v" style={{ color: kpi.profit >= 0 ? "var(--green)" : "var(--red)" }}>{money(kpi.profit)}</div>
-            <div className="pipe-sub">{tr("db.profitBreakdown").replace("{r}", money(kpi.profitRevenue)).replace("{f}", money(kpi.profitFee)).replace("{c}", money(kpi.profitCost))}</div>
+            {/* Phí đang ước tính → dòng breakdown ghi rõ "fee (est.)" */}
+            <div className="pipe-sub">{tr(Number(kpi.profitFeeEst ?? 0) > 0 ? "db.profitBreakdownEst" : "db.profitBreakdown").replace("{r}", money(kpi.profitRevenue)).replace("{f}", money(kpi.profitFee)).replace("{c}", money(kpi.profitCost))}</div>
           </Link>
         </div>
       )}

@@ -61,6 +61,9 @@ export const stores = pgTable("stores", {
   // Tiền tệ shop + tỉ giá quy đổi sang USD (fx_rate = số đơn vị tiền này / 1 USD; VND ≈ 25400).
   currency: text("currency").notNull().default("USD"),
   fxRate: numeric("fx_rate", { precision: 14, scale: 4 }).notNull().default("1"),
+  // % phí sàn ƯỚC TÍNH cho shop này (Etsy & TikTok mặc định 6.5). Sàn không trả phí theo đơn
+  // qua API — chỉ có khi quyết toán — nên đơn mới về tính phí = total × fee_rate%.
+  feeRate: numeric("fee_rate", { precision: 6, scale: 3 }).notNull().default("6.5"),
   lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_stores_seller").on(t.sellerId)]);
@@ -85,6 +88,9 @@ export const orders = pgTable("orders", {
   country: text("country").notNull().default("United States"),
   total: numeric("total", { precision: 12, scale: 2 }).notNull().default("0"),
   platformFee: numeric("platform_fee", { precision: 12, scale: 2 }).notNull().default("0"),
+  // true = platform_fee đang là số ƯỚC TÍNH theo % của shop → UI ghi rõ "Fee (est.)".
+  // false = phí THẬT (import file Payments của Etsy, hoặc nhập tay).
+  feeEstimated: boolean("fee_estimated").notNull().default(false),
   currency: text("currency").notNull().default("USD"),
   orderLabel: text("order_label"),
   note: text("note"),                 // note NỘI BỘ (staff tự ghi)

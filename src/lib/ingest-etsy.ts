@@ -3,6 +3,7 @@ import { beforeLaunch } from "@/lib/ingest-cutoff";
 import { and, eq } from "drizzle-orm";
 import { ignoredSet } from "@/lib/ignored-orders";
 import { decodeEntities } from "@/lib/variant-display";
+import { storeFeePct, estFee } from "@/lib/fee";
 
 export type InItem = {
   title?: string; sku?: string; qty?: number; price?: number;
@@ -26,6 +27,8 @@ const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 // orderedAt = NGÀY KÉO ĐƠN (thời điểm ingest) để mọi thống kê tính theo ngày kéo.
 export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], source: "extension" | "api" = "api", platform: "etsy" | "tiktok" = "etsy") {
   const fx = Number(store.fx) > 0 ? Number(store.fx) : 1;
+  // Phí sàn: API đơn của Etsy/TikTok KHÔNG kèm phí (chỉ có khi quyết toán) → ước tính theo % của shop.
+  const feePct = await storeFeePct(store.id);
   let created = 0, skipped = 0;
   const createdIds: string[] = [];
   const errors: string[] = [];
@@ -193,7 +196,9 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         continue;
       }
 
-      if (o.platformStatus && SHIPPED_LIKE.test(String(o.platformStatus))) { skipped++; continue; }
+      // Đơn MỚI đã SHIP / HUỶ / HOÀN TIỀN TOÀN BỘ / void trên sàn → KHÔNG kéo về.
+      // (bug: trước chỉ chặn /cancel/, để lọt "Fully refunded" → đơn refund vẫn vào FUSION).
+      if (o.platformStatus && (SHIPPED_LIKE.test(String(o.platformStatus)) || CANCEL_LIKE.test(String(o.platformStatus)))) { skipped++; continue; }
       // MỐC LAUNCH: đơn đặt trước INGEST_SINCE → thuộc hệ thống cũ, bỏ qua (chống push đúp)
       if (beforeLaunch(o.orderedAt)) { skipped++; continue; }
 
@@ -209,7 +214,10 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         buyerFirst: s(o.buyerFirst), buyerLast: s(o.buyerLast),
         addr1: s(o.addr1), addr2: s(o.addr2), city: s(o.city), state: s(o.state), zip: s(o.zip),
         country: s(o.country) ?? "United States",
-        total: (total / fx).toFixed(2), platformFee: (num(o.fee) / fx).toFixed(2),
+        // Có phí THẬT từ nguồn (hiếm) → dùng luôn; không có → ƯỚC TÍNH theo % shop và bật cờ est.
+        total: (total / fx).toFixed(2),
+        platformFee: num(o.fee) > 0 ? (num(o.fee) / fx).toFixed(2) : estFee(total / fx, feePct),
+        feeEstimated: !(num(o.fee) > 0) && feePct > 0,
         buyerNote: s(o.note), // note KHÁCH → cột riêng (note nội bộ do staff tự ghi)
         orderedAt: new Date(),
       }).onConflictDoNothing().returning();

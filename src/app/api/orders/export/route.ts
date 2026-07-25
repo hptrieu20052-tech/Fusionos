@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
          ORDER BY df.id LIMIT 1) AS design_mockup_key,
       coalesce(o.buyer_first,'') || ' ' || coalesce(o.buyer_last,'') AS buyer,
       o.addr1, o.addr2, o.city, o.state, o.zip, o.country,
-      o.total, o.platform_fee,
+      o.total, o.platform_fee, o.fee_estimated,
       coalesce((SELECT -sum(amount) FROM transactions t WHERE t.order_id = o.id AND t.type='base_cost'),0) AS base_cost,
       fo.tracking_number, fo.tracking_carrier, f.name AS fulfiller, fo.external_ff_id
     FROM orders o
@@ -70,9 +70,12 @@ export async function GET(req: NextRequest) {
   const data = rows.map((r) => {
     const designLinks = String(r.design_keys ?? "").split("||").filter(Boolean).map((k) => fileUrl(k)).filter(Boolean).join(" | ");
     const mockupLink = fileUrl((r.mockup_key as string) || (r.design_mockup_key as string) || null) ?? "";
+    // Order Label: dùng nhãn đã lưu; TRỐNG thì tự dựng theo đúng công thức UI: TÊNSTORE(bỏ ký tự đặc biệt, in hoa)-ExternalID.
+    const orderLabel = String(r.order_label ?? "").trim()
+      || [String(r.store ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase(), r.external_id].filter(Boolean).join("-");
     return {
       // — ĐỊNH DANH ĐƠN —
-      "Order ID": r.external_id, "Order Label ID": r.order_label ?? "",
+      "Order ID": r.external_id, "Order Label ID": orderLabel,
       "Platform": r.platform, "Store": r.store ?? "", "Seller": r.seller ?? "",
       "Status": r.status, "Order date": String(r.ordered_date ?? "").slice(0, 10),
       // — SẢN PHẨM + FILE IN —
@@ -86,7 +89,8 @@ export async function GET(req: NextRequest) {
       "Guest": r.buyer, "Addr1": r.addr1 ?? "", "Addr2": r.addr2 ?? "",
       "City": r.city ?? "", "State": r.state ?? "", "ZIP": r.zip ?? "", "Country": r.country,
       // — TIỀN —
-      "Total": Number(r.total), "Fee": Number(r.platform_fee),
+      // Fee Type: EST = phí ƯỚC TÍNH theo % của shop (sàn chưa quyết toán) · REAL = phí thật
+      "Total": Number(r.total), "Fee": Number(r.platform_fee), "Fee Type": r.fee_estimated ? "EST" : "REAL",
       ...(hideProfit ? {} : { "Base Cost": Number(r.base_cost) }),
       // — FULFILL/TRACKING —
       "Fulfiller": r.fulfiller ?? "", "FF Order ID": r.external_ff_id ?? "",

@@ -66,13 +66,15 @@ export async function GET(req: NextRequest) {
     SELECT
       coalesce(sum(o.total),0)::numeric AS revenue,
       coalesce(sum(o.platform_fee),0)::numeric AS fee,
+      -- phần phí đang ƯỚC TÍNH (%) → dashboard ghi rõ "fee (est.)"
+      coalesce(sum(o.platform_fee) FILTER (WHERE o.fee_estimated),0)::numeric AS fee_est,
       coalesce((SELECT -sum(t.amount) FROM transactions t
         JOIN orders o2 ON o2.id = t.order_id
         WHERE t.type IN ('base_cost','shipping','ads','sample')
           AND ${sql.raw(cond.replace("o.ordered_at","o2.ordered_at"))}
           AND o2.status NOT IN ('cancel','trash')${own2}),0) AS cost
     FROM orders o WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')${own}
-  `)).rows as { revenue: string; fee: string; cost: string }[];
+  `)).rows as { revenue: string; fee: string; fee_est: string; cost: string }[];
   const profit = Number(pnl.revenue) - Number(pnl.fee) - Number(pnl.cost);
 
   // nhãn kỳ so sánh theo range
@@ -101,6 +103,6 @@ export async function GET(req: NextRequest) {
     prevOrders: prev ? prev.o : null, prevRevenue: prev ? Number(prev.r) : null,
     pendingNew: misc.pending_new, issues: misc.issues, designs: misc.designs,
     pipeline,
-    profit, profitRevenue: Number(pnl.revenue), profitFee: Number(pnl.fee), profitCost: Number(pnl.cost),
+    profit, profitRevenue: Number(pnl.revenue), profitFee: Number(pnl.fee), profitFeeEst: Number(pnl.fee_est ?? 0), profitCost: Number(pnl.cost),
   });
 }

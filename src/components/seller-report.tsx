@@ -3,7 +3,7 @@ import { useLang } from "@/components/lang-provider";
 import { useEffect, useRef, useState } from "react";
 
 type Seller = { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number }[]; revenue?: number; fee?: number; cost?: number; profit?: number | null; platforms?: string[] };
-type Data = { buckets: string[]; sellers: Seller[]; totals: { orders: number; items: number }; showMoney?: boolean; hideProfit?: boolean; money?: { revenue: number; fee: number; cost: number; profit: number | null } | null };
+type Data = { buckets: string[]; sellers: Seller[]; totals: { orders: number; items: number }; showMoney?: boolean; hideProfit?: boolean; money?: { revenue: number; fee: number; feeEst?: number; cost: number; profit: number | null } | null };
 
 // Tiền hiển thị ĐÚNG TỚI CENT (không làm tròn). round(*100)/100 chỉ để khử nhiễu float khi cộng dồn.
 const cents = (n: number) => Math.round(n * 100) / 100;
@@ -65,7 +65,8 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
           {data.money && (
             <div style={{ fontSize: 12, fontWeight: 500, marginTop: 2 }}>
               <span style={{ color: "var(--muted)" }}>Rev </span><b>{usd(data.money.revenue)}</b>
-              <span style={{ color: "var(--muted)" }}> · Fee </span>{usd(data.money.fee)}
+              {/* Có đơn dùng phí ước tính → nhãn "Fee (est.)" (tiếng Anh, hiện ở cả 2 ngôn ngữ) */}
+              <span style={{ color: "var(--muted)" }}>{Number(data.money.feeEst ?? 0) > 0 ? " · Fee (est.) " : " · Fee "}</span>{usd(data.money.fee)}
               <span style={{ color: "var(--muted)" }}> · Cost </span>{usd(data.money.cost)}
               {!data.hideProfit && <><span style={{ color: "var(--muted)" }}> · Profit </span><b style={{ color: (data.money.profit ?? 0) >= 0 ? "var(--green)" : "var(--red)" }}>{usd(data.money.profit)}</b></>}
             </div>
@@ -118,7 +119,7 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
                   {data.showMoney ? (
                     <>
                       <th style={{ padding: "3px 4px" }}>Revenue</th>
-                      <th style={{ padding: "3px 4px" }}>Fee</th>
+                      <th style={{ padding: "3px 4px" }} title={Number(data.money?.feeEst ?? 0) > 0 ? "Estimated marketplace fee (store % × total) — marketplaces only settle the real fee 7–30 days later" : undefined}>{Number(data.money?.feeEst ?? 0) > 0 ? "Fee (est.)" : "Fee"}</th>
                       <th style={{ padding: "3px 4px" }} title="Fulfillment cost — base cost + shipping charged per order">Cost</th>
                       {!data.hideProfit && <th style={{ padding: "3px 4px" }}>Profit</th>}
                     </>

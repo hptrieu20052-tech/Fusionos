@@ -82,7 +82,8 @@ type Order = {
   id: string; external_id: string; platform: string; status: string; ordered_at: string;
   buyer_first: string | null; buyer_last: string | null;
   addr1: string | null; addr2: string | null; city: string | null; state: string | null; zip: string | null; country: string;
-  total: string; platform_fee: string; seller_name: string | null; seller_team?: string | null; store_name: string | null; order_label: string | null; note: string | null; buyer_note?: string | null; shipping_type?: string | null;
+  // fee_estimated = true → platform_fee là số ƯỚC TÍNH theo % của shop (sàn chưa quyết toán) → nhãn "Fee (est.)"
+  total: string; platform_fee: string; fee_estimated?: boolean; seller_name: string | null; seller_team?: string | null; store_name: string | null; order_label: string | null; note: string | null; buyer_note?: string | null; shipping_type?: string | null;
   designer_sent_to?: string | null; designer_sent_at?: string | null;
   tiktok_labels?: { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string }[] | null;
   items: Item[];
@@ -1239,7 +1240,8 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
               {/* Tài chính đơn */}
               <div className="o2-fin">
                 <div className="c"><span className="k">{t("o.total")}</span><span className="v">{money(o.total)}</span></div>
-                <div className="c"><span className="k">{t("o.fee")}</span><span className="v">{money(o.platform_fee)}</span></div>
+                {/* Phí ước tính → nhãn tiếng Anh "Fee (est.)" cho rõ đây KHÔNG phải số quyết toán của sàn */}
+                <div className="c" title={o.fee_estimated ? t("o.feeEstHint") : undefined}><span className="k">{o.fee_estimated ? "Fee (est.)" : t("o.fee")}</span><span className="v">{money(o.platform_fee)}</span></div>
                 <div className="c net"><span className="k">{t("o.afterFee")}</span><span className="v">{money(Number(o.total) - Number(o.platform_fee))}</span></div>
               </div>
               {/* Vùng thao tác: tracking/chi phí */}

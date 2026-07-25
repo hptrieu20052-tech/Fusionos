@@ -5,6 +5,7 @@ import { desc, eq, and, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { scopeOwnerIds } from "@/lib/scope";
+import { DEFAULT_FEE_PCT } from "@/lib/fee";
 
 export const dynamic = "force-dynamic";
 
@@ -128,6 +129,8 @@ export async function POST(req: NextRequest) {
     storeUrl: (typeof b.storeUrl === "string" && b.storeUrl.trim()) ? b.storeUrl.trim() : null,
     currency: (typeof b.currency === "string" && b.currency.trim()) ? b.currency.trim().toUpperCase() : "USD",
     fxRate: (b.fxRate != null && Number(b.fxRate) > 0) ? String(Number(b.fxRate)) : "1",
+    // % phí sàn ƯỚC TÍNH (Etsy & TikTok mặc định 6.5) — sàn không trả phí theo đơn qua API.
+    feeRate: (b.feeRate != null && Number(b.feeRate) >= 0 && Number(b.feeRate) < 100) ? String(Number(b.feeRate)) : String(DEFAULT_FEE_PCT),
   }).returning();
   return NextResponse.json({ ok: true, store: s });
 }

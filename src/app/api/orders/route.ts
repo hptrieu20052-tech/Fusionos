@@ -6,6 +6,7 @@ import { levelOf, hasRestriction } from "@/lib/rbac";
 import { scopeOwnerIds, resolveScope } from "@/lib/scope";
 import { fileUrl } from "@/lib/storage";
 import { suggestForItems } from "@/lib/design-suggest";
+import { storeFeePct, estFee } from "@/lib/fee";
 
 export const dynamic = "force-dynamic";
 
@@ -160,6 +161,10 @@ export async function POST(req: NextRequest) {
   const scope = await resolveScope(session, "orders");
   const sellerId = scope === "all" ? (b.sellerId || null) : session.sub;
 
+  // Nhập tay mà để trống phí → ước tính theo % của shop (đánh dấu "Fee (est.)"); nhập số → phí THẬT.
+  const manualTotal = Number(b.total ?? 0);
+  const manualFee = Number(b.platformFee ?? 0);
+  const mFeePct = manualFee > 0 ? 0 : await storeFeePct(b.storeId || null);
   const [order] = await db.insert(schema.orders).values({
     externalId, platform: platform as never,
     storeId: b.storeId || null, sellerId,
@@ -167,7 +172,8 @@ export async function POST(req: NextRequest) {
     buyerFirst: b.buyerFirst ?? null, buyerLast: b.buyerLast ?? null,
     addr1: b.addr1 ?? null, addr2: b.addr2 ?? null, city: b.city ?? null,
     state: b.state ?? null, zip: b.zip ?? null, country: b.country || "United States",
-    total: String(Number(b.total ?? 0).toFixed(2)), platformFee: String(Number(b.platformFee ?? 0).toFixed(2)),
+    total: manualTotal.toFixed(2), platformFee: manualFee > 0 ? manualFee.toFixed(2) : estFee(manualTotal, mFeePct),
+    feeEstimated: !(manualFee > 0) && mFeePct > 0,
     orderedAt: new Date(),
   }).returning();
 

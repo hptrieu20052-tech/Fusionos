@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import * as XLSX from "xlsx";
 import { ignoredSet } from "@/lib/ignored-orders";
+import { estFee, normFeePct } from "@/lib/fee";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,14 +34,16 @@ export async function POST(req: NextRequest) {
 
   // Không chọn seller → lấy seller mặc định của store (đồng bộ với cấu hình store)
   let fxRate = 1;
+  let feePct = 0; // % phí sàn ước tính của shop — file Orders/Order Items của Etsy không có cột phí
   {
-    const [st] = await db.select({ s: schema.stores.sellerId, fx: schema.stores.fxRate, mk: schema.stores.marketplace }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
+    const [st] = await db.select({ s: schema.stores.sellerId, fx: schema.stores.fxRate, mk: schema.stores.marketplace, fee: schema.stores.feeRate }).from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
     if (!st) return NextResponse.json({ ok: false, error: "Store not found" }, { status: 404 });
     // Chống chọn nhầm sàn: import etsy mà trỏ vào shop sàn khác → đơn vào sai shop, không sửa được
     if (st.mk !== "etsy") return NextResponse.json({ ok: false, error: `That store is not a etsy store` }, { status: 400 });
     if (!sellerId) sellerId = st?.s ?? null;
     const r = Number(st?.fx ?? 1);
     if (r > 0) fxRate = r; // tiền shop → USD: chia cho tỉ giá
+    feePct = normFeePct(st?.fee);
   }
 
   const buf = Buffer.from(await file.arrayBuffer());
@@ -79,8 +82,9 @@ export async function POST(req: NextRequest) {
         .where(and(eq(schema.orders.platform, "etsy" as never), eq(schema.orders.externalId, ext))).limit(1);
       if (!ord) { notFound++; continue; }
       try {
+        // Đây là phí THẬT do Etsy quyết toán → ghi đè số ước tính và TẮT cờ est.
         const fee = (Number(ord.total) * feeRate).toFixed(2);
-        await db.update(schema.orders).set({ platformFee: fee, updatedAt: new Date() }).where(eq(schema.orders.id, ord.id));
+        await db.update(schema.orders).set({ platformFee: fee, feeEstimated: false, updatedAt: new Date() }).where(eq(schema.orders.id, ord.id));
         updated++;
       } catch (e) { errs.push(`${ext}: ${String((e as Error)?.message ?? e).slice(0, 80)}`); }
     }
@@ -176,7 +180,8 @@ export async function POST(req: NextRequest) {
         buyerFirst: g.first || null, buyerLast: g.last || null,
         addr1: g.addr1 || null, addr2: g.addr2 || null, city: g.city || null,
         state: g.state || null, zip: g.zip || null, country: g.country,
-        total: (total / fxRate).toFixed(2), platformFee: "0.00",
+        total: (total / fxRate).toFixed(2),
+        platformFee: estFee(total / fxRate, feePct), feeEstimated: feePct > 0,
         orderedAt: new Date(),
       }).onConflictDoNothing().returning();
       if (!order) { skipped++; continue; } // request song song đã insert trước → coi như trùng

@@ -70,6 +70,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if ("note" in b) patch.note = b.note || null;
   if (typeof b.currency === "string" && b.currency.trim()) patch.currency = b.currency.trim().toUpperCase();
   if (b.fxRate != null && !isNaN(Number(b.fxRate)) && Number(b.fxRate) > 0) patch.fxRate = String(Number(b.fxRate));
+  // % phí sàn ước tính: cho phép 0 (tắt ước tính) đến < 100
+  if (b.feeRate != null && !isNaN(Number(b.feeRate)) && Number(b.feeRate) >= 0 && Number(b.feeRate) < 100) patch.feeRate = String(Number(b.feeRate));
   if (b.regenIngestToken === true) patch.ingestToken = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
   if (b.status && (schema.stores.status.enumValues as readonly string[]).includes(b.status)) patch.status = b.status;
   if (b.connectMethod && (schema.stores.connectMethod.enumValues as readonly string[]).includes(b.connectMethod)) patch.connectMethod = b.connectMethod;

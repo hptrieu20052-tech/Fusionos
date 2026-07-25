@@ -55,12 +55,14 @@ export async function GET(req: NextRequest) {
   // Tiền (Doanh thu / Fee / Lợi nhuận) + Sàn — chỉ cho người có quyền orders; ẩn lợi nhuận nếu bị hạn chế hide_profit.
   const showMoney = oLvl >= 1;
   const hideProfit = showMoney ? await hasRestriction(session, "hide_profit") : true;
-  const money = { revenue: 0, fee: 0, cost: 0, profit: 0 };
+  const money = { revenue: 0, fee: 0, feeEst: 0, cost: 0, profit: 0 };
   if (showMoney) {
     const mr = (await db.execute(sql`
       SELECT o.seller_id,
         coalesce(sum(o.total),0)::numeric AS revenue,
         coalesce(sum(o.platform_fee),0)::numeric AS fee,
+        -- phần phí đang là ƯỚC TÍNH (%) → UI ghi rõ "Fee (est.)"
+        coalesce(sum(o.platform_fee) FILTER (WHERE o.fee_estimated),0)::numeric AS fee_est,
         coalesce(sum(oc.cost),0)::numeric AS cost,
         array_agg(DISTINCT o.platform::text) AS platforms
       FROM orders o
@@ -70,7 +72,7 @@ export async function GET(req: NextRequest) {
       ) oc ON oc.order_id = o.id
       WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash') ${own}
       GROUP BY o.seller_id
-    `)).rows as { seller_id: string | null; revenue: string; fee: string; cost: string; platforms: string[] }[];
+    `)).rows as { seller_id: string | null; revenue: string; fee: string; fee_est: string; cost: string; platforms: string[] }[];
     const mMap = new Map(mr.map((x) => [x.seller_id ?? "none", x]));
     for (const s of sellers) {
       const m = mMap.get(s.id ?? "none");
@@ -83,9 +85,10 @@ export async function GET(req: NextRequest) {
       (s as Record<string, unknown>).cost = cost; // chi phí fulfill (base cost + ship) gắn theo đơn
       (s as Record<string, unknown>).profit = hideProfit ? null : profit;
       (s as Record<string, unknown>).platforms = (m?.platforms ?? []).filter(Boolean);
-      money.revenue += revenue; money.fee += fee; money.cost += cost; money.profit += profit;
+      (s as Record<string, unknown>).feeEst = Number(m?.fee_est ?? 0);
+      money.revenue += revenue; money.fee += fee; money.feeEst += Number(m?.fee_est ?? 0); money.cost += cost; money.profit += profit;
     }
   }
 
-  return NextResponse.json({ ok: true, range, buckets, sellers, totals, showMoney, hideProfit, money: showMoney ? { revenue: money.revenue, fee: money.fee, cost: money.cost, profit: hideProfit ? null : money.profit } : null });
+  return NextResponse.json({ ok: true, range, buckets, sellers, totals, showMoney, hideProfit, money: showMoney ? { revenue: money.revenue, fee: money.fee, feeEst: money.feeEst, cost: money.cost, profit: hideProfit ? null : money.profit } : null });
 }
