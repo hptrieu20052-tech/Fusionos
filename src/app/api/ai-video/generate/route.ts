@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const image = String(b?.image ?? "").trim();
   const prompt = String(b?.prompt ?? "").trim();
+  const negativePrompt = String(b?.negativePrompt ?? "").trim().slice(0, 600);
   const duration = String(b?.duration ?? "5") === "10" ? "10" : "5";
   const aspectRatio = b?.aspectRatio && b.aspectRatio !== "auto" ? String(b.aspectRatio) : undefined;
   const model = String(b?.model ?? "").trim() || VIDEO_MODELS[0].id;
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
   if (!isVideoModel(model)) return NextResponse.json({ ok: false, error: "Invalid video model" }, { status: 400 });
 
   try {
-    const { requestId, statusUrl, responseUrl } = await falVideoSubmit(model, { prompt, imageUrl: image, duration, aspectRatio });
+    const { requestId, statusUrl, responseUrl } = await falVideoSubmit(model, { prompt, imageUrl: image, duration, aspectRatio, negativePrompt });
     return NextResponse.json({ ok: true, requestId, statusUrl, responseUrl, model });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 502 });

@@ -52,22 +52,35 @@ export async function seedreamEdit(
 //  VIDEO — image-to-video qua fal QUEUE (render lâu 1–4 phút → không chờ đồng bộ).
 // ============================================================================
 
-export type VideoModel = { id: string; name: string; note: string; aspect: boolean; audio: boolean };
+export type VideoModel = { id: string; name: string; note: string; aspect: boolean; audio: boolean; neg: boolean };
 // Danh sách model image-to-video (curated). Kling 2.1 = chuyển động tốt nhất; Seedance 2.0 = cùng nhà Seedream.
+// neg = model có tham số negative_prompt RIÊNG. Model không có (Seedance) → ghép vào cuối prompt: "Avoid: ...".
 export const VIDEO_MODELS: VideoModel[] = [
-  { id: "fal-ai/kling-video/v2.1/standard/image-to-video", name: "Kling 2.1 — best motion", note: "Chuyển động mượt, bám nhân vật tốt nhất. Tỷ lệ theo ảnh gốc.", aspect: false, audio: false },
-  { id: "bytedance/seedance-2.0/image-to-video", name: "Seedance 2.0 (ByteDance, +audio)", note: "Cùng nhà Seedream. Chọn tỷ lệ 9:16/1:1/16:9, có audio.", aspect: true, audio: true },
+  { id: "fal-ai/kling-video/v2.1/standard/image-to-video", name: "Kling 2.1 — best motion", note: "Chuyển động mượt, bám nhân vật tốt nhất. Tỷ lệ theo ảnh gốc.", aspect: false, audio: false, neg: true },
+  { id: "bytedance/seedance-2.0/image-to-video", name: "Seedance 2.0 (ByteDance, +audio)", note: "Cùng nhà Seedream. Chọn tỷ lệ 9:16/1:1/16:9, có audio.", aspect: true, audio: true, neg: false },
 ];
 const VIDEO_IDS = new Set(VIDEO_MODELS.map((m) => m.id));
 export function isVideoModel(id: string) { return VIDEO_IDS.has(id); }
 
+// Negative prompt mặc định (giữ nét chữ/logo trên áo, tránh lỗi tay & watermark) — dùng khi user để trống.
+export const DEFAULT_NEGATIVE = "blur, distortion, low quality, warped text, deformed logo, extra fingers, extra limbs, morphing face, flicker, watermark, subtitles";
+
 // Build input theo từng model (schema khác nhau).
-function videoInput(modelId: string, o: { prompt: string; imageUrl: string; duration: string; aspectRatio?: string }): Record<string, unknown> {
-  const prompt = o.prompt || "Animate this image with natural, smooth, cinematic motion. Keep the subject, colours and composition faithful to the original.";
+// LƯU Ý SCHEMA (fal, 2026-07):
+//   • kling v2.1 standard i2v : duration = CHUỖI "5"|"10", có negative_prompt, cfg_scale.
+//   • seedance-2.0 i2v        : duration = CHUỖI "auto"|"4".."15" (KHÔNG phải số),
+//                               resolution/aspect_ratio/generate_audio; KHÔNG có negative_prompt.
+function videoInput(modelId: string, o: { prompt: string; imageUrl: string; duration: string; aspectRatio?: string; negativePrompt?: string }): Record<string, unknown> {
+  let prompt = o.prompt || "Animate this image with natural, smooth, cinematic motion. Keep the subject, colours and composition faithful to the original.";
+  const neg = (o.negativePrompt ?? "").trim() || DEFAULT_NEGATIVE;
   const dur = o.duration === "10" ? "10" : "5";
   const base: Record<string, unknown> = { prompt, image_url: o.imageUrl };
-  if (modelId.includes("kling")) return { ...base, duration: dur, cfg_scale: 0.5 };
-  if (modelId.includes("seedance")) return { ...base, duration: Number(dur), resolution: "720p", ...(o.aspectRatio && o.aspectRatio !== "auto" ? { aspect_ratio: o.aspectRatio } : {}) };
+  if (modelId.includes("kling")) return { ...base, duration: dur, cfg_scale: 0.5, negative_prompt: neg };
+  if (modelId.includes("seedance")) {
+    // Seedance không có trường negative_prompt → ghép thành câu "Avoid: ..." ở cuối prompt.
+    prompt = `${prompt}\nAvoid: ${neg}.`;
+    return { prompt, image_url: o.imageUrl, duration: dur, resolution: "720p", ...(o.aspectRatio && o.aspectRatio !== "auto" ? { aspect_ratio: o.aspectRatio } : {}) };
+  }
   return { ...base, duration: dur };
 }
 
@@ -80,10 +93,20 @@ function assertFalUrl(u: string): string {
   return url.toString();
 }
 
+// FILE KẾT QUẢ không nằm trên fal.run: Kling trả v3.fal.media, Seedance trả storage.googleapis.com.
+// → whitelist riêng cho link media (vẫn chặn SSRF: chỉ https + đúng các host CDN của fal).
+const MEDIA_HOST = /(^|\.)(fal\.run|fal\.media|fal\.ai|googleapis\.com|cloudflarestorage\.com|r2\.dev)$/i;
+function assertMediaUrl(u: string): string {
+  let url: URL;
+  try { url = new URL(u); } catch { throw new Error("Link video trả về không hợp lệ"); }
+  if (url.protocol !== "https:" || !MEDIA_HOST.test(url.hostname)) throw new Error(`Link video không thuộc CDN của fal: ${url.hostname}`);
+  return url.toString();
+}
+
 /** Submit job image-to-video vào queue. Trả request_id + status_url + response_url (dùng để hỏi trạng thái). */
 export async function falVideoSubmit(
   modelId: string,
-  o: { prompt: string; imageUrl: string; duration: string; aspectRatio?: string },
+  o: { prompt: string; imageUrl: string; duration: string; aspectRatio?: string; negativePrompt?: string },
 ): Promise<{ requestId: string; statusUrl: string; responseUrl: string }> {
   const key = FAL_KEY();
   if (!key) throw new Error("FAL_KEY chưa cấu hình (thêm trong Vercel → Settings → Environment Variables).");
@@ -116,13 +139,19 @@ export async function falVideoPoll(statusUrl: string, responseUrl: string): Prom
   let sd: { status?: string };
   try { sd = JSON.parse(stext); } catch { throw new Error("fal video: status không phải JSON"); }
   const status = sd.status ?? "UNKNOWN";
-  if (status !== "COMPLETED") return { status };
+  // Job hỏng (FAILED/ERROR/CANCELLED) → báo lỗi NGAY thay vì để client quay vòng tới lúc timeout 7 phút.
+  if (status !== "COMPLETED") {
+    if (["IN_QUEUE", "IN_PROGRESS", "UNKNOWN"].includes(status)) return { status };
+    throw new Error(`fal video: job ${status} — ${stext.slice(0, 200)}`);
+  }
   const rres = await fetch(assertFalUrl(responseUrl), { headers: { Authorization: `Key ${key}` }, signal: AbortSignal.timeout(30000) });
   const rtext = await rres.text();
   if (!rres.ok) throw new Error(`fal video result HTTP ${rres.status}: ${rtext.slice(0, 200)}`);
-  let rd: { video?: { url?: string } };
+  let rd: { video?: { url?: string }; videos?: { url?: string }[]; output?: { video?: { url?: string } } };
   try { rd = JSON.parse(rtext); } catch { throw new Error("fal video: result không phải JSON"); }
-  const videoUrl = rd.video?.url;
-  if (!videoUrl) throw new Error("fal video: không có video trả về");
-  return { status, videoUrl: assertFalUrl(videoUrl) };
+  const videoUrl = rd.video?.url || rd.videos?.[0]?.url || rd.output?.video?.url;
+  if (!videoUrl) throw new Error(`fal video: không có video trả về — ${rtext.slice(0, 200)}`);
+  // ĐÂY LÀ CHỖ TỪNG LÀM HỎNG: file kết quả nằm trên v3.fal.media / storage.googleapis.com,
+  // KHÔNG phải fal.run → phải dùng assertMediaUrl, nếu dùng assertFalUrl sẽ luôn ném lỗi.
+  return { status, videoUrl: assertMediaUrl(videoUrl) };
 }

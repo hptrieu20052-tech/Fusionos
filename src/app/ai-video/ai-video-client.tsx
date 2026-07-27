@@ -2,11 +2,13 @@
 import { useEffect, useRef, useState } from "react";
 
 // Danh sách model image-to-video (khớp VIDEO_MODELS trong src/lib/ai/fal.ts).
-const MODELS: { id: string; name: string; note: string; aspect: boolean }[] = [
-  { id: "fal-ai/kling-video/v2.1/standard/image-to-video", name: "Kling 2.1 — best motion", note: "Smoothest, most faithful motion. Output ratio follows the source image.", aspect: false },
-  { id: "bytedance/seedance-2.0/image-to-video", name: "Seedance 2.0 (ByteDance, +audio)", note: "Same family as Seedream. Pick the aspect ratio, includes audio.", aspect: true },
+const MODELS: { id: string; name: string; note: string; aspect: boolean; neg: boolean }[] = [
+  { id: "fal-ai/kling-video/v2.1/standard/image-to-video", name: "Kling 2.1 — best motion", note: "Smoothest, most faithful motion. Output ratio follows the source image.", aspect: false, neg: true },
+  { id: "bytedance/seedance-2.0/image-to-video", name: "Seedance 2.0 (ByteDance, +audio)", note: "Same family as Seedream. Pick the aspect ratio, includes audio.", aspect: true, neg: false },
 ];
 const RATIOS = ["auto", "9:16", "1:1", "16:9"];
+// Negative prompt mặc định (khớp DEFAULT_NEGATIVE ở src/lib/ai/fal.ts) — bỏ trống là dùng cái này.
+const NEG_DEFAULT = "blur, distortion, low quality, warped text, deformed logo, extra fingers, extra limbs, morphing face, flicker, watermark, subtitles";
 
 const box: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 14, background: "#fff", padding: 18 };
 const lab: React.CSSProperties = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 5 };
@@ -20,6 +22,7 @@ export function GenVideoClient() {
   const [srcName, setSrcName] = useState<string>("");
   const [link, setLink] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [negPrompt, setNegPrompt] = useState("");
   const [model, setModel] = useState(MODELS[0].id);
   const [duration, setDuration] = useState<"5" | "10">("5");
   const [ratio, setRatio] = useState("auto");
@@ -35,11 +38,34 @@ export function GenVideoClient() {
 
   useEffect(() => () => { runId.current++; if (timerRef.current) clearInterval(timerRef.current); }, []);
 
+  // Ảnh quá nặng gửi thẳng dạng base64 sẽ vượt giới hạn body ~4.5MB của Vercel → request chết trước khi tới fal.
+  // → tự thu nhỏ về tối đa 1600px / JPEG q0.92 trước khi gửi (chất lượng video không đổi, model cũng chỉ render 720p).
+  const shrink = (dataUrl: string): Promise<string> => new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1600;
+      const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+      if (scale === 1 && dataUrl.length < 2_600_000) { resolve(dataUrl); return; }
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      const ctx = c.getContext("2d");
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      resolve(c.toDataURL("image/jpeg", 0.92));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
   const readFile = (f: File) => {
     if (!f.type.startsWith("image/")) { setMsg("✗ Image files only (PNG/JPG/WebP)"); return; }
     if (f.size > 15 * 1024 * 1024) { setMsg("✗ Image too large (>15MB)"); return; }
     const r = new FileReader();
-    r.onload = () => { setSrcData(String(r.result)); setSrcName(f.name); setResult(null); setMsg(""); };
+    r.onload = async () => {
+      const small = await shrink(String(r.result));
+      setSrcData(small); setSrcName(f.name); setResult(null); setMsg("");
+    };
     r.readAsDataURL(f);
   };
   const useLink = () => {
@@ -64,7 +90,7 @@ export function GenVideoClient() {
     try {
       const sub = await fetch("/api/ai-video/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: srcData, prompt, model, duration, aspectRatio: ratio }),
+        body: JSON.stringify({ image: srcData, prompt, negativePrompt: negPrompt, model, duration, aspectRatio: ratio }),
       }).then((r) => r.json());
       if (!sub.ok) { setMsg("✗ " + (sub.error ?? "Submit failed")); setBusy(false); stopTimer(); return; }
 
@@ -137,6 +163,24 @@ export function GenVideoClient() {
             <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2}
               placeholder="E.g. gentle camera push-in, character waves, sparkles drift… (optional)"
               style={{ ...ctl, resize: "vertical" }} />
+          </div>
+
+          {/* Negative prompt — thứ KHÔNG muốn xuất hiện trong video (chữ méo, tay thừa, watermark…) */}
+          <div style={{ marginTop: 12 }}>
+            <label style={lab}>Negative prompt (optional)</label>
+            <textarea value={negPrompt} onChange={(e) => setNegPrompt(e.target.value)} rows={2}
+              placeholder={NEG_DEFAULT}
+              style={{ ...ctl, resize: "vertical" }} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 5 }}>
+              <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.4 }}>
+                What must NOT appear. Leave empty to use the default above.
+                {!modelInfo.neg && " This model has no native negative field — it is appended to the prompt as \"Avoid: …\"."}
+              </div>
+              <button type="button" onClick={() => setNegPrompt(NEG_DEFAULT)}
+                style={{ flexShrink: 0, border: "1px solid var(--line)", background: "#F3F6FB", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>
+                Use default
+              </button>
+            </div>
           </div>
 
           {/* Model */}
