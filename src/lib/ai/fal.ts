@@ -57,7 +57,10 @@ export type VideoModel = { id: string; name: string; note: string; aspect: boole
 // neg = model có tham số negative_prompt RIÊNG. Model không có (Seedance) → ghép vào cuối prompt: "Avoid: ...".
 export const VIDEO_MODELS: VideoModel[] = [
   { id: "fal-ai/kling-video/v2.1/standard/image-to-video", name: "Kling 2.1 — best motion", note: "Chuyển động mượt, bám nhân vật tốt nhất. Tỷ lệ theo ảnh gốc.", aspect: false, audio: false, neg: true },
-  { id: "bytedance/seedance-2.0/image-to-video", name: "Seedance 2.0 (ByteDance, +audio)", note: "Cùng nhà Seedream. Chọn tỷ lệ 9:16/1:1/16:9, có audio.", aspect: true, audio: true, neg: false },
+  { id: "fal-ai/kling-video/v2.1/pro/image-to-video", name: "Kling 2.1 Pro — highest quality", note: "Nét hơn, chuyển động sạch hơn bản standard (giá cao hơn). Tỷ lệ theo ảnh gốc.", aspect: false, audio: false, neg: true },
+  { id: "bytedance/seedance-2.0/image-to-video", name: "Seedance 2.0 (ByteDance, +audio)", note: "Cùng nhà Seedream. Chọn tỷ lệ 9:16/1:1/16:9, có audio, hỗ trợ 1080p.", aspect: true, audio: true, neg: false },
+  // MULTI-IMAGE: nhận nhiều ảnh tham chiếu (@Image1, @Image2… trong prompt) → video nhiều cảnh/chuyển cảnh.
+  { id: "bytedance/seedance-2.0/reference-to-video", name: "Seedance 2.0 Multi-image — scenes", note: "2–4 ảnh → video nhiều cảnh. Prompt gọi ảnh bằng @Image1, @Image2…", aspect: true, audio: true, neg: false },
 ];
 const VIDEO_IDS = new Set(VIDEO_MODELS.map((m) => m.id));
 export function isVideoModel(id: string) { return VIDEO_IDS.has(id); }
@@ -70,16 +73,23 @@ export const DEFAULT_NEGATIVE = "blur, distortion, low quality, warped text, def
 //   • kling v2.1 standard i2v : duration = CHUỖI "5"|"10", có negative_prompt, cfg_scale.
 //   • seedance-2.0 i2v        : duration = CHUỖI "auto"|"4".."15" (KHÔNG phải số),
 //                               resolution/aspect_ratio/generate_audio; KHÔNG có negative_prompt.
-function videoInput(modelId: string, o: { prompt: string; imageUrl: string; duration: string; aspectRatio?: string; negativePrompt?: string }): Record<string, unknown> {
+function videoInput(modelId: string, o: { prompt: string; imageUrl: string; imageUrls?: string[]; duration: string; aspectRatio?: string; negativePrompt?: string; resolution?: string }): Record<string, unknown> {
   let prompt = o.prompt || "Animate this image with natural, smooth, cinematic motion. Keep the subject, colours and composition faithful to the original.";
   const neg = (o.negativePrompt ?? "").trim() || DEFAULT_NEGATIVE;
   const dur = o.duration === "10" ? "10" : "5";
+  const resolution = o.resolution === "1080p" ? "1080p" : "720p";
+  // MULTI-IMAGE (reference-to-video): field là image_urls (MẢNG, tối đa 9) — kiểm tra TRƯỚC vì id cũng chứa "seedance".
+  if (modelId.includes("reference-to-video")) {
+    const urls = (o.imageUrls ?? []).filter(Boolean).slice(0, 9);
+    prompt = `${prompt}\nAvoid: ${neg}.`;
+    return { prompt, image_urls: urls.length ? urls : [o.imageUrl], duration: dur, resolution, ...(o.aspectRatio && o.aspectRatio !== "auto" ? { aspect_ratio: o.aspectRatio } : {}) };
+  }
   const base: Record<string, unknown> = { prompt, image_url: o.imageUrl };
   if (modelId.includes("kling")) return { ...base, duration: dur, cfg_scale: 0.5, negative_prompt: neg };
   if (modelId.includes("seedance")) {
     // Seedance không có trường negative_prompt → ghép thành câu "Avoid: ..." ở cuối prompt.
     prompt = `${prompt}\nAvoid: ${neg}.`;
-    return { prompt, image_url: o.imageUrl, duration: dur, resolution: "720p", ...(o.aspectRatio && o.aspectRatio !== "auto" ? { aspect_ratio: o.aspectRatio } : {}) };
+    return { prompt, image_url: o.imageUrl, duration: dur, resolution, ...(o.aspectRatio && o.aspectRatio !== "auto" ? { aspect_ratio: o.aspectRatio } : {}) };
   }
   return { ...base, duration: dur };
 }
@@ -106,7 +116,7 @@ function assertMediaUrl(u: string): string {
 /** Submit job image-to-video vào queue. Trả request_id + status_url + response_url (dùng để hỏi trạng thái). */
 export async function falVideoSubmit(
   modelId: string,
-  o: { prompt: string; imageUrl: string; duration: string; aspectRatio?: string; negativePrompt?: string },
+  o: { prompt: string; imageUrl: string; imageUrls?: string[]; duration: string; aspectRatio?: string; negativePrompt?: string; resolution?: string },
 ): Promise<{ requestId: string; statusUrl: string; responseUrl: string }> {
   const key = FAL_KEY();
   if (!key) throw new Error("FAL_KEY chưa cấu hình (thêm trong Vercel → Settings → Environment Variables).");

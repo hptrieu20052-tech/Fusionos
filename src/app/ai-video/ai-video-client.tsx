@@ -2,10 +2,14 @@
 import { useEffect, useRef, useState } from "react";
 
 // Danh sách model image-to-video (khớp VIDEO_MODELS trong src/lib/ai/fal.ts).
-const MODELS: { id: string; name: string; note: string; aspect: boolean; neg: boolean }[] = [
-  { id: "fal-ai/kling-video/v2.1/standard/image-to-video", name: "Kling 2.1 — best motion", note: "Smoothest, most faithful motion. Output ratio follows the source image.", aspect: false, neg: true },
-  { id: "bytedance/seedance-2.0/image-to-video", name: "Seedance 2.0 (ByteDance, +audio)", note: "Same family as Seedream. Pick the aspect ratio, includes audio.", aspect: true, neg: false },
+const MODELS: { id: string; name: string; note: string; aspect: boolean; neg: boolean; res: boolean; multi: boolean }[] = [
+  { id: "fal-ai/kling-video/v2.1/standard/image-to-video", name: "Kling 2.1 — best motion", note: "Smoothest, most faithful motion. Output ratio follows the source image.", aspect: false, neg: true, res: false, multi: false },
+  { id: "fal-ai/kling-video/v2.1/pro/image-to-video", name: "Kling 2.1 Pro — highest quality", note: "Sharper detail and cleaner motion than standard (higher cost). Ratio follows the source image.", aspect: false, neg: true, res: false, multi: false },
+  { id: "bytedance/seedance-2.0/image-to-video", name: "Seedance 2.0 (ByteDance, +audio)", note: "Same family as Seedream. Pick the aspect ratio, includes audio, supports 1080p.", aspect: true, neg: false, res: true, multi: false },
+  { id: "bytedance/seedance-2.0/reference-to-video", name: "Seedance 2.0 Multi-image — scenes", note: "2–4 images → multi-scene video. Reference them in the prompt as @Image1, @Image2…", aspect: true, neg: false, res: true, multi: true },
 ];
+const MULTI_ID = "bytedance/seedance-2.0/reference-to-video";
+const MAX_IMAGES = 4; // giới hạn body ~4.5MB của Vercel (ảnh đã nén còn ~0.5–0.9MB/tấm)
 const RATIOS = ["auto", "9:16", "1:1", "16:9"];
 // Negative prompt mặc định (khớp DEFAULT_NEGATIVE ở src/lib/ai/fal.ts) — bỏ trống là dùng cái này.
 const NEG_DEFAULT = "blur, distortion, low quality, warped text, deformed logo, extra fingers, extra limbs, morphing face, flicker, watermark, subtitles";
@@ -18,14 +22,17 @@ const POLL_MS = 5000;
 const MAX_POLLS = 84; // ~7 phút
 
 export function GenVideoClient() {
-  const [srcData, setSrcData] = useState<string>("");
-  const [srcName, setSrcName] = useState<string>("");
+  // Nhiều ảnh nguồn (tối đa MAX_IMAGES). 1 ảnh = image-to-video thường; 2+ ảnh = multi-scene.
+  const [srcs, setSrcs] = useState<{ data: string; name: string }[]>([]);
   const [link, setLink] = useState("");
   const [prompt, setPrompt] = useState("");
   const [negPrompt, setNegPrompt] = useState("");
   const [model, setModel] = useState(MODELS[0].id);
   const [duration, setDuration] = useState<"5" | "10">("5");
   const [ratio, setRatio] = useState("auto");
+  const [reso, setReso] = useState<"720p" | "1080p">("720p");
+  const [scripting, setScripting] = useState(false);
+  const [idea, setIdea] = useState("");
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [msg, setMsg] = useState("");
@@ -35,8 +42,16 @@ export function GenVideoClient() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const modelInfo = MODELS.find((m) => m.id === model) ?? MODELS[0];
+  const srcData = srcs[0]?.data ?? ""; // ảnh đầu — dùng cho model 1-ảnh
 
   useEffect(() => () => { runId.current++; if (timerRef.current) clearInterval(timerRef.current); }, []);
+
+  // 2+ ảnh → bắt buộc model Multi-image; quay về 1 ảnh khi đang chọn Multi → trả về model mặc định.
+  useEffect(() => {
+    if (srcs.length > 1 && model !== MULTI_ID) setModel(MULTI_ID);
+    if (srcs.length <= 1 && model === MULTI_ID) setModel(MODELS[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [srcs.length]);
 
   // Ảnh quá nặng gửi thẳng dạng base64 sẽ vượt giới hạn body ~4.5MB của Vercel → request chết trước khi tới fal.
   // → tự thu nhỏ về tối đa 1600px / JPEG q0.92 trước khi gửi (chất lượng video không đổi, model cũng chỉ render 720p).
@@ -58,22 +73,49 @@ export function GenVideoClient() {
     img.src = dataUrl;
   });
 
-  const readFile = (f: File) => {
-    if (!f.type.startsWith("image/")) { setMsg("✗ Image files only (PNG/JPG/WebP)"); return; }
-    if (f.size > 15 * 1024 * 1024) { setMsg("✗ Image too large (>15MB)"); return; }
-    const r = new FileReader();
-    r.onload = async () => {
-      const small = await shrink(String(r.result));
-      setSrcData(small); setSrcName(f.name); setResult(null); setMsg("");
-    };
-    r.readAsDataURL(f);
+  const addSrc = (data: string, name: string) => {
+    setSrcs((prev) => {
+      if (prev.length >= MAX_IMAGES) { setMsg(`✗ Max ${MAX_IMAGES} images`); return prev; }
+      return [...prev, { data, name }];
+    });
+    setResult(null); setMsg("");
+  };
+  const readFiles = (files: FileList | File[]) => {
+    for (const f of Array.from(files)) {
+      if (!f.type.startsWith("image/")) { setMsg("✗ Image files only (PNG/JPG/WebP)"); continue; }
+      if (f.size > 15 * 1024 * 1024) { setMsg("✗ Image too large (>15MB)"); continue; }
+      const r = new FileReader();
+      r.onload = async () => addSrc(await shrink(String(r.result)), f.name);
+      r.readAsDataURL(f);
+    }
   };
   const useLink = () => {
     const u = link.trim();
     if (!/^https?:\/\/\S+/i.test(u)) { setMsg("✗ Link must start with http(s)://"); return; }
-    setSrcData(u); setSrcName(u.split("/").pop() || "link"); setResult(null); setMsg("");
+    addSrc(u, u.split("/").pop() || "link"); setLink("");
   };
-  const clearSrc = () => { setSrcData(""); setSrcName(""); setResult(null); };
+  const removeSrc = (i: number) => { setSrcs((prev) => prev.filter((_, k) => k !== i)); setResult(null); };
+  const clearSrc = () => { setSrcs([]); setResult(null); setIdea(""); };
+
+  // AI TỰ VIẾT KỊCH BẢN: gửi ảnh (+ prompt hiện tại làm gợi ý) → AI trả prompt/negative/duration/ratio, đổ vào form.
+  const aiScript = async () => {
+    if (!srcData) { setMsg("✗ Upload or paste a source image link first"); return; }
+    setScripting(true); setMsg("AI is writing the script…"); setIdea("");
+    try {
+      const r = await fetch("/api/ai-video/script", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ images: srcs.map((s) => s.data), notes: prompt }),
+      }).then((x) => x.json());
+      if (!r.ok) { setMsg("✗ " + (r.error ?? "Script failed")); setScripting(false); return; }
+      setPrompt(r.prompt ?? "");
+      setNegPrompt(r.negativePrompt ?? "");
+      if (r.duration === "5" || r.duration === "10") setDuration(r.duration);
+      if (modelInfo.aspect && ["9:16", "1:1", "16:9"].includes(r.aspectRatio)) setRatio(r.aspectRatio);
+      setIdea(r.idea ?? "");
+      setMsg("");
+    } catch { setMsg("✗ Network error — try again"); }
+    setScripting(false);
+  };
 
   const startTimer = () => {
     setElapsed(0);
@@ -90,7 +132,7 @@ export function GenVideoClient() {
     try {
       const sub = await fetch("/api/ai-video/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: srcData, prompt, negativePrompt: negPrompt, model, duration, aspectRatio: ratio }),
+        body: JSON.stringify({ image: srcData, images: srcs.map((s) => s.data), prompt, negativePrompt: negPrompt, model, duration, aspectRatio: ratio, resolution: reso }),
       }).then((r) => r.json());
       if (!sub.ok) { setMsg("✗ " + (sub.error ?? "Submit failed")); setBusy(false); stopTimer(); return; }
 
@@ -129,40 +171,70 @@ export function GenVideoClient() {
         {/* Nguồn + tuỳ chọn */}
         <div style={box}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 13 }}>Source image</div>
-            {srcData && (
+            <div style={{ fontWeight: 700, fontSize: 13 }}>
+              Source image{srcs.length > 1 ? `s (${srcs.length}/${MAX_IMAGES})` : ""}
+            </div>
+            {srcs.length > 0 && (
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => fileRef.current?.click()} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--blue)" }}>Change</button>
-                <button onClick={clearSrc} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--red)" }}>Remove</button>
+                {srcs.length < MAX_IMAGES && (
+                  <button onClick={() => fileRef.current?.click()} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--blue)" }}>+ Add image</button>
+                )}
+                <button onClick={clearSrc} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", color: "var(--red)" }}>Remove all</button>
               </div>
             )}
           </div>
-          <div onClick={() => { if (!srcData) fileRef.current?.click(); }}
+          <div onClick={() => { if (!srcs.length) fileRef.current?.click(); }}
             onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) readFile(f); }}
-            style={{ border: "2px dashed var(--line)", borderRadius: 12, minHeight: 240, display: "flex", alignItems: "center", justifyContent: "center", cursor: srcData ? "default" : "pointer", background: "#FAFBFD", overflow: "hidden" }}>
-            {srcData
+            onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files?.length) readFiles(e.dataTransfer.files); }}
+            style={{ border: "2px dashed var(--line)", borderRadius: 12, minHeight: srcs.length > 1 ? 150 : 240, display: "flex", alignItems: "center", justifyContent: "center", cursor: srcs.length ? "default" : "pointer", background: "#FAFBFD", overflow: "hidden", padding: srcs.length > 1 ? 8 : 0 }}>
+            {srcs.length === 0 && (
+              <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12.5, padding: 20 }}>
+                <div style={{ fontSize: 30, marginBottom: 6 }}>＋</div>
+                Drag & drop or click to choose (multiple allowed)<br />PNG / JPG / WebP · ≤ 15MB · up to {MAX_IMAGES} images = multi-scene
+              </div>
+            )}
+            {srcs.length === 1 && (
               // eslint-disable-next-line @next/next/no-img-element
-              ? <img src={srcData} alt="" style={{ maxWidth: "100%", maxHeight: 300, objectFit: "contain" }} />
-              : <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 12.5, padding: 20 }}>
-                  <div style={{ fontSize: 30, marginBottom: 6 }}>＋</div>
-                  Drag & drop or click to choose<br />PNG / JPG / WebP · ≤ 15MB
-                </div>}
+              <img src={srcs[0].data} alt="" style={{ maxWidth: "100%", maxHeight: 300, objectFit: "contain" }} />
+            )}
+            {srcs.length > 1 && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 8, width: "100%" }}>
+                {srcs.map((s, i) => (
+                  <div key={i} style={{ position: "relative", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", background: "#fff" }}>
+                    {/* Thứ tự = thứ tự cảnh: prompt gọi bằng @Image1, @Image2… */}
+                    <span style={{ position: "absolute", top: 4, left: 4, background: "#6D48C9", color: "#fff", fontSize: 10, fontWeight: 800, borderRadius: 6, padding: "1px 6px" }}>@Image{i + 1}</span>
+                    <button onClick={() => removeSrc(i)} title="Remove"
+                      style={{ position: "absolute", top: 4, right: 4, border: "none", background: "rgba(0,0,0,.55)", color: "#fff", borderRadius: 6, width: 18, height: 18, fontSize: 11, lineHeight: "18px", padding: 0, cursor: "pointer" }}>×</button>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={s.data} alt="" style={{ width: "100%", height: 110, objectFit: "cover", display: "block" }} />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); e.target.value = ""; }} />
-          {srcName && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{srcName}</div>}
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) readFiles(e.target.files); e.target.value = ""; }} />
+          {srcs.length === 1 && <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{srcs[0].name}</div>}
+          {srcs.length > 1 && <div style={{ fontSize: 11, color: "#6D48C9", marginTop: 6, fontWeight: 600 }}>Multi-scene mode: 1 scene per image, in this order. Press &quot;AI script&quot; to write the scene-by-scene script.</div>}
 
           <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
             <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="…or paste an image link (http/https)" style={{ ...ctl, flex: 1 }} onKeyDown={(e) => e.key === "Enter" && useLink()} />
             <button onClick={useLink} style={{ border: "1px solid var(--line)", background: "#F3F6FB", borderRadius: 10, padding: "0 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "var(--ink)" }}>Use link</button>
           </div>
 
-          {/* Prompt mô tả chuyển động (optional) */}
+          {/* Prompt mô tả chuyển động (optional) + nút AI tự viết kịch bản */}
           <div style={{ marginTop: 12 }}>
-            <label style={lab}>Motion prompt (optional)</label>
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={2}
-              placeholder="E.g. gentle camera push-in, character waves, sparkles drift… (optional)"
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 5 }}>
+              <label style={{ ...lab, marginBottom: 0 }}>Motion prompt (optional)</label>
+              <button type="button" onClick={aiScript} disabled={scripting || busy || !srcData}
+                title="AI looks at the image and writes a selling ad script (fills prompt, negative prompt, duration and ratio)"
+                style={{ border: "none", background: scripting || !srcData ? "#B9A8E8" : "#6D48C9", color: "#fff", borderRadius: 8, padding: "4px 12px", fontSize: 11.5, fontWeight: 800, cursor: scripting || !srcData ? "default" : "pointer" }}>
+                {scripting ? "Writing…" : "AI script"}
+              </button>
+            </div>
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={3}
+              placeholder={'E.g. gentle camera push-in, character waves… — or type a short idea ("cozy fall vibe") then press "AI script" to expand it'}
               style={{ ...ctl, resize: "vertical" }} />
+            {idea && <div style={{ fontSize: 11, color: "#6D48C9", marginTop: 5, fontWeight: 600 }}>Ad concept: {idea}</div>}
           </div>
 
           {/* Negative prompt — thứ KHÔNG muốn xuất hiện trong video (chữ méo, tay thừa, watermark…) */}
@@ -187,13 +259,14 @@ export function GenVideoClient() {
           <div style={{ marginTop: 12 }}>
             <label style={lab}>Model AI</label>
             <select value={model} onChange={(e) => setModel(e.target.value)} style={ctl}>
-              {MODELS.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {/* 2+ ảnh → chỉ model Multi-image dùng được (model 1-ảnh bị disable) */}
+              {MODELS.map((m) => <option key={m.id} value={m.id} disabled={srcs.length > 1 && !m.multi}>{m.name}</option>)}
             </select>
             <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5 }}>{modelInfo.note}</div>
           </div>
 
-          {/* Duration + Aspect */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+          {/* Duration + Aspect + Resolution */}
+          <div style={{ display: "grid", gridTemplateColumns: modelInfo.res ? "1fr 1fr 1fr" : "1fr 1fr", gap: 8, marginTop: 12 }}>
             <div>
               <label style={lab}>Duration</label>
               <select value={duration} onChange={(e) => setDuration(e.target.value === "10" ? "10" : "5")} style={ctl}>
@@ -207,6 +280,15 @@ export function GenVideoClient() {
                 {RATIOS.map((r) => <option key={r} value={r}>{r === "auto" ? "Auto" : r}</option>)}
               </select>
             </div>
+            {modelInfo.res && (
+              <div>
+                <label style={lab}>Resolution</label>
+                <select value={reso} onChange={(e) => setReso(e.target.value === "1080p" ? "1080p" : "720p")} style={ctl}>
+                  <option value="720p">720p</option>
+                  <option value="1080p">1080p (sharper)</option>
+                </select>
+              </div>
+            )}
           </div>
 
           <button onClick={generate} disabled={busy}
