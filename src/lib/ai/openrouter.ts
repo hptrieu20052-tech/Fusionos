@@ -5,7 +5,7 @@ const KEY = () => (process.env.OPENROUTER_API_KEY ?? "").trim();
 const TEXT_MODEL = () => (process.env.OPENROUTER_TEXT_MODEL ?? "anthropic/claude-3.5-sonnet").trim();
 
 // Gọi chat completions, ÉP trả JSON object. Ném lỗi rõ ràng để UI hiện.
-export async function orChatJSON<T>(system: string, user: string, opts?: { model?: string; maxTokens?: number; temperature?: number; images?: string[] }): Promise<T> {
+export async function orChatJSON<T>(system: string, user: string, opts?: { model?: string; maxTokens?: number; temperature?: number; images?: string[]; timeoutMs?: number }): Promise<T> {
   const key = KEY();
   if (!key) throw new Error("OPENROUTER_API_KEY chưa cấu hình trong env (Vercel → Settings → Environment Variables).");
   // Nếu có ảnh (data URL) → gửi multimodal: [text, image_url…]. Model text phải hỗ trợ vision.
@@ -31,7 +31,9 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
         temperature: opts?.temperature ?? 0.8,
       }),
       // Fail SỚM (75s) trước mốc ~100s của Cloudflare → trả lỗi JSON rõ ràng thay vì gateway 502.
-      signal: AbortSignal.timeout(75000),
+      // Route nào chạy trên Vercel maxDuration 60s PHẢI truyền timeoutMs < 60000, nếu không function
+      // bị Vercel giết trước khi kịp trả lỗi JSON → client chỉ thấy "Network error" vô nghĩa.
+      signal: AbortSignal.timeout(opts?.timeoutMs ?? 75000),
     });
   } catch (e) {
     const m = String((e as Error)?.message ?? e);

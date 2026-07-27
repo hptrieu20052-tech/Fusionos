@@ -60,7 +60,8 @@ export async function POST(req: NextRequest) {
     const user = multi + (notes
       ? `Extra direction from the seller (follow it): ${notes}`
       : "Write the best-selling ad script for it.");
-    const s = await orChatJSON<Script>(SYSTEM, user, { images, maxTokens: 1000, temperature: 0.8 });
+    // 50s < maxDuration 60s → nếu model chậm vẫn kịp trả lỗi JSON tử tế thay vì bị Vercel giết (client thấy "Network error").
+    const s = await orChatJSON<Script>(SYSTEM, user, { images, maxTokens: 1000, temperature: 0.8, timeoutMs: 50000 });
     const prompt = String(s?.prompt ?? "").trim();
     if (!prompt) throw new Error("AI không trả về kịch bản — thử lại.");
     return NextResponse.json({

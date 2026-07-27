@@ -20,6 +20,18 @@ const ctl: React.CSSProperties = { width: "100%", boxSizing: "border-box", borde
 
 const POLL_MS = 5000;
 const MAX_POLLS = 84; // ~7 phút
+const MAX_BODY = 4_200_000; // giới hạn body 4.5MB của Vercel — chặn trước ở client cho lỗi dễ hiểu
+
+// POST JSON và LUÔN trả về lỗi đọc được: server trả HTML/timeout (không phải JSON) thì hiện "HTTP <status>: <trích đoạn>"
+// thay vì "Network error" vô nghĩa.
+async function postJSON<T extends { ok?: boolean; error?: string }>(url: string, body: unknown): Promise<T> {
+  const payload = JSON.stringify(body);
+  if (payload.length > MAX_BODY) throw new Error("Images too large in total (>4MB after compress) — remove an image or use smaller ones");
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
+  const text = await res.text();
+  try { return JSON.parse(text) as T; }
+  catch { throw new Error(`HTTP ${res.status}${res.status === 413 ? " (payload too large)" : res.status === 504 ? " (server timeout)" : ""}: ${text.replace(/<[^>]+>/g, " ").trim().slice(0, 120) || "empty response"}`); }
+}
 
 export function GenVideoClient() {
   // Nhiều ảnh nguồn (tối đa MAX_IMAGES). 1 ảnh = image-to-video thường; 2+ ảnh = multi-scene.
@@ -102,18 +114,16 @@ export function GenVideoClient() {
     if (!srcData) { setMsg("✗ Upload or paste a source image link first"); return; }
     setScripting(true); setMsg("AI is writing the script…"); setIdea("");
     try {
-      const r = await fetch("/api/ai-video/script", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ images: srcs.map((s) => s.data), notes: prompt }),
-      }).then((x) => x.json());
+      const r = await postJSON<{ ok?: boolean; error?: string; prompt?: string; negativePrompt?: string; duration?: string; aspectRatio?: string; idea?: string }>(
+        "/api/ai-video/script", { images: srcs.map((s) => s.data), notes: prompt });
       if (!r.ok) { setMsg("✗ " + (r.error ?? "Script failed")); setScripting(false); return; }
       setPrompt(r.prompt ?? "");
       setNegPrompt(r.negativePrompt ?? "");
       if (r.duration === "5" || r.duration === "10") setDuration(r.duration);
-      if (modelInfo.aspect && ["9:16", "1:1", "16:9"].includes(r.aspectRatio)) setRatio(r.aspectRatio);
+      if (modelInfo.aspect && ["9:16", "1:1", "16:9"].includes(String(r.aspectRatio))) setRatio(String(r.aspectRatio));
       setIdea(r.idea ?? "");
       setMsg("");
-    } catch { setMsg("✗ Network error — try again"); }
+    } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? "Network error — try again")); }
     setScripting(false);
   };
 
@@ -130,10 +140,9 @@ export function GenVideoClient() {
     const myId = ++runId.current;
     setBusy(true); setResult(null); setMsg("Submitting…"); startTimer();
     try {
-      const sub = await fetch("/api/ai-video/generate", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: srcData, images: srcs.map((s) => s.data), prompt, negativePrompt: negPrompt, model, duration, aspectRatio: ratio, resolution: reso }),
-      }).then((r) => r.json());
+      const sub = await postJSON<{ ok?: boolean; error?: string; statusUrl?: string; responseUrl?: string }>(
+        "/api/ai-video/generate",
+        { image: srcData, images: srcs.map((s) => s.data), prompt, negativePrompt: negPrompt, model, duration, aspectRatio: ratio, resolution: reso });
       if (!sub.ok) { setMsg("✗ " + (sub.error ?? "Submit failed")); setBusy(false); stopTimer(); return; }
 
       const { statusUrl, responseUrl } = sub;
@@ -153,7 +162,7 @@ export function GenVideoClient() {
         if (st.done && st.url) { setResult({ url: st.url }); setMsg(""); setBusy(false); stopTimer(); return; }
       }
       setMsg("✗ Timed out (>7 min). Try a shorter duration or run again.");
-    } catch { setMsg("✗ Network error — try again"); }
+    } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? "Network error — try again")); }
     setBusy(false); stopTimer();
   };
 
