@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 
   // 1 DÒNG / ITEM (đơn nhiều sản phẩm → nhiều dòng, phần đơn lặp lại) — đủ link design + mockup để fulfill thẳng từ Excel.
   const rows = (await db.execute(sql`
-    SELECT o.external_id, o.order_label, o.platform, s.name AS store, u.full_name AS seller,
+    SELECT o.id AS oid, o.external_id, o.order_label, o.platform, s.name AS store, u.full_name AS seller,
       o.status, o.ordered_at::date AS ordered_date,
       oi.product_title, oi.variant, oi.qty, oi.personalization, oi.special_print, oi.internal_sku,
       d.sku_code AS design_sku, d.title AS design_title,
@@ -67,7 +67,16 @@ export async function GET(req: NextRequest) {
   `)).rows as Record<string, unknown>[];
 
   // Cột sắp theo LOGIC FULFILL: định danh đơn → sản phẩm + file in → địa chỉ ship → tiền → tracking.
+  // QUAN TRỌNG — CHỐNG CỘNG TRÙNG TIỀN:
+  //   Total / Fee / Base Cost là số của CẢ ĐƠN, không phải của từng item. Đơn nhiều sản phẩm sẽ
+  //   chiếm nhiều dòng; nếu in lại số tiền ở mọi dòng thì SUM() trong Excel bị thổi phồng.
+  //   → Chỉ in tiền ở DÒNG ĐẦU của mỗi đơn, các dòng item sau để TRỐNG ⇒ cột Total/Fee/Base Cost
+  //     luôn cộng ra đúng bằng số trên trang Orders/Finance.
+  const seenOrder = new Set<string>();
   const data = rows.map((r) => {
+    const oid = String(r.oid ?? r.external_id ?? "");
+    const firstRow = !seenOrder.has(oid);
+    if (firstRow) seenOrder.add(oid);
     const designLinks = String(r.design_keys ?? "").split("||").filter(Boolean).map((k) => fileUrl(k)).filter(Boolean).join(" | ");
     const mockupLink = fileUrl((r.mockup_key as string) || (r.design_mockup_key as string) || null) ?? "";
     // Order Label: dùng nhãn đã lưu; TRỐNG thì tự dựng theo đúng công thức UI: TÊNSTORE(bỏ ký tự đặc biệt, in hoa)-ExternalID.
@@ -88,20 +97,45 @@ export async function GET(req: NextRequest) {
       // — ĐỊA CHỈ SHIP —
       "Guest": r.buyer, "Addr1": r.addr1 ?? "", "Addr2": r.addr2 ?? "",
       "City": r.city ?? "", "State": r.state ?? "", "ZIP": r.zip ?? "", "Country": r.country,
-      // — TIỀN —
+      // — TIỀN (số của CẢ ĐƠN — chỉ in ở dòng đầu tiên của đơn, dòng item sau để trống) —
       // Fee Type: EST = phí ƯỚC TÍNH theo % của shop (sàn chưa quyết toán) · REAL = phí thật
-      "Total": Number(r.total), "Fee": Number(r.platform_fee), "Fee Type": r.fee_estimated ? "EST" : "REAL",
-      ...(hideProfit ? {} : { "Base Cost": Number(r.base_cost) }),
+      "Total": firstRow ? Number(r.total) : "", "Fee": firstRow ? Number(r.platform_fee) : "",
+      "Fee Type": firstRow ? (r.fee_estimated ? "EST" : "REAL") : "",
+      ...(hideProfit ? {} : { "Base Cost": firstRow ? Number(r.base_cost) : "" }),
       // — FULFILL/TRACKING —
       "Fulfiller": r.fulfiller ?? "", "FF Order ID": r.external_ff_id ?? "",
       "Tracking Number": r.tracking_number ?? "", "Carrier": r.tracking_carrier ?? "",
     };
   });
 
+  // SHEET 2 "By Order": 1 DÒNG / ĐƠN — đối chiếu thẳng với trang Orders & Finance, cộng cột nào cũng đúng.
+  const byOrder = new Map<string, Record<string, unknown>>();
+  for (const r of rows) {
+    const oid = String(r.oid ?? r.external_id ?? "");
+    const cur = byOrder.get(oid);
+    if (cur) { cur["Items"] = Number(cur["Items"] ?? 0) + (r.product_title ? 1 : 0); cur["Qty"] = Number(cur["Qty"] ?? 0) + Number(r.qty ?? 0); continue; }
+    const orderLabel = String(r.order_label ?? "").trim()
+      || [String(r.store ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase(), r.external_id].filter(Boolean).join("-");
+    byOrder.set(oid, {
+      "Order ID": r.external_id, "Order Label ID": orderLabel,
+      "Platform": r.platform, "Store": r.store ?? "", "Seller": r.seller ?? "",
+      "Status": r.status, "Order date": String(r.ordered_date ?? "").slice(0, 10),
+      "Items": r.product_title ? 1 : 0, "Qty": Number(r.qty ?? 0),
+      "Total": Number(r.total), "Fee": Number(r.platform_fee), "Fee Type": r.fee_estimated ? "EST" : "REAL",
+      "After Fee": Number((Number(r.total) - Number(r.platform_fee)).toFixed(2)),
+      ...(hideProfit ? {} : { "Base Cost": Number(r.base_cost) }),
+      "Fulfiller": r.fulfiller ?? "", "Tracking Number": r.tracking_number ?? "",
+    });
+  }
+  const summary = Array.from(byOrder.values());
+
   const ws = XLSX.utils.json_to_sheet(data);
   ws["!cols"] = Object.keys(data[0] ?? { a: 1 }).map((k) => ({ wch: Math.max(k.length + 2, 14) }));
+  const ws2 = XLSX.utils.json_to_sheet(summary);
+  ws2["!cols"] = Object.keys(summary[0] ?? { a: 1 }).map((k) => ({ wch: Math.max(k.length + 2, 14) }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Orders");
+  XLSX.utils.book_append_sheet(wb, ws2, "By Order");
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
 
   return new NextResponse(buf, {
