@@ -276,16 +276,23 @@ export function extractVinawayOrder(raw: unknown): {
     ...((root.amounts as Record<string, unknown>) ?? {}),
   };
   const track = ((o.tracking ?? o.shipment ?? {}) as Record<string, unknown>);
+  const base = firstNum(o.subtotal, o.sub_total, o.amount_subtotal, o.subtotal_amount, o.items_total);
+  const ship = firstNum(o.shipping, o.shipping_fee, o.amount_shipping, o.ship_fee, o.shipping_amount, o.shipping_cost);
+  const tax = firstNum(o.tax, o.tax_amount, o.tax_fee);
+  const designFee = firstNum(o.design_fee, o.designFee, o.amount_design_fee, o.design_cost, o.design_fee_amount);
+  const surcharge = firstNum(o.surcharge, o.surcharge_amount, o.extra_fee);
+  const discount = firstNum(o.discount, o.discount_amount);
+  const total = firstNum(o.actual_total, o.amount_total, o.total_amount, o.grand_total, o.total, o.estimate_total);
+  // BẪY ĐƠN VỊ (đã dính thật): API Vinaway trả tiền theo CENT — portal $15.18 → API 1518 → card từng hiện
+  // Base $750 / Total $1518. Nhận diện: MỌI số tiền đều là SỐ NGUYÊN → chia 100; có số lẻ → là dollar, giữ nguyên.
+  const vals = [base, ship, tax, designFee, surcharge, discount, total].filter((n): n is number => n != null);
+  const scale = vals.length && vals.every((n) => Number.isInteger(n)) ? 0.01 : 1;
+  const money = (n?: number) => (n == null ? undefined : Math.round(n * scale * 100) / 100);
   return {
     status: firstStr(o.status, o.order_status, o.state),
     trackingNumber: firstStr(o.tracking_number, o.tracking_code, o.trackingNumber, track.tracking_number, track.code, track.number),
     carrier: firstStr(o.carrier, o.shipping_carrier, o.tracking_company, track.carrier, track.company),
-    base: firstNum(o.subtotal, o.sub_total, o.amount_subtotal, o.subtotal_amount, o.items_total),
-    ship: firstNum(o.shipping, o.shipping_fee, o.amount_shipping, o.ship_fee, o.shipping_amount, o.shipping_cost),
-    tax: firstNum(o.tax, o.tax_amount, o.tax_fee),
-    designFee: firstNum(o.design_fee, o.designFee, o.amount_design_fee, o.design_cost, o.design_fee_amount),
-    surcharge: firstNum(o.surcharge, o.surcharge_amount, o.extra_fee),
-    discount: firstNum(o.discount, o.discount_amount),
-    total: firstNum(o.actual_total, o.amount_total, o.total_amount, o.grand_total, o.total, o.estimate_total),
+    base: money(base), ship: money(ship), tax: money(tax),
+    designFee: money(designFee), surcharge: money(surcharge), discount: money(discount), total: money(total),
   };
 }

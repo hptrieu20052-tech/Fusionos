@@ -204,13 +204,32 @@ export function extractLenfulOrder(root: Record<string, unknown>): {
     ...((root.summary as Record<string, unknown>) ?? {}),
   };
   const track = ((o.tracking ?? o.shipment ?? {}) as Record<string, unknown>);
+  // Tên field trực tiếp không trúng (đơn thật chỉ bóc được total, ship rơi vào base) → DÒ SÂU
+  // toàn bộ cây JSON (≤3 tầng) theo pattern tên tiền. Bỏ qua mảng để không dính "shippings":[0,1,2]
+  // (mảng MÃ shipping method lúc đẩy đơn — không phải tiền!).
+  const deepNum = (obj: unknown, re: RegExp, depth = 0): number | undefined => {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj) || depth > 3) return undefined;
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (re.test(k) && !Array.isArray(v) && (typeof v === "number" || typeof v === "string")) {
+        const n = Number(v); if (Number.isFinite(n) && n > 0) return n;
+      }
+    }
+    for (const v of Object.values(obj as Record<string, unknown>)) {
+      const r = deepNum(v, re, depth + 1); if (r !== undefined) return r;
+    }
+    return undefined;
+  };
+  const base = lNum(o.subtotal, o.sub_total, o.summary_amount, o.items_total, o.total_item)
+    ?? deepNum(root, /^(sub.?total|summary|item.?(total|price|amount)|product.?(total|price|amount))$/i);
+  const ship = lNum(o.shipping_fee, o.shipping, o.ship_fee, o.shipping_price, o.shipping_cost)
+    ?? deepNum(root, /^(ship(ping)?[._-]?(fee|cost|price|amount|total)|fee[._-]?ship(ping)?|total[._-]?ship(ping)?)$/i);
+  const tax = lNum(o.tax, o.tax_amount, o.tax_fee) ?? deepNum(root, /^(tax([._-]?(fee|amount|total))?)$/i);
+  const total = lNum(o.total, o.total_price, o.total_amount, o.grand_total, o.amount)
+    ?? deepNum(root, /^(grand.?total|total([._-]?(price|amount|cost))?)$/i);
   return {
     status: lStr(o.status, o.order_status, o.state),
     trackingNumber: lStr(o.tracking_number, o.tracking_code, o.trackingNumber, track.tracking_number, track.code, track.number),
     carrier: lStr(o.carrier, o.shipping_carrier, o.tracking_company, track.carrier, track.company),
-    base: lNum(o.subtotal, o.sub_total, o.summary_amount, o.items_total, o.total_item),
-    ship: lNum(o.shipping_fee, o.shipping, o.ship_fee, o.shipping_price, o.shipping_cost),
-    tax: lNum(o.tax, o.tax_amount, o.tax_fee),
-    total: lNum(o.total, o.total_price, o.total_amount, o.grand_total, o.amount),
+    base, ship, tax, total,
   };
 }

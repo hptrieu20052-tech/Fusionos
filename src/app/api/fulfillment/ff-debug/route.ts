@@ -9,6 +9,8 @@ import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchiz
 import { getPrintifyOrder, toISO2 } from "@/lib/printify";
 import { getFlashshipOrdersByCodes } from "@/lib/flashship";
 import { getCompassupTracking, getCompassupFees, type CompassupCred } from "@/lib/compassup";
+import { getLenfulOrder, extractLenfulOrder } from "@/lib/lenful";
+import { getVinawayOrder, extractVinawayOrder } from "@/lib/vinaway";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -94,6 +96,23 @@ export async function GET(req: NextRequest) {
         getCompassupFees(cc, ffo.externalFfId ?? "").catch((e) => ({ error: String((e as Error)?.message ?? e) })),
       ]);
       return NextResponse.json({ ok: true, fusion, sentAs: { order_id: ffo.externalFfId }, track, fees });
+    }
+
+    if (name.includes("lenful")) {
+      const lCred = {
+        endpoint: ff.apiEndpoint, userName: cred.userName || cred.user_name || cred.identifier || "",
+        password: cred.password || cred.apiKey || "", storeId: cred.storeId || cred.store_id || cred.shopId || "",
+      };
+      if (!lCred.userName || !lCred.password) return NextResponse.json({ ok: false, error: "Lenful: thiếu user_name / password" }, { status: 400 });
+      const raw = await getLenfulOrder(lCred, ffo.externalFfId ?? "");
+      return NextResponse.json({ ok: true, fusion, sentAs: { id: ffo.externalFfId, storeId: lCred.storeId || null }, parsed: raw ? extractLenfulOrder(raw) : null, raw });
+    }
+
+    if (name.includes("vinaway")) {
+      const vCred = { endpoint: ff.apiEndpoint, email: cred.email || cred.identifier || cred.userName || "", password: cred.password || cred.apiKey || "" };
+      if (!vCred.email || !vCred.password) return NextResponse.json({ ok: false, error: "Vinaway: thiếu email / password" }, { status: 400 });
+      const raw = await getVinawayOrder(vCred, ffo.externalFfId ?? "");
+      return NextResponse.json({ ok: true, fusion, sentAs: { id: ffo.externalFfId }, parsed: extractVinawayOrder(raw), raw });
     }
 
     if (name.includes("flashship") || name.includes("flashpod")) {
