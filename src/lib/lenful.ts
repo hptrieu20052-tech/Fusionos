@@ -156,3 +156,61 @@ export async function createLenfulOrder(cred: LenfulCred & { storeId: string }, 
   if (!id) throw new Error("Lenful order: no order id in response (" + text.slice(0, 200) + ")");
   return { id: String(id), raw: j };
 }
+
+// ============================================================================
+//  CHI TIẾT ĐƠN — API seller V6 KHÔNG công bố endpoint detail → thử lần lượt các path
+//  hay gặp; path nào trả 2xx JSON thì dùng (poll đã throttle nên vài request 404 là rẻ).
+//  Portal hiện: Summary (subtotal) · Shipping · Total · Payment/Transaction.
+// ============================================================================
+
+export async function getLenfulOrder(cred: LenfulCred & { storeId?: string }, id: string): Promise<Record<string, unknown> | null> {
+  const token = await lenfulToken(cred);
+  const base = baseOf(cred.endpoint);
+  const sid = (cred.storeId ?? "").trim();
+  const eid = encodeURIComponent(id);
+  const paths = [
+    sid ? `/api/order/${encodeURIComponent(sid)}/detail/${eid}` : "",
+    sid ? `/api/order/${encodeURIComponent(sid)}/${eid}` : "",
+    `/api/order/detail/${eid}`,
+    `/api/order/${eid}`,
+    `/api/seller/order/${eid}`,
+  ].filter(Boolean);
+  for (const p of paths) {
+    try {
+      const res = await fetch(`${base}${p}`, {
+        headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) continue;
+      const j = JSON.parse(await res.text()) as Record<string, unknown>;
+      const d = ((j?.data ?? j.order ?? j) ?? null) as Record<string, unknown> | null;
+      if (d && typeof d === "object" && Object.keys(d).length) return d;
+    } catch { /* thử path kế tiếp */ }
+  }
+  return null;
+}
+
+const lNum = (...vals: unknown[]): number | undefined => { for (const v of vals) { const n = Number(v); if (Number.isFinite(n) && n > 0) return n; } return undefined; };
+const lStr = (...vals: unknown[]): string | undefined => { for (const v of vals) { const s = (v == null ? "" : String(v)).trim(); if (s) return s; } return undefined; };
+
+/** Bóc chi phí + tracking từ detail Lenful (dò mềm nhiều tên field). */
+export function extractLenfulOrder(root: Record<string, unknown>): {
+  status?: string; trackingNumber?: string; carrier?: string;
+  base?: number; ship?: number; tax?: number; total?: number;
+} {
+  const o: Record<string, unknown> = {
+    ...root,
+    ...((root.pricing as Record<string, unknown>) ?? {}),
+    ...((root.summary as Record<string, unknown>) ?? {}),
+  };
+  const track = ((o.tracking ?? o.shipment ?? {}) as Record<string, unknown>);
+  return {
+    status: lStr(o.status, o.order_status, o.state),
+    trackingNumber: lStr(o.tracking_number, o.tracking_code, o.trackingNumber, track.tracking_number, track.code, track.number),
+    carrier: lStr(o.carrier, o.shipping_carrier, o.tracking_company, track.carrier, track.company),
+    base: lNum(o.subtotal, o.sub_total, o.summary_amount, o.items_total, o.total_item),
+    ship: lNum(o.shipping_fee, o.shipping, o.ship_fee, o.shipping_price, o.shipping_cost),
+    tax: lNum(o.tax, o.tax_amount, o.tax_fee),
+    total: lNum(o.total, o.total_price, o.total_amount, o.grand_total, o.amount),
+  };
+}

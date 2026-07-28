@@ -7,6 +7,8 @@ import { getOnosOrder, mapOnosStatus, isPaidWord } from "@/lib/onos";
 import { getCompassupTracking, getCompassupFees, type CompassupCred } from "@/lib/compassup";
 import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
+import { getVinawayOrder, extractVinawayOrder } from "@/lib/vinaway";
+import { getLenfulOrder, extractLenfulOrder } from "@/lib/lenful";
 import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
 import { toISO2 } from "@/lib/printify";
 import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
@@ -138,6 +140,17 @@ function mapMerchizeStatus(raw: string, hasTracking: boolean, paid = false): str
   return "";
 }
 
+// Map trạng thái CHUNG cho Lenful/Vinaway (API không có doc trạng thái chi tiết).
+// QUY TẮC như mọi nhà: chỉ "shipped" khi CÓ TRACKING hoặc chữ ship/transit rõ ràng.
+function mapGenericStatus(raw: string, hasTracking: boolean): string {
+  const s = (raw || "").toLowerCase();
+  if (/cancel|refund|reject/.test(s)) return "cancelled";
+  if (/deliver/.test(s)) return "delivered";
+  if (hasTracking || /ship|transit|picked|out.?for.?delivery/.test(s)) return "shipped";
+  if (/produc|process|print|packing|packed|fulfil|progress|approved|paid/.test(s)) return "in_production";
+  return "";
+}
+
 // Dò field CHI PHÍ (best-effort) từ response ONOS/Wembroidery — chỉ ghi khi > 0.
 // Số gộp → để cả vào base; nếu có tách ship/tax thì tách. Doc 2 nhà này chưa rõ tên field
 // nên dò rộng; sai thì đơn giữ nguyên cost cũ (không phá gì).
@@ -180,10 +193,13 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
       : name.includes("wembroidery") ? "wem"
       : name.includes("merchize") ? "merchize"
       : name.includes("flashship") ? "flashship"
-      : name.includes("compassup") ? "compassup" : null;
+      : name.includes("compassup") ? "compassup"
+      : name.includes("lenful") ? "lenful"
+      : name.includes("vinaway") ? "vinaway" : null;
     if (!kind) continue;
     const cred = (ff.credentials ?? {}) as Record<string, string>;
-    const apiKey = cred.apiKey || cred.accessToken || cred.apiToken || cred.bearerToken;
+    // Lenful/Vinaway đăng nhập bằng identifier + password (password có thể nằm ở apiKey)
+    const apiKey = cred.apiKey || cred.accessToken || cred.apiToken || cred.bearerToken || cred.password;
     if (!apiKey) { skipped++; continue; }
     if (await throttled(ff, !!opts.force)) { skipped++; continue; }
 
@@ -286,6 +302,34 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             const status = mapWemStatus(S(order.status), !!(trackingNumber || ffo.trackingNumber));
             const wc = wemCost(order);
             if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, carrier: carrier || undefined, cost: wc })) updated++;
+          } else if (kind === "vinaway") {
+            // Vinaway: GET /api/orders/{internal_order_id} → Pricing Details tách sẵn từng khoản
+            const raw = await getVinawayOrder({ endpoint: ff.apiEndpoint, email: cred.email || cred.identifier || cred.userName || "", password: cred.password || apiKey }, ffo.externalFfId!);
+            const v = extractVinawayOrder(raw);
+            const status = mapGenericStatus(v.status ?? "", !!(v.trackingNumber || ffo.trackingNumber)) || ffo.status;
+            const vFees: Record<string, number> = {};
+            if ((v.designFee ?? 0) > 0) vFees.design = v.designFee!;
+            if ((v.surcharge ?? 0) > 0) vFees.surcharge = v.surcharge!;
+            if ((v.discount ?? 0) > 0) vFees.discount = -v.discount!; // giảm giá = số ÂM trong fees
+            if (await applyUpdate(ffo, {
+              status, trackingNumber: v.trackingNumber, carrier: v.carrier,
+              cost: (v.total ?? 0) > 0 ? { base: v.base, ship: v.ship, tax: v.tax, fees: Object.keys(vFees).length ? vFees : undefined, total: v.total! } : undefined,
+            })) updated++;
+          } else if (kind === "lenful") {
+            // Lenful: API không public endpoint detail → getLenfulOrder tự dò path; không thấy thì bỏ qua êm
+            const lCred = {
+              endpoint: ff.apiEndpoint, userName: cred.userName || cred.user_name || cred.identifier || "",
+              password: cred.password || cred.apiKey || "", storeId: cred.storeId || cred.store_id || cred.shopId || "",
+            };
+            if (!lCred.userName || !lCred.password) { skipped++; return; }
+            const d = await getLenfulOrder(lCred, ffo.externalFfId!);
+            if (!d) { skipped++; return; }
+            const L = extractLenfulOrder(d);
+            const status = mapGenericStatus(L.status ?? "", !!(L.trackingNumber || ffo.trackingNumber)) || ffo.status;
+            if (await applyUpdate(ffo, {
+              status, trackingNumber: L.trackingNumber, carrier: L.carrier,
+              cost: (L.total ?? 0) > 0 ? { base: L.base, ship: L.ship, tax: L.tax, total: L.total! } : undefined,
+            })) updated++;
           } else {
             // Merchize: endpoint tracking trả kèm status (cancel/fulfilled/...) và ĐÔI KHI cả chi phí.
             // Đơn cũ lưu nhầm Mongo _id → fallback hỏi bằng external_number + identifier.

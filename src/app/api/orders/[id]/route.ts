@@ -103,7 +103,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       for (const [k, v] of Object.entries(ce.fees ?? {})) {
         const a = Number(v || 0); if (!a) continue;
         const dk = a.toFixed(2); if (seen.has(dk)) continue; seen.add(dk);
-        feeItems.push({ kind: k.startsWith("fc:") ? "branding" : k === "design" ? "design" : "surcharge", amount: a });
+        feeItems.push({ kind: k.startsWith("fc:") || k === "discount" ? "branding" : k === "design" ? "design" : "surcharge", amount: a });
       }
       f.feeBreakdown = { importTax: Number(ce.tax ?? 0), items: feeItems };
       if (hideProfit) { f.cost = null; f.baseCost = null; f.shipCost = null; f.extraFee = null; f.feeBreakdown = null; f.costEvents = null; }

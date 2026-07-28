@@ -244,3 +244,48 @@ export async function listVinawaySkus(cred: VinawayCred, page = 1, limit = 100):
   }).filter((v) => v.id);
   return { total: flexTotal(j, data.length), data, sample: raw.length ? JSON.stringify(raw[0]).slice(0, 600) : undefined };
 }
+
+// ============================================================================
+//  CHI TIẾT ĐƠN — GET /api/orders/{internal_order_id}: trạng thái + tracking + CHI PHÍ THẬT
+//  (Pricing Details bên portal: Subtotal · Shipping · Design Fee · Tax · Surcharge · Discount · Actual Total)
+// ============================================================================
+
+export async function getVinawayOrder(cred: VinawayCred, id: string): Promise<Record<string, unknown>> {
+  const { api, token } = await vinawaySession(cred);
+  const res = await vFetch(`${api}/orders/${encodeURIComponent(id)}`, {
+    headers: { Accept: "application/json", Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(20000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Vinaway order detail HTTP ${res.status}: ${text.slice(0, 200)}`);
+  try { return JSON.parse(text) as Record<string, unknown>; } catch { throw new Error("Vinaway order detail: not JSON"); }
+}
+
+/** Bóc chi phí + tracking từ detail. Field không có doc → dò MỀM nhiều tên (kể cả object pricing lồng). */
+export function extractVinawayOrder(raw: unknown): {
+  status?: string; trackingNumber?: string; carrier?: string;
+  base?: number; ship?: number; tax?: number; designFee?: number; surcharge?: number; discount?: number; total?: number;
+} {
+  const j = (raw ?? {}) as Record<string, unknown>;
+  const root = ((j.data ?? j.order ?? j) ?? {}) as Record<string, unknown>;
+  // Gộp các object giá hay gặp vào 1 chỗ để dò field
+  const o: Record<string, unknown> = {
+    ...root,
+    ...((root.pricing as Record<string, unknown>) ?? {}),
+    ...((root.price_details as Record<string, unknown>) ?? {}),
+    ...((root.amounts as Record<string, unknown>) ?? {}),
+  };
+  const track = ((o.tracking ?? o.shipment ?? {}) as Record<string, unknown>);
+  return {
+    status: firstStr(o.status, o.order_status, o.state),
+    trackingNumber: firstStr(o.tracking_number, o.tracking_code, o.trackingNumber, track.tracking_number, track.code, track.number),
+    carrier: firstStr(o.carrier, o.shipping_carrier, o.tracking_company, track.carrier, track.company),
+    base: firstNum(o.subtotal, o.sub_total, o.amount_subtotal, o.subtotal_amount, o.items_total),
+    ship: firstNum(o.shipping, o.shipping_fee, o.amount_shipping, o.ship_fee, o.shipping_amount, o.shipping_cost),
+    tax: firstNum(o.tax, o.tax_amount, o.tax_fee),
+    designFee: firstNum(o.design_fee, o.designFee, o.amount_design_fee, o.design_cost, o.design_fee_amount),
+    surcharge: firstNum(o.surcharge, o.surcharge_amount, o.extra_fee),
+    discount: firstNum(o.discount, o.discount_amount),
+    total: firstNum(o.actual_total, o.amount_total, o.total_amount, o.grand_total, o.total, o.estimate_total),
+  };
+}
