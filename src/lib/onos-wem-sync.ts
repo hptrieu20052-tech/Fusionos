@@ -46,11 +46,23 @@ async function openFfosOf(fulfillerId: string): Promise<OpenFfo[]> {
 
 async function applyUpdate(ffo: OpenFfo, upd: {
   status: string; trackingNumber?: string; trackingUrl?: string; carrier?: string;
-  // Giá THẬT từ nhà in (tùy nhà mới có). base/ship/tax để hiển thị; total để ghi bút toán.
-  cost?: { base?: number; ship?: number; tax?: number; total: number };
+  // Giá THẬT từ nhà in (tùy nhà mới có). base/ship/tax/fees để hiển thị; total để ghi bút toán.
+  // fees = các khoản phụ có tên (design/extra…) — hiện tách riêng trên card đơn.
+  cost?: { base?: number; ship?: number; tax?: number; fees?: Record<string, number>; total: number };
 }): Promise<boolean> {
-  const costChanged = !!(upd.cost && upd.cost.total > 0 && Math.abs(upd.cost.total - Number(ffo.cost ?? 0)) >= 0.005);
-  const changed = upd.status !== ffo.status || (upd.trackingNumber && upd.trackingNumber !== ffo.trackingNumber) || costChanged;
+  const c = upd.cost;
+  const total = c && c.total > 0 ? Math.round(c.total * 100) / 100 : 0;
+  const prevCe = (ffo.costEvents ?? {}) as { base?: number; ship?: number; tax?: number; fees?: Record<string, number> };
+  const fees = { ...(prevCe.fees ?? {}), ...(c?.fees ?? {}) };
+  const feeSum = Math.round(Object.values(fees).reduce((s, v) => s + Number(v || 0), 0) * 100) / 100;
+  const ship = c?.ship ?? 0, tax = c?.tax ?? 0;
+  // Nhà in không trả base riêng (vd Wembroidery chỉ trả total) → DẪN XUẤT base = total − ship − tax − fees.
+  // BUG CŨ: để base = TOTAL trong khi vẫn hiện Ship riêng → card ghi Base $22.10 · Ship $8.75 · Total $22.10.
+  const base = c?.base ?? Math.max(0, Math.round((total - ship - tax - feeSum) * 100) / 100);
+  const costChanged = !!(c && total > 0 && Math.abs(total - Number(ffo.cost ?? 0)) >= 0.005);
+  // Tự chữa đơn cũ: TỔNG đúng nhưng chi tiết sai/thiếu (base=total, thiếu design/tax) → vẫn ghi lại chi tiết.
+  const detailChanged = !!(c && total > 0 && (prevCe.base == null || Math.abs(base - Number(prevCe.base)) >= 0.005));
+  const changed = upd.status !== ffo.status || (upd.trackingNumber && upd.trackingNumber !== ffo.trackingNumber) || costChanged || detailChanged;
   if (!changed) return false;
 
   // ---- ĐƠN BỊ HUỶ bên supplier → hoàn cost + đơn về Cancel (giống flow webhook Merchize/Printify) ----
@@ -78,13 +90,13 @@ async function applyUpdate(ffo: OpenFfo, upd: {
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
 
   // GIÁ THẬT: nhà in trả cost (vd FlashShip total_fee) → ghi vào ffo + upsert bút toán qua rebalance.
-  // Nhà in trả 1 số gộp thì để tất cả vào baseCost (ship/tax = 0) — Total vẫn đúng.
-  if (upd.cost && upd.cost.total > 0 && upd.status !== "cancelled") {
-    const c = upd.cost;
-    const total = Math.round(c.total * 100) / 100;
+  // Nhà in trả 1 số gộp thì toàn bộ nằm ở baseCost (ship/tax/fees = 0) — Total vẫn đúng.
+  if (c && total > 0 && upd.status !== "cancelled" && (costChanged || detailChanged)) {
     await db.update(schema.fulfillmentOrders).set({
-      baseCost: (c.base ?? total).toFixed(2), shipCost: (c.ship ?? 0).toFixed(2),
-      extraFee: (c.tax ?? 0).toFixed(2), cost: total.toFixed(2),
+      baseCost: base.toFixed(2), shipCost: ship.toFixed(2),
+      extraFee: (Math.round((tax + feeSum) * 100) / 100).toFixed(2), cost: total.toFixed(2),
+      // Chi tiết từng khoản để card đơn tách riêng: base + ship + tax + fees(design/extra…)
+      costEvents: { ...prevCe, base, ship, tax, fees },
     }).where(eq(schema.fulfillmentOrders.id, ffo.id));
     await rebalanceOrderCost(ffo.orderId, `cost sync (poll)`);
   }
@@ -140,11 +152,19 @@ function onosCost(d: Record<string, unknown>): { base?: number; ship?: number; t
   const total = pickNum(d, ["total_cost", "total_fee", "total", "total_price", "amount"]) || (base + ship + tax);
   return total > 0 ? { base: base || undefined, ship: ship || undefined, tax: tax || undefined, total } : undefined;
 }
-function wemCost(o: Record<string, unknown>): { base?: number; ship?: number; tax?: number; total: number } | undefined {
-  const base = pickNum(o, ["baseCost", "productCost", "itemCost"]);
-  const ship = pickNum(o, ["shippingCost", "shipCost", "shippingFee"]);
-  const total = pickNum(o, ["totalCost", "total", "totalPrice", "grandTotal"]) || (base + ship);
-  return total > 0 ? { base: base || undefined, ship: ship || undefined, total } : undefined;
+function wemCost(o: Record<string, unknown>): { base?: number; ship?: number; tax?: number; fees?: Record<string, number>; total: number } | undefined {
+  // Hoá đơn Wembroidery gồm: Sub Total (base) + Extra Cost + Design cost + Shipping Fee + Tax = Total.
+  // Dò nhiều tên field vì API đặt tên không thống nhất; field nào không có thì applyUpdate tự dẫn xuất.
+  const base = pickNum(o, ["baseCost", "productCost", "itemCost", "subTotal", "subtotal", "sub_total"]);
+  const design = pickNum(o, ["designCost", "design_cost", "designFee", "design_fee"]);
+  const extra = pickNum(o, ["extraCost", "extra_cost", "extraFee", "extra_fee"]);
+  const ship = pickNum(o, ["shippingCost", "shipCost", "shippingFee", "shipping_fee"]);
+  const tax = pickNum(o, ["tax", "taxAmount", "tax_amount", "taxFee", "tax_fee"]);
+  const total = pickNum(o, ["totalCost", "total", "totalPrice", "grandTotal"]) || (base + design + extra + ship + tax);
+  const fees: Record<string, number> = {};
+  if (design > 0) fees.design = design;
+  if (extra > 0) fees.extra = extra;
+  return total > 0 ? { base: base || undefined, ship: ship || undefined, tax: tax || undefined, fees: Object.keys(fees).length ? fees : undefined, total } : undefined;
 }
 
 export async function syncOnosWem(opts: { force?: boolean } = {}) {

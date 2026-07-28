@@ -32,6 +32,8 @@ export async function syncPrintwayCost(cred: Cred, ffo: FfoLite): Promise<boolea
   await db.update(schema.fulfillmentOrders).set({
     baseCost: c.base.toFixed(2), shipCost: c.ship.toFixed(2),
     extraFee: c.tax.toFixed(2), cost: c.total.toFixed(2),
+    // Ghi chi tiết vào costEvents để card đơn TÁCH RIÊNG dòng thuế (giống Merchize)
+    costEvents: { base: c.base, ship: c.ship, tax: c.tax },
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
 
   // Bút toán base_cost = -(total). Note lúc đẩy có chứa external_ff_id; nếu id đã bị

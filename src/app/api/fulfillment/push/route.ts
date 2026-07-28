@@ -244,6 +244,8 @@ async function handlePush(req: NextRequest) {
   const [ffo] = await db.insert(schema.fulfillmentOrders).values({
     orderId: order.id, fulfillerId: ff.id, externalFfId,
     status: "pushed", cost: finalCost.toFixed(2), baseCost: finalBase.toFixed(2), shipCost: finalShip.toFixed(2), extraFee: finalTax.toFixed(2), pushedAt: new Date(),
+    // Chi tiết phí ngay từ lúc đẩy — card đơn tách riêng dòng thuế thay vì cục "Tax/fee"
+    costEvents: { base: finalBase, ship: finalShip, tax: finalTax },
     lines: pushedLines,
   }).returning();
 

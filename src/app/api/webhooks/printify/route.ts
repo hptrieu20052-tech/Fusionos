@@ -74,6 +74,8 @@ export async function POST(req: NextRequest) {
     patch.shipCost = (shipC / 100).toFixed(2);
     patch.extraFee = (taxC / 100).toFixed(2);
     patch.cost = ((baseC + shipC + taxC) / 100).toFixed(2);
+    // Ghi chi tiết vào costEvents để card đơn TÁCH RIÊNG dòng thuế (giống Merchize)
+    patch.costEvents = { base: baseC / 100, ship: shipC / 100, tax: taxC / 100 };
   }
   if (trackingNumber) {
     patch.trackingNumber = trackingNumber;

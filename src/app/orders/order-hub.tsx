@@ -1292,7 +1292,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                         const bdSum = bd ? bd.importTax + bd.items.reduce((s, x) => s + x.amount, 0) : 0;
                         // Chỉ tách khi breakdown khớp đúng số gộp (±1 cent) — dữ liệu cũ chưa có chi tiết thì giữ dòng Tax/fee gộp
                         const itemized = !!bd && bdSum > 0 && Math.abs(bdSum - Number(f.extraFee ?? 0)) < 0.011;
-                        const feeLabel = (k: string) => (k === "branding" ? t("o.branding") : t("o.surcharge"));
+                        const feeLabel = (k: string) => (k === "branding" ? t("o.branding") : k === "design" ? t("o.designFee") : t("o.surcharge"));
                         return (
                           <div className="o2-supcost" style={{ flexWrap: "wrap" }}>
                             <span>{t("o.baseCost")}: <b>{money(f.baseCost ?? 0)}</b></span>

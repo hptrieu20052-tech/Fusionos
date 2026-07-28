@@ -88,6 +88,8 @@ export async function syncPrintify(opts: { force?: boolean } = {}) {
           patch.shipCost = (shipC / 100).toFixed(2);
           patch.extraFee = (taxC / 100).toFixed(2);
           patch.cost = grand.toFixed(2);
+          // Ghi chi tiết vào costEvents để card đơn TÁCH RIÊNG dòng thuế (giống Merchize)
+          patch.costEvents = { base: baseC / 100, ship: shipC / 100, tax: taxC / 100 };
         }
 
         if (Object.keys(patch).length) {
