@@ -510,6 +510,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "o.surcharge": { vi: "Phụ phí sàn in", en: "Surcharge" },
   "o.branding": { vi: "Branding/giảm giá", en: "Branding/discount" },
   "o.designFee": { vi: "Phí design", en: "Design fee" },
+  "o.otherFee": { vi: "Phí khác", en: "Other fee" },
   "rep.chooseDates": { vi: "Chọn đủ ngày bắt đầu và kết thúc để xem dữ liệu.", en: "Select both start and end dates to view data." },
   "rep.totalItems": { vi: "tổng items", en: "total items" },
   "rep.totalOrders": { vi: "tổng đơn", en: "total orders" },

@@ -55,15 +55,28 @@ async function applyUpdate(ffo: OpenFfo, upd: {
   const c = upd.cost;
   const total = c && c.total > 0 ? Math.round(c.total * 100) / 100 : 0;
   const prevCe = (ffo.costEvents ?? {}) as { base?: number; ship?: number; tax?: number; fees?: Record<string, number> };
-  const fees = { ...(prevCe.fees ?? {}), ...(c?.fees ?? {}) };
-  const feeSum = Math.round(Object.values(fees).reduce((s, v) => s + Number(v || 0), 0) * 100) / 100;
+  // "other" là PHẦN DƯ tự tính — luôn bỏ bản cũ ra rồi tính lại, tránh cộng chồng khi field có tên được nhận diện thêm.
+  const fees: Record<string, number> = { ...(prevCe.fees ?? {}), ...(c?.fees ?? {}) };
+  delete fees.other;
+  let feeSum = Math.round(Object.values(fees).reduce((s, v) => s + Number(v || 0), 0) * 100) / 100;
   const ship = c?.ship ?? 0, tax = c?.tax ?? 0;
   // Nhà in không trả base riêng (vd Wembroidery chỉ trả total) → DẪN XUẤT base = total − ship − tax − fees.
   // BUG CŨ: để base = TOTAL trong khi vẫn hiện Ship riêng → card ghi Base $22.10 · Ship $8.75 · Total $22.10.
   const base = c?.base ?? Math.max(0, Math.round((total - ship - tax - feeSum) * 100) / 100);
+  // LƯỚI AN TOÀN: API có khoản không nhận diện được tên (Design cost, Extra Shipping Fee…) → phần dư
+  // total − (base+ship+tax+fees) thành dòng "Phí khác", đảm bảo cộng dọc LUÔN bằng Total.
+  if (c?.base != null && total > 0) {
+    const leftover = Math.round((total - base - ship - tax - feeSum) * 100) / 100;
+    if (leftover >= 0.01) { fees.other = leftover; feeSum = Math.round((feeSum + leftover) * 100) / 100; }
+  }
   const costChanged = !!(c && total > 0 && Math.abs(total - Number(ffo.cost ?? 0)) >= 0.005);
-  // Tự chữa đơn cũ: TỔNG đúng nhưng chi tiết sai/thiếu (base=total, thiếu design/tax) → vẫn ghi lại chi tiết.
-  const detailChanged = !!(c && total > 0 && (prevCe.base == null || Math.abs(base - Number(prevCe.base)) >= 0.005));
+  // Tự chữa đơn cũ: TỔNG đúng nhưng chi tiết sai/thiếu (base=total, thiếu design/tax, thiếu phần dư "Phí khác")
+  // → so cả base LẪN tổng phụ phí; lệch cái nào cũng ghi lại chi tiết.
+  const prevExtra = Math.round((Number(prevCe.tax ?? 0) + Object.values(prevCe.fees ?? {}).reduce((s, v) => s + Number(v || 0), 0)) * 100) / 100;
+  const newExtra = Math.round((tax + feeSum) * 100) / 100;
+  const detailChanged = !!(c && total > 0 && (
+    prevCe.base == null || Math.abs(base - Number(prevCe.base)) >= 0.005 || Math.abs(newExtra - prevExtra) >= 0.005
+  ));
   const changed = upd.status !== ffo.status || (upd.trackingNumber && upd.trackingNumber !== ffo.trackingNumber) || costChanged || detailChanged;
   if (!changed) return false;
 
@@ -169,8 +182,8 @@ function wemCost(o: Record<string, unknown>): { base?: number; ship?: number; ta
   // Hoá đơn Wembroidery gồm: Sub Total (base) + Extra Cost + Design cost + Shipping Fee + Tax = Total.
   // Dò nhiều tên field vì API đặt tên không thống nhất; field nào không có thì applyUpdate tự dẫn xuất.
   const base = pickNum(o, ["baseCost", "productCost", "itemCost", "subTotal", "subtotal", "sub_total"]);
-  const design = pickNum(o, ["designCost", "design_cost", "designFee", "design_fee"]);
-  const extra = pickNum(o, ["extraCost", "extra_cost", "extraFee", "extra_fee"]);
+  const design = pickNum(o, ["designCost", "design_cost", "designFee", "design_fee", "designPrice", "design_price", "designTotal", "design_total", "totalDesignFee", "designAmount"]);
+  const extra = pickNum(o, ["extraCost", "extra_cost", "extraFee", "extra_fee", "extraShippingFee", "extra_shipping_fee", "extraShipFee"]);
   const ship = pickNum(o, ["shippingCost", "shipCost", "shippingFee", "shipping_fee"]);
   const tax = pickNum(o, ["tax", "taxAmount", "tax_amount", "taxFee", "tax_fee"]);
   const total = pickNum(o, ["totalCost", "total", "totalPrice", "grandTotal"]) || (base + design + extra + ship + tax);
