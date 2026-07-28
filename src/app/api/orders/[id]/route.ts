@@ -93,7 +93,20 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     items: itemsOut,
     ffOrders: ffOrders.map((x) => {
       const f = { ...x.f, fulfillerName: x.name } as Record<string, unknown>;
-      if (hideProfit) { f.cost = null; f.baseCost = null; f.shipCost = null; f.extraFee = null; }
+      // TÁCH RIÊNG từng khoản phí cho seller nắm rõ (thay vì gộp cục "Tax/fee"):
+      //   costEvents.tax  = import tax (poll đọc từ catalog Merchize)
+      //   costEvents.fees = surcharge ("sur:...") / branding-discount ("fc:...") từ webhook
+      // Gộp entry CÙNG SỐ TIỀN — đúng quy tắc dedup khi tính cost, để breakdown luôn khớp Total.
+      const ce = (x.f.costEvents ?? {}) as { tax?: number; fees?: Record<string, number> };
+      const seen = new Set<string>();
+      const feeItems: { kind: string; amount: number }[] = [];
+      for (const [k, v] of Object.entries(ce.fees ?? {})) {
+        const a = Number(v || 0); if (!a) continue;
+        const dk = a.toFixed(2); if (seen.has(dk)) continue; seen.add(dk);
+        feeItems.push({ kind: k.startsWith("fc:") ? "branding" : "surcharge", amount: a });
+      }
+      f.feeBreakdown = { importTax: Number(ce.tax ?? 0), items: feeItems };
+      if (hideProfit) { f.cost = null; f.baseCost = null; f.shipCost = null; f.extraFee = null; f.feeBreakdown = null; f.costEvents = null; }
       return f;
     }),
     fulfillerOptions: hideProfit ? options.map((o) => ({ ...o, estCost: null })) : options,

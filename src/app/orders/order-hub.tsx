@@ -92,7 +92,7 @@ type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unit
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; nonPod?: boolean; gsheet?: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
 type Opt = { id: string; name: string; marketplace?: string };
-type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number }[] | null };
+type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; feeBreakdown?: { importTax: number; items: { kind: string; amount: number }[] } | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number }[] | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -1286,15 +1286,27 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                           ))}
                         </div>
                       )}
-                      {/* Chi phí supplier */}
-                      {(f.baseCost != null || f.shipCost != null) && (
-                        <div className="o2-supcost">
-                          <span>{t("o.baseCost")}: <b>{money(f.baseCost ?? 0)}</b></span>
-                          <span>{t("o.shipFee")}: <b>{money(f.shipCost ?? 0)}</b></span>
-                          {Number(f.extraFee ?? 0) !== 0 && <span>{t("o.taxFee")}: <b>{money(f.extraFee ?? 0)}</b></span>}
-                          <span className="tot">{t("o.total")}: <b>{money(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0) + Number(f.extraFee ?? 0)))}</b></span>
-                        </div>
-                      )}
+                      {/* Chi phí supplier — TÁCH RIÊNG từng khoản cho seller nắm rõ */}
+                      {(f.baseCost != null || f.shipCost != null) && (() => {
+                        const bd = f.feeBreakdown;
+                        const bdSum = bd ? bd.importTax + bd.items.reduce((s, x) => s + x.amount, 0) : 0;
+                        // Chỉ tách khi breakdown khớp đúng số gộp (±1 cent) — dữ liệu cũ chưa có chi tiết thì giữ dòng Tax/fee gộp
+                        const itemized = !!bd && bdSum > 0 && Math.abs(bdSum - Number(f.extraFee ?? 0)) < 0.011;
+                        const feeLabel = (k: string) => (k === "branding" ? t("o.branding") : t("o.surcharge"));
+                        return (
+                          <div className="o2-supcost" style={{ flexWrap: "wrap" }}>
+                            <span>{t("o.baseCost")}: <b>{money(f.baseCost ?? 0)}</b></span>
+                            <span>{t("o.shipFee")}: <b>{money(f.shipCost ?? 0)}</b></span>
+                            {itemized ? (<>
+                              {bd!.importTax > 0 && <span>{t("o.importTax")}: <b>{money(bd!.importTax)}</b></span>}
+                              {bd!.items.map((x, i) => <span key={i}>{feeLabel(x.kind)}: <b>{money(x.amount)}</b></span>)}
+                            </>) : (
+                              Number(f.extraFee ?? 0) !== 0 && <span>{t("o.taxFee")}: <b>{money(f.extraFee ?? 0)}</b></span>
+                            )}
+                            <span className="tot">{t("o.total")}: <b>{money(f.cost ?? (Number(f.baseCost ?? 0) + Number(f.shipCost ?? 0) + Number(f.extraFee ?? 0)))}</b></span>
+                          </div>
+                        );
+                      })()}
                       {/* Tracking gọn 1 hàng */}
                       {f.trackingNumber ? (
                         <div className="o2-track-row">
