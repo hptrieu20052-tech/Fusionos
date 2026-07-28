@@ -159,8 +159,10 @@ function mapGenericStatus(raw: string, hasTracking: boolean): string {
   const s = (raw || "").toLowerCase();
   if (/cancel|refund|reject/.test(s)) return "cancelled";
   if (/deliver/.test(s)) return "delivered";
-  if (hasTracking || /ship|transit|picked|out.?for.?delivery/.test(s)) return "shipped";
-  if (/produc|process|print|packing|packed|fulfil|progress|approved|paid/.test(s)) return "in_production";
+  // "Picked" của Lenful = MỚI NHẶT VÀO SẢN XUẤT (chưa có tracking) → KHÔNG được map shipped.
+  // shipped chỉ khi CÓ TRACKING hoặc chữ ship/transit rõ ràng — đúng quy tắc chung toàn hệ thống.
+  if (hasTracking || /ship|transit|out.?for.?delivery/.test(s)) return "shipped";
+  if (/produc|process|print|packing|packed|picked|fulfil|progress|approved|paid/.test(s)) return "in_production";
   return "";
 }
 

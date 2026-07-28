@@ -219,12 +219,19 @@ export function extractLenfulOrder(root: Record<string, unknown>): {
     }
     return undefined;
   };
-  const base = lNum(o.subtotal, o.sub_total, o.summary_amount, o.items_total, o.total_item)
-    ?? deepNum(root, /^(sub.?total|summary|item.?(total|price|amount)|product.?(total|price|amount))$/i);
+  // TÊN FIELD THẬT (xác nhận từ ff-debug đơn GUTLINGARTSSHOP-4126087553):
+  //   root.subtotal_price = 5.5 (base) · root.total_price = 13 (total)
+  //   SHIP KHÔNG có ở root — nằm trong items[]: mỗi item có shipping_price (7.5) + shipping_xbase
+  //   (first_item_price/second_item_price chỉ là BẢNG GIÁ tier, không cộng!)
+  const items = Array.isArray(root.items) ? (root.items as Record<string, unknown>[]) : [];
+  const shipFromItems = Math.round(items.reduce((s, it) => s + (Number(it?.shipping_price) || 0) + (Number(it?.shipping_xbase) || 0), 0) * 100) / 100;
+  const base = lNum(o.subtotal_price, o.subtotal, o.sub_total, o.summary_amount, o.items_total, o.total_item)
+    ?? deepNum(root, /^(sub.?total([._-]?price)?|summary|item.?(total|price|amount)|product.?(total|price|amount))$/i);
   const ship = lNum(o.shipping_fee, o.shipping, o.ship_fee, o.shipping_price, o.shipping_cost)
+    ?? (shipFromItems > 0 ? shipFromItems : undefined)
     ?? deepNum(root, /^(ship(ping)?[._-]?(fee|cost|price|amount|total)|fee[._-]?ship(ping)?|total[._-]?ship(ping)?)$/i);
   const tax = lNum(o.tax, o.tax_amount, o.tax_fee) ?? deepNum(root, /^(tax([._-]?(fee|amount|total))?)$/i);
-  const total = lNum(o.total, o.total_price, o.total_amount, o.grand_total, o.amount)
+  const total = lNum(o.total_price, o.total, o.total_amount, o.grand_total, o.amount)
     ?? deepNum(root, /^(grand.?total|total([._-]?(price|amount|cost))?)$/i);
   return {
     status: lStr(o.status, o.order_status, o.state),
