@@ -48,9 +48,9 @@ export async function POST(req: NextRequest) {
     const shippingCost = num(r.shipping_cost);
     const eventId = String(b?.event_id ?? b?.event_time ?? "");
 
-    // Bản ghi chi phí hiện có: { base, ship, fees: { [eventId]: amount } }. Áp lại cùng eventId → ghi đè, không cộng trùng.
-    const prev = (ffo.costEvents ?? {}) as { base?: number; ship?: number; fees?: Record<string, number> };
-    const ce = { base: prev.base, ship: prev.ship, fees: { ...(prev.fees ?? {}) } };
+    // Bản ghi chi phí hiện có: { base, ship, tax (import tax do poll ghi), fees: { [key]: amount } }.
+    const prev = (ffo.costEvents ?? {}) as { base?: number; ship?: number; tax?: number; fees?: Record<string, number> };
+    const ce = { base: prev.base, ship: prev.ship, tax: prev.tax, fees: { ...(prev.fees ?? {}) } };
 
     if (fulfillmentCost !== undefined || shippingCost !== undefined) {
       if (fulfillmentCost !== undefined) ce.base = fulfillmentCost;
@@ -60,15 +60,24 @@ export async function POST(req: NextRequest) {
       if (branding || discount) ce.fees[`fc:${eventId}`] = branding - discount;
     } else if (/SURCHARGE|TRANSACTION|FEE|TAX/.test(ev)) {
       const amt = num(r.price) ?? num(r.amount) ?? num(r.tax) ?? num(r.tax_amount) ?? 0;
-      ce.fees[eventId || `fee:${b?.event_time ?? Date.now()}`] = amt;
+      // BUG CŨ (surcharge $3.50 hiện thành $7.00): key theo event_id, nhưng Merchize bắn CÙNG MỘT
+      // khoản phụ phí qua NHIỀU event (tạo → trả tiền → cập nhật), mỗi event một event_id → cộng trùng.
+      // → key theo ID của KHOẢN PHÍ (fallback: số tiền). Event lặp lại chỉ GHI ĐÈ, không cộng thêm.
+      const feeKey = `sur:${String(r._id ?? r.id ?? r.surcharge_id ?? r.code ?? amt.toFixed(2))}`;
+      ce.fees[feeKey] = amt;
     } else {
       return NextResponse.json({ ok: true, matched: ffo.id, skipped: "payment event without cost" });
     }
 
     const base = Number(ce.base ?? ffo.baseCost ?? 0);
     const ship = Number(ce.ship ?? ffo.shipCost ?? 0);
-    const extra = Object.values(ce.fees).reduce((s, v) => s + Number(v || 0), 0);
-    const total = base + ship + extra;
+    // Tự chữa dữ liệu cũ đã lỡ cộng trùng: GỘP các entry CÙNG SỐ TIỀN thành một
+    // (2 khoản phí khác nhau mà trùng số tiền y hệt trên cùng 1 đơn là cực hiếm — chấp nhận đánh đổi).
+    const seenAmt = new Set<string>(); let feeSum = 0;
+    for (const v of Object.values(ce.fees)) { const k = Number(v || 0).toFixed(2); if (seenAmt.has(k)) continue; seenAmt.add(k); feeSum += Number(v || 0); }
+    // extra = phụ phí (dedup) + import tax (poll ghi vào ce.tax — webhook Merchize không bắn import tax)
+    const extra = Math.round((feeSum + Number(ce.tax ?? 0)) * 100) / 100;
+    const total = Math.round((base + ship + extra) * 100) / 100;
 
     await db.update(schema.fulfillmentOrders).set({
       baseCost: base.toFixed(2), shipCost: ship.toFixed(2), extraFee: extra.toFixed(2), cost: total.toFixed(2), costEvents: ce,

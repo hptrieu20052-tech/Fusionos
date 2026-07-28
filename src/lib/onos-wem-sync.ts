@@ -23,7 +23,7 @@ import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
 const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 const arrOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []);
 
-type OpenFfo = { id: string; orderId: string; externalFfId: string | null; status: string; trackingNumber: string | null; cost: string | null; extNumber: string | null; country: string | null };
+type OpenFfo = { id: string; orderId: string; externalFfId: string | null; status: string; trackingNumber: string | null; cost: string | null; costEvents: unknown; extNumber: string | null; country: string | null };
 
 async function openFfosOf(fulfillerId: string): Promise<OpenFfo[]> {
   // Kèm external_number của đơn (orderLabel > externalId) để fallback hỏi Merchize khi
@@ -32,7 +32,7 @@ async function openFfosOf(fulfillerId: string): Promise<OpenFfo[]> {
     id: schema.fulfillmentOrders.id, orderId: schema.fulfillmentOrders.orderId,
     externalFfId: schema.fulfillmentOrders.externalFfId, status: schema.fulfillmentOrders.status,
     trackingNumber: schema.fulfillmentOrders.trackingNumber,
-    cost: schema.fulfillmentOrders.cost,
+    cost: schema.fulfillmentOrders.cost, costEvents: schema.fulfillmentOrders.costEvents,
     label: schema.orders.orderLabel, ext: schema.orders.externalId, country: schema.orders.country,
   }).from(schema.fulfillmentOrders)
     .innerJoin(schema.orders, eq(schema.orders.id, schema.fulfillmentOrders.orderId))
@@ -283,13 +283,22 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             if (await applyUpdate(ffo, { status, trackingNumber: t.trackingNumber, trackingUrl: t.trackingUrl, carrier: t.carrier })) updated++;
 
             // CHI PHÍ: Merchize chỉ bắn tiền qua webhook PAYMENT — webhook không tới thì đơn kẹt ở
-            // giá SKU mapping (thiếu import tax). Nếu poll trả về giá thì ghi đè + cân lại sổ.
+            // giá SKU mapping (thiếu import tax). Poll trả về giá thì MERGE + cân lại sổ.
+            // BUG CŨ: poll GHI ĐÈ extraFee = import tax → XOÁ MẤT surcharge nhận qua webhook; còn
+            // webhook lại không biết import tax → hai bên giẫm nhau, Tax/fee nhảy số loạn xạ.
+            // Giờ: import tax lưu vào costEvents.tax, GIỮ nguyên fees (surcharge) của webhook,
+            // extra = tax + Σfees (gộp entry CÙNG SỐ TIỀN — tự chữa dữ liệu cũ bị cộng trùng theo event_id).
             const base = t.fulfillmentCost, ship = t.shippingCost ?? 0, tax = t.importTax ?? 0;
             if (base != null && status !== "cancelled") {
-              const total = Math.round((base + ship + tax) * 100) / 100;
+              const prevCe = (ffo.costEvents ?? {}) as { base?: number; ship?: number; tax?: number; fees?: Record<string, number> };
+              const seenAmt = new Set<string>(); let feeSum = 0;
+              for (const v of Object.values(prevCe.fees ?? {})) { const k = Number(v || 0).toFixed(2); if (seenAmt.has(k)) continue; seenAmt.add(k); feeSum += Number(v || 0); }
+              const extra = Math.round((tax + feeSum) * 100) / 100;
+              const total = Math.round((base + ship + extra) * 100) / 100;
               if (total > 0 && Math.abs(total - Number(ffo.cost ?? 0)) >= 0.005) {
                 await db.update(schema.fulfillmentOrders).set({
-                  baseCost: base.toFixed(2), shipCost: ship.toFixed(2), extraFee: tax.toFixed(2), cost: total.toFixed(2),
+                  baseCost: base.toFixed(2), shipCost: ship.toFixed(2), extraFee: extra.toFixed(2), cost: total.toFixed(2),
+                  costEvents: { ...prevCe, base, ship, tax },
                 }).where(eq(schema.fulfillmentOrders.id, ffo.id));
                 await db.update(schema.transactions).set({ amount: (-total).toFixed(2) }).where(and(
                   eq(schema.transactions.orderId, ffo.orderId),
