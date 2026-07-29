@@ -206,6 +206,31 @@ export const tiktokProducts = pgTable("tiktok_products", {
   syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({ uqTtProduct: uniqueIndex("uq_tt_product").on(t.storeId, t.tiktokProductId) }));
 
+// Listing ETSY import từ CSV export chính chủ của Etsy (Manage Products Etsy).
+// KHÔNG dùng API Etsy — nguồn duy nhất là file CSV seller tự tải về. Mỗi (store, title) = 1 dòng
+// (CSV Etsy không có listing id nên dedupe theo title trong cùng store; import lại = cập nhật đè).
+export const etsyProducts = pgTable("etsy_products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  price: numeric("price", { precision: 12, scale: 2 }),
+  currency: text("currency").default("USD"),
+  quantity: integer("quantity"),
+  tags: text("tags"),
+  materials: text("materials"),
+  images: jsonb("images").notNull().default([]),         // string[] — link ảnh Etsy CDN
+  variations: jsonb("variations").notNull().default([]), // [{ name, values: string[] }]
+  sku: text("sku"),
+  status: text("status").notNull().default("active"),
+  // AI tối ưu SEO Shopify (title ngắn + tag chuẩn) — KHÔNG đè title gốc Etsy (dùng dedupe).
+  shopifyTitle: text("shopify_title"),
+  shopifyTags: text("shopify_tags"),
+  shopifyDesc: text("shopify_desc"),
+  importedAt: timestamp("imported_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({ idxEtsyProductsStore: index("idx_etsy_products_store").on(t.storeId) }));
+
 // ---------- FULFILLMENT ----------
 export const fulfillers = pgTable("fulfillers", {
   id: uuid("id").primaryKey().defaultRandom(),

@@ -157,6 +157,10 @@ export default function AppShell({ user, links, children, canProducts = false, c
             <span className="topnav-ic"><IconGrid width={16} height={16} /></span>
             Manage Templates Tiktok
           </Link>}
+          {canProducts && <Link href="/etsy-products" prefetch className={`topnav-more-item${isActive("/etsy-products") ? " active" : ""}`}>
+            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            Manage Products Etsy
+          </Link>}
           {canSupport && <Link href="/support" prefetch className={`topnav-more-item${isActive("/support") ? " active" : ""}`}>
             <span className="topnav-ic"><IconSupport width={16} height={16} /></span>
             Customer Messages Tiktok
@@ -307,6 +311,12 @@ export default function AppShell({ user, links, children, canProducts = false, c
               <Link href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
                 <span className="topnav-ic"><IconBox width={18} height={18} /></span>
                 Manage Products Tiktok
+              </Link>
+            )}
+            {!hasDesigns && canProducts && (
+              <Link href="/etsy-products" prefetch className={`mobile-nav-item${isActive("/etsy-products") ? " active" : ""}`}>
+                <span className="topnav-ic"><IconBox width={18} height={18} /></span>
+                Manage Products Etsy
               </Link>
             )}
             {!hasDesigns && canSupport && (
