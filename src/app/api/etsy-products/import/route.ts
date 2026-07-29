@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
+  try {
   const form = await req.formData().catch(() => null);
   const file = form?.get("file") as File | null;
   const storeId = String(form?.get("storeId") ?? "");
@@ -79,4 +80,12 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, inserted, updated, skipped, store: store.name });
+  } catch (e) {
+    // Lỗi thường gặp nhất: chưa chạy MIGRATION_etsy_products.sql → bảng etsy_products chưa tồn tại.
+    const m = String((e as Error)?.message ?? e);
+    const hint = /etsy_products|relation|does not exist|column/i.test(m)
+      ? " — Bảng chưa được tạo. Chạy MIGRATION_etsy_products.sql trong Supabase SQL Editor trước."
+      : "";
+    return NextResponse.json({ ok: false, error: "server: " + m.slice(0, 240) + hint }, { status: 500 });
+  }
 }

@@ -60,10 +60,14 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
     setBusy(true);
     try {
       const fd = new FormData(); fd.append("file", impFile); fd.append("storeId", impStore);
-      const j = await fetch("/api/etsy-products/import", { method: "POST", body: fd }).then((r) => r.json());
+      const res = await fetch("/api/etsy-products/import", { method: "POST", body: fd });
+      const text = await res.text();
+      let j: { ok?: boolean; error?: string; store?: string; inserted?: number; updated?: number; skipped?: number };
+      try { j = JSON.parse(text); }
+      catch { flash(`✗ HTTP ${res.status}: ${text.replace(/<[^>]+>/g, " ").trim().slice(0, 140) || "server error"}`, false); setBusy(false); return; }
       if (j.ok) { flash(`✓ ${j.store}: +${j.inserted} mới · ${j.updated} cập nhật${j.skipped ? ` · ${j.skipped} bỏ qua` : ""}`); setImpOpen(false); setImpFile(null); load(); }
       else flash("✗ " + (j.error ?? "Import lỗi"), false);
-    } catch { flash("✗ Lỗi mạng", false); }
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Lỗi mạng"), false); }
     setBusy(false);
   };
 
