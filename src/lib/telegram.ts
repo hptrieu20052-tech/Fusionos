@@ -35,7 +35,64 @@ export async function sendTelegram(chatId: string, html: string): Promise<{ ok: 
 
 const money = (v: unknown) => "$" + Number(v ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
+// Tải 1 ảnh về server (thử nhiều size Etsy nếu bản fullxfull không tồn tại) → trả Blob để upload thẳng.
+// Lý do tồn tại: gửi album bằng URL hay dính "WEBPAGE_MEDIA_EMPTY" — Telegram không tự tải được ảnh
+// (CDN chặn bot, hoặc link ipf_fullxfull do mình tự đổi ra KHÔNG tồn tại với một số file khách upload).
+async function fetchImageBytes(u: string): Promise<Blob | null> {
+  const cands = [u];
+  if (/ipf_fullxfull/i.test(u)) {
+    // Ảnh khách upload trên Etsy không phải file nào cũng có bản fullxfull → lùi dần size vẫn đủ nét để design
+    cands.push(u.replace(/ipf_fullxfull/i, "ipf_1588xN"), u.replace(/ipf_fullxfull/i, "ipf_680x540"), u.replace(/ipf_fullxfull/i, "ipf_300x300"));
+  }
+  for (const c of cands) {
+    try {
+      const r = await fetch(c, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+        redirect: "follow",
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!r.ok) continue;
+      const ct = (r.headers.get("content-type") ?? "").toLowerCase();
+      const buf = await r.arrayBuffer();
+      // Telegram nhận photo ≤ ~10MB; loại luôn response rỗng/trang HTML lỗi
+      if (buf.byteLength < 200 || buf.byteLength > 9_800_000) continue;
+      if (!ct.startsWith("image/") && !/\.(jpe?g|png|webp)(\?|$)/i.test(c)) continue;
+      return new Blob([buf], { type: ct.startsWith("image/") ? ct : "image/jpeg" });
+    } catch { /* thử ứng viên kế tiếp */ }
+  }
+  return null;
+}
+
+// PHƯƠNG ÁN B: tự tải ảnh về rồi UPLOAD bytes cho Telegram (multipart attach://) — không bắt Telegram đi tải.
+// Ảnh nào tải không nổi thì BỎ QUA ảnh đó thay vì chết cả album.
+async function sendBatchByUpload(token: string, chatId: string, batch: string[], caption?: string): Promise<{ ok: boolean; error?: string; skipped: number }> {
+  const fd = new FormData();
+  const media: Record<string, unknown>[] = [];
+  let idx = 0, skipped = 0;
+  for (const u of batch) {
+    const blob = await fetchImageBytes(u);
+    if (!blob) { skipped++; continue; }
+    const key = `f${idx++}`;
+    fd.append(key, blob, `${key}.jpg`);
+    media.push({ type: "photo", media: `attach://${key}` });
+  }
+  if (!media.length) return { ok: false, error: "no downloadable images in batch", skipped };
+  if (caption) { media[0].caption = caption; media[0].parse_mode = "HTML"; }
+  fd.append("chat_id", chatId.trim());
+  fd.append("media", JSON.stringify(media));
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMediaGroup`, {
+      method: "POST", body: fd, signal: AbortSignal.timeout(45000),
+    });
+    const j = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
+    return j.ok ? { ok: true, skipped } : { ok: false, error: String(j.description ?? res.status).slice(0, 200), skipped };
+  } catch (e) {
+    return { ok: false, error: String((e as Error)?.message ?? e).slice(0, 200), skipped };
+  }
+}
+
 // Gửi ALBUM ảnh (sendMediaGroup) — tối đa 10 ảnh/nhóm, tự chia lô nếu nhiều hơn. caption đặt ở ảnh đầu nhóm đầu.
+// Lô nào gửi bằng URL bị Telegram từ chối (WEBPAGE_MEDIA_EMPTY / WRONG_TYPE…) → tự chuyển sang tải về + upload bytes.
 export async function sendTelegramMediaGroup(chatId: string, photoUrls: string[], caption?: string): Promise<{ ok: boolean; error?: string }> {
   const token = TOKEN();
   if (!token) return { ok: false, error: "TELEGRAM_BOT_TOKEN not configured" };
@@ -44,11 +101,13 @@ export async function sendTelegramMediaGroup(chatId: string, photoUrls: string[]
   let firstErr = "";
   for (let i = 0; i < urls.length; i += 10) {
     const batch = urls.slice(i, i + 10);
+    const cap = i === 0 ? caption : undefined;
     const media = batch.map((u, j) => {
       const m: Record<string, unknown> = { type: "photo", media: u };
-      if (i === 0 && j === 0 && caption) { m.caption = caption; m.parse_mode = "HTML"; }
+      if (j === 0 && cap) { m.caption = cap; m.parse_mode = "HTML"; }
       return m;
     });
+    let batchErr = "";
     try {
       const res = await fetch(`https://api.telegram.org/bot${token}/sendMediaGroup`, {
         method: "POST",
@@ -57,8 +116,13 @@ export async function sendTelegramMediaGroup(chatId: string, photoUrls: string[]
         signal: AbortSignal.timeout(25000),
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; description?: string };
-      if (!j.ok && !firstErr) firstErr = String(j.description ?? res.status);
-    } catch (e) { if (!firstErr) firstErr = String((e as Error)?.message ?? e); }
+      if (!j.ok) batchErr = String(j.description ?? res.status);
+    } catch (e) { batchErr = String((e as Error)?.message ?? e); }
+    // URL fail → phương án B: server tải ảnh về, upload thẳng cho Telegram
+    if (batchErr) {
+      const up = await sendBatchByUpload(token, chatId, batch, cap);
+      if (!up.ok && !firstErr) firstErr = `${batchErr} (retry-upload: ${up.error})`;
+    }
     await new Promise((r) => setTimeout(r, 400)); // giãn nhịp giữa các lô
   }
   return firstErr ? { ok: false, error: firstErr.slice(0, 200) } : { ok: true };
