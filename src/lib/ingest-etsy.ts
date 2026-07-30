@@ -22,6 +22,10 @@ export type IngestStore = { id: string; sellerId: string | null; fx: unknown; na
 // và file đẩy sang nhà in cũng không dính chuỗi rác.
 const s = (v: unknown) => (typeof v === "string" && v.trim() ? decodeEntities(v).trim() : null);
 const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+// Chống rác lọt vào ô State: extension đời cũ có lúc đọc nhầm trạng thái đơn (o.state="active"…)
+// vào field bang. Nếu giá trị là từ trạng thái đơn thì bỏ (để trống còn hơn sai).
+const ORDER_STATUS_WORDS = /^(active|open|paid|unpaid|completed|complete|processing|pending|new|created|shipped|in[_\s-]?transit|delivered|cancel(?:led|ed)?|refunded?|void|declined|chargeback|fulfilled|partially[_\s-]?fulfilled)$/i;
+const cleanState = (v: unknown) => { const x = s(v); return x && ORDER_STATUS_WORDS.test(x) ? null : x; };
 
 // Ghi đơn Etsy đã chuẩn hoá vào DB. Dedup theo (platform=etsy, external_id).
 // orderedAt = NGÀY KÉO ĐƠN (thời điểm ingest) để mọi thống kê tính theo ngày kéo.
@@ -212,7 +216,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         platformStatus: s(o.platformStatus),
         shippingType: s(o.shippingType),
         buyerFirst: s(o.buyerFirst), buyerLast: s(o.buyerLast),
-        addr1: s(o.addr1), addr2: s(o.addr2), city: s(o.city), state: s(o.state), zip: s(o.zip),
+        addr1: s(o.addr1), addr2: s(o.addr2), city: s(o.city), state: cleanState(o.state), zip: s(o.zip),
         country: s(o.country) ?? "United States",
         // Có phí THẬT từ nguồn (hiếm) → dùng luôn; không có → ƯỚC TÍNH theo % shop và bật cờ est.
         total: (total / fx).toFixed(2),
