@@ -29,6 +29,32 @@ const linkBtn = (c: string): React.CSSProperties => ({ border: "none", backgroun
 const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
 const SHOP_GREEN = "#5E8E3E";
 
+type ActKey =
+  | "active" | "draft" | "archive" | "delete"
+  | "tags_add" | "tags_remove"
+  | "channels_include" | "channels_exclude"
+  | "catalogs_include" | "catalogs_exclude"
+  | "collection_add" | "collection_remove";
+type ActionItem = { key: ActKey; label: string; danger?: boolean } | { sep: true; key: string };
+const ACTIONS: ActionItem[] = [
+  { key: "active", label: "Set as Active" },
+  { key: "draft", label: "Unlist products (set to Draft)" },
+  { key: "archive", label: "Archive products" },
+  { key: "sep1", sep: true },
+  { key: "tags_add", label: "Add tags…" },
+  { key: "tags_remove", label: "Remove tags…" },
+  { key: "sep2", sep: true },
+  { key: "collection_add", label: "Add to collection…" },
+  { key: "collection_remove", label: "Remove from collection…" },
+  { key: "sep3", sep: true },
+  { key: "channels_include", label: "Include in sales channels…" },
+  { key: "channels_exclude", label: "Exclude from sales channels…" },
+  { key: "catalogs_include", label: "Include in catalogs…" },
+  { key: "catalogs_exclude", label: "Exclude from catalogs…" },
+  { key: "sep4", sep: true },
+  { key: "delete", label: "Delete products on Shopify", danger: true },
+];
+
 const statusBadge = (s: string) => {
   const up = (s || "").toUpperCase();
   const c = up === "ACTIVE" ? { bg: "#EAF7F0", fg: "#158A57" } : up === "ARCHIVED" ? { bg: "#F1F1F4", fg: "#66788E" } : { bg: "#FFF6E6", fg: "#B7791F" };
@@ -55,6 +81,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [bpValues, setBpValues] = useState<{ name: string; value: string; count: number; current: string }[]>([]);
   const [bpPrices, setBpPrices] = useState<Record<string, string>>({});
   const [bpLoading, setBpLoading] = useState(false);
+  // Bulk actions ("More actions")
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
+  const [tagInput, setTagInput] = useState("");
+  const [pickOne, setPickOne] = useState("");
+  const [pickMany, setPickMany] = useState<Set<string>>(new Set());
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 5000); };
   const load = async () => { setLoading(true); try { const j = await fetch("/api/shopify-products").then((r) => r.json()); if (j.ok) setRows(j.rows); } catch { /* noop */ } setLoading(false); };
@@ -96,16 +128,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setEditId(null); }
     setEditLoading(false);
   };
+  // Save = tự đẩy lên Shopify luôn (không còn bước Push riêng).
   const saveEdit = async () => {
     if (!edit) return;
     setBusy(true);
     try {
-      const j = await fetch("/api/shopify-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      const p = await fetch("/api/shopify-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
         id: edit.id, title: edit.title, bodyHtml: edit.bodyHtml, tags: edit.tags, status: edit.status,
         vendor: edit.vendor, productType: edit.productType, variants: edit.variants, images: edit.images,
       }) }).then((r) => r.json());
-      if (j.ok) { flash("✓ Saved (chưa đẩy — bấm Push to Shopify để áp lên store)"); setEditId(null); load(); }
-      else flash("✗ " + (j.error ?? "Save failed"), false);
+      if (!p.ok) { flash("✗ " + (p.error ?? "Save failed"), false); setBusy(false); return; }
+      const j = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [edit.id] }) }).then((r) => r.json());
+      if (j.ok || j.pushed) { flash("✓ Saved & updated on Shopify"); setEditId(null); load(); }
+      else { const err = (j.results ?? [])[0]?.error ?? j.error ?? "push failed"; flash("✗ Saved locally but Shopify update failed: " + err + (/write_products|scope|access/i.test(String(err)) ? " — add scope write_products + reinstall app" : ""), false); setEditId(null); load(); }
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
@@ -132,7 +167,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         if (j.ok) { done += j.optimized ?? 0; if (j.errors) errs.push(...j.errors); } else errs.push(j.error ?? "failed");
       } catch (e) { errs.push(String((e as Error)?.message ?? "network")); }
     }
-    flash(done > 0 ? `✓ AI optimized ${done}/${idsAll.length} (chưa đẩy — Push để áp)` : `✗ AI Optimize failed: ${errs[0] ?? "unknown"}`, done > 0); load();
+    if (done > 0) {
+      const push = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: idsAll }) }).then((r) => r.json()).catch(() => ({}));
+      flash(`✓ AI optimized ${done}/${idsAll.length} — updated ${push.pushed ?? 0} on Shopify`, (push.failed ?? 0) === 0);
+    } else flash(`✗ AI Optimize failed: ${errs[0] ?? "unknown"}`, false);
+    load();
     setBusy(false);
   };
   const doDelete = async () => {
@@ -157,10 +196,90 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const applyBulkPrice = async () => {
     setBusy(true);
     try { const j = await fetch("/api/shopify-products/bulk-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), prices: bpPrices }) }).then((r) => r.json());
-      if (j.ok) { flash(`✓ Priced ${j.sizes} size(s) · ${j.variantsSet} variants across ${j.updated} product(s) — Push để áp lên Shopify`); setBpOpen(false); load(); }
-      else flash("✗ " + (j.error ?? "Failed"), false);
+      if (j.ok) {
+        setBpOpen(false);
+        const push = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json());
+        flash(`✓ Priced ${j.sizes} size(s) · ${j.variantsSet} variants across ${j.updated} product(s) — updated ${push.pushed ?? 0} on Shopify`, (push.failed ?? 0) === 0);
+        load();
+      } else flash("✗ " + (j.error ?? "Failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
+  };
+
+  // ---- bulk actions ("More actions") ----
+  const selStoreIds = () => Array.from(new Set(rows.filter((r) => sel.has(r.id)).map((r) => r.storeId)));
+  const postAction = async (payload: Record<string, unknown>, okMsg: (r: { done: number; failed: number; skipped: number; results?: { ok: boolean; error?: string }[] }) => string) => {
+    setBusy(true);
+    try {
+      const j = await fetch("/api/shopify-products/bulk-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), ...payload }) }).then((r) => r.json());
+      if (j.ok || j.done) { flash(okMsg(j), (j.failed ?? 0) === 0); setSel(new Set()); load(); }
+      else { const err = j.error ?? (j.results ?? []).find((r: { ok: boolean }) => !r.ok)?.error ?? "Action failed"; flash("✗ " + err + (/write_products|scope|access|publications/i.test(String(err)) ? " — add scope write_products/write_publications + reinstall app" : ""), false); }
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
+  const runAction = async (key: ActKey) => {
+    setActionsOpen(false);
+    if (!sel.size) return flash("✗ Select products first", false);
+    // Lifecycle nhanh (có confirm)
+    if (key === "active" || key === "draft" || key === "archive") {
+      const word = key === "active" ? "set ACTIVE" : key === "draft" ? "Unlist (set DRAFT)" : "Archive";
+      if (!confirm(`${word} ${sel.size} product(s) on Shopify?`)) return;
+      return postAction({ action: key }, (r) => `✓ ${word}: ${r.done} done${r.failed ? ` · ${r.failed} failed` : ""}`);
+    }
+    if (key === "delete") {
+      if (!confirm(`⚠ DELETE ${sel.size} product(s) PERMANENTLY on Shopify? This cannot be undone.`)) return;
+      if (!confirm(`Confirm again: permanently delete ${sel.size} product(s) on Shopify AND remove from this list?`)) return;
+      return postAction({ action: "delete" }, (r) => `✓ Deleted ${r.done} on Shopify${r.failed ? ` · ${r.failed} failed` : ""}`);
+    }
+    // Tags → mở modal nhập
+    if (key === "tags_add" || key === "tags_remove") {
+      setTagInput(""); setAct({ key, title: key === "tags_add" ? "Add tags" : "Remove tags", kind: "tags", storeId: "", loading: false, items: [] });
+      return;
+    }
+    // Picker actions (collection / channels / catalogs) — cần đúng 1 store
+    const sids = selStoreIds();
+    if (sids.length !== 1) return flash("✗ These actions need products from ONE store — filter by store first (channel/collection IDs are per store).", false);
+    const storeId = sids[0];
+    const kind: "collection" | "publication" = (key === "collection_add" || key === "collection_remove") ? "collection" : "publication";
+    const catalogMode = key === "catalogs_include" || key === "catalogs_exclude";
+    const titleMap: Record<string, string> = {
+      collection_add: "Add to collection", collection_remove: "Remove from collection",
+      channels_include: "Include in sales channels", channels_exclude: "Exclude from sales channels",
+      catalogs_include: "Include in catalogs", catalogs_exclude: "Exclude from catalogs",
+    };
+    setPickOne(""); setPickMany(new Set());
+    setAct({ key, title: titleMap[key], kind, storeId, loading: true, items: [] });
+    try {
+      const j = await fetch(`/api/shopify-products/channels?storeId=${storeId}`).then((r) => r.json());
+      if (!j.ok) { flash("✗ " + (j.error ?? "Load failed"), false); setAct(null); return; }
+      const items: { id: string; label: string }[] = kind === "collection"
+        ? (j.collections ?? []).map((c: { id: string; title: string }) => ({ id: c.id, label: c.title }))
+        : catalogMode
+          ? (j.catalogs ?? []).map((c: { publicationId: string; name: string }) => ({ id: c.publicationId, label: c.name }))
+          : (j.publications ?? []).map((p: { id: string; name: string }) => ({ id: p.id, label: p.name }));
+      setAct((a) => a ? { ...a, loading: false, items } : a);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setAct(null); }
+  };
+  const submitAct = async () => {
+    if (!act) return;
+    if (act.kind === "tags") {
+      const tags = tagInput.split(",").map((t) => t.trim()).filter(Boolean);
+      if (!tags.length) return flash("✗ Enter at least one tag", false);
+      setAct(null);
+      return postAction({ action: act.key, tags: tags.join(",") }, (r) => `✓ ${act.key === "tags_add" ? "Added" : "Removed"} tags on ${r.done} product(s)${r.failed ? ` · ${r.failed} failed` : ""}`);
+    }
+    if (act.kind === "collection") {
+      if (!pickOne) return flash("✗ Pick a collection", false);
+      const payload = { action: act.key, storeId: act.storeId, collectionId: pickOne };
+      setAct(null);
+      return postAction(payload, (r) => `✓ ${act.key === "collection_add" ? "Added to" : "Removed from"} collection: ${r.done}${r.failed ? ` · ${r.failed} failed` : ""}${r.skipped ? ` · ${r.skipped} skipped (other store)` : ""}`);
+    }
+    // publication (channels/catalogs)
+    if (!pickMany.size) return flash("✗ Pick at least one", false);
+    const payload = { action: act.key, storeId: act.storeId, publicationIds: Array.from(pickMany) };
+    const verb = act.key.endsWith("_include") ? "Included" : "Excluded";
+    setAct(null);
+    return postAction(payload, (r) => `✓ ${verb} ${r.done} product(s)${r.failed ? ` · ${r.failed} failed` : ""}${r.skipped ? ` · ${r.skipped} skipped (other store)` : ""}`);
   };
 
   // ---- edit modal helpers ----
@@ -168,6 +287,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const delImg = (i: number) => { if (!edit) return; setEdit({ ...edit, images: edit.images.filter((_, k) => k !== i) }); };
   const moveImg = (i: number, dir: -1 | 1) => { if (!edit) return; const j = i + dir; if (j < 0 || j >= edit.images.length) return; const a = edit.images.slice(); [a[i], a[j]] = [a[j], a[i]]; setEdit({ ...edit, images: a }); };
   const addImg = () => { if (!edit) return; const url = prompt("Image URL (https://...)"); if (!url || !/^https?:\/\//i.test(url)) return; setEdit({ ...edit, images: [...edit.images, { id: "", src: url.trim(), altText: "", position: edit.images.length + 1 }] }); };
+  const uploadImg = async (file: File | null | undefined) => {
+    if (!edit || !file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+      if (j.ok && j.url) setEdit((e) => e ? { ...e, images: [...e.images, { id: "", src: j.url, altText: "", position: e.images.length + 1 }] } : e);
+      else flash("✗ " + (j.error ?? "Upload failed"), false);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
 
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 4px" }}>
@@ -216,8 +346,21 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
           )}
           {canEdit && <button disabled={busy} onClick={doAiOptimize} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }}>✦ AI Optimize</button>}
           {canEdit && <button disabled={busy} onClick={openBulkPrice} style={{ ...pill("linear-gradient(135deg,#F59E0B,#D97706)", "#fff"), opacity: busy ? .6 : 1 }}>◫ Bulk Price</button>}
-          {canEdit && <button disabled={busy} onClick={() => doPush(Array.from(sel))} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: busy ? .6 : 1 }}>⬆ Push to Shopify</button>}
-          {canEdit && <button disabled={busy} onClick={doDelete} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }}>🗑 Remove</button>}
+          {canEdit && (
+            <div style={{ position: "relative" }}>
+              <button disabled={busy} onClick={() => setActionsOpen((v) => !v)} style={{ ...ghost, padding: "9px 12px" }}>More actions ▾</button>
+              {actionsOpen && (
+                <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30, minWidth: 230, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,.12)", padding: 6 }} onMouseLeave={() => setActionsOpen(false)}>
+                  {ACTIONS.map((a) => "sep" in a ? (
+                    <div key={a.key} style={{ height: 1, background: "var(--line)", margin: "5px 4px" }} />
+                  ) : (
+                    <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>{a.label}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {canEdit && <button disabled={busy} onClick={doDelete} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }}>🗑 Remove local</button>}
           <button onClick={() => setSel(new Set())} style={{ ...ghost, padding: "9px 12px" }}>Clear</button>
         </div>
       )}
@@ -308,7 +451,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                         </div>
                       ))}
                     </div>
-                    <button onClick={addImg} style={{ ...ghost, marginTop: 8, fontSize: 12.5, width: "100%" }}>+ Add image by URL</button>
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <label style={{ ...ghost, fontSize: 12.5, flex: 1, textAlign: "center", cursor: busy ? "default" : "pointer", opacity: busy ? .6 : 1 }}>
+                        {busy ? "Uploading…" : "⬆ Upload image"}
+                        <input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { uploadImg(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                      </label>
+                      <button onClick={addImg} style={{ ...ghost, fontSize: 12.5, flex: 1 }}>+ Add by URL</button>
+                    </div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Store: {edit.storeName} · handle: {edit.handle}</div>
                   </div>
                   {/* RIGHT: fields + variants */}
@@ -348,8 +497,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                     </div>
                     <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
                       <button onClick={() => setEditId(null)} style={ghost}>Cancel</button>
-                      <button disabled={busy} onClick={saveEdit} style={{ ...ghost }}>Save (local)</button>
-                      <button disabled={busy} onClick={async () => { await saveEdit(); await doPush([edit.id]); }} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: busy ? .6 : 1 }}>Save & Push</button>
+                      <button disabled={busy} onClick={saveEdit} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: busy ? .6 : 1 }}>{busy ? "Saving…" : "Save (auto-updates Shopify)"}</button>
                     </div>
                   </div>
                 </div>
@@ -387,6 +535,49 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
               <button onClick={() => setBpOpen(false)} style={ghost}>Cancel</button>
               <button disabled={busy || bpLoading} onClick={applyBulkPrice} style={{ ...pill("linear-gradient(135deg,#F59E0B,#D97706)", "#fff"), opacity: (busy || bpLoading) ? .6 : 1 }}>Apply prices</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK ACTION MODAL (tags / collection / channels / catalogs) */}
+      {act && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setAct(null)}>
+          <div style={{ ...card, width: 440, maxWidth: "96vw", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <b style={{ fontSize: 16 }}>{act.title}</b>
+              <button onClick={() => setAct(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>Applies to <b>{sel.size}</b> selected product(s) — runs on Shopify.</div>
+
+            {act.kind === "tags" && (
+              <div>
+                <label style={lab}>Tags (comma-separated)</label>
+                <input autoFocus value={tagInput} onChange={(e) => setTagInput(e.target.value)} placeholder="e.g. summer, sale, tshirt" style={{ ...ctl, width: "100%" }} />
+              </div>
+            )}
+
+            {act.kind !== "tags" && (
+              act.loading ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>Loading…</div>
+              : act.items.length === 0 ? <div style={{ padding: "20px 0", textAlign: "center", color: "var(--muted)" }}>{act.kind === "collection" ? "No manual collections on this store." : "None available on this store."}</div>
+              : <div style={{ display: "grid", gap: 4, maxHeight: 320, overflowY: "auto" }}>
+                  {act.items.map((it) => act.kind === "collection" ? (
+                    <label key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, cursor: "pointer", background: pickOne === it.id ? "#F3FBF6" : "transparent" }}>
+                      <input type="radio" name="pickCol" checked={pickOne === it.id} onChange={() => setPickOne(it.id)} />
+                      <span style={{ fontSize: 13.5 }}>{it.label}</span>
+                    </label>
+                  ) : (
+                    <label key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, cursor: "pointer", background: pickMany.has(it.id) ? "#F3FBF6" : "transparent" }}>
+                      <input type="checkbox" checked={pickMany.has(it.id)} onChange={() => setPickMany((s) => { const n = new Set(s); n.has(it.id) ? n.delete(it.id) : n.add(it.id); return n; })} />
+                      <span style={{ fontSize: 13.5 }}>{it.label}</span>
+                    </label>
+                  ))}
+                </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+              <button onClick={() => setAct(null)} style={ghost}>Cancel</button>
+              <button disabled={busy || act.loading} onClick={submitAct} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: (busy || act.loading) ? .6 : 1 }}>{busy ? "Working…" : "Apply"}</button>
             </div>
           </div>
         </div>

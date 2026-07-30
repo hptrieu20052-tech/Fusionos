@@ -259,6 +259,20 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     setBusy(false);
   };
 
+  // Thêm ảnh vào listing (Etsy edit modal): upload từ máy (R2) hoặc dán URL.
+  const addImgUrl = () => { if (!edit) return; const url = prompt("Image URL (https://...)"); if (!url || !/^https?:\/\//i.test(url)) return; setEdit({ ...edit, images: [...edit.images, url.trim()] }); };
+  const uploadImg = async (file: File | null | undefined) => {
+    if (!edit || !file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+      if (j.ok && j.url) setEdit((e) => e ? { ...e, images: [...e.images, j.url] } : e);
+      else flash("✗ " + (j.error ?? "Upload failed"), false);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
+
   const storeName = (id: string) => stores.find((s) => s.id === id)?.name ?? "";
 
   return (
@@ -569,6 +583,13 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                         ))}
                       </div>
                     )}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                    <label style={{ ...linkBtn("var(--blue)"), fontSize: 12, cursor: busy ? "default" : "pointer", opacity: busy ? .5 : 1 }}>
+                      {busy ? "Uploading…" : "↑ Upload image"}
+                      <input type="file" accept="image/*" disabled={busy} onChange={(e) => { uploadImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
+                    </label>
+                    <button onClick={addImgUrl} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12 }}>+ Add by URL</button>
+                  </div>
 
                   <div style={{ fontSize: 12, lineHeight: 1.9, marginBottom: 12 }}>
                     <div><span style={{ color: "var(--muted)" }}>Store: </span><b>{edit.storeName ?? "—"}</b></div>
