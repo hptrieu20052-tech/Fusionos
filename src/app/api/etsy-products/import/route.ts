@@ -34,11 +34,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "forbidden: store is not yours" }, { status: 403 });
   }
 
-  // Parse CSV bằng XLSX (đọc chuẩn quote/newline trong description)
+  // Parse CSV — ÉP UTF-8 để không lỗi mã hoá (✨/emoji/dấu → "â‰¡" mojibake).
+  // CSV Etsy là UTF-8; đọc thành string bằng TextDecoder utf-8 rồi mới cho XLSX parse (type:"string").
   let rows: Record<string, unknown>[];
   try {
-    const buf = new Uint8Array(await file.arrayBuffer());
-    const wb = XLSX.read(buf, { type: "array" });
+    const text = new TextDecoder("utf-8").decode(new Uint8Array(await file.arrayBuffer()));
+    const wb = XLSX.read(text, { type: "string", codepage: 65001, raw: true });
     const ws = wb.Sheets[wb.SheetNames[0]];
     rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
   } catch {

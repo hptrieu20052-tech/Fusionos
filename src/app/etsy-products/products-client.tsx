@@ -10,7 +10,12 @@ type Row = {
 };
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
-type Detail = { id: string; title: string; price: string | null; tags: string | null; description: string | null; shopifyTitle: string | null; shopifyTags: string | null; shopifyDesc: string | null };
+type Detail = {
+  id: string; title: string; price: string | null; tags: string | null; description: string | null;
+  shopifyTitle: string | null; shopifyTags: string | null; shopifyDesc: string | null;
+  images: string[]; variations: { name?: string; values?: string[] }[]; quantity: number | null; sku: string | null;
+  storeName: string | null; sellerName: string | null;
+};
 
 /* ---- style tokens (modern) ---- */
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -162,6 +167,9 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
       if (j.ok) setEdit({
         id: j.item.id, title: j.item.title, price: j.item.price, tags: j.item.tags, description: j.item.description,
         shopifyTitle: j.item.shopifyTitle, shopifyTags: j.item.shopifyTags, shopifyDesc: j.item.shopifyDesc,
+        images: Array.isArray(j.item.images) ? j.item.images : [],
+        variations: Array.isArray(j.item.variations) ? j.item.variations : [],
+        quantity: j.item.quantity, sku: j.item.sku, storeName: j.item.storeName, sellerName: j.item.sellerName,
       });
       else { flash("✗ " + (j.error ?? "Load failed"), false); setEditId(null); }
     } catch { flash("✗ Network error", false); setEditId(null); }
@@ -329,10 +337,10 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
         </div>
       )}
 
-      {/* IMPORT DRAWER */}
+      {/* IMPORT MODAL (centered) */}
       {impOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 60, display: "flex", justifyContent: "flex-end" }} onClick={() => !busy && setImpOpen(false)}>
-          <div style={{ background: "#fff", width: 460, maxWidth: "94vw", height: "100%", padding: 24, overflowY: "auto", boxShadow: "-8px 0 24px rgba(16,24,40,.12)", animation: "slideIn .2s ease" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setImpOpen(false)}>
+          <div style={{ background: "#fff", width: 480, maxWidth: "94vw", maxHeight: "90vh", borderRadius: 18, padding: 24, overflowY: "auto", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <div style={{ fontWeight: 800, fontSize: 18 }}>Import Etsy CSV</div>
               <button onClick={() => setImpOpen(false)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
@@ -395,48 +403,94 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
         </div>
       )}
 
-      {/* EDIT DRAWER */}
+      {/* EDIT MODAL (centered, full detail) */}
       {editId && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 60, display: "flex", justifyContent: "flex-end" }} onClick={() => !busy && setEditId(null)}>
-          <div style={{ background: "#fff", width: 540, maxWidth: "96vw", height: "100%", padding: 24, overflowY: "auto", boxShadow: "-8px 0 24px rgba(16,24,40,.12)", animation: "slideIn .2s ease" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-              <div style={{ fontWeight: 800, fontSize: 18 }}>Edit listing (for Shopify)</div>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setEditId(null)}>
+          <div style={{ background: "#fff", width: 860, maxWidth: "96vw", maxHeight: "92vh", borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
+            {/* header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--line)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <MarketplaceLogo mk="etsy" size={20} />
+                <div style={{ fontWeight: 800, fontSize: 17 }}>Edit listing</div>
+                <span style={{ fontSize: 11.5, color: "var(--muted)" }}>· exported to Shopify (Etsy original kept intact)</span>
+              </div>
               <button onClick={() => setEditId(null)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
             </div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 18, lineHeight: 1.5 }}>
-              These edits are used when exporting to Shopify. The original Etsy data is kept intact.
-            </div>
+
             {editLoading || !edit ? (
-              <div style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</div>
+              <div style={{ padding: 50, textAlign: "center", color: "var(--muted)" }}>Loading…</div>
             ) : (
-              <>
-                <label style={lab}>Shopify title <span style={{ fontWeight: 500 }}>({(edit.shopifyTitle ?? "").length}/140 · keep it short)</span></label>
-                <input value={edit.shopifyTitle ?? ""} maxLength={140} onChange={(e) => setEdit({ ...edit, shopifyTitle: e.target.value })}
-                  placeholder={edit.title} style={{ ...ctl, width: "100%", marginBottom: 6 }} />
-                <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 16 }}>Etsy original: {edit.title}</div>
-
-                <label style={lab}>Price (USD)</label>
-                <input value={edit.price ?? ""} inputMode="decimal" onChange={(e) => setEdit({ ...edit, price: e.target.value.replace(/[^0-9.]/g, "") })}
-                  placeholder="0.00" style={{ ...ctl, width: 160, marginBottom: 16 }} />
-
-                <label style={lab}>Tags <span style={{ fontWeight: 500 }}>(comma-separated)</span></label>
-                <textarea value={edit.shopifyTags ?? ""} onChange={(e) => setEdit({ ...edit, shopifyTags: e.target.value })} rows={2}
-                  placeholder={(edit.tags ?? "").replace(/_/g, " ")} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 16 }} />
-
-                <label style={lab}>Description</label>
-                <textarea value={edit.shopifyDesc ?? ""} onChange={(e) => setEdit({ ...edit, shopifyDesc: e.target.value })} rows={7}
-                  placeholder={(edit.description ?? "").slice(0, 400)} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 20 }} />
-
-                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                  <button style={ghost} disabled={busy} onClick={() => setEditId(null)}>Cancel</button>
-                  <button style={{ ...pill("var(--blue)", "#fff"), opacity: busy ? .6 : 1 }} disabled={busy} onClick={saveEdit}>{busy ? "Saving…" : "Save"}</button>
+              <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 0, overflow: "hidden", flex: 1 }}>
+                {/* LEFT — read-only detail */}
+                <div style={{ borderRight: "1px solid var(--line)", padding: 18, overflowY: "auto", background: "#FAFBFD" }}>
+                  {/* image gallery */}
+                  {edit.images.length > 0 && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={edit.images[0]} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 12, marginBottom: 8 }} />
+                  )}
+                  {edit.images.length > 1 && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginBottom: 14 }}>
+                      {edit.images.slice(1, 9).map((u, i) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={i} src={u} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8 }} />
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 12, lineHeight: 1.9 }}>
+                    <div><span style={{ color: "var(--muted)" }}>Store: </span><b>{edit.storeName ?? "—"}</b></div>
+                    {edit.sellerName && <div><span style={{ color: "var(--muted)" }}>Seller: </span><b>{edit.sellerName}</b></div>}
+                    {edit.sku && <div><span style={{ color: "var(--muted)" }}>SKU: </span><b style={{ fontFamily: "ui-monospace,monospace" }}>{edit.sku}</b></div>}
+                    <div><span style={{ color: "var(--muted)" }}>Qty: </span><b>{edit.quantity ?? "—"}</b></div>
+                  </div>
+                  {edit.variations.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ ...lab, marginBottom: 4 }}>Variations</div>
+                      {edit.variations.map((v, i) => (
+                        <div key={i} style={{ fontSize: 12, marginBottom: 6 }}>
+                          <b>{v.name}</b>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
+                            {(v.values ?? []).map((val, k) => <span key={k} style={{ fontSize: 11, background: "#EEF1F6", borderRadius: 6, padding: "2px 7px" }}>{val}</span>)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </>
+
+                {/* RIGHT — editable Shopify fields */}
+                <div style={{ padding: 20, overflowY: "auto" }}>
+                  <label style={lab}>Shopify title <span style={{ fontWeight: 500 }}>({(edit.shopifyTitle ?? "").length}/140 · keep it short)</span></label>
+                  <input value={edit.shopifyTitle ?? ""} maxLength={140} onChange={(e) => setEdit({ ...edit, shopifyTitle: e.target.value })}
+                    placeholder={edit.title} style={{ ...ctl, width: "100%", marginBottom: 5 }} />
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 16, lineHeight: 1.4 }}>Etsy original: {edit.title}</div>
+
+                  <label style={lab}>Price (USD)</label>
+                  <input value={edit.price ?? ""} inputMode="decimal" onChange={(e) => setEdit({ ...edit, price: e.target.value.replace(/[^0-9.]/g, "") })}
+                    placeholder="0.00" style={{ ...ctl, width: 160, marginBottom: 16 }} />
+
+                  <label style={lab}>Tags <span style={{ fontWeight: 500 }}>(comma-separated)</span></label>
+                  <textarea value={edit.shopifyTags ?? ""} onChange={(e) => setEdit({ ...edit, shopifyTags: e.target.value })} rows={3}
+                    placeholder={(edit.tags ?? "").replace(/_/g, " ")} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 16 }} />
+
+                  <label style={lab}>Description</label>
+                  <textarea value={edit.shopifyDesc ?? ""} onChange={(e) => setEdit({ ...edit, shopifyDesc: e.target.value })} rows={8}
+                    placeholder={(edit.description ?? "").slice(0, 400)} style={{ ...ctl, width: "100%", resize: "vertical" }} />
+                  {edit.description && !edit.shopifyDesc && (
+                    <button onClick={() => setEdit({ ...edit, shopifyDesc: edit.description })} style={{ ...linkBtn("var(--blue)"), marginTop: 6 }}>↩ Copy Etsy description</button>
+                  )}
+                </div>
+              </div>
             )}
+
+            {/* footer */}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "14px 22px", borderTop: "1px solid var(--line)" }}>
+              <button style={ghost} disabled={busy} onClick={() => setEditId(null)}>Cancel</button>
+              <button style={{ ...pill("var(--blue)", "#fff"), opacity: busy || !edit ? .6 : 1 }} disabled={busy || !edit} onClick={saveEdit}>{busy ? "Saving…" : "Save"}</button>
+            </div>
           </div>
         </div>
       )}
-      <style>{`@keyframes slideIn{from{transform:translateX(30px);opacity:.4}to{transform:translateX(0);opacity:1}}`}</style>
+      <style>{`@keyframes popIn{from{transform:scale(.96);opacity:.4}to{transform:scale(1);opacity:1}}`}</style>
     </div>
   );
 }

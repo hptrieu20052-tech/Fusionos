@@ -27,10 +27,14 @@ export async function GET(req: NextRequest) {
 
   const id = req.nextUrl.searchParams.get("id");
   if (id && /^[0-9a-f-]{36}$/i.test(id)) {
-    const [row] = await db.select().from(schema.etsyProducts)
+    const [row] = await db.select({
+      p: schema.etsyProducts, storeName: schema.stores.name, sellerName: schema.users.fullName,
+    }).from(schema.etsyProducts)
+      .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+      .leftJoin(schema.users, eq(schema.users.id, schema.stores.sellerId))
       .where(sql`${schema.etsyProducts.id} = ${id}::uuid AND ${schema.etsyProducts.storeId} IN (${sql.join(storeIds.map((x) => sql`${x}::uuid`), sql`, `)})`).limit(1);
     if (!row) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-    return NextResponse.json({ ok: true, item: JSON.parse(JSON.stringify(row)) });
+    return NextResponse.json({ ok: true, item: JSON.parse(JSON.stringify({ ...row.p, storeName: row.storeName, sellerName: row.sellerName })) });
   }
 
   const rows = await db.select({
