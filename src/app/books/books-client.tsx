@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import { BOOK_PRODUCTS, getBookProduct, genBlocks } from "@/lib/book-products";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
+import { useConfirm } from "@/components/confirm-provider";
 
 type Title = { id: string; name: string; occasion: string | null; audience: string | null; status: string; kind?: string | null; sourceId?: string | null; updatedAt: string; createdAt?: string | null; ownerId?: string | null; ownerName?: string | null };
 type Owner = { id: string; name: string };
@@ -193,9 +194,10 @@ function ListView({ titles, owners, scoped, tab, setTab, open, openMaster, reloa
   const [owner, setOwner] = useState("");
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" });
   const [pg, setPg] = useState(1);
+  const confirm = useConfirm();
   useEffect(() => { setPg(1); }, [tab, owner, dr]);
   const del = async (t: Title) => {
-    if (typeof window !== "undefined" && !window.confirm(`Delete book "${t.name}"? This cannot be undone.`)) return;
+    if (!(await confirm({ message: `Delete book "${t.name}"?\nThis cannot be undone.`, danger: true }))) return;
     const j = await api(`/api/books/${t.id}`, "DELETE");
     if (j.ok) { flash("✓ Book deleted"); reload(); } else flash("✗ " + (j.error ?? "Delete error"));
   };

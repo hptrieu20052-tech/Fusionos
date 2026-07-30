@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
     const row = {
       storeId, shopifyProductId: p.shopifyProductId, handle: p.handle, title: p.title, bodyHtml: p.bodyHtml,
       vendor: p.vendor, productType: p.productType, tags: p.tags, status: p.status,
+      seoTitle: p.seoTitle, seoDescription: p.seoDescription,
       options: p.options, variants: p.variants, images: p.images,
       onlineStoreUrl: p.onlineStoreUrl, totalInventory: p.totalInventory,
       dirty: false, syncedAt: new Date(), updatedAt: new Date(),

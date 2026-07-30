@@ -72,6 +72,8 @@ export async function PATCH(req: NextRequest) {
   if (typeof b.title === "string" && b.title.trim()) patch.title = b.title.trim();
   if ("bodyHtml" in b) patch.bodyHtml = String(b.bodyHtml ?? "");
   if ("tags" in b) patch.tags = String(b.tags ?? "");
+  if ("seoTitle" in b) patch.seoTitle = String(b.seoTitle ?? "").slice(0, 200);
+  if ("seoDescription" in b) patch.seoDescription = String(b.seoDescription ?? "").slice(0, 320);
   if ("vendor" in b) patch.vendor = String(b.vendor ?? "");
   if ("productType" in b) patch.productType = String(b.productType ?? "");
   if (typeof b.status === "string" && ["ACTIVE", "DRAFT", "ARCHIVED"].includes(b.status.toUpperCase())) patch.status = b.status.toUpperCase();

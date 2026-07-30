@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { useConfirm, usePrompt } from "@/components/confirm-provider";
 
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
@@ -16,6 +17,7 @@ type Img = { id: string; src: string; altText: string; position: number };
 type Detail = {
   id: string; storeId: string; storeName: string | null; shopifyProductId: string; handle: string | null;
   title: string; bodyHtml: string | null; vendor: string | null; productType: string | null; tags: string | null;
+  seoTitle: string | null; seoDescription: string | null;
   status: string; options: { name: string; position: number; values: string[] }[];
   variants: Variant[]; images: Img[]; onlineStoreUrl: string | null; totalInventory: number | null; dirty: boolean;
 };
@@ -30,6 +32,7 @@ const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
 const SHOP_GREEN = "#5E8E3E";
 
 type ActKey =
+  | "apply_template"
   | "active" | "draft" | "archive" | "delete"
   | "tags_add" | "tags_remove"
   | "channels_include" | "channels_exclude"
@@ -37,6 +40,8 @@ type ActKey =
   | "collection_add" | "collection_remove";
 type ActionItem = { key: ActKey; label: string; danger?: boolean } | { sep: true; key: string };
 const ACTIONS: ActionItem[] = [
+  { key: "apply_template", label: "Apply template…" },
+  { key: "sep0", sep: true },
   { key: "active", label: "Set as Active" },
   { key: "draft", label: "Unlist products (set to Draft)" },
   { key: "archive", label: "Archive products" },
@@ -83,10 +88,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [bpLoading, setBpLoading] = useState(false);
   // Bulk actions ("More actions")
   const [actionsOpen, setActionsOpen] = useState(false);
-  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
+  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
   const [tagInput, setTagInput] = useState("");
   const [pickOne, setPickOne] = useState("");
   const [pickMany, setPickMany] = useState<Set<string>>(new Set());
+  const confirm = useConfirm();
+  const askPrompt = usePrompt();
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 5000); };
   const load = async () => { setLoading(true); try { const j = await fetch("/api/shopify-products").then((r) => r.json()); if (j.ok) setRows(j.rows); } catch { /* noop */ } setLoading(false); };
@@ -136,6 +143,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       const p = await fetch("/api/shopify-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
         id: edit.id, title: edit.title, bodyHtml: edit.bodyHtml, tags: edit.tags, status: edit.status,
         vendor: edit.vendor, productType: edit.productType, variants: edit.variants, images: edit.images,
+        seoTitle: edit.seoTitle, seoDescription: edit.seoDescription,
       }) }).then((r) => r.json());
       if (!p.ok) { flash("✗ " + (p.error ?? "Save failed"), false); setBusy(false); return; }
       const j = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [edit.id] }) }).then((r) => r.json());
@@ -176,7 +184,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   };
   const doDelete = async () => {
     if (!sel.size) return;
-    if (!confirm(`Remove ${sel.size} product(s) from FUSION list? (KHÔNG xóa trên Shopify — chỉ bỏ khỏi bảng này)`)) return;
+    if (!(await confirm({ message: `Remove ${sel.size} product(s) from the FUSION list?\nThis does NOT delete them on Shopify — only removes them from this table.`, confirmText: "Remove", danger: true }))) return;
     setBusy(true);
     try { const j = await fetch("/api/shopify-products", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json());
       if (j.ok) { flash(`✓ Removed ${j.deleted}`); setSel(new Set()); load(); } else flash("✗ " + (j.error ?? "Delete failed"), false);
@@ -223,12 +231,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     // Lifecycle nhanh (có confirm)
     if (key === "active" || key === "draft" || key === "archive") {
       const word = key === "active" ? "set ACTIVE" : key === "draft" ? "Unlist (set DRAFT)" : "Archive";
-      if (!confirm(`${word} ${sel.size} product(s) on Shopify?`)) return;
+      if (!(await confirm({ message: `${word} ${sel.size} product(s) on Shopify?`, confirmText: "Apply", tone: "green" }))) return;
       return postAction({ action: key }, (r) => `✓ ${word}: ${r.done} done${r.failed ? ` · ${r.failed} failed` : ""}`);
     }
     if (key === "delete") {
-      if (!confirm(`⚠ DELETE ${sel.size} product(s) PERMANENTLY on Shopify? This cannot be undone.`)) return;
-      if (!confirm(`Confirm again: permanently delete ${sel.size} product(s) on Shopify AND remove from this list?`)) return;
+      if (!(await confirm({ title: "Delete on Shopify", message: `Permanently DELETE ${sel.size} product(s) on Shopify?\nThis cannot be undone.`, danger: true, confirmText: "Delete" }))) return;
+      if (!(await confirm({ title: "Confirm delete", message: `Confirm again: permanently delete ${sel.size} product(s) on Shopify AND remove them from this list?`, danger: true, confirmText: "Delete permanently" }))) return;
       return postAction({ action: "delete" }, (r) => `✓ Deleted ${r.done} on Shopify${r.failed ? ` · ${r.failed} failed` : ""}`);
     }
     // Tags → mở modal nhập
@@ -236,10 +244,23 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       setTagInput(""); setAct({ key, title: key === "tags_add" ? "Add tags" : "Remove tags", kind: "tags", storeId: "", loading: false, items: [] });
       return;
     }
-    // Picker actions (collection / channels / catalogs) — cần đúng 1 store
+    // Picker actions (template / collection / channels / catalogs) — cần đúng 1 store
     const sids = selStoreIds();
-    if (sids.length !== 1) return flash("✗ These actions need products from ONE store — filter by store first (channel/collection IDs are per store).", false);
+    if (sids.length !== 1) return flash("✗ These actions need products from ONE store — filter by store first (template/channel/collection IDs are per store).", false);
     const storeId = sids[0];
+    // Apply template — nạp danh sách template của store
+    if (key === "apply_template") {
+      setPickOne("");
+      setAct({ key, title: "Apply template", kind: "template", storeId, loading: true, items: [] });
+      try {
+        const j = await fetch(`/api/shopify-templates?storeId=${storeId}`).then((r) => r.json());
+        if (!j.ok) { flash("✗ " + (j.error ?? "Load failed"), false); setAct(null); return; }
+        const items = (j.templates ?? []).map((t: { id: string; name: string }) => ({ id: t.id, label: t.name }));
+        if (!items.length) flash("✗ No templates for this store — create one in Manage Templates · Shopify", false);
+        setAct((a) => a ? { ...a, loading: false, items } : a);
+      } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setAct(null); }
+      return;
+    }
     const kind: "collection" | "publication" = (key === "collection_add" || key === "collection_remove") ? "collection" : "publication";
     const catalogMode = key === "catalogs_include" || key === "catalogs_exclude";
     const titleMap: Record<string, string> = {
@@ -262,6 +283,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   };
   const submitAct = async () => {
     if (!act) return;
+    if (act.kind === "template") {
+      if (!pickOne) return flash("✗ Pick a template", false);
+      const templateId = pickOne;
+      setAct(null); setBusy(true);
+      try {
+        const j = await fetch("/api/shopify-products/apply-template", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), templateId }) }).then((r) => r.json());
+        if (j.ok || j.done) { flash(`✓ Applied template to ${j.done} product(s)${j.failed ? ` · ${j.failed} failed` : ""}${j.skipped ? ` · ${j.skipped} skipped (other store)` : ""}`, (j.failed ?? 0) === 0); setSel(new Set()); load(); }
+        else { const err = j.error ?? (j.results ?? []).find((r: { ok: boolean }) => !r.ok)?.error ?? "Apply failed"; flash("✗ " + err, false); }
+      } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+      setBusy(false);
+      return;
+    }
     if (act.kind === "tags") {
       const tags = tagInput.split(",").map((t) => t.trim()).filter(Boolean);
       if (!tags.length) return flash("✗ Enter at least one tag", false);
@@ -286,7 +319,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const setV = (i: number, k: keyof Variant, val: string) => { if (!edit) return; const vs = edit.variants.slice(); (vs[i] as Record<string, unknown>)[k] = val; setEdit({ ...edit, variants: vs }); };
   const delImg = (i: number) => { if (!edit) return; setEdit({ ...edit, images: edit.images.filter((_, k) => k !== i) }); };
   const moveImg = (i: number, dir: -1 | 1) => { if (!edit) return; const j = i + dir; if (j < 0 || j >= edit.images.length) return; const a = edit.images.slice(); [a[i], a[j]] = [a[j], a[i]]; setEdit({ ...edit, images: a }); };
-  const addImg = () => { if (!edit) return; const url = prompt("Image URL (https://...)"); if (!url || !/^https?:\/\//i.test(url)) return; setEdit({ ...edit, images: [...edit.images, { id: "", src: url.trim(), altText: "", position: edit.images.length + 1 }] }); };
+  const addImg = async () => { if (!edit) return; const url = await askPrompt({ title: "Add image by URL", message: "Paste an image URL (https://...)", input: { placeholder: "https://…" } }); if (!url || !/^https?:\/\//i.test(url)) return; setEdit((e) => e ? { ...e, images: [...e.images, { id: "", src: url.trim(), altText: "", position: e.images.length + 1 }] } : e); };
   const uploadImg = async (file: File | null | undefined) => {
     if (!edit || !file) return;
     setBusy(true);
@@ -472,6 +505,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                     <input value={edit.tags ?? ""} onChange={(e) => setEdit({ ...edit, tags: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 12 }} />
                     <label style={lab}>Description (HTML)</label>
                     <textarea value={edit.bodyHtml ?? ""} onChange={(e) => setEdit({ ...edit, bodyHtml: e.target.value })} rows={4} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 14 }} />
+                    <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#FAFBFD" }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: "#334155", marginBottom: 8 }}>Search engine listing (Google)</div>
+                      <label style={lab}>Page title <span style={{ fontWeight: 500 }}>({(edit.seoTitle ?? "").length}/60)</span></label>
+                      <input value={edit.seoTitle ?? ""} onChange={(e) => setEdit({ ...edit, seoTitle: e.target.value })} maxLength={70} placeholder="Shown as the blue link on Google" style={{ ...ctl, width: "100%", marginBottom: 10 }} />
+                      <label style={lab}>Meta description <span style={{ fontWeight: 500 }}>({(edit.seoDescription ?? "").length}/155)</span></label>
+                      <textarea value={edit.seoDescription ?? ""} onChange={(e) => setEdit({ ...edit, seoDescription: e.target.value })} maxLength={320} rows={2} placeholder="Shown under the link on Google" style={{ ...ctl, width: "100%", resize: "vertical" }} />
+                    </div>
                     <label style={lab}>Variants ({edit.variants.length}) — giá / compare-at / SKU</label>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
@@ -559,9 +599,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
             {act.kind !== "tags" && (
               act.loading ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>Loading…</div>
-              : act.items.length === 0 ? <div style={{ padding: "20px 0", textAlign: "center", color: "var(--muted)" }}>{act.kind === "collection" ? "No manual collections on this store." : "None available on this store."}</div>
+              : act.items.length === 0 ? <div style={{ padding: "20px 0", textAlign: "center", color: "var(--muted)" }}>{act.kind === "collection" ? "No manual collections on this store." : act.kind === "template" ? "No templates for this store — create one in Manage Templates · Shopify." : "None available on this store."}</div>
               : <div style={{ display: "grid", gap: 4, maxHeight: 320, overflowY: "auto" }}>
-                  {act.items.map((it) => act.kind === "collection" ? (
+                  {act.items.map((it) => (act.kind === "collection" || act.kind === "template") ? (
                     <label key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, cursor: "pointer", background: pickOne === it.id ? "#F3FBF6" : "transparent" }}>
                       <input type="radio" name="pickCol" checked={pickOne === it.id} onChange={() => setPickOne(it.id)} />
                       <span style={{ fontSize: 13.5 }}>{it.label}</span>

@@ -86,6 +86,9 @@ export const orders = pgTable("orders", {
   state: text("state"),
   zip: text("zip"),
   country: text("country").notNull().default("United States"),
+  // Địa chỉ đầy đủ do SÀN tự ghép (Etsy formatted_address = nội dung nút Copy address). Nguồn chuẩn để đối chiếu,
+  // bảo đảm không thiếu dòng nào (Unit/Apt/tòa nhà…), đúng mọi quốc gia. Field tách rời vẫn dùng cho API nhà in.
+  formattedAddress: text("formatted_address"),
   total: numeric("total", { precision: 12, scale: 2 }).notNull().default("0"),
   platformFee: numeric("platform_fee", { precision: 12, scale: 2 }).notNull().default("0"),
   // true = platform_fee đang là số ƯỚC TÍNH theo % của shop → UI ghi rõ "Fee (est.)".
@@ -249,6 +252,8 @@ export const shopifyProducts = pgTable("shopify_products", {
   productType: text("product_type"),
   tags: text("tags"),                           // "a, b, c"
   status: text("status").notNull().default("DRAFT"), // ACTIVE / DRAFT / ARCHIVED
+  seoTitle: text("seo_title"),                  // SEO Page title (≤60) — hiện trên Google
+  seoDescription: text("seo_description"),      // SEO Meta description (≤160)
   // options: [{ name, position, values: string[] }]
   options: jsonb("options").notNull().default([]),
   // variants: [{ id(GID), title, selectedOptions:[{name,value}], price, compareAtPrice, sku, inventoryItemId, inventoryQty, barcode }]
@@ -265,6 +270,32 @@ export const shopifyProducts = pgTable("shopify_products", {
 }, (t) => ({
   idxShopifyProductsStore: index("idx_shopify_products_store").on(t.storeId),
   idxShopifyProductsGid: index("idx_shopify_products_gid").on(t.shopifyProductId),
+}));
+
+// ---------- SHOPIFY VARIANT TEMPLATES (preset: options + giá theo tổ hợp + collection/tags/status/kênh) ----------
+// Dựng 1 lần, áp cho nhiều sản phẩm: lúc Push Etsy→Shopify, và bulk-edit listing Shopify đã có (productSet).
+export const shopifyTemplates = pgTable("shopify_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),          // template gắn với 1 store Shopify (collection/kênh theo store)
+  name: text("name").notNull(),
+  // options: [{ name, values: string[] }]  (vd Size:[8x8,10x10], Paper:[Glossy,Matte]) — tối đa 3
+  options: jsonb("options").notNull().default([]),
+  // variants: [{ options: {OptionName:value,...}, price, compareAtPrice?, sku? }] — giá theo TỪNG tổ hợp
+  variants: jsonb("variants").notNull().default([]),
+  collectionIds: jsonb("collection_ids").notNull().default([]), // gid://shopify/Collection/...
+  publicationIds: jsonb("publication_ids").notNull().default([]), // sales channels (gid://shopify/Publication/...)
+  status: text("status").notNull().default("DRAFT"), // ACTIVE / DRAFT / ARCHIVED
+  productType: text("product_type"),            // vd "Personalized"
+  vendor: text("vendor"),                       // vd "Talewix"
+  themeTemplate: text("theme_template"),        // templateSuffix (Theme template, "" = Default product)
+  // category: { id: gid://shopify/TaxonomyCategory/..., name } — Shopify Standard Product Taxonomy
+  category: jsonb("category"),
+  // categoryMetafields: [{ namespace, key, type, value, label, valueLabel }] — Book cover type/Genre/Language/Target audience
+  categoryMetafields: jsonb("category_metafields").notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  idxShopifyTemplatesStore: index("idx_shopify_templates_store").on(t.storeId),
 }));
 
 // ---------- FULFILLMENT ----------

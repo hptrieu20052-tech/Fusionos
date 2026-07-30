@@ -5,9 +5,10 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { shopifyGraphQL, shopHost, type ShopifyCred } from "@/lib/shopify";
+import { applyTemplate, type Template } from "@/lib/shopify-template";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 /**
  * POST /api/etsy-products/push-shopify { ids: string[], storeId: string }
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 100);
   const storeId = String(b?.storeId ?? "").trim();
+  const templateId = /^[0-9a-f-]{36}$/i.test(String(b?.templateId ?? "")) ? String(b.templateId) : "";
   if (!ids.length || !storeId) return NextResponse.json({ ok: false, error: "ids + storeId required" }, { status: 400 });
 
   // Store Shopify đích + credentials
@@ -57,9 +59,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "forbidden: some listings are not in your stores" }, { status: 403 });
   }
 
+  // Template (tuỳ chọn) — áp full preset (options/variants/giá/category/collection/kênh…) khi tạo trên Shopify.
+  let tpl: Template | null = null;
+  if (templateId) {
+    const [t] = await db.select().from(schema.shopifyTemplates).where(eq(schema.shopifyTemplates.id, templateId)).limit(1);
+    if (!t) return NextResponse.json({ ok: false, error: "template not found" }, { status: 404 });
+    if (t.storeId !== storeId) return NextResponse.json({ ok: false, error: "template thuộc store khác — chọn template của đúng store đích" }, { status: 400 });
+    tpl = t as unknown as Template;
+  }
+
   const results: { id: string; title: string; ok: boolean; handle?: string; error?: string }[] = [];
   for (const { p } of rows) {
     try {
+      // ---- Có template: dùng cấu trúc/giá từ template, nội dung (title/desc/ảnh) từ listing Etsy ----
+      if (tpl) {
+        const titleT = p.shopifyTitle || p.title;
+        const descT = (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
+        const imgsT = (Array.isArray(p.images) ? p.images as string[] : []).filter(Boolean).slice(0, 12);
+        const existingGidT = (p as { shopifyProductId?: string }).shopifyProductId || undefined;
+        const res = await applyTemplate(cred, tpl, { id: existingGidT, title: titleT, descriptionHtml: descT, images: imgsT }, { includeImages: true });
+        if (!res.ok || !res.productId) { results.push({ id: p.id, title: titleT, ok: false, error: res.error ?? "apply failed" }); continue; }
+        await db.update(schema.etsyProducts).set({ shopifyProductId: res.productId, updatedAt: new Date() }).where(eq(schema.etsyProducts.id, p.id));
+        results.push({ id: p.id, title: titleT, ok: true, handle: res.handle });
+        continue;
+      }
       const vars = (Array.isArray(p.variations) ? p.variations as { name?: string; values?: string[] }[] : [])
         .map((v) => ({ name: String(v.name ?? "").trim(), values: (v.values ?? []).map(String).filter((x) => x && !CANON.test(x)) }))
         .filter((v) => v.name && v.values.length)

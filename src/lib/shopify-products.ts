@@ -14,6 +14,7 @@ export type SyncedOption = { name: string; position: number; values: string[] };
 export type SyncedProduct = {
   shopifyProductId: string; handle: string; title: string; bodyHtml: string;
   vendor: string; productType: string; tags: string; status: string;
+  seoTitle: string; seoDescription: string;
   options: SyncedOption[]; variants: SyncedVariant[]; images: SyncedImage[];
   onlineStoreUrl: string | null; totalInventory: number | null;
 };
@@ -30,6 +31,7 @@ const PRODUCTS_QUERY = `query Products($cursor: String) {
     pageInfo { hasNextPage endCursor }
     nodes {
       id handle title descriptionHtml vendor productType status tags totalInventory onlineStoreUrl
+      seo { title description }
       options { name position optionValues { name } }
       media(first: 20) { nodes { ... on MediaImage { id image { url altText } } } }
       variants(first: 100) {
@@ -43,6 +45,7 @@ const PRODUCTS_QUERY = `query Products($cursor: String) {
 type RawProduct = {
   id: string; handle?: string; title?: string; descriptionHtml?: string; vendor?: string;
   productType?: string; status?: string; tags?: string[]; totalInventory?: number | null; onlineStoreUrl?: string | null;
+  seo?: { title?: string | null; description?: string | null } | null;
   options?: { name?: string; position?: number; optionValues?: { name?: string }[] }[];
   media?: { nodes?: { id?: string; image?: { url?: string; altText?: string | null } }[] };
   variants?: { nodes?: Record<string, unknown>[] };
@@ -68,6 +71,7 @@ function normalize(p: RawProduct): SyncedProduct {
     shopifyProductId: p.id, handle: String(p.handle ?? ""), title: String(p.title ?? ""),
     bodyHtml: String(p.descriptionHtml ?? ""), vendor: String(p.vendor ?? ""), productType: String(p.productType ?? ""),
     tags: (p.tags ?? []).join(", "), status: String(p.status ?? "DRAFT"),
+    seoTitle: String(p.seo?.title ?? ""), seoDescription: String(p.seo?.description ?? ""),
     options, variants, images, onlineStoreUrl: p.onlineStoreUrl ?? null,
     totalInventory: p.totalInventory == null ? null : Number(p.totalInventory),
   };
@@ -87,6 +91,24 @@ export async function fetchAllShopifyProducts(cred: ShopifyCred, maxPages = 40):
     if (!cursor) break;
   }
   return out;
+}
+
+// Lấy 1 sản phẩm theo GID (dùng sau khi productSet để đồng bộ lại bản local với variant GID mới).
+const ONE_QUERY = `query One($id: ID!) {
+  product(id: $id) {
+    id handle title descriptionHtml vendor productType status tags totalInventory onlineStoreUrl
+    seo { title description }
+    options { name position optionValues { name } }
+    media(first: 20) { nodes { ... on MediaImage { id image { url altText } } } }
+    variants(first: 100) {
+      nodes { id title price compareAtPrice sku barcode inventoryQuantity
+              selectedOptions { name value } inventoryItem { id } }
+    }
+  }
+}`;
+export async function fetchOneShopifyProduct(cred: ShopifyCred, gid: string): Promise<SyncedProduct | null> {
+  const data = await shopifyGraphQL<{ product?: RawProduct | null }>(cred, ONE_QUERY, { id: gid });
+  return data.product ? normalize(data.product) : null;
 }
 
 // ---- PUSH: đẩy chỉnh sửa local lên Shopify ----
@@ -112,6 +134,7 @@ const MEDIA_LIST = `query M($id: ID!) {
 type LocalProduct = {
   shopifyProductId: string; title: string; bodyHtml: string | null; tags: string | null;
   status: string; vendor: string | null; productType: string | null;
+  seoTitle?: string | null; seoDescription?: string | null;
   variants: SyncedVariant[]; images: SyncedImage[];
 };
 
@@ -135,6 +158,8 @@ export async function pushProductToShopify(
       status: (local.status || "DRAFT").toUpperCase(),
       vendor: local.vendor ?? undefined, productType: local.productType ?? undefined,
       tags: (local.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean),
+      ...((local.seoTitle != null || local.seoDescription != null)
+        ? { seo: { title: local.seoTitle ?? "", description: local.seoDescription ?? "" } } : {}),
     },
   });
   const e1 = ue(r1.productUpdate?.userErrors); if (e1) return { ok: false, error: "product: " + e1 };

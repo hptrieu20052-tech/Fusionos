@@ -50,7 +50,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
   useEffect(() => {
     setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false);
-    const hubPaths = ["/etsy-products", "/shopify-products", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
+    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
     setMobileHub(hubPaths.some((p) => path.startsWith(p)));
   }, [path]);
   useEffect(() => {
@@ -104,7 +104,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
 
   // Dropdown "Seller Hub" (gộp Products + Templates + Support) — sau "Design Studio"; hiện khi có quyền products HOẶC support.
   const hasDesigns = links.some((l) => !l.more && l.href === "/designs");
-  const hubActive = ["/etsy-products", "/shopify-products", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
+  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image", "/ai-video"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
@@ -156,6 +156,10 @@ export default function AppShell({ user, links, children, canProducts = false, c
           {canProducts && <Link href="/shopify-products" prefetch className={`topnav-more-item${isActive("/shopify-products") ? " active" : ""}`}>
             <span className="topnav-ic"><IconBox width={16} height={16} /></span>
             Manage Products Shopify
+          </Link>}
+          {canProducts && <Link href="/shopify-templates" prefetch className={`topnav-more-item${isActive("/shopify-templates") ? " active" : ""}`}>
+            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            Manage Templates Shopify
           </Link>}
           {canProducts && <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
             <span className="topnav-ic"><IconBox width={16} height={16} /></span>
@@ -321,6 +325,12 @@ export default function AppShell({ user, links, children, canProducts = false, c
               <Link href="/shopify-products" prefetch className={`mobile-nav-item${isActive("/shopify-products") ? " active" : ""}`}>
                 <span className="topnav-ic"><IconBox width={18} height={18} /></span>
                 Manage Products Shopify
+              </Link>
+            )}
+            {!hasDesigns && canProducts && (
+              <Link href="/shopify-templates" prefetch className={`mobile-nav-item${isActive("/shopify-templates") ? " active" : ""}`}>
+                <span className="topnav-ic"><IconBox width={18} height={18} /></span>
+                Manage Templates Shopify
               </Link>
             )}
             {!hasDesigns && canProducts && (

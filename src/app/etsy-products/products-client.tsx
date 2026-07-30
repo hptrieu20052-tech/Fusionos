@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { useConfirm, usePrompt } from "@/components/confirm-provider";
 
 type Row = {
   id: string; storeId: string; title: string; price: string | null; quantity: number | null;
@@ -37,6 +38,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20); // default 20 listings/page
   const [pushFilter, setPushFilter] = useState(""); // "" | "pushed" | "not"
+  const confirm = useConfirm();
+  const askPrompt = usePrompt();
   const showSellerFilter = sellers.length > 1; // only when managing multiple sellers (admin)
   // Import drawer
   const [impOpen, setImpOpen] = useState(false);
@@ -101,13 +104,22 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
   // Push to Shopify qua API (không cần CSV). Chọn store Shopify đích → tạo/cập nhật sản phẩm.
   const [pushStore, setPushStore] = useState(shopifyStores[0]?.id ?? "");
+  const [pushTemplate, setPushTemplate] = useState("");
+  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    if (!pushStore) { setTemplates([]); return; }
+    fetch(`/api/shopify-templates?storeId=${pushStore}`).then((r) => r.json())
+      .then((j) => { const t = j.ok ? j.templates : []; setTemplates(t); setPushTemplate((cur) => t.some((x: { id: string }) => x.id === cur) ? cur : ""); })
+      .catch(() => setTemplates([]));
+  }, [pushStore]);
   const doPushShopify = async () => {
     if (!sel.size) return flash("✗ Select listings first", false);
     if (!pushStore) return flash("✗ Chưa có store Shopify — thêm store Shopify + cấu hình API trong Stores trước", false);
-    if (!confirm(`Push ${sel.size} listing(s) to Shopify store "${shopifyStores.find((s) => s.id === pushStore)?.name ?? ""}"? Sản phẩm tạo ở trạng thái DRAFT để duyệt trước khi bán.`)) return;
+    const tplName = templates.find((t) => t.id === pushTemplate)?.name;
+    if (!(await confirm({ title: "Push to Shopify", message: `Push ${sel.size} listing(s) to Shopify store "${shopifyStores.find((s) => s.id === pushStore)?.name ?? ""}"?${tplName ? `\nTemplate: ${tplName} (variants/price/collections/channels/category from template).` : "\nNo template — variants/price come from each Etsy listing."}\nProducts are created as DRAFT so you can review before selling.`, confirmText: "Push", tone: "green" }))) return;
     setBusy(true);
     try {
-      const j = await fetch("/api/etsy-products/push-shopify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), storeId: pushStore }) }).then((r) => r.json());
+      const j = await fetch("/api/etsy-products/push-shopify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), storeId: pushStore, ...(pushTemplate ? { templateId: pushTemplate } : {}) }) }).then((r) => r.json());
       if (j.ok || j.created) {
         const fail = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
         flash(`✓ Pushed ${j.created}/${(j.results ?? []).length} to ${j.store}${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`, j.failed === 0);
@@ -202,7 +214,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
   const doDelete = async () => {
     if (!sel.size) return;
-    if (!confirm(`Delete ${sel.size} listing(s) from FUSION? (Your Etsy shop is NOT affected)`)) return;
+    if (!(await confirm({ message: `Delete ${sel.size} listing(s) from FUSION?\nYour Etsy shop is NOT affected.`, danger: true }))) return;
     setBusy(true);
     const j = await fetch("/api/etsy-products", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json()).catch(() => ({ ok: false }));
     if (j.ok) { flash(`✓ Deleted ${j.deleted}`); setSel(new Set()); load(); } else flash("✗ " + (j.error ?? "Delete failed"), false);
@@ -217,7 +229,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   };
 
   const doDeleteOne = async (id: string, title: string) => {
-    if (!confirm(`Delete "${title.slice(0, 60)}" from FUSION? (Your Etsy shop is NOT affected)`)) return;
+    if (!(await confirm({ message: `Delete "${title.slice(0, 60)}" from FUSION?\nYour Etsy shop is NOT affected.`, danger: true }))) return;
     setBusy(true);
     const j = await fetch("/api/etsy-products", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id] }) }).then((r) => r.json()).catch(() => ({ ok: false }));
     if (j.ok) { flash("✓ Deleted"); const n = new Set(sel); n.delete(id); setSel(n); load(); } else flash("✗ " + (j.error ?? "Delete failed"), false);
@@ -260,7 +272,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   };
 
   // Thêm ảnh vào listing (Etsy edit modal): upload từ máy (R2) hoặc dán URL.
-  const addImgUrl = () => { if (!edit) return; const url = prompt("Image URL (https://...)"); if (!url || !/^https?:\/\//i.test(url)) return; setEdit({ ...edit, images: [...edit.images, url.trim()] }); };
+  const addImgUrl = async () => { if (!edit) return; const url = await askPrompt({ title: "Add image by URL", message: "Paste an image URL (https://...)", input: { placeholder: "https://…" } }); if (!url || !/^https?:\/\//i.test(url)) return; setEdit((e) => e ? { ...e, images: [...e.images, url.trim()] } : e); };
   const uploadImg = async (file: File | null | undefined) => {
     if (!edit || !file) return;
     setBusy(true);
@@ -340,6 +352,10 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <select value={pushStore} onChange={(e) => setPushStore(e.target.value)} title="Target Shopify store" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 160 }}>
                 {shopifyStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <select value={pushTemplate} onChange={(e) => setPushTemplate(e.target.value)} title="Apply a template (variants/price/collections/channels/category)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 180 }}>
+                <option value="">Template: none</option>
+                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>
               <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doPushShopify} title="Create the selected listings directly on Shopify via API (no CSV)"><IcShop /> Push to Shopify</button>
             </span>

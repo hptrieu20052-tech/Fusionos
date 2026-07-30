@@ -4,7 +4,7 @@ import { Flash } from "@/components/flash";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { SupplierLogo } from "@/components/supplier-logo";
-import { useConfirm } from "@/components/confirm-provider";
+import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import { IconTrash, IconRefresh, IconPlus, IconPin, IconPrinter } from "@/components/icons";
 
 type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null; logoUrl?: string | null; mapCount?: number; pinnedCount?: number };
@@ -17,6 +17,7 @@ const pgBtn = (disabled: boolean): CSSProperties => ({ background: "#fff", borde
 export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const { t } = useLang();
   const confirm = useConfirm();
+  const askPrompt = usePrompt();
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [rows, setRows] = useState<Map[]>([]);
   const [total, setTotal] = useState(0);
@@ -287,7 +288,17 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped` + (imp.unmatched ? ` · ${imp.unmatched} unmatched product_id` : ""));
     // Response Vinaway thiếu field (không tên SP / không sku code) → hiện MẪU THÔ để copy gửi admin map lại field.
-    if (imp.note && typeof window !== "undefined" && /Response Vinaway/.test(String(imp.note))) window.prompt("Vinaway response sample — copy & gửi admin:", String(imp.note));
+    if (imp.note && /Response Vinaway/.test(String(imp.note))) await askPrompt({ title: "Vinaway response sample", message: "Copy this and send to admin:", confirmText: "Done", input: { initial: String(imp.note) } });
+  }
+
+  // Kéo catalog Hogoto POD (GET /v1/product) → thêm mapping mới (fulfillerSku = Product Code)
+  async function getSkuHogoto() {
+    setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Hogoto POD"));
+    const imp = await fetch("/api/fulfillers/hogoto-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
+    refresh();
+    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.products} products, ${imp.found} variants, ${imp.skipped} skipped`);
+    if (imp.note) await askPrompt({ title: "Hogoto response sample", message: "Copy this and send to admin:", confirmText: "Done", input: { initial: String(imp.note) } });
   }
 
   // Kéo catalog SKU Printway (GET /products/list-sku-catalogs) → thêm mapping mới
@@ -388,6 +399,9 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("vinaway") && canEdit && (
               <button onClick={getSkuVinaway} title="Pull products + variant SKUs from Vinaway (product_id:sku_id)" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
+            )}
+            {ff.method === "api" && ff.name.toLowerCase().includes("hogoto") && canEdit && (
+              <button onClick={getSkuHogoto} title="Pull product catalog from Hogoto POD (GET /v1/product)" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconRefresh width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{t("sk.updateSkuBtn")}</button>
             )}
             {ff.method === "api" && ff.name.toLowerCase().includes("compassup") && canEdit && (
               <button onClick={() => setCuOpen((v) => !v)} title="Import variants from a Compassup product link" style={{ background: "#EAF3EA", border: "1px solid #BFE0BF", color: "#2E7D46", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: "pointer", fontSize: 12.5 }}><IconPlus width={13} height={13} style={{ verticalAlign: "-2px", marginRight: 4 }} />{cuOpen ? "Close import" : "Import from link"}</button>

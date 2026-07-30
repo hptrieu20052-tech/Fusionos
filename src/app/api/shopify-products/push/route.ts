@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
       const res = await pushProductToShopify(cred, {
         shopifyProductId: r.p.shopifyProductId, title: r.p.title, bodyHtml: r.p.bodyHtml, tags: r.p.tags,
         status: r.p.status, vendor: r.p.vendor, productType: r.p.productType,
+        seoTitle: r.p.seoTitle, seoDescription: r.p.seoDescription,
         variants: (Array.isArray(r.p.variants) ? r.p.variants as SyncedVariant[] : []),
         images: (Array.isArray(r.p.images) ? r.p.images as SyncedImage[] : []),
       });
