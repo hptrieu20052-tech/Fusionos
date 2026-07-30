@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import {
   IconDashboard, IconOrders, IconTruck, IconArtwork, IconReport,
   IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing, IconBell, IconSparkle, IconBook,
+  IconEtsy, IconShopify, IconTiktok,
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 
@@ -150,23 +151,23 @@ export default function AppShell({ user, links, children, canProducts = false, c
       {prodOpen && (
         <div className="topnav-more-menu" onClick={() => setProdOpen(false)}>
           {canProducts && <Link href="/etsy-products" prefetch className={`topnav-more-item${isActive("/etsy-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            <span className="topnav-ic"><IconEtsy width={16} height={16} /></span>
             Manage Products Etsy
           </Link>}
           {canProducts && <Link href="/shopify-products" prefetch className={`topnav-more-item${isActive("/shopify-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            <span className="topnav-ic"><IconShopify width={16} height={16} /></span>
             Manage Products Shopify
           </Link>}
           {canProducts && <Link href="/shopify-templates" prefetch className={`topnav-more-item${isActive("/shopify-templates") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            <span className="topnav-ic"><IconShopify width={16} height={16} /></span>
             Manage Templates Shopify
           </Link>}
           {canProducts && <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            <span className="topnav-ic"><IconTiktok width={16} height={16} /></span>
             Manage Products Tiktok
           </Link>}
           {canProducts && <Link href="/tiktok-templates" prefetch className={`topnav-more-item${isActive("/tiktok-templates") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconGrid width={16} height={16} /></span>
+            <span className="topnav-ic"><IconTiktok width={16} height={16} /></span>
             Manage Templates Tiktok
           </Link>}
           {canSupport && <Link href="/support" prefetch className={`topnav-more-item${isActive("/support") ? " active" : ""}`}>
@@ -287,8 +288,8 @@ export default function AppShell({ user, links, children, canProducts = false, c
               if (l.href === "/designs" && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
                 const hubItems = [
                   ...(canProducts ? [
-                    { href: "/tiktok-products", icon: <IconBox width={18} height={18} />, label: "Manage Products Tiktok" },
-                    { href: "/tiktok-templates", icon: <IconGrid width={18} height={18} />, label: "Manage Templates Tiktok" },
+                    { href: "/tiktok-products", icon: <IconTiktok width={18} height={18} />, label: "Manage Products Tiktok" },
+                    { href: "/tiktok-templates", icon: <IconTiktok width={18} height={18} />, label: "Manage Templates Tiktok" },
                   ] : []),
                   ...(canSupport ? [{ href: "/support", icon: <IconSupport width={18} height={18} />, label: "Customer Messages Tiktok" }] : []),
                   ...(canMarketing ? [{ href: "/marketing", icon: <IconMarketing width={18} height={18} />, label: "Marketing Tiktok" }] : []),
@@ -317,25 +318,25 @@ export default function AppShell({ user, links, children, canProducts = false, c
             })}
             {!hasDesigns && canProducts && (
               <Link href="/etsy-products" prefetch className={`mobile-nav-item${isActive("/etsy-products") ? " active" : ""}`}>
-                <span className="topnav-ic"><IconBox width={18} height={18} /></span>
+                <span className="topnav-ic"><IconEtsy width={18} height={18} /></span>
                 Manage Products Etsy
               </Link>
             )}
             {!hasDesigns && canProducts && (
               <Link href="/shopify-products" prefetch className={`mobile-nav-item${isActive("/shopify-products") ? " active" : ""}`}>
-                <span className="topnav-ic"><IconBox width={18} height={18} /></span>
+                <span className="topnav-ic"><IconShopify width={18} height={18} /></span>
                 Manage Products Shopify
               </Link>
             )}
             {!hasDesigns && canProducts && (
               <Link href="/shopify-templates" prefetch className={`mobile-nav-item${isActive("/shopify-templates") ? " active" : ""}`}>
-                <span className="topnav-ic"><IconBox width={18} height={18} /></span>
+                <span className="topnav-ic"><IconShopify width={18} height={18} /></span>
                 Manage Templates Shopify
               </Link>
             )}
             {!hasDesigns && canProducts && (
               <Link href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
-                <span className="topnav-ic"><IconBox width={18} height={18} /></span>
+                <span className="topnav-ic"><IconTiktok width={18} height={18} /></span>
                 Manage Products Tiktok
               </Link>
             )}

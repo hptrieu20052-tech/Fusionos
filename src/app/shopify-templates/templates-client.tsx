@@ -44,6 +44,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
   const [colls, setColls] = useState<NamedItem[]>([]);
   const [pubs, setPubs] = useState<NamedItem[]>([]);
   const [catQ, setCatQ] = useState(""); const [catHits, setCatHits] = useState<NamedItem[]>([]);
+  const [optTexts, setOptTexts] = useState<string[]>([]); // text thô cho ô values (tránh strip dấu phẩy khi gõ)
   // "new from product"
   const [prodPick, setProdPick] = useState<{ storeId: string; list: { id: string; title: string }[] } | null>(null);
 
@@ -66,7 +67,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
     } catch { /* offline */ }
   }, []);
 
-  const openEditor = async (d: Draft) => { setDraft(d); setCatQ(""); setCatHits([]); await loadPickers(d.storeId); };
+  const openEditor = async (d: Draft) => { setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setCatQ(""); setCatHits([]); await loadPickers(d.storeId); };
   const newBlank = () => { if (!storeFilter) return flash("✗ Pick a store first", false); openEditor(emptyDraft(storeFilter)); };
   const editTpl = (t: Tpl) => openEditor({ ...t, category: t.category ?? null });
 
@@ -99,7 +100,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
         status: "DRAFT", productType: p.productType ?? "", vendor: p.vendor ?? "", themeTemplate: p.themeTemplate ?? "",
         category: p.category ?? null, categoryMetafields: p.categoryMetafields ?? [],
       };
-      setDraft(d); setCatQ(""); setCatHits([]);
+      setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setCatQ(""); setCatHits([]);
       // đảm bảo picker có tên collection/kênh từ product kể cả khi chưa nạp full store
       loadPickers(p.storeId);
     } catch { flash("✗ Network error", false); }
@@ -118,12 +119,21 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
     const options = d.options.map((o, k) => k === i ? { ...o, ...patch } : o);
     return { ...d, options, variants: regenVariants(options, d.variants) };
   });
-  const addOption = () => setDraft((d) => d ? { ...d, options: [...d.options, { name: "", values: [] }] } : d);
-  const removeOption = (i: number) => setDraft((d) => {
-    if (!d) return d;
-    const options = d.options.filter((_, k) => k !== i);
-    return { ...d, options, variants: regenVariants(options, d.variants) };
-  });
+  // Ô values: giữ text thô người gõ (optTexts) để KHÔNG mất dấu phẩy/khoảng trắng khi đang gõ giá trị mới.
+  const setOptionValuesText = (i: number, text: string) => {
+    setOptTexts((ts) => { const n = [...ts]; n[i] = text; return n; });
+    setOption(i, { values: text.split(",").map((x) => x.trim()).filter(Boolean) });
+  };
+  const setOptionName = (i: number, name: string) => setOption(i, { name });
+  const addOption = () => { setDraft((d) => d ? { ...d, options: [...d.options, { name: "", values: [] }] } : d); setOptTexts((ts) => [...ts, ""]); };
+  const removeOption = (i: number) => {
+    setDraft((d) => {
+      if (!d) return d;
+      const options = d.options.filter((_, k) => k !== i);
+      return { ...d, options, variants: regenVariants(options, d.variants) };
+    });
+    setOptTexts((ts) => ts.filter((_, k) => k !== i));
+  };
   const setVariant = (i: number, patch: Partial<Vari>) => setDraft((d) => d ? { ...d, variants: d.variants.map((v, k) => k === i ? { ...v, ...patch } : v) } : d);
   const toggleId = (field: "collectionIds" | "publicationIds", id: string) => setDraft((d) => {
     if (!d) return d;
@@ -233,8 +243,8 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
             <div style={{ ...lab, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>Options (max 3)</div>
             {draft.options.map((o, i) => (
               <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <input value={o.name} onChange={(e) => setOption(i, { name: e.target.value })} placeholder="Option name (e.g. Size)" style={{ ...ctl, width: 180 }} />
-                <input value={o.values.join(", ")} onChange={(e) => setOption(i, { values: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) })} placeholder="Values, comma-separated" style={{ ...ctl, flex: 1 }} />
+                <input value={o.name} onChange={(e) => setOptionName(i, e.target.value)} placeholder="Option name (e.g. Size)" style={{ ...ctl, width: 180 }} />
+                <input value={optTexts[i] ?? o.values.join(", ")} onChange={(e) => setOptionValuesText(i, e.target.value)} placeholder="Values, comma-separated (e.g. 8x8, 10x10, 12x12)" style={{ ...ctl, flex: 1 }} />
                 <button onClick={() => removeOption(i)} style={{ ...ghost, color: "var(--red)", padding: "8px 12px" }}>×</button>
               </div>
             ))}

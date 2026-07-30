@@ -189,6 +189,22 @@ export const IconBox = (p: P) => (
     <path d="M21 8l-9-5-9 5v8l9 5 9-5V8zM3.3 8.3L12 13l8.7-4.7M12 13v9" />
   </svg>
 );
+// ---- Logo sàn dạng line (đồng bộ với bộ icon nav) ----
+export const IconEtsy = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={16} height={16} {...p}>
+    <path d="M15.5 6H9v12h6.5" /><path d="M9 12h5.5" />
+  </svg>
+);
+export const IconShopify = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={16} height={16} {...p}>
+    <path d="M6.2 7.5 5 20h14l-1.2-12.5a1 1 0 0 0-1-.9H7.2a1 1 0 0 0-1 .9z" /><path d="M9 8.5V6.8a3 3 0 0 1 6 0v1.7" />
+  </svg>
+);
+export const IconTiktok = (p: P) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={16} height={16} {...p}>
+    <path d="M10 20a3 3 0 1 1-3-3c.4 0 .7 0 1 .1V5c1.2 2.6 3.4 4 6 4" />
+  </svg>
+);
 export const IconMarketing = (p: P) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" width={16} height={16} {...p}>
     <path d="M3 11v2a1 1 0 0 0 1 1h2l3.5 3.5V7.5L6 11H4a1 1 0 0 0-1 0z" />
