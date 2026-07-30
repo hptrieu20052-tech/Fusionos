@@ -8,8 +8,8 @@ export const dynamic = "force-dynamic";
 // GET /api/books/models?type=text|image → danh sách model OpenRouter cho UI chọn theo khâu.
 export async function GET(req: NextRequest) {
   const s = await getSession();
-  // Cho phép mọi module AI Agent dùng chung danh sách model (Book Studio / Gen Image / Gen Video).
-  const allowed = (await can(s, "bookStudio")) || (await can(s, "genImage")) || (await can(s, "genVideo"));
+  // Cho phép mọi module AI Agent + Manage Products Etsy (AI Optimize) dùng chung danh sách model.
+  const allowed = (await can(s, "bookStudio")) || (await can(s, "genImage")) || (await can(s, "genVideo")) || (await can(s, "products"));
   if (!allowed) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const type = req.nextUrl.searchParams.get("type") === "image" ? "image" : "text";
   try {

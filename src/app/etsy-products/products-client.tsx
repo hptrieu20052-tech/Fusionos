@@ -49,6 +49,9 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
   const [editId, setEditId] = useState<string | null>(null);
   const [edit, setEdit] = useState<Detail | null>(null);
   const [editLoading, setEditLoading] = useState(false);
+  // AI model chooser (dùng cho AI Optimize). "" = model text mặc định của hệ thống.
+  const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
+  const [aiModel, setAiModel] = useState("");
 
   const load = async () => {
     setLoading(true);
@@ -56,6 +59,12 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
+  // Nạp danh sách model text từ OpenRouter (tái dùng endpoint Book Studio) + khôi phục lựa chọn đã lưu.
+  useEffect(() => {
+    try { const saved = window.localStorage.getItem("etsyAiModel"); if (saved) setAiModel(saved); } catch { /* ignore */ }
+    fetch("/api/books/models?type=text").then((r) => r.json()).then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
+  }, []);
+  const chooseModel = (m: string) => { setAiModel(m); try { window.localStorage.setItem("etsyAiModel", m); } catch { /* ignore */ } };
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 5000); };
 
@@ -110,7 +119,7 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
       for (let i = 0; i < all.length; i += CHUNK) {
         flash(`✦ AI optimizing… ${done}/${all.length}`);
         const batch = all.slice(i, i + CHUNK);
-        const res = await fetch("/api/etsy-products/ai-optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) });
+        const res = await fetch("/api/etsy-products/ai-optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: aiModel || undefined }) });
         const text = await res.text();
         let j: { ok?: boolean; optimized?: number; error?: string; errors?: string[] };
         try { j = JSON.parse(text); } catch { errs.push(`HTTP ${res.status}`); continue; }
@@ -246,6 +255,12 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
         <div style={{ ...card, padding: "10px 14px", marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", background: "#F8FAFF", borderColor: "#DCE6FB" }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--blue)" }}>{sel.size} selected</span>
           <div style={{ flex: 1 }} />
+          {canEdit && (
+            <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model used for Optimize" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 220 }}>
+              <option value="">AI model: Default</option>
+              {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+          )}
           {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doOptimize} title="AI rewrites title + tags for Shopify/Google SEO (auto-batches, any count)"><IcSpark /> AI Optimize</button>}
           <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#22A06B,#158A57)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doExport}><IcDownload /> Export Shopify</button>
           {canEdit && <button disabled={busy} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }} onClick={doDelete}><IcTrash /> Delete</button>}

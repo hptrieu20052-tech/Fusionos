@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 20);
   if (!ids.length) return NextResponse.json({ ok: false, error: "Select up to 20 listings" }, { status: 400 });
+  // Model do người dùng chọn (slug OpenRouter); rỗng → dùng model text mặc định (OPENROUTER_TEXT_MODEL).
+  const model = typeof b?.model === "string" && b.model.trim() ? b.model.trim() : undefined;
 
   const rows = await db.select({
     id: schema.etsyProducts.id, storeId: schema.etsyProducts.storeId,
@@ -48,7 +50,7 @@ export async function POST(req: NextRequest) {
   for (const r of rows) {
     try {
       const user = `Etsy title: ${r.title}\nEtsy tags: ${(r.tags ?? "").replace(/_/g, " ")}\nEtsy description (first 500 chars): ${(r.description ?? "").slice(0, 500)}`;
-      const o = await orChatJSON<Opt>(SYSTEM, user, { maxTokens: 500, temperature: 0.6, timeoutMs: 45000 });
+      const o = await orChatJSON<Opt>(SYSTEM, user, { model, maxTokens: 500, temperature: 0.6, timeoutMs: 45000 });
       const t = String(o?.title ?? "").trim().slice(0, 70);
       if (!t) throw new Error("empty title");
       await db.update(schema.etsyProducts).set({
