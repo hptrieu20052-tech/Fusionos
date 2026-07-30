@@ -89,6 +89,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
       if (!j.ok) { flash("✗ " + (j.error ?? "Fetch failed"), false); setBusy(false); return; }
       const p = j.prefill;
       setProdPick(null);
+      if (j.note) flash("⚠ Copied — " + j.note, true);
       setColls((p.collections ?? []).map((c: { id: string; title: string }) => ({ id: c.id, label: c.title })));
       setPubs((p.publications ?? []).map((c: { id: string; name: string }) => ({ id: c.id, label: c.name })));
       const d: Draft = {
