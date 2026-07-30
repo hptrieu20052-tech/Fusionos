@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { verifyShopifyHmac, normalizeShopifyOrder, shopHost, webhookSecretOf, type ShopifyCred } from "@/lib/shopify";
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
 
@@ -49,12 +49,30 @@ export async function POST(req: NextRequest) {
         .where(and(eq(schema.orders.platform, "shopify" as never), eq(schema.orders.externalId, norm.externalId)));
       return NextResponse.json({ ok: true, cancelled: norm.externalId });
     }
+    // PHÂN BỔ SELLER THEO SẢN PHẨM: khớp product_id của line item ↔ listing đã Push (shopifyProductId)
+    // ↔ store Etsy gốc ↔ seller. Nhờ vậy cả công ty chung 1 store Shopify vẫn về đúng seller.
+    // Không khớp được (sản phẩm không do FUSION đẩy) → fallback về chủ store Shopify.
+    let sellerId = store.sellerId;
+    try {
+      const pids = Array.from(new Set((norm.items ?? [])
+        .map((it) => String(it.listingId ?? "").replace(/\D/g, "")).filter(Boolean)));
+      if (pids.length) {
+        const gids = pids.map((n) => `gid://shopify/Product/${n}`);
+        const [m] = await db.select({ sellerId: schema.stores.sellerId })
+          .from(schema.etsyProducts)
+          .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+          .where(inArray(schema.etsyProducts.shopifyProductId, gids))
+          .limit(1);
+        if (m?.sellerId) sellerId = m.sellerId;
+      }
+    } catch { /* fallback store.sellerId */ }
+
     // insertEtsyOrders tự bắn Telegram cho đơn mới (notifyNewSales bên trong) → không gọi lại ở đây.
     const r = await insertEtsyOrders(
-      { id: store.id, sellerId: store.sellerId, fx: store.fxRate, name: store.name },
+      { id: store.id, sellerId, fx: store.fxRate, name: store.name },
       [norm], "api", "shopify",
     );
-    return NextResponse.json({ ok: true, ...r });
+    return NextResponse.json({ ok: true, seller: sellerId, ...r });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
