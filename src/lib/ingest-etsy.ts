@@ -13,6 +13,7 @@ export type InItem = {
 export type InOrder = {
   externalId?: string; buyerFirst?: string; buyerLast?: string;
   addr1?: string; addr2?: string; city?: string; state?: string; zip?: string; country?: string;
+  formattedAddress?: string; // địa chỉ đầy đủ sàn tự ghép (Copy address) — bảo hiểm không thiếu dòng
   total?: number; fee?: number; orderedAt?: string; note?: string; platformStatus?: string; shippingType?: string;
   items?: InItem[];
 };
@@ -26,6 +27,7 @@ const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 // vào field bang. Nếu giá trị là từ trạng thái đơn thì bỏ (để trống còn hơn sai).
 const ORDER_STATUS_WORDS = /^(active|open|paid|unpaid|completed|complete|processing|pending|new|created|shipped|in[_\s-]?transit|delivered|cancel(?:led|ed)?|refunded?|void|declined|chargeback|fulfilled|partially[_\s-]?fulfilled)$/i;
 const cleanState = (v: unknown) => { const x = s(v); return x && ORDER_STATUS_WORDS.test(x) ? null : x; };
+
 
 // Ghi đơn Etsy đã chuẩn hoá vào DB. Dedup theo (platform=etsy, external_id).
 // orderedAt = NGÀY KÉO ĐƠN (thời điểm ingest) để mọi thống kê tính theo ngày kéo.
@@ -45,6 +47,34 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
 
   // Blocklist đơn hệ thống CŨ — hỏi DB 1 lần cho cả lô, không hỏi từng đơn
   const blocked = await ignoredSet(orders.map((o) => String(o.externalId ?? "")));
+
+  // ---- ADDRESS 2 LẤY TỪ COPY ADDRESS (formatted_address) — NGUỒN CHUẨN 100% CỦA ETSY ----
+  // Extension đôi khi để second_line rác ("Apt 101") lọt vào addr2. Copy address là địa chỉ Etsy SẼ SHIP,
+  // nên addr2 phải SUY RA TỪ đó. Copy address dạng nhiều dòng: Name / Street1 / [Street2] / City ST ZIP / Country.
+  // Không có Copy address → giữ nguyên addr2 extension trả (KHÔNG dùng dấu hiệu leak, không đoán).
+  const normA = (v: string) => v.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const parseFormatted = (fa: string): { addr1: string; addr2: string } | null => {
+    let lines = fa.split(/[\r\n]+/).map((t) => t.trim()).filter(Boolean);
+    if (lines.length < 3) lines = fa.split(/\s*,\s*/).map((t) => t.trim()).filter(Boolean);
+    if (lines.length < 3) return null;
+    let end = lines.length;
+    if (/^(united states|usa|u\.?s\.?a?\.?|canada|australia|united kingdom|u\.?k\.?)$/i.test(lines[end - 1])) end--; // bỏ country
+    let cityIdx = -1;
+    for (let i = end - 1; i >= 1; i--) { if (/\d{4,}/.test(lines[i])) { cityIdx = i; break; } } // dòng City ST ZIP (có ZIP)
+    if (cityIdx < 2) return null; // cần Name(0) + Street1(1) + City
+    const street = lines.slice(1, cityIdx); // các dòng phố giữa Name và City
+    if (!street.length) return null;
+    return { addr1: street[0], addr2: street.slice(1).join(" ") };
+  };
+  const resolveAddr2 = (o: InOrder): string | null => {
+    const raw = s(o.addr2);
+    const fa = s(o.formattedAddress);
+    if (!fa) return raw; // không có Copy address → giữ nguyên, không đoán
+    const p = parseFormatted(fa);
+    if (p) return s(p.addr2); // SUY RA addr2 từ Copy address (rỗng nếu Copy address không có dòng phụ → không có apt)
+    if (raw) return normA(fa).includes(normA(raw)) ? raw : null; // parse không được → chỉ giữ raw nếu có trong Copy address
+    return null;
+  };
 
   for (const o of orders.slice(0, 500)) {
     const ext = s(o.externalId);
@@ -67,13 +97,18 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         fillIf("buyerFirst", dup.buyerFirst, s(o.buyerFirst));
         fillIf("buyerLast", dup.buyerLast, s(o.buyerLast));
         fillIf("addr1", dup.addr1, s(o.addr1));
-        fillIf("addr2", dup.addr2, s(o.addr2));
+        fillIf("addr2", dup.addr2, resolveAddr2(o));
         fillIf("city", dup.city, s(o.city));
         fillIf("state", dup.state, s(o.state));
         fillIf("zip", dup.zip, s(o.zip));
         fillIf("buyerNote", dup.buyerNote, s(o.note)); // note KHÁCH vào cột riêng buyer_note
         if (s(o.country) && (!dup.country || dup.country === "United States")) {
           if (s(o.country) !== dup.country) patch.country = s(o.country);
+        }
+        // Đơn ĐÃ LƯU addr2 (kéo trước bằng ext lỗi) → khi CÓ Copy address thì SỬA LẠI theo Copy address (re-push tự sạch).
+        if (dup.addr2 && String(dup.addr2).trim() && s(o.formattedAddress)) {
+          const good = resolveAddr2(o);
+          if ((good ?? "") !== String(dup.addr2).trim()) patch.addr2 = good; // theo Copy address: thay bằng apt thật hoặc xoá rác
         }
         const inTotal = num(o.total);
         if (inTotal > 0 && (!dup.total || Number(dup.total) === 0)) patch.total = (inTotal / fx).toFixed(2);
@@ -216,8 +251,9 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         platformStatus: s(o.platformStatus),
         shippingType: s(o.shippingType),
         buyerFirst: s(o.buyerFirst), buyerLast: s(o.buyerLast),
-        addr1: s(o.addr1), addr2: s(o.addr2), city: s(o.city), state: cleanState(o.state), zip: s(o.zip),
+        addr1: s(o.addr1), addr2: resolveAddr2(o), city: s(o.city), state: cleanState(o.state), zip: s(o.zip),
         country: s(o.country) ?? "United States",
+        formattedAddress: s(o.formattedAddress),
         // Có phí THẬT từ nguồn (hiếm) → dùng luôn; không có → ƯỚC TÍNH theo % shop và bật cờ est.
         total: (total / fx).toFixed(2),
         platformFee: num(o.fee) > 0 ? (num(o.fee) / fx).toFixed(2) : estFee(total / fx, feePct),
