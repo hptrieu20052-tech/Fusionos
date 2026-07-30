@@ -19,7 +19,16 @@ export default async function EtsyProductsPage() {
   const where = scopeIds
     ? and(eq(schema.stores.marketplace, "etsy"), inArray(schema.stores.sellerId, scopeIds))
     : eq(schema.stores.marketplace, "etsy");
-  const stores = await db.select({ id: schema.stores.id, name: schema.stores.name })
-    .from(schema.stores).where(where).orderBy(asc(schema.stores.name));
-  return <EtsyProductsClient stores={stores} canEdit={lvl >= 2} />;
+  // Kèm seller (chủ store) để admin lọc theo seller — seller thường thì list chỉ có store của mình.
+  const stores = await db.select({
+    id: schema.stores.id, name: schema.stores.name,
+    sellerId: schema.stores.sellerId, sellerName: schema.users.fullName,
+  }).from(schema.stores)
+    .leftJoin(schema.users, eq(schema.users.id, schema.stores.sellerId))
+    .where(where).orderBy(asc(schema.stores.name));
+  // Danh sách seller duy nhất (chỉ hiện filter cho admin/quản lý thấy > 1 seller)
+  const sellerMap = new Map<string, string>();
+  for (const s of stores) if (s.sellerId) sellerMap.set(s.sellerId, s.sellerName ?? "—");
+  const sellers = Array.from(sellerMap, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  return <EtsyProductsClient stores={stores} sellers={sellers} canEdit={lvl >= 2} />;
 }

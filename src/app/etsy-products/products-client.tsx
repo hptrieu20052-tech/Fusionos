@@ -1,13 +1,15 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MarketplaceLogo } from "@/components/marketplace-logo";
 
 type Row = {
   id: string; storeId: string; title: string; price: string | null; quantity: number | null;
   tags: string | null; sku: string | null; status: string; importedAt: string | null;
   storeName: string | null; mainImageUrl: string | null; variationsSummary: string;
-  shopifyTitle: string | null;
+  shopifyTitle: string | null; sellerId: string | null; sellerName: string | null;
 };
-type Store = { id: string; name: string };
+type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
+type Seller = { id: string; name: string };
 
 /* ---- style tokens (modern) ---- */
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -15,20 +17,25 @@ const ctl: React.CSSProperties = { border: "1px solid var(--line)", borderRadius
 const pill = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", gap: 7, border: "none", background: bg, color: fg, borderRadius: 12, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", transition: "opacity .15s, transform .05s" });
 const ghost: React.CSSProperties = { ...pill("#fff", "var(--ink)"), border: "1px solid var(--line)" };
 
-export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[]; canEdit: boolean }) {
+export default function EtsyProductsClient({ stores, sellers, canEdit }: { stores: Store[]; sellers: Seller[]; canEdit: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [kw, setKw] = useState("");
+  const [sellerFilter, setSellerFilter] = useState("");
   const [storeFilter, setStoreFilter] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const showSellerFilter = sellers.length > 1; // chỉ hiện khi quản nhiều seller (admin)
   // Import drawer
   const [impOpen, setImpOpen] = useState(false);
+  const [impSeller, setImpSeller] = useState("");
   const [impStore, setImpStore] = useState(stores[0]?.id ?? "");
   const [impFile, setImpFile] = useState<File | null>(null);
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Store hiện trong dropdown import: lọc theo seller đã chọn (nếu có)
+  const impStores = useMemo(() => impSeller ? stores.filter((s) => s.sellerId === impSeller) : stores, [stores, impSeller]);
 
   const load = async () => {
     setLoading(true);
@@ -40,9 +47,12 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 5000); };
 
   const filtered = useMemo(() => rows.filter((r) =>
+    (!sellerFilter || r.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (!kw.trim() || (r.title + " " + (r.shopifyTitle ?? "") + " " + (r.sku ?? "") + " " + (r.tags ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, storeFilter]);
+  ), [rows, kw, sellerFilter, storeFilter]);
+  // Store dropdown ở filter bar: lọc theo seller đang chọn
+  const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
 
   const allChecked = filtered.length > 0 && filtered.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) filtered.forEach((r) => n.delete(r.id)); else filtered.forEach((r) => n.add(r.id)); setSel(n); };
@@ -73,13 +83,25 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
 
   const doOptimize = async () => {
     if (!sel.size) return flash("✗ Chọn listing trước", false);
-    if (sel.size > 20) return flash("✗ AI Optimize tối đa 20 listing/lần", false);
-    setBusy(true); flash("✦ AI đang tối ưu title & tag…");
+    setBusy(true);
+    // TỰ CHIA LÔ 10 listing/lần (server maxDuration 60s) → không còn chặn cứng 20, chọn bao nhiêu cũng chạy.
+    const all = Array.from(sel);
+    const CHUNK = 10;
+    let done = 0; const errs: string[] = [];
     try {
-      const j = await fetch("/api/etsy-products/ai-optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json());
-      if (j.ok) { flash(`✓ Đã tối ưu ${j.optimized}/${j.total}${j.errors ? " · lỗi: " + j.errors[0] : ""}`); load(); }
-      else flash("✗ " + (j.error ?? "Optimize lỗi"), false);
-    } catch { flash("✗ Lỗi mạng", false); }
+      for (let i = 0; i < all.length; i += CHUNK) {
+        flash(`✦ AI đang tối ưu… ${done}/${all.length}`);
+        const batch = all.slice(i, i + CHUNK);
+        const res = await fetch("/api/etsy-products/ai-optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) });
+        const text = await res.text();
+        let j: { ok?: boolean; optimized?: number; error?: string; errors?: string[] };
+        try { j = JSON.parse(text); } catch { errs.push(`HTTP ${res.status}`); continue; }
+        if (j.ok) { done += Number(j.optimized ?? 0); if (j.errors) errs.push(...j.errors); }
+        else errs.push(j.error ?? "batch failed");
+      }
+      flash(`✓ Đã tối ưu ${done}/${all.length}${errs.length ? " · một số lỗi: " + errs[0] : ""}`, errs.length === 0 || done > 0);
+      load();
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Lỗi mạng"), false); }
     setBusy(false);
   };
 
@@ -112,7 +134,9 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
       {/* HERO HEADER */}
       <div style={{ ...card, padding: "18px 22px", marginBottom: 16, background: "linear-gradient(135deg,#FFF8F3 0%,#FFFFFF 60%)", borderColor: "#FBE3D2" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <div style={{ width: 42, height: 42, borderRadius: 12, background: "#F1641E", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 20, flexShrink: 0 }}>E</div>
+          <div style={{ width: 42, height: 42, borderRadius: 12, background: "#fff", border: "1px solid #FBE3D2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <MarketplaceLogo mk="etsy" size={26} />
+          </div>
           <div>
             <h1 style={{ fontSize: 19, fontWeight: 800, margin: 0 }}>Manage Products · Etsy</h1>
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
@@ -135,9 +159,15 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
           <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }}><IcSearch /></span>
           <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Tìm title / SKU / tag" style={{ ...ctl, width: "100%", paddingLeft: 34 }} />
         </div>
+        {showSellerFilter && (
+          <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} style={ctl}>
+            <option value="">Tất cả seller</option>
+            {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
         <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} style={ctl}>
           <option value="">Tất cả store</option>
-          {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {storesForFilter.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>{sel.size ? `${sel.size} đã chọn` : `${filtered.length} listing`}</span>
@@ -147,7 +177,7 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
         <div style={{ ...card, padding: "10px 14px", marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", background: "#F8FAFF", borderColor: "#DCE6FB" }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--blue)" }}>{sel.size} listing</span>
           <div style={{ flex: 1 }} />
-          {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doOptimize} title="AI viết lại title + tag chuẩn SEO (tối đa 20)"><IcSpark /> AI Optimize</button>}
+          {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doOptimize} title="AI viết lại title + tag chuẩn SEO Shopify (tự chia lô, chọn bao nhiêu cũng chạy)"><IcSpark /> AI Optimize</button>}
           <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#22A06B,#158A57)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doExport}><IcDownload /> Export Shopify</button>
           {canEdit && <button disabled={busy} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }} onClick={doDelete}><IcTrash /> Xoá</button>}
           <button style={{ ...ghost, padding: "9px 12px" }} onClick={() => setSel(new Set())}>Bỏ chọn</button>
@@ -166,7 +196,7 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
               <th style={{ padding: "12px 14px" }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
               <th style={{ padding: "12px 6px" }}>Ảnh</th>
               <th style={{ padding: "12px 6px" }}>Title</th>
-              <th style={{ padding: "12px 6px" }}>Store</th>
+              <th style={{ padding: "12px 6px" }}>Store / Seller</th>
               <th style={{ padding: "12px 6px" }}>Biến thể</th>
               <th style={{ padding: "12px 6px", textAlign: "right" }}>Giá</th>
               <th style={{ padding: "12px 6px", textAlign: "right" }}>SL</th>
@@ -199,7 +229,12 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
                     : <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.title}</div>}
                   {r.sku && <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "ui-monospace,monospace" }}>{r.sku}</div>}
                 </td>
-                <td style={{ padding: "10px 6px", whiteSpace: "nowrap" }}>{r.storeName ?? "—"}</td>
+                <td style={{ padding: "10px 6px", whiteSpace: "nowrap" }}>
+                  <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                    <MarketplaceLogo mk="etsy" size={15} />{r.storeName ?? "—"}
+                  </div>
+                  {r.sellerName && <div style={{ fontSize: 11, color: "var(--muted)", marginLeft: 21 }}>{r.sellerName}</div>}
+                </td>
                 <td style={{ padding: "10px 6px", fontSize: 12, color: "var(--muted)" }}>{r.variationsSummary || "—"}</td>
                 <td style={{ padding: "10px 6px", textAlign: "right", fontWeight: 700 }}>{r.price ? `$${Number(r.price).toFixed(2)}` : "—"}</td>
                 <td style={{ padding: "10px 6px", textAlign: "right" }}>{r.quantity ?? "—"}</td>
@@ -222,13 +257,22 @@ export default function EtsyProductsClient({ stores, canEdit }: { stores: Store[
               Etsy → Shop Manager → Settings → Options → <b>Download Data</b>. Import lại cùng file = cập nhật đè theo title.
             </div>
 
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>① Chọn store nhận listing</label>
+            {showSellerFilter && (
+              <>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>① Chọn seller</label>
+                <select value={impSeller} onChange={(e) => { setImpSeller(e.target.value); const first = stores.find((s) => s.sellerId === e.target.value); setImpStore(first?.id ?? ""); }} style={{ ...ctl, width: "100%", marginBottom: 14 }}>
+                  <option value="">Tất cả seller</option>
+                  {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </>
+            )}
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>{showSellerFilter ? "②" : "①"} Chọn store nhận listing</label>
             <select value={impStore} onChange={(e) => setImpStore(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: 18 }}>
-              {stores.length === 0 && <option value="">(Chưa có store Etsy)</option>}
-              {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              {impStores.length === 0 && <option value="">(Chưa có store Etsy)</option>}
+              {impStores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.sellerName ? ` · ${s.sellerName}` : ""}</option>)}
             </select>
 
-            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>② Kéo thả file CSV</label>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>{showSellerFilter ? "③" : "②"} Kéo thả file CSV</label>
             <div
               onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
               onDragLeave={() => setDrag(false)}

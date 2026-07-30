@@ -38,8 +38,11 @@ export async function GET() {
     shopifyTitle: schema.etsyProducts.shopifyTitle,
     importedAt: schema.etsyProducts.importedAt,
     storeName: schema.stores.name,
+    sellerId: schema.stores.sellerId,
+    sellerName: schema.users.fullName,
   }).from(schema.etsyProducts)
     .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+    .leftJoin(schema.users, eq(schema.users.id, schema.stores.sellerId))
     .where(inArray(schema.etsyProducts.storeId, storeIds))
     .orderBy(desc(schema.etsyProducts.importedAt)).limit(2000);
 
