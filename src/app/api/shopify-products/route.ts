@@ -42,6 +42,9 @@ export async function GET(req: NextRequest) {
     return {
       id: r.p.id, storeId: r.p.storeId, storeName: r.storeName, sellerName: r.sellerName,
       title: r.p.title, handle: r.p.handle, status: r.p.status, dirty: r.p.dirty,
+      productType: r.p.productType ?? "",
+      categoryName: (r.p.category as { name?: string } | null)?.name ?? "",
+      collectionTitles: (Array.isArray(r.p.collections) ? r.p.collections as { title: string }[] : []).map((c) => c.title).filter(Boolean),
       variantCount: vs.length, minPrice: prices.length ? Math.min(...prices) : null, maxPrice: prices.length ? Math.max(...prices) : null,
       mainImage: imgs[0]?.src ?? null, imageCount: imgs.length,
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,

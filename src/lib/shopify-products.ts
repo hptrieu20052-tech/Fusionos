@@ -15,6 +15,7 @@ export type SyncedProduct = {
   shopifyProductId: string; handle: string; title: string; bodyHtml: string;
   vendor: string; productType: string; tags: string; status: string;
   seoTitle: string; seoDescription: string;
+  category: { id: string; name: string } | null; collections: { id: string; title: string }[];
   options: SyncedOption[]; variants: SyncedVariant[]; images: SyncedImage[];
   onlineStoreUrl: string | null; totalInventory: number | null;
 };
@@ -32,6 +33,8 @@ const PRODUCTS_QUERY = `query Products($cursor: String) {
     nodes {
       id handle title descriptionHtml vendor productType status tags totalInventory onlineStoreUrl
       seo { title description }
+      category { id fullName }
+      collections(first: 30) { nodes { id title } }
       options { name position optionValues { name } }
       media(first: 20) { nodes { ... on MediaImage { id image { url altText } } } }
       variants(first: 100) {
@@ -46,6 +49,8 @@ type RawProduct = {
   id: string; handle?: string; title?: string; descriptionHtml?: string; vendor?: string;
   productType?: string; status?: string; tags?: string[]; totalInventory?: number | null; onlineStoreUrl?: string | null;
   seo?: { title?: string | null; description?: string | null } | null;
+  category?: { id?: string; fullName?: string } | null;
+  collections?: { nodes?: { id?: string; title?: string }[] } | null;
   options?: { name?: string; position?: number; optionValues?: { name?: string }[] }[];
   media?: { nodes?: { id?: string; image?: { url?: string; altText?: string | null } }[] };
   variants?: { nodes?: Record<string, unknown>[] };
@@ -72,6 +77,8 @@ function normalize(p: RawProduct): SyncedProduct {
     bodyHtml: String(p.descriptionHtml ?? ""), vendor: String(p.vendor ?? ""), productType: String(p.productType ?? ""),
     tags: (p.tags ?? []).join(", "), status: String(p.status ?? "DRAFT"),
     seoTitle: String(p.seo?.title ?? ""), seoDescription: String(p.seo?.description ?? ""),
+    category: p.category?.id ? { id: String(p.category.id), name: String(p.category.fullName ?? "") } : null,
+    collections: (p.collections?.nodes ?? []).map((c) => ({ id: String(c.id ?? ""), title: String(c.title ?? "") })).filter((c) => c.id),
     options, variants, images, onlineStoreUrl: p.onlineStoreUrl ?? null,
     totalInventory: p.totalInventory == null ? null : Number(p.totalInventory),
   };
@@ -98,6 +105,8 @@ const ONE_QUERY = `query One($id: ID!) {
   product(id: $id) {
     id handle title descriptionHtml vendor productType status tags totalInventory onlineStoreUrl
     seo { title description }
+    category { id fullName }
+    collections(first: 30) { nodes { id title } }
     options { name position optionValues { name } }
     media(first: 20) { nodes { ... on MediaImage { id image { url altText } } } }
     variants(first: 100) {

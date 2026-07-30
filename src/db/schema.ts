@@ -254,6 +254,8 @@ export const shopifyProducts = pgTable("shopify_products", {
   status: text("status").notNull().default("DRAFT"), // ACTIVE / DRAFT / ARCHIVED
   seoTitle: text("seo_title"),                  // SEO Page title (≤60) — hiện trên Google
   seoDescription: text("seo_description"),      // SEO Meta description (≤160)
+  category: jsonb("category"),                  // { id, name } — Shopify taxonomy (để filter)
+  collections: jsonb("collections").notNull().default([]), // [{ id, title }] — collections chứa sản phẩm (để filter)
   // options: [{ name, position, values: string[] }]
   options: jsonb("options").notNull().default([]),
   // variants: [{ id(GID), title, selectedOptions:[{name,value}], price, compareAtPrice, sku, inventoryItemId, inventoryQty, barcode }]

@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       if (fresh) {
         await db.update(schema.shopifyProducts).set({
           handle: fresh.handle, title: fresh.title, bodyHtml: fresh.bodyHtml, vendor: fresh.vendor, productType: fresh.productType,
-          tags: fresh.tags, status: fresh.status, seoTitle: fresh.seoTitle, seoDescription: fresh.seoDescription, options: fresh.options, variants: fresh.variants, images: fresh.images,
+          tags: fresh.tags, status: fresh.status, seoTitle: fresh.seoTitle, seoDescription: fresh.seoDescription, category: fresh.category, collections: fresh.collections, options: fresh.options, variants: fresh.variants, images: fresh.images,
           onlineStoreUrl: fresh.onlineStoreUrl, totalInventory: fresh.totalInventory, dirty: false, syncedAt: new Date(), pushedAt: new Date(), updatedAt: new Date(),
         }).where(eq(schema.shopifyProducts.id, r.p.id));
       } else {

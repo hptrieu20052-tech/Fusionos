@@ -10,6 +10,7 @@ type Row = {
   variantCount: number; minPrice: number | null; maxPrice: number | null;
   mainImage: string | null; imageCount: number; onlineStoreUrl: string | null;
   totalInventory: number | null; optionsSummary: string;
+  productType: string; categoryName: string; collectionTitles: string[];
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -72,6 +73,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [kw, setKw] = useState(""); const [sellerFilter, setSellerFilter] = useState(""); const [storeFilter, setStoreFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState(""); const [categoryFilter, setCategoryFilter] = useState(""); const [collectionFilter, setCollectionFilter] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
@@ -106,13 +108,21 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
   const showSellerFilter = sellers.length > 1;
   const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
+  // Danh sách giá trị distinct cho 3 filter (theo store đang lọc nếu có)
+  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && (!sellerFilter || stores.find((s) => s.id === r.storeId)?.sellerId === sellerFilter)), [rows, storeFilter, sellerFilter, stores]);
+  const typeOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.productType).filter(Boolean))).sort(), [scopeRows]);
+  const categoryOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.categoryName).filter(Boolean))).sort(), [scopeRows]);
+  const collectionOptions = useMemo(() => Array.from(new Set(scopeRows.flatMap((r) => r.collectionTitles ?? []).filter(Boolean))).sort(), [scopeRows]);
   const filtered = useMemo(() => rows.filter((r) =>
     (!sellerFilter || stores.find((s) => s.id === r.storeId)?.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
+    (!typeFilter || r.productType === typeFilter) &&
+    (!categoryFilter || r.categoryName === categoryFilter) &&
+    (!collectionFilter || (r.collectionTitles ?? []).includes(collectionFilter)) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, stores]);
+  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
@@ -362,6 +372,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         )}
         <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} style={ctl}>
           <option value="">All stores</option>{storesForFilter.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} title="Product type" style={ctl}>
+          <option value="">All types</option>{typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} title="Category" style={ctl}>
+          <option value="">All categories</option>{categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} title="Collection" style={ctl}>
+          <option value="">All collections</option>{collectionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>{sel.size ? `${sel.size} selected` : `${filtered.length} products`}</span>
