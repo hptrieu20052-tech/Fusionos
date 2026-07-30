@@ -117,7 +117,8 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
         if (j.ok) { done += Number(j.optimized ?? 0); if (j.errors) errs.push(...j.errors); }
         else errs.push(j.error ?? "batch failed");
       }
-      flash(`✓ Optimized ${done}/${all.length}${errs.length ? " · some failed: " + errs[0] : ""}`, errs.length === 0 || done > 0);
+      if (done === 0) flash(`✗ AI Optimize failed (0/${all.length}): ${errs[0] ?? "unknown"}${/shopify_|column|does not exist/i.test(errs[0] ?? "") ? " — Run MIGRATION_etsy_products.sql in Supabase first" : ""}`, false);
+      else flash(`✓ Optimized ${done}/${all.length}${errs.length ? " · some failed: " + errs[0] : ""}`);
       load();
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
@@ -166,7 +167,11 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
       const j = await fetch(`/api/etsy-products?id=${id}`).then((r) => r.json());
       if (j.ok) setEdit({
         id: j.item.id, title: j.item.title, price: j.item.price, tags: j.item.tags, description: j.item.description,
-        shopifyTitle: j.item.shopifyTitle, shopifyTags: j.item.shopifyTags, shopifyDesc: j.item.shopifyDesc,
+        // Etsy title/tags/desc GIỮ NGUYÊN (read-only). Ô Shopify là bản RIÊNG do AI Optimize/sửa tay điền
+        // (rỗng nếu chưa tối ưu). Export Shopify lấy bản Shopify; rỗng thì fallback bản Etsy.
+        shopifyTitle: j.item.shopifyTitle ?? "",
+        shopifyTags: j.item.shopifyTags ?? "",
+        shopifyDesc: j.item.shopifyDesc ?? "",
         images: Array.isArray(j.item.images) ? j.item.images : [],
         variations: Array.isArray(j.item.variations) ? j.item.variations : [],
         quantity: j.item.quantity, sku: j.item.sku, storeName: j.item.storeName, sellerName: j.item.sellerName,
@@ -182,7 +187,7 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
     try {
       const res = await fetch("/api/etsy-products", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: edit.id, title: edit.shopifyTitle ?? "", tags: edit.shopifyTags ?? "", description: edit.shopifyDesc ?? "", price: edit.price ?? "" }),
+        body: JSON.stringify({ id: edit.id, title: edit.shopifyTitle ?? "", tags: edit.shopifyTags ?? "", description: edit.shopifyDesc ?? "", price: edit.price ?? "", images: edit.images, variations: edit.variations }),
       });
       const j = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
       if (j.ok) { flash("✓ Saved"); setEditId(null); setEdit(null); load(); }
@@ -339,7 +344,7 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
 
       {/* IMPORT MODAL (centered) */}
       {impOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setImpOpen(false)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setImpOpen(false)}>
           <div style={{ background: "#fff", width: 480, maxWidth: "94vw", maxHeight: "90vh", borderRadius: 18, padding: 24, overflowY: "auto", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
               <div style={{ fontWeight: 800, fontSize: 18 }}>Import Etsy CSV</div>
@@ -405,7 +410,7 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
 
       {/* EDIT MODAL (centered, full detail) */}
       {editId && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setEditId(null)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setEditId(null)}>
           <div style={{ background: "#fff", width: 860, maxWidth: "96vw", maxHeight: "92vh", borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
             {/* header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--line)" }}>
@@ -421,63 +426,78 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
               <div style={{ padding: 50, textAlign: "center", color: "var(--muted)" }}>Loading…</div>
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 0, overflow: "hidden", flex: 1 }}>
-                {/* LEFT — read-only detail */}
+                {/* LEFT — images (deletable) + variations (editable) + read-only info */}
                 <div style={{ borderRight: "1px solid var(--line)", padding: 18, overflowY: "auto", background: "#FAFBFD" }}>
-                  {/* image gallery */}
-                  {edit.images.length > 0 && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={edit.images[0]} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 12, marginBottom: 8 }} />
-                  )}
-                  {edit.images.length > 1 && (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 6, marginBottom: 14 }}>
-                      {edit.images.slice(1, 9).map((u, i) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img key={i} src={u} alt="" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 8 }} />
-                      ))}
-                    </div>
-                  )}
-                  <div style={{ fontSize: 12, lineHeight: 1.9 }}>
+                  <div style={{ ...lab, marginBottom: 6 }}>Images <span style={{ fontWeight: 500 }}>({edit.images.length}) · hover to remove</span></div>
+                  {edit.images.length === 0
+                    ? <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>No images.</div>
+                    : (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginBottom: 14 }}>
+                        {edit.images.map((u, i) => (
+                          <div key={i} style={{ position: "relative", aspectRatio: "1", borderRadius: 8, overflow: "hidden" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            {i === 0 && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 9, fontWeight: 800, background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 5, padding: "1px 5px" }}>MAIN</span>}
+                            <button title="Remove image" onClick={() => setEdit({ ...edit, images: edit.images.filter((_, k) => k !== i) })}
+                              style={{ position: "absolute", top: 3, right: 3, border: "none", background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 6, width: 20, height: 20, fontSize: 12, lineHeight: "20px", padding: 0, cursor: "pointer" }}>×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                  <div style={{ fontSize: 12, lineHeight: 1.9, marginBottom: 12 }}>
                     <div><span style={{ color: "var(--muted)" }}>Store: </span><b>{edit.storeName ?? "—"}</b></div>
                     {edit.sellerName && <div><span style={{ color: "var(--muted)" }}>Seller: </span><b>{edit.sellerName}</b></div>}
                     {edit.sku && <div><span style={{ color: "var(--muted)" }}>SKU: </span><b style={{ fontFamily: "ui-monospace,monospace" }}>{edit.sku}</b></div>}
                     <div><span style={{ color: "var(--muted)" }}>Qty: </span><b>{edit.quantity ?? "—"}</b></div>
                   </div>
-                  {edit.variations.length > 0 && (
-                    <div style={{ marginTop: 12 }}>
-                      <div style={{ ...lab, marginBottom: 4 }}>Variations</div>
-                      {edit.variations.map((v, i) => (
-                        <div key={i} style={{ fontSize: 12, marginBottom: 6 }}>
-                          <b>{v.name}</b>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 3 }}>
-                            {(v.values ?? []).map((val, k) => <span key={k} style={{ fontSize: 11, background: "#EEF1F6", borderRadius: 6, padding: "2px 7px" }}>{val}</span>)}
-                          </div>
-                        </div>
-                      ))}
+
+                  {/* Variations — editable: name + comma-separated values, remove/add */}
+                  <div style={{ ...lab, marginBottom: 6 }}>Variations</div>
+                  {edit.variations.map((v, i) => (
+                    <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 8, marginBottom: 8, background: "#fff" }}>
+                      <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                        <input value={v.name ?? ""} placeholder="Name (e.g. Size)" onChange={(e) => { const n = [...edit.variations]; n[i] = { ...n[i], name: e.target.value }; setEdit({ ...edit, variations: n }); }}
+                          style={{ ...ctl, padding: "6px 9px", fontSize: 12, flex: 1 }} />
+                        <button title="Remove variation" onClick={() => setEdit({ ...edit, variations: edit.variations.filter((_, k) => k !== i) })}
+                          style={{ ...linkBtn("var(--red)"), fontSize: 16 }}>×</button>
+                      </div>
+                      <input value={(v.values ?? []).join(", ")} placeholder="Values, comma-separated"
+                        onChange={(e) => { const n = [...edit.variations]; n[i] = { ...n[i], values: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) }; setEdit({ ...edit, variations: n }); }}
+                        style={{ ...ctl, padding: "6px 9px", fontSize: 12, width: "100%" }} />
                     </div>
-                  )}
+                  ))}
+                  <button onClick={() => setEdit({ ...edit, variations: [...edit.variations, { name: "", values: [] }] })}
+                    style={{ ...linkBtn("var(--blue)"), fontSize: 12 }}>+ Add variation</button>
                 </div>
 
-                {/* RIGHT — editable Shopify fields */}
+                {/* RIGHT — Shopify fields (separate from Etsy original). Export uses these; empty = fallback to Etsy. */}
                 <div style={{ padding: 20, overflowY: "auto" }}>
-                  <label style={lab}>Shopify title <span style={{ fontWeight: 500 }}>({(edit.shopifyTitle ?? "").length}/140 · keep it short)</span></label>
-                  <input value={edit.shopifyTitle ?? ""} maxLength={140} onChange={(e) => setEdit({ ...edit, shopifyTitle: e.target.value })}
-                    placeholder={edit.title} style={{ ...ctl, width: "100%", marginBottom: 5 }} />
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 16, lineHeight: 1.4 }}>Etsy original: {edit.title}</div>
+                  <label style={lab}>
+                    Shopify title <span style={{ fontWeight: 500, color: (edit.shopifyTitle ?? "").length > 140 ? "var(--red)" : "var(--muted)" }}>({(edit.shopifyTitle ?? "").length}/140)</span>
+                    <button onClick={() => setEdit({ ...edit, shopifyTitle: edit.title })} style={{ ...linkBtn("var(--blue)"), float: "right", fontSize: 11 }}>Use Etsy title</button>
+                  </label>
+                  <textarea value={edit.shopifyTitle ?? ""} onChange={(e) => setEdit({ ...edit, shopifyTitle: e.target.value })}
+                    rows={2} placeholder="Filled by AI Optimize, or type a short Shopify title…" style={{ ...ctl, width: "100%", marginBottom: 5, resize: "vertical" }} />
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 16, lineHeight: 1.4 }}><b>Etsy original:</b> {edit.title}</div>
 
                   <label style={lab}>Price (USD)</label>
                   <input value={edit.price ?? ""} inputMode="decimal" onChange={(e) => setEdit({ ...edit, price: e.target.value.replace(/[^0-9.]/g, "") })}
                     placeholder="0.00" style={{ ...ctl, width: 160, marginBottom: 16 }} />
 
-                  <label style={lab}>Tags <span style={{ fontWeight: 500 }}>(comma-separated)</span></label>
+                  <label style={lab}>
+                    Shopify tags <span style={{ fontWeight: 500 }}>(comma-separated)</span>
+                    <button onClick={() => setEdit({ ...edit, shopifyTags: (edit.tags ?? "").replace(/_/g, " ") })} style={{ ...linkBtn("var(--blue)"), float: "right", fontSize: 11 }}>Use Etsy tags</button>
+                  </label>
                   <textarea value={edit.shopifyTags ?? ""} onChange={(e) => setEdit({ ...edit, shopifyTags: e.target.value })} rows={3}
-                    placeholder={(edit.tags ?? "").replace(/_/g, " ")} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 16 }} />
+                    placeholder="Filled by AI Optimize, or type your own…" style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 16 }} />
 
-                  <label style={lab}>Description</label>
+                  <label style={lab}>
+                    Shopify description
+                    <button onClick={() => setEdit({ ...edit, shopifyDesc: edit.description ?? "" })} style={{ ...linkBtn("var(--blue)"), float: "right", fontSize: 11 }}>Use Etsy description</button>
+                  </label>
                   <textarea value={edit.shopifyDesc ?? ""} onChange={(e) => setEdit({ ...edit, shopifyDesc: e.target.value })} rows={8}
-                    placeholder={(edit.description ?? "").slice(0, 400)} style={{ ...ctl, width: "100%", resize: "vertical" }} />
-                  {edit.description && !edit.shopifyDesc && (
-                    <button onClick={() => setEdit({ ...edit, shopifyDesc: edit.description })} style={{ ...linkBtn("var(--blue)"), marginTop: 6 }}>↩ Copy Etsy description</button>
-                  )}
+                    placeholder="Filled by AI Optimize, or type your own…" style={{ ...ctl, width: "100%", resize: "vertical" }} />
                 </div>
               </div>
             )}

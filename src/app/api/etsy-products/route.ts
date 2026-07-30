@@ -72,9 +72,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, rows: JSON.parse(JSON.stringify(out)) });
 }
 
-// PATCH /api/etsy-products { id, title?, price?, tags?, description? } — sửa tay 1 listing.
+// PATCH /api/etsy-products { id, title?, price?, tags?, description?, images?, variations? } — sửa tay 1 listing.
 // title/tags/description ghi vào cột shopify_* (bản dùng khi Export Shopify), KHÔNG đè bản gốc Etsy.
-// price ghi thẳng vào price (giá dùng cho export). Chỉ sửa được listing thuộc store trong scope.
+// price/images/variations ghi thẳng (dùng cho export). Chỉ sửa listing thuộc store trong scope.
 export async function PATCH(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
@@ -84,19 +84,39 @@ export async function PATCH(req: NextRequest) {
   const storeIds = await scopedEtsyStoreIds(session);
   if (!storeIds.length) return NextResponse.json({ ok: false, error: "no stores in scope" }, { status: 403 });
 
-  const patch: Record<string, unknown> = { updatedAt: new Date() };
-  if (typeof b.title === "string") patch.shopifyTitle = b.title.trim().slice(0, 140) || null;
-  if (typeof b.tags === "string") patch.shopifyTags = b.tags.trim().slice(0, 600) || null;
-  if (typeof b.description === "string") patch.shopifyDesc = b.description.trim().slice(0, 4000) || null;
-  if (b.price !== undefined && b.price !== "") {
-    const p = Number(b.price);
-    if (Number.isFinite(p) && p >= 0) patch.price = p.toFixed(2);
+  try {
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (typeof b.title === "string") patch.shopifyTitle = b.title.trim().slice(0, 200) || null;
+    if (typeof b.tags === "string") patch.shopifyTags = b.tags.trim().slice(0, 600) || null;
+    if (typeof b.description === "string") patch.shopifyDesc = b.description.trim().slice(0, 4000) || null;
+    if (b.price !== undefined && b.price !== "") {
+      const p = Number(b.price);
+      if (Number.isFinite(p) && p >= 0) patch.price = p.toFixed(2);
+    }
+    // Xoá/sắp lại ảnh: nhận mảng URL đã lọc (tối đa 20, chỉ http/https).
+    if (Array.isArray(b.images)) {
+      patch.images = b.images.map((x: unknown) => String(x)).filter((u: string) => /^https?:\/\//i.test(u)).slice(0, 20);
+    }
+    // Sửa biến thể: [{name, values:[]}] — bỏ variation rỗng.
+    if (Array.isArray(b.variations)) {
+      patch.variations = b.variations
+        .map((v: { name?: unknown; values?: unknown }) => ({
+          name: String(v?.name ?? "").trim().slice(0, 60),
+          values: (Array.isArray(v?.values) ? v.values : []).map((x: unknown) => String(x).trim()).filter(Boolean).slice(0, 40),
+        }))
+        .filter((v: { name: string; values: string[] }) => v.name && v.values.length)
+        .slice(0, 6);
+    }
+    const upd = await db.update(schema.etsyProducts).set(patch)
+      .where(sql`${schema.etsyProducts.id} = ${id}::uuid AND ${schema.etsyProducts.storeId} IN (${sql.join(storeIds.map((x) => sql`${x}::uuid`), sql`, `)})`)
+      .returning({ id: schema.etsyProducts.id });
+    if (!upd.length) return NextResponse.json({ ok: false, error: "not found or not in your scope" }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const m = String((e as Error)?.message ?? e);
+    const hint = /shopify_|column|does not exist/i.test(m) ? " — Run MIGRATION_etsy_products.sql (adds shopify_title/tags/desc) in Supabase first." : "";
+    return NextResponse.json({ ok: false, error: "server: " + m.slice(0, 200) + hint }, { status: 500 });
   }
-  const upd = await db.update(schema.etsyProducts).set(patch)
-    .where(sql`${schema.etsyProducts.id} = ${id}::uuid AND ${schema.etsyProducts.storeId} IN (${sql.join(storeIds.map((x) => sql`${x}::uuid`), sql`, `)})`)
-    .returning({ id: schema.etsyProducts.id });
-  if (!upd.length) return NextResponse.json({ ok: false, error: "not found or not in your scope" }, { status: 404 });
-  return NextResponse.json({ ok: true });
 }
 
 // POST /api/etsy-products { action:"duplicate", id } — nhân bản 1 listing (title + " (Copy)").
