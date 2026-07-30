@@ -30,5 +30,11 @@ export default async function EtsyProductsPage() {
   const sellerMap = new Map<string, string>();
   for (const s of stores) if (s.sellerId) sellerMap.set(s.sellerId, s.sellerName ?? "—");
   const sellers = Array.from(sellerMap, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  return <EtsyProductsClient stores={stores} sellers={sellers} canEdit={lvl >= 2} />;
+  // Store SHOPIFY (đích để Push to Shopify qua API) — cùng scope seller.
+  const shopWhere = scopeIds
+    ? and(eq(schema.stores.marketplace, "shopify"), inArray(schema.stores.sellerId, scopeIds))
+    : eq(schema.stores.marketplace, "shopify");
+  const shopifyStores = await db.select({ id: schema.stores.id, name: schema.stores.name, sellerId: schema.stores.sellerId })
+    .from(schema.stores).where(shopWhere).orderBy(asc(schema.stores.name));
+  return <EtsyProductsClient stores={stores} sellers={sellers} shopifyStores={shopifyStores} canEdit={lvl >= 2} />;
 }

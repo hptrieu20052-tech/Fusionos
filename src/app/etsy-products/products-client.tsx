@@ -25,7 +25,7 @@ const ghost: React.CSSProperties = { ...pill("#fff", "var(--ink)"), border: "1px
 const lab: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 };
 const linkBtn = (c: string): React.CSSProperties => ({ border: "none", background: "none", padding: 0, cursor: "pointer", color: c, fontWeight: 700, fontSize: 12.5 });
 
-export default function EtsyProductsClient({ stores, sellers, canEdit }: { stores: Store[]; sellers: Seller[]; canEdit: boolean }) {
+export default function EtsyProductsClient({ stores, sellers, shopifyStores = [], canEdit }: { stores: Store[]; sellers: Seller[]; shopifyStores?: { id: string; name: string; sellerId: string | null }[]; canEdit: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [kw, setKw] = useState("");
@@ -94,6 +94,27 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
       const j = await fetch("/api/etsy-products/bulk-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), prices: bpPrices }) }).then((r) => r.json());
       if (j.ok) { flash(`✓ Priced ${j.sizes} size(s) across ${j.updated} listing(s)`); setBpOpen(false); load(); }
       else flash("✗ " + (j.error ?? "Failed"), false);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
+
+  // Push to Shopify qua API (không cần CSV). Chọn store Shopify đích → tạo/cập nhật sản phẩm.
+  const [pushStore, setPushStore] = useState(shopifyStores[0]?.id ?? "");
+  const doPushShopify = async () => {
+    if (!sel.size) return flash("✗ Select listings first", false);
+    if (!pushStore) return flash("✗ Chưa có store Shopify — thêm store Shopify + cấu hình API trong Stores trước", false);
+    if (!confirm(`Push ${sel.size} listing(s) to Shopify store "${shopifyStores.find((s) => s.id === pushStore)?.name ?? ""}"? Sản phẩm tạo ở trạng thái DRAFT để duyệt trước khi bán.`)) return;
+    setBusy(true);
+    try {
+      const j = await fetch("/api/etsy-products/push-shopify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), storeId: pushStore }) }).then((r) => r.json());
+      if (j.ok || j.created) {
+        const fail = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
+        flash(`✓ Pushed ${j.created}/${(j.results ?? []).length} to ${j.store}${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`, j.failed === 0);
+        load();
+      } else {
+        const first = (j.results ?? [])[0];
+        flash("✗ " + (j.error ?? first?.error ?? "Push failed") + (/read_products|write_products|access|scope|Not Found|401|403/i.test(j.error ?? first?.error ?? "") ? " — thêm scope read_products/write_products + Install lại app" : ""), false);
+      }
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
@@ -293,7 +314,15 @@ export default function EtsyProductsClient({ stores, sellers, canEdit }: { store
           )}
           {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doOptimize} title="AI rewrites title + tags for Shopify/Google SEO (auto-batches, any count)"><IcSpark /> AI Optimize</button>}
           {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#F59E0B,#D97706)", "#fff"), opacity: busy ? .6 : 1 }} onClick={openBulkPrice} title="Set price per size across all selected listings"><IcTag /> Bulk Price</button>}
-          <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#22A06B,#158A57)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doExport}><IcDownload /> Export Shopify</button>
+          {canEdit && shopifyStores.length > 0 && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <select value={pushStore} onChange={(e) => setPushStore(e.target.value)} title="Target Shopify store" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 160 }}>
+                {shopifyStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doPushShopify} title="Create the selected listings directly on Shopify via API (no CSV)"><IcShop /> Push to Shopify</button>
+            </span>
+          )}
+          <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#22A06B,#158A57)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doExport} title="Fallback: download a Shopify CSV instead of pushing via API"><IcDownload /> Export CSV</button>
           {canEdit && <button disabled={busy} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }} onClick={doDelete}><IcTrash /> Delete</button>}
           <button style={{ ...ghost, padding: "9px 12px" }} onClick={() => setSel(new Set())}>Clear</button>
         </div>
@@ -607,4 +636,5 @@ const IcSpark = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="curr
 const IcTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>;
 const IcSearch = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>;
 const IcTag = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3H4a1 1 0 0 0-1 1v5.59A2 2 0 0 0 3.83 11l9.58 9.58a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.82z" /><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" stroke="none" /></svg>;
+const IcShop = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18M9 20v-6h6v6" /></svg>;
 const IcEdit = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>;

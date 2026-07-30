@@ -230,6 +230,8 @@ export const etsyProducts = pgTable("etsy_products", {
   shopifyTitle: text("shopify_title"),
   shopifyTags: text("shopify_tags"),
   shopifyDesc: text("shopify_desc"),
+  // GID sản phẩm trên Shopify sau khi Push (gid://shopify/Product/...). Có = đã đẩy → lần sau cập nhật, không tạo trùng.
+  shopifyProductId: text("shopify_product_id"),
   importedAt: timestamp("imported_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({ idxEtsyProductsStore: index("idx_etsy_products_store").on(t.storeId) }));

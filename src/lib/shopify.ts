@@ -61,6 +61,28 @@ export async function shopifyApi(cred: ShopifyCred, path: string, init: RequestI
   try { return text ? JSON.parse(text) : {}; } catch { throw new Error("Shopify: phản hồi không phải JSON"); }
 }
 
+// Gọi Admin GraphQL API — DÙNG CHO PRODUCTS (REST products/variants đã bị Shopify deprecate).
+// Trả về data; ném lỗi nếu có top-level errors hoặc userErrors (gộp message để log).
+export async function shopifyGraphQL<T = Record<string, unknown>>(
+  cred: ShopifyCred, query: string, variables: Record<string, unknown> = {},
+): Promise<T> {
+  const host = shopHost(cred);
+  const token = await getAccessToken(cred);
+  if (!host) throw new Error("Shopify store chưa cấu hình shopDomain");
+  const res = await fetch(`https://${host}/admin/api/${API_VER}/graphql.json`, {
+    method: "POST",
+    headers: { "X-Shopify-Access-Token": token, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ query, variables }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const textBody = await res.text();
+  if (!res.ok) throw new Error(`Shopify GraphQL HTTP ${res.status}: ${textBody.slice(0, 300)}`);
+  let j: { data?: T; errors?: { message?: string }[] };
+  try { j = JSON.parse(textBody); } catch { throw new Error("Shopify GraphQL: phản hồi không phải JSON"); }
+  if (j.errors?.length) throw new Error("Shopify GraphQL: " + j.errors.map((e) => e.message).join("; ").slice(0, 300));
+  return (j.data ?? {}) as T;
+}
+
 // Xác thực webhook: HMAC-SHA256(raw body, secret) → base64, so với header X-Shopify-Hmac-Sha256.
 // So sánh timing-safe. secret = "API secret key" của Custom App.
 export function verifyShopifyHmac(rawBody: string, hmacHeader: string, secret: string): boolean {
