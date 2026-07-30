@@ -25,7 +25,7 @@ const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 
 // Ghi đơn Etsy đã chuẩn hoá vào DB. Dedup theo (platform=etsy, external_id).
 // orderedAt = NGÀY KÉO ĐƠN (thời điểm ingest) để mọi thống kê tính theo ngày kéo.
-export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], source: "extension" | "api" = "api", platform: "etsy" | "tiktok" = "etsy") {
+export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], source: "extension" | "api" = "api", platform: "etsy" | "tiktok" | "shopify" = "etsy") {
   const fx = Number(store.fx) > 0 ? Number(store.fx) : 1;
   // Phí sàn: API đơn của Etsy/TikTok KHÔNG kèm phí (chỉ có khi quyết toán) → ước tính theo % của shop.
   const feePct = await storeFeePct(store.id);

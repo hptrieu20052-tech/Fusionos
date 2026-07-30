@@ -4,6 +4,7 @@ import { eq, or } from "drizzle-orm";
 import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
+import { autoPushShopifyTracking } from "@/lib/shopify";
 import { mapPwStatus } from "@/lib/printway-api";
 import { syncPrintwayCost, pwCredOf } from "@/lib/printway-cost";
 
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
     if (patch.trackingNumber) {
       await markShippedOnTracking(ffo.orderId);
       await autoPushEtsyTracking(ffo.orderId);
-      await autoPushTiktokTracking(ffo.orderId);
+      await autoPushTiktokTracking(ffo.orderId); await autoPushShopifyTracking(ffo.orderId);
     }
   }
   // GIÁ THẬT: payload webhook Printway KHÔNG có tiền (chỉ order_status / tracking).

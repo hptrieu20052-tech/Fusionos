@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
+import { autoPushShopifyTracking } from "@/lib/shopify";
 import { markShippedOnTracking, syncOrderFromFf } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
     status: newStatus,
     trackingSyncedAt: b.trackingNumber ? new Date() : ffo.trackingSyncedAt,
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
-  if (b.trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await autoPushTiktokTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); } // CÓ TRACKING mới nhảy Shipped + đẩy Etsy/TikTok (bug cũ: thiếu {})
+  if (b.trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await autoPushTiktokTracking(ffo.orderId); await autoPushShopifyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); } // CÓ TRACKING mới nhảy Shipped + đẩy Etsy/TikTok (bug cũ: thiếu {})
 
   if (b.trackingNumber || newStatus === "shipped") {
     await db.update(schema.orders).set({ status: "shipped", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));

@@ -7,7 +7,7 @@ import { sql } from "drizzle-orm";
 // ---------- ENUMS ----------
 export const roleEnum = pgEnum("user_role", ["admin", "seller", "designer", "support", "content", "hiring"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "pending", "leave", "disabled"]);
-export const marketplaceEnum = pgEnum("marketplace", ["tiktok", "amazon", "etsy", "other"]);
+export const marketplaceEnum = pgEnum("marketplace", ["tiktok", "amazon", "etsy", "shopify", "other"]);
 export const connectMethodEnum = pgEnum("connect_method", ["api", "extension", "excel"]);
 export const storeStatusEnum = pgEnum("store_status", ["active", "warning", "suspended", "pending"]);
 export const orderStatusEnum = pgEnum("order_status", [
@@ -299,6 +299,8 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   etsyTrackingPushedAt: timestamp("etsy_tracking_pushed_at", { withTimezone: true }),
   // Thời điểm đã đẩy tracking lên TikTok (Seller Shipping, ship package). null = chưa đẩy.
   tiktokTrackingPushedAt: timestamp("tiktok_tracking_pushed_at", { withTimezone: true }),
+  // Thời điểm đã tạo fulfillment + tracking NGƯỢC lên Shopify qua Admin API. null = chưa đẩy.
+  shopifyTrackingPushedAt: timestamp("shopify_tracking_pushed_at", { withTimezone: true }),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_ff_order").on(t.orderId)]);

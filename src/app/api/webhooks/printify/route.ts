@@ -4,6 +4,7 @@ import { and, eq, inArray, like, or, desc } from "drizzle-orm";
 import { getPrintifyOrder } from "@/lib/printify";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
+import { autoPushShopifyTracking } from "@/lib/shopify";
 import { markShippedOnTracking, syncOrderFromFf, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
   }
   await db.update(schema.fulfillmentOrders).set(patch).where(eq(schema.fulfillmentOrders.id, ffo.id));
   await syncOrderFromFf(ffo.orderId, status); // đồng bộ trạng thái đơn theo nhà in (in_production/shipped/delivered)
-  if (trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await autoPushTiktokTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); } // CÓ TRACKING mới ship + đẩy lên Etsy/TikTok (bug cũ: thiếu {} → đơn vừa tạo đã nhảy Shipped)
+  if (trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await autoPushTiktokTracking(ffo.orderId); await autoPushShopifyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); } // CÓ TRACKING mới ship + đẩy lên Etsy/TikTok (bug cũ: thiếu {} → đơn vừa tạo đã nhảy Shipped)
 
   // ĐƠN BỊ HUỶ bên Printify → đưa đơn vào TRASH + XOÁ chi phí (seller không phải chịu)
   if (isCancel) {

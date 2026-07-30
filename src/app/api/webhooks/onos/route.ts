@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, like, or } from "drizzle-orm";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
+import { autoPushShopifyTracking } from "@/lib/shopify";
 import { syncOrderFromFf, refundOrderCost, markShippedOnTracking } from "@/lib/order-status";
 import { mapOnosStatus } from "@/lib/onos";
 import crypto from "crypto";
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
     trackingSyncedAt: trackingNumber ? new Date() : ffo.trackingSyncedAt,
   }).where(eq(schema.fulfillmentOrders.id, ffo.id));
   await syncOrderFromFf(ffo.orderId, status);
-  if (trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await autoPushTiktokTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); }
+  if (trackingNumber) { await autoPushEtsyTracking(ffo.orderId); await autoPushTiktokTracking(ffo.orderId); await autoPushShopifyTracking(ffo.orderId); await markShippedOnTracking(ffo.orderId); }
 
   if (status === "cancelled") {
     // ĐƠN BỊ HUỶ bên ONOS → xoá chi phí + đơn về Cancel (giống Merchize)

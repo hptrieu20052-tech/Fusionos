@@ -4,6 +4,7 @@ import { getPrintifyOrder } from "@/lib/printify";
 import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
+import { autoPushShopifyTracking } from "@/lib/shopify";
 import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
 
 /**
@@ -98,7 +99,7 @@ export async function syncPrintify(opts: { force?: boolean } = {}) {
           if (patch.trackingNumber) {
             await markShippedOnTracking(x.orderId);
             await autoPushEtsyTracking(x.orderId);
-            await autoPushTiktokTracking(x.orderId);
+            await autoPushTiktokTracking(x.orderId); await autoPushShopifyTracking(x.orderId);
           }
           if (isCancel) {
             await db.update(schema.fulfillmentOrders).set({ baseCost: "0", shipCost: "0", extraFee: "0", cost: "0" }).where(eq(schema.fulfillmentOrders.id, x.id));

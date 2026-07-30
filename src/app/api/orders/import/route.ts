@@ -7,6 +7,7 @@ import { hasAction } from "@/lib/actions";
 import * as XLSX from "xlsx";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
+import { autoPushShopifyTracking } from "@/lib/shopify";
 import { markShippedOnTracking } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
       if (!["delivered", "cancel", "trash"].includes(order.status)) {
         await markShippedOnTracking(order.id);
         await autoPushEtsyTracking(order.id);
-        await autoPushTiktokTracking(order.id).catch(() => { /* đơn không phải TikTok → bỏ qua */ });
+        await autoPushTiktokTracking(order.id); await autoPushShopifyTracking(order.id).catch(() => { /* đơn không phải TikTok → bỏ qua */ });
       }
       trackingUpdated++;
     }

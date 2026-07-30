@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
+import { autoPushShopifyTracking } from "@/lib/shopify";
 import { markShippedOnTracking, rebalanceOrderCost } from "@/lib/order-status";
 
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // Bug cũ: chỉ cập nhật fulfillment_orders → sổ giữ giá cũ → thống kê sai (vd import lỗi 46294 sửa còn 25.09
     // nhưng Dashboard vẫn cộng 46294). rebalanceOrderCost cân bút toán = ĐÚNG tổng cost các bản ghi fulfill.
     if (patch.baseCost != null || patch.shipCost != null) await rebalanceOrderCost(params.id, "Manual cost edit — reconciled ledger");
-    if (patch.trackingNumber) { await autoPushEtsyTracking(params.id); await autoPushTiktokTracking(params.id); await markShippedOnTracking(params.id); } // CÓ TRACKING mới nhảy Shipped + đẩy Etsy/TikTok (bug cũ: thiếu {} → sửa SĐT/cost cũng làm đơn Shipped)
+    if (patch.trackingNumber) { await autoPushEtsyTracking(params.id); await autoPushTiktokTracking(params.id); await autoPushShopifyTracking(params.id); await markShippedOnTracking(params.id); } // CÓ TRACKING mới nhảy Shipped + đẩy Etsy/TikTok (bug cũ: thiếu {} → sửa SĐT/cost cũng làm đơn Shipped)
     return NextResponse.json({ ok: true, id: ffo.id, updated: true });
   }
 
