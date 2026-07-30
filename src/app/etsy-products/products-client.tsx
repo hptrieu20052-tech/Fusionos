@@ -6,7 +6,7 @@ type Row = {
   id: string; storeId: string; title: string; price: string | null; quantity: number | null;
   tags: string | null; sku: string | null; status: string; importedAt: string | null;
   storeName: string | null; mainImageUrl: string | null; variationsSummary: string;
-  shopifyTitle: string | null; sellerId: string | null; sellerName: string | null;
+  shopifyTitle: string | null; sellerId: string | null; sellerName: string | null; pushed?: boolean;
 };
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
@@ -36,6 +36,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [busy, setBusy] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20); // default 20 listings/page
+  const [pushFilter, setPushFilter] = useState(""); // "" | "pushed" | "not"
   const showSellerFilter = sellers.length > 1; // only when managing multiple sellers (admin)
   // Import drawer
   const [impOpen, setImpOpen] = useState(false);
@@ -122,13 +123,15 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const filtered = useMemo(() => rows.filter((r) =>
     (!sellerFilter || r.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
+    (pushFilter === "" || (pushFilter === "pushed" ? r.pushed : !r.pushed)) &&
     (!kw.trim() || (r.title + " " + (r.shopifyTitle ?? "") + " " + (r.sku ?? "") + " " + (r.tags ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter]);
+  ), [rows, kw, sellerFilter, storeFilter, pushFilter]);
+  const pushedCount = useMemo(() => rows.filter((r) => r.pushed).length, [rows]);
   const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
 
   // Phân trang (mặc định 20/trang). Reset về trang 1 khi filter đổi.
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, pageSize, pushFilter]);
   const pageClamped = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageClamped - 1) * pageSize, pageClamped * pageSize), [filtered, pageClamped, pageSize]);
 
@@ -298,6 +301,11 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           <option value="">All stores</option>
           {storesForFilter.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
+        <select value={pushFilter} onChange={(e) => setPushFilter(e.target.value)} style={ctl} title="Lọc theo trạng thái push Shopify">
+          <option value="">All ({pushedCount} pushed)</option>
+          <option value="not">Not pushed</option>
+          <option value="pushed">Pushed to Shopify</option>
+        </select>
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>{sel.size ? `${sel.size} selected` : `${filtered.length} listings`}</span>
       </div>
@@ -372,7 +380,10 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                         <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Etsy: {r.title}</div>
                       </>
                     : <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.title}</div>}
-                  {r.sku && <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "ui-monospace,monospace" }}>{r.sku}</div>}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                    {r.sku && <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "ui-monospace,monospace" }}>{r.sku}</span>}
+                    {r.pushed && <span title="Đã push qua Shopify — push lại sẽ CẬP NHẬT, không tạo trùng" style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px" }}>↑ SHOPIFY</span>}
+                  </div>
                 </td>
                 <td style={{ padding: "10px 6px", whiteSpace: "nowrap" }}>
                   <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>

@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
     sku: schema.etsyProducts.sku,
     status: schema.etsyProducts.status,
     shopifyTitle: schema.etsyProducts.shopifyTitle,
+    shopifyProductId: schema.etsyProducts.shopifyProductId,
     importedAt: schema.etsyProducts.importedAt,
     storeName: schema.stores.name,
     sellerId: schema.stores.sellerId,
@@ -63,6 +64,7 @@ export async function GET(req: NextRequest) {
   const out = rows.map((r) => ({
     ...r,
     images: undefined,
+    pushed: !!r.shopifyProductId, // đã push qua Shopify chưa
     mainImageUrl: Array.isArray(r.images) && r.images.length ? String((r.images as string[])[0]) : null,
     variationsSummary: Array.isArray(r.variations)
       ? (r.variations as { name?: string; values?: string[] }[]).map((v) => `${v.name}: ${(v.values ?? []).length}`).join(" · ")

@@ -1,5 +1,5 @@
 {
-  "version": "1.9.8",
+  "version": "1.9.9",
   "url": "/api/extension/download",
   "notes": "Fix shipping address parsing — read State / Address line 2 from the real shipping address (stops wrong values like state=active or a stray Apt/number in Address 2)"
 }
