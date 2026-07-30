@@ -68,7 +68,14 @@ export async function POST(req: NextRequest) {
     const combos: [string, string][] = v1 && v2
       ? v1.values.flatMap((a) => v2.values.map((b) => [a, b] as [string, string]))
       : v1 ? v1.values.map((a) => [a, ""] as [string, string]) : [["", ""]];
-    const price = p.price ?? "0";
+    const basePrice = p.price ?? "0";
+    // Giá THEO SIZE: variantPrices[value] cho từng biến thể; không có thì dùng giá gốc.
+    const vp = (p.variantPrices && typeof p.variantPrices === "object" ? p.variantPrices : {}) as Record<string, string>;
+    const priceFor = (a: string, bv: string) => {
+      const pa = vp[a], pb = vp[bv];
+      const v = (pa != null && String(pa).trim() !== "") ? pa : (pb != null && String(pb).trim() !== "") ? pb : basePrice;
+      return String(v ?? basePrice);
+    };
 
     combos.forEach(([a, bv], idx) => {
       const r: Record<string, string> = Object.fromEntries(COLS.map((c) => [c, ""]));
@@ -89,7 +96,7 @@ export async function POST(req: NextRequest) {
       r["Variant Grams"] = "500";
       r["Variant Inventory Policy"] = "deny";
       r["Variant Fulfillment Service"] = "manual";
-      r["Variant Price"] = String(price);
+      r["Variant Price"] = priceFor(a, bv);
       r["Variant Requires Shipping"] = "TRUE";
       r["Variant Taxable"] = "TRUE";
       out.push(COLS.map((c) => csvCell(r[c])).join(","));

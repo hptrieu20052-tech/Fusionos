@@ -221,6 +221,9 @@ export const etsyProducts = pgTable("etsy_products", {
   materials: text("materials"),
   images: jsonb("images").notNull().default([]),         // string[] — link ảnh Etsy CDN
   variations: jsonb("variations").notNull().default([]), // [{ name, values: string[] }]
+  // Giá theo GIÁ TRỊ biến thể (thường là size): { "8x8": "39.95", "11x8.5": "49.95" }.
+  // Export Shopify: giá mỗi variant = variantPrices[value] ?? price gốc. Nhập qua Bulk Price / Edit.
+  variantPrices: jsonb("variant_prices").notNull().default({}),
   sku: text("sku"),
   status: text("status").notNull().default("active"),
   // AI tối ưu SEO Shopify (title ngắn + tag chuẩn) — KHÔNG đè title gốc Etsy (dùng dedupe).
