@@ -56,7 +56,8 @@ export async function GET(req: NextRequest) {
       // live nếu có đơn trong 7 ngày; die nếu store active nhưng >14 ngày không đơn
       const live = (c?.c7 ?? 0) > 0;
       const cred = (r.s.apiCredentials ?? {}) as Record<string, string>;
-      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_"));
+      const SHOPIFY_KEYS = ["shopDomain", "clientId", "clientSecret", "adminToken", "webhookSecret"];
+      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k));
       return {
         ...r.s,
         apiCredentials: undefined,
@@ -76,6 +77,12 @@ export async function GET(req: NextRequest) {
           connected: !!cred.tiktok_access_token && !!cred.tiktok_shop_id,
           shopId: cred.tiktok_shop_id || "",
           shopName: cred.tiktok_shop_name || "",
+        },
+        // Shopify: có shopDomain + (clientId&clientSecret HOẶC adminToken) = đã cấu hình app
+        shopify: {
+          shopDomain: cred.shopDomain || "",
+          hasApp: !!cred.shopDomain && !!(cred.adminToken || (cred.clientId && cred.clientSecret)),
+          clientId: cred.clientId || "",
         },
         sellerName: r.sellerName,
         // Số liệu shop public do extension đọc hộ (sales / rating / reviews / tuổi shop / còn sống)

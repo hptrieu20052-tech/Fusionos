@@ -16,14 +16,15 @@ type Store = {
   live: boolean; hasCredentials: boolean; credentialKeys: string[];
   etsy?: { hasKeystring: boolean; keystring: string; connected: boolean; shopId: string };
   tiktok?: { hasApp: boolean; appKey: string; authLink: string; connected: boolean; shopId: string; shopName: string };
+  shopify?: { shopDomain: string; hasApp: boolean; clientId: string };
 };
 type Opt = { id: string; name: string };
 
-const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["other", "Other"]];
+const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["shopify", "Shopify"], ["other", "Other"]];
 const CONNECT: [string, string][] = [["extension", "Chrome Extension"], ["api", "API"], ["excel", "Excel Import"]];
 const CURRENCIES: [string, string][] = [["USD", "USD ($)"], ["VND", "VND (₫)"], ["EUR", "EUR (€)"], ["GBP", "GBP (£)"], ["AUD", "AUD"], ["CAD", "CAD"], ["JPY", "JPY (¥)"]];
 const FX_DEFAULT: Record<string, number> = { VND: 25400, EUR: 0.92, GBP: 0.79, AUD: 1.5, CAD: 1.36, JPY: 157 };
-const MK_COLOR: Record<string, string> = { tiktok: "#25242A", amazon: "#FF9900", etsy: "#F1641E", other: "#66788E" };
+const MK_COLOR: Record<string, string> = { tiktok: "#25242A", amazon: "#FF9900", etsy: "#F1641E", shopify: "#5E8E3E", other: "#66788E" };
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Field credentials theo từng sàn
 const CRED_FIELDS: Record<string, [string, string][]> = {
@@ -207,7 +208,7 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
     <Modal title={t("st.addStoreNew")} close={close}>
       <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: gymwear.us" style={inp} /></L>
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => setF({ ...f, marketplace: e.target.value })} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => { const mk = e.target.value; setF({ ...f, marketplace: mk, connectMethod: mk === "shopify" ? "api" : f.connectMethod }); }} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       {!isSeller && <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
@@ -216,6 +217,11 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
           New Etsy shops (0–100 sales) usually can&apos;t get an API key yet — pull orders with the{" "}
           <a href="/extension/" target="_blank" rel="noreferrer" style={{ color: "var(--blue)", fontWeight: 700 }}>FUSION Order Sync extension</a>{" "}
           instead. Once the shop has its own Etsy API approved, copy the connect link, open it in the shop's own browser profile, and orders switch to the official API.
+        </div>
+      )}
+      {f.marketplace === "shopify" && (
+        <div style={{ fontSize: 12, color: "var(--muted)", background: "#F3FBF6", border: "1px solid #CDEFD8", borderRadius: 10, padding: "8px 12px", margin: "2px 0 4px", lineHeight: 1.55 }}>
+          Create the store first, then open its <b>Settings</b> to enter the Shopify app <b>Shop domain</b>, <b>Client ID</b> and <b>Client Secret</b>, check the connection and register webhooks. Orders then flow into FUSION automatically.
         </div>
       )}
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -313,6 +319,38 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     setEtsyBusy(false);
     if (j.ok) { flash(`✓ ${j.received} orders — created ${j.created}, skipped ${j.skipped}`); reload(); } else flash("✗ " + (j.error ?? "Error"));
   };
+  // ===== Shopify API (app Dev Dashboard: Client ID + Client Secret → token client_credentials) =====
+  const [shDomain, setShDomain] = useState(store.shopify?.shopDomain ?? "");
+  const [shClientId, setShClientId] = useState(store.shopify?.clientId ?? "");
+  const [shSecret, setShSecret] = useState("");
+  const [shBusy, setShBusy] = useState(false);
+  const [shSaved, setShSaved] = useState(store.shopify?.hasApp ?? false);
+  const [shCheck, setShCheck] = useState<{ ok: boolean; text: string } | null>(null);
+  const saveShopify = async () => {
+    if (!shDomain.trim() || !shClientId.trim() || (!shSecret.trim() && !store.shopify?.hasApp)) {
+      flash("✗ Enter Shop domain + Client ID + Client Secret"); return;
+    }
+    setShBusy(true);
+    const j = await fetch("/api/shopify/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, shopDomain: shDomain.trim(), clientId: shClientId.trim(), clientSecret: shSecret.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setShBusy(false);
+    if (j.ok) { flash("✓ Shopify app saved — now Check connection"); setShSaved(true); setShSecret(""); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+  const checkShopify = async () => {
+    setShBusy(true); setShCheck(null);
+    const j = await fetch("/api/shopify/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setShBusy(false);
+    if (j.ok) { setShCheck({ ok: true, text: `${j.shopName || "shop"} · ${j.myshopifyDomain || ""}${j.currency ? " · " + j.currency : ""}` }); flash("✓ Connected: " + (j.shopName || j.myshopifyDomain)); }
+    else { setShCheck({ ok: false, text: j.error ?? "Error" }); flash("✗ " + (j.error ?? "Error")); }
+  };
+  const registerShopifyHooks = async () => {
+    setShBusy(true);
+    const j = await fetch("/api/shopify/register-webhooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setShBusy(false);
+    const r0 = (j.results ?? [])[0] as { ok?: boolean; error?: string; topics?: string[] } | undefined;
+    if (j.ok) { setShCheck({ ok: true, text: "Webhooks: " + ((r0?.topics ?? []).join(", ") || "registered") }); flash("✓ Webhooks registered"); }
+    else { setShCheck({ ok: false, text: r0?.error ?? j.error ?? "Error" }); flash("✗ " + (r0?.error ?? j.error ?? "Error")); }
+  };
+
   const fields = CRED_FIELDS[store.marketplace] ?? CRED_FIELDS.other;
 
   const save = async () => {
@@ -468,6 +506,41 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         </div>
       )}
 
+      {/* Shopify API (app Dev Dashboard — client_credentials). Nhập ở đây thay cho chạy SQL. */}
+      {store.marketplace === "shopify" && (
+        <div style={{ border: "1px solid #CDEFD8", background: "#F3FBF6", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
+          <b style={{ fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 6 }}><IconKey width={15} height={15} /> Shopify API (Dev Dashboard app)</b>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px" }}>
+            In the Shopify Dev Dashboard, release a version with scopes <b>read_orders, write_fulfillments, read_fulfillments, write/read_assigned_fulfillment_orders</b>, then copy Client ID + Client Secret from <b>Settings</b> and paste them here.
+          </div>
+          <L label="Shop domain (xxx.myshopify.com — NOT your custom domain)">
+            <input value={shDomain} onChange={(e) => setShDomain(e.target.value)} placeholder="talewix-xxxx.myshopify.com" style={inp} autoComplete="off" data-lpignore="true" data-1p-ignore />
+          </L>
+          <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <L label="Client ID"><input value={shClientId} onChange={(e) => setShClientId(e.target.value)} placeholder="e.g. 85e245a2fbdd…" style={inp} autoComplete="off" data-lpignore="true" data-1p-ignore /></L>
+            <L label="Client Secret"><input type="password" value={shSecret} onChange={(e) => setShSecret(e.target.value)} placeholder={store.shopify?.hasApp ? "••• (saved, leave blank to keep)" : "shpss_…"} style={inp} autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
+          </div>
+          {shCheck && (
+            <div style={{ fontSize: 12, padding: "7px 11px", borderRadius: 9, margin: "2px 0 8px", background: shCheck.ok ? "var(--green-soft)" : "var(--red-soft)", color: shCheck.ok ? "#2E7D46" : "var(--red)", fontWeight: 600 }}>
+              {shCheck.ok ? "✓ " : "✗ "}{shCheck.text}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <button onClick={saveShopify} disabled={shBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save app</button>
+            <button onClick={checkShopify} disabled={shBusy || !(store.shopify?.hasApp || shSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.shopify?.hasApp || shSaved) ? "pointer" : "default", opacity: (store.shopify?.hasApp || shSaved) ? 1 : 0.5 }}>Check connection</button>
+            <button onClick={registerShopifyHooks} disabled={shBusy || !(store.shopify?.hasApp || shSaved)} style={{ background: "#2E7D46", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.shopify?.hasApp || shSaved) ? "pointer" : "default", opacity: (store.shopify?.hasApp || shSaved) ? 1 : 0.5 }}>Register webhooks</button>
+            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
+              {store.shopify?.hasApp
+                ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> App saved</span>
+                : <span style={{ color: "var(--muted)" }}>Not configured</span>}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
+            Flow: <b>Save app</b> → <b>Check connection</b> (confirms the shop name) → <b>Register webhooks</b>. After that, new Shopify orders arrive automatically and tracking is pushed back to Shopify.
+          </div>
+        </div>
+      )}
+
       {/* Extension: Kéo đơn Etsy về FUSION (chỉ store Etsy) */}
       {store.marketplace === "etsy" && (
         <div style={{ border: "1px solid #CDE3FA", background: "#F3F9FF", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
@@ -490,8 +563,8 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         </div>
       )}
 
-      {/* Setup API (generic) — Etsy/TikTok có khu riêng nên ẩn */}
-      {store.marketplace !== "etsy" && store.marketplace !== "tiktok" && (
+      {/* Setup API (generic) — Etsy/TikTok/Shopify có khu riêng nên ẩn */}
+      {store.marketplace !== "etsy" && store.marketplace !== "tiktok" && store.marketplace !== "shopify" && (
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <b style={{ fontSize: 13.5 }}>{t("st.apiConfig")}</b>

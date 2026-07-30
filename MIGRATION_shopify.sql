@@ -10,8 +10,10 @@ ALTER TABLE fulfillment_orders ADD COLUMN IF NOT EXISTS shopify_tracking_pushed_
 -- 3) (Tuỳ chọn) tạo store Shopify để nhận đơn. Chạy SQL mẫu — chọn ĐÚNG kiểu app:
 --
 -- === App Dev Dashboard (mới, khuyên dùng — token tự đổi qua client_credentials) ===
--- INSERT INTO stores (name, marketplace, seller_id, fee_rate, api_credentials)
--- VALUES ('Talewix', 'shopify', '<SELLER_UUID>', 3.0,
+-- Lấy SELLER_UUID: SELECT id, full_name, email, role FROM users WHERE role IN ('admin','seller');
+-- connect_method BẮT BUỘC: 'api' cho Shopify (nhận đơn qua webhook).
+-- INSERT INTO stores (name, marketplace, connect_method, seller_id, fee_rate, api_credentials)
+-- VALUES ('Talewix', 'shopify', 'api', '<SELLER_UUID>', 3.0,
 --   jsonb_build_object(
 --     'shopDomain','talewix.myshopify.com',
 --     'clientId','<CLIENT_ID>',
@@ -19,7 +21,9 @@ ALTER TABLE fulfillment_orders ADD COLUMN IF NOT EXISTS shopify_tracking_pushed_
 --   ));
 --
 -- === App custom cũ (nếu store còn cho, token cố định shpat_) ===
--- ... jsonb_build_object('shopDomain','talewix.myshopify.com','adminToken','<shpat_...>','webhookSecret','<SECRET>')
+-- INSERT INTO stores (name, marketplace, connect_method, seller_id, fee_rate, api_credentials)
+-- VALUES ('Talewix', 'shopify', 'api', '<SELLER_UUID>', 3.0,
+--   jsonb_build_object('shopDomain','talewix.myshopify.com','adminToken','<shpat_...>','webhookSecret','<SECRET>'));
 --
 -- fee_rate 3.0 = ~3% phí thanh toán → Fee (est.) tự tính.
 -- shopDomain: dạng "xxx.myshopify.com" (KHÔNG phải talewix.com).
