@@ -174,7 +174,8 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
   return (
     <div style={{ maxWidth: 1120, margin: "0 auto", padding: "0 4px" }}>
       <div style={{ ...card, padding: "18px 22px", marginBottom: 14, display: "flex", alignItems: "center", gap: 14, background: "linear-gradient(90deg,#F3FBF6,#fff)" }}>
-        <div style={{ width: 44, height: 44, borderRadius: 12, background: SHOP_GREEN, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontWeight: 800, fontSize: 20 }}>T</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/marketplaces/shopify.png" alt="Shopify" width={42} height={42} style={{ width: 42, height: 42, objectFit: "contain", display: "block", flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 19, fontWeight: 800 }}>Manage Templates · Shopify</div>
           <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{rows.length} templates · Full preset (variants + price + collections + channels + category) applied on Push & bulk-edit</div>

@@ -3,6 +3,7 @@ const MK_LOGOS: { match: (m: string) => boolean; src: string }[] = [
   { match: (m) => m.includes("tiktok"), src: "/marketplaces/tiktok.png" },
   { match: (m) => m.includes("amazon"), src: "/marketplaces/amazon.png" },
   { match: (m) => m.includes("etsy"), src: "/marketplaces/etsy.png" },
+  { match: (m) => m.includes("shopify"), src: "/marketplaces/shopify.png" }, // logo gốc Shopify
 ];
 
 export function MarketplaceLogo({ mk, size = 22 }: { mk: string; size?: number }) {
