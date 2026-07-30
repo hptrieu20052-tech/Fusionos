@@ -105,10 +105,13 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         if (s(o.country) && (!dup.country || dup.country === "United States")) {
           if (s(o.country) !== dup.country) patch.country = s(o.country);
         }
-        // Đơn ĐÃ LƯU addr2 (kéo trước bằng ext lỗi) → khi CÓ Copy address thì SỬA LẠI theo Copy address (re-push tự sạch).
-        if (dup.addr2 && String(dup.addr2).trim() && s(o.formattedAddress)) {
+        // DỌN Address 2 cũ theo bản kéo MỚI (ext ≥1.9.12 đã chặn địa chỉ shop rò): khi cùng người
+        // (addr1 khớp) HOẶC có Copy address mà addr2 khác → đồng bộ (thay apt thật / xoá rác "Apt 101").
+        if (dup.addr2 && String(dup.addr2).trim()) {
+          const cur = String(dup.addr2).trim();
           const good = resolveAddr2(o);
-          if ((good ?? "") !== String(dup.addr2).trim()) patch.addr2 = good; // theo Copy address: thay bằng apt thật hoặc xoá rác
+          const sameAddr1 = !!s(o.addr1) && normA(s(o.addr1)!) === normA(String(dup.addr1 || ""));
+          if ((s(o.formattedAddress) || sameAddr1) && (good ?? "") !== cur) patch.addr2 = good;
         }
         const inTotal = num(o.total);
         if (inTotal > 0 && (!dup.total || Number(dup.total) === 0)) patch.total = (inTotal / fx).toFixed(2);
