@@ -236,6 +236,37 @@ export const etsyProducts = pgTable("etsy_products", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({ idxEtsyProductsStore: index("idx_etsy_products_store").on(t.storeId) }));
 
+// ---------- SHOPIFY PRODUCTS (Manage Products Shopify — two-way sync qua GraphQL) ----------
+// Bản sao sản phẩm Shopify để sửa trong FUSION rồi Push ngược. Sync = kéo về; dirty = có sửa chưa đẩy.
+export const shopifyProducts = pgTable("shopify_products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),          // store Shopify (marketplace=shopify)
+  shopifyProductId: text("shopify_product_id").notNull(), // GID gid://shopify/Product/...
+  handle: text("handle"),
+  title: text("title").notNull(),
+  bodyHtml: text("body_html"),                  // mô tả (descriptionHtml)
+  vendor: text("vendor"),
+  productType: text("product_type"),
+  tags: text("tags"),                           // "a, b, c"
+  status: text("status").notNull().default("DRAFT"), // ACTIVE / DRAFT / ARCHIVED
+  // options: [{ name, position, values: string[] }]
+  options: jsonb("options").notNull().default([]),
+  // variants: [{ id(GID), title, selectedOptions:[{name,value}], price, compareAtPrice, sku, inventoryItemId, inventoryQty, barcode }]
+  variants: jsonb("variants").notNull().default([]),
+  // images: [{ id(GID), src, altText, position }]
+  images: jsonb("images").notNull().default([]),
+  onlineStoreUrl: text("online_store_url"),
+  totalInventory: integer("total_inventory"),
+  dirty: boolean("dirty").notNull().default(false), // có chỉnh sửa local chưa Push
+  syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
+  pushedAt: timestamp("pushed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  idxShopifyProductsStore: index("idx_shopify_products_store").on(t.storeId),
+  idxShopifyProductsGid: index("idx_shopify_products_gid").on(t.shopifyProductId),
+}));
+
 // ---------- FULFILLMENT ----------
 export const fulfillers = pgTable("fulfillers", {
   id: uuid("id").primaryKey().defaultRandom(),

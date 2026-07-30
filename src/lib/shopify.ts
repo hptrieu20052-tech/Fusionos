@@ -150,6 +150,43 @@ export function normalizeShopifyOrder(o: Record<string, unknown>): InOrder {
   };
 }
 
+// Tách đơn Shopify theo SELLER (khớp product_id ↔ listing đã Push ↔ seller gốc).
+// Trả về [{ sellerId, order }]. 1 nhóm → 1 đơn (mã gốc). Nhiều nhóm (giỏ trộn seller) → đơn gốc + -CLONE-n,
+// total chia theo TỈ LỆ giá trị item của từng seller (fee ước tính theo % shop sẽ tự tỉ lệ theo total).
+// Item không map được (list tay trên Shopify) → gán adminSellerId để support/admin vẫn thấy mà fulfill.
+export function splitShopifyOrderBySeller(
+  o: Record<string, unknown>,
+  resolveSeller: (productId: string) => string | null,
+  adminSellerId: string | null,
+): { sellerId: string | null; order: InOrder }[] {
+  const base = normalizeShopifyOrder(o);
+  const groups = new Map<string, { sellerId: string | null; items: InItem[]; subtotal: number }>();
+  for (const it of (base.items ?? [])) {
+    const pid = String(it.listingId ?? "").replace(/\D/g, "");
+    const sid = (pid && resolveSeller(pid)) || adminSellerId || null;
+    const key = sid ?? "∅";
+    const g = groups.get(key) ?? { sellerId: sid, items: [], subtotal: 0 };
+    g.items.push(it);
+    g.subtotal += num(it.price) * (num(it.qty) || 1);
+    groups.set(key, g);
+  }
+  const arr = Array.from(groups.values());
+  if (arr.length <= 1) return [{ sellerId: arr[0]?.sellerId ?? adminSellerId ?? null, order: base }];
+
+  const totalOrder = num(o.total_price) || num(o.current_total_price) || arr.reduce((a, g) => a + g.subtotal, 0);
+  const sumSub = arr.reduce((a, g) => a + g.subtotal, 0) || 1;
+  const baseExt = base.externalId;
+  return arr.map((g, i) => ({
+    sellerId: g.sellerId,
+    order: {
+      ...base,
+      externalId: i === 0 ? baseExt : `${baseExt}-CLONE-${i}`,
+      items: g.items,
+      total: Math.round(totalOrder * (g.subtotal / sumSub) * 100) / 100,
+    },
+  }));
+}
+
 // ---- ĐẨY TRACKING NGƯỢC LÊN SHOPIFY (tạo fulfillment → khách nhận email "đã gửi hàng") ----
 // Shopify 2024-10: cần fulfillment_order_id (lấy từ /orders/{id}/fulfillment_orders) rồi POST /fulfillments.
 export async function createShopifyFulfillment(
