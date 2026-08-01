@@ -264,6 +264,9 @@ export const shopifyProducts = pgTable("shopify_products", {
   images: jsonb("images").notNull().default([]),
   onlineStoreUrl: text("online_store_url"),
   totalInventory: integer("total_inventory"),
+  // Template FUSION gán cho listing này — nguồn facts cho AI Optimize + 3 tab mô tả.
+  // null = tự khớp theo Product type (fallback), gán tay = luôn dùng template này.
+  templateId: uuid("template_id"),
   dirty: boolean("dirty").notNull().default(false), // có chỉnh sửa local chưa Push
   syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
   pushedAt: timestamp("pushed_at", { withTimezone: true }),

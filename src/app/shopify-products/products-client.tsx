@@ -11,6 +11,7 @@ type Row = {
   mainImage: string | null; imageCount: number; onlineStoreUrl: string | null;
   totalInventory: number | null; optionsSummary: string;
   productType: string; categoryName: string; collectionTitles: string[];
+  templateId: string | null; templateName: string; templatePinned: boolean; templateHasFacts: boolean;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -33,7 +34,7 @@ const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
 const SHOP_GREEN = "#5E8E3E";
 
 type ActKey =
-  | "apply_template"
+  | "set_template" | "apply_template"
   | "active" | "draft" | "archive" | "delete"
   | "tags_add" | "tags_remove"
   | "channels_include" | "channels_exclude"
@@ -41,7 +42,8 @@ type ActKey =
   | "collection_add" | "collection_remove";
 type ActionItem = { key: ActKey; label: string; danger?: boolean } | { sep: true; key: string };
 const ACTIONS: ActionItem[] = [
-  { key: "apply_template", label: "Apply template…" },
+  { key: "set_template", label: "Set AI template…" },
+  { key: "apply_template", label: "Apply template (variants → Shopify)…" },
   { key: "sep0", sep: true },
   { key: "active", label: "Set as Active" },
   { key: "draft", label: "Unlist products (set to Draft)" },
@@ -72,6 +74,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  // Thanh tiến độ cho việc chạy theo lô (AI Optimize / Push) — chạy tới đâu hiện tới đó.
+  const [prog, setProg] = useState<{ label: string; done: number; total: number; fail: number } | null>(null);
   const [kw, setKw] = useState(""); const [sellerFilter, setSellerFilter] = useState(""); const [storeFilter, setStoreFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState(""); const [categoryFilter, setCategoryFilter] = useState(""); const [collectionFilter, setCollectionFilter] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -162,34 +166,52 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
-  const doPush = async (ids: string[]) => {
+  // Push theo LÔ 5 — route /push chỉ có 60s trên Vercel, đẩy 20 con 1 lần là bị cắt giữa chừng.
+  const doPush = async (ids: string[], keepProgress = false) => {
     if (!ids.length) return flash("✗ Select products first", false);
     setBusy(true);
-    try {
-      const j = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }).then((r) => r.json());
-      if (j.ok || j.pushed) {
-        const fail = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
-        flash(`✓ Pushed ${j.pushed}/${(j.results ?? []).length}${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`, j.failed === 0); load();
-      } else flash("✗ " + (j.error ?? (j.results ?? [])[0]?.error ?? "Push failed") + (/write_products|scope|access/i.test(JSON.stringify(j)) ? " — thêm scope write_products + Install lại app" : ""), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    let ok = 0; const errs: string[] = [];
+    setProg({ label: "Pushing to Shopify", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += 5) {
+      const batch = ids.slice(i, i + 5);
+      try {
+        const j = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
+        ok += j.pushed ?? 0;
+        (j.results ?? []).filter((r: { ok: boolean; error?: string }) => !r.ok).forEach((r: { error?: string }) => { if (errs.length < 3) errs.push(r.error ?? "failed"); });
+        if (!j.ok && !j.pushed && j.error && errs.length < 3) errs.push(j.error);
+      } catch (e) { if (errs.length < 3) errs.push(String((e as Error)?.message ?? "network")); }
+      const sent = Math.min(i + batch.length, ids.length);
+      setProg((p) => p ? { ...p, done: sent, fail: Math.max(0, sent - ok) } : p);
+    }
+    const failed = ids.length - ok;
+    flash(`${failed ? "⚠" : "✓"} Pushed ${ok}/${ids.length} to Shopify${failed ? ` · ${failed} failed: ${errs[0] ?? ""}` : ""}${/write_products|scope|access/i.test(errs.join(" ")) ? " — thêm scope write_products + Install lại app" : ""}`, failed === 0);
+    if (!keepProgress) setProg(null);
+    await load();
     setBusy(false);
+    return { ok, failed };
   };
+  // AI Optimize theo LÔ 4, chạy tuần tự từng lô + hiện tiến độ.
+  // KHÔNG tự Push nữa: gen xong sản phẩm ở trạng thái EDITED → xem lại → bấm "⬆ Push to Shopify".
   const doAiOptimize = async () => {
     if (!sel.size) return flash("✗ Select products first", false);
-    setBusy(true);
-    const idsAll = Array.from(sel); let done = 0; const errs: string[] = [];
-    for (let i = 0; i < idsAll.length; i += 20) {
-      const batch = idsAll.slice(i, i + 20);
+    const idsAll = Array.from(sel);
+    setBusy(true); setMsg(null);
+    setProg({ label: "AI writing content", done: 0, total: idsAll.length, fail: 0 });
+    let done = 0; let fail = 0; let withTpl = 0; const errs: string[] = [];
+    for (let i = 0; i < idsAll.length; i += 4) {
+      const batch = idsAll.slice(i, i + 4);
       try {
         const j = await fetch("/api/shopify-products/ai-optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: aiModel || undefined }) }).then((r) => r.json());
-        if (j.ok) { done += j.optimized ?? 0; if (j.errors) errs.push(...j.errors); } else errs.push(j.error ?? "failed");
-      } catch (e) { errs.push(String((e as Error)?.message ?? "network")); }
+        done += j.optimized ?? 0; withTpl += j.withTemplate ?? 0;
+        fail += (j.failed ?? (j.ok ? 0 : batch.length));
+        if (j.errors) errs.push(...j.errors); else if (!j.ok && j.error) errs.push(j.error);
+      } catch (e) { fail += batch.length; errs.push(String((e as Error)?.message ?? "network")); }
+      setProg({ label: "AI writing content", done: Math.min(i + batch.length, idsAll.length), total: idsAll.length, fail });
     }
-    if (done > 0) {
-      const push = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: idsAll }) }).then((r) => r.json()).catch(() => ({}));
-      flash(`✓ AI optimized ${done}/${idsAll.length} — updated ${push.pushed ?? 0} on Shopify`, (push.failed ?? 0) === 0);
-    } else flash(`✗ AI Optimize failed: ${errs[0] ?? "unknown"}`, false);
-    load();
+    setProg(null);
+    if (done > 0) flash(`✓ AI wrote ${done}/${idsAll.length} listing(s) · ${withTpl} with 3 tabs from template${fail ? ` · ${fail} failed: ${errs[0] ?? ""}` : ""} — review, then press ⬆ Push to Shopify`, fail === 0);
+    else flash(`✗ AI Optimize failed: ${errs[0] ?? "unknown"}`, false);
+    await load();
     setBusy(false);
   };
   const doDelete = async () => {
@@ -258,15 +280,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     const sids = selStoreIds();
     if (sids.length !== 1) return flash("✗ These actions need products from ONE store — filter by store first (template/channel/collection IDs are per store).", false);
     const storeId = sids[0];
-    // Apply template — nạp danh sách template của store
-    if (key === "apply_template") {
-      setPickOne("");
-      setAct({ key, title: "Apply template", kind: "template", storeId, loading: true, items: [] });
+    // Set AI template (chỉ gán link) / Apply template (ghi variants lên Shopify) — nạp danh sách template của store
+    if (key === "set_template" || key === "apply_template") {
+      const isSet = key === "set_template";
+      setPickOne(isSet ? "__none__" : "");
+      setAct({ key, title: isSet ? "Set AI template" : "Apply template", kind: "template", storeId, loading: true, items: [] });
       try {
         const j = await fetch(`/api/shopify-templates?storeId=${storeId}`).then((r) => r.json());
         if (!j.ok) { flash("✗ " + (j.error ?? "Load failed"), false); setAct(null); return; }
-        const items = (j.templates ?? []).map((t: { id: string; name: string }) => ({ id: t.id, label: t.name }));
-        if (!items.length) flash("✗ No templates for this store — create one in Manage Templates · Shopify", false);
+        const tpls = (j.templates ?? []).map((t: { id: string; name: string; productType?: string | null }) => ({ id: t.id, label: t.productType ? `${t.name} — type: ${t.productType}` : t.name }));
+        if (!tpls.length) flash("✗ No templates for this store — create one in Manage Templates · Shopify", false);
+        const items = isSet ? [{ id: "__none__", label: "None — auto-match by Product type" }, ...tpls] : tpls;
         setAct((a) => a ? { ...a, loading: false, items } : a);
       } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setAct(null); }
       return;
@@ -293,6 +317,20 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   };
   const submitAct = async () => {
     if (!act) return;
+    // Set AI template — chỉ gán link trong FUSION, KHÔNG đụng Shopify, KHÔNG đổi mô tả đang có.
+    if (act.kind === "template" && act.key === "set_template") {
+      if (!pickOne) return flash("✗ Pick a template", false);
+      const templateId = pickOne === "__none__" ? null : pickOne;
+      setAct(null); setBusy(true);
+      try {
+        const j = await fetch("/api/shopify-products/set-template", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), templateId }) }).then((r) => r.json());
+        if (j.ok) flash(`✓ ${templateId ? "Linked" : "Unlinked"} template on ${j.done} product(s)${j.skipped ? ` · ${j.skipped} skipped (other store)` : ""} — existing descriptions unchanged; run ✦ AI Optimize to rewrite them`);
+        else flash("✗ " + (j.error ?? "Failed"), false);
+      } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+      await load();
+      setBusy(false);
+      return;
+    }
     if (act.kind === "template") {
       if (!pickOne) return flash("✗ Pick a template", false);
       const templateId = pickOne;
@@ -423,6 +461,24 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         </div>
       )}
 
+      {/* Thanh tiến độ — chạy theo lô nên phải thấy được đang tới đâu */}
+      {prog && (
+        <div style={{ ...card, padding: "12px 16px", marginBottom: 12, borderColor: "#D7CCF5", background: "#F8F6FF" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 700, color: "#5B3FBF", marginBottom: 8 }}>
+            <span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid #C9B8F5", borderTopColor: "#7C5CFF", borderRadius: "50%", animation: "fusionSpin .7s linear infinite" }} />
+            <span>{prog.label}… {prog.done}/{prog.total}</span>
+            <div style={{ flex: 1 }} />
+            {prog.fail > 0 && <span style={{ color: "#C0392B", fontWeight: 700 }}>{prog.fail} failed</span>}
+            <span style={{ color: "var(--muted)", fontWeight: 600 }}>{Math.round((prog.done / Math.max(1, prog.total)) * 100)}%</span>
+          </div>
+          <div style={{ height: 7, borderRadius: 999, background: "#E7E0FB", overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${Math.round((prog.done / Math.max(1, prog.total)) * 100)}%`, background: "linear-gradient(90deg,#7C5CFF,#6D48C9)", borderRadius: 999, transition: "width .3s ease" }} />
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 7 }}>Running in small batches — keep this tab open until it finishes.</div>
+          <style>{"@keyframes fusionSpin{to{transform:rotate(360deg)}}"}</style>
+        </div>
+      )}
+
       {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, padding: "10px 14px", borderRadius: 12, background: msg.ok ? "#EAF7F0" : "#FDECEC", color: msg.ok ? "#158A57" : "#C0392B", border: `1px solid ${msg.ok ? "#C7EAD8" : "#F5CFCF"}` }}>{msg.text}</div>}
 
       {/* Table */}
@@ -434,25 +490,48 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <th style={{ padding: "10px 6px", textAlign: "left" }}>Image</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Title</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Store / Seller</th>
-              <th style={{ padding: "10px 8px", textAlign: "left" }}>Options</th>
+              <th style={{ padding: "10px 8px", textAlign: "left" }}>Type / Category</th>
+              <th style={{ padding: "10px 8px", textAlign: "left" }}>Collections</th>
+              <th style={{ padding: "10px 8px", textAlign: "left" }}>Template</th>
               <th style={{ padding: "10px 8px", textAlign: "right" }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center" }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={8} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={8} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
+            {loading && <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: "8px 6px" }}>{r.mainImage ? <img src={r.mainImage} alt="" width={42} height={42} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} /> : <div style={{ width: 42, height: 42, borderRadius: 8, background: "#F1F1F4" }} />}</td>
                 <td style={{ padding: "8px" }}>
                   <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.variantCount} variants · {r.imageCount} images{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.variantCount} variants · {r.imageCount} images{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}{r.optionsSummary ? ` · ${r.optionsSummary}` : ""}</div>
                 </td>
                 <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.sellerName ?? "—"}</div></td>
-                <td style={{ padding: "8px", fontSize: 12, color: "var(--muted)" }}>{r.optionsSummary || "—"}</td>
+                <td style={{ padding: "8px", fontSize: 12, maxWidth: 150 }}>
+                  <div title={r.productType || ""} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productType || "—"}</div>
+                  <div title={r.categoryName || ""} style={{ color: "var(--muted)", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.categoryName || "—"}</div>
+                </td>
+                <td style={{ padding: "8px", fontSize: 12, maxWidth: 160 }}>
+                  {(r.collectionTitles ?? []).length === 0 ? <span style={{ color: "var(--muted)" }}>—</span> : (
+                    <span title={r.collectionTitles.join(", ")} style={{ display: "inline-flex", flexWrap: "wrap", gap: 4 }}>
+                      {r.collectionTitles.slice(0, 2).map((c) => <span key={c} style={{ fontSize: 11, fontWeight: 600, padding: "1px 7px", borderRadius: 999, background: "#EEF3FF", color: "#3A5BC7" }}>{c.length > 18 ? c.slice(0, 18) + "…" : c}</span>)}
+                      {r.collectionTitles.length > 2 && <span style={{ fontSize: 11, color: "var(--muted)", fontWeight: 600 }}>+{r.collectionTitles.length - 2}</span>}
+                    </span>
+                  )}
+                </td>
+                <td style={{ padding: "8px", fontSize: 12, maxWidth: 150 }}>
+                  {r.templateName ? (
+                    <span title={r.templatePinned ? "Pinned manually — AI Optimize always uses this template" : "Auto-matched by Product type — pin it with More actions → Set AI template"} style={{ display: "inline-flex", alignItems: "center", gap: 5, maxWidth: "100%" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: r.templatePinned ? "#F1EBFF" : "#F1F1F4", color: r.templatePinned ? "#5B3FBF" : "#66788E", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.templatePinned ? "📌 " : "≈ "}{r.templateName.length > 16 ? r.templateName.slice(0, 16) + "…" : r.templateName}
+                      </span>
+                      {!r.templateHasFacts && <span title="This template has no Product info / Product Details / Shipping info filled in — AI will only write the Description" style={{ color: "#B7791F", fontWeight: 800 }}>⚠</span>}
+                    </span>
+                  ) : <span title="No template matched — AI Optimize writes the Description only (no 3 tabs)" style={{ color: "var(--muted)" }}>—</span>}
+                </td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap" }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
                 <td style={{ padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
@@ -613,7 +692,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <b style={{ fontSize: 16 }}>{act.title}</b>
               <button onClick={() => setAct(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>Applies to <b>{sel.size}</b> selected product(s) — runs on Shopify.</div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>
+              {act.key === "set_template"
+                ? <>Applies to <b>{sel.size}</b> selected product(s) — links the facts source for ✦ AI Optimize only. Nothing is sent to Shopify and the current description is not touched.</>
+                : <>Applies to <b>{sel.size}</b> selected product(s) — runs on Shopify.</>}
+            </div>
 
             {act.kind === "tags" && (
               <div>

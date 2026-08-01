@@ -35,10 +35,27 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(schema.shopifyProducts.updatedAt));
 
   const scoped = scopeIds ? rows.filter((r) => r.storeSeller && scopeIds.includes(r.storeSeller)) : rows;
+
+  // Template FUSION của từng listing: gán tay (templateId) > tự khớp theo Product type (cùng store).
+  const tpls = await db.select({ id: schema.shopifyTemplates.id, storeId: schema.shopifyTemplates.storeId, name: schema.shopifyTemplates.name, productType: schema.shopifyTemplates.productType, status: schema.shopifyTemplates.status, baseDescription: schema.shopifyTemplates.baseDescription, productDetails: schema.shopifyTemplates.productDetails, shippingInfo: schema.shopifyTemplates.shippingInfo }).from(schema.shopifyTemplates);
+  const byId = new Map(tpls.map((t) => [t.id, t]));
+  const matchTpl = (storeId: string, productType: string | null) => {
+    const list = tpls.filter((t) => t.storeId === storeId);
+    const pt = (productType ?? "").trim().toLowerCase();
+    if (pt) { const m = list.find((t) => (t.productType ?? "").trim().toLowerCase() === pt); if (m) return m; }
+    const active = list.filter((t) => t.status === "ACTIVE");
+    if (active.length === 1) return active[0];
+    if (list.length === 1) return list[0];
+    return null;
+  };
+
   const list = scoped.map((r) => {
     const vs = (Array.isArray(r.p.variants) ? r.p.variants as Variant[] : []);
     const prices = vs.map((v) => Number(v.price)).filter((n) => !isNaN(n) && n > 0);
     const imgs = (Array.isArray(r.p.images) ? r.p.images as Img[] : []);
+    const pinned = r.p.templateId ? byId.get(r.p.templateId) ?? null : null;
+    const tpl = pinned ?? matchTpl(r.p.storeId, r.p.productType);
+    const tplHasFacts = !!(tpl && ((tpl.baseDescription ?? "").trim() || (tpl.productDetails ?? "").trim() || (tpl.shippingInfo ?? "").trim()));
     return {
       id: r.p.id, storeId: r.p.storeId, storeName: r.storeName, sellerName: r.sellerName,
       title: r.p.title, handle: r.p.handle, status: r.p.status, dirty: r.p.dirty,
@@ -48,6 +65,7 @@ export async function GET(req: NextRequest) {
       variantCount: vs.length, minPrice: prices.length ? Math.min(...prices) : null, maxPrice: prices.length ? Math.max(...prices) : null,
       mainImage: imgs[0]?.src ?? null, imageCount: imgs.length,
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,
+      templateId: tpl?.id ?? null, templateName: tpl?.name ?? "", templatePinned: !!pinned, templateHasFacts: tplHasFacts,
       syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt,
       optionsSummary: (Array.isArray(r.p.options) ? r.p.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${o.values.length}`).join(" · "),
     };

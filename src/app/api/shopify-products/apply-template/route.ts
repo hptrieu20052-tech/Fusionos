@@ -53,10 +53,10 @@ export async function POST(req: NextRequest) {
         await db.update(schema.shopifyProducts).set({
           handle: fresh.handle, title: fresh.title, bodyHtml: fresh.bodyHtml, vendor: fresh.vendor, productType: fresh.productType,
           tags: fresh.tags, status: fresh.status, seoTitle: fresh.seoTitle, seoDescription: fresh.seoDescription, category: fresh.category, collections: fresh.collections, options: fresh.options, variants: fresh.variants, images: fresh.images,
-          onlineStoreUrl: fresh.onlineStoreUrl, totalInventory: fresh.totalInventory, dirty: false, syncedAt: new Date(), pushedAt: new Date(), updatedAt: new Date(),
+          onlineStoreUrl: fresh.onlineStoreUrl, totalInventory: fresh.totalInventory, templateId: tpl.id, dirty: false, syncedAt: new Date(), pushedAt: new Date(), updatedAt: new Date(),
         }).where(eq(schema.shopifyProducts.id, r.p.id));
       } else {
-        await db.update(schema.shopifyProducts).set({ dirty: false, pushedAt: new Date(), updatedAt: new Date() }).where(eq(schema.shopifyProducts.id, r.p.id));
+        await db.update(schema.shopifyProducts).set({ templateId: tpl.id, dirty: false, pushedAt: new Date(), updatedAt: new Date() }).where(eq(schema.shopifyProducts.id, r.p.id));
       }
     } catch { /* refetch lỗi không chặn — sản phẩm đã áp xong trên Shopify */ }
     results.push({ id: r.p.id, title: r.p.title, ok: true, ...(res.error ? { error: res.error } : {}) });
