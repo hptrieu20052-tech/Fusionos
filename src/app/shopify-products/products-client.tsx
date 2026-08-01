@@ -735,12 +735,28 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                     <input value={edit.tags ?? ""} onChange={(e) => setEdit({ ...edit, tags: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 12 }} />
                     <label style={lab}>Description (HTML)</label>
                     <textarea value={edit.bodyHtml ?? ""} onChange={(e) => setEdit({ ...edit, bodyHtml: e.target.value })} rows={4} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 14 }} />
+                    {/* SEO — đây chính là dòng Google hiển thị. Bỏ trống thì Shopify tự lấy title + đoạn đầu mô tả,
+                        thường bị cụt và không có từ khoá. Có preview thật để thấy trước khi Save. */}
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#FAFBFD" }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: "#334155", marginBottom: 8 }}>Search engine listing (Google)</div>
-                      <label style={lab}>Page title <span style={{ fontWeight: 500 }}>({(edit.seoTitle ?? "").length}/60)</span></label>
-                      <input value={edit.seoTitle ?? ""} onChange={(e) => setEdit({ ...edit, seoTitle: e.target.value })} maxLength={70} placeholder="Shown as the blue link on Google" style={{ ...ctl, width: "100%", marginBottom: 10 }} />
-                      <label style={lab}>Meta description <span style={{ fontWeight: 500 }}>({(edit.seoDescription ?? "").length}/155)</span></label>
-                      <textarea value={edit.seoDescription ?? ""} onChange={(e) => setEdit({ ...edit, seoDescription: e.target.value })} maxLength={320} rows={2} placeholder="Shown under the link on Google" style={{ ...ctl, width: "100%", resize: "vertical" }} />
+                      {/* Preview y như kết quả tìm kiếm */}
+                      <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+                        <div style={{ fontSize: 11.5, color: "#4d5156", marginBottom: 2 }}>
+                          {(edit.onlineStoreUrl ?? "").replace(/^https?:\/\//, "").split("/")[0] || "your-store.com"} <span style={{ color: "#70757a" }}>› products › {edit.handle ?? ""}</span>
+                        </div>
+                        <div style={{ fontSize: 16, color: "#1a0dab", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {(edit.seoTitle ?? "").trim() || edit.title || "Page title"}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: "#4d5156", lineHeight: 1.45, marginTop: 2 }}>
+                          {((edit.seoDescription ?? "").trim() || (edit.bodyHtml ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() || "Meta description shown under the link on Google.").slice(0, 160)}
+                          {(((edit.seoDescription ?? "").trim() || (edit.bodyHtml ?? "")).length > 160) && "…"}
+                        </div>
+                      </div>
+                      <label style={lab}>Page title <span style={{ fontWeight: 700, color: (edit.seoTitle ?? "").length > 60 ? "var(--red)" : "var(--muted)" }}>({(edit.seoTitle ?? "").length}/60)</span></label>
+                      <input value={edit.seoTitle ?? ""} onChange={(e) => setEdit({ ...edit, seoTitle: e.target.value })} maxLength={70} placeholder="Blue link on Google — keyword first, ≤60 chars" style={{ ...ctl, width: "100%", marginBottom: 10, borderColor: (edit.seoTitle ?? "").length > 60 ? "#F3C9C9" : "var(--line)" }} />
+                      <label style={lab}>Meta description <span style={{ fontWeight: 700, color: (edit.seoDescription ?? "").length > 155 ? "var(--red)" : "var(--muted)" }}>({(edit.seoDescription ?? "").length}/155)</span></label>
+                      <textarea value={edit.seoDescription ?? ""} onChange={(e) => setEdit({ ...edit, seoDescription: e.target.value })} maxLength={320} rows={3} placeholder="One persuasive sentence under the link — keyword + benefit + call to action" style={{ ...ctl, width: "100%", resize: "vertical", borderColor: (edit.seoDescription ?? "").length > 155 ? "#F3C9C9" : "var(--line)" }} />
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Leave these blank and Shopify falls back to the product title plus a chopped-off slice of the description — worse click-through on Google and Shopping ads.</div>
                     </div>
                     <label style={lab}>Variants ({edit.variants.length}) — giá / compare-at / SKU</label>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
