@@ -33,6 +33,14 @@ const lab: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 7
 const linkBtn = (c: string): React.CSSProperties => ({ border: "none", background: "none", padding: 0, cursor: "pointer", color: c, fontWeight: 700, fontSize: 12.5 });
 const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
 const SHOP_GREEN = "#5E8E3E";
+// Control nhỏ dùng cho thanh filter/action — nhỏ hơn ctl để cả hàng nằm gọn 1 dòng.
+const fctl: React.CSSProperties = { ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 155 };
+// Select đang có giá trị thì đổi màu — nhìn phát biết đang lọc cái gì.
+const fsel = (on: boolean, fg = "#1F6F45", bd = "#BFE3CD", bg = "#F3FBF6"): React.CSSProperties =>
+  ({ ...fctl, borderColor: on ? bd : "var(--line)", background: on ? bg : "#fff", color: on ? fg : "inherit", fontWeight: on ? 700 : 400 });
+// Nhóm nút theo bước làm việc — có nhãn + vạch ngăn để mắt không phải đọc hết 7 nút.
+const grp: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px 5px 8px", borderLeft: "1px solid #CDEFD8", flexWrap: "wrap" };
+const grpLab: React.CSSProperties = { fontSize: 10, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase", color: "#7C9A86", whiteSpace: "nowrap" };
 // "2h ago" / "3d ago" — nhìn phát biết listing nào vừa chạy AI, khỏi chạy lại tốn tiền.
 const ago = (iso: string | null) => {
   if (!iso) return "";
@@ -148,8 +156,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, aiFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
-  // Trong danh sách đang chọn, bao nhiêu con ĐÃ chạy AI rồi (để hiện nút "Skip already optimized").
+  // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
+  const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
+  const selDirty = useMemo(() => rows.filter((r) => sel.has(r.id) && r.dirty).length, [rows, sel]);
+  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || aiFilter);
+  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCategoryFilter(""); setCollectionFilter(""); setAiFilter(""); };
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
@@ -446,73 +458,97 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         )}
       </div>
 
-      {/* Filters */}
-      <div style={{ ...card, padding: "12px 16px", marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...ctl, flex: 1, minWidth: 200 }} />
-        {showSellerFilter && (
-          <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} style={ctl}>
-            <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        )}
-        <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} style={ctl}>
-          <option value="">All stores</option>{storesForFilter.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} title="Product type" style={ctl}>
-          <option value="">All types</option>{typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-        <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} title="Category" style={ctl}>
-          <option value="">All categories</option>{categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} title="Collection" style={ctl}>
-          <option value="">All collections</option>{collectionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select value={aiFilter} onChange={(e) => setAiFilter(e.target.value as "" | "todo" | "done" | "unpushed")} title="AI Optimize status — pick 'Not optimized yet' so you never pay to rewrite the same listing twice" style={{ ...ctl, borderColor: aiFilter ? "#C9B8F5" : "var(--line)", color: aiFilter ? "#5B3FBF" : "inherit", fontWeight: aiFilter ? 700 : 400 }}>
-          <option value="">AI: all</option>
-          <option value="todo">Not optimized yet</option>
-          <option value="done">AI optimized</option>
-          <option value="unpushed">AI done · not pushed</option>
-        </select>
-        <div style={{ flex: 1 }} />
-        <button onClick={() => setSel(new Set(filtered.map((r) => r.id)))} disabled={!filtered.length} title="Select every product matching the filters above (not just this page)" style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: filtered.length ? 1 : .5 }}>Select all {filtered.length}</button>
-        <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>{sel.size ? `${sel.size} selected` : `${filtered.length} products`}</span>
-      </div>
-
-      {/* Selection bar */}
-      {sel.size > 0 && (
-        <div style={{ ...card, padding: "10px 14px", marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", background: "#F3FBF6", borderColor: "#CDEFD8" }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: SHOP_GREEN }}>{sel.size} selected</span>
-          <div style={{ flex: 1 }} />
-          {canEdit && (
-            <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model for Optimize" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 200 }}>
-              <option value="">AI model: Default</option>{aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+      {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
+      <div style={{ ...card, padding: "12px 14px", marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 15, color: "var(--muted)" }}>🔍</span>
+          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "1 1 220px", maxWidth: "none", minWidth: 180 }} />
+          {showSellerFilter && (
+            <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
+              <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-          {canEdit && selDone > 0 && (
-            <button disabled={busy} title="Deselect the listings AI has already rewritten — don't pay to write the same content twice" onClick={() => setSel(new Set(rows.filter((r) => sel.has(r.id) && !r.aiAt).map((r) => r.id)))} style={{ ...ghost, padding: "9px 12px", fontSize: 12.5, borderColor: "#D7CCF5", color: "#5B3FBF" }}>Skip {selDone} already optimized</button>
-          )}
-          {canEdit && <button disabled={busy} onClick={() => doAiOptimize()} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }}>✦ AI Optimize</button>}
-          {canEdit && <button disabled={busy} title="Đẩy các sản phẩm đã chỉnh (EDITED) trong số đang chọn lên Shopify" onClick={() => {
-            const ids = rows.filter((r) => sel.has(r.id) && r.dirty).map((r) => r.id);
-            if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
-            doPush(ids);
-          }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), opacity: busy ? .6 : 1 }}>⬆ Push to Shopify</button>}
-          {canEdit && <button disabled={busy} onClick={openBulkPrice} style={{ ...pill("linear-gradient(135deg,#F59E0B,#D97706)", "#fff"), opacity: busy ? .6 : 1 }}>◫ Bulk Price</button>}
+          <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} title="Store" style={fsel(!!storeFilter)}>
+            <option value="">All stores</option>{storesForFilter.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} title="Product type" style={fsel(!!typeFilter)}>
+            <option value="">All types</option>{typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} title="Category" style={fsel(!!categoryFilter)}>
+            <option value="">All categories</option>{categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} title="Collection" style={fsel(!!collectionFilter)}>
+            <option value="">All collections</option>{collectionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={aiFilter} onChange={(e) => setAiFilter(e.target.value as "" | "todo" | "done" | "unpushed")} title="AI Optimize status — pick 'Not optimized yet' so you never pay to rewrite the same listing twice" style={fsel(!!aiFilter, "#5B3FBF", "#C9B8F5", "#F8F6FF")}>
+            <option value="">AI: all</option>
+            <option value="todo">✦ Not optimized yet</option>
+            <option value="done">✦ AI optimized</option>
+            <option value="unpushed">✦ Optimized · not pushed</option>
+          </select>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
+          <span style={{ fontSize: 12.5, fontWeight: 700 }}>{filtered.length}</span>
+          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{anyFilter ? `of ${rows.length} products match` : "products"}</span>
+          {anyFilter && <button onClick={clearFilters} style={{ ...linkBtn("var(--blue)"), fontSize: 12 }}>Clear filters</button>}
+          <div style={{ flex: 1 }} />
+          {sel.size > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: SHOP_GREEN }}>{sel.size} selected</span>}
+          <button onClick={() => setSel(new Set(filtered.map((r) => r.id)))} disabled={!filtered.length} title="Select every product matching the filters above — not just this page" style={{ ...ghost, padding: "7px 12px", fontSize: 12.5, opacity: filtered.length ? 1 : .5 }}>Select all {filtered.length}</button>
+          {sel.size > 0 && <button onClick={() => setSel(new Set())} style={{ ...ghost, padding: "7px 12px", fontSize: 12.5 }}>Clear selection</button>}
+        </div>
+      </div>
+
+      {/* ── ACTION BAR ── xếp theo đúng thứ tự làm việc: ① viết nội dung → ② đẩy lên Shopify → ③ sửa khác */}
+      {sel.size > 0 && (
+        <div style={{ ...card, padding: "10px 14px", marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", background: "#F3FBF6", borderColor: "#CDEFD8" }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: SHOP_GREEN, whiteSpace: "nowrap" }}>{sel.size} selected</span>
+
           {canEdit && (
-            <div style={{ position: "relative" }}>
-              <button disabled={busy} onClick={() => setActionsOpen((v) => !v)} style={{ ...ghost, padding: "9px 12px" }}>More actions ▾</button>
-              {actionsOpen && (
-                <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30, minWidth: 230, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,.12)", padding: 6 }} onMouseLeave={() => setActionsOpen(false)}>
-                  {ACTIONS.map((a) => "sep" in a ? (
-                    <div key={a.key} style={{ height: 1, background: "var(--line)", margin: "5px 4px" }} />
-                  ) : (
-                    <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>{a.label}</button>
-                  ))}
-                </div>
+            <span style={grp}>
+              <span style={grpLab}>1 · Content</span>
+              <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model used by Optimize — avoid ':free' models, they get rate-limited" style={{ ...fctl, maxWidth: 170 }}>
+                <option value="">Model: Default</option>{aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              {selDone > 0 && (
+                <button disabled={busy} title="Deselect listings AI has already rewritten — don't pay to write the same content twice" onClick={() => setSel(new Set(rows.filter((r) => sel.has(r.id) && !r.aiAt).map((r) => r.id)))} style={{ ...ghost, padding: "8px 11px", fontSize: 12.5, borderColor: "#D7CCF5", color: "#5B3FBF" }}>Skip {selDone} done</button>
               )}
-            </div>
+              <button disabled={busy} onClick={() => doAiOptimize()} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), padding: "9px 14px", opacity: busy ? .6 : 1 }}>✦ AI Optimize{selTodo !== sel.size ? ` (${sel.size})` : ""}</button>
+            </span>
           )}
-          {canEdit && <button disabled={busy} onClick={doDelete} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }}>🗑 Remove local</button>}
-          <button onClick={() => setSel(new Set())} style={{ ...ghost, padding: "9px 12px" }}>Clear</button>
+
+          {canEdit && (
+            <span style={grp}>
+              <span style={grpLab}>2 · Publish</span>
+              <button disabled={busy || !selDirty} title={selDirty ? `Push ${selDirty} edited listing(s) to Shopify` : "Nothing edited in this selection — run AI Optimize or Edit first"} onClick={() => {
+                const ids = rows.filter((r) => sel.has(r.id) && r.dirty).map((r) => r.id);
+                if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
+                doPush(ids);
+              }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), padding: "9px 14px", opacity: busy || !selDirty ? .45 : 1 }}>⬆ Push to Shopify{selDirty ? ` (${selDirty})` : ""}</button>
+            </span>
+          )}
+
+          {canEdit && (
+            <span style={grp}>
+              <span style={grpLab}>3 · Bulk edit</span>
+              <button disabled={busy} onClick={openBulkPrice} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5 }}>◫ Bulk Price</button>
+              <div style={{ position: "relative" }}>
+                <button disabled={busy} onClick={() => setActionsOpen((v) => !v)} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5 }}>More actions ▾</button>
+                {actionsOpen && (
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30, minWidth: 230, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,.12)", padding: 6 }} onMouseLeave={() => setActionsOpen(false)}>
+                    {ACTIONS.map((a) => "sep" in a ? (
+                      <div key={a.key} style={{ height: 1, background: "var(--line)", margin: "5px 4px" }} />
+                    ) : (
+                      <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>{a.label}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </span>
+          )}
+
+          <div style={{ flex: 1 }} />
+          {canEdit && <button disabled={busy} title="Remove from this FUSION list only — does NOT delete on Shopify" onClick={doDelete} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, color: "var(--red)", borderColor: "#F3C9C9" }}>🗑 Remove local</button>}
         </div>
       )}
 
