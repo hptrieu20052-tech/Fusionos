@@ -223,6 +223,32 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
     return { ok, failed };
   };
+  // Push delivery: đẩy SỐ NGÀY GIAO HÀNG của Template lên listing (metafield fusion.delivery).
+  // Chỉ ghi metafield — KHÔNG đụng title/mô tả/giá/ảnh, nên chạy được cả trên listing đang sạch.
+  // Widget "Estimated delivery" trong theme đọc metafield này → sửa số trong Template là cả trăm listing đổi theo.
+  const doPushDelivery = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    setBusy(true); setFails([]);
+    let ok = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "Pushing delivery times", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += 25) {
+      const batch = ids.slice(i, i + 25);
+      try {
+        const j = await fetch("/api/shopify-products/push-delivery", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
+        ok += j.pushed ?? 0;
+        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+      } catch (e) {
+        const m = String((e as Error)?.message ?? "network");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+      }
+      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    }
+    setProg(null); setFails(failed);
+    flash(`${failed.length ? "⚠" : "✓"} Delivery times pushed to ${ok}/${ids.length} listing(s)${failed.length ? ` · ${failed.length} failed — see the list below` : " — check the product page widget"}`, failed.length === 0);
+    setBusy(false);
+  };
+
   // AI Optimize theo LÔ 3 + hiện tiến độ + TỰ CHẠY LẠI con fail (2 vòng nữa) vì lỗi hay gặp là
   // 429 rate limit / provider chậm — chạy lại là qua. Con nào vẫn hỏng thì liệt kê kèm lý do.
   // KHÔNG tự Push: gen xong sản phẩm ở trạng thái EDITED → xem lại → bấm "⬆ Push to Shopify".
@@ -525,6 +551,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
                 doPush(ids);
               }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), padding: "9px 14px", opacity: busy || !selDirty ? .45 : 1 }}>⬆ Push to Shopify{selDirty ? ` (${selDirty})` : ""}</button>
+              {/* Chỉ ghi metafield fusion.delivery — không đụng nội dung listing, nên chạy được cả trên con đã sạch. */}
+              <button disabled={busy || !sel.size} title="Push the delivery times from each product's Template to Shopify (metafield fusion.delivery). Only touches the delivery widget — content, prices and images are untouched." onClick={() => doPushDelivery(Array.from(sel))} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: busy || !sel.size ? .45 : 1 }}>🚚 Push delivery{sel.size ? ` (${sel.size})` : ""}</button>
             </span>
           )}
 

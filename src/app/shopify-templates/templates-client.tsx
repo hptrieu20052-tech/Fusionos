@@ -14,6 +14,11 @@ type Draft = {
   status: string; productType: string; vendor: string; themeTemplate: string;
   category: Cat; categoryMetafields: Meta[];
   baseDescription: string; productDetails: string; shippingInfo: string;
+  // Estimated delivery — số NGÀY LÀM VIỆC. null = widget dùng mặc định.
+  shipProcMin: number | null; shipProcMax: number | null;
+  shipUsMin: number | null; shipUsMax: number | null;
+  shipIntlMin: number | null; shipIntlMax: number | null;
+  shipCutoffHour: number | null;
 };
 type Tpl = Draft & { updatedAt?: string };
 type NamedItem = { id: string; label: string };
@@ -31,7 +36,11 @@ function cartesian(options: Opt[]): Record<string, string>[] {
   if (!clean.length) return [];
   return clean.reduce<Record<string, string>[]>((acc, o) => acc.flatMap((c) => o.values.map((v) => ({ ...c, [o.name]: v }))), [{}]).slice(0, 100);
 }
-const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [], baseDescription: "", productDetails: "", shippingInfo: "" });
+// Số ngày mặc định cho template mới — theo facts supplier: xử lý 1-3, US 4-8, quốc tế 10-30, chốt đơn 14h.
+const DEFAULT_SHIP = { shipProcMin: 1, shipProcMax: 3, shipUsMin: 4, shipUsMax: 8, shipIntlMin: 10, shipIntlMax: 30, shipCutoffHour: 14 };
+// Ô số ngày trong editor: "" → null (bỏ trống = widget tự dùng mặc định của nó).
+const numOrNull = (s: string): number | null => { const n = parseInt(s, 10); return isFinite(n) && n >= 0 ? n : null; };
+const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [], baseDescription: "", productDetails: "", shippingInfo: "", ...DEFAULT_SHIP });
 
 export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) {
   const confirm = useConfirm();
@@ -70,7 +79,15 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
 
   const openEditor = async (d: Draft) => { setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setCatQ(""); setCatHits([]); await loadPickers(d.storeId); };
   const newBlank = () => { if (!storeFilter) return flash("✗ Pick a store first", false); openEditor(emptyDraft(storeFilter)); };
-  const editTpl = (t: Tpl) => openEditor({ ...t, category: t.category ?? null, baseDescription: t.baseDescription ?? "", productDetails: t.productDetails ?? "", shippingInfo: t.shippingInfo ?? "" });
+  const editTpl = (t: Tpl) => openEditor({
+    ...t, category: t.category ?? null,
+    baseDescription: t.baseDescription ?? "", productDetails: t.productDetails ?? "", shippingInfo: t.shippingInfo ?? "",
+    // template cũ chưa có số ngày → để trống, KHÔNG tự điền, tránh ghi số bịa lên listing đang chạy
+    shipProcMin: t.shipProcMin ?? null, shipProcMax: t.shipProcMax ?? null,
+    shipUsMin: t.shipUsMin ?? null, shipUsMax: t.shipUsMax ?? null,
+    shipIntlMin: t.shipIntlMin ?? null, shipIntlMax: t.shipIntlMax ?? null,
+    shipCutoffHour: t.shipCutoffHour ?? null,
+  });
 
   // New from product: nạp danh sách listing của store rồi chọn
   const startFromProduct = async () => {
@@ -100,7 +117,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
         collectionIds: p.collectionIds ?? [], publicationIds: p.publicationIds ?? [],
         status: "DRAFT", productType: p.productType ?? "", vendor: p.vendor ?? "", themeTemplate: p.themeTemplate ?? "",
         category: p.category ?? null, categoryMetafields: p.categoryMetafields ?? [],
-        baseDescription: "", productDetails: "", shippingInfo: "",
+        baseDescription: "", productDetails: "", shippingInfo: "", ...DEFAULT_SHIP,
       };
       setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setCatQ(""); setCatHits([]);
       // đảm bảo picker có tên collection/kênh từ product kể cả khi chưa nạp full store
@@ -252,6 +269,56 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
               <textarea value={draft.productDetails} onChange={(e) => setD({ productDetails: e.target.value })} placeholder={"Material: Premium hardcover\nPages: 24 fully illustrated pages\nSizes: 11\"x8.5\" or 8\"x8\"\nPaper: Glossy or Matte\nPersonalization: Child's name on the cover and throughout the story\n30-day money-back guarantee"} style={{ ...ctl, width: "100%", minHeight: 96, resize: "vertical" }} />
               <label style={{ ...lab, marginTop: 10 }}>Shipping info (tab &quot;Shipping&quot;)</label>
               <textarea value={draft.shippingInfo} onChange={(e) => setD({ shippingInfo: e.target.value })} placeholder={"Processing Time: All orders are processed within 1-3 business days.\nShipping Time: 3-5 business days (US).\nShipping Cost: Free 3-day shipping on all US orders.\nTracking: You'll receive a tracking number by email once your order ships."} style={{ ...ctl, width: "100%", minHeight: 96, resize: "vertical" }} />
+            </div>
+
+            {/* ── ESTIMATED DELIVERY ── số ngày làm việc cho widget "You'll receive your package between…"
+                Push delivery trong Manage Products đẩy mấy số này lên listing (metafield fusion.delivery). */}
+            <div style={{ border: "1px solid #E3DCF5", background: "#FAF8FF", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>🚚 Estimated delivery · product page widget</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
+                Business days — the widget skips weekends and counts from the shopper&apos;s own clock. Push these to Shopify with <b>Push delivery</b> in Manage Products. Leave blank to fall back to the widget defaults.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+                <div>
+                  <label style={lab}>Processing (min → max)</label>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="number" min={0} max={180} value={draft.shipProcMin ?? ""} onChange={(e) => setD({ shipProcMin: numOrNull(e.target.value) })} placeholder="1" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    <span style={{ color: "var(--muted)" }}>–</span>
+                    <input type="number" min={0} max={180} value={draft.shipProcMax ?? ""} onChange={(e) => setD({ shipProcMax: numOrNull(e.target.value) })} placeholder="3" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={lab}>Shipping · United States</label>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="number" min={0} max={180} value={draft.shipUsMin ?? ""} onChange={(e) => setD({ shipUsMin: numOrNull(e.target.value) })} placeholder="4" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    <span style={{ color: "var(--muted)" }}>–</span>
+                    <input type="number" min={0} max={180} value={draft.shipUsMax ?? ""} onChange={(e) => setD({ shipUsMax: numOrNull(e.target.value) })} placeholder="8" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={lab}>Shipping · International</label>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="number" min={0} max={180} value={draft.shipIntlMin ?? ""} onChange={(e) => setD({ shipIntlMin: numOrNull(e.target.value) })} placeholder="10" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    <span style={{ color: "var(--muted)" }}>–</span>
+                    <input type="number" min={0} max={180} value={draft.shipIntlMax ?? ""} onChange={(e) => setD({ shipIntlMax: numOrNull(e.target.value) })} placeholder="30" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={lab}>Order cut-off (hour)</label>
+                  <input type="number" min={0} max={23} value={draft.shipCutoffHour ?? ""} onChange={(e) => setD({ shipCutoffHour: numOrNull(e.target.value) })} placeholder="14" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                </div>
+              </div>
+              {/* Xem trước ngay tại đây — khỏi phải deploy rồi mở web mới biết ra ngày nào */}
+              <div style={{ marginTop: 12, fontSize: 12.5, color: "#4C3A87", background: "#fff", border: "1px solid #E3DCF5", borderRadius: 9, padding: "9px 12px" }}>
+                {(() => {
+                  const bd = (from: Date, n: number) => { const d = new Date(from); let left = n; while (left > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) left--; } return d; };
+                  const f = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+                  const pMin = draft.shipProcMin ?? 1, pMax = draft.shipProcMax ?? 3, uMin = draft.shipUsMin ?? 4, uMax = draft.shipUsMax ?? 8;
+                  const now = new Date();
+                  const start = (draft.shipCutoffHour != null && now.getHours() >= draft.shipCutoffHour) ? bd(now, 1) : now;
+                  return <>Preview (US, ordered today): ships <b>{f(bd(start, pMin))} – {f(bd(start, pMax))}</b>, arrives <b>{f(bd(start, pMin + uMin))} – {f(bd(start, pMax + uMax))}</b></>;
+                })()}
+              </div>
             </div>
 
             {/* OPTIONS */}

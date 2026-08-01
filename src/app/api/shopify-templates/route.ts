@@ -17,6 +17,19 @@ type TplBody = {
   category?: { id: string; name: string } | null;
   categoryMetafields?: { namespace: string; key: string; type: string; value: string; label?: string; valueLabel?: string }[];
   baseDescription?: string; productDetails?: string; shippingInfo?: string;
+  // Estimated delivery — số NGÀY LÀM VIỆC cho widget trên trang sản phẩm
+  shipProcMin?: number | null; shipProcMax?: number | null;
+  shipUsMin?: number | null; shipUsMax?: number | null;
+  shipIntlMin?: number | null; shipIntlMax?: number | null;
+  shipCutoffHour?: number | null;
+};
+
+// Ô số ngày: rỗng/rác → null (widget dùng số mặc định của nó). Chặn số âm và số vô lý.
+const clampDays = (v: unknown, max = 180): number | null => {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Math.round(Number(v));
+  if (!isFinite(n) || n < 0) return null;
+  return Math.min(n, max);
 };
 
 // Store nào user được phép thao tác (Shopify + trong scope)?
@@ -69,6 +82,20 @@ function payloadOf(b: TplBody) {
     baseDescription: String(b.baseDescription ?? "").slice(0, 6000).trim() || null,
     productDetails: String(b.productDetails ?? "").slice(0, 6000).trim() || null,
     shippingInfo: String(b.shippingInfo ?? "").slice(0, 6000).trim() || null,
+    // Số ngày giao hàng — max/min tự đảo nếu người dùng gõ ngược (min 8, max 4 → 4..8).
+    ...(() => {
+      const pmin = clampDays(b.shipProcMin), pmax = clampDays(b.shipProcMax);
+      const umin = clampDays(b.shipUsMin), umax = clampDays(b.shipUsMax);
+      const imin = clampDays(b.shipIntlMin), imax = clampDays(b.shipIntlMax);
+      const lo = (a: number | null, z: number | null) => (a != null && z != null ? Math.min(a, z) : a);
+      const hi = (a: number | null, z: number | null) => (a != null && z != null ? Math.max(a, z) : z);
+      return {
+        shipProcMin: lo(pmin, pmax), shipProcMax: hi(pmin, pmax),
+        shipUsMin: lo(umin, umax), shipUsMax: hi(umin, umax),
+        shipIntlMin: lo(imin, imax), shipIntlMax: hi(imin, imax),
+        shipCutoffHour: clampDays(b.shipCutoffHour, 23),
+      };
+    })(),
     updatedAt: new Date(),
   };
 }

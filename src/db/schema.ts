@@ -304,6 +304,17 @@ export const shopifyTemplates = pgTable("shopify_templates", {
   baseDescription: text("base_description"),   // thông tin gốc sản phẩm (chất liệu, cá nhân hoá thế nào, in ở đâu…)
   productDetails: text("product_details"),     // bullet specs — mỗi dòng 1 gạch đầu dòng
   shippingInfo: text("shipping_info"),         // nội dung tab Shipping (processing/shipping time, cost, tracking)
+  // ---- Estimated delivery — widget "You'll receive your package between X - Y" trên trang sản phẩm ----
+  // Số NGÀY LÀM VIỆC (widget tự bỏ T7/CN). Đặt theo Product type ⇒ mỗi loại hàng có timeline riêng.
+  // Bấm "Push delivery" trong Manage Products → ghi metafield fusion.delivery (JSON) lên từng listing Shopify.
+  // null = widget dùng số mặc định của nó.
+  shipProcMin: integer("ship_proc_min"),        // xử lý/sản xuất tối thiểu (vd 1)
+  shipProcMax: integer("ship_proc_max"),        // xử lý/sản xuất tối đa (vd 3)
+  shipUsMin: integer("ship_us_min"),            // giao trong US tối thiểu (vd 4)
+  shipUsMax: integer("ship_us_max"),            // giao trong US tối đa (vd 8)
+  shipIntlMin: integer("ship_intl_min"),        // giao quốc tế tối thiểu (vd 10)
+  shipIntlMax: integer("ship_intl_max"),        // giao quốc tế tối đa (vd 30)
+  shipCutoffHour: integer("ship_cutoff_hour"),  // giờ chốt đơn 0-23 (vd 14 = đặt sau 2h chiều tính từ hôm sau)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({
