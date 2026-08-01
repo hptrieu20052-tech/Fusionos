@@ -51,6 +51,19 @@ function tplFor(tpls: Tpl[], storeId: string, productType: string | null, pinned
 const pair = (min: number | null, max: number | null): [number, number] | null =>
   (min == null || max == null) ? null : [Math.min(min, max), Math.max(min, max)];
 
+// { ca:[6,12], … } — số ngày riêng từng nước, chỉ giữ cặp đầy đủ và hợp lệ.
+function countryPairs(v: unknown): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  if (!v || typeof v !== "object") return out;
+  for (const [k, a] of Object.entries(v as Record<string, unknown>)) {
+    if (!Array.isArray(a) || a.length !== 2) continue;
+    const lo = Number(a[0]), hi = Number(a[1]);
+    if (!isFinite(lo) || !isFinite(hi) || lo < 0 || hi < 0) continue;
+    out[k.toLowerCase()] = [Math.min(lo, hi), Math.max(lo, hi)];
+  }
+  return out;
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
@@ -90,11 +103,14 @@ export async function POST(req: NextRequest) {
       const proc = pair(t.shipProcMin, t.shipProcMax);
       const us = pair(t.shipUsMin, t.shipUsMax);
       const intl = pair(t.shipIntlMin, t.shipIntlMax);
-      if (!proc && !us && !intl) { results.push({ id: r.id, title: r.title, ok: false, error: `template "${t.name}" chưa điền số ngày giao hàng` }); continue; }
+      const cty = countryPairs(t.shipCountries);
+      const hasCty = Object.keys(cty).length > 0;
+      if (!proc && !us && !intl && !hasCty) { results.push({ id: r.id, title: r.title, ok: false, error: `template "${t.name}" chưa điền số ngày giao hàng` }); continue; }
       const payload: Record<string, unknown> = {};
       if (proc) payload.proc = proc;
       if (us) payload.us = us;
       if (intl) payload.intl = intl;
+      if (hasCty) payload.cty = cty;   // số ngày riêng từng nước — widget ưu tiên trước intl
       if (t.shipCutoffHour != null) payload.cutoff = t.shipCutoffHour;
       jobs.push({ row: r, value: JSON.stringify(payload) });
     }

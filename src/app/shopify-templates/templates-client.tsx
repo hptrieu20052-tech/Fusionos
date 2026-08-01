@@ -19,6 +19,9 @@ type Draft = {
   shipUsMin: number | null; shipUsMax: number | null;
   shipIntlMin: number | null; shipIntlMax: number | null;
   shipCutoffHour: number | null;
+  // Số ngày riêng từng nước: { ca:[6,12], gb:[7,14], au:[8,16], de:[7,14] }. Nước khác → Rest of world.
+  // Trong editor cho phép null tạm thời (đang gõ dở); server bỏ nước nào thiếu 1 vế.
+  shipCountries: Record<string, [number | null, number | null]>;
 };
 type Tpl = Draft & { updatedAt?: string };
 type NamedItem = { id: string; label: string };
@@ -37,7 +40,17 @@ function cartesian(options: Opt[]): Record<string, string>[] {
   return clean.reduce<Record<string, string>[]>((acc, o) => acc.flatMap((c) => o.values.map((v) => ({ ...c, [o.name]: v }))), [{}]).slice(0, 100);
 }
 // Số ngày mặc định cho template mới — theo facts supplier: xử lý 1-3, US 4-8, quốc tế 10-30, chốt đơn 14h.
-const DEFAULT_SHIP = { shipProcMin: 1, shipProcMax: 3, shipUsMin: 4, shipUsMax: 8, shipIntlMin: 10, shipIntlMax: 30, shipCutoffHour: 14 };
+const DEFAULT_SHIP = {
+  shipProcMin: 1, shipProcMax: 3, shipUsMin: 4, shipUsMax: 8, shipIntlMin: 10, shipIntlMax: 30, shipCutoffHour: 14,
+  shipCountries: { ca: [6, 12], gb: [7, 14], au: [8, 16], de: [7, 14] } as Record<string, [number | null, number | null]>,
+};
+// 4 nước có ô riêng — phải khớp DELIVERY_COUNTRIES ở API và COUNTRIES trong file liquid của widget.
+const SHIP_COUNTRIES: { cc: string; label: string; ph: [string, string] }[] = [
+  { cc: "ca", label: "Canada", ph: ["6", "12"] },
+  { cc: "gb", label: "United Kingdom", ph: ["7", "14"] },
+  { cc: "au", label: "Australia", ph: ["8", "16"] },
+  { cc: "de", label: "Germany", ph: ["7", "14"] },
+];
 // Ô số ngày trong editor: "" → null (bỏ trống = widget tự dùng mặc định của nó).
 const numOrNull = (s: string): number | null => { const n = parseInt(s, 10); return isFinite(n) && n >= 0 ? n : null; };
 const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [], baseDescription: "", productDetails: "", shippingInfo: "", ...DEFAULT_SHIP });
@@ -87,6 +100,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
     shipUsMin: t.shipUsMin ?? null, shipUsMax: t.shipUsMax ?? null,
     shipIntlMin: t.shipIntlMin ?? null, shipIntlMax: t.shipIntlMax ?? null,
     shipCutoffHour: t.shipCutoffHour ?? null,
+    shipCountries: (t.shipCountries && typeof t.shipCountries === "object") ? t.shipCountries : {},
   });
 
   // New from product: nạp danh sách listing của store rồi chọn
@@ -128,6 +142,22 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
 
   // ---- editor helpers ----
   const setD = (patch: Partial<Draft>) => setDraft((d) => d ? { ...d, ...patch } : d);
+  // Ô số ngày theo nước — đọc/ghi vào map shipCountries. Xoá cả 2 ô ⇒ bỏ nước đó ra khỏi map
+  // ⇒ widget cho nước đó chạy theo Rest of world.
+  const cGet = (cc: string, i: 0 | 1): number | "" => {
+    const v = draft?.shipCountries?.[cc];
+    return Array.isArray(v) && v[i] != null ? v[i] : "";
+  };
+  const cSet = (cc: string, i: 0 | 1, val: number | null) => setDraft((d) => {
+    if (!d) return d;
+    const cur = d.shipCountries?.[cc];
+    const next: [number | null, number | null] = Array.isArray(cur) ? [cur[0], cur[1]] : [null, null];
+    next[i] = val;
+    const map: Record<string, [number | null, number | null]> = { ...(d.shipCountries ?? {}) };
+    if (next[0] == null && next[1] == null) delete map[cc];
+    else map[cc] = next;
+    return { ...d, shipCountries: map };
+  });
   // Khi đổi options → dựng lại combos, giữ giá combo còn tồn tại
   const regenVariants = (options: Opt[], prev: Vari[]) => {
     const map = new Map(prev.map((v) => [priceKey(v.options), v]));
@@ -197,7 +227,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
         <img src="/marketplaces/shopify.png" alt="Shopify" width={42} height={42} style={{ width: 42, height: 42, objectFit: "contain", display: "block", flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 19, fontWeight: 800 }}>Manage Templates · Shopify</div>
-          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{rows.length} templates · Full preset (variants + price + collections + channels + category) applied on Push & bulk-edit</div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{rows.length} templates</div>
         </div>
         <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} style={{ ...ctl }}>
           {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -209,7 +239,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
       {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, padding: "10px 14px", borderRadius: 12, background: msg.ok ? "#EAF7F0" : "#FDECEC", color: msg.ok ? "#158A57" : "#C0392B", border: `1px solid ${msg.ok ? "#C7EAD8" : "#F5CFCF"}` }}>{msg.text}</div>}
 
       {loading ? <div style={{ ...card, padding: 40, textAlign: "center", color: "var(--muted)" }}>Loading…</div>
-        : filtered.length === 0 ? <div style={{ ...card, padding: 40, textAlign: "center", color: "var(--muted)" }}>No templates yet. Create one from an existing Shopify product for the fastest setup.</div>
+        : filtered.length === 0 ? <div style={{ ...card, padding: 40, textAlign: "center", color: "var(--muted)" }}>No templates yet</div>
         : <div style={{ display: "grid", gap: 10 }}>
             {filtered.map((t) => (
               <div key={t.id} style={{ ...card, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
@@ -230,7 +260,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 2900, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setProdPick(null)}>
           <div style={{ ...card, width: 520, maxWidth: "96vw", maxHeight: "86vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
             <b style={{ fontSize: 16 }}>Pick a Shopify listing to copy from</b>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "6px 0 14px" }}>Its options, prices, category, metafields, collections & channels become the template.</div>
+            <div style={{ height: 14 }} />
             <div style={{ display: "grid", gap: 4, maxHeight: 420, overflowY: "auto" }}>
               {prodPick.list.map((p) => (
                 <button key={p.id} disabled={busy} onClick={() => pickProduct(p.id)} style={{ textAlign: "left", padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 10, background: "#fff", cursor: "pointer", fontSize: 13.5 }}>{p.title}</button>
@@ -261,26 +291,23 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
 
             {/* AI CONTENT — nguồn sự thật cho AI Optimize + 3 tab mô tả */}
             <div style={{ border: "1px solid #DCE9F5", background: "#F7FBFF", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>AI content · description tabs</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>AI Optimize uses these as ground truth (matched by Type). Product Details & Shipping are appended to every description as tab sections.</div>
-              <label style={lab}>Product info — facts for AI (material, personalization, printing, who it&apos;s for)</label>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>AI content · description tabs</div>
+              <label style={lab}>Product info</label>
               <textarea value={draft.baseDescription} onChange={(e) => setD({ baseDescription: e.target.value })} placeholder={"Personalized hardcover children's book. The child's name appears on the cover and is woven through the story. 24 illustrated pages, premium thick paper, glossy or matte finish. Printed in the USA, made to order. For kids ages 0-8."} style={{ ...ctl, width: "100%", minHeight: 76, resize: "vertical" }} />
-              <label style={{ ...lab, marginTop: 10 }}>Product Details — one bullet per line (tab &quot;Product Details&quot;)</label>
+              <label style={{ ...lab, marginTop: 10 }}>Product Details</label>
               <textarea value={draft.productDetails} onChange={(e) => setD({ productDetails: e.target.value })} placeholder={"Material: Premium hardcover\nPages: 24 fully illustrated pages\nSizes: 11\"x8.5\" or 8\"x8\"\nPaper: Glossy or Matte\nPersonalization: Child's name on the cover and throughout the story\n30-day money-back guarantee"} style={{ ...ctl, width: "100%", minHeight: 96, resize: "vertical" }} />
-              <label style={{ ...lab, marginTop: 10 }}>Shipping info (tab &quot;Shipping&quot;)</label>
+              <label style={{ ...lab, marginTop: 10 }}>Shipping info</label>
               <textarea value={draft.shippingInfo} onChange={(e) => setD({ shippingInfo: e.target.value })} placeholder={"Processing Time: All orders are processed within 1-3 business days.\nShipping Time: 3-5 business days (US).\nShipping Cost: Free 3-day shipping on all US orders.\nTracking: You'll receive a tracking number by email once your order ships."} style={{ ...ctl, width: "100%", minHeight: 96, resize: "vertical" }} />
             </div>
 
-            {/* ── ESTIMATED DELIVERY ── số ngày làm việc cho widget "You'll receive your package between…"
-                Push delivery trong Manage Products đẩy mấy số này lên listing (metafield fusion.delivery). */}
+            {/* ── ESTIMATED DELIVERY ── số ngày làm việc cho widget trên trang sản phẩm.
+                4 nước có ô riêng (CA/GB/AU/DE) + Rest of world; nước không điền → chạy theo Rest of world.
+                "🔄 Update Template" trong Manage Products đẩy mấy số này lên listing (metafield fusion.delivery). */}
             <div style={{ border: "1px solid #E3DCF5", background: "#FAF8FF", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>🚚 Estimated delivery · product page widget</div>
-              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>
-                Business days — the widget skips weekends and counts from the shopper&apos;s own clock. Push these to Shopify with <b>Push delivery</b> in Manage Products. Leave blank to fall back to the widget defaults.
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>🚚 Estimated delivery · business days</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
                 <div>
-                  <label style={lab}>Processing (min → max)</label>
+                  <label style={lab}>Processing</label>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <input type="number" min={0} max={180} value={draft.shipProcMin ?? ""} onChange={(e) => setD({ shipProcMin: numOrNull(e.target.value) })} placeholder="1" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
                     <span style={{ color: "var(--muted)" }}>–</span>
@@ -288,15 +315,25 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
                   </div>
                 </div>
                 <div>
-                  <label style={lab}>Shipping · United States</label>
+                  <label style={lab}>United States</label>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <input type="number" min={0} max={180} value={draft.shipUsMin ?? ""} onChange={(e) => setD({ shipUsMin: numOrNull(e.target.value) })} placeholder="4" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
                     <span style={{ color: "var(--muted)" }}>–</span>
                     <input type="number" min={0} max={180} value={draft.shipUsMax ?? ""} onChange={(e) => setD({ shipUsMax: numOrNull(e.target.value) })} placeholder="8" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
                   </div>
                 </div>
+                {SHIP_COUNTRIES.map((c) => (
+                  <div key={c.cc}>
+                    <label style={lab}>{c.label}</label>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="number" min={0} max={180} value={cGet(c.cc, 0)} onChange={(e) => cSet(c.cc, 0, numOrNull(e.target.value))} placeholder={c.ph[0]} style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                      <span style={{ color: "var(--muted)" }}>–</span>
+                      <input type="number" min={0} max={180} value={cGet(c.cc, 1)} onChange={(e) => cSet(c.cc, 1, numOrNull(e.target.value))} placeholder={c.ph[1]} style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    </div>
+                  </div>
+                ))}
                 <div>
-                  <label style={lab}>Shipping · International</label>
+                  <label style={lab}>Rest of world</label>
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <input type="number" min={0} max={180} value={draft.shipIntlMin ?? ""} onChange={(e) => setD({ shipIntlMin: numOrNull(e.target.value) })} placeholder="10" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
                     <span style={{ color: "var(--muted)" }}>–</span>
@@ -304,25 +341,25 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
                   </div>
                 </div>
                 <div>
-                  <label style={lab}>Order cut-off (hour)</label>
+                  <label style={lab}>Cut-off hour</label>
                   <input type="number" min={0} max={23} value={draft.shipCutoffHour ?? ""} onChange={(e) => setD({ shipCutoffHour: numOrNull(e.target.value) })} placeholder="14" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
                 </div>
               </div>
               {/* Xem trước ngay tại đây — khỏi phải deploy rồi mở web mới biết ra ngày nào */}
-              <div style={{ marginTop: 12, fontSize: 12.5, color: "#4C3A87", background: "#fff", border: "1px solid #E3DCF5", borderRadius: 9, padding: "9px 12px" }}>
+              <div style={{ marginTop: 10, fontSize: 12.5, color: "#4C3A87", background: "#fff", border: "1px solid #E3DCF5", borderRadius: 9, padding: "8px 12px" }}>
                 {(() => {
                   const bd = (from: Date, n: number) => { const d = new Date(from); let left = n; while (left > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) left--; } return d; };
                   const f = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
                   const pMin = draft.shipProcMin ?? 1, pMax = draft.shipProcMax ?? 3, uMin = draft.shipUsMin ?? 4, uMax = draft.shipUsMax ?? 8;
                   const now = new Date();
                   const start = (draft.shipCutoffHour != null && now.getHours() >= draft.shipCutoffHour) ? bd(now, 1) : now;
-                  return <>Preview (US, ordered today): ships <b>{f(bd(start, pMin))} – {f(bd(start, pMax))}</b>, arrives <b>{f(bd(start, pMin + uMin))} – {f(bd(start, pMax + uMax))}</b></>;
+                  return <>US · ships <b>{f(bd(start, pMin))} – {f(bd(start, pMax))}</b> · arrives <b>{f(bd(start, pMin + uMin))} – {f(bd(start, pMax + uMax))}</b></>;
                 })()}
               </div>
             </div>
 
             {/* OPTIONS */}
-            <div style={{ ...lab, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>Options (max 3)</div>
+            <div style={{ ...lab, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>Options</div>
             {draft.options.map((o, i) => (
               <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                 <input value={o.name} onChange={(e) => setOptionName(i, e.target.value)} placeholder="Option name (e.g. Size)" style={{ ...ctl, width: 180 }} />
@@ -335,7 +372,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
             {/* VARIANTS GRID */}
             {draft.variants.length > 0 && (
               <div style={{ marginTop: 10, marginBottom: 16 }}>
-                <div style={{ ...lab, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>Variants · price per combination ({draft.variants.length})</div>
+                <div style={{ ...lab, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>Variants ({draft.variants.length})</div>
                 <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden", maxHeight: 320, overflowY: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                     <thead><tr style={{ background: "#F7F8FA", textAlign: "left" }}>

@@ -315,6 +315,9 @@ export const shopifyTemplates = pgTable("shopify_templates", {
   shipIntlMin: integer("ship_intl_min"),        // giao quốc tế tối thiểu (vd 10)
   shipIntlMax: integer("ship_intl_max"),        // giao quốc tế tối đa (vd 30)
   shipCutoffHour: integer("ship_cutoff_hour"),  // giờ chốt đơn 0-23 (vd 14 = đặt sau 2h chiều tính từ hôm sau)
+  // Số ngày ship riêng cho từng nước: { "ca":[6,12], "gb":[7,14], "au":[8,16], "de":[7,14] }
+  // Nước không có trong map ⇒ dùng ship_intl_* (Rest of world). Cần MIGRATION_shopify_delivery_countries.sql
+  shipCountries: jsonb("ship_countries").$type<Record<string, [number, number]>>().notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({

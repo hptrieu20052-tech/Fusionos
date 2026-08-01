@@ -22,7 +22,11 @@ type TplBody = {
   shipUsMin?: number | null; shipUsMax?: number | null;
   shipIntlMin?: number | null; shipIntlMax?: number | null;
   shipCutoffHour?: number | null;
+  shipCountries?: Record<string, unknown>;   // { ca:[6,12], gb:[7,14], au:[8,16], de:[7,14] }
 };
+
+// 4 nước có ô riêng trong Template + trong widget. Nước khác ⇒ Rest of world (ship_intl_*).
+export const DELIVERY_COUNTRIES = ["ca", "gb", "au", "de"] as const;
 
 // Ô số ngày: rỗng/rác → null (widget dùng số mặc định của nó). Chặn số âm và số vô lý.
 const clampDays = (v: unknown, max = 180): number | null => {
@@ -31,6 +35,21 @@ const clampDays = (v: unknown, max = 180): number | null => {
   if (!isFinite(n) || n < 0) return null;
   return Math.min(n, max);
 };
+
+// { ca:[6,12], … } — chỉ giữ nước trong danh sách và cặp số ĐẦY ĐỦ, thiếu 1 vế thì bỏ cả nước đó.
+function clampCountries(v: unknown): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  if (!v || typeof v !== "object") return out;
+  const src = v as Record<string, unknown>;
+  for (const cc of DELIVERY_COUNTRIES) {
+    const a = src[cc];
+    if (!Array.isArray(a)) continue;
+    const lo = clampDays(a[0]), hi = clampDays(a[1]);
+    if (lo == null || hi == null) continue;
+    out[cc] = [Math.min(lo, hi), Math.max(lo, hi)];
+  }
+  return out;
+}
 
 // Store nào user được phép thao tác (Shopify + trong scope)?
 async function allowedStoreIds(session: Awaited<ReturnType<typeof getSession>>): Promise<Set<string>> {
@@ -94,6 +113,7 @@ function payloadOf(b: TplBody) {
         shipUsMin: lo(umin, umax), shipUsMax: hi(umin, umax),
         shipIntlMin: lo(imin, imax), shipIntlMax: hi(imin, imax),
         shipCutoffHour: clampDays(b.shipCutoffHour, 23),
+        shipCountries: clampCountries(b.shipCountries),
       };
     })(),
     updatedAt: new Date(),
