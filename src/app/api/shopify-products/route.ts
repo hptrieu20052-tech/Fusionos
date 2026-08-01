@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
       mainImage: imgs[0]?.src ?? null, imageCount: imgs.length,
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,
       templateId: tpl?.id ?? null, templateName: tpl?.name ?? "", templatePinned: !!pinned, templateHasFacts: tplHasFacts,
-      syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt,
+      syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt, aiAt: r.p.aiAt,
       optionsSummary: (Array.isArray(r.p.options) ? r.p.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${o.values.length}`).join(" · "),
     };
   });

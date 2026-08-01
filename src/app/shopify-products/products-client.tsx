@@ -12,6 +12,7 @@ type Row = {
   totalInventory: number | null; optionsSummary: string;
   productType: string; categoryName: string; collectionTitles: string[];
   templateId: string | null; templateName: string; templatePinned: boolean; templateHasFacts: boolean;
+  aiAt: string | null; pushedAt: string | null;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -32,6 +33,19 @@ const lab: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 7
 const linkBtn = (c: string): React.CSSProperties => ({ border: "none", background: "none", padding: 0, cursor: "pointer", color: c, fontWeight: 700, fontSize: 12.5 });
 const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
 const SHOP_GREEN = "#5E8E3E";
+// "2h ago" / "3d ago" — nhìn phát biết listing nào vừa chạy AI, khỏi chạy lại tốn tiền.
+const ago = (iso: string | null) => {
+  if (!iso) return "";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!isFinite(ms) || ms < 0) return "just now";
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+};
 
 type ActKey =
   | "set_template" | "apply_template"
@@ -76,8 +90,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   // Thanh tiến độ cho việc chạy theo lô (AI Optimize / Push) — chạy tới đâu hiện tới đó.
   const [prog, setProg] = useState<{ label: string; done: number; total: number; fail: number } | null>(null);
+  // Danh sách sản phẩm AI viết hỏng + lý do — phải thấy được lý do mới sửa được.
+  const [fails, setFails] = useState<{ id: string; title: string; error: string }[]>([]);
   const [kw, setKw] = useState(""); const [sellerFilter, setSellerFilter] = useState(""); const [storeFilter, setStoreFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState(""); const [categoryFilter, setCategoryFilter] = useState(""); const [collectionFilter, setCollectionFilter] = useState("");
+  // Lọc theo trạng thái AI: "" tất cả · "todo" chưa chạy AI · "done" đã có AI · "unpushed" đã AI nhưng chưa Push
+  const [aiFilter, setAiFilter] = useState<"" | "todo" | "done" | "unpushed">("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
@@ -123,12 +141,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     (!typeFilter || r.productType === typeFilter) &&
     (!categoryFilter || r.categoryName === categoryFilter) &&
     (!collectionFilter || (r.collectionTitles ?? []).includes(collectionFilter)) &&
+    (!aiFilter || (aiFilter === "todo" ? !r.aiAt : aiFilter === "done" ? !!r.aiAt : !!r.aiAt && r.dirty)) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, stores]);
+  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, aiFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, aiFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
+  // Trong danh sách đang chọn, bao nhiêu con ĐÃ chạy AI rồi (để hiện nút "Skip already optimized").
+  const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
@@ -190,27 +211,51 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
     return { ok, failed };
   };
-  // AI Optimize theo LÔ 4, chạy tuần tự từng lô + hiện tiến độ.
-  // KHÔNG tự Push nữa: gen xong sản phẩm ở trạng thái EDITED → xem lại → bấm "⬆ Push to Shopify".
-  const doAiOptimize = async () => {
-    if (!sel.size) return flash("✗ Select products first", false);
-    const idsAll = Array.from(sel);
-    setBusy(true); setMsg(null);
-    setProg({ label: "AI writing content", done: 0, total: idsAll.length, fail: 0 });
-    let done = 0; let fail = 0; let withTpl = 0; const errs: string[] = [];
-    for (let i = 0; i < idsAll.length; i += 4) {
-      const batch = idsAll.slice(i, i + 4);
+  // AI Optimize theo LÔ 3 + hiện tiến độ + TỰ CHẠY LẠI con fail (2 vòng nữa) vì lỗi hay gặp là
+  // 429 rate limit / provider chậm — chạy lại là qua. Con nào vẫn hỏng thì liệt kê kèm lý do.
+  // KHÔNG tự Push: gen xong sản phẩm ở trạng thái EDITED → xem lại → bấm "⬆ Push to Shopify".
+  const CHUNK_AI = 3;
+  const runAiPass = async (ids: string[], label: string, offsetDone: number, grandTotal: number) => {
+    let ok = 0; let withTpl = 0; const failed: { id: string; title: string; error: string }[] = [];
+    for (let i = 0; i < ids.length; i += CHUNK_AI) {
+      const batch = ids.slice(i, i + CHUNK_AI);
       try {
         const j = await fetch("/api/shopify-products/ai-optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: aiModel || undefined }) }).then((r) => r.json());
-        done += j.optimized ?? 0; withTpl += j.withTemplate ?? 0;
-        fail += (j.failed ?? (j.ok ? 0 : batch.length));
-        if (j.errors) errs.push(...j.errors); else if (!j.ok && j.error) errs.push(j.error);
-      } catch (e) { fail += batch.length; errs.push(String((e as Error)?.message ?? "network")); }
-      setProg({ label: "AI writing content", done: Math.min(i + batch.length, idsAll.length), total: idsAll.length, fail });
+        ok += j.optimized ?? 0; withTpl += j.withTemplate ?? 0;
+        const res = (j.results ?? []) as { id: string; title: string; ok: boolean; error?: string }[];
+        res.filter((x) => !x.ok).forEach((x) => failed.push({ id: x.id, title: x.title, error: x.error ?? "failed" }));
+        if (!res.length && !j.ok) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error ?? "request failed" }));
+      } catch (e) {
+        const err = String((e as Error)?.message ?? "network error — Vercel function bị cắt hoặc mất mạng");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: err }));
+      }
+      setProg({ label, done: offsetDone + Math.min(i + batch.length, ids.length), total: grandTotal, fail: failed.length });
+    }
+    return { ok, withTpl, failed };
+  };
+  const doAiOptimize = async (retryIds?: string[]) => {
+    const idsAll = retryIds ?? Array.from(sel);
+    if (!idsAll.length) return flash("✗ Select products first", false);
+    setBusy(true); setMsg(null); setFails([]);
+    let done = 0; let withTpl = 0;
+    let pending = idsAll;
+    let lastFails: { id: string; title: string; error: string }[] = [];
+    // vòng 1 chạy hết, vòng 2-3 chỉ chạy lại con hỏng
+    for (let pass = 1; pass <= 3 && pending.length; pass++) {
+      const label = pass === 1 ? "AI writing content" : `Retrying ${pending.length} failed (pass ${pass}/3)`;
+      const base = pass === 1 ? 0 : idsAll.length - pending.length;
+      setProg({ label, done: base, total: pass === 1 ? idsAll.length : idsAll.length, fail: lastFails.length });
+      const r = await runAiPass(pending, label, base, idsAll.length);
+      done += r.ok; withTpl += r.withTpl;
+      lastFails = r.failed;
+      pending = r.failed.map((f) => f.id);
+      if (pending.length) await new Promise((s) => setTimeout(s, 2500)); // hạ nhiệt rate limit
     }
     setProg(null);
-    if (done > 0) flash(`✓ AI wrote ${done}/${idsAll.length} listing(s) · ${withTpl} with 3 tabs from template${fail ? ` · ${fail} failed: ${errs[0] ?? ""}` : ""} — review, then press ⬆ Push to Shopify`, fail === 0);
-    else flash(`✗ AI Optimize failed: ${errs[0] ?? "unknown"}`, false);
+    setFails(lastFails);
+    const fail = lastFails.length;
+    if (done > 0) flash(`✓ AI wrote ${done}/${idsAll.length} listing(s) · ${withTpl} with 3 tabs from template${fail ? ` · ${fail} still failed — see the list below` : ""} — review, then press ⬆ Push to Shopify`, fail === 0);
+    else flash(`✗ AI Optimize failed on all ${idsAll.length}: ${lastFails[0]?.error ?? "unknown"}`, false);
     await load();
     setBusy(false);
   };
@@ -421,7 +466,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} title="Collection" style={ctl}>
           <option value="">All collections</option>{collectionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        <select value={aiFilter} onChange={(e) => setAiFilter(e.target.value as "" | "todo" | "done" | "unpushed")} title="AI Optimize status — pick 'Not optimized yet' so you never pay to rewrite the same listing twice" style={{ ...ctl, borderColor: aiFilter ? "#C9B8F5" : "var(--line)", color: aiFilter ? "#5B3FBF" : "inherit", fontWeight: aiFilter ? 700 : 400 }}>
+          <option value="">AI: all</option>
+          <option value="todo">Not optimized yet</option>
+          <option value="done">AI optimized</option>
+          <option value="unpushed">AI done · not pushed</option>
+        </select>
         <div style={{ flex: 1 }} />
+        <button onClick={() => setSel(new Set(filtered.map((r) => r.id)))} disabled={!filtered.length} title="Select every product matching the filters above (not just this page)" style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: filtered.length ? 1 : .5 }}>Select all {filtered.length}</button>
         <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>{sel.size ? `${sel.size} selected` : `${filtered.length} products`}</span>
       </div>
 
@@ -435,7 +487,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <option value="">AI model: Default</option>{aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
           )}
-          {canEdit && <button disabled={busy} onClick={doAiOptimize} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }}>✦ AI Optimize</button>}
+          {canEdit && selDone > 0 && (
+            <button disabled={busy} title="Deselect the listings AI has already rewritten — don't pay to write the same content twice" onClick={() => setSel(new Set(rows.filter((r) => sel.has(r.id) && !r.aiAt).map((r) => r.id)))} style={{ ...ghost, padding: "9px 12px", fontSize: 12.5, borderColor: "#D7CCF5", color: "#5B3FBF" }}>Skip {selDone} already optimized</button>
+          )}
+          {canEdit && <button disabled={busy} onClick={() => doAiOptimize()} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }}>✦ AI Optimize</button>}
           {canEdit && <button disabled={busy} title="Đẩy các sản phẩm đã chỉnh (EDITED) trong số đang chọn lên Shopify" onClick={() => {
             const ids = rows.filter((r) => sel.has(r.id) && r.dirty).map((r) => r.id);
             if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
@@ -481,6 +536,30 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
       {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, padding: "10px 14px", borderRadius: 12, background: msg.ok ? "#EAF7F0" : "#FDECEC", color: msg.ok ? "#158A57" : "#C0392B", border: `1px solid ${msg.ok ? "#C7EAD8" : "#F5CFCF"}` }}>{msg.text}</div>}
 
+      {/* Sản phẩm AI viết hỏng + LÝ DO THẬT — không đoán mò nữa. Retry chỉ chạy lại đúng mấy con này. */}
+      {fails.length > 0 && !prog && (
+        <div style={{ ...card, padding: "12px 16px", marginBottom: 12, borderColor: "#F5CFCF", background: "#FFF8F8" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <b style={{ fontSize: 13, color: "#C0392B" }}>{fails.length} listing(s) failed after 3 attempts</b>
+            <div style={{ flex: 1 }} />
+            {canEdit && <button disabled={busy} onClick={() => doAiOptimize(fails.map((f) => f.id))} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), padding: "7px 13px", fontSize: 12.5, opacity: busy ? .6 : 1 }}>↻ Retry failed</button>}
+            <button onClick={() => setFails([])} style={{ ...ghost, padding: "7px 12px", fontSize: 12.5 }}>Dismiss</button>
+          </div>
+          <div style={{ maxHeight: 210, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+            {fails.map((f) => (
+              <div key={f.id} style={{ fontSize: 12, lineHeight: 1.45, borderTop: "1px solid #F5DEDE", paddingTop: 6 }}>
+                <div style={{ fontWeight: 700 }}>{f.title.slice(0, 70)}</div>
+                <div style={{ color: "#C0392B", wordBreak: "break-word" }}>{f.error}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
+            <b>429 / rate limit</b> → the AI model is throttling you: pick a paid model instead of a <code>:free</code> one, or retry in a few minutes.
+            {" "}<b>402 / credit</b> → top up OpenRouter. <b>timeout</b> → the model is too slow, switch to a faster one.
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div style={{ ...card, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -493,14 +572,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Type / Category</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Collections</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Template</th>
+              <th style={{ padding: "10px 8px", textAlign: "center" }} title="Last AI Optimize run — blank means this listing has never been rewritten">AI</th>
               <th style={{ padding: "10px 8px", textAlign: "right" }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center" }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
+            {loading && <tr><td colSpan={11} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={11} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
@@ -531,6 +611,16 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                       {!r.templateHasFacts && <span title="This template has no Product info / Product Details / Shipping info filled in — AI will only write the Description" style={{ color: "#B7791F", fontWeight: 800 }}>⚠</span>}
                     </span>
                   ) : <span title="No template matched — AI Optimize writes the Description only (no 3 tabs)" style={{ color: "var(--muted)" }}>—</span>}
+                </td>
+                {/* AI: đã viết lại chưa + cách đây bao lâu. Chấm cam = đã viết nhưng chưa Push lên Shopify. */}
+                <td style={{ padding: "8px", textAlign: "center", whiteSpace: "nowrap" }}>
+                  {r.aiAt ? (
+                    <span title={`AI Optimize last run ${new Date(r.aiAt).toLocaleString()}${r.dirty ? " — not pushed to Shopify yet" : ""}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#F1EBFF", color: "#5B3FBF" }}>
+                      ✦ {ago(r.aiAt)}{r.dirty && <span style={{ color: "#B7791F" }}>●</span>}
+                    </span>
+                  ) : (
+                    <span title="Never optimized — select it and run ✦ AI Optimize" style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#F1F1F4", color: "#8794A5" }}>not yet</span>
+                  )}
                 </td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap" }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>

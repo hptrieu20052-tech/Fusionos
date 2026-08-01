@@ -45,11 +45,68 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
   let data: { choices?: { message?: { content?: string } }[] };
   try { data = JSON.parse(text); } catch { throw new Error("OpenRouter trả về không phải JSON."); }
   const content = data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error("OpenRouter: nội dung rỗng.");
-  // Vài model bọc JSON trong ```json ... ``` → gỡ rào.
-  const cleaned = content.trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  try { return JSON.parse(cleaned) as T; }
-  catch { throw new Error("Model trả về không phải JSON hợp lệ: " + cleaned.slice(0, 200)); }
+  const finish = (data as { choices?: { finish_reason?: string }[] })?.choices?.[0]?.finish_reason ?? "";
+  if (!content) throw new Error("OpenRouter: nội dung rỗng." + (finish ? ` (finish_reason=${finish})` : ""));
+  const parsed = parseLooseJSON<T>(content);
+  if (parsed === null) {
+    const cleaned = content.trim().slice(0, 200);
+    throw new Error(
+      finish === "length"
+        ? `Model bị cắt giữa chừng vì hết max_tokens (JSON không đóng). Tăng maxTokens hoặc đổi sang model khác.`
+        : "Model trả về không phải JSON hợp lệ: " + cleaned,
+    );
+  }
+  return parsed;
+}
+
+// ===== Parse JSON "chịu lỗi" =====
+// Model hay trả JSON bọc trong ```json, kèm lời dẫn, hoặc BỊ CẮT CỤT khi chạm max_tokens.
+// Cắt cụt = mất trắng cả lần gọi (tốn tiền, user thấy "failed"). Ở đây ta vá lại: đóng chuỗi/ngoặc
+// còn thiếu, nếu vẫn hỏng thì lùi dần về dấu phẩy trước đó để giữ các field đã hoàn chỉnh.
+function scanJson(s: string) {
+  const stack: string[] = []; const commas: number[] = [];
+  let inStr = false, esc = false;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) { esc = false; continue; }
+      if (c === "\\") { esc = true; continue; }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') { inStr = true; continue; }
+    else if (c === "{" || c === "[") stack.push(c);
+    else if (c === "}" || c === "]") stack.pop();
+    else if (c === "," && stack.length === 1) commas.push(i);
+  }
+  return { stack, inStr, esc, commas };
+}
+function closeWith(body: string, stack: string[]) {
+  return body + stack.slice().reverse().map((c) => (c === "{" ? "}" : "]")).join("");
+}
+export function parseLooseJSON<T>(raw: string): T | null {
+  let s = String(raw ?? "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const first = s.indexOf("{");
+  if (first > 0) s = s.slice(first);          // bỏ lời dẫn kiểu "Here is the JSON:"
+  const tryParse = (x: string): T | null => { try { return JSON.parse(x) as T; } catch { return null; } };
+  const direct = tryParse(s);
+  if (direct !== null) return direct;
+
+  // 1) Đóng nốt chuỗi/ngoặc còn dở — giữ được cả field cuối (dù nội dung bị cụt).
+  const info = scanJson(s);
+  let base = info.esc ? s.slice(0, -1) : s;
+  if (info.inStr) base += '"'; else base = base.replace(/\s*[,:]\s*$/, "");
+  const closed = tryParse(closeWith(base, info.stack));
+  if (closed !== null) return closed;
+
+  // 2) Lùi về các dấu phẩy top-level gần cuối — bỏ field dở, giữ field đã xong.
+  for (let k = info.commas.length - 1, n = 0; k >= 0 && n < 6; k--, n++) {
+    const cut = s.slice(0, info.commas[k]);
+    const st = scanJson(cut);
+    const cand = tryParse(closeWith(st.inStr ? cut + '"' : cut, st.stack));
+    if (cand !== null) return cand;
+  }
+  return null;
 }
 
 const OR_IMAGE = "https://openrouter.ai/api/v1/images";

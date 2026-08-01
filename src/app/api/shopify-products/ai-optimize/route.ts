@@ -7,7 +7,10 @@ import { storeOwnerScopeIds } from "@/lib/scope";
 import { orChatJSON } from "@/lib/ai/openrouter";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+// 60s = trần của MỌI gói Vercel (kể cả Hobby). KHÔNG đặt 300: gói Hobby bị cắt ở 60s mà không báo,
+// cả lô chết cùng lúc và client chỉ thấy "Network error".
+export const maxDuration = 60;
+const BUDGET_MS = 52_000; // tự trả kết quả trước khi Vercel giết function
 
 /**
  * POST /api/shopify-products/ai-optimize { ids, model? }
@@ -19,11 +22,11 @@ export const maxDuration = 300;
  * Không có template → chỉ gen Description như trước.
  *
  * QUAN TRỌNG (fix "chỉ chạy được 1 sản phẩm"):
- * Mỗi request chỉ nhận TỐI ĐA 4 ids và chạy SONG SONG. Bản cũ nhận 20 ids chạy tuần tự,
- * Vercel giết function ở giây 60 khi mới xong con đầu tiên → client thấy "Network error".
- * Client tự chia lô 4 và hiển thị tiến độ.
+ * Mỗi request chỉ nhận TỐI ĐA 3 ids và chạy SONG SONG, có ngân sách thời gian riêng để LUÔN
+ * kịp trả JSON trước mốc 60s của Vercel. Bản cũ nhận 20 ids chạy tuần tự → bị giết sau con đầu tiên.
+ * Client tự chia lô 3, hiện tiến độ, và tự chạy lại những con fail.
  */
-const MAX_PER_CALL = 4;
+const MAX_PER_CALL = 3;
 
 type Opt = { title?: string; seoTitle?: string; seoDescription?: string; tags?: string; description?: string; productDetails?: string; shipping?: string };
 
@@ -58,8 +61,39 @@ function tplFor(tpls: Tpl[], storeId: string, productType: string | null, pinned
   return null;
 }
 const clip = (s: string | null | undefined, n: number) => String(s ?? "").trim().slice(0, n);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Gọi AI trong NGÂN SÁCH thời gian còn lại. Lý do fail hay gặp khi chạy song song:
+ *  - 429 rate limit của OpenRouter (nhất là model :free) → chờ ngắn rồi thử lại nếu còn giờ
+ *  - 5xx / provider chậm → thử lại
+ *  - JSON cụt vì hết max_tokens → orChatJSON đã tự vá, còn hỏng thì thử lại
+ * Chỉ thử lại KHI còn đủ thời gian; hết giờ thì trả lỗi rõ ràng để client tự chạy lại con đó.
+ */
+async function askAI(system: string, user: string, model: string | undefined, deadline: number): Promise<Opt> {
+  let last: Error | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const left = deadline - Date.now();
+    if (left < 8000) break;
+    try {
+      const o = await orChatJSON<Opt>(system, user, { model, maxTokens: 4000, temperature: 0.5, timeoutMs: Math.min(45000, left - 2000) });
+      if (!clip(o?.title, 120)) throw new Error("model trả về title rỗng");
+      return o;
+    } catch (e) {
+      last = e as Error;
+      const m = String(last?.message ?? "");
+      if (/HTTP 4(0[13]|04)/.test(m)) break;                       // sai key / hết credit / model không tồn tại → thử lại vô ích
+      const rate = /429|rate.?limit|too many/i.test(m);
+      const wait = rate ? 4000 : 1200;
+      if (deadline - Date.now() < wait + 10000) break;
+      await sleep(wait);
+    }
+  }
+  throw last ?? new Error("hết thời gian trong 1 request — bấm Retry failed");
+}
 
 export async function POST(req: NextRequest) {
+  const deadline = Date.now() + BUDGET_MS;
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
@@ -77,8 +111,9 @@ export async function POST(req: NextRequest) {
   const tpls = storeIds.length ? await db.select().from(schema.shopifyTemplates) : [];
 
   // Chạy SONG SONG — mỗi sản phẩm tự bắt lỗi, 1 con hỏng không kéo cả lô.
-  const results = await Promise.all(rows.map(async (r): Promise<{ id: string; title: string; ok: boolean; withTemplate?: boolean; error?: string }> => {
+  const results = await Promise.all(rows.map(async (r, idx): Promise<{ id: string; title: string; ok: boolean; withTemplate?: boolean; error?: string }> => {
     try {
+      await sleep(idx * 400); // lệch pha — 3 request nổ cùng lúc rất dễ ăn 429
       const tpl = tplFor(tpls, r.storeId, r.productType, r.templateId);
       const hasFacts = !!(tpl && ((tpl.baseDescription ?? "").trim() || (tpl.productDetails ?? "").trim() || (tpl.shippingInfo ?? "").trim()));
       const opts = (Array.isArray(r.options) ? r.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${(o.values ?? []).join(", ")}`).join(" | ");
@@ -97,9 +132,8 @@ Current tags: ${r.tags ?? ""}
 ${factsBlock}Current description (plain, up to 1000 chars): ${(r.bodyHtml ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1000)}`;
 
       const system = hasFacts ? SYSTEM_BASE + SYSTEM_TPL_EXTRA : SYSTEM_BASE;
-      const o = await orChatJSON<Opt>(system, user, { model, maxTokens: 2600, temperature: 0.5, timeoutMs: 60000 });
+      const o = await askAI(system, user, model, deadline);
       const t = clip(o?.title, 120);
-      if (!t) throw new Error("empty title");
 
       // Ghép 3 tab — tất cả do AI viết riêng cho listing này (facts từ template)
       let body = clip(o?.description, 6000);
@@ -119,11 +153,11 @@ ${factsBlock}Current description (plain, up to 1000 chars): ${(r.bodyHtml ?? "")
         seoDescription: clip(o?.seoDescription, 320) || null,
         tags: clip(o?.tags, 600) || r.tags,
         bodyHtml: body.slice(0, 12000) || r.bodyHtml,
-        dirty: true, updatedAt: new Date(),
+        dirty: true, aiAt: new Date(), updatedAt: new Date(),
       }).where(eq(schema.shopifyProducts.id, r.id));
       return { id: r.id, title: r.title, ok: true, withTemplate: usedTpl };
     } catch (e) {
-      return { id: r.id, title: r.title, ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) };
+      return { id: r.id, title: r.title, ok: false, error: String((e as Error)?.message ?? e).slice(0, 240) };
     }
   }));
 

@@ -268,6 +268,9 @@ export const shopifyProducts = pgTable("shopify_products", {
   // null = tự khớp theo Product type (fallback), gán tay = luôn dùng template này.
   templateId: uuid("template_id"),
   dirty: boolean("dirty").notNull().default(false), // có chỉnh sửa local chưa Push
+  // Lần cuối AI Optimize viết lại listing này. null = CHƯA chạy AI bao giờ.
+  // Dùng cho cột "AI" + filter "Not optimized yet" — khỏi chạy lại (và trả tiền lại) con đã xong.
+  aiAt: timestamp("ai_at", { withTimezone: true }),
   syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
   pushedAt: timestamp("pushed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
