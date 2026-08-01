@@ -38,9 +38,8 @@ const fctl: React.CSSProperties = { ...ctl, padding: "8px 10px", fontSize: 12.5,
 // Select đang có giá trị thì đổi màu — nhìn phát biết đang lọc cái gì.
 const fsel = (on: boolean, fg = "#1F6F45", bd = "#BFE3CD", bg = "#F3FBF6"): React.CSSProperties =>
   ({ ...fctl, borderColor: on ? bd : "var(--line)", background: on ? bg : "#fff", color: on ? fg : "inherit", fontWeight: on ? 700 : 400 });
-// Nhóm nút theo bước làm việc — có nhãn + vạch ngăn để mắt không phải đọc hết 7 nút.
+// Nhóm nút theo bước làm việc — chỉ còn vạch ngăn, bỏ nhãn 1/2/3 cho đỡ rối.
 const grp: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px 5px 8px", borderLeft: "1px solid #CDEFD8", flexWrap: "wrap" };
-const grpLab: React.CSSProperties = { fontSize: 10, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase", color: "#7C9A86", whiteSpace: "nowrap" };
 // "2h ago" / "3d ago" — nhìn phát biết listing nào vừa chạy AI, khỏi chạy lại tốn tiền.
 const ago = (iso: string | null) => {
   if (!iso) return "";
@@ -115,11 +114,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   // AI model
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
   const [aiModel, setAiModel] = useState("");
-  // Bulk price
-  const [bpOpen, setBpOpen] = useState(false);
-  const [bpValues, setBpValues] = useState<{ name: string; value: string; count: number; current: string }[]>([]);
-  const [bpPrices, setBpPrices] = useState<Record<string, string>>({});
-  const [bpLoading, setBpLoading] = useState(false);
   // Bulk actions ("More actions")
   const [actionsOpen, setActionsOpen] = useState(false);
   const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
@@ -336,37 +330,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     await load();
     setBusy(false);
   };
-  const doDelete = async () => {
-    if (!sel.size) return;
-    if (!(await confirm({ message: `Remove ${sel.size} product(s) from the FUSION list?\nThis does NOT delete them on Shopify — only removes them from this table.`, confirmText: "Remove", danger: true }))) return;
-    setBusy(true);
-    try { const j = await fetch("/api/shopify-products", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json());
-      if (j.ok) { flash(`✓ Removed ${j.deleted}`); setSel(new Set()); load(); } else flash("✗ " + (j.error ?? "Delete failed"), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
-    setBusy(false);
-  };
-  const openBulkPrice = async () => {
-    if (!sel.size) return flash("✗ Select products first", false);
-    setBpOpen(true); setBpLoading(true); setBpValues([]); setBpPrices({});
-    try {
-      const j = await fetch("/api/shopify-products/bulk-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json());
-      if (j.ok) { setBpValues(j.values ?? []); const init: Record<string, string> = {}; (j.values ?? []).forEach((v: { value: string; current: string }) => { init[v.value] = ""; }); setBpPrices(init); }
-      else { flash("✗ " + (j.error ?? "Failed"), false); setBpOpen(false); }
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setBpOpen(false); }
-    setBpLoading(false);
-  };
-  const applyBulkPrice = async () => {
-    setBusy(true);
-    try { const j = await fetch("/api/shopify-products/bulk-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), prices: bpPrices }) }).then((r) => r.json());
-      if (j.ok) {
-        setBpOpen(false);
-        const push = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json());
-        flash(`✓ Priced ${j.sizes} size(s) · ${j.variantsSet} variants across ${j.updated} product(s) — updated ${push.pushed ?? 0} on Shopify`, (push.failed ?? 0) === 0);
-        load();
-      } else flash("✗ " + (j.error ?? "Failed"), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
-    setBusy(false);
-  };
 
   // ---- bulk actions ("More actions") ----
   const selStoreIds = () => Array.from(new Set(rows.filter((r) => sel.has(r.id)).map((r) => r.storeId)));
@@ -528,7 +491,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
       <div style={{ ...card, padding: "12px 14px", marginBottom: 12 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <span style={{ fontSize: 15, color: "var(--muted)" }}>🔍</span>
           <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "1 1 220px", maxWidth: "none", minWidth: 180 }} />
           {showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
@@ -573,7 +535,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
           {canEdit && (
             <span style={grp}>
-              <span style={grpLab}>1 · Content</span>
               <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model used by Optimize — avoid ':free' models, they get rate-limited" style={{ ...fctl, maxWidth: 170 }}>
                 <option value="">Model: Default</option>{aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
@@ -586,7 +547,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
           {canEdit && (
             <span style={grp}>
-              <span style={grpLab}>2 · Publish</span>
               <button disabled={busy || !selDirty} title={selDirty ? `Push ${selDirty} edited listing(s) to Shopify` : "Nothing edited in this selection — run AI Optimize or Edit first"} onClick={() => {
                 const ids = rows.filter((r) => sel.has(r.id) && r.dirty).map((r) => r.id);
                 if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
@@ -599,8 +559,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
           {canEdit && (
             <span style={grp}>
-              <span style={grpLab}>3 · Bulk edit</span>
-              <button disabled={busy} onClick={openBulkPrice} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5 }}>◫ Bulk Price</button>
               <div style={{ position: "relative" }}>
                 <button disabled={busy} onClick={() => setActionsOpen((v) => !v)} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5 }}>More actions ▾</button>
                 {actionsOpen && (
@@ -616,8 +574,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             </span>
           )}
 
-          <div style={{ flex: 1 }} />
-          {canEdit && <button disabled={busy} title="Remove from this FUSION list only — does NOT delete on Shopify" onClick={doDelete} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, color: "var(--red)", borderColor: "#F3C9C9" }}>🗑 Remove local</button>}
         </div>
       )}
 
@@ -858,39 +814,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 </div>
               </>
             )}
-          </div>
-        </div>
-      )}
-
-      {/* BULK PRICE MODAL */}
-      {bpOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setBpOpen(false)}>
-          <div style={{ ...card, width: 480, maxWidth: "96vw", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-              <b style={{ fontSize: 16 }}>◫ Bulk Price by Size</b>
-              <button onClick={() => setBpOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
-            </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>Đặt giá theo giá trị option (size…) cho <b>{sel.size}</b> sản phẩm đã chọn. Để trống = giữ nguyên. Lưu vào bản local (dirty) → bấm <b>Push</b> để áp lên Shopify.</div>
-            {bpLoading ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>Loading…</div>
-              : bpValues.length === 0 ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>No option values.</div>
-              : <div style={{ display: "grid", gap: 8 }}>
-                  {bpValues.map((v) => (
-                    <div key={v.value} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 600 }} title={v.value}>{v.value}</div>
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{v.name || "Option"} · {v.count} variants · now {v.current ? "$" + v.current : "—"}</div>
-                      </div>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ color: "var(--muted)", fontSize: 13 }}>$</span>
-                        <input type="number" step="0.01" min="0" value={bpPrices[v.value] ?? ""} placeholder="—" onChange={(e) => setBpPrices((p) => ({ ...p, [v.value]: e.target.value }))} style={{ ...ctl, width: 100, padding: "8px 10px", textAlign: "right" }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-              <button onClick={() => setBpOpen(false)} style={ghost}>Cancel</button>
-              <button disabled={busy || bpLoading} onClick={applyBulkPrice} style={{ ...pill("linear-gradient(135deg,#F59E0B,#D97706)", "#fff"), opacity: (busy || bpLoading) ? .6 : 1 }}>Apply prices</button>
-            </div>
           </div>
         </div>
       )}
