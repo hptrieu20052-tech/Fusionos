@@ -398,6 +398,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             </select>
           )}
           {canEdit && <button disabled={busy} onClick={doAiOptimize} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }}>✦ AI Optimize</button>}
+          {canEdit && <button disabled={busy} title="Đẩy các sản phẩm đã chỉnh (EDITED) trong số đang chọn lên Shopify" onClick={() => {
+            const ids = rows.filter((r) => sel.has(r.id) && r.dirty).map((r) => r.id);
+            if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
+            doPush(ids);
+          }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), opacity: busy ? .6 : 1 }}>⬆ Push to Shopify</button>}
           {canEdit && <button disabled={busy} onClick={openBulkPrice} style={{ ...pill("linear-gradient(135deg,#F59E0B,#D97706)", "#fff"), opacity: busy ? .6 : 1 }}>◫ Bulk Price</button>}
           {canEdit && (
             <div style={{ position: "relative" }}>
