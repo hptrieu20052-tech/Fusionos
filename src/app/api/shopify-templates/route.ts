@@ -26,7 +26,9 @@ type TplBody = {
 };
 
 // 4 nước có ô riêng trong Template + trong widget. Nước khác ⇒ Rest of world (ship_intl_*).
-export const DELIVERY_COUNTRIES = ["ca", "gb", "au", "de"] as const;
+// KHÔNG export: file route.ts của Next.js chỉ cho export GET/POST/PATCH/DELETE/dynamic/maxDuration…
+// export thêm biến lạ ⇒ build fail "is not a valid Route export field".
+const DELIVERY_COUNTRIES = ["ca", "gb", "au", "de"] as const;
 
 // Ô số ngày: rỗng/rác → null (widget dùng số mặc định của nó). Chặn số âm và số vô lý.
 const clampDays = (v: unknown, max = 180): number | null => {
