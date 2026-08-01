@@ -7,10 +7,10 @@ import { storeOwnerScopeIds } from "@/lib/scope";
 import { orChatJSON } from "@/lib/ai/openrouter";
 
 export const dynamic = "force-dynamic";
-// 60s = trần của MỌI gói Vercel (kể cả Hobby). KHÔNG đặt 300: gói Hobby bị cắt ở 60s mà không báo,
-// cả lô chết cùng lúc và client chỉ thấy "Network error".
-export const maxDuration = 60;
-const BUDGET_MS = 52_000; // tự trả kết quả trước khi Vercel giết function
+// Tài khoản đang ở gói Vercel PRO ⇒ maxDuration tối đa 300s (Hobby mới bị chặn ở 60s).
+// Nếu sau này hạ về Hobby thì PHẢI đưa 3 số dưới đây về 60 / 52_000 / 3, không thì cả lô chết câm.
+export const maxDuration = 300;
+const BUDGET_MS = 270_000; // tự trả kết quả trước khi Vercel giết function
 
 /**
  * POST /api/shopify-products/ai-optimize { ids, model? }
@@ -22,11 +22,12 @@ const BUDGET_MS = 52_000; // tự trả kết quả trước khi Vercel giết f
  * Không có template → chỉ gen Description như trước.
  *
  * QUAN TRỌNG (fix "chỉ chạy được 1 sản phẩm"):
- * Mỗi request chỉ nhận TỐI ĐA 3 ids và chạy SONG SONG, có ngân sách thời gian riêng để LUÔN
- * kịp trả JSON trước mốc 60s của Vercel. Bản cũ nhận 20 ids chạy tuần tự → bị giết sau con đầu tiên.
- * Client tự chia lô 3, hiện tiến độ, và tự chạy lại những con fail.
+ * Mỗi request nhận TỐI ĐA 6 ids và chạy SONG SONG, có ngân sách thời gian riêng để LUÔN
+ * kịp trả JSON trước mốc 300s của Vercel Pro. Bản cũ nhận 20 ids chạy tuần tự → bị giết sau con đầu tiên.
+ * Client tự chia lô 6, hiện tiến độ, và tự chạy lại những con fail.
+ * Không nâng quá 6: mỗi id = 1 request OpenRouter, bắn nhiều quá dễ dính rate limit 429.
  */
-const MAX_PER_CALL = 3;
+const MAX_PER_CALL = 6;
 
 type Opt = { title?: string; seoTitle?: string; seoDescription?: string; tags?: string; description?: string; productDetails?: string; shipping?: string };
 

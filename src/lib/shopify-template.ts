@@ -58,13 +58,27 @@ function buildVariants(tpl: Template) {
 
 type BaseContent = { id?: string; title: string; descriptionHtml?: string; images?: string[] };
 
+// Tuỳ chọn khi dựng input.
+//  includeImages     – chỉ bật khi TẠO MỚI (productSet.files thay toàn bộ media).
+//  statusOverride    – giữ nguyên trạng thái listing đang chạy thay vì ghi status của template.
+//                      Bắt buộc dùng cho "Update Template": template DRAFT mà ghi đè lên 114 listing
+//                      đang ACTIVE là gỡ nguyên shop khỏi Google trong 1 nốt nhạc.
+//  extraMetafields   – metafield ghi kèm trong cùng 1 request (vd fusion.delivery).
+//  skipCollections   – không thêm listing vào collectionIds của template (dùng cho Update Template).
+export type TplInputOpts = {
+  includeImages: boolean;
+  statusOverride?: string | null;
+  extraMetafields?: { namespace: string; key: string; type: string; value: string }[];
+  skipCollections?: boolean;
+};
+
 // Tạo input ProductSet từ template + nội dung riêng của sản phẩm (title/desc/ảnh).
-export function buildTemplateInput(tpl: Template, base: BaseContent, opts: { includeImages: boolean }): Record<string, unknown> {
+export function buildTemplateInput(tpl: Template, base: BaseContent, opts: TplInputOpts): Record<string, unknown> {
   const productOptions = tpl.options.map((o, i) => ({ name: o.name, position: i + 1, values: o.values.map((v) => ({ name: v })) }));
   const input: Record<string, unknown> = {
     title: base.title,
     ...(base.descriptionHtml != null ? { descriptionHtml: base.descriptionHtml } : {}),
-    status: (tpl.status || "DRAFT").toUpperCase(),
+    status: String(opts.statusOverride || tpl.status || "DRAFT").toUpperCase(),
     ...(tpl.productType ? { productType: tpl.productType } : {}),
     ...(tpl.vendor ? { vendor: tpl.vendor } : {}),
     ...(tpl.themeTemplate ? { templateSuffix: tpl.themeTemplate } : {}),
@@ -78,14 +92,16 @@ export function buildTemplateInput(tpl: Template, base: BaseContent, opts: { inc
     input.files = base.images.filter(Boolean).slice(0, 12).map((src) => ({ originalSource: src, contentType: "IMAGE" }));
   }
   // Category metafields (best-effort) — chỉ gửi khi có namespace/key/type/value đầy đủ.
-  const mfs = (tpl.categoryMetafields ?? []).filter((m) => m.namespace && m.key && m.type && String(m.value ?? "").trim() !== "");
+  // Cộng thêm extraMetafields (fusion.delivery) để chỉ tốn 1 request thay vì gọi metafieldsSet riêng.
+  const mfs = [...(tpl.categoryMetafields ?? []), ...(opts.extraMetafields ?? [])]
+    .filter((m) => m.namespace && m.key && m.type && String(m.value ?? "").trim() !== "");
   if (mfs.length) input.metafields = mfs.map((m) => ({ namespace: m.namespace, key: m.key, type: m.type, value: m.value }));
   return input;
 }
 
 // Áp template → productSet → collections + channels. Trả product id/handle hoặc lỗi.
 export async function applyTemplate(
-  cred: ShopifyCred, tpl: Template, base: BaseContent, opts: { includeImages: boolean },
+  cred: ShopifyCred, tpl: Template, base: BaseContent, opts: TplInputOpts,
 ): Promise<{ ok: boolean; productId?: string; handle?: string; error?: string }> {
   const input = buildTemplateInput(tpl, base, opts);
   let data: { productSet?: { product?: { id: string; handle: string }; userErrors?: { message: string }[] } };
@@ -101,7 +117,9 @@ export async function applyTemplate(
 
   // Collections + sales channels (không chặn kết quả chính — gom lỗi phụ)
   const warn: string[] = [];
-  for (const cid of tpl.collectionIds ?? []) {
+  // skipCollections: "Update Template" KHÔNG đụng collection — listing đang chạy đã được xếp
+  // collection theo dịp/chủ đề riêng, đẩy collection của template vào là loạn hết.
+  if (!opts.skipCollections) for (const cid of tpl.collectionIds ?? []) {
     try { await collectionAddProducts(cred, cid, [prod.id]); } catch (e) { warn.push(`collection: ${String((e as Error)?.message ?? e).slice(0, 80)}`); }
   }
   if ((tpl.publicationIds ?? []).length) {

@@ -56,7 +56,7 @@ const ago = (iso: string | null) => {
 };
 
 type ActKey =
-  | "set_template" | "apply_template"
+  | "set_template" | "apply_template" | "push_delivery"
   | "active" | "draft" | "archive" | "delete"
   | "tags_add" | "tags_remove"
   | "channels_include" | "channels_exclude"
@@ -66,6 +66,8 @@ type ActionItem = { key: ActKey; label: string; danger?: boolean } | { sep: true
 const ACTIONS: ActionItem[] = [
   { key: "set_template", label: "Set AI template…" },
   { key: "apply_template", label: "Apply template (variants → Shopify)…" },
+  // Bản nhẹ của Update Template: chỉ ghi metafield fusion.delivery, không đụng variants.
+  { key: "push_delivery", label: "Push delivery times only" },
   { key: "sep0", sep: true },
   { key: "active", label: "Set as Active" },
   { key: "draft", label: "Unlist products (set to Draft)" },
@@ -223,9 +225,45 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
     return { ok, failed };
   };
-  // Push delivery: đẩy SỐ NGÀY GIAO HÀNG của Template lên listing (metafield fusion.delivery).
-  // Chỉ ghi metafield — KHÔNG đụng title/mô tả/giá/ảnh, nên chạy được cả trên listing đang sạch.
-  // Widget "Estimated delivery" trong theme đọc metafield này → sửa số trong Template là cả trăm listing đổi theo.
+  // Update Template: Template đổi gì thì đẩy hết xuống listing — mỗi listing tự khớp template của nó.
+  // Ghi: product type / vendor / theme template, category + metafields, options + variants + GIÁ,
+  //      metafield fusion.delivery, kênh bán.
+  // KHÔNG đụng: COLLECTIONS, title, mô tả 3 tab do AI viết, ảnh, SEO, tags, trạng thái ACTIVE/DRAFT.
+  // productSet dựng lại variants ⇒ hỏi xác nhận trước, và chạy lô 5 vì mỗi con mất ~3-6s.
+  const CHUNK_TPL = 5;
+  const doUpdateTemplate = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    const okGo = await confirm({
+      title: "Update Template",
+      danger: true,
+      confirmText: `Update ${ids.length}`,
+      message: `Ghi lại ${ids.length} listing theo Template của từng sản phẩm: product type, vendor, theme template, category, options + variants + GIÁ, số ngày giao hàng, kênh bán.\n\nGiữ nguyên: collections, tiêu đề, mô tả 3 tab do AI viết, ảnh, SEO, tags, trạng thái Active/Draft.\n\n⚠ Variants bị dựng lại theo Template: variant nào Template không có sẽ bị XOÁ khỏi Shopify và không khôi phục được. Chắc chắn chạy?`,
+    });
+    if (!okGo) return;
+    setBusy(true); setFails([]);
+    let ok = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "Updating from template", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += CHUNK_TPL) {
+      const batch = ids.slice(i, i + CHUNK_TPL);
+      try {
+        const j = await fetch("/api/shopify-products/update-template", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
+        ok += j.updated ?? 0;
+        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+      } catch (e) {
+        const m = String((e as Error)?.message ?? "network");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+      }
+      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    }
+    setProg(null); setFails(failed);
+    flash(`${failed.length ? "⚠" : "✓"} Template applied to ${ok}/${ids.length} listing(s)${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    await load();
+    setBusy(false);
+  };
+
+  // Push delivery: CHỈ đẩy số ngày giao hàng (metafield fusion.delivery) — không đụng gì khác,
+  // nên chạy được cả trên listing đang sạch. Nằm trong "More actions" khi chỉ cần sửa mỗi timeline.
   const doPushDelivery = async (ids: string[]) => {
     if (!ids.length) return flash("✗ Select products first", false);
     setBusy(true); setFails([]);
@@ -249,10 +287,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
   };
 
-  // AI Optimize theo LÔ 3 + hiện tiến độ + TỰ CHẠY LẠI con fail (2 vòng nữa) vì lỗi hay gặp là
+  // AI Optimize theo LÔ 6 + hiện tiến độ + TỰ CHẠY LẠI con fail (2 vòng nữa) vì lỗi hay gặp là
   // 429 rate limit / provider chậm — chạy lại là qua. Con nào vẫn hỏng thì liệt kê kèm lý do.
   // KHÔNG tự Push: gen xong sản phẩm ở trạng thái EDITED → xem lại → bấm "⬆ Push to Shopify".
-  const CHUNK_AI = 3;
+  // 6 = MAX_PER_CALL của route (chạy được nhờ Vercel Pro cho 300s). Hạ về Hobby thì phải đưa lại 3.
+  const CHUNK_AI = 6;
   const runAiPass = async (ids: string[], label: string, offsetDone: number, grandTotal: number) => {
     let ok = 0; let withTpl = 0; const failed: { id: string; title: string; error: string }[] = [];
     for (let i = 0; i < ids.length; i += CHUNK_AI) {
@@ -343,6 +382,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const runAction = async (key: ActKey) => {
     setActionsOpen(false);
     if (!sel.size) return flash("✗ Select products first", false);
+    // Chỉ số ngày giao hàng — không confirm vì không phá gì cả.
+    if (key === "push_delivery") return doPushDelivery(Array.from(sel));
     // Lifecycle nhanh (có confirm)
     if (key === "active" || key === "draft" || key === "archive") {
       const word = key === "active" ? "set ACTIVE" : key === "draft" ? "Unlist (set DRAFT)" : "Archive";
@@ -551,8 +592,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
                 doPush(ids);
               }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), padding: "9px 14px", opacity: busy || !selDirty ? .45 : 1 }}>⬆ Push to Shopify{selDirty ? ` (${selDirty})` : ""}</button>
-              {/* Chỉ ghi metafield fusion.delivery — không đụng nội dung listing, nên chạy được cả trên con đã sạch. */}
-              <button disabled={busy || !sel.size} title="Push the delivery times from each product's Template to Shopify (metafield fusion.delivery). Only touches the delivery widget — content, prices and images are untouched." onClick={() => doPushDelivery(Array.from(sel))} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: busy || !sel.size ? .45 : 1 }}>🚚 Push delivery{sel.size ? ` (${sel.size})` : ""}</button>
+              {/* Template đổi gì → đẩy hết xuống listing. Chạy được cả trên con đã sạch (không cần dirty). */}
+              <button disabled={busy || !sel.size} title="Re-apply each product's Template to its Shopify listing: product type, vendor, theme template, category, options + variants + prices, delivery times and sales channels. Collections, title, AI description, images, SEO, tags and Active/Draft status are left untouched." onClick={() => doUpdateTemplate(Array.from(sel))} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: busy || !sel.size ? .45 : 1 }}>🔄 Update Template{sel.size ? ` (${sel.size})` : ""}</button>
             </span>
           )}
 
