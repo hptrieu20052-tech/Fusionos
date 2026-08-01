@@ -13,6 +13,7 @@ type Draft = {
   collectionIds: string[]; publicationIds: string[];
   status: string; productType: string; vendor: string; themeTemplate: string;
   category: Cat; categoryMetafields: Meta[];
+  baseDescription: string; productDetails: string; shippingInfo: string;
 };
 type Tpl = Draft & { updatedAt?: string };
 type NamedItem = { id: string; label: string };
@@ -30,7 +31,7 @@ function cartesian(options: Opt[]): Record<string, string>[] {
   if (!clean.length) return [];
   return clean.reduce<Record<string, string>[]>((acc, o) => acc.flatMap((c) => o.values.map((v) => ({ ...c, [o.name]: v }))), [{}]).slice(0, 100);
 }
-const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [] });
+const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [], baseDescription: "", productDetails: "", shippingInfo: "" });
 
 export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) {
   const confirm = useConfirm();
@@ -69,7 +70,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
 
   const openEditor = async (d: Draft) => { setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setCatQ(""); setCatHits([]); await loadPickers(d.storeId); };
   const newBlank = () => { if (!storeFilter) return flash("✗ Pick a store first", false); openEditor(emptyDraft(storeFilter)); };
-  const editTpl = (t: Tpl) => openEditor({ ...t, category: t.category ?? null });
+  const editTpl = (t: Tpl) => openEditor({ ...t, category: t.category ?? null, baseDescription: t.baseDescription ?? "", productDetails: t.productDetails ?? "", shippingInfo: t.shippingInfo ?? "" });
 
   // New from product: nạp danh sách listing của store rồi chọn
   const startFromProduct = async () => {
@@ -99,6 +100,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
         collectionIds: p.collectionIds ?? [], publicationIds: p.publicationIds ?? [],
         status: "DRAFT", productType: p.productType ?? "", vendor: p.vendor ?? "", themeTemplate: p.themeTemplate ?? "",
         category: p.category ?? null, categoryMetafields: p.categoryMetafields ?? [],
+        baseDescription: "", productDetails: "", shippingInfo: "",
       };
       setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setCatQ(""); setCatHits([]);
       // đảm bảo picker có tên collection/kênh từ product kể cả khi chưa nạp full store
@@ -238,6 +240,18 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
               <div><label style={lab}>Type</label><input value={draft.productType} onChange={(e) => setD({ productType: e.target.value })} placeholder="Personalized" style={{ ...ctl, width: "100%" }} /></div>
               <div><label style={lab}>Vendor</label><input value={draft.vendor} onChange={(e) => setD({ vendor: e.target.value })} style={{ ...ctl, width: "100%" }} /></div>
               <div><label style={lab}>Theme template (suffix)</label><input value={draft.themeTemplate} onChange={(e) => setD({ themeTemplate: e.target.value })} placeholder="(Default product)" style={{ ...ctl, width: "100%" }} /></div>
+            </div>
+
+            {/* AI CONTENT — nguồn sự thật cho AI Optimize + 3 tab mô tả */}
+            <div style={{ border: "1px solid #DCE9F5", background: "#F7FBFF", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>AI content · description tabs</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 12 }}>AI Optimize uses these as ground truth (matched by Type). Product Details & Shipping are appended to every description as tab sections.</div>
+              <label style={lab}>Product info — facts for AI (material, personalization, printing, who it&apos;s for)</label>
+              <textarea value={draft.baseDescription} onChange={(e) => setD({ baseDescription: e.target.value })} placeholder={"Personalized hardcover children's book. The child's name appears on the cover and is woven through the story. 24 illustrated pages, premium thick paper, glossy or matte finish. Printed in the USA, made to order. For kids ages 0-8."} style={{ ...ctl, width: "100%", minHeight: 76, resize: "vertical" }} />
+              <label style={{ ...lab, marginTop: 10 }}>Product Details — one bullet per line (tab &quot;Product Details&quot;)</label>
+              <textarea value={draft.productDetails} onChange={(e) => setD({ productDetails: e.target.value })} placeholder={"Material: Premium hardcover\nPages: 24 fully illustrated pages\nSizes: 11\"x8.5\" or 8\"x8\"\nPaper: Glossy or Matte\nPersonalization: Child's name on the cover and throughout the story\n30-day money-back guarantee"} style={{ ...ctl, width: "100%", minHeight: 96, resize: "vertical" }} />
+              <label style={{ ...lab, marginTop: 10 }}>Shipping info (tab &quot;Shipping&quot;)</label>
+              <textarea value={draft.shippingInfo} onChange={(e) => setD({ shippingInfo: e.target.value })} placeholder={"Processing Time: All orders are processed within 1-3 business days.\nShipping Time: 3-5 business days (US).\nShipping Cost: Free 3-day shipping on all US orders.\nTracking: You'll receive a tracking number by email once your order ships."} style={{ ...ctl, width: "100%", minHeight: 96, resize: "vertical" }} />
             </div>
 
             {/* OPTIONS */}

@@ -16,6 +16,7 @@ type TplBody = {
   status?: string; productType?: string; vendor?: string; themeTemplate?: string;
   category?: { id: string; name: string } | null;
   categoryMetafields?: { namespace: string; key: string; type: string; value: string; label?: string; valueLabel?: string }[];
+  baseDescription?: string; productDetails?: string; shippingInfo?: string;
 };
 
 // Store nào user được phép thao tác (Shopify + trong scope)?
@@ -65,6 +66,9 @@ function payloadOf(b: TplBody) {
     themeTemplate: String(b.themeTemplate ?? "").slice(0, 120) || null,
     category: (b.category && typeof b.category === "object" && b.category.id) ? { id: String(b.category.id), name: String(b.category.name ?? "") } : null,
     categoryMetafields: clampMeta(b.categoryMetafields),
+    baseDescription: String(b.baseDescription ?? "").slice(0, 6000).trim() || null,
+    productDetails: String(b.productDetails ?? "").slice(0, 6000).trim() || null,
+    shippingInfo: String(b.shippingInfo ?? "").slice(0, 6000).trim() || null,
     updatedAt: new Date(),
   };
 }

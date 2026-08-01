@@ -294,6 +294,10 @@ export const shopifyTemplates = pgTable("shopify_templates", {
   category: jsonb("category"),
   // categoryMetafields: [{ namespace, key, type, value, label, valueLabel }] — Book cover type/Genre/Language/Target audience
   categoryMetafields: jsonb("category_metafields").notNull().default([]),
+  // Nội dung chuẩn của loại sản phẩm — nguồn sự thật cho AI Optimize + 3 tab mô tả (Description / Product Details / Shipping)
+  baseDescription: text("base_description"),   // thông tin gốc sản phẩm (chất liệu, cá nhân hoá thế nào, in ở đâu…)
+  productDetails: text("product_details"),     // bullet specs — mỗi dòng 1 gạch đầu dòng
+  shippingInfo: text("shipping_info"),         // nội dung tab Shipping (processing/shipping time, cost, tracking)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({
