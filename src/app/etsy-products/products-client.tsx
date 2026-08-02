@@ -86,10 +86,11 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const doPushShopify = async () => {
     if (!sel.size) return flash("✗ Select listings first", false);
     if (!pushStore) return flash("✗ Chưa có store Shopify — thêm store Shopify + cấu hình API trong Stores trước", false);
+    if (!pushTemplate) return flash("✗ Select a template before pushing", false);
     setPushOpen(false);
     setBusy(true);
     try {
-      const j = await fetch("/api/etsy-products/push-shopify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), storeId: pushStore, ...(pushTemplate ? { templateId: pushTemplate } : {}) }) }).then((r) => r.json());
+      const j = await fetch("/api/etsy-products/push-shopify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), storeId: pushStore, templateId: pushTemplate }) }).then((r) => r.json());
       if (j.ok || j.created) {
         const fail = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
         flash(`✓ Pushed ${j.created}/${(j.results ?? []).length} to ${j.store}${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`, j.failed === 0);
@@ -417,10 +418,15 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             </select>
 
             <label style={lab}>② Template</label>
-            <select value={pushTemplate} onChange={(e) => setPushTemplate(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: 18 }}>
-              <option value="">None — variants/price from each Etsy listing</option>
+            <select value={pushTemplate} onChange={(e) => setPushTemplate(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: templates.length ? 18 : 8 }}>
+              <option value="" disabled>— Select a template —</option>
               {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
+            {pushStore && templates.length === 0 && (
+              <div style={{ fontSize: 12, color: "#B42318", marginBottom: 16, padding: "10px 12px", background: "#FEF3F2", borderRadius: 10, border: "1px solid #FDA29B" }}>
+                This store has no template yet. Create one in <b>Templates</b> first.
+              </div>
+            )}
 
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, padding: "10px 12px", background: "#F8FAFF", borderRadius: 10, border: "1px solid #DCE6FB" }}>
               New products are created as <b style={{ color: "var(--ink)" }}>DRAFT</b>.
@@ -428,7 +434,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button style={ghost} disabled={busy} onClick={() => setPushOpen(false)}>Cancel</button>
-              <button style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: pushStore && !busy ? 1 : .5 }} disabled={busy || !pushStore} onClick={doPushShopify}>
+              <button style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: pushStore && pushTemplate && !busy ? 1 : .5 }} disabled={busy || !pushStore || !pushTemplate} onClick={doPushShopify}>
                 {busy ? "Pushing…" : "Push now"}
               </button>
             </div>
