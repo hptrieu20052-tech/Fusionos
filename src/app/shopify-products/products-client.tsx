@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
+import ThumbZoom from "@/components/thumb-zoom";
 
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
@@ -645,7 +646,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
-                <td style={{ padding: "8px 6px" }}>{r.mainImage ? <img src={r.mainImage} alt="" width={42} height={42} style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} /> : <div style={{ width: 42, height: 42, borderRadius: 8, background: "#F1F1F4" }} />}</td>
+                <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} alt={r.title} size={42} radius={8} border /></td>
                 <td style={{ padding: "8px" }}>
                   <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.variantCount} variants · {r.imageCount} images{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}{r.optionsSummary ? ` · ${r.optionsSummary}` : ""}</div>

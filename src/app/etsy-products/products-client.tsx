@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
+import ThumbZoom from "@/components/thumb-zoom";
 
 type Row = {
   id: string; storeId: string; title: string; price: string | null; quantity: number | null;
@@ -398,10 +399,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)", background: sel.has(r.id) ? "#F8FAFF" : "#fff" }}>
                 <td style={{ padding: "10px 14px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: "8px 6px" }}>
-                  {r.mainImageUrl
-                    // eslint-disable-next-line @next/next/no-img-element
-                    ? <img src={r.mainImageUrl} alt="" style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 10 }} />
-                    : <div style={{ width: 46, height: 46, borderRadius: 10, background: "var(--line)" }} />}
+                  <ThumbZoom src={r.mainImageUrl} alt={r.title} size={46} radius={10} />
                 </td>
                 <td style={{ padding: "10px 6px", maxWidth: 420 }}>
                   {r.shopifyTitle

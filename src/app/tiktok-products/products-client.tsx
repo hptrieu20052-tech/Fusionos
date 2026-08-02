@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useConfirm } from "@/components/confirm-provider";
+import ThumbZoom from "@/components/thumb-zoom";
 
 type Row = {
   id: string; storeId: string; tiktokProductId: string; title: string | null; status: string | null;
@@ -153,8 +154,7 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
               return (
                 <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                   <td style={{ padding: "8px 6px" }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {(r.mainImageUrl || thumbs[r.id]) ? <img src={r.mainImageUrl || thumbs[r.id]} alt="" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 7 }} /> : <div style={{ width: 42, height: 42, background: "#EEF1F5", borderRadius: 7 }} />}
+                    <ThumbZoom src={r.mainImageUrl || thumbs[r.id]} alt={r.title || ""} size={42} radius={7} />
                   </td>
                   <td style={{ padding: "8px 6px", maxWidth: 380 }}>
                     <div style={{ fontWeight: 600, lineHeight: 1.3 }}>{r.title || "(no title)"}</div>
