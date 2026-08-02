@@ -56,7 +56,7 @@ const ago = (iso: string | null) => {
 };
 
 type ActKey =
-  | "set_template" | "apply_template" | "push_delivery"
+  | "set_template" | "apply_template" | "push_delivery" | "find_replace"
   | "active" | "draft" | "archive" | "delete"
   | "tags_add" | "tags_remove"
   | "channels_include" | "channels_exclude"
@@ -68,6 +68,7 @@ const ACTIONS: ActionItem[] = [
   { key: "apply_template", label: "Apply template (variants → Shopify)…" },
   // Bản nhẹ của Update Template: chỉ ghi metafield fusion.delivery, không đụng variants.
   { key: "push_delivery", label: "Push delivery times only" },
+  { key: "find_replace", label: "Find & replace in text…" },
   { key: "sep0", sep: true },
   { key: "active", label: "Set as Active" },
   { key: "draft", label: "Unlist products (set to Draft)" },
@@ -119,8 +120,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [aiModel, setAiModel] = useState("");
   // Bulk actions ("More actions")
   const [actionsOpen, setActionsOpen] = useState(false);
-  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
+  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template" | "replace"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
   const [tagInput, setTagInput] = useState("");
+  // Find & replace (More actions) — chuỗi nguyên văn, không regex.
+  const [frFind, setFrFind] = useState("");
+  const [frReplace, setFrReplace] = useState("");
+  const [frField, setFrField] = useState<"body" | "title">("body");
   const [pickOne, setPickOne] = useState("");
   const [pickMany, setPickMany] = useState<Set<string>>(new Set());
   const confirm = useConfirm();
@@ -336,6 +341,53 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
   };
 
+  // Find & replace: thay chuỗi NGUYÊN VĂN trong mô tả/tiêu đề rồi ghi thẳng lên Shopify qua API.
+  // Chạy dry-run trước để biết chính xác bao nhiêu listing dính chuỗi, rồi mới hỏi xác nhận.
+  const CHUNK_FR = 25;
+  const doFindReplace = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    if (!frFind) return flash("✗ Enter the text to find", false);
+    setBusy(true);
+    let matched = 0, hits = 0;
+    try {
+      for (let i = 0; i < ids.length; i += CHUNK_FR) {
+        const j = await fetch("/api/shopify-products/find-replace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: ids.slice(i, i + CHUNK_FR), find: frFind, replace: frReplace, field: frField, dryRun: true }) }).then((r) => r.json());
+        if (!j.ok) { flash("✗ " + (j.error ?? "Preview failed"), false); setBusy(false); return; }
+        matched += j.matched ?? 0; hits += j.hits ?? 0;
+      }
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setBusy(false); return; }
+    setBusy(false);
+    if (!matched) return flash(`✗ No match — 0/${ids.length} selected listing(s) contain that text`, false);
+    const where = frField === "title" ? "title" : "description";
+    const okGo = await confirm({
+      title: "Find & replace",
+      danger: true,
+      confirmText: `Replace on ${matched}`,
+      message: `${matched}/${ids.length} listing(s) contain the text (${hits} occurrence(s)) in the ${where}.\n\nFind:\n${frFind.slice(0, 300)}\n\nReplace with:\n${frReplace ? frReplace.slice(0, 300) : "(empty — the text will be deleted)"}\n\nWrites straight to Shopify. Variants, prices, images, collections and status are untouched. This cannot be undone.`,
+    });
+    if (!okGo) return;
+    setAct(null); setBusy(true); setFails([]);
+    let ok = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "Replacing on Shopify", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += CHUNK_FR) {
+      const batch = ids.slice(i, i + CHUNK_FR);
+      try {
+        const j = await fetch("/api/shopify-products/find-replace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, find: frFind, replace: frReplace, field: frField }) }).then((r) => r.json());
+        ok += j.done ?? 0;
+        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((x) => x.id === id)?.title ?? id, error: j.error }));
+      } catch (e) {
+        const m = String((e as Error)?.message ?? "network");
+        batch.forEach((id) => failed.push({ id, title: rows.find((x) => x.id === id)?.title ?? id, error: m }));
+      }
+      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    }
+    setProg(null); setFails(failed);
+    flash(`${failed.length ? "⚠" : "✓"} Replaced in ${ok} listing(s) on Shopify${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    await load();
+    setBusy(false);
+  };
+
   // ---- bulk actions ("More actions") ----
   const selStoreIds = () => Array.from(new Set(rows.filter((r) => sel.has(r.id)).map((r) => r.storeId)));
   const postAction = async (payload: Record<string, unknown>, okMsg: (r: { done: number; failed: number; skipped: number; results?: { ok: boolean; error?: string }[] }) => string) => {
@@ -352,6 +404,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     if (!sel.size) return flash("✗ Select products first", false);
     // Chỉ số ngày giao hàng — không confirm vì không phá gì cả.
     if (key === "push_delivery") return doPushDelivery(Array.from(sel));
+    // Find & replace: chạy được trên nhiều store cùng lúc — mỗi listing dùng credential store của nó.
+    if (key === "find_replace") { setAct({ key, title: "Find & replace in text", kind: "replace", storeId: "", loading: false, items: [] }); return; }
     // Lifecycle nhanh (có confirm)
     if (key === "active" || key === "draft" || key === "archive") {
       const word = key === "active" ? "set ACTIVE" : key === "draft" ? "Unlist (set DRAFT)" : "Archive";
@@ -435,6 +489,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       setBusy(false);
       return;
     }
+    if (act.kind === "replace") return doFindReplace(Array.from(sel));
     if (act.kind === "tags") {
       const tags = tagInput.split(",").map((t) => t.trim()).filter(Boolean);
       if (!tags.length) return flash("✗ Enter at least one tag", false);
@@ -850,7 +905,31 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               </div>
             )}
 
-            {act.kind !== "tags" && (
+            {act.kind === "replace" && (
+              <div style={{ display: "grid", gap: 12 }}>
+                <div>
+                  <label style={lab}>Field</label>
+                  <div style={{ display: "flex", gap: 16 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, cursor: "pointer" }}>
+                      <input type="radio" name="frField" checked={frField === "body"} onChange={() => setFrField("body")} /> Description
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, cursor: "pointer" }}>
+                      <input type="radio" name="frField" checked={frField === "title"} onChange={() => setFrField("title")} /> Title
+                    </label>
+                  </div>
+                </div>
+                <div>
+                  <label style={lab}>Find (exact text — no wildcards)</label>
+                  <textarea autoFocus value={frFind} onChange={(e) => setFrFind(e.target.value)} rows={4} style={{ ...ctl, width: "100%", resize: "vertical", fontFamily: "ui-monospace, monospace", fontSize: 12.5 }} />
+                </div>
+                <div>
+                  <label style={lab}>Replace with (leave empty to delete)</label>
+                  <textarea value={frReplace} onChange={(e) => setFrReplace(e.target.value)} rows={4} style={{ ...ctl, width: "100%", resize: "vertical", fontFamily: "ui-monospace, monospace", fontSize: 12.5 }} />
+                </div>
+              </div>
+            )}
+
+            {act.kind !== "tags" && act.kind !== "replace" && (
               act.loading ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>Loading…</div>
               : act.items.length === 0 ? <div style={{ padding: "20px 0", textAlign: "center", color: "var(--muted)" }}>{act.kind === "collection" ? "No manual collections on this store." : act.kind === "template" ? "No templates for this store — create one in Manage Templates · Shopify." : "None available on this store."}</div>
               : <div style={{ display: "grid", gap: 4, maxHeight: 320, overflowY: "auto" }}>

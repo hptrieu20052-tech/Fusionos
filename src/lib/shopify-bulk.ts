@@ -124,3 +124,19 @@ export async function collectionRemoveProducts(cred: ShopifyCred, collectionId: 
   );
   throwUserErrors("collectionRemoveProducts", d.collectionRemoveProducts?.userErrors);
 }
+
+// ---- Find & Replace: chỉ ghi ĐÚNG 1-2 field text, không đụng variants/ảnh/collections ----
+// Dùng cho Manage Products → More actions → Find & replace in text…
+export async function updateProductText(
+  cred: ShopifyCred, gid: string, patch: { title?: string; descriptionHtml?: string },
+): Promise<void> {
+  const input: Record<string, unknown> = { id: gid };
+  if (typeof patch.title === "string") input.title = patch.title;
+  if (typeof patch.descriptionHtml === "string") input.descriptionHtml = patch.descriptionHtml;
+  const d = await shopifyGraphQL<{ productUpdate?: { userErrors?: UserErr[] } }>(
+    cred,
+    `mutation($input: ProductInput!) { productUpdate(input: $input) { product { id } userErrors { field message } } }`,
+    { input },
+  );
+  throwUserErrors("productUpdate", d.productUpdate?.userErrors);
+}
