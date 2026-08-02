@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { shopHost, type ShopifyCred } from "@/lib/shopify";
-import { pushProductToShopify, type SyncedVariant, type SyncedImage } from "@/lib/shopify-products";
+import { pushProductToShopify, fetchOneShopifyProduct, type SyncedVariant, type SyncedImage } from "@/lib/shopify-products";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,7 +42,21 @@ export async function POST(req: NextRequest) {
         images: (Array.isArray(r.p.images) ? r.p.images as SyncedImage[] : []),
       });
       if (res.ok) {
-        await db.update(schema.shopifyProducts).set({ dirty: false, pushedAt: new Date(), updatedAt: new Date() }).where(eq(schema.shopifyProducts.id, r.p.id));
+        // Đọc lại từ Shopify sau khi push. BẮT BUỘC: ảnh mới thêm chưa có media GID trong bản local,
+        // nếu không nạp lại thì lần Push sau productCreateMedia sẽ thêm ảnh đó LẦN NỮA (ảnh trùng).
+        // Đồng thời làm mới variant GID / handle / inventory / collections cho đúng bảng.
+        let fresh: Awaited<ReturnType<typeof fetchOneShopifyProduct>> = null;
+        try { fresh = await fetchOneShopifyProduct(cred, r.p.shopifyProductId); } catch { /* refetch lỗi không chặn — Shopify đã nhận */ }
+        await db.update(schema.shopifyProducts).set({
+          ...(fresh ? {
+            handle: fresh.handle, title: fresh.title, bodyHtml: fresh.bodyHtml, vendor: fresh.vendor, productType: fresh.productType,
+            tags: fresh.tags, status: fresh.status, seoTitle: fresh.seoTitle, seoDescription: fresh.seoDescription,
+            category: fresh.category, collections: fresh.collections, options: fresh.options,
+            variants: fresh.variants, images: fresh.images,
+            onlineStoreUrl: fresh.onlineStoreUrl, totalInventory: fresh.totalInventory, syncedAt: new Date(),
+          } : {}),
+          dirty: false, pushedAt: new Date(), updatedAt: new Date(),
+        }).where(eq(schema.shopifyProducts.id, r.p.id));
         results.push({ id: r.p.id, title: r.p.title, ok: true });
       } else results.push({ id: r.p.id, title: r.p.title, ok: false, error: res.error });
     } catch (e) {
