@@ -93,8 +93,21 @@ export async function POST(req: NextRequest) {
     const cred = credOf(t[0]).cred;
     const gids = t.map((r) => r.p.shopifyProductId);
     try {
-      if (action === "collection_add") await collectionAddProducts(cred, collectionId, gids);
+      let col = { id: collectionId, title: "Collection" };
+      if (action === "collection_add") col = await collectionAddProducts(cred, collectionId, gids);
       else await collectionRemoveProducts(cred, collectionId, gids);
+      // Shopify đã nhận -> cập nhật cột collections local NGAY, không bắt user bấm Sync mới thấy.
+      // Lần Sync sau sẽ ghi đè bằng dữ liệu thật từ Shopify.
+      const patch = (cur: unknown) => {
+        const list = (Array.isArray(cur) ? cur : []) as { id?: string; title?: string }[];
+        const rest = list.filter((c) => c && String(c.id ?? "") && String(c.id) !== col.id);
+        return action === "collection_add" ? [...rest, { id: col.id, title: col.title }] : rest;
+      };
+      await Promise.all(t.map((r) =>
+        db.update(schema.shopifyProducts)
+          .set({ collections: patch(r.p.collections), updatedAt: new Date() })
+          .where(eq(schema.shopifyProducts.id, r.p.id))
+      ));
       t.forEach((r) => results.push({ id: r.p.id, title: r.p.title, ok: true }));
     } catch (e) {
       const err = String((e as Error)?.message ?? e).slice(0, 200);

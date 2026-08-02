@@ -103,13 +103,17 @@ export async function unpublishFromPublications(cred: ShopifyCred, gid: string, 
 }
 
 // ---- Collections (manual) — thao tác theo collection, nhận cả list product 1 lần ----
-export async function collectionAddProducts(cred: ShopifyCred, collectionId: string, productIds: string[]): Promise<void> {
-  const d = await shopifyGraphQL<{ collectionAddProducts?: { userErrors?: UserErr[] } }>(
+// Trả về { id, title } của collection để route cập nhật NGAY cột collections local
+// (không chờ Sync) — nếu không, bảng vẫn hiện "—" dù Shopify đã nhận.
+export async function collectionAddProducts(cred: ShopifyCred, collectionId: string, productIds: string[]): Promise<{ id: string; title: string }> {
+  const d = await shopifyGraphQL<{ collectionAddProducts?: { collection?: { id?: string; title?: string } | null; userErrors?: UserErr[] } }>(
     cred,
-    `mutation($id: ID!, $productIds: [ID!]!) { collectionAddProducts(id: $id, productIds: $productIds) { userErrors { field message } } }`,
+    `mutation($id: ID!, $productIds: [ID!]!) { collectionAddProducts(id: $id, productIds: $productIds) { collection { id title } userErrors { field message } } }`,
     { id: collectionId, productIds },
   );
   throwUserErrors("collectionAddProducts", d.collectionAddProducts?.userErrors);
+  const c = d.collectionAddProducts?.collection;
+  return { id: String(c?.id || collectionId), title: String(c?.title || "Collection") };
 }
 
 export async function collectionRemoveProducts(cred: ShopifyCred, collectionId: string, productIds: string[]): Promise<void> {
