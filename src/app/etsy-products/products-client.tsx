@@ -73,6 +73,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 5000); };
 
   // Push to Shopify qua API (không cần CSV). Chọn store Shopify đích → tạo/cập nhật sản phẩm.
+  const [pushOpen, setPushOpen] = useState(false);
   const [pushStore, setPushStore] = useState(shopifyStores[0]?.id ?? "");
   const [pushTemplate, setPushTemplate] = useState("");
   const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
@@ -85,8 +86,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const doPushShopify = async () => {
     if (!sel.size) return flash("✗ Select listings first", false);
     if (!pushStore) return flash("✗ Chưa có store Shopify — thêm store Shopify + cấu hình API trong Stores trước", false);
-    const tplName = templates.find((t) => t.id === pushTemplate)?.name;
-    if (!(await confirm({ title: "Push to Shopify", message: `Push ${sel.size} listing(s) to Shopify store "${shopifyStores.find((s) => s.id === pushStore)?.name ?? ""}"?${tplName ? `\nTemplate: ${tplName} (variants/price/collections/channels/category from template).` : "\nNo template — variants/price come from each Etsy listing."}\nProducts are created as DRAFT so you can review before selling.`, confirmText: "Push", tone: "green" }))) return;
+    setPushOpen(false);
     setBusy(true);
     try {
       const j = await fetch("/api/etsy-products/push-shopify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), storeId: pushStore, ...(pushTemplate ? { templateId: pushTemplate } : {}) }) }).then((r) => r.json());
@@ -166,19 +166,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       else flash(`✓ Optimized ${done}/${all.length}${errs.length ? " · some failed: " + errs[0] : ""}`);
       load();
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
-    setBusy(false);
-  };
-
-  const doExport = async () => {
-    if (!sel.size) return flash("✗ Select listings to export", false);
-    setBusy(true); flash("⬇ Building Shopify CSV…");
-    try {
-      const res = await fetch("/api/etsy-products/export-shopify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) });
-      if (!res.ok) { const j = await res.json().catch(() => ({})); flash("✗ " + (j.error ?? `HTTP ${res.status}`), false); setBusy(false); return; }
-      const blob = await res.blob(); const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob); a.download = `shopify-import-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(a.href);
-      flash(`✓ Exported ${sel.size} listings — Shopify → Products → Import (products land as DRAFT, review prices before publishing)`);
-    } catch { flash("✗ Network error", false); }
     setBusy(false);
   };
 
@@ -318,18 +305,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           )}
           {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doOptimize} title="AI rewrites title + tags for Shopify/Google SEO (auto-batches, any count)"><IcSpark /> AI Optimize</button>}
           {canEdit && shopifyStores.length > 0 && (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <select value={pushStore} onChange={(e) => setPushStore(e.target.value)} title="Target Shopify store" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 160 }}>
-                {shopifyStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-              <select value={pushTemplate} onChange={(e) => setPushTemplate(e.target.value)} title="Apply a template (variants/price/collections/channels/category)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 180 }}>
-                <option value="">Template: none</option>
-                {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-              </select>
-              <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doPushShopify} title="Create the selected listings directly on Shopify via API (no CSV)"><IcShop /> Push to Shopify</button>
-            </span>
+            <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={() => setPushOpen(true)} title="Create the selected listings directly on Shopify via API"><IcShop /> Push to Shopify</button>
           )}
-          <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#22A06B,#158A57)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doExport} title="Fallback: download a Shopify CSV instead of pushing via API"><IcDownload /> Export CSV</button>
           {canEdit && <button disabled={busy} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }} onClick={doDelete}><IcTrash /> Delete</button>}
           <button style={{ ...ghost, padding: "9px 12px" }} onClick={() => setSel(new Set())}>Clear</button>
         </div>
@@ -420,6 +397,41 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             <button disabled={pageClamped <= 1} onClick={() => setPage(pageClamped - 1)} style={{ ...ghost, padding: "7px 12px", opacity: pageClamped <= 1 ? .4 : 1 }}>‹ Prev</button>
             <span style={{ fontSize: 12.5, fontWeight: 700, minWidth: 70, textAlign: "center" }}>Page {pageClamped}/{totalPages}</span>
             <button disabled={pageClamped >= totalPages} onClick={() => setPage(pageClamped + 1)} style={{ ...ghost, padding: "7px 12px", opacity: pageClamped >= totalPages ? .4 : 1 }}>Next ›</button>
+          </div>
+        </div>
+      )}
+
+      {/* PUSH TO SHOPIFY MODAL (centered) — chọn store + template ngay tại bước push */}
+      {pushOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setPushOpen(false)}>
+          <div style={{ background: "#fff", width: 440, maxWidth: "94vw", maxHeight: "90vh", borderRadius: 18, padding: 24, overflowY: "auto", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>Push {sel.size} listing{sel.size === 1 ? "" : "s"} to Shopify</div>
+              <button onClick={() => setPushOpen(false)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
+            </div>
+
+            <label style={lab}>① Destination store</label>
+            <select value={pushStore} onChange={(e) => setPushStore(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: 14 }}>
+              {shopifyStores.length === 0 && <option value="">(No Shopify store)</option>}
+              {shopifyStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+
+            <label style={lab}>② Template</label>
+            <select value={pushTemplate} onChange={(e) => setPushTemplate(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: 18 }}>
+              <option value="">None — variants/price from each Etsy listing</option>
+              {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, padding: "10px 12px", background: "#F8FAFF", borderRadius: 10, border: "1px solid #DCE6FB" }}>
+              New products are created as <b style={{ color: "var(--ink)" }}>DRAFT</b>.
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button style={ghost} disabled={busy} onClick={() => setPushOpen(false)}>Cancel</button>
+              <button style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: pushStore && !busy ? 1 : .5 }} disabled={busy || !pushStore} onClick={doPushShopify}>
+                {busy ? "Pushing…" : "Push now"}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -606,7 +618,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
 /* ---- inline icons (stroke) ---- */
 const IcUpload = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>;
-const IcDownload = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" /></svg>;
 const IcSpark = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.4L19 9l-5.4 1.6L12 16l-1.6-5.4L5 9l5.4-1.6L12 2z" /></svg>;
 const IcTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>;
 const IcSearch = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>;
