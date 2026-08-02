@@ -30,6 +30,38 @@ export async function listFlashshipVariants(c: Cred): Promise<FsVariant[]> {
 }
 
 // ---- Create order: POST /orders/shirt-add | /orders/ornament-add → data = order_code ----
+// FlashShip TÁCH endpoint theo loại hàng. Gửi variant ORNAMENT vào shirt-add sẽ bị chặn:
+//   FLS_400 "API add SHIRT can't use for variant ORNAMENT"
+// Loại hàng lấy từ product_type của GET /orders/list-variant-sku (đã lưu vào skuMappings.productType
+// dạng "SHIRT GILDAN G5000" / "ORNAMENT ...").
+export type FsKind = "shirt" | "ornament";
+
+/**
+ * Suy ra endpoint FlashShip từ nhãn sản phẩm trong SKU mapping.
+ * override = extraJson.fsKind — ép tay khi mapping nhập thủ công không có product_type.
+ * Không nhận ra được thì trả "shirt" (giữ nguyên hành vi cũ, không gây hồi quy).
+ */
+export function flashshipKind(productLabel?: string | null, override?: unknown): FsKind {
+  const o = String(override ?? "").trim().toLowerCase();
+  if (o === "ornament" || o === "shirt") return o;
+  return /\bORNAMENT\b/.test(String(productLabel ?? "").toUpperCase()) ? "ornament" : "shirt";
+}
+
+// Ornament chỉ in mặt trước/sau — KHÔNG có tay áo, mũ, cổ, túi, và không có DTF/DTG.
+// Gửi thừa field của áo sang ornament-add là mời validation lỗi, nên lọc sạch trước khi POST.
+const ORNAMENT_FIELDS = new Set<keyof FsProduct>([
+  "variant_id", "quantity", "note",
+  "printer_design_front_url", "printer_design_back_url",
+  "mockup_front_url", "mockup_back_url",
+]);
+const trimForOrnament = (p: FsProduct): FsProduct => {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(p)) {
+    if (ORNAMENT_FIELDS.has(k as keyof FsProduct) && v !== null && v !== undefined) out[k] = v;
+  }
+  return out as unknown as FsProduct;
+};
+
 export type FsProduct = {
   variant_id: number;
   quantity: number;
@@ -69,9 +101,12 @@ export type FsCreateOrder = {
   products: FsProduct[];
 };
 export async function createFlashshipOrder(
-  c: Cred, payload: FsCreateOrder, kind: "shirt" | "ornament" = "shirt",
+  c: Cred, payload: FsCreateOrder, kind: FsKind = "shirt",
 ): Promise<{ orderCode: string; paymentPending: boolean; raw: unknown }> {
-  const r = await fetch(`${base(c)}/orders/${kind}-add`, { method: "POST", headers: headers(c), body: JSON.stringify(payload), ...ft() });
+  const body: FsCreateOrder = kind === "ornament"
+    ? { ...payload, products: payload.products.map(trimForOrnament) }
+    : payload;
+  const r = await fetch(`${base(c)}/orders/${kind}-add`, { method: "POST", headers: headers(c), body: JSON.stringify(body), ...ft() });
   const j = (await r.json().catch(() => ({}))) as FsEnvelope;
   const pending = isBalancePending(j.code);
   if (!okCode(j.code) && !pending) {

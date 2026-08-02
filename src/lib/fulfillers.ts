@@ -2,7 +2,7 @@ import { toISO2, uploadImageByUrl, createProduct, createOrderFromProducts, getPr
 import { createCompassupOrder, type CompassupCred, type CompassupItem } from "@/lib/compassup";
 import { createMerchizeOrder, createMerchizeTiktokOrder, pushMerchizeOrder } from "@/lib/merchize";
 import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, calcPrintwayPrice, type PwOrderItem } from "@/lib/printway-api";
-import { createFlashshipOrder, type FsProduct } from "@/lib/flashship";
+import { createFlashshipOrder, flashshipKind, type FsProduct } from "@/lib/flashship";
 import { createOnosOrder, type OnosItem } from "@/lib/onos";
 import { createWembroideryOrder, type WemItem, type WemDesign } from "@/lib/wembroidery";
 import { createLenfulOrder, type LenfulDesign, type LenfulItem } from "@/lib/lenful";
@@ -408,6 +408,14 @@ function flashshipAdapter(): FulfillerAdapter {
       const bad = products.find((p) => !p.variant_id);
       if (bad) throw new Error("FlashShip needs a NUMERIC variant_id in SKU mapping (pull via Update SKU on the Flashship tab)");
 
+      // FlashShip có endpoint RIÊNG cho từng loại hàng: /orders/shirt-add vs /orders/ornament-add.
+      // Đẩy variant ORNAMENT vào shirt-add → FLS_400 "API add SHIRT can't use for variant ORNAMENT".
+      const kinds = new Set(ctx.lines.map((l) => flashshipKind(l.fulfillerProduct, (l.extra as Record<string, unknown> | null)?.fsKind)));
+      if (kinds.size > 1) {
+        throw new Error("FlashShip handles SHIRT and ORNAMENT through separate order endpoints, and this order mixes both. Push the SHIRT items first, then push the ORNAMENT items as a second fulfillment record (tick only those items).");
+      }
+      const kind = kinds.values().next().value ?? "shirt";
+
       const res = await createFlashshipOrder({ accessToken, endpoint: ctx.fulfiller.apiEndpoint }, {
         order_id: orderExtNumber(o),
         buyer_first_name: (o.buyerFirst || "").trim() || "Customer",
@@ -423,7 +431,7 @@ function flashshipAdapter(): FulfillerAdapter {
         shipment,
         link_label: o.labelUrl || undefined, // CHỈ đơn Ship-by-TikTok có; đơn khác undefined → không đổi hành vi
         products,
-      });
+      }, kind);
       return {
         externalFfId: res.orderCode, simulated: false, raw: res.raw,
         reason: res.paymentPending ? "FLS-406: insufficient balance → payment PENDING, repay on FlashShip web admin" : undefined,
