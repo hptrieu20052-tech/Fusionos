@@ -57,12 +57,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   // AI model chooser (dùng cho AI Optimize). "" = model text mặc định của hệ thống.
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
   const [aiModel, setAiModel] = useState("");
-  // Bulk Price theo size
-  const [bpOpen, setBpOpen] = useState(false);
-  const [bpValues, setBpValues] = useState<{ name: string; value: string; count: number; current: string }[]>([]);
-  const [bpPrices, setBpPrices] = useState<Record<string, string>>({});
-  const [bpLoading, setBpLoading] = useState(false);
-
   const load = async () => {
     setLoading(true);
     try { const j = await fetch("/api/etsy-products").then((r) => r.json()); if (j.ok) setRows(j.rows); } catch { /* noop */ }
@@ -77,31 +71,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const chooseModel = (m: string) => { setAiModel(m); try { window.localStorage.setItem("etsyAiModel", m); } catch { /* ignore */ } };
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 5000); };
-
-  // Bulk Price: mở modal → nạp danh sách size (gộp) của các listing đã chọn, điền sẵn giá hiện có.
-  const openBulkPrice = async () => {
-    if (!sel.size) return flash("✗ Select listings first", false);
-    setBpOpen(true); setBpLoading(true); setBpValues([]); setBpPrices({});
-    try {
-      const j = await fetch("/api/etsy-products/bulk-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json());
-      if (j.ok) {
-        setBpValues(j.values ?? []);
-        const init: Record<string, string> = {};
-        (j.values ?? []).forEach((v: { value: string; current: string }) => { init[v.value] = v.current ?? ""; });
-        setBpPrices(init);
-      } else { flash("✗ " + (j.error ?? "Failed") + (/column|variant_prices|does not exist/i.test(j.error ?? "") ? " — Run MIGRATION_etsy_variant_prices.sql in Supabase first" : ""), false); setBpOpen(false); }
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setBpOpen(false); }
-    setBpLoading(false);
-  };
-  const applyBulkPrice = async () => {
-    setBusy(true);
-    try {
-      const j = await fetch("/api/etsy-products/bulk-price", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), prices: bpPrices }) }).then((r) => r.json());
-      if (j.ok) { flash(`✓ Priced ${j.sizes} size(s) across ${j.updated} listing(s)`); setBpOpen(false); load(); }
-      else flash("✗ " + (j.error ?? "Failed"), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
-    setBusy(false);
-  };
 
   // Push to Shopify qua API (không cần CSV). Chọn store Shopify đích → tạo/cập nhật sản phẩm.
   const [pushStore, setPushStore] = useState(shopifyStores[0]?.id ?? "");
@@ -348,7 +317,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             </select>
           )}
           {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doOptimize} title="AI rewrites title + tags for Shopify/Google SEO (auto-batches, any count)"><IcSpark /> AI Optimize</button>}
-          {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#F59E0B,#D97706)", "#fff"), opacity: busy ? .6 : 1 }} onClick={openBulkPrice} title="Set price per size across all selected listings"><IcTag /> Bulk Price</button>}
           {canEdit && shopifyStores.length > 0 && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <select value={pushStore} onChange={(e) => setPushStore(e.target.value)} title="Target Shopify store" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 160 }}>
@@ -452,45 +420,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             <button disabled={pageClamped <= 1} onClick={() => setPage(pageClamped - 1)} style={{ ...ghost, padding: "7px 12px", opacity: pageClamped <= 1 ? .4 : 1 }}>‹ Prev</button>
             <span style={{ fontSize: 12.5, fontWeight: 700, minWidth: 70, textAlign: "center" }}>Page {pageClamped}/{totalPages}</span>
             <button disabled={pageClamped >= totalPages} onClick={() => setPage(pageClamped + 1)} style={{ ...ghost, padding: "7px 12px", opacity: pageClamped >= totalPages ? .4 : 1 }}>Next ›</button>
-          </div>
-        </div>
-      )}
-
-      {/* BULK PRICE MODAL (centered) */}
-      {bpOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setBpOpen(false)}>
-          <div style={{ ...card, width: 480, maxWidth: "96vw", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-              <b style={{ fontSize: 16, display: "inline-flex", alignItems: "center", gap: 8 }}><IcTag /> Bulk Price by Size</b>
-              <button onClick={() => setBpOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
-            </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
-              Set a price per size — applied to all <b>{sel.size}</b> selected listing{sel.size > 1 ? "s" : ""} (only sizes each listing actually has). Sizes left blank keep the listing&apos;s base price. This becomes the Shopify variant price on export.
-            </div>
-            {bpLoading ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>Loading sizes…</div>
-              : bpValues.length === 0 ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>No variant values found on the selected listings.</div>
-              : (
-                <div style={{ display: "grid", gap: 8 }}>
-                  {bpValues.map((v) => (
-                    <div key={v.value} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13.5, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={v.value}>{v.value}</div>
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{v.name || "Option"} · {v.count} listing{v.count > 1 ? "s" : ""}</div>
-                      </div>
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ color: "var(--muted)", fontSize: 13 }}>$</span>
-                        <input type="number" step="0.01" min="0" inputMode="decimal" value={bpPrices[v.value] ?? ""} placeholder="—"
-                          onChange={(e) => setBpPrices((p) => ({ ...p, [v.value]: e.target.value }))}
-                          style={{ ...ctl, width: 100, padding: "8px 10px", textAlign: "right" }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
-              <button onClick={() => setBpOpen(false)} style={ghost}>Cancel</button>
-              <button disabled={busy || bpLoading} onClick={applyBulkPrice} style={{ ...pill("linear-gradient(135deg,#F59E0B,#D97706)", "#fff"), opacity: (busy || bpLoading) ? .6 : 1 }}>{busy ? "Applying…" : "Apply prices"}</button>
-            </div>
           </div>
         </div>
       )}
@@ -681,6 +610,5 @@ const IcDownload = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="n
 const IcSpark = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.4L19 9l-5.4 1.6L12 16l-1.6-5.4L5 9l5.4-1.6L12 2z" /></svg>;
 const IcTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>;
 const IcSearch = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>;
-const IcTag = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.59 13.41 11 3.83A2 2 0 0 0 9.59 3H4a1 1 0 0 0-1 1v5.59A2 2 0 0 0 3.83 11l9.58 9.58a2 2 0 0 0 2.83 0l4.35-4.35a2 2 0 0 0 0-2.82z" /><circle cx="7.5" cy="7.5" r="1.5" fill="currentColor" stroke="none" /></svg>;
 const IcShop = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18M9 20v-6h6v6" /></svg>;
 const IcEdit = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>;

@@ -104,6 +104,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [fails, setFails] = useState<{ id: string; title: string; error: string }[]>([]);
   const [kw, setKw] = useState(""); const [sellerFilter, setSellerFilter] = useState(""); const [storeFilter, setStoreFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState(""); const [categoryFilter, setCategoryFilter] = useState(""); const [collectionFilter, setCollectionFilter] = useState("");
+  // Lọc theo trạng thái Shopify — listing đẩy từ Etsy sang luôn là DRAFT, lọc "Draft" để soát trước khi bật Active.
+  const [statusFilter, setStatusFilter] = useState("");
   // Lọc theo trạng thái AI: "" tất cả · "todo" chưa chạy AI · "done" đã có AI · "unpushed" đã AI nhưng chưa Push
   const [aiFilter, setAiFilter] = useState<"" | "todo" | "done" | "unpushed">("");
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -140,25 +142,27 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const typeOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.productType).filter(Boolean))).sort(), [scopeRows]);
   const categoryOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.categoryName).filter(Boolean))).sort(), [scopeRows]);
   const collectionOptions = useMemo(() => Array.from(new Set(scopeRows.flatMap((r) => r.collectionTitles ?? []).filter(Boolean))).sort(), [scopeRows]);
+  const statusOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => (r.status || "").toUpperCase()).filter(Boolean))).sort(), [scopeRows]);
   const filtered = useMemo(() => rows.filter((r) =>
     (!sellerFilter || stores.find((s) => s.id === r.storeId)?.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (!typeFilter || r.productType === typeFilter) &&
     (!categoryFilter || r.categoryName === categoryFilter) &&
     (!collectionFilter || (r.collectionTitles ?? []).includes(collectionFilter)) &&
+    (!statusFilter || (r.status || "").toUpperCase() === statusFilter) &&
     (!aiFilter || (aiFilter === "todo" ? !r.aiAt : aiFilter === "done" ? !!r.aiAt : !!r.aiAt && r.dirty)) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, aiFilter, stores]);
+  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, aiFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
   // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
   const selDirty = useMemo(() => rows.filter((r) => sel.has(r.id) && r.dirty).length, [rows, sel]);
-  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || aiFilter);
-  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCategoryFilter(""); setCollectionFilter(""); setAiFilter(""); };
+  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter);
+  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCategoryFilter(""); setCollectionFilter(""); setStatusFilter(""); setAiFilter(""); };
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
@@ -509,6 +513,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
           </select>
           <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} title="Collection" style={fsel(!!collectionFilter)}>
             <option value="">All collections</option>{collectionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} title="Shopify status" style={fsel(!!statusFilter)}>
+            <option value="">All status</option>
+            {(statusOptions.length ? statusOptions : ["ACTIVE", "DRAFT", "ARCHIVED"]).map((st) => (
+              <option key={st} value={st}>{st.charAt(0) + st.slice(1).toLowerCase()}</option>
+            ))}
           </select>
           <select value={aiFilter} onChange={(e) => setAiFilter(e.target.value as "" | "todo" | "done" | "unpushed")} title="AI Optimize status — pick 'Not optimized yet' so you never pay to rewrite the same listing twice" style={fsel(!!aiFilter, "#5B3FBF", "#C9B8F5", "#F8F6FF")}>
             <option value="">AI: all</option>

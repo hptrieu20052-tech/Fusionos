@@ -77,7 +77,10 @@ export async function POST(req: NextRequest) {
         const descT = (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
         const imgsT = (Array.isArray(p.images) ? p.images as string[] : []).filter(Boolean).slice(0, 12);
         const existingGidT = (p as { shopifyProductId?: string }).shopifyProductId || undefined;
-        const res = await applyTemplate(cred, tpl, { id: existingGidT, title: titleT, descriptionHtml: descT, images: imgsT }, { includeImages: true });
+        // Listing MỚI đẩy từ Etsy sang LUÔN là DRAFT — phải soát title/ảnh/giá rồi mới bật Active bằng tay.
+        // Template có status ACTIVE thì trước đây nó lên sàn ngay lúc push. Đẩy LẠI (đã có gid) thì KHÔNG
+        // đụng tới status: ghi đè DRAFT lên listing đang chạy là gỡ nó khỏi Google.
+        const res = await applyTemplate(cred, tpl, { id: existingGidT, title: titleT, descriptionHtml: descT, images: imgsT }, { includeImages: true, statusOverride: existingGidT ? null : "DRAFT" });
         if (!res.ok || !res.productId) { results.push({ id: p.id, title: titleT, ok: false, error: res.error ?? "apply failed" }); continue; }
         await db.update(schema.etsyProducts).set({ shopifyProductId: res.productId, updatedAt: new Date() }).where(eq(schema.etsyProducts.id, p.id));
         results.push({ id: p.id, title: titleT, ok: true, handle: res.handle });
