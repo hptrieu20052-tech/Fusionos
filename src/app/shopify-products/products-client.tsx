@@ -55,40 +55,48 @@ const ago = (iso: string | null) => {
   return d < 30 ? `${d}d ago` : new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
+// Hàm POST dùng chung cho mọi hành động theo lô.
+// Vì sao không dùng thẳng .then(r => r.json()): khi function trên Vercel bị cắt (hết giờ / 502 / hết RAM)
+// thì body trả về RỖNG, r.json() ném đúng câu "Unexpected end of JSON input" — người dùng đọc không hiểu
+// gì và cái gợi ý 429/402 phía dưới lại chỉ sai hướng. Đọc text trước rồi mới parse để báo đúng mã HTTP.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function postJSON<T = any>(url: string, body: unknown): Promise<T> {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const txt = await r.text();
+  if (!txt.trim()) throw new Error(`HTTP ${r.status} — server ngắt giữa chừng, không trả dữ liệu (thường là chạy quá lâu bị cắt). Chọn ít sản phẩm hơn rồi bấm Retry failed.`);
+  try { return JSON.parse(txt) as T; }
+  catch { throw new Error(`HTTP ${r.status} — server trả về không phải JSON: ${txt.replace(/\s+/g, " ").slice(0, 140)}`); }
+}
+
+// v117: 22 mục → 13. Mỗi cặp add/remove giờ là MỘT mục có công tắc Add/Remove trong modal;
+// 3 kiểu push-từ-template gộp thành 1 modal có checkbox; 3 bước Google feed gộp thành 1 lệnh
+// chạy tuần tự. Catalogs đã BỎ HẲN — đó là tính năng Shopify B2B, Talewix không bán B2B.
 type ActKey =
-  | "set_template" | "apply_template" | "push_delivery" | "push_personalization" | "find_replace"
-  | "fill_sku" | "push_google_fields" | "image_alt" | "feed_copy" | "feed_export"
-  | "active" | "draft" | "archive" | "delete"
-  | "tags_add" | "tags_remove"
-  | "channels_include" | "channels_exclude"
-  | "catalogs_include" | "catalogs_exclude"
-  | "collection_add" | "collection_remove";
+  | "set_template" | "push_template" | "find_replace"
+  | "google_prep" | "feed_copy" | "feed_export"
+  | "tags" | "collection" | "channels"
+  | "active" | "draft" | "archive" | "delete";
 type ActionItem = { key: ActKey; label: string; danger?: boolean };
 type ActionGroup = { title: string; items: ActionItem[] };
-// Chia cột theo VIỆC (không theo thứ tự cũ) để nhìn ra cái nào trùng nhau mà gộp/bỏ.
 const ACTION_GROUPS: ActionGroup[] = [
   {
     title: "Template & text",
     items: [
+      // Chỉ gán nguồn facts cho AI Optimize — KHÔNG gửi gì lên Shopify.
       { key: "set_template", label: "Set AI template…" },
-      { key: "apply_template", label: "Apply template (variants → Shopify)…" },
-      // Bản nhẹ của Update Template: chỉ ghi metafield fusion.delivery, không đụng variants.
-      { key: "push_delivery", label: "Push delivery times only" },
-      // Ghi metafield fusion.options — ô cá nhân hoá khách điền trên trang sản phẩm.
-      { key: "push_personalization", label: "Push personalization fields" },
+      // Gộp của: Apply template + Push delivery times + Push personalization fields.
+      { key: "push_template", label: "Push template fields…" },
       { key: "find_replace", label: "Find & replace in text…" },
     ],
   },
   {
     // KHÔNG phải việc dùng-một-lần. SKU và alt chỉ gắn được vào variant/media ĐÃ TỒN TẠI trên
-    // Shopify, nên MỖI lô sản phẩm mới đều phải chạy lại đúng thứ tự cột này (sau Push → Sync).
-    // 3 mục đầu chỉ ghi SKU / metafield / alt ⇒ không đụng title-mô tả-giá-ảnh, không cần bấm Push.
-    // 2 mục cuối KHÔNG đụng Shopify: chỉ ghi vào FUSION OS rồi xuất ra file feed phụ.
+    // Shopify, nên MỖI lô sản phẩm mới đều phải chạy lại (sau Push → Sync).
+    // google_prep chỉ ghi SKU / metafield / alt ⇒ không đụng title-mô tả-giá-ảnh, không cần Push.
+    // 2 mục feed KHÔNG đụng Shopify: chỉ ghi vào FUSION OS rồi xuất ra file feed phụ.
     title: "Google feed",
     items: [
-      { key: "fill_sku", label: "Generate missing SKUs → Shopify" },
-      { key: "push_google_fields", label: "Push Google feed fields (custom product + audience)" },
-      { key: "image_alt", label: "Generate image alt text (AI vision) → Shopify" },
+      { key: "google_prep", label: "Prepare for Google feed (SKU + fields + alt)…" },
       { key: "feed_copy", label: "Generate feed title + long description (AI)" },
       { key: "feed_export", label: "Export supplemental feed (.txt)" },
     ],
@@ -96,17 +104,13 @@ const ACTION_GROUPS: ActionGroup[] = [
   {
     title: "Organize",
     items: [
-      { key: "tags_add", label: "Add tags…" },
-      { key: "tags_remove", label: "Remove tags…" },
-      { key: "collection_add", label: "Add to collection…" },
-      { key: "collection_remove", label: "Remove from collection…" },
-      { key: "channels_include", label: "Include in sales channels…" },
-      { key: "channels_exclude", label: "Exclude from sales channels…" },
-      { key: "catalogs_include", label: "Include in catalogs…" },
-      { key: "catalogs_exclude", label: "Exclude from catalogs…" },
+      { key: "tags", label: "Add / remove tags…" },
+      { key: "collection", label: "Add / remove collection…" },
+      { key: "channels", label: "Include / exclude sales channels…" },
     ],
   },
   {
+    // 3 mục này giữ nguyên 1-click: đây là thao tác hay dùng nhất, nhét vào modal chỉ tốn thêm click.
     title: "Status",
     items: [
       { key: "active", label: "Set as Active" },
@@ -152,8 +156,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [visionIds, setVisionIds] = useState<Set<string>>(new Set());
   // Bulk actions ("More actions")
   const [actionsOpen, setActionsOpen] = useState(false);
-  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template" | "replace"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
+  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template" | "replace" | "pushtpl" | "gprep"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
   const [tagInput, setTagInput] = useState("");
+  // Hai lệnh gộp dùng checkbox chọn bước nào chạy; tags/collection/channels dùng công tắc Add↔Remove.
+  const [parts, setParts] = useState<Record<string, boolean>>({});
+  const [actMode, setActMode] = useState<"add" | "remove">("add");
   // Find & replace (More actions) — chuỗi nguyên văn, không regex.
   const [frFind, setFrFind] = useState("");
   const [frReplace, setFrReplace] = useState("");
@@ -211,7 +218,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     if (!syncStore) return flash("✗ Chưa có store Shopify — thêm store + cấu hình API trong Stores trước", false);
     setBusy(true);
     try {
-      const j = await fetch("/api/shopify-products/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: syncStore }) }).then((r) => r.json());
+      const j = await postJSON("/api/shopify-products/sync", { storeId: syncStore });
       if (j.ok) { flash(`✓ Synced ${j.store}: ${j.total} products (+${j.created} new · ${j.updated} updated${j.skippedDirty ? ` · ${j.skippedDirty} kept local edits` : ""})`); load(); }
       else flash("✗ " + (j.error ?? "Sync failed") + (/read_products|scope/i.test(j.error ?? "") ? "" : ""), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
@@ -234,7 +241,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         seoTitle: edit.seoTitle, seoDescription: edit.seoDescription,
       }) }).then((r) => r.json());
       if (!p.ok) { flash("✗ " + (p.error ?? "Save failed"), false); setBusy(false); return; }
-      const j = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [edit.id] }) }).then((r) => r.json());
+      const j = await postJSON("/api/shopify-products/push", { ids: [edit.id] });
       if (j.ok || j.pushed) { flash("✓ Saved & updated on Shopify"); setEditId(null); load(); }
       else { const err = (j.results ?? [])[0]?.error ?? j.error ?? "push failed"; flash("✗ Saved locally but Shopify update failed: " + err + (/write_products|scope|access/i.test(String(err)) ? " — add scope write_products + reinstall app" : ""), false); setEditId(null); load(); }
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
@@ -249,7 +256,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     for (let i = 0; i < ids.length; i += 5) {
       const batch = ids.slice(i, i + 5);
       try {
-        const j = await fetch("/api/shopify-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
+        const j = await postJSON("/api/shopify-products/push", { ids: batch });
         ok += j.pushed ?? 0;
         (j.results ?? []).filter((r: { ok: boolean; error?: string }) => !r.ok).forEach((r: { error?: string }) => { if (errs.length < 3) errs.push(r.error ?? "failed"); });
         if (!j.ok && !j.pushed && j.error && errs.length < 3) errs.push(j.error);
@@ -264,212 +271,183 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
     return { ok, failed };
   };
-  // Update Template: Template đổi gì thì đẩy hết xuống listing — mỗi listing tự khớp template của nó.
-  // Ghi: product type / vendor / theme template, category + metafields, options + variants + GIÁ,
-  //      metafield fusion.delivery, kênh bán.
-  // KHÔNG đụng: COLLECTIONS, title, mô tả 3 tab do AI viết, ảnh, SEO, tags, trạng thái ACTIVE/DRAFT.
-  // productSet dựng lại variants ⇒ hỏi xác nhận trước, và chạy lô 5 vì mỗi con mất ~3-6s.
-  const CHUNK_TPL = 5;
-  const doUpdateTemplate = async (ids: string[]) => {
-    if (!ids.length) return flash("✗ Select products first", false);
-    const okGo = await confirm({
-      title: "Update Template",
-      danger: true,
-      confirmText: `Update ${ids.length}`,
-      message: `Ghi lại ${ids.length} listing theo Template của từng sản phẩm: product type, vendor, theme template, category, options + variants + GIÁ, số ngày giao hàng, kênh bán.\n\nGiữ nguyên: collections, tiêu đề, mô tả 3 tab do AI viết, ảnh, SEO, tags, trạng thái Active/Draft.\n\n⚠ Variants bị dựng lại theo Template: variant nào Template không có sẽ bị XOÁ khỏi Shopify và không khôi phục được. Chắc chắn chạy?`,
-    });
-    if (!okGo) return;
-    setBusy(true); setFails([]);
-    let ok = 0; const failed: { id: string; title: string; error: string }[] = [];
-    setProg({ label: "Updating from template", done: 0, total: ids.length, fail: 0 });
-    for (let i = 0; i < ids.length; i += CHUNK_TPL) {
-      const batch = ids.slice(i, i + CHUNK_TPL);
+  // ── Bộ chạy theo lô dùng chung ────────────────────────────────────────────────
+  // Mọi hành động chạy-theo-lô đều cùng một khuôn: cắt lô → POST → cộng số → gom lỗi → đẩy thanh
+  // tiến độ. Tách ra đây để một hành động gộp (vd Prepare for Google feed) chạy được NHIỀU bước
+  // trên MỘT thanh tiến độ và CỘNG DỒN lỗi, thay vì bước sau xoá mất lỗi của bước trước.
+  // Không tự flash, không tự setBusy — hàm gọi lo phần đó.
+  type BatchFail = { id: string; title: string; error: string };
+  const runBatch = async (o: {
+    url: string; ids: string[]; label: string; chunk: number;
+    counters: string[];                    // các key số trong JSON trả về cần cộng dồn
+    body?: Record<string, unknown>;
+    offset?: number; grand?: number; failBase?: number;   // để nhiều bước dùng chung 1 thanh
+  }): Promise<{ counts: Record<string, number>; failed: BatchFail[] }> => {
+    const counts: Record<string, number> = {};
+    o.counters.forEach((k) => (counts[k] = 0));
+    const failed: BatchFail[] = [];
+    const grand = o.grand ?? o.ids.length;
+    const offset = o.offset ?? 0;
+    const failBase = o.failBase ?? 0;
+    const titleOf = (id: string) => rows.find((r) => r.id === id)?.title ?? id;
+    for (let i = 0; i < o.ids.length; i += o.chunk) {
+      const batch = o.ids.slice(i, i + o.chunk);
       try {
-        const j = await fetch("/api/shopify-products/update-template", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
-        ok += j.updated ?? 0;
-        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
-        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+        const j = await postJSON(o.url, { ids: batch, ...(o.body ?? {}) });
+        o.counters.forEach((k) => (counts[k] += Number(j?.[k] ?? 0)));
+        const res = (j?.results ?? []) as { id: string; title: string; ok: boolean; error?: string }[];
+        res.filter((x) => !x.ok).forEach((x) => failed.push({ id: x.id, title: x.title, error: x.error ?? "failed" }));
+        // Route chết trước khi kịp trả results ⇒ ghi lỗi cho cả lô, không im lặng bỏ qua.
+        if (!res.length && j?.error) batch.forEach((id) => failed.push({ id, title: titleOf(id), error: String(j.error) }));
       } catch (e) {
         const m = String((e as Error)?.message ?? "network");
-        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+        batch.forEach((id) => failed.push({ id, title: titleOf(id), error: m }));
       }
-      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+      setProg({ label: o.label, done: offset + Math.min(i + o.chunk, o.ids.length), total: grand, fail: failBase + failed.length });
     }
-    setProg(null); setFails(failed);
-    flash(`${failed.length ? "⚠" : "✓"} Template applied to ${ok}/${ids.length} listing(s)${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
-    await load();
-    setBusy(false);
+    return { counts, failed };
   };
 
-  // Push delivery: CHỈ đẩy số ngày giao hàng (metafield fusion.delivery) — không đụng gì khác,
-  // nên chạy được cả trên listing đang sạch. Nằm trong "More actions" khi chỉ cần sửa mỗi timeline.
-  const doPushDelivery = async (ids: string[]) => {
-    if (!ids.length) return flash("✗ Select products first", false);
-    setBusy(true); setFails([]);
-    let ok = 0; const failed: { id: string; title: string; error: string }[] = [];
-    setProg({ label: "Pushing delivery times", done: 0, total: ids.length, fail: 0 });
-    for (let i = 0; i < ids.length; i += 25) {
-      const batch = ids.slice(i, i + 25);
-      try {
-        const j = await fetch("/api/shopify-products/push-delivery", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
-        ok += j.pushed ?? 0;
-        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
-        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
-      } catch (e) {
-        const m = String((e as Error)?.message ?? "network");
-        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
-      }
-      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
-    }
-    setProg(null); setFails(failed);
-    flash(`${failed.length ? "⚠" : "✓"} Delivery times pushed to ${ok}/${ids.length} listing(s)${failed.length ? ` · ${failed.length} failed — see the list below` : " — check the product page widget"}`, failed.length === 0);
-    setBusy(false);
-  };
+  // ── Các "pass" chạy theo lô ───────────────────────────────────────────────────
+  // Mỗi hàm dưới đây là MỘT bước, không tự hỏi xác nhận, không tự flash, không tự setBusy —
+  // để hai lệnh gộp (Push template fields / Prepare for Google feed) ghép chúng lại thành một
+  // lượt chạy có chung thanh tiến độ và chung danh sách lỗi.
 
-  // Push personalization: CHỈ đẩy bộ ô cá nhân hoá của Template (metafield fusion.options).
-  // Không đụng title/description/giá/ảnh nên chạy được cả trên listing đang sạch.
-  // Template không khai ô nào ⇒ ghi mảng rỗng = XOÁ ô trên listing; đếm riêng để báo rõ.
-  const doPushPersonalization = async (ids: string[]) => {
-    if (!ids.length) return flash("✗ Select products first", false);
-    setBusy(true); setFails([]);
-    let ok = 0; let cleared = 0; const failed: { id: string; title: string; error: string }[] = [];
-    setProg({ label: "Pushing personalization fields", done: 0, total: ids.length, fail: 0 });
-    for (let i = 0; i < ids.length; i += 25) {
-      const batch = ids.slice(i, i + 25);
-      try {
-        const j = await fetch("/api/shopify-products/push-personalization", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
-        ok += j.pushed ?? 0; cleared += j.cleared ?? 0;
-        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
-        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
-      } catch (e) {
-        const m = String((e as Error)?.message ?? "network");
-        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
-      }
-      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
-    }
-    setProg(null); setFails(failed);
-    const tail = failed.length ? ` · ${failed.length} failed — see the list below`
-      : cleared ? ` · ${cleared} had no fields in their template — those listings were cleared`
-      : " — open a product page to check the inputs";
-    flash(`${failed.length ? "⚠" : cleared ? "⚠" : "✓"} Personalization pushed to ${ok}/${ids.length} listing(s)${tail}`, failed.length === 0 && cleared === 0);
-    setBusy(false);
-  };
+  // fusion.delivery — chỉ số ngày giao hàng, không đụng variants nên chạy được cả trên listing sạch.
+  const passDelivery = (ids: string[], p?: { offset: number; grand: number; failBase: number }) =>
+    runBatch({ url: "/api/shopify-products/push-delivery", ids, label: "Pushing delivery times", chunk: 25, counters: ["pushed"], ...p });
+
+  // fusion.options — bộ ô cá nhân hoá khách điền trên trang sản phẩm.
+  // Template không khai ô nào ⇒ ghi mảng rỗng = XOÁ ô trên listing; đếm riêng "cleared" để báo rõ.
+  const passPersonalization = (ids: string[], p?: { offset: number; grand: number; failBase: number }) =>
+    runBatch({ url: "/api/shopify-products/push-personalization", ids, label: "Pushing personalization fields", chunk: 25, counters: ["pushed", "cleared"], ...p });
 
   // ══ Google feed · BƯỚC THƯỜNG XUYÊN, KHÔNG PHẢI ONE-OFF ═════════════════════
-  // 3 hàm dưới đây phải chạy lại cho MỖI lô sản phẩm mới: SKU gắn vào variant GID và
-  // alt gắn vào media GID — hai thứ chỉ tồn tại SAU khi sản phẩm đã lên Shopify, nên
-  // không thể sinh sẵn lúc tạo. Quy trình mỗi lô: Push từ Etsy → Sync from Shopify →
-  // Generate missing SKUs → Push Google feed fields → Generate image alt text.
+  // 3 pass dưới đây phải chạy lại cho MỖI lô sản phẩm mới: SKU gắn vào variant GID và alt gắn vào
+  // media GID — hai thứ chỉ tồn tại SAU khi sản phẩm đã lên Shopify, không sinh sẵn lúc tạo được.
+  // Quy trình mỗi lô: Push từ Etsy → Sync from Shopify → Prepare for Google feed.
   // Cả 3 chỉ ghi SKU / metafield / alt ⇒ không set dirty, không cần bấm Push sau đó.
 
-  // Generate missing SKUs: sinh TLW-0007-8X8-GLO cho variant ĐANG TRỐNG rồi ghi thẳng lên
-  // Shopify (chỉ field sku). Variant đã có SKU thì bỏ qua — đổi SKU là Google coi như hàng mới.
-  // Không set dirty, không cần bấm Push sau đó.
-  const doFillSku = async (ids: string[]) => {
+  // Sinh TLW-0007-8X8-GLO cho variant ĐANG TRỐNG. Variant đã có SKU thì giữ nguyên —
+  // đổi SKU là Google coi như hàng mới, mất hết lịch sử của item đó.
+  const passSku = (ids: string[], p?: { offset: number; grand: number; failBase: number }) =>
+    runBatch({ url: "/api/shopify-products/fill-sku", ids, label: "Generating SKUs", chunk: 25, counters: ["pushed", "filled", "skipped"], ...p });
+
+  // mm-google-shopping.custom_product = true (hàng tự sản xuất, không cần GTIN)
+  // + rút shopify.target-audience về đúng "Kids" (Google chỉ nhận 1 giá trị age_group).
+  const passGoogleFields = (ids: string[], p?: { offset: number; grand: number; failBase: number }) =>
+    runBatch({ url: "/api/shopify-products/push-google-fields", ids, label: "Pushing Google feed fields", chunk: 25, counters: ["pushed", "audienceFixed", "audienceSkipped"], body: { customProduct: true, audience: "kids" }, ...p });
+
+  // Model VISION xem từng tấm ảnh rồi viết alt ≤125 ký tự, ghi thẳng lên Shopify (chỉ field alt).
+  // Ảnh đã có alt thì giữ nguyên. Lô 6 vì mỗi listing là 1 lượt gọi vision — bắn nhiều dễ ăn 429.
+  const CHUNK_ALT = 6;
+  const passImageAlt = (ids: string[], model: string | undefined, p?: { offset: number; grand: number; failBase: number }) =>
+    runBatch({ url: "/api/shopify-products/image-alt", ids, label: "Writing image alt text", chunk: CHUNK_ALT, counters: ["pushed", "written", "skipped"], body: { model }, ...p });
+
+  // ── Lệnh gộp 1: Push template fields ─────────────────────────────────────────
+  // Gộp của: nút "🔄 Update Template" + Apply template + Push delivery times + Push personalization
+  // fields. Cả bốn đều là ghi-từ-template, chỉ khác phạm vi và khác nguồn template.
+  //   templateId rỗng  → mỗi listing dùng template CỦA NÓ  → /update-template
+  //   templateId có    → cả lô dùng MỘT template đã chọn    → /apply-template
+  // Hai route này đã bao gồm luôn fusion.delivery ⇒ tick "full" thì bỏ qua bước delivery cho khỏi
+  // chạy hai lần cùng một việc.
+  const doPushTemplate = async (ids: string[], want: { full: boolean; delivery: boolean; personalization: boolean }, templateId: string) => {
     if (!ids.length) return flash("✗ Select products first", false);
-    const okGo = await confirm({
-      title: "Generate missing SKUs",
-      confirmText: `Generate on ${ids.length}`,
-      tone: "green",
-      message: `Sinh SKU dạng TLW-0007-8X8-GLO cho những variant đang TRỐNG của ${ids.length} listing, rồi ghi thẳng lên Shopify.\n\nVariant nào ĐÃ CÓ SKU sẽ được giữ nguyên, không ghi đè.\n\nChỉ đụng field SKU. Tiêu đề, mô tả, giá, ảnh, trạng thái không thay đổi — không cần bấm Push sau đó.`,
-    });
-    if (!okGo) return;
+    const doDelivery = want.delivery && !want.full;   // full đã ghi delivery rồi
+    const steps = [want.full, doDelivery, want.personalization].filter(Boolean).length;
+    if (!steps) return flash("✗ Tick at least one field to push", false);
+    if (want.full) {
+      const okGo = await confirm({
+        title: "Push template fields",
+        danger: true,
+        confirmText: `Push to ${ids.length}`,
+        message: `Ghi lên ${ids.length} listing: product type, vendor, theme template, category + metafield, options + variants + GIÁ, số ngày giao hàng, kênh bán${want.personalization ? ", ô cá nhân hoá" : ""}.\n\nGiữ nguyên: collections, tiêu đề, mô tả, ảnh, SEO, tags, trạng thái Active/Draft.\n\n⚠ Variants bị dựng lại theo template: variant nào template không có sẽ bị XOÁ khỏi Shopify và không khôi phục được.`,
+      });
+      if (!okGo) return;
+    }
     setBusy(true); setFails([]);
-    let ok = 0, filled = 0, skipped = 0; const failed: { id: string; title: string; error: string }[] = [];
-    setProg({ label: "Generating SKUs", done: 0, total: ids.length, fail: 0 });
-    for (let i = 0; i < ids.length; i += 25) {
-      const batch = ids.slice(i, i + 25);
+    const grand = ids.length * steps;
+    let done = 0; const failed: { id: string; title: string; error: string }[] = [];
+    const bits: string[] = [];
+    setProg({ label: "Pushing template fields", done: 0, total: grand, fail: 0 });
+
+    if (want.full) {
+      // Hai route này có payload riêng (chạy cả lô 1 lần / có templateId) nên không dùng runBatch.
+      const url = templateId ? "/api/shopify-products/apply-template" : "/api/shopify-products/update-template";
+      setProg({ label: "Applying template", done, total: grand, fail: failed.length });
       try {
-        const j = await fetch("/api/shopify-products/fill-sku", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
-        ok += j.pushed ?? 0; filled += j.filled ?? 0; skipped += j.skipped ?? 0;
-        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
-        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+        const j = await postJSON(url, templateId ? { ids, templateId } : { ids });
+        const okCount = Number(j?.done ?? j?.updated ?? 0);
+        bits.push(`template on ${okCount}`);
+        const res = (j?.results ?? []) as { id: string; title: string; ok: boolean; error?: string }[];
+        res.filter((r) => !r.ok).forEach((r) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!res.length && j?.error) ids.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: String(j.error) }));
       } catch (e) {
         const m = String((e as Error)?.message ?? "network");
-        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+        ids.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
       }
-      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+      done += ids.length;
+      setProg({ label: "Applying template", done, total: grand, fail: failed.length });
     }
+    if (doDelivery) {
+      const r = await passDelivery(ids, { offset: done, grand, failBase: failed.length });
+      failed.push(...r.failed); done += ids.length;
+      bits.push(`delivery on ${r.counts.pushed}`);
+    }
+    if (want.personalization) {
+      const r = await passPersonalization(ids, { offset: done, grand, failBase: failed.length });
+      failed.push(...r.failed); done += ids.length;
+      // Template rỗng ⇒ listing bị xoá sạch ô cá nhân hoá. Phải nói ra, không nuốt.
+      bits.push(`personalization on ${r.counts.pushed}${r.counts.cleared ? ` (${r.counts.cleared} cleared — template has no fields)` : ""}`);
+    }
+
     setProg(null); setFails(failed);
-    flash(`${failed.length ? "⚠" : "✓"} ${filled} SKU(s) written on ${ok}/${ids.length} listing(s)${skipped ? ` · ${skipped} variant(s) already had a SKU — kept as is` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    flash(`${failed.length ? "⚠" : "✓"} Template fields pushed: ${bits.join(" · ")}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
     await load();
     setBusy(false);
   };
 
-  // Push Google feed fields: metafield mm-google-shopping.custom_product = true
-  // + rút shopify.target-audience về đúng "Kids" (Google chỉ nhận 1 giá trị age_group).
-  // Chỉ ghi metafield ⇒ không kích hoạt duyệt lại listing trên Merchant Center.
-  const doPushGoogleFields = async (ids: string[]) => {
+  // ── Lệnh gộp 2: Prepare for Google feed ──────────────────────────────────────
+  // Gộp của Generate missing SKUs + Push Google feed fields + Generate image alt text — ba bước
+  // này luôn chạy cùng nhau, đúng thứ tự này, sau mỗi lô sản phẩm mới. Chạy lại vô hại: cả ba
+  // đều bỏ qua thứ đã có (SKU cũ, alt cũ), không ghi đè.
+  const doGooglePrep = async (ids: string[], want: { sku: boolean; fields: boolean; alt: boolean }) => {
     if (!ids.length) return flash("✗ Select products first", false);
-    const okGo = await confirm({
-      title: "Push Google feed fields",
-      confirmText: `Push to ${ids.length}`,
-      tone: "green",
-      message: `Ghi 2 metafield cho ${ids.length} listing:\n\n• Google: Custom Product = true — Google hiểu là hàng tự sản xuất, không cần GTIN.\n• Target audience — giữ lại duy nhất "Kids", bỏ "Adults" (Google chỉ nhận 1 giá trị).\n\nListing chưa có Target audience sẽ được bỏ qua, không tự điền.\n\nKhông đụng tiêu đề, mô tả, giá, ảnh — nên không kích hoạt duyệt lại.`,
-    });
-    if (!okGo) return;
-    setBusy(true); setFails([]);
-    let ok = 0, fixed = 0, skippedAud = 0; const failed: { id: string; title: string; error: string }[] = [];
-    setProg({ label: "Pushing Google feed fields", done: 0, total: ids.length, fail: 0 });
-    for (let i = 0; i < ids.length; i += 25) {
-      const batch = ids.slice(i, i + 25);
-      try {
-        const j = await fetch("/api/shopify-products/push-google-fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, customProduct: true, audience: "kids" }) }).then((r) => r.json());
-        ok += j.pushed ?? 0; fixed += j.audienceFixed ?? 0; skippedAud += j.audienceSkipped ?? 0;
-        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
-        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
-      } catch (e) {
-        const m = String((e as Error)?.message ?? "network");
-        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
-      }
-      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
-    }
-    setProg(null); setFails(failed);
-    flash(`${failed.length ? "⚠" : "✓"} Google fields pushed to ${ok}/${ids.length} listing(s) · audience narrowed on ${fixed}${skippedAud ? ` · ${skippedAud} had no matching audience value — left untouched` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
-    setBusy(false);
-  };
-
-  // Generate image alt text: model VISION xem từng tấm ảnh rồi viết alt ≤125 ký tự, ghi thẳng
-  // lên Shopify (productUpdateMedia, chỉ field alt). Ảnh đã có alt thì giữ nguyên.
-  // Lô 6 vì mỗi listing là 1 lượt gọi vision — bắn nhiều cùng lúc dễ ăn 429.
-  const CHUNK_ALT = 6;
-  const doImageAlt = async (ids: string[]) => {
-    if (!ids.length) return flash("✗ Select products first", false);
-    // Model lấy từ ô Model trên thanh action. Model chỉ đọc chữ thì không xem được ảnh ⇒ dùng model mặc định của server.
+    const steps = [want.sku, want.fields, want.alt].filter(Boolean).length;
+    if (!steps) return flash("✗ Tick at least one step", false);
+    // Model lấy từ ô Model trên thanh action. Model chỉ đọc chữ thì không xem được ảnh ⇒ để server dùng model mặc định.
     const useVision = !!aiModel && visionIds.has(aiModel);
-    const modelName = aiModels.find((m) => m.id === aiModel)?.name ?? aiModel;
-    const okGo = await confirm({
-      title: "Generate image alt text",
-      confirmText: `Generate on ${ids.length}`,
-      tone: "green",
-      message: `AI sẽ XEM từng tấm ảnh của ${ids.length} listing rồi viết alt text ≤125 ký tự mô tả đúng thứ có trong ảnh, ghi thẳng lên Shopify.\n\nModel: ${useVision ? modelName : `mặc định của server${aiModel ? ` (${modelName} không đọc được ảnh)` : ""}`}\n\nẢnh nào ĐÃ CÓ alt sẽ được giữ nguyên, không ghi đè.\n\nAlt không phải trường của feed Merchant Center — chỉ đụng alt thì không kích hoạt duyệt lại.\n\nChạy chậm: khoảng ${Math.ceil(ids.length / CHUNK_ALT)} lượt, mỗi lượt tới ~1 phút.`,
-    });
-    if (!okGo) return;
     setBusy(true); setFails([]);
-    let ok = 0, written = 0, kept = 0; const failed: { id: string; title: string; error: string }[] = [];
-    setProg({ label: "Writing image alt text", done: 0, total: ids.length, fail: 0 });
-    for (let i = 0; i < ids.length; i += CHUNK_ALT) {
-      const batch = ids.slice(i, i + CHUNK_ALT);
-      try {
-        const j = await fetch("/api/shopify-products/image-alt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: useVision ? aiModel : undefined }) }).then((r) => r.json());
-        ok += j.pushed ?? 0; written += j.written ?? 0; kept += j.skipped ?? 0;
-        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
-        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
-      } catch (e) {
-        const m = String((e as Error)?.message ?? "network");
-        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
-      }
-      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    const grand = ids.length * steps;
+    let done = 0; const failed: { id: string; title: string; error: string }[] = [];
+    const bits: string[] = [];
+    setProg({ label: "Preparing for Google feed", done: 0, total: grand, fail: 0 });
+
+    if (want.sku) {
+      const r = await passSku(ids, { offset: done, grand, failBase: failed.length });
+      failed.push(...r.failed); done += ids.length;
+      bits.push(`${r.counts.filled} SKU(s) written${r.counts.skipped ? ` · ${r.counts.skipped} variant(s) already had one` : ""}`);
     }
+    if (want.fields) {
+      const r = await passGoogleFields(ids, { offset: done, grand, failBase: failed.length });
+      failed.push(...r.failed); done += ids.length;
+      bits.push(`Google fields on ${r.counts.pushed} · audience narrowed on ${r.counts.audienceFixed}${r.counts.audienceSkipped ? ` · ${r.counts.audienceSkipped} had no audience value — left untouched` : ""}`);
+    }
+    if (want.alt) {
+      const r = await passImageAlt(ids, useVision ? aiModel : undefined, { offset: done, grand, failBase: failed.length });
+      failed.push(...r.failed); done += ids.length;
+      bits.push(`${r.counts.written} alt text(s) written${r.counts.skipped ? ` · ${r.counts.skipped} image(s) already had alt` : ""}`);
+    }
+
     setProg(null); setFails(failed);
-    flash(`${failed.length ? "⚠" : "✓"} ${written} alt text(s) written on ${ok}/${ids.length} listing(s)${kept ? ` · ${kept} image(s) already had alt — kept as is` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    flash(`${failed.length ? "⚠" : "✓"} ${bits.join(" · ")}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
     await load();
     setBusy(false);
   };
 
   // ── Supplemental feed ────────────────────────────────────────────────────────
   // Feed Merchant Center đang lấy description từ ô SEO meta (≤155 ký tự) — mà ô đó là dòng snippet
-  // trên Google Search nên KHÔNG được dài. Google cho feed tới 5000 ký tự. Hai nút dưới đây viết
+  // trên Google Search nên KHÔNG được dài. Google cho feed tới 5000 ký tự. Hai hàm dưới đây viết
   // một bản title/description RIÊNG cho feed rồi xuất file .txt để upload làm feed phụ:
   // Merchant Center ghi đè 2 field đó trong feed, listing Shopify không đổi một chữ nào.
   const CHUNK_FEED = 6;
@@ -484,25 +462,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     });
     if (!okGo) return;
     setBusy(true); setFails([]);
-    let ok = 0; const chars: number[] = []; const failed: { id: string; title: string; error: string }[] = [];
     setProg({ label: "Writing feed copy", done: 0, total: ids.length, fail: 0 });
-    for (let i = 0; i < ids.length; i += CHUNK_FEED) {
-      const batch = ids.slice(i, i + CHUNK_FEED);
-      try {
-        const j = await fetch("/api/shopify-products/feed-copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: aiModel || undefined }) }).then((r) => r.json());
-        ok += j.written ?? 0;
-        if (j.avgChars) chars.push(j.avgChars);
-        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
-        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
-      } catch (e) {
-        const m = String((e as Error)?.message ?? "network");
-        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
-      }
-      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
-    }
+    const { counts, failed } = await runBatch({ url: "/api/shopify-products/feed-copy", ids, label: "Writing feed copy", chunk: CHUNK_FEED, counters: ["written"], body: { model: aiModel || undefined } });
     setProg(null); setFails(failed);
-    const avg = chars.length ? Math.round(chars.reduce((a, c) => a + c, 0) / chars.length) : 0;
-    flash(`${failed.length ? "⚠" : "✓"} Feed copy written for ${ok}/${ids.length} listing(s)${avg ? ` · avg ${avg} chars` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    flash(`${failed.length ? "⚠" : "✓"} Feed copy written for ${counts.written}/${ids.length} listing(s)${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
     await load();
     setBusy(false);
   };
@@ -544,7 +507,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     for (let i = 0; i < ids.length; i += CHUNK_AI) {
       const batch = ids.slice(i, i + CHUNK_AI);
       try {
-        const j = await fetch("/api/shopify-products/ai-optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: aiModel || undefined }) }).then((r) => r.json());
+        const j = await postJSON("/api/shopify-products/ai-optimize", { ids: batch, model: aiModel || undefined });
         ok += j.optimized ?? 0; withTpl += j.withTemplate ?? 0;
         const res = (j.results ?? []) as { id: string; title: string; ok: boolean; error?: string }[];
         res.filter((x) => !x.ok).forEach((x) => failed.push({ id: x.id, title: x.title, error: x.error ?? "failed" }));
@@ -594,7 +557,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     let matched = 0, hits = 0;
     try {
       for (let i = 0; i < ids.length; i += CHUNK_FR) {
-        const j = await fetch("/api/shopify-products/find-replace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: ids.slice(i, i + CHUNK_FR), find: frFind, replace: frReplace, field: frField, dryRun: true }) }).then((r) => r.json());
+        const j = await postJSON("/api/shopify-products/find-replace", { ids: ids.slice(i, i + CHUNK_FR), find: frFind, replace: frReplace, field: frField, dryRun: true });
         if (!j.ok) { flash("✗ " + (j.error ?? "Preview failed"), false); setBusy(false); return; }
         matched += j.matched ?? 0; hits += j.hits ?? 0;
       }
@@ -615,7 +578,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     for (let i = 0; i < ids.length; i += CHUNK_FR) {
       const batch = ids.slice(i, i + CHUNK_FR);
       try {
-        const j = await fetch("/api/shopify-products/find-replace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, find: frFind, replace: frReplace, field: frField }) }).then((r) => r.json());
+        const j = await postJSON("/api/shopify-products/find-replace", { ids: batch, find: frFind, replace: frReplace, field: frField });
         ok += j.done ?? 0;
         (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
         if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((x) => x.id === id)?.title ?? id, error: j.error }));
@@ -636,7 +599,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const postAction = async (payload: Record<string, unknown>, okMsg: (r: { done: number; failed: number; skipped: number; results?: { ok: boolean; error?: string }[] }) => string) => {
     setBusy(true);
     try {
-      const j = await fetch("/api/shopify-products/bulk-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), ...payload }) }).then((r) => r.json());
+      const j = await postJSON("/api/shopify-products/bulk-action", { ids: Array.from(sel), ...payload });
       if (j.ok || j.done) { flash(okMsg(j), (j.failed ?? 0) === 0); setSel(new Set()); load(); }
       else { const err = j.error ?? (j.results ?? []).find((r: { ok: boolean }) => !r.ok)?.error ?? "Action failed"; flash("✗ " + err + (/write_products|scope|access|publications/i.test(String(err)) ? " — add scope write_products/write_publications + reinstall app" : ""), false); }
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
@@ -645,18 +608,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const runAction = async (key: ActKey) => {
     setActionsOpen(false);
     if (!sel.size) return flash("✗ Select products first", false);
-    // Chỉ số ngày giao hàng — không confirm vì không phá gì cả.
-    if (key === "push_delivery") return doPushDelivery(Array.from(sel));
-    if (key === "push_personalization") return doPushPersonalization(Array.from(sel));
-    // Google feed — chạy lại cho mỗi lô sản phẩm mới, không phải one-off.
-    if (key === "fill_sku") return doFillSku(Array.from(sel));
-    if (key === "push_google_fields") return doPushGoogleFields(Array.from(sel));
-    if (key === "image_alt") return doImageAlt(Array.from(sel));
-    // Feed phụ — không đụng Shopify.
+    // Feed phụ — không đụng Shopify, không cần chọn gì thêm.
     if (key === "feed_copy") return doFeedCopy(Array.from(sel));
     if (key === "feed_export") return doFeedExport(Array.from(sel));
     // Find & replace: chạy được trên nhiều store cùng lúc — mỗi listing dùng credential store của nó.
     if (key === "find_replace") { setAct({ key, title: "Find & replace in text", kind: "replace", storeId: "", loading: false, items: [] }); return; }
+    // Google feed: 3 bước, mặc định tick cả 3 vì lô mới nào cũng cần cả 3.
+    if (key === "google_prep") {
+      setParts({ sku: true, fields: true, alt: true });
+      setAct({ key, title: "Prepare for Google feed", kind: "gprep", storeId: "", loading: false, items: [] });
+      return;
+    }
     // Lifecycle nhanh (có confirm)
     if (key === "active" || key === "draft" || key === "archive") {
       const word = key === "active" ? "set ACTIVE" : key === "draft" ? "Unlist (set DRAFT)" : "Archive";
@@ -668,59 +630,68 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       if (!(await confirm({ title: "Confirm delete", message: `Confirm again: permanently delete ${sel.size} product(s) on Shopify AND remove them from this list?`, danger: true, confirmText: "Delete permanently" }))) return;
       return postAction({ action: "delete" }, (r) => `✓ Deleted ${r.done} on Shopify${r.failed ? ` · ${r.failed} failed` : ""}`);
     }
-    // Tags → mở modal nhập
-    if (key === "tags_add" || key === "tags_remove") {
-      setTagInput(""); setAct({ key, title: key === "tags_add" ? "Add tags" : "Remove tags", kind: "tags", storeId: "", loading: false, items: [] });
+    // Tags → 1 modal, công tắc Add/Remove nằm trong modal.
+    if (key === "tags") {
+      setTagInput(""); setActMode("add");
+      setAct({ key, title: "Tags", kind: "tags", storeId: "", loading: false, items: [] });
       return;
     }
-    // Picker actions (template / collection / channels / catalogs) — cần đúng 1 store
+    // Push template fields: chạy được trên nhiều store nếu dùng template CỦA TỪNG sản phẩm.
+    // Chỉ khi chọn 1 template áp cho cả lô mới cần cùng store (template ID là của riêng store).
+    if (key === "push_template") {
+      setParts({ full: true, delivery: false, personalization: true });
+      setPickOne("__own__");
+      const one = selStoreIds();
+      const sid = one.length === 1 ? one[0] : "";
+      const own = { id: "__own__", label: "Each product's own template (auto-match by Product type)" };
+      setAct({ key, title: "Push template fields", kind: "pushtpl", storeId: sid, loading: !!sid, items: [own] });
+      if (!sid) return;
+      try {
+        const j = await fetch(`/api/shopify-templates?storeId=${sid}`).then((r) => r.json());
+        const tpls = (j.templates ?? []).map((t: { id: string; name: string; productType?: string | null }) => ({ id: t.id, label: t.productType ? `${t.name} — type: ${t.productType}` : t.name }));
+        setAct((a) => a ? { ...a, loading: false, items: [own, ...tpls] } : a);
+      } catch { setAct((a) => a ? { ...a, loading: false } : a); }
+      return;
+    }
+    // Picker actions còn lại (template / collection / channels) — cần đúng 1 store
     const sids = selStoreIds();
     if (sids.length !== 1) return flash("✗ These actions need products from ONE store — filter by store first (template/channel/collection IDs are per store).", false);
     const storeId = sids[0];
-    // Set AI template (chỉ gán link) / Apply template (ghi variants lên Shopify) — nạp danh sách template của store
-    if (key === "set_template" || key === "apply_template") {
-      const isSet = key === "set_template";
-      setPickOne(isSet ? "__none__" : "");
-      setAct({ key, title: isSet ? "Set AI template" : "Apply template", kind: "template", storeId, loading: true, items: [] });
+    // Set AI template — chỉ gán nguồn facts cho AI, KHÔNG gửi gì lên Shopify.
+    if (key === "set_template") {
+      setPickOne("__none__");
+      setAct({ key, title: "Set AI template", kind: "template", storeId, loading: true, items: [] });
       try {
         const j = await fetch(`/api/shopify-templates?storeId=${storeId}`).then((r) => r.json());
         if (!j.ok) { flash("✗ " + (j.error ?? "Load failed"), false); setAct(null); return; }
         const tpls = (j.templates ?? []).map((t: { id: string; name: string; productType?: string | null }) => ({ id: t.id, label: t.productType ? `${t.name} — type: ${t.productType}` : t.name }));
         if (!tpls.length) flash("✗ No templates for this store — create one in Manage Templates · Shopify", false);
-        const items = isSet ? [{ id: "__none__", label: "None — auto-match by Product type" }, ...tpls] : tpls;
-        setAct((a) => a ? { ...a, loading: false, items } : a);
+        setAct((a) => a ? { ...a, loading: false, items: [{ id: "__none__", label: "None — auto-match by Product type" }, ...tpls] } : a);
       } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setAct(null); }
       return;
     }
-    const kind: "collection" | "publication" = (key === "collection_add" || key === "collection_remove") ? "collection" : "publication";
-    const catalogMode = key === "catalogs_include" || key === "catalogs_exclude";
-    const titleMap: Record<string, string> = {
-      collection_add: "Add to collection", collection_remove: "Remove from collection",
-      channels_include: "Include in sales channels", channels_exclude: "Exclude from sales channels",
-      catalogs_include: "Include in catalogs", catalogs_exclude: "Exclude from catalogs",
-    };
-    setPickOne(""); setPickMany(new Set());
-    setAct({ key, title: titleMap[key], kind, storeId, loading: true, items: [] });
+    // collection / channels — mỗi cái 1 mục, chiều Add hay Remove chọn trong modal.
+    const kind: "collection" | "publication" = key === "collection" ? "collection" : "publication";
+    setPickOne(""); setPickMany(new Set()); setActMode("add");
+    setAct({ key, title: kind === "collection" ? "Collection" : "Sales channels", kind, storeId, loading: true, items: [] });
     try {
       const j = await fetch(`/api/shopify-products/channels?storeId=${storeId}`).then((r) => r.json());
       if (!j.ok) { flash("✗ " + (j.error ?? "Load failed"), false); setAct(null); return; }
       const items: { id: string; label: string }[] = kind === "collection"
         ? (j.collections ?? []).map((c: { id: string; title: string }) => ({ id: c.id, label: c.title }))
-        : catalogMode
-          ? (j.catalogs ?? []).map((c: { publicationId: string; name: string }) => ({ id: c.publicationId, label: c.name }))
-          : (j.publications ?? []).map((p: { id: string; name: string }) => ({ id: p.id, label: p.name }));
+        : (j.publications ?? []).map((p: { id: string; name: string }) => ({ id: p.id, label: p.name }));
       setAct((a) => a ? { ...a, loading: false, items } : a);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); setAct(null); }
   };
   const submitAct = async () => {
     if (!act) return;
     // Set AI template — chỉ gán link trong FUSION, KHÔNG đụng Shopify, KHÔNG đổi mô tả đang có.
-    if (act.kind === "template" && act.key === "set_template") {
+    if (act.kind === "template") {
       if (!pickOne) return flash("✗ Pick a template", false);
       const templateId = pickOne === "__none__" ? null : pickOne;
       setAct(null); setBusy(true);
       try {
-        const j = await fetch("/api/shopify-products/set-template", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), templateId }) }).then((r) => r.json());
+        const j = await postJSON("/api/shopify-products/set-template", { ids: Array.from(sel), templateId });
         if (j.ok) flash(`✓ ${templateId ? "Linked" : "Unlinked"} template on ${j.done} product(s)${j.skipped ? ` · ${j.skipped} skipped (other store)` : ""} — existing descriptions unchanged; run ✦ AI Optimize to rewrite them`);
         else flash("✗ " + (j.error ?? "Failed"), false);
       } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
@@ -728,37 +699,39 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       setBusy(false);
       return;
     }
-    if (act.kind === "template") {
-      if (!pickOne) return flash("✗ Pick a template", false);
-      const templateId = pickOne;
-      setAct(null); setBusy(true);
-      try {
-        const j = await fetch("/api/shopify-products/apply-template", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), templateId }) }).then((r) => r.json());
-        if (j.ok || j.done) { flash(`✓ Applied template to ${j.done} product(s)${j.failed ? ` · ${j.failed} failed` : ""}${j.skipped ? ` · ${j.skipped} skipped (other store)` : ""}`, (j.failed ?? 0) === 0); setSel(new Set()); load(); }
-        else { const err = j.error ?? (j.results ?? []).find((r: { ok: boolean }) => !r.ok)?.error ?? "Apply failed"; flash("✗ " + err, false); }
-      } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
-      setBusy(false);
-      return;
+    if (act.kind === "pushtpl") {
+      const want = { full: !!parts.full, delivery: !!parts.delivery, personalization: !!parts.personalization };
+      const templateId = pickOne && pickOne !== "__own__" ? pickOne : "";
+      setAct(null);
+      return doPushTemplate(Array.from(sel), want, templateId);
+    }
+    if (act.kind === "gprep") {
+      const want = { sku: !!parts.sku, fields: !!parts.fields, alt: !!parts.alt };
+      setAct(null);
+      return doGooglePrep(Array.from(sel), want);
     }
     if (act.kind === "replace") return doFindReplace(Array.from(sel));
     if (act.kind === "tags") {
       const tags = tagInput.split(",").map((t) => t.trim()).filter(Boolean);
       if (!tags.length) return flash("✗ Enter at least one tag", false);
+      const action = actMode === "add" ? "tags_add" : "tags_remove";
+      const verb = actMode === "add" ? "Added" : "Removed";
       setAct(null);
-      return postAction({ action: act.key, tags: tags.join(",") }, (r) => `✓ ${act.key === "tags_add" ? "Added" : "Removed"} tags on ${r.done} product(s)${r.failed ? ` · ${r.failed} failed` : ""}`);
+      return postAction({ action, tags: tags.join(",") }, (r) => `✓ ${verb} tags on ${r.done} product(s)${r.failed ? ` · ${r.failed} failed` : ""}`);
     }
     if (act.kind === "collection") {
       if (!pickOne) return flash("✗ Pick a collection", false);
-      const payload = { action: act.key, storeId: act.storeId, collectionId: pickOne };
+      const action = actMode === "add" ? "collection_add" : "collection_remove";
+      const verb = actMode === "add" ? "Added to" : "Removed from";
       setAct(null);
-      return postAction(payload, (r) => `✓ ${act.key === "collection_add" ? "Added to" : "Removed from"} collection: ${r.done}${r.failed ? ` · ${r.failed} failed` : ""}${r.skipped ? ` · ${r.skipped} skipped (other store)` : ""}`);
+      return postAction({ action, storeId: act.storeId, collectionId: pickOne }, (r) => `✓ ${verb} collection: ${r.done}${r.failed ? ` · ${r.failed} failed` : ""}${r.skipped ? ` · ${r.skipped} skipped (other store)` : ""}`);
     }
-    // publication (channels/catalogs)
+    // publication (sales channels)
     if (!pickMany.size) return flash("✗ Pick at least one", false);
-    const payload = { action: act.key, storeId: act.storeId, publicationIds: Array.from(pickMany) };
-    const verb = act.key.endsWith("_include") ? "Included" : "Excluded";
+    const action = actMode === "add" ? "channels_include" : "channels_exclude";
+    const verb = actMode === "add" ? "Included" : "Excluded";
     setAct(null);
-    return postAction(payload, (r) => `✓ ${verb} ${r.done} product(s)${r.failed ? ` · ${r.failed} failed` : ""}${r.skipped ? ` · ${r.skipped} skipped (other store)` : ""}`);
+    return postAction({ action, storeId: act.storeId, publicationIds: Array.from(pickMany) }, (r) => `✓ ${verb} ${r.done} product(s)${r.failed ? ` · ${r.failed} failed` : ""}${r.skipped ? ` · ${r.skipped} skipped (other store)` : ""}`);
   };
 
   // ---- edit modal helpers ----
@@ -872,7 +845,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 doPush(ids);
               }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), padding: "9px 14px", opacity: busy || !selDirty ? .45 : 1 }}>⬆ Push to Shopify{selDirty ? ` (${selDirty})` : ""}</button>
               {/* Template đổi gì → đẩy hết xuống listing. Chạy được cả trên con đã sạch (không cần dirty). */}
-              <button disabled={busy || !sel.size} title="Re-apply each product's Template to its Shopify listing: product type, vendor, theme template, category, options + variants + prices, delivery times and sales channels. Collections, title, AI description, images, SEO, tags and Active/Draft status are left untouched." onClick={() => doUpdateTemplate(Array.from(sel))} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: busy || !sel.size ? .45 : 1 }}>🔄 Update Template{sel.size ? ` (${sel.size})` : ""}</button>
+              <button disabled={busy || !sel.size} title="Re-apply each product's Template to its Shopify listing: product type, vendor, theme template, category, options + variants + prices, delivery times, sales channels and personalization fields. Collections, title, AI description, images, SEO, tags and Active/Draft status are left untouched." onClick={() => runAction("push_template")} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: busy || !sel.size ? .45 : 1 }}>🔄 Update Template{sel.size ? ` (${sel.size})` : ""}</button>
             </span>
           )}
 
@@ -939,6 +912,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
           <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
             <b>429 / rate limit</b> → the AI model is throttling you: pick a paid model instead of a <code>:free</code> one, or retry in a few minutes.
             {" "}<b>402 / credit</b> → top up OpenRouter. <b>timeout</b> → the model is too slow, switch to a faster one.
+            {" "}<b>server ngắt giữa chừng</b> → not an AI error: the request ran past its time limit and was killed. Select fewer listings and press Retry failed.
           </div>
         </div>
       )}
@@ -1151,8 +1125,52 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>
               {act.key === "set_template"
                 ? <>Applies to <b>{sel.size}</b> selected product(s) — links the facts source for ✦ AI Optimize only. Nothing is sent to Shopify and the current description is not touched.</>
+                : act.kind === "gprep"
+                ? <>Applies to <b>{sel.size}</b> selected product(s). Writes SKU / metafields / image alt only — title, description, price and images are untouched, so this does not restart the Merchant Center review, and no Push is needed afterwards.</>
                 : <>Applies to <b>{sel.size}</b> selected product(s) — runs on Shopify.</>}
             </div>
+
+            {/* Công tắc chiều Add ↔ Remove — thay cho việc có 2 mục riêng trong menu. */}
+            {(act.kind === "tags" || act.kind === "collection" || act.kind === "publication") && (
+              <div style={{ display: "flex", gap: 0, marginBottom: 14, border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden" }}>
+                {(["add", "remove"] as const).map((m) => {
+                  const on = actMode === m;
+                  const label = act.kind === "publication" ? (m === "add" ? "Include in" : "Exclude from") : m === "add" ? "Add" : "Remove";
+                  return (
+                    <button key={m} onClick={() => setActMode(m)}
+                      style={{ flex: 1, border: "none", padding: "9px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", background: on ? (m === "add" ? "#E7F6EC" : "#FCEBEB") : "#fff", color: on ? (m === "add" ? "#15803d" : "#D14343") : "var(--muted)" }}>{label}</button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Hai lệnh gộp: tick bước nào chạy bước đó, chạy tuần tự trên MỘT thanh tiến độ. */}
+            {(act.kind === "pushtpl" || act.kind === "gprep") && (
+              <div style={{ display: "grid", gap: 2, marginBottom: 14 }}>
+                {(act.kind === "pushtpl"
+                  ? [
+                      { k: "full", t: "Template preset", d: "Product type, vendor, theme template, category + metafields, options + variants + prices, delivery times, sales channels. ⚠ Rebuilds variants — any variant not in the template is deleted on Shopify.", off: false },
+                      { k: "delivery", t: "Delivery times only", d: parts.full ? "Already included in Template preset." : "Writes metafield fusion.delivery only — no variant rebuild, safe on clean listings.", off: !!parts.full },
+                      { k: "personalization", t: "Personalization fields", d: "Writes metafield fusion.options. If the template has no fields, the listing's fields are cleared.", off: false },
+                    ]
+                  : [
+                      { k: "sku", t: "Generate missing SKUs", d: "Empty variants only — a variant that already has a SKU is never changed.", off: false },
+                      { k: "fields", t: "Google feed fields", d: "Custom Product = true, Target audience narrowed to \"Kids\".", off: false },
+                      { k: "alt", t: "Image alt text (AI vision)", d: `Images without alt only. Model: ${aiModel && visionIds.has(aiModel) ? (aiModels.find((m) => m.id === aiModel)?.name ?? aiModel) : `server default${aiModel ? " — the model picked on the toolbar cannot read images" : ""}`}.`, off: false },
+                    ]
+                ).map((s) => (
+                  <label key={s.k} style={{ display: "flex", gap: 10, padding: "9px 10px", borderRadius: 10, cursor: s.off ? "default" : "pointer", opacity: s.off ? .45 : 1, background: parts[s.k] && !s.off ? "#F3FBF6" : "transparent" }}>
+                    <input type="checkbox" disabled={s.off} checked={!!parts[s.k] && !s.off} onChange={(e) => setParts((p) => ({ ...p, [s.k]: e.target.checked }))} style={{ marginTop: 3 }} />
+                    <span>
+                      <span style={{ fontSize: 13.5, fontWeight: 700 }}>{s.t}</span>
+                      <span style={{ display: "block", fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>{s.d}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {act.kind === "pushtpl" && <label style={lab}>Template source</label>}
 
             {act.kind === "tags" && (
               <div>
@@ -1185,11 +1203,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               </div>
             )}
 
-            {act.kind !== "tags" && act.kind !== "replace" && (
+            {act.kind !== "tags" && act.kind !== "replace" && act.kind !== "gprep" && (
               act.loading ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>Loading…</div>
               : act.items.length === 0 ? <div style={{ padding: "20px 0", textAlign: "center", color: "var(--muted)" }}>{act.kind === "collection" ? "No manual collections on this store." : act.kind === "template" ? "No templates for this store — create one in Manage Templates · Shopify." : "None available on this store."}</div>
               : <div style={{ display: "grid", gap: 4, maxHeight: 320, overflowY: "auto" }}>
-                  {act.items.map((it) => (act.kind === "collection" || act.kind === "template") ? (
+                  {act.items.map((it) => (act.kind === "collection" || act.kind === "template" || act.kind === "pushtpl") ? (
                     <label key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, cursor: "pointer", background: pickOne === it.id ? "#F3FBF6" : "transparent" }}>
                       <input type="radio" name="pickCol" checked={pickOne === it.id} onChange={() => setPickOne(it.id)} />
                       <span style={{ fontSize: 13.5 }}>{it.label}</span>
