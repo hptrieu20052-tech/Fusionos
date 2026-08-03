@@ -54,21 +54,12 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [editId, setEditId] = useState<string | null>(null);
   const [edit, setEdit] = useState<Detail | null>(null);
   const [editLoading, setEditLoading] = useState(false);
-  // AI model chooser (dùng cho AI Optimize). "" = model text mặc định của hệ thống.
-  const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
-  const [aiModel, setAiModel] = useState("");
   const load = async () => {
     setLoading(true);
     try { const j = await fetch("/api/etsy-products").then((r) => r.json()); if (j.ok) setRows(j.rows); } catch { /* noop */ }
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
-  // Nạp danh sách model text từ OpenRouter (tái dùng endpoint Book Studio) + khôi phục lựa chọn đã lưu.
-  useEffect(() => {
-    try { const saved = window.localStorage.getItem("etsyAiModel"); if (saved) setAiModel(saved); } catch { /* ignore */ }
-    fetch("/api/books/models?type=text").then((r) => r.json()).then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
-  }, []);
-  const chooseModel = (m: string) => { setAiModel(m); try { window.localStorage.setItem("etsyAiModel", m); } catch { /* ignore */ } };
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 5000); };
 
@@ -121,7 +112,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
-  const optimizedCount = useMemo(() => rows.filter((r) => r.shopifyTitle).length, [rows]);
 
   const pickFile = (f: File | null | undefined) => {
     if (!f) return;
@@ -141,31 +131,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       catch { flash(`✗ HTTP ${res.status}: ${text.replace(/<[^>]+>/g, " ").trim().slice(0, 140) || "server error"}`, false); setBusy(false); return; }
       if (j.ok) { flash(`✓ ${j.store}: +${j.inserted} new · ${j.updated} updated${j.skipped ? ` · ${j.skipped} skipped` : ""}`); setImpOpen(false); setImpFile(null); load(); }
       else flash("✗ " + (j.error ?? "Import failed"), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
-    setBusy(false);
-  };
-
-  const doOptimize = async () => {
-    if (!sel.size) return flash("✗ Select listings first", false);
-    setBusy(true);
-    // Auto-batch 10/run (server maxDuration 60s) — no hard 20 cap, any count works.
-    const all = Array.from(sel);
-    const CHUNK = 10;
-    let done = 0; const errs: string[] = [];
-    try {
-      for (let i = 0; i < all.length; i += CHUNK) {
-        flash(`✦ AI optimizing… ${done}/${all.length}`);
-        const batch = all.slice(i, i + CHUNK);
-        const res = await fetch("/api/etsy-products/ai-optimize", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: aiModel || undefined }) });
-        const text = await res.text();
-        let j: { ok?: boolean; optimized?: number; error?: string; errors?: string[] };
-        try { j = JSON.parse(text); } catch { errs.push(`HTTP ${res.status}`); continue; }
-        if (j.ok) { done += Number(j.optimized ?? 0); if (j.errors) errs.push(...j.errors); }
-        else errs.push(j.error ?? "batch failed");
-      }
-      if (done === 0) flash(`✗ AI Optimize failed (0/${all.length}): ${errs[0] ?? "unknown"}${/shopify_|column|does not exist/i.test(errs[0] ?? "") ? " — Run MIGRATION_etsy_products.sql in Supabase first" : ""}`, false);
-      else flash(`✓ Optimized ${done}/${all.length}${errs.length ? " · some failed: " + errs[0] : ""}`);
-      load();
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
@@ -256,7 +221,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           <div>
             <h1 style={{ fontSize: 19, fontWeight: 800, margin: 0 }}>Manage Products · Etsy</h1>
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-              {rows.length} listings · {optimizedCount} AI-optimized · Import Etsy CSV → optimize SEO → export to Shopify
+              {rows.length} listings · {pushedCount} pushed to Shopify · exactly as exported from Etsy
             </div>
           </div>
           <div style={{ flex: 1 }} />
@@ -298,13 +263,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         <div style={{ ...card, padding: "10px 14px", marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", background: "#F8FAFF", borderColor: "#DCE6FB" }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--blue)" }}>{sel.size} selected</span>
           <div style={{ flex: 1 }} />
-          {canEdit && (
-            <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model used for Optimize" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 220 }}>
-              <option value="">AI model: Default</option>
-              {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          )}
-          {canEdit && <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), opacity: busy ? .6 : 1 }} onClick={doOptimize} title="AI rewrites title + tags for Shopify/Google SEO (auto-batches, any count)"><IcSpark /> AI Optimize</button>}
           {canEdit && shopifyStores.length > 0 && (
             <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={() => setPushOpen(true)} title="Create the selected listings directly on Shopify via API"><IcShop /> Push to Shopify</button>
           )}
@@ -348,12 +306,9 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                   <ThumbZoom src={r.mainImageUrl} alt={r.title} size={46} radius={10} />
                 </td>
                 <td style={{ padding: "10px 6px", maxWidth: 420 }}>
-                  {r.shopifyTitle
-                    ? <>
-                        <div style={{ fontWeight: 700 }}>{r.shopifyTitle} <span style={{ fontSize: 10, fontWeight: 800, color: "#6D48C9", background: "#EEE9FB", borderRadius: 6, padding: "1px 6px", marginLeft: 4 }}>AI</span></div>
-                        <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Etsy: {r.title}</div>
-                      </>
-                    : <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.title}</div>}
+                  {/* v118: LUÔN hiện title gốc từ CSV Etsy. Bỏ nhánh hiện shopify_title + badge AI —
+                      bảng này là bản gốc Etsy, việc tối ưu chữ làm ở Optimize Products · Shopify. */}
+                  <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.title}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
                     {r.sku && <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "ui-monospace,monospace" }}>{r.sku}</span>}
                     {r.pushed && <span title="Đã push qua Shopify — push lại sẽ CẬP NHẬT, không tạo trùng" style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px" }}>↑ SHOPIFY</span>}
@@ -374,7 +329,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                     <div style={{ display: "inline-flex", gap: 12, alignItems: "center", fontSize: 12.5, fontWeight: 700 }}>
                       <button onClick={() => openEdit(r.id)} style={linkBtn("var(--blue)")}>Edit</button>
                       <button disabled={busy} onClick={() => doDuplicate(r.id)} style={linkBtn("#158A57")}>Duplicate</button>
-                      <button disabled={busy} onClick={() => doDeleteOne(r.id, r.shopifyTitle || r.title)} style={linkBtn("var(--red)")}>Delete</button>
+                      <button disabled={busy} onClick={() => doDeleteOne(r.id, r.title)} style={linkBtn("var(--red)")}>Delete</button>
                     </div>
                   )}
                 </td>
@@ -624,7 +579,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
 /* ---- inline icons (stroke) ---- */
 const IcUpload = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>;
-const IcSpark = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.6 5.4L19 9l-5.4 1.6L12 16l-1.6-5.4L5 9l5.4-1.6L12 2z" /></svg>;
 const IcTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>;
 const IcSearch = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>;
 const IcShop = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18M9 20v-6h6v6" /></svg>;

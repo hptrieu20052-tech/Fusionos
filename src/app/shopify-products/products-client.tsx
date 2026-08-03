@@ -853,10 +853,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             <span style={grp}>
               <div style={{ position: "relative" }}>
                 <button disabled={busy} onClick={() => setActionsOpen((v) => !v)} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5 }}>More actions ▾</button>
+                {/* v118: 4 cột ngang → 1 cột DỌC. Bốn cột rộng hơn màn hình nên tràn sang phải,
+                    phải kéo ngang mới thấy hết. Neo right:0 để menu mở về bên trái, không tràn mép. */}
                 {actionsOpen && (
-                  <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30, display: "flex", alignItems: "stretch", gap: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,.12)", padding: 6 }} onMouseLeave={() => setActionsOpen(false)}>
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 30, width: 320, maxHeight: "min(72vh, 640px)", overflowY: "auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,.12)", padding: 6 }} onMouseLeave={() => setActionsOpen(false)}>
                     {ACTION_GROUPS.map((g, gi) => (
-                      <div key={g.title} style={{ minWidth: 232, padding: "2px 6px", borderLeft: gi ? "1px solid var(--line)" : "none" }}>
+                      <div key={g.title} style={{ padding: "2px 2px", borderTop: gi ? "1px solid var(--line)" : "none", marginTop: gi ? 5 : 0, paddingTop: gi ? 5 : 2 }}>
                         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", color: "var(--muted)", padding: "6px 8px 4px" }}>{g.title}</div>
                         {g.items.map((a) => (
                           <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, lineHeight: 1.35, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>{a.label}</button>
