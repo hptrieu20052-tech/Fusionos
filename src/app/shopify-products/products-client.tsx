@@ -14,6 +14,7 @@ type Row = {
   productType: string; categoryName: string; collectionTitles: string[];
   templateId: string | null; templateName: string; templatePinned: boolean; templateHasFacts: boolean;
   aiAt: string | null; pushedAt: string | null;
+  feedAt: string | null; feedTitleLen: number; feedDescLen: number;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -22,6 +23,7 @@ type Detail = {
   id: string; storeId: string; storeName: string | null; shopifyProductId: string; handle: string | null;
   title: string; bodyHtml: string | null; vendor: string | null; productType: string | null; tags: string | null;
   seoTitle: string | null; seoDescription: string | null;
+  feedTitle: string | null; feedDescription: string | null; feedAt: string | null;
   status: string; options: { name: string; position: number; values: string[] }[];
   variants: Variant[]; images: Img[]; onlineStoreUrl: string | null; totalInventory: number | null; dirty: boolean;
 };
@@ -42,6 +44,10 @@ const fsel = (on: boolean, fg = "#1F6F45", bd = "#BFE3CD", bg = "#F3FBF6"): Reac
 // Nhóm nút theo bước làm việc — chỉ còn vạch ngăn, bỏ nhãn 1/2/3 cho đỡ rối.
 const grp: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px 5px 8px", borderLeft: "1px solid #CDEFD8", flexWrap: "wrap" };
 // "2h ago" / "3d ago" — nhìn phát biết listing nào vừa chạy AI, khỏi chạy lại tốn tiền.
+// v119: một dòng chỉ được coi là CÓ FEED khi đủ điều kiện Export — feed-export bỏ qua dòng
+// thiếu title/description, và dưới 600 ký tự thì viết feed coi như hỏng mục đích.
+const feedOk = (r: { feedAt: string | null; feedTitleLen: number; feedDescLen: number }) =>
+  !!r.feedAt && r.feedTitleLen > 0 && r.feedDescLen >= 600;
 const ago = (iso: string | null) => {
   if (!iso) return "";
   const ms = Date.now() - new Date(iso).getTime();
@@ -142,6 +148,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [statusFilter, setStatusFilter] = useState("");
   // Lọc theo trạng thái AI: "" tất cả · "todo" chưa chạy AI · "done" đã có AI · "unpushed" đã AI nhưng chưa Push
   const [aiFilter, setAiFilter] = useState<"" | "todo" | "done" | "unpushed">("");
+  const [feedFilter, setFeedFilter] = useState<"" | "todo" | "done">("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
@@ -198,18 +205,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     (!collectionFilter || (r.collectionTitles ?? []).includes(collectionFilter)) &&
     (!statusFilter || (r.status || "").toUpperCase() === statusFilter) &&
     (!aiFilter || (aiFilter === "todo" ? !r.aiAt : aiFilter === "done" ? !!r.aiAt : !!r.aiAt && r.dirty)) &&
+    (!feedFilter || (feedFilter === "done" ? feedOk(r) : !feedOk(r))) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, stores]);
+  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
   // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
   const selDirty = useMemo(() => rows.filter((r) => sel.has(r.id) && r.dirty).length, [rows, sel]);
-  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter);
-  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCategoryFilter(""); setCollectionFilter(""); setStatusFilter(""); setAiFilter(""); };
+  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter);
+  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); };
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
@@ -244,6 +252,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       const j = await postJSON("/api/shopify-products/push", { ids: [edit.id] });
       if (j.ok || j.pushed) { flash("✓ Saved & updated on Shopify"); setEditId(null); load(); }
       else { const err = (j.results ?? [])[0]?.error ?? j.error ?? "push failed"; flash("✗ Saved locally but Shopify update failed: " + err + (/write_products|scope|access/i.test(String(err)) ? " — add scope write_products + reinstall app" : ""), false); setEditId(null); load(); }
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
+  // v119: feed copy lưu ĐƯỜNG RIÊNG. Không dùng PATCH /api/shopify-products vì route đó luôn set
+  // dirty:true và saveEdit đẩy thẳng lên Shopify — 2 field feed không bao giờ lên Shopify, đẩy là vô ích.
+  const saveFeed = async () => {
+    if (!edit) return;
+    setBusy(true);
+    try {
+      const j = await postJSON("/api/shopify-products/feed-save", { id: edit.id, feedTitle: edit.feedTitle ?? "", feedDescription: edit.feedDescription ?? "" });
+      if (j.ok) { flash("✓ Feed copy saved" + (j.warn ? " — " + j.warn : "")); load(); }
+      else flash("✗ " + (j.error ?? "Save failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
@@ -805,6 +825,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             <option value="done">✦ AI optimized</option>
             <option value="unpushed">✦ Optimized · not pushed</option>
           </select>
+          <select value={feedFilter} onChange={(e) => setFeedFilter(e.target.value as "" | "todo" | "done")} title="Google Merchant feed copy — pick 'No feed copy yet' to see exactly which listings Export supplemental feed would skip" style={fsel(!!feedFilter, "#1F6F45", "#BFE3CD", "#F3FBF6")}>
+            <option value="">Feed: all</option>
+            <option value="todo">No feed copy yet</option>
+            <option value="done">Feed copy ready</option>
+          </select>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
@@ -931,7 +956,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Type / Category</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Collections</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Template</th>
-              <th style={{ padding: "10px 8px", textAlign: "center" }} title="Last AI Optimize run — blank means this listing has never been rewritten">AI</th>
+              <th style={{ padding: "10px 8px", textAlign: "center" }} title="Top line = last AI Optimize run. Bottom line = Google Merchant feed copy and its length">AI / Feed</th>
               <th style={{ padding: "10px 8px", textAlign: "right" }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center" }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right" }}>Actions</th>
@@ -980,6 +1005,16 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                   ) : (
                     <span title="Never optimized — select it and run ✦ AI Optimize" style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#F1F1F4", color: "#8794A5" }}>not yet</span>
                   )}
+                  {/* v119: dòng 2 = feed Merchant Center. Xanh lá = đủ điều kiện Export, vàng = có nhưng cụt. */}
+                  <div style={{ marginTop: 3 }}>
+                    {feedOk(r) ? (
+                      <span title={`Feed copy written ${new Date(r.feedAt as string).toLocaleString()} — title ${r.feedTitleLen} chars, description ${r.feedDescLen} chars`} style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#E9F7EF", color: "#1F6F45" }}>feed {r.feedDescLen}</span>
+                    ) : r.feedAt ? (
+                      <span title={`Feed copy is too short to export — title ${r.feedTitleLen} chars, description ${r.feedDescLen} chars, needs 600+`} style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#FEF6E7", color: "#B7791F" }}>feed {r.feedDescLen}</span>
+                    ) : (
+                      <span title="No feed copy — Export supplemental feed skips this listing" style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#F1F1F4", color: "#8794A5" }}>no feed</span>
+                    )}
+                  </div>
                 </td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap" }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
@@ -1080,6 +1115,22 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                       <label style={lab}>Meta description <span style={{ fontWeight: 700, color: (edit.seoDescription ?? "").length > 155 ? "var(--red)" : "var(--muted)" }}>({(edit.seoDescription ?? "").length}/155)</span></label>
                       <textarea value={edit.seoDescription ?? ""} onChange={(e) => setEdit({ ...edit, seoDescription: e.target.value })} maxLength={320} rows={3} placeholder="One persuasive sentence under the link — keyword + benefit + call to action" style={{ ...ctl, width: "100%", resize: "vertical", borderColor: (edit.seoDescription ?? "").length > 155 ? "#F3C9C9" : "var(--line)" }} />
                       <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Leave these blank and Shopify falls back to the product title plus a chopped-off slice of the description — worse click-through on Google and Shopping ads.</div>
+                    </div>
+                    {/* v119: 2 field feed Merchant Center — trước đây viết xong không có chỗ nào xem được.
+                        Nút Save feed copy đi route riêng: không set dirty, không Push lên Shopify. */}
+                    <div style={{ border: "1px solid #C9B8F5", borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#FBFAFF" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#4B3A8F" }}>Google Merchant feed (supplemental)</div>
+                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{edit.feedAt ? `written ${ago(edit.feedAt)}` : "never generated"}</div>
+                      </div>
+                      <label style={lab}>Feed title <span style={{ fontWeight: 700, color: (edit.feedTitle ?? "").length > 150 ? "var(--red)" : "var(--muted)" }}>({(edit.feedTitle ?? "").length}/150)</span></label>
+                      <input value={edit.feedTitle ?? ""} onChange={(e) => setEdit({ ...edit, feedTitle: e.target.value })} maxLength={150} placeholder="110-150 chars — keyword first, no size or finish suffix" style={{ ...ctl, width: "100%", marginBottom: 10, borderColor: (edit.feedTitle ?? "").length > 150 ? "#F3C9C9" : "var(--line)" }} />
+                      <label style={lab}>Feed description <span style={{ fontWeight: 700, color: (edit.feedDescription ?? "").length > 0 && ((edit.feedDescription ?? "").length < 600 || (edit.feedDescription ?? "").length > 1400) ? "var(--red)" : "var(--muted)" }}>({(edit.feedDescription ?? "").length} chars · target 800-1200)</span></label>
+                      <textarea value={edit.feedDescription ?? ""} onChange={(e) => setEdit({ ...edit, feedDescription: e.target.value })} rows={7} placeholder="Plain text, no HTML, no line breaks" style={{ ...ctl, width: "100%", resize: "vertical", borderColor: (edit.feedDescription ?? "").length > 0 && ((edit.feedDescription ?? "").length < 600 || (edit.feedDescription ?? "").length > 1400) ? "#F3C9C9" : "var(--line)" }} />
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+                        <button disabled={busy} onClick={saveFeed} style={{ ...pill("#5B3FBF", "#fff"), padding: "7px 14px", fontSize: 12.5 }}>Save feed copy</button>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Merchant Center only — never sent to Shopify, and not included in Save below.</span>
+                      </div>
                     </div>
                     <label style={lab}>Variants ({edit.variants.length}) — giá / compare-at / SKU</label>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>

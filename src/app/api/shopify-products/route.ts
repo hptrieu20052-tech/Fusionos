@@ -36,6 +36,14 @@ export async function GET(req: NextRequest) {
 
   const scoped = scopeIds ? rows.filter((r) => r.storeSeller && scopeIds.includes(r.storeSeller)) : rows;
 
+  // v119: SẮP XẾP MỚI → CŨ. Trước đây orderBy updated_at: cột đó bị ghi lại mỗi lần AI Optimize,
+  // feed copy, Save hay Push chạm vào sản phẩm, nên chạy AI vài con là cả bảng đảo thứ tự —
+  // đúng cái "lộn xộn" đang thấy. Product ID của Shopify tăng dần theo thời gian tạo ⇒ ID lớn = mới hơn.
+  const pidNum = (gid: string | null) => { const m = String(gid ?? "").match(/(\d+)\s*$/); return m ? Number(m[1]) : 0; };
+  scoped.sort((a, b) =>
+    (pidNum(b.p.shopifyProductId) - pidNum(a.p.shopifyProductId)) ||
+    (new Date(b.p.createdAt ?? 0).getTime() - new Date(a.p.createdAt ?? 0).getTime()));
+
   // Template FUSION của từng listing: gán tay (templateId) > tự khớp theo Product type (cùng store).
   const tpls = await db.select({ id: schema.shopifyTemplates.id, storeId: schema.shopifyTemplates.storeId, name: schema.shopifyTemplates.name, productType: schema.shopifyTemplates.productType, status: schema.shopifyTemplates.status, baseDescription: schema.shopifyTemplates.baseDescription, productDetails: schema.shopifyTemplates.productDetails, shippingInfo: schema.shopifyTemplates.shippingInfo }).from(schema.shopifyTemplates);
   const byId = new Map(tpls.map((t) => [t.id, t]));
@@ -67,6 +75,9 @@ export async function GET(req: NextRequest) {
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,
       templateId: tpl?.id ?? null, templateName: tpl?.name ?? "", templatePinned: !!pinned, templateHasFacts: tplHasFacts,
       syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt, aiAt: r.p.aiAt,
+      // v119: feed Merchant Center. Chỉ trả ĐỘ DÀI, không trả nguyên văn — 134 dòng × 1300 ký tự
+      // là ~180KB thừa mỗi lần load bảng. Nội dung đầy đủ lấy ở GET ?id= khi mở Edit.
+      feedAt: r.p.feedAt, feedTitleLen: (r.p.feedTitle ?? "").length, feedDescLen: (r.p.feedDescription ?? "").length,
       optionsSummary: (Array.isArray(r.p.options) ? r.p.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${o.values.length}`).join(" · "),
     };
   });
