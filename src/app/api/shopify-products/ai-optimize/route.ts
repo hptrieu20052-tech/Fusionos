@@ -79,7 +79,9 @@ async function askAI(system: string, user: string, model: string | undefined, de
     const left = deadline - Date.now();
     if (left < 8000) break;
     try {
-      const o = await orChatJSON<Opt>(system, user, { model, maxTokens: 4000, temperature: 0.5, timeoutMs: Math.min(45000, left - 2000) });
+      // Model suy luận tiêu token nghĩ TRONG max_tokens ⇒ 4000 cạn trước khi kịp viết JSON
+      // (lỗi "nội dung rỗng, finish_reason=length"). Nới trần + ép effort low: chỉ viết copy, không cần nghĩ sâu.
+      const o = await orChatJSON<Opt>(system, user, { model, maxTokens: 12000, temperature: 0.5, reasoning: "low", timeoutMs: Math.min(45000, left - 2000) });
       if (!clip(o?.title, 120)) throw new Error("model trả về title rỗng");
       return o;
     } catch (e) {

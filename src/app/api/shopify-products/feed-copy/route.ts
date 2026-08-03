@@ -97,7 +97,9 @@ SUPPLIER FACTS (ground truth — never contradict, never invent beyond this):
 Current on-page description (plain, up to 2000 chars): ${plain(r.bodyHtml).slice(0, 2000)}`;
 
       const o = await orChatJSON<{ feedTitle?: string; feedDescription?: string }>(SYSTEM, user, {
-        model, maxTokens: 1600, temperature: 0.5,
+        // 1600 đủ cho model thường (feed dài nhất ~1400 ký tự ≈ 400 token) nhưng model suy luận
+        // (GPT-5.x…) đốt hết vào phần nghĩ ⇒ content rỗng finish_reason=length. Nới trần + effort low.
+        model, maxTokens: 8000, temperature: 0.5, reasoning: "low",
         timeoutMs: Math.min(70_000, Math.max(15_000, deadline - Date.now() - 8000)),
       });
       const ft = clip(plain(o?.feedTitle), T_MAX);

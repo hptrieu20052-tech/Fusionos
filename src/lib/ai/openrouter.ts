@@ -5,7 +5,12 @@ const KEY = () => (process.env.OPENROUTER_API_KEY ?? "").trim();
 const TEXT_MODEL = () => (process.env.OPENROUTER_TEXT_MODEL ?? "anthropic/claude-3.5-sonnet").trim();
 
 // Gọi chat completions, ÉP trả JSON object. Ném lỗi rõ ràng để UI hiện.
-export async function orChatJSON<T>(system: string, user: string, opts?: { model?: string; maxTokens?: number; temperature?: number; images?: string[]; timeoutMs?: number }): Promise<T> {
+//
+// reasoning: model dòng suy luận (GPT-5.x, o-series, Gemini Thinking, Claude thinking) tiêu token
+// SUY NGHĨ trước khi viết, và phần đó ĐẾM VÀO max_tokens. Cạn token trong lúc nghĩ ⇒ content rỗng
+// kèm finish_reason=length ⇒ cả lần gọi mất trắng. Việc viết copy không cần suy luận sâu, nên các
+// route copywriting truyền "low" để token dồn vào phần chữ. Model không suy luận bỏ qua field này.
+export async function orChatJSON<T>(system: string, user: string, opts?: { model?: string; maxTokens?: number; temperature?: number; images?: string[]; timeoutMs?: number; reasoning?: "low" | "medium" | "high" }): Promise<T> {
   const key = KEY();
   if (!key) throw new Error("OPENROUTER_API_KEY chưa cấu hình trong env (Vercel → Settings → Environment Variables).");
   // Nếu có ảnh (data URL) → gửi multimodal: [text, image_url…]. Model text phải hỗ trợ vision.
@@ -29,6 +34,7 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
         response_format: { type: "json_object" },
         max_tokens: opts?.maxTokens ?? 3000,
         temperature: opts?.temperature ?? 0.8,
+        ...(opts?.reasoning ? { reasoning: { effort: opts.reasoning } } : {}),
       }),
       // Fail SỚM (75s) trước mốc ~100s của Cloudflare → trả lỗi JSON rõ ràng thay vì gateway 502.
       // Route nào chạy trên Vercel maxDuration 60s PHẢI truyền timeoutMs < 60000, nếu không function
@@ -46,7 +52,13 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
   try { data = JSON.parse(text); } catch { throw new Error("OpenRouter trả về không phải JSON."); }
   const content = data?.choices?.[0]?.message?.content;
   const finish = (data as { choices?: { finish_reason?: string }[] })?.choices?.[0]?.finish_reason ?? "";
-  if (!content) throw new Error("OpenRouter: nội dung rỗng." + (finish ? ` (finish_reason=${finish})` : ""));
+  if (!content) {
+    throw new Error(
+      finish === "length"
+        ? "Model tiêu hết token vào phần suy nghĩ nên không viết được chữ nào (finish_reason=length). Đổi Model AI sang con KHÔNG suy luận (Claude Sonnet / Gemini Flash / GPT-4o) hoặc báo dev nâng maxTokens."
+        : "OpenRouter: nội dung rỗng." + (finish ? ` (finish_reason=${finish})` : ""),
+    );
+  }
   const parsed = parseLooseJSON<T>(content);
   if (parsed === null) {
     const cleaned = content.trim().slice(0, 200);
