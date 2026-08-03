@@ -35,8 +35,8 @@ const SYSTEM_BASE = `You are an e-commerce SEO copywriter optimizing a Shopify p
 
 Return STRICT JSON. Keys:
 - "title": product title, 55-70 chars, primary keyword first, Title Case, human and specific (recipient + occasion + product type). No ALL CAPS.
-- "seoTitle": SEO page title MAX 60 chars, primary keyword near the front, compelling.
-- "seoDescription": SEO meta description MAX 155 chars, one persuasive sentence with the keyword + a benefit + a soft call-to-action.
+- "seoTitle": SEO page title, 55-60 characters — aim for 58-60 and NEVER go under 55 or over 60. Primary keyword near the front, then a benefit or occasion. Use the full width; a short title wastes the Google result line.
+- "seoDescription": SEO meta description, 145-155 characters — aim for 150-155 and NEVER go under 145 or over 155. This exact text is ALSO used as the product description in Google Shopping, so it must read as a complete, self-contained sentence: primary keyword + who it is for + the strongest concrete benefit + a soft call-to-action. No ellipsis, no truncation, no trailing dangling phrase. Count the characters before you answer.
 - "tags": 12-15 comma-separated lowercase search terms (recipient, occasion, product type, style, use-case). No underscores or #.
 - "description": clean HTML, 220-330 words: one <p> hook (keyword in first sentence, emotional benefit tied to THIS listing's theme); one <p> on how the personalization works / what makes it special; one <p><strong>Product features</strong></p> then <ul> with 5-7 <li> benefits; one <p> of gift occasions matching THIS listing's theme; one closing <p> call to action. Only <p>, <ul>, <li>, <strong>.`;
 

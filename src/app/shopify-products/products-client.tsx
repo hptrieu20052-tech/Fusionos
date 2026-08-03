@@ -57,44 +57,64 @@ const ago = (iso: string | null) => {
 
 type ActKey =
   | "set_template" | "apply_template" | "push_delivery" | "push_personalization" | "find_replace"
-  | "fill_sku" | "push_google_fields"
+  | "fill_sku" | "push_google_fields" | "image_alt" | "feed_copy" | "feed_export"
   | "active" | "draft" | "archive" | "delete"
   | "tags_add" | "tags_remove"
   | "channels_include" | "channels_exclude"
   | "catalogs_include" | "catalogs_exclude"
   | "collection_add" | "collection_remove";
-type ActionItem = { key: ActKey; label: string; danger?: boolean } | { sep: true; key: string };
-const ACTIONS: ActionItem[] = [
-  { key: "set_template", label: "Set AI template…" },
-  { key: "apply_template", label: "Apply template (variants → Shopify)…" },
-  // Bản nhẹ của Update Template: chỉ ghi metafield fusion.delivery, không đụng variants.
-  { key: "push_delivery", label: "Push delivery times only" },
-  // Ghi metafield fusion.options — ô cá nhân hoá khách điền trên trang sản phẩm.
-  { key: "push_personalization", label: "Push personalization fields" },
-  { key: "find_replace", label: "Find & replace in text…" },
-  // ── Google feed (one-off) ──────────────────────────────────────────────────
-  // Hai mục dùng-một-lần. Chạy xong hết 134 listing thì xoá được: bỏ 2 dòng này,
-  // 2 dòng dispatch trong runAction, 2 hàm doFillSku / doPushGoogleFields và 2 thư mục route.
-  { key: "sep_g", sep: true },
-  { key: "fill_sku", label: "Generate missing SKUs → Shopify" },
-  { key: "push_google_fields", label: "Push Google feed fields (custom product + audience)" },
-  { key: "sep0", sep: true },
-  { key: "active", label: "Set as Active" },
-  { key: "draft", label: "Unlist products (set to Draft)" },
-  { key: "archive", label: "Archive products" },
-  { key: "sep1", sep: true },
-  { key: "tags_add", label: "Add tags…" },
-  { key: "tags_remove", label: "Remove tags…" },
-  { key: "sep2", sep: true },
-  { key: "collection_add", label: "Add to collection…" },
-  { key: "collection_remove", label: "Remove from collection…" },
-  { key: "sep3", sep: true },
-  { key: "channels_include", label: "Include in sales channels…" },
-  { key: "channels_exclude", label: "Exclude from sales channels…" },
-  { key: "catalogs_include", label: "Include in catalogs…" },
-  { key: "catalogs_exclude", label: "Exclude from catalogs…" },
-  { key: "sep4", sep: true },
-  { key: "delete", label: "Delete products on Shopify", danger: true },
+type ActionItem = { key: ActKey; label: string; danger?: boolean };
+type ActionGroup = { title: string; items: ActionItem[] };
+// Chia cột theo VIỆC (không theo thứ tự cũ) để nhìn ra cái nào trùng nhau mà gộp/bỏ.
+const ACTION_GROUPS: ActionGroup[] = [
+  {
+    title: "Template & text",
+    items: [
+      { key: "set_template", label: "Set AI template…" },
+      { key: "apply_template", label: "Apply template (variants → Shopify)…" },
+      // Bản nhẹ của Update Template: chỉ ghi metafield fusion.delivery, không đụng variants.
+      { key: "push_delivery", label: "Push delivery times only" },
+      // Ghi metafield fusion.options — ô cá nhân hoá khách điền trên trang sản phẩm.
+      { key: "push_personalization", label: "Push personalization fields" },
+      { key: "find_replace", label: "Find & replace in text…" },
+    ],
+  },
+  {
+    // KHÔNG phải việc dùng-một-lần. SKU và alt chỉ gắn được vào variant/media ĐÃ TỒN TẠI trên
+    // Shopify, nên MỖI lô sản phẩm mới đều phải chạy lại đúng thứ tự cột này (sau Push → Sync).
+    // 3 mục đầu chỉ ghi SKU / metafield / alt ⇒ không đụng title-mô tả-giá-ảnh, không cần bấm Push.
+    // 2 mục cuối KHÔNG đụng Shopify: chỉ ghi vào FUSION OS rồi xuất ra file feed phụ.
+    title: "Google feed",
+    items: [
+      { key: "fill_sku", label: "Generate missing SKUs → Shopify" },
+      { key: "push_google_fields", label: "Push Google feed fields (custom product + audience)" },
+      { key: "image_alt", label: "Generate image alt text (AI vision) → Shopify" },
+      { key: "feed_copy", label: "Generate feed title + long description (AI)" },
+      { key: "feed_export", label: "Export supplemental feed (.txt)" },
+    ],
+  },
+  {
+    title: "Organize",
+    items: [
+      { key: "tags_add", label: "Add tags…" },
+      { key: "tags_remove", label: "Remove tags…" },
+      { key: "collection_add", label: "Add to collection…" },
+      { key: "collection_remove", label: "Remove from collection…" },
+      { key: "channels_include", label: "Include in sales channels…" },
+      { key: "channels_exclude", label: "Exclude from sales channels…" },
+      { key: "catalogs_include", label: "Include in catalogs…" },
+      { key: "catalogs_exclude", label: "Exclude from catalogs…" },
+    ],
+  },
+  {
+    title: "Status",
+    items: [
+      { key: "active", label: "Set as Active" },
+      { key: "draft", label: "Unlist products (set to Draft)" },
+      { key: "archive", label: "Archive products" },
+      { key: "delete", label: "Delete products on Shopify", danger: true },
+    ],
+  },
 ];
 
 const statusBadge = (s: string) => {
@@ -127,6 +147,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   // AI model
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
   const [aiModel, setAiModel] = useState("");
+  // Ô Model là NGUỒN DUY NHẤT cho mọi hành động AI ở trang này. Nhưng alt text cần model ĐỌC ĐƯỢC ẢNH:
+  // danh sách vision dùng để biết model đang chọn có xem được ảnh không, không thì chạy model mặc định.
+  const [visionIds, setVisionIds] = useState<Set<string>>(new Set());
   // Bulk actions ("More actions")
   const [actionsOpen, setActionsOpen] = useState(false);
   const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template" | "replace"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
@@ -146,6 +169,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   useEffect(() => {
     try { const s = window.localStorage.getItem("shopifyAiModel"); if (s) setAiModel(s); } catch { /* ignore */ }
     fetch("/api/books/models?type=text").then((r) => r.json()).then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
+    fetch("/api/books/models?type=vision").then((r) => r.json()).then((j) => {
+      if (Array.isArray(j?.models)) setVisionIds(new Set((j.models as { id: string }[]).map((m) => m.id)));
+    }).catch(() => { /* offline */ });
   }, []);
   const chooseModel = (m: string) => { setAiModel(m); try { window.localStorage.setItem("shopifyAiModel", m); } catch { /* ignore */ } };
 
@@ -329,9 +355,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
   };
 
-  // ══ ONE-OFF · Google feed ═══════════════════════════════════════════════════
-  // Hai hàm dưới là việc dọn dẹp một lần cho feed Google. Chạy xong toàn bộ listing
-  // thì xoá cả khối này + 2 dòng trong ACTIONS + 2 dòng trong runAction + 2 route.
+  // ══ Google feed · BƯỚC THƯỜNG XUYÊN, KHÔNG PHẢI ONE-OFF ═════════════════════
+  // 3 hàm dưới đây phải chạy lại cho MỖI lô sản phẩm mới: SKU gắn vào variant GID và
+  // alt gắn vào media GID — hai thứ chỉ tồn tại SAU khi sản phẩm đã lên Shopify, nên
+  // không thể sinh sẵn lúc tạo. Quy trình mỗi lô: Push từ Etsy → Sync from Shopify →
+  // Generate missing SKUs → Push Google feed fields → Generate image alt text.
+  // Cả 3 chỉ ghi SKU / metafield / alt ⇒ không set dirty, không cần bấm Push sau đó.
 
   // Generate missing SKUs: sinh TLW-0007-8X8-GLO cho variant ĐANG TRỐNG rồi ghi thẳng lên
   // Shopify (chỉ field sku). Variant đã có SKU thì bỏ qua — đổi SKU là Google coi như hàng mới.
@@ -397,6 +426,111 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     }
     setProg(null); setFails(failed);
     flash(`${failed.length ? "⚠" : "✓"} Google fields pushed to ${ok}/${ids.length} listing(s) · audience narrowed on ${fixed}${skippedAud ? ` · ${skippedAud} had no matching audience value — left untouched` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    setBusy(false);
+  };
+
+  // Generate image alt text: model VISION xem từng tấm ảnh rồi viết alt ≤125 ký tự, ghi thẳng
+  // lên Shopify (productUpdateMedia, chỉ field alt). Ảnh đã có alt thì giữ nguyên.
+  // Lô 6 vì mỗi listing là 1 lượt gọi vision — bắn nhiều cùng lúc dễ ăn 429.
+  const CHUNK_ALT = 6;
+  const doImageAlt = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    // Model lấy từ ô Model trên thanh action. Model chỉ đọc chữ thì không xem được ảnh ⇒ dùng model mặc định của server.
+    const useVision = !!aiModel && visionIds.has(aiModel);
+    const modelName = aiModels.find((m) => m.id === aiModel)?.name ?? aiModel;
+    const okGo = await confirm({
+      title: "Generate image alt text",
+      confirmText: `Generate on ${ids.length}`,
+      tone: "green",
+      message: `AI sẽ XEM từng tấm ảnh của ${ids.length} listing rồi viết alt text ≤125 ký tự mô tả đúng thứ có trong ảnh, ghi thẳng lên Shopify.\n\nModel: ${useVision ? modelName : `mặc định của server${aiModel ? ` (${modelName} không đọc được ảnh)` : ""}`}\n\nẢnh nào ĐÃ CÓ alt sẽ được giữ nguyên, không ghi đè.\n\nAlt không phải trường của feed Merchant Center — chỉ đụng alt thì không kích hoạt duyệt lại.\n\nChạy chậm: khoảng ${Math.ceil(ids.length / CHUNK_ALT)} lượt, mỗi lượt tới ~1 phút.`,
+    });
+    if (!okGo) return;
+    setBusy(true); setFails([]);
+    let ok = 0, written = 0, kept = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "Writing image alt text", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += CHUNK_ALT) {
+      const batch = ids.slice(i, i + CHUNK_ALT);
+      try {
+        const j = await fetch("/api/shopify-products/image-alt", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: useVision ? aiModel : undefined }) }).then((r) => r.json());
+        ok += j.pushed ?? 0; written += j.written ?? 0; kept += j.skipped ?? 0;
+        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+      } catch (e) {
+        const m = String((e as Error)?.message ?? "network");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+      }
+      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    }
+    setProg(null); setFails(failed);
+    flash(`${failed.length ? "⚠" : "✓"} ${written} alt text(s) written on ${ok}/${ids.length} listing(s)${kept ? ` · ${kept} image(s) already had alt — kept as is` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    await load();
+    setBusy(false);
+  };
+
+  // ── Supplemental feed ────────────────────────────────────────────────────────
+  // Feed Merchant Center đang lấy description từ ô SEO meta (≤155 ký tự) — mà ô đó là dòng snippet
+  // trên Google Search nên KHÔNG được dài. Google cho feed tới 5000 ký tự. Hai nút dưới đây viết
+  // một bản title/description RIÊNG cho feed rồi xuất file .txt để upload làm feed phụ:
+  // Merchant Center ghi đè 2 field đó trong feed, listing Shopify không đổi một chữ nào.
+  const CHUNK_FEED = 6;
+  const doFeedCopy = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    const modelName = aiModels.find((m) => m.id === aiModel)?.name ?? aiModel;
+    const okGo = await confirm({
+      title: "Generate feed title + long description",
+      confirmText: `Generate on ${ids.length}`,
+      tone: "green",
+      message: `AI viết feed title (≤150 ký tự) + feed description (800-1200 ký tự) cho ${ids.length} listing.\n\nModel: ${aiModel ? modelName : "mặc định của server"}\n\nHai field này CHỈ nằm trong FUSION OS — không ghi lên Shopify, không đụng title/mô tả/SEO của listing, không tạo trạng thái Edited.\n\nChúng chỉ đi ra ngoài khi bấm "Export supplemental feed".\n\nKhoảng ${Math.ceil(ids.length / CHUNK_FEED)} lượt, mỗi lượt tới ~1 phút.`,
+    });
+    if (!okGo) return;
+    setBusy(true); setFails([]);
+    let ok = 0; const chars: number[] = []; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "Writing feed copy", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += CHUNK_FEED) {
+      const batch = ids.slice(i, i + CHUNK_FEED);
+      try {
+        const j = await fetch("/api/shopify-products/feed-copy", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, model: aiModel || undefined }) }).then((r) => r.json());
+        ok += j.written ?? 0;
+        if (j.avgChars) chars.push(j.avgChars);
+        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+      } catch (e) {
+        const m = String((e as Error)?.message ?? "network");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+      }
+      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    }
+    setProg(null); setFails(failed);
+    const avg = chars.length ? Math.round(chars.reduce((a, c) => a + c, 0) / chars.length) : 0;
+    flash(`${failed.length ? "⚠" : "✓"} Feed copy written for ${ok}/${ids.length} listing(s)${avg ? ` · avg ${avg} chars` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    await load();
+    setBusy(false);
+  };
+
+  // Xuất TSV: 1 dòng / VARIANT, cột id = shopify_ZZ_<productId>_<variantId> — trùng tuyệt đối với
+  // feed chính, sai 1 ký tự là Google bỏ qua dòng đó mà không báo lỗi.
+  const doFeedExport = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/shopify-products/feed-export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        flash("✗ " + String(j?.error ?? `export failed (${res.status})`), false);
+        setBusy(false); return;
+      }
+      const nRows = res.headers.get("X-Feed-Rows") ?? "?";
+      const nSkip = Number(res.headers.get("X-Feed-Skipped") ?? 0);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "talewix-supplemental-feed.txt";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      flash(`${nSkip ? "⚠" : "✓"} Exported ${nRows} variant row(s)${nSkip ? ` · ${nSkip} listing(s) skipped — run "Generate feed title + long description" on them first` : ""}`, nSkip === 0);
+    } catch (e) {
+      flash("✗ " + String((e as Error)?.message ?? "network"), false);
+    }
     setBusy(false);
   };
 
@@ -514,9 +648,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     // Chỉ số ngày giao hàng — không confirm vì không phá gì cả.
     if (key === "push_delivery") return doPushDelivery(Array.from(sel));
     if (key === "push_personalization") return doPushPersonalization(Array.from(sel));
-    // ONE-OFF · Google feed — xoá 2 dòng này khi đã chạy xong toàn bộ listing.
+    // Google feed — chạy lại cho mỗi lô sản phẩm mới, không phải one-off.
     if (key === "fill_sku") return doFillSku(Array.from(sel));
     if (key === "push_google_fields") return doPushGoogleFields(Array.from(sel));
+    if (key === "image_alt") return doImageAlt(Array.from(sel));
+    // Feed phụ — không đụng Shopify.
+    if (key === "feed_copy") return doFeedCopy(Array.from(sel));
+    if (key === "feed_export") return doFeedExport(Array.from(sel));
     // Find & replace: chạy được trên nhiều store cùng lúc — mỗi listing dùng credential store của nó.
     if (key === "find_replace") { setAct({ key, title: "Find & replace in text", kind: "replace", storeId: "", loading: false, items: [] }); return; }
     // Lifecycle nhanh (có confirm)
@@ -714,8 +852,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
           {canEdit && (
             <span style={grp}>
-              <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model used by Optimize — avoid ':free' models, they get rate-limited" style={{ ...fctl, maxWidth: 170 }}>
-                <option value="">Model: Default</option>{aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+              {/* Ô này là NGUỒN DUY NHẤT cho mọi hành động AI của trang: AI Optimize, feed copy, alt text.
+                  Model nào đọc được ảnh thì có dấu 👁 — alt text chỉ dùng được model có dấu đó. */}
+              <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model for every AI action on this page (Optimize, feed copy, image alt). 👁 = can read images, required for image alt text. Avoid ':free' models, they get rate-limited." style={{ ...fctl, maxWidth: 170 }}>
+                <option value="">Model: Default</option>{aiModels.map((m) => <option key={m.id} value={m.id}>{visionIds.has(m.id) ? "👁 " : ""}{m.name}</option>)}
               </select>
               {selDone > 0 && (
                 <button disabled={busy} title="Deselect listings AI has already rewritten — don't pay to write the same content twice" onClick={() => setSel(new Set(rows.filter((r) => sel.has(r.id) && !r.aiAt).map((r) => r.id)))} style={{ ...ghost, padding: "8px 11px", fontSize: 12.5, borderColor: "#D7CCF5", color: "#5B3FBF" }}>Skip {selDone} done</button>
@@ -741,11 +881,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <div style={{ position: "relative" }}>
                 <button disabled={busy} onClick={() => setActionsOpen((v) => !v)} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5 }}>More actions ▾</button>
                 {actionsOpen && (
-                  <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30, minWidth: 230, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,.12)", padding: 6 }} onMouseLeave={() => setActionsOpen(false)}>
-                    {ACTIONS.map((a) => "sep" in a ? (
-                      <div key={a.key} style={{ height: 1, background: "var(--line)", margin: "5px 4px" }} />
-                    ) : (
-                      <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>{a.label}</button>
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30, display: "flex", alignItems: "stretch", gap: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,.12)", padding: 6 }} onMouseLeave={() => setActionsOpen(false)}>
+                    {ACTION_GROUPS.map((g, gi) => (
+                      <div key={g.title} style={{ minWidth: 232, padding: "2px 6px", borderLeft: gi ? "1px solid var(--line)" : "none" }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", color: "var(--muted)", padding: "6px 8px 4px" }}>{g.title}</div>
+                        {g.items.map((a) => (
+                          <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, lineHeight: 1.35, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>{a.label}</button>
+                        ))}
+                      </div>
                     ))}
                   </div>
                 )}

@@ -145,20 +145,25 @@ export async function orGenerateImage(prompt: string, refDataUrls: string[], opt
   return { b64: img.b64_json, mediaType: img.media_type ?? "image/png", cost: data?.usage?.cost ?? 0 };
 }
 
-// Danh sách model trên OpenRouter để UI chọn theo khâu. type=text (kịch bản/ý tưởng) | image (vẽ/mockup).
-export async function listModels(type: "text" | "image" = "text"): Promise<{ id: string; name: string }[]> {
+// Danh sách model trên OpenRouter để UI chọn theo khâu.
+//   text   — sinh chữ (kịch bản/ý tưởng/AI Optimize)
+//   image  — vẽ/mockup
+//   vision — ĐỌC được ảnh và trả ra chữ (alt text ảnh). Model text thuần mà nhét ảnh vào là lỗi,
+//            nên nút alt text phải lọc theo danh sách này chứ không dùng bừa model đang chọn.
+export async function listModels(type: "text" | "image" | "vision" = "text"): Promise<{ id: string; name: string }[]> {
   const key = KEY();
   const res = await fetch("https://openrouter.ai/api/v1/models", { headers: key ? { Authorization: `Bearer ${key}` } : {}, signal: AbortSignal.timeout(20000) });
-  const j = (await res.json().catch(() => ({}))) as { data?: { id?: string; name?: string; architecture?: { output_modalities?: string[]; modality?: string } }[] };
+  const j = (await res.json().catch(() => ({}))) as { data?: { id?: string; name?: string; architecture?: { input_modalities?: string[]; output_modalities?: string[]; modality?: string } }[] };
   const data = Array.isArray(j?.data) ? j.data : [];
   const want = type === "image" ? "image" : "text";
   const list = data
     .filter((m) => {
       const out = m?.architecture?.output_modalities;
-      if (Array.isArray(out)) return out.includes(want);
-      // fallback: modality dạng "text+image->text"
       const mod = m?.architecture?.modality ?? "";
-      return mod.split("->")[1]?.includes(want) ?? (want === "text");
+      const okOut = Array.isArray(out) ? out.includes(want) : (mod.split("->")[1]?.includes(want) ?? (want === "text"));
+      if (!okOut || type !== "vision") return okOut;
+      const inp = m?.architecture?.input_modalities;
+      return Array.isArray(inp) ? inp.includes("image") : (mod.split("->")[0]?.includes("image") ?? false);
     })
     .map((m) => ({ id: String(m.id), name: String(m.name ?? m.id) }))
     .sort((a, b) => a.name.localeCompare(b.name));

@@ -267,6 +267,13 @@ export const shopifyProducts = pgTable("shopify_products", {
   // Template FUSION gán cho listing này — nguồn facts cho AI Optimize + 3 tab mô tả.
   // null = tự khớp theo Product type (fallback), gán tay = luôn dùng template này.
   templateId: uuid("template_id"),
+  // ---- Google supplemental feed — CHỈ nằm trong FUSION OS, KHÔNG BAO GIỜ push lên Shopify ----
+  // Merchant Center cho description tới 5000 ký tự, nhưng feed đang lấy seo_description (≤155,
+  // vì ô đó là dòng snippet trên Google Search, dài hơn là bị cắt). Hai field dưới đây để xuất
+  // file feed phụ ghi đè title/description mà không đụng một chữ nào trên listing.
+  feedTitle: text("feed_title"),                  // ≤150 ký tự, KHÔNG dính đuôi variant 8"x8" / Matte
+  feedDescription: text("feed_description"),      // 800-1200 ký tự — chỗ chứa từ khoá thật để match query
+  feedAt: timestamp("feed_at", { withTimezone: true }), // lần cuối AI viết 2 field trên
   dirty: boolean("dirty").notNull().default(false), // có chỉnh sửa local chưa Push
   // Lần cuối AI Optimize viết lại listing này. null = CHƯA chạy AI bao giờ.
   // Dùng cho cột "AI" + filter "Not optimized yet" — khỏi chạy lại (và trả tiền lại) con đã xong.
@@ -300,6 +307,13 @@ export const shopifyTemplates = pgTable("shopify_templates", {
   category: jsonb("category"),
   // categoryMetafields: [{ namespace, key, type, value, label, valueLabel }] — Book cover type/Genre/Language/Target audience
   categoryMetafields: jsonb("category_metafields").notNull().default([]),
+  // ---- Personalization — ô khách tự điền trên trang sản phẩm Shopify (mô hình giống Etsy) ----
+  // [{ type:"text"|"dropdown"|"upload", label, instructions, required, maxChars, options[], maxFiles }]
+  // Tối đa 5 câu/template, tối đa 1 câu kiểu upload — đúng giới hạn Etsy đang áp cho seller.
+  // "Push personalization" trong Manage Products ghi mảng này lên listing thành metafield
+  // fusion.options (json); snippet Liquid đọc ra, render thành line item properties.
+  // Cần MIGRATION_personalization.sql
+  personalization: jsonb("personalization").notNull().default([]),
   // Nội dung chuẩn của loại sản phẩm — nguồn sự thật cho AI Optimize + 3 tab mô tả (Description / Product Details / Shipping)
   baseDescription: text("base_description"),   // thông tin gốc sản phẩm (chất liệu, cá nhân hoá thế nào, in ở đâu…)
   productDetails: text("product_details"),     // bullet specs — mỗi dòng 1 gạch đầu dòng
