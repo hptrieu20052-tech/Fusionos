@@ -33,16 +33,30 @@ const D_MAX = 1400;
 
 const SYSTEM = `You write Google Merchant Center feed copy for a print-on-demand personalized product sold in the United States. This copy is read by Google's matching engine and by shoppers on Google Shopping and Free listings — not by a search-results snippet, so there is room to be complete.
 
+THE PRODUCT PHOTOS ARE ATTACHED — LOOK AT THEM FIRST, then read the SOURCE LISTING block if one is present. Every listing personalizes something different and the generic supplier facts do NOT say which; the photos and the source listing title are the two things that do. Read the images to establish exactly what is customized: a child's name printed on the cover or inside, the buyer's own uploaded photos placed on the pages, a dedication page, a portrait drawn as a character, a family name, a date, a message. Then describe the personalization you can actually SEE. Address the shopper as "you" — write "you upload your photos" and "you choose the dedication", never "the buyer supplies". If the images show no personalization, say nothing about it rather than inventing it, and never claim a feature you cannot see in the photos or read in the facts.
+
 Return STRICT JSON with exactly two keys:
 
 - "feedTitle": 110-150 characters written as ONE natural product name a real store would print on a shelf label — NOT a comma-separated keyword list. Aim for two to three descriptive segments joined by commas at most, each reading as normal English (e.g. "Personalized Raccoon Story Book for Kids with Their Name and Photos, Woodland Watercolor Hardcover Keepsake Gift"). Start with the primary keyword a buyer actually types, then the recipient, the occasion, and the concrete product form (e.g. hardcover photo book). Use Title Case, but keep short words lowercase unless they are the first word: for, and, with, to, of, in, on, a, an, the, or. No variant suffix, no size, no paper finish, no shop name, no ALL CAPS, no emojis, no pipe characters, no filler words padded on to hit the length.
 
-- "feedDescription": 800-1200 characters of PLAIN TEXT — no HTML tags, no bullet characters, no line breaks, no emojis. Write 4-6 flowing sentences that a shopper would actually read, covering, in this order: what the product is and who it is for; how the personalization works in concrete detail — exactly what the buyer supplies (name, photos, dedication, whatever the facts state), how it appears inside the book, and why that makes it a one-of-a-kind keepsake rather than a generic gift; the physical specifics (format, cover, paper, page count, print quality) exactly as given in the facts below; and the gift occasions and recipients it suits. Weave in the natural phrases buyers search — occasion, recipient, product type, style — as part of real sentences. NEVER mention shipping, delivery, production time, turnaround, arrival dates, returns or any policy — the Merchant Center feed carries those separately and stating them here creates a mismatch. Never list keywords, never repeat a phrase, never invent a number, size, material, time or policy that is not in the input.`;
+- "feedDescription": 800-1200 characters of PLAIN TEXT — no HTML tags, no bullet characters, no line breaks, no emojis. Write 4-6 flowing sentences that a shopper would actually read, covering, in this order: what the product is and who it is for; how the personalization works in concrete detail — name each thing you can see being customized in the photos (a name, uploaded photos, a dedication, a date), where it appears on the product, and why that makes it a one-of-a-kind keepsake rather than a generic gift; the physical specifics (format, cover, paper, page count, print quality) exactly as given in the facts below; and the gift occasions and recipients it suits. Weave in the natural phrases buyers search — occasion, recipient, product type, style — as part of real sentences. NEVER mention shipping, delivery, production time, turnaround, arrival dates, returns or any policy — the Merchant Center feed carries those separately and stating them here creates a mismatch. Never list keywords, never repeat a phrase, never invent a number, size, material, time or policy that is not in the input.`;
 
 const clip = (s: unknown, n: number) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 // Feed không chấp nhận HTML/xuống dòng/tab — dọn sạch trước khi lưu để lúc Export khỏi phải xử lý.
 const plain = (s: unknown) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/[\t\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+
+// Ảnh sản phẩm gửi kèm cho model NHÌN — mỗi listing cá nhân hoá một kiểu, template không tả nổi từng kiểu.
+// Tối đa 3 ảnh đầu theo position, ép Shopify CDN trả bản 900px cho nhẹ token.
+const IMG_MAX = 3;
+function imgUrls(v: unknown): string[] {
+  const arr = (Array.isArray(v) ? v : []) as { src?: string; position?: number }[];
+  return arr.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99))
+    .map((i) => String(i?.src ?? "").trim())
+    .filter((s) => /^https:\/\//i.test(s))
+    .slice(0, IMG_MAX)
+    .map((s) => s + (s.includes("?") ? "&" : "?") + "width=900");
+}
 
 type Tpl = typeof schema.shopifyTemplates.$inferSelect;
 function tplFor(tpls: Tpl[], storeId: string, productType: string | null, pinnedId: string | null): Tpl | null {
@@ -68,6 +82,8 @@ export async function POST(req: NextRequest) {
     id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, title: schema.shopifyProducts.title,
     bodyHtml: schema.shopifyProducts.bodyHtml, tags: schema.shopifyProducts.tags, productType: schema.shopifyProducts.productType,
     seoDescription: schema.shopifyProducts.seoDescription, options: schema.shopifyProducts.options,
+    images: schema.shopifyProducts.images,
+    gid: schema.shopifyProducts.shopifyProductId,
     templateId: schema.shopifyProducts.templateId, seller: schema.stores.sellerId,
   }).from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
@@ -77,6 +93,15 @@ export async function POST(req: NextRequest) {
 
   const tpls = await db.select().from(schema.shopifyTemplates);
 
+  // Listing Etsy GỐC của sản phẩm này (nối bằng GID Shopify đã ghi lúc Push).
+  // Đây là nơi DUY NHẤT nói rõ listing này cá nhân hoá cái gì — template chỉ tả chung cho cả loại.
+  const gids = rows.map((r) => r.gid).filter(Boolean) as string[];
+  const srcRows = gids.length
+    ? await db.select({ gid: schema.etsyProducts.shopifyProductId, title: schema.etsyProducts.title, tags: schema.etsyProducts.tags, description: schema.etsyProducts.description })
+        .from(schema.etsyProducts).where(inArray(schema.etsyProducts.shopifyProductId, gids))
+    : [];
+  const srcBy = new Map(srcRows.filter((s) => s.gid).map((s) => [s.gid as string, s]));
+
   const results = await Promise.all(rows.map(async (r, idx): Promise<{ id: string; title: string; ok: boolean; chars?: number; error?: string }> => {
     try {
       await sleep(idx * 400);
@@ -84,12 +109,22 @@ export async function POST(req: NextRequest) {
       const tpl = tplFor(tpls, r.storeId, r.productType, r.templateId);
       const opts = (Array.isArray(r.options) ? r.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${(o.values ?? []).join(", ")}`).join(" | ");
 
+      // Title Etsy gốc là mô tả CHÍNH XÁC nhất về listing này: seller nhồi đủ ý vào đó
+      // (cá nhân hoá cái gì, cho ai, dịp nào). Đưa lên đầu prompt để model bám vào.
+      const src = r.gid ? srcBy.get(r.gid) : undefined;
+      const srcBlock = src ? `
+SOURCE LISTING this product was built from. The source title is the most accurate single description of what this specific listing is and what gets personalized — trust it over the generic facts below. Use it ONLY to understand the product; never reuse its sentences, its exact title, or any policy/shipping text from it:
+[Source title] ${clip(src.title, 250)}
+[Source tags] ${clip(src.tags, 400)}
+[Source description] ${clip(src.description, 1800)}
+` : "";
+
       const user = `Current product title: ${clip(r.title, 200)}
 Product type: ${clip(r.productType, 80)}
 Variants offered: ${opts || "none"}
 Search terms buyers use: ${clip(r.tags, 400)}
 Current meta description: ${clip(r.seoDescription, 200) || "(none)"}
-
+${srcBlock}
 SUPPLIER FACTS (ground truth — never contradict, never invent beyond this):
 [Product info] ${clip(tpl?.baseDescription, 1500) || "(none)"}
 [Specs] ${clip(tpl?.productDetails, 1500) || "(none)"}
@@ -99,7 +134,7 @@ Current on-page description (plain, up to 2000 chars): ${plain(r.bodyHtml).slice
       const o = await orChatJSON<{ feedTitle?: string; feedDescription?: string }>(SYSTEM, user, {
         // 1600 đủ cho model thường (feed dài nhất ~1400 ký tự ≈ 400 token) nhưng model suy luận
         // (GPT-5.x…) đốt hết vào phần nghĩ ⇒ content rỗng finish_reason=length. Nới trần + effort low.
-        model, maxTokens: 8000, temperature: 0.5, reasoning: "low",
+        model, maxTokens: 8000, temperature: 0.5, reasoning: "low", images: imgUrls(r.images),
         timeoutMs: Math.min(70_000, Math.max(15_000, deadline - Date.now() - 8000)),
       });
       const ft = clip(plain(o?.feedTitle), T_MAX);

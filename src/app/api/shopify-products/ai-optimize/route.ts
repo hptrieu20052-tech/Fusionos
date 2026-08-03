@@ -33,6 +33,8 @@ type Opt = { title?: string; seoTitle?: string; seoDescription?: string; tags?: 
 
 const SYSTEM_BASE = `You are an e-commerce SEO copywriter optimizing a Shopify product for US shoppers on Google Search & Shopping. Pick ONE primary keyword (what a buyer actually types) and weave it naturally into the title, the SEO fields, and the first sentence of the description. Never keyword-stuff, no emojis, no shop name.
 
+THE PRODUCT PHOTOS ARE ATTACHED — LOOK AT THEM FIRST, then read the SOURCE LISTING block if one is present. Every listing personalizes something different and the generic supplier facts do NOT say which; the photos and the source listing title are the two things that do. Read the images to establish exactly what the buyer gets and what is customized: a child's name printed on the cover or inside, the buyer's own uploaded photos placed on the pages, a dedication page, a portrait of the child drawn as a character, a family name, a date, a map, a message. Then write about the personalization you can actually SEE. Address the shopper as "you" — write "you upload your photos", never "the buyer supplies". If the images show no personalization at all, say nothing about it rather than inventing it, and never claim a feature you cannot see in the photos or read in the facts.
+
 Return STRICT JSON. Keys:
 - "title": product title, 55-70 characters — aim for 60-68 and NEVER go under 55 or over 70. Primary keyword first, Title Case, human and specific (recipient + occasion + product type). Keep short words lowercase unless first: for, and, with, to, of, in, on, a, an, the, or. FORBIDDEN: the pipe character "|", and any padding word bolted on just to reach the length (Keepsake, Gift Idea, Custom Gift, Unique, Perfect, Best, Special) unless that word is genuinely part of the product name. If your title is under 55 characters, do NOT pad with filler — rewrite it with a real extra detail (the recipient, the occasion, what gets personalized, the art style) until it lands in range. No ALL CAPS.
 - "seoTitle": SEO page title, 55-60 characters — aim for 58-60 and NEVER go under 55 or over 60. Primary keyword near the front, then a benefit or occasion. Use the full width; a short title wastes the Google result line.
@@ -73,7 +75,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  *  - JSON cụt vì hết max_tokens → orChatJSON đã tự vá, còn hỏng thì thử lại
  * Chỉ thử lại KHI còn đủ thời gian; hết giờ thì trả lỗi rõ ràng để client tự chạy lại con đó.
  */
-async function askAI(system: string, user: string, model: string | undefined, deadline: number): Promise<Opt> {
+// Ảnh sản phẩm gửi kèm cho model NHÌN. Mỗi listing cá nhân hoá một kiểu (ảnh khách gửi, tên in bìa,
+// nhân vật riêng…) và template KHÔNG mô tả nổi từng kiểu, nên chữ nghĩa suông hay viết chung chung.
+// Lấy tối đa 3 ảnh đầu theo position (bìa + ruột) và ép Shopify CDN trả bản 900px cho nhẹ token.
+const IMG_MAX = 3;
+function imgUrls(v: unknown): string[] {
+  const arr = (Array.isArray(v) ? v : []) as { src?: string; position?: number }[];
+  return arr.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99))
+    .map((i) => String(i?.src ?? "").trim())
+    .filter((s) => /^https:\/\//i.test(s))
+    .slice(0, IMG_MAX)
+    .map((s) => s + (s.includes("?") ? "&" : "?") + "width=900");
+}
+
+async function askAI(system: string, user: string, model: string | undefined, deadline: number, images?: string[]): Promise<Opt> {
   let last: Error | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const left = deadline - Date.now();
@@ -81,7 +96,7 @@ async function askAI(system: string, user: string, model: string | undefined, de
     try {
       // Model suy luận tiêu token nghĩ TRONG max_tokens ⇒ 4000 cạn trước khi kịp viết JSON
       // (lỗi "nội dung rỗng, finish_reason=length"). Nới trần + ép effort low: chỉ viết copy, không cần nghĩ sâu.
-      const o = await orChatJSON<Opt>(system, user, { model, maxTokens: 12000, temperature: 0.5, reasoning: "low", timeoutMs: Math.min(45000, left - 2000) });
+      const o = await orChatJSON<Opt>(system, user, { model, maxTokens: 12000, temperature: 0.5, reasoning: "low", images, timeoutMs: Math.min(45000, left - 2000) });
       if (!clip(o?.title, 120)) throw new Error("model trả về title rỗng");
       return o;
     } catch (e) {
@@ -106,7 +121,7 @@ export async function POST(req: NextRequest) {
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
   const model = typeof b?.model === "string" && b.model.trim() ? b.model.trim() : undefined;
 
-  const rows = await db.select({ id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, title: schema.shopifyProducts.title, tags: schema.shopifyProducts.tags, bodyHtml: schema.shopifyProducts.bodyHtml, productType: schema.shopifyProducts.productType, vendor: schema.shopifyProducts.vendor, options: schema.shopifyProducts.options, templateId: schema.shopifyProducts.templateId, seller: schema.stores.sellerId })
+  const rows = await db.select({ id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, title: schema.shopifyProducts.title, tags: schema.shopifyProducts.tags, bodyHtml: schema.shopifyProducts.bodyHtml, productType: schema.shopifyProducts.productType, vendor: schema.shopifyProducts.vendor, options: schema.shopifyProducts.options, images: schema.shopifyProducts.images, gid: schema.shopifyProducts.shopifyProductId, templateId: schema.shopifyProducts.templateId, seller: schema.stores.sellerId })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
   const scopeIds = await storeOwnerScopeIds(session);
@@ -114,6 +129,15 @@ export async function POST(req: NextRequest) {
 
   const storeIds = Array.from(new Set(rows.map((r) => r.storeId)));
   const tpls = storeIds.length ? await db.select().from(schema.shopifyTemplates) : [];
+
+  // Listing Etsy GỐC của sản phẩm này (nối bằng GID Shopify đã ghi lúc Push).
+  // Đây là nơi DUY NHẤT nói rõ listing này cá nhân hoá cái gì — template chỉ tả chung cho cả loại.
+  const gids = rows.map((r) => r.gid).filter(Boolean) as string[];
+  const srcRows = gids.length
+    ? await db.select({ gid: schema.etsyProducts.shopifyProductId, title: schema.etsyProducts.title, tags: schema.etsyProducts.tags, description: schema.etsyProducts.description })
+        .from(schema.etsyProducts).where(inArray(schema.etsyProducts.shopifyProductId, gids))
+    : [];
+  const srcBy = new Map(srcRows.filter((s) => s.gid).map((s) => [s.gid as string, s]));
 
   // Chạy SONG SONG — mỗi sản phẩm tự bắt lỗi, 1 con hỏng không kéo cả lô.
   const results = await Promise.all(rows.map(async (r, idx): Promise<{ id: string; title: string; ok: boolean; withTemplate?: boolean; error?: string }> => {
@@ -129,15 +153,22 @@ SUPPLIER FACTS (ground truth for this product type "${tpl!.productType ?? ""}"):
 [Specs] ${clip(tpl!.productDetails, 1500) || "(none)"}
 [Shipping] ${clip(tpl!.shippingInfo, 1500) || "(none)"}
 ` : "";
+      const src = r.gid ? srcBy.get(r.gid) : undefined;
+      const srcBlock = src ? `
+SOURCE LISTING this product was built from. The source title is the most accurate single description of what this specific listing is and what gets personalized — trust it over the generic facts below. Use it ONLY to understand the product; never reuse its sentences, its exact title, or any policy/shipping text from it:
+[Source title] ${clip(src.title, 250)}
+[Source tags] ${clip(src.tags, 400)}
+[Source description] ${clip(src.description, 1800)}
+` : "";
       const user = `Current title: ${r.title}
 Product type: ${r.productType ?? ""}
 Vendor/brand: ${r.vendor ?? ""}
 Options/variants: ${opts || "none"}
 Current tags: ${r.tags ?? ""}
-${factsBlock}Current description (plain, up to 1000 chars): ${(r.bodyHtml ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1000)}`;
+${srcBlock}${factsBlock}Current description (plain, up to 1000 chars): ${(r.bodyHtml ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1000)}`;
 
       const system = hasFacts ? SYSTEM_BASE + SYSTEM_TPL_EXTRA : SYSTEM_BASE;
-      const o = await askAI(system, user, model, deadline);
+      const o = await askAI(system, user, model, deadline, imgUrls(r.images));
       const t = clip(o?.title, 120);
 
       // Ghép 3 tab — tất cả do AI viết riêng cho listing này (facts từ template)
