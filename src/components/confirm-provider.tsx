@@ -53,7 +53,9 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
       {children}
       {o && (
         <div onClick={() => done(false)}
-          style={{ position: "fixed", inset: 0, background: "rgba(20,26,38,.46)", backdropFilter: "blur(2px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "cf-fade .12s ease" }}>
+          // zIndex phải CAO HƠN mọi modal trong app (các modal đang dùng 3000) — hộp confirm/prompt
+          // luôn được gọi TỪ TRONG một modal (Add image by URL, Delete…), nằm dưới là coi như mất hộp.
+          style={{ position: "fixed", inset: 0, background: "rgba(20,26,38,.46)", backdropFilter: "blur(2px)", zIndex: 9800, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, animation: "cf-fade .12s ease" }}>
           <div onClick={(e) => e.stopPropagation()}
             className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 420, maxWidth: "94vw", padding: "24px 24px 20px", boxShadow: "0 18px 50px rgba(13,40,80,.28)", animation: "cf-pop .16s cubic-bezier(.2,.9,.3,1.2)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
