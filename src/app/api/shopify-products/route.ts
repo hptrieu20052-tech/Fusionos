@@ -78,6 +78,12 @@ export async function GET(req: NextRequest) {
       // v119: feed Merchant Center. Chỉ trả ĐỘ DÀI, không trả nguyên văn — 134 dòng × 1300 ký tự
       // là ~180KB thừa mỗi lần load bảng. Nội dung đầy đủ lấy ở GET ?id= khi mở Edit.
       feedAt: r.p.feedAt, feedTitleLen: (r.p.feedTitle ?? "").length, feedDescLen: (r.p.feedDescription ?? "").length,
+      // v127: cột PIPELINE — "listing này đã chạy những gì rồi". Chỉ trả 4 CON SỐ, không trả nội dung.
+      // fill-sku và image-alt đều ghi ngược variants/images về DB local ngay sau khi Shopify nhận
+      // (fill-sku/route.ts:156, image-alt/route.ts:138) ⇒ 4 số này là tình trạng THẬT trên Shopify,
+      // không phải phỏng đoán, và không cần bấm Sync mới thấy.
+      skuTotal: vs.length, skuDone: vs.filter((v) => String(v?.sku ?? "").trim()).length,
+      altTotal: imgs.length, altDone: imgs.filter((i) => String(i?.altText ?? "").trim()).length,
       optionsSummary: (Array.isArray(r.p.options) ? r.p.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${o.values.length}`).join(" · "),
     };
   });

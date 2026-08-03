@@ -15,6 +15,8 @@ type Row = {
   templateId: string | null; templateName: string; templatePinned: boolean; templateHasFacts: boolean;
   aiAt: string | null; pushedAt: string | null;
   feedAt: string | null; feedTitleLen: number; feedDescLen: number;
+  // v127: cột PIPELINE. skuDone/skuTotal = số variant đã có SKU; altDone/altTotal = số ảnh đã có alt.
+  skuDone: number; skuTotal: number; altDone: number; altTotal: number;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -48,6 +50,12 @@ const grp: React.CSSProperties = { display: "inline-flex", alignItems: "center",
 // thiếu title/description, và dưới 600 ký tự thì viết feed coi như hỏng mục đích.
 const feedOk = (r: { feedAt: string | null; feedTitleLen: number; feedDescLen: number }) =>
   !!r.feedAt && r.feedTitleLen > 0 && r.feedDescLen >= 600;
+// v127: màu chip "sku 4/4" / "alt 10/10". Xanh = xong hết, vàng = làm dở, xám = chưa có gì.
+// total = 0 (listing không variant/không ảnh) coi như không áp dụng ⇒ xám, đừng báo động giả.
+const chipTone = (done: number, total: number): React.CSSProperties =>
+  total === 0 || done === 0 ? { background: "#F1F1F4", color: "#8794A5" }
+    : done >= total ? { background: "#E9F7EF", color: "#1F6F45" }
+      : { background: "#FEF6E7", color: "#B7791F" };
 const ago = (iso: string | null) => {
   if (!iso) return "";
   const ms = Date.now() - new Date(iso).getTime();
@@ -149,6 +157,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   // Lọc theo trạng thái AI: "" tất cả · "todo" chưa chạy AI · "done" đã có AI · "unpushed" đã AI nhưng chưa Push
   const [aiFilter, setAiFilter] = useState<"" | "todo" | "done" | "unpushed">("");
   const [feedFilter, setFeedFilter] = useState<"" | "todo" | "done">("");
+  const [prepFilter, setPrepFilter] = useState<"" | "sku" | "alt" | "done">(""); // v127
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
@@ -206,18 +215,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     (!statusFilter || (r.status || "").toUpperCase() === statusFilter) &&
     (!aiFilter || (aiFilter === "todo" ? !r.aiAt : aiFilter === "done" ? !!r.aiAt : !!r.aiAt && r.dirty)) &&
     (!feedFilter || (feedFilter === "done" ? feedOk(r) : !feedOk(r))) &&
+    (!prepFilter || (prepFilter === "sku" ? r.skuDone < r.skuTotal : prepFilter === "alt" ? r.altDone < r.altTotal : r.skuDone >= r.skuTotal && r.altDone >= r.altTotal)) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, stores]);
+  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
   // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
   const selDirty = useMemo(() => rows.filter((r) => sel.has(r.id) && r.dirty).length, [rows, sel]);
-  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter);
-  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); };
+  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter);
+  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); setPrepFilter(""); };
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
@@ -830,6 +840,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             <option value="todo">No feed copy yet</option>
             <option value="done">Feed copy ready</option>
           </select>
+          {/* v127: lọc đúng những listing còn thiếu SKU / alt để chỉ chạy lại đúng chỗ đó,
+              khỏi bắn cả 135 con qua vision lần nữa. */}
+          <select value={prepFilter} onChange={(e) => setPrepFilter(e.target.value as "" | "sku" | "alt" | "done")} title="Google prep status — pick 'Missing image alt' to select only the listings that still need a vision run" style={fsel(!!prepFilter, "#1F6F45", "#BFE3CD", "#F3FBF6")}>
+            <option value="">Prep: all</option>
+            <option value="sku">Missing SKU</option>
+            <option value="alt">Missing image alt</option>
+            <option value="done">SKU + alt complete</option>
+          </select>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
@@ -956,7 +974,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Type / Category</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Collections</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Template</th>
-              <th style={{ padding: "10px 8px", textAlign: "center" }} title="Top line = last AI Optimize run. Bottom line = Google Merchant feed copy and its length">AI / Feed</th>
+              <th style={{ padding: "10px 8px", textAlign: "center" }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
               <th style={{ padding: "10px 8px", textAlign: "right" }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center" }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right" }}>Actions</th>
@@ -1014,6 +1032,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                     ) : (
                       <span title="No feed copy — Export supplemental feed skips this listing" style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#F1F1F4", color: "#8794A5" }}>no feed</span>
                     )}
+                  </div>
+                  {/* v127: dòng 3 = 2 việc còn lại của google_prep. Đếm THẬT từ variants[].sku và
+                      images[].altText đã ghi ngược về DB, nên không cần Sync mới thấy đúng.
+                      Xanh = đủ, vàng = làm dở, xám = chưa chạy. */}
+                  <div style={{ marginTop: 3, display: "flex", gap: 4, justifyContent: "center" }}>
+                    <span title={r.skuTotal === 0 ? "No variants" : r.skuDone === r.skuTotal ? `All ${r.skuTotal} variant(s) have a SKU` : `${r.skuTotal - r.skuDone} variant(s) still have no SKU — run Prepare for Google feed`}
+                      style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...chipTone(r.skuDone, r.skuTotal) }}>sku {r.skuDone}/{r.skuTotal}</span>
+                    <span title={r.altTotal === 0 ? "No images" : r.altDone === r.altTotal ? `All ${r.altTotal} image(s) have alt text` : `${r.altTotal - r.altDone} image(s) still have no alt text — run Prepare for Google feed with a vision model`}
+                      style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...chipTone(r.altDone, r.altTotal) }}>alt {r.altDone}/{r.altTotal}</span>
                   </div>
                 </td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap" }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
