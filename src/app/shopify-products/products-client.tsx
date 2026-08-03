@@ -56,7 +56,8 @@ const ago = (iso: string | null) => {
 };
 
 type ActKey =
-  | "set_template" | "apply_template" | "push_delivery" | "find_replace"
+  | "set_template" | "apply_template" | "push_delivery" | "push_personalization" | "find_replace"
+  | "fill_sku" | "push_google_fields"
   | "active" | "draft" | "archive" | "delete"
   | "tags_add" | "tags_remove"
   | "channels_include" | "channels_exclude"
@@ -68,7 +69,15 @@ const ACTIONS: ActionItem[] = [
   { key: "apply_template", label: "Apply template (variants → Shopify)…" },
   // Bản nhẹ của Update Template: chỉ ghi metafield fusion.delivery, không đụng variants.
   { key: "push_delivery", label: "Push delivery times only" },
+  // Ghi metafield fusion.options — ô cá nhân hoá khách điền trên trang sản phẩm.
+  { key: "push_personalization", label: "Push personalization fields" },
   { key: "find_replace", label: "Find & replace in text…" },
+  // ── Google feed (one-off) ──────────────────────────────────────────────────
+  // Hai mục dùng-một-lần. Chạy xong hết 134 listing thì xoá được: bỏ 2 dòng này,
+  // 2 dòng dispatch trong runAction, 2 hàm doFillSku / doPushGoogleFields và 2 thư mục route.
+  { key: "sep_g", sep: true },
+  { key: "fill_sku", label: "Generate missing SKUs → Shopify" },
+  { key: "push_google_fields", label: "Push Google feed fields (custom product + audience)" },
   { key: "sep0", sep: true },
   { key: "active", label: "Set as Active" },
   { key: "draft", label: "Unlist products (set to Draft)" },
@@ -291,6 +300,106 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
   };
 
+  // Push personalization: CHỈ đẩy bộ ô cá nhân hoá của Template (metafield fusion.options).
+  // Không đụng title/description/giá/ảnh nên chạy được cả trên listing đang sạch.
+  // Template không khai ô nào ⇒ ghi mảng rỗng = XOÁ ô trên listing; đếm riêng để báo rõ.
+  const doPushPersonalization = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    setBusy(true); setFails([]);
+    let ok = 0; let cleared = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "Pushing personalization fields", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += 25) {
+      const batch = ids.slice(i, i + 25);
+      try {
+        const j = await fetch("/api/shopify-products/push-personalization", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
+        ok += j.pushed ?? 0; cleared += j.cleared ?? 0;
+        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+      } catch (e) {
+        const m = String((e as Error)?.message ?? "network");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+      }
+      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    }
+    setProg(null); setFails(failed);
+    const tail = failed.length ? ` · ${failed.length} failed — see the list below`
+      : cleared ? ` · ${cleared} had no fields in their template — those listings were cleared`
+      : " — open a product page to check the inputs";
+    flash(`${failed.length ? "⚠" : cleared ? "⚠" : "✓"} Personalization pushed to ${ok}/${ids.length} listing(s)${tail}`, failed.length === 0 && cleared === 0);
+    setBusy(false);
+  };
+
+  // ══ ONE-OFF · Google feed ═══════════════════════════════════════════════════
+  // Hai hàm dưới là việc dọn dẹp một lần cho feed Google. Chạy xong toàn bộ listing
+  // thì xoá cả khối này + 2 dòng trong ACTIONS + 2 dòng trong runAction + 2 route.
+
+  // Generate missing SKUs: sinh TLW-0007-8X8-GLO cho variant ĐANG TRỐNG rồi ghi thẳng lên
+  // Shopify (chỉ field sku). Variant đã có SKU thì bỏ qua — đổi SKU là Google coi như hàng mới.
+  // Không set dirty, không cần bấm Push sau đó.
+  const doFillSku = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    const okGo = await confirm({
+      title: "Generate missing SKUs",
+      confirmText: `Generate on ${ids.length}`,
+      tone: "green",
+      message: `Sinh SKU dạng TLW-0007-8X8-GLO cho những variant đang TRỐNG của ${ids.length} listing, rồi ghi thẳng lên Shopify.\n\nVariant nào ĐÃ CÓ SKU sẽ được giữ nguyên, không ghi đè.\n\nChỉ đụng field SKU. Tiêu đề, mô tả, giá, ảnh, trạng thái không thay đổi — không cần bấm Push sau đó.`,
+    });
+    if (!okGo) return;
+    setBusy(true); setFails([]);
+    let ok = 0, filled = 0, skipped = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "Generating SKUs", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += 25) {
+      const batch = ids.slice(i, i + 25);
+      try {
+        const j = await fetch("/api/shopify-products/fill-sku", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch }) }).then((r) => r.json());
+        ok += j.pushed ?? 0; filled += j.filled ?? 0; skipped += j.skipped ?? 0;
+        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+      } catch (e) {
+        const m = String((e as Error)?.message ?? "network");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+      }
+      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    }
+    setProg(null); setFails(failed);
+    flash(`${failed.length ? "⚠" : "✓"} ${filled} SKU(s) written on ${ok}/${ids.length} listing(s)${skipped ? ` · ${skipped} variant(s) already had a SKU — kept as is` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    await load();
+    setBusy(false);
+  };
+
+  // Push Google feed fields: metafield mm-google-shopping.custom_product = true
+  // + rút shopify.target-audience về đúng "Kids" (Google chỉ nhận 1 giá trị age_group).
+  // Chỉ ghi metafield ⇒ không kích hoạt duyệt lại listing trên Merchant Center.
+  const doPushGoogleFields = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    const okGo = await confirm({
+      title: "Push Google feed fields",
+      confirmText: `Push to ${ids.length}`,
+      tone: "green",
+      message: `Ghi 2 metafield cho ${ids.length} listing:\n\n• Google: Custom Product = true — Google hiểu là hàng tự sản xuất, không cần GTIN.\n• Target audience — giữ lại duy nhất "Kids", bỏ "Adults" (Google chỉ nhận 1 giá trị).\n\nListing chưa có Target audience sẽ được bỏ qua, không tự điền.\n\nKhông đụng tiêu đề, mô tả, giá, ảnh — nên không kích hoạt duyệt lại.`,
+    });
+    if (!okGo) return;
+    setBusy(true); setFails([]);
+    let ok = 0, fixed = 0, skippedAud = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "Pushing Google feed fields", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += 25) {
+      const batch = ids.slice(i, i + 25);
+      try {
+        const j = await fetch("/api/shopify-products/push-google-fields", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: batch, customProduct: true, audience: "kids" }) }).then((r) => r.json());
+        ok += j.pushed ?? 0; fixed += j.audienceFixed ?? 0; skippedAud += j.audienceSkipped ?? 0;
+        (j.results ?? []).filter((r: { ok: boolean }) => !r.ok).forEach((r: { id: string; title: string; error?: string }) => failed.push({ id: r.id, title: r.title, error: r.error ?? "failed" }));
+        if (!j.results && j.error) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error }));
+      } catch (e) {
+        const m = String((e as Error)?.message ?? "network");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: m }));
+      }
+      setProg((p) => p ? { ...p, done: Math.min(i + batch.length, ids.length), fail: failed.length } : p);
+    }
+    setProg(null); setFails(failed);
+    flash(`${failed.length ? "⚠" : "✓"} Google fields pushed to ${ok}/${ids.length} listing(s) · audience narrowed on ${fixed}${skippedAud ? ` · ${skippedAud} had no matching audience value — left untouched` : ""}${failed.length ? ` · ${failed.length} failed — see the list below` : ""}`, failed.length === 0);
+    setBusy(false);
+  };
+
   // AI Optimize theo LÔ 6 + hiện tiến độ + TỰ CHẠY LẠI con fail (2 vòng nữa) vì lỗi hay gặp là
   // 429 rate limit / provider chậm — chạy lại là qua. Con nào vẫn hỏng thì liệt kê kèm lý do.
   // KHÔNG tự Push: gen xong sản phẩm ở trạng thái EDITED → xem lại → bấm "⬆ Push to Shopify".
@@ -404,6 +513,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     if (!sel.size) return flash("✗ Select products first", false);
     // Chỉ số ngày giao hàng — không confirm vì không phá gì cả.
     if (key === "push_delivery") return doPushDelivery(Array.from(sel));
+    if (key === "push_personalization") return doPushPersonalization(Array.from(sel));
+    // ONE-OFF · Google feed — xoá 2 dòng này khi đã chạy xong toàn bộ listing.
+    if (key === "fill_sku") return doFillSku(Array.from(sel));
+    if (key === "push_google_fields") return doPushGoogleFields(Array.from(sel));
     // Find & replace: chạy được trên nhiều store cùng lúc — mỗi listing dùng credential store của nó.
     if (key === "find_replace") { setAct({ key, title: "Find & replace in text", kind: "replace", storeId: "", loading: false, items: [] }); return; }
     // Lifecycle nhanh (có confirm)
