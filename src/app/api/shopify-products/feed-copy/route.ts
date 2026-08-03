@@ -35,9 +35,9 @@ const SYSTEM = `You write Google Merchant Center feed copy for a print-on-demand
 
 Return STRICT JSON with exactly two keys:
 
-- "feedTitle": 110-150 characters. Start with the primary keyword a buyer actually types. Then the recipient, the occasion, and the concrete product form (e.g. hardcover photo book). Title Case. No variant suffix, no size, no paper finish, no shop name, no ALL CAPS, no emojis, no pipes stacked with filler.
+- "feedTitle": 110-150 characters written as ONE natural product name a real store would print on a shelf label — NOT a comma-separated keyword list. Aim for two to three descriptive segments joined by commas at most, each reading as normal English (e.g. "Personalized Raccoon Story Book for Kids with Their Name and Photos, Woodland Watercolor Hardcover Keepsake Gift"). Start with the primary keyword a buyer actually types, then the recipient, the occasion, and the concrete product form (e.g. hardcover photo book). Use Title Case, but keep short words lowercase unless they are the first word: for, and, with, to, of, in, on, a, an, the, or. No variant suffix, no size, no paper finish, no shop name, no ALL CAPS, no emojis, no pipe characters, no filler words padded on to hit the length.
 
-- "feedDescription": 800-1200 characters of PLAIN TEXT — no HTML tags, no bullet characters, no line breaks, no emojis. Write 4-6 flowing sentences that a shopper would actually read, covering, in this order: what the product is and who it is for; how the personalization works and what the buyer supplies; the physical specifics (format, cover, paper, page count, print quality) exactly as given in the facts below; the gift occasions and recipients it suits; and how it ships and arrives. Weave in the natural phrases buyers search — occasion, recipient, product type, style — as part of real sentences. Never list keywords, never repeat a phrase, never invent a number, size, material, time or policy that is not in the input.`;
+- "feedDescription": 800-1200 characters of PLAIN TEXT — no HTML tags, no bullet characters, no line breaks, no emojis. Write 4-6 flowing sentences that a shopper would actually read, covering, in this order: what the product is and who it is for; how the personalization works in concrete detail — exactly what the buyer supplies (name, photos, dedication, whatever the facts state), how it appears inside the book, and why that makes it a one-of-a-kind keepsake rather than a generic gift; the physical specifics (format, cover, paper, page count, print quality) exactly as given in the facts below; and the gift occasions and recipients it suits. Weave in the natural phrases buyers search — occasion, recipient, product type, style — as part of real sentences. NEVER mention shipping, delivery, production time, turnaround, arrival dates, returns or any policy — the Merchant Center feed carries those separately and stating them here creates a mismatch. Never list keywords, never repeat a phrase, never invent a number, size, material, time or policy that is not in the input.`;
 
 const clip = (s: unknown, n: number) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -93,7 +93,6 @@ Current meta description: ${clip(r.seoDescription, 200) || "(none)"}
 SUPPLIER FACTS (ground truth — never contradict, never invent beyond this):
 [Product info] ${clip(tpl?.baseDescription, 1500) || "(none)"}
 [Specs] ${clip(tpl?.productDetails, 1500) || "(none)"}
-[Shipping] ${clip(tpl?.shippingInfo, 1200) || "(none)"}
 
 Current on-page description (plain, up to 2000 chars): ${plain(r.bodyHtml).slice(0, 2000)}`;
 
