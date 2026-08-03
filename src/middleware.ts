@@ -5,7 +5,10 @@ import { jwtVerify } from "jose";
 // /journey: ảnh tĩnh trang LOGIN (chưa đăng nhập) — không whitelist thì middleware 307 ảnh về /login → carousel trống.
 // /api/tiktokshops/auth + /api/tiktok/oauth/callback: điểm nhận OAuth từ TikTok/theyourlist,
 // KHÔNG có session cookie → phải public (state=storeId tự xác định store, an toàn).
-const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/api/ping", "/api/cron", "/journey/", "/api/tiktokshops/auth", "/api/tiktok/oauth/callback"];
+// /api/feed: Googlebot của Merchant Center KHÔNG có cookie session → middleware trả 401 →
+// Merchant Center hiện đúng chữ "Authentication failed". Route tự chặn bằng FEED_FETCH_KEY
+// (thiếu/sai khoá là 404), nên mở public ở tầng middleware là an toàn.
+const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/api/ping", "/api/cron", "/journey/", "/api/tiktokshops/auth", "/api/tiktok/oauth/callback", "/api/feed/"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
