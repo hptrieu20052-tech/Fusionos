@@ -40,7 +40,7 @@ Return STRICT JSON. Keys:
 - "tags": 12-15 comma-separated lowercase search terms (recipient, occasion, product type, style, use-case). No underscores or #.
 - "description": clean HTML, 220-330 words: one <p> hook (keyword in first sentence, emotional benefit tied to THIS listing's theme); one <p> on how the personalization works / what makes it special; one <p><strong>Product features</strong></p> then <ul> with 5-7 <li> benefits; one <p> of gift occasions matching THIS listing's theme; one closing <p> call to action. Only <p>, <ul>, <li>, <strong>.
 
-BEFORE you output the JSON, do a character count on "title", "seoTitle" and "seoDescription" by counting them character by character (spaces and punctuation included). If any of the three is outside its stated range, rewrite that field — adding real substance when short, cutting the weakest words when long — and count again. Only return the JSON once all three are inside range. A field that is one character short is still wrong.`;
+LENGTH RULE: "title", "seoTitle" and "seoDescription" must land inside their stated character ranges, spaces and punctuation included. Check each one before writing it out and fix it in place — add a real detail when short, cut the weakest words when long. One character short is still wrong. Output the JSON object only, with no counts, notes or commentary of any kind.`;
 
 const SYSTEM_TPL_EXTRA = `
 
