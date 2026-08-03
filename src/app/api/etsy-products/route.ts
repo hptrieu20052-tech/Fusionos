@@ -126,6 +126,50 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
+
+  // ----- CREATE MANUAL -----
+  // Ý tưởng mới chưa có trên Etsy vẫn cần một dòng ở đây, vì Push Shopify và AI Optimize đều đọc
+  // từ bảng này. shopify_product_id để trống ⇒ Push lần đầu TẠO MỚI trên Shopify, không đè cái nào.
+  if (b?.action === "create") {
+    const storeId = String(b?.storeId ?? "");
+    if (!/^[0-9a-f-]{36}$/i.test(storeId)) return NextResponse.json({ ok: false, error: "storeId required" }, { status: 400 });
+    const scoped = await scopedEtsyStoreIds(session);
+    if (!scoped.includes(storeId)) return NextResponse.json({ ok: false, error: "store not in your scope" }, { status: 403 });
+    const title = String(b?.title ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+    if (!title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
+
+    // Import CSV dedupe theo (store, title) vì CSV Etsy không có listing id ⇒ trùng title là hỏng.
+    const [dup] = await db.select({ id: schema.etsyProducts.id }).from(schema.etsyProducts)
+      .where(sql`${schema.etsyProducts.storeId} = ${storeId}::uuid AND lower(${schema.etsyProducts.title}) = lower(${title})`).limit(1);
+    if (dup) return NextResponse.json({ ok: false, error: "a listing with this exact title already exists in this store" }, { status: 409 });
+
+    const priceNum = Number(b?.price);
+    const qtyNum = Number(b?.quantity);
+    const images = (Array.isArray(b?.images) ? b.images : []).map((x: unknown) => String(x)).filter((u: string) => /^https?:\/\//i.test(u)).slice(0, 20);
+    const variations = (Array.isArray(b?.variations) ? b.variations : [])
+      .map((v: { name?: unknown; values?: unknown }) => ({
+        name: String(v?.name ?? "").trim().slice(0, 60),
+        values: (Array.isArray(v?.values) ? v.values : []).map((x: unknown) => String(x).trim()).filter(Boolean).slice(0, 40),
+      }))
+      .filter((v: { name: string; values: string[] }) => v.name && v.values.length)
+      .slice(0, 6);
+
+    try {
+      const [ins] = await db.insert(schema.etsyProducts).values({
+        storeId, title,
+        description: String(b?.description ?? "").trim().slice(0, 8000) || null,
+        price: Number.isFinite(priceNum) && priceNum >= 0 ? priceNum.toFixed(2) : null,
+        quantity: Number.isFinite(qtyNum) && qtyNum >= 0 ? Math.floor(qtyNum) : null,
+        tags: String(b?.tags ?? "").trim().slice(0, 600) || null,
+        sku: String(b?.sku ?? "").trim().slice(0, 100) || null,
+        images, variations, status: "active",
+      }).returning({ id: schema.etsyProducts.id });
+      return NextResponse.json({ ok: true, id: ins?.id });
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: "server: " + String((e as Error)?.message ?? e).slice(0, 200) }, { status: 500 });
+    }
+  }
+
   const id = String(b?.id ?? "");
   if (b?.action !== "duplicate" || !/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ ok: false, error: "bad request" }, { status: 400 });
   const storeIds = await scopedEtsyStoreIds(session);

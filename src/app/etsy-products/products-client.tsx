@@ -19,6 +19,17 @@ type Detail = {
   storeName: string | null; sellerName: string | null;
 };
 
+type NewListing = {
+  sellerId: string; storeId: string; title: string; price: string; quantity: string; sku: string;
+  tags: string; description: string; images: string[]; variations: { name: string; values: string }[];
+};
+// Mặc định 2 biến thể giống hàng import từ Etsy (Size / Paper) — sửa hoặc xoá thoải mái.
+const BLANK_NEW: NewListing = {
+  sellerId: "", storeId: "", title: "", price: "", quantity: "999", sku: "",
+  tags: "", description: "", images: [],
+  variations: [{ name: "Size", values: "" }, { name: "Paper", values: "" }],
+};
+
 /* ---- style tokens (modern) ---- */
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
 const ctl: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "10px 13px", fontSize: 13.5, font: "inherit", background: "#fff", outline: "none" };
@@ -50,6 +61,12 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const impStores = useMemo(() => impSeller ? stores.filter((s) => s.sellerId === impSeller) : stores, [stores, impSeller]);
+  // Create Manual — dòng listing tự gõ, không cần CSV Etsy (ý tưởng mới chưa có trên Etsy).
+  // Vẫn nằm chung bảng etsy_products nên Push Shopify / AI Optimize dùng được ngay như listing import.
+  const [newOpen, setNewOpen] = useState(false);
+  const [nw, setNw] = useState<NewListing>(BLANK_NEW);
+  const newFileRef = useRef<HTMLInputElement>(null);
+  const newStores = useMemo(() => nw.sellerId ? stores.filter((s) => s.sellerId === nw.sellerId) : stores, [stores, nw.sellerId]);
   // Edit drawer
   const [editId, setEditId] = useState<string | null>(null);
   const [edit, setEdit] = useState<Detail | null>(null);
@@ -159,6 +176,45 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     setBusy(false);
   };
 
+  // ---- Create Manual ----
+  const openCreate = () => { setNw({ ...BLANK_NEW, storeId: stores[0]?.id ?? "", sellerId: "" }); setNewOpen(true); };
+  const setNwField = <K extends keyof NewListing>(k: K, v: NewListing[K]) => setNw((s) => ({ ...s, [k]: v }));
+  const newAddImgUrl = async () => {
+    const url = await askPrompt({ title: "Add image by URL", message: "Paste an image URL (https://...)", input: { placeholder: "https://…" } });
+    if (!url || !/^https?:\/\//i.test(url)) return;
+    setNw((s) => ({ ...s, images: [...s.images, url.trim()] }));
+  };
+  const newUploadImg = async (file: File | null | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+      if (j.ok && j.url) setNw((s) => ({ ...s, images: [...s.images, j.url] }));
+      else flash("✗ " + (j.error ?? "Upload failed"), false);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
+  const doCreate = async () => {
+    if (!nw.storeId) return flash("✗ Select a store first", false);
+    if (!nw.title.trim()) return flash("✗ Title is required", false);
+    setBusy(true);
+    try {
+      const res = await fetch("/api/etsy-products", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create", storeId: nw.storeId, title: nw.title, price: nw.price, quantity: nw.quantity,
+          sku: nw.sku, tags: nw.tags, description: nw.description, images: nw.images,
+          variations: nw.variations.map((v) => ({ name: v.name, values: v.values.split(",").map((x) => x.trim()).filter(Boolean) })),
+        }),
+      });
+      const j = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+      if (j.ok) { flash("✓ Listing created — select it and Push to Shopify when ready"); setNewOpen(false); setNw(BLANK_NEW); load(); }
+      else flash("✗ " + (j.error ?? "Create failed"), false);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
+
   const openEdit = async (id: string) => {
     setEditId(id); setEdit(null); setEditLoading(true);
     try {
@@ -226,10 +282,16 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           </div>
           <div style={{ flex: 1 }} />
           {canEdit && (
-            <button style={pill("#F1641E", "#fff")} onClick={() => setImpOpen(true)}
-              onMouseDown={(e) => (e.currentTarget.style.transform = "scale(.97)")} onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}>
-              <IcUpload /> Import Etsy CSV
-            </button>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button style={{ ...ghost, borderColor: "#FBE3D2" }} onClick={openCreate}
+                onMouseDown={(e) => (e.currentTarget.style.transform = "scale(.97)")} onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}>
+                <IcPlus /> Create Manual
+              </button>
+              <button style={pill("#F1641E", "#fff")} onClick={() => setImpOpen(true)}
+                onMouseDown={(e) => (e.currentTarget.style.transform = "scale(.97)")} onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}>
+                <IcUpload /> Import Etsy CSV
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -391,6 +453,115 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
               <button style={ghost} disabled={busy} onClick={() => setPushOpen(false)}>Cancel</button>
               <button style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: pushStore && pushTemplate && !busy ? 1 : .5 }} disabled={busy || !pushStore || !pushTemplate} onClick={doPushShopify}>
                 {busy ? "Pushing…" : "Push now"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE MANUAL MODAL */}
+      {newOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setNewOpen(false)}>
+          <div style={{ background: "#fff", width: 820, maxWidth: "96vw", maxHeight: "92vh", borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--line)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <MarketplaceLogo mk="etsy" size={20} />
+                <div style={{ fontWeight: 800, fontSize: 17 }}>Create listing manually</div>
+              </div>
+              <button onClick={() => setNewOpen(false)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
+            </div>
+
+            <div style={{ padding: "18px 22px", overflowY: "auto", display: "grid", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: showSellerFilter ? "1fr 1fr" : "1fr", gap: 12 }}>
+                {showSellerFilter && (
+                  <div>
+                    <label style={lab}>Seller</label>
+                    <select value={nw.sellerId} onChange={(e) => setNw((s) => ({ ...s, sellerId: e.target.value, storeId: stores.find((x) => x.sellerId === e.target.value)?.id ?? "" }))} style={{ ...ctl, width: "100%" }}>
+                      <option value="">All sellers</option>
+                      {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <label style={lab}>Store *</label>
+                  <select value={nw.storeId} onChange={(e) => setNwField("storeId", e.target.value)} style={{ ...ctl, width: "100%" }}>
+                    <option value="">(Select store)</option>
+                    {newStores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.sellerName ? ` · ${s.sellerName}` : ""}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={lab}>Title * <span style={{ fontWeight: 500 }}>({nw.title.length}/200)</span></label>
+                <textarea value={nw.title} onChange={(e) => setNwField("title", e.target.value)} rows={2}
+                  placeholder="Personalized Bedtime Story Book, Custom Name Children's Book, Dragon Unicorn Fairy Adventure, Baby Shower Birthday Gift"
+                  style={{ ...ctl, width: "100%", resize: "vertical", lineHeight: 1.45 }} />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={lab}>Price (USD)</label>
+                  <input value={nw.price} onChange={(e) => setNwField("price", e.target.value)} placeholder="16.65" inputMode="decimal" style={{ ...ctl, width: "100%" }} />
+                </div>
+                <div>
+                  <label style={lab}>Quantity</label>
+                  <input value={nw.quantity} onChange={(e) => setNwField("quantity", e.target.value)} inputMode="numeric" style={{ ...ctl, width: "100%" }} />
+                </div>
+                <div>
+                  <label style={lab}>SKU</label>
+                  <input value={nw.sku} onChange={(e) => setNwField("sku", e.target.value)} style={{ ...ctl, width: "100%" }} />
+                </div>
+              </div>
+
+              <div>
+                <label style={lab}>Tags <span style={{ fontWeight: 500 }}>(comma separated)</span></label>
+                <input value={nw.tags} onChange={(e) => setNwField("tags", e.target.value)} placeholder="personalized book, custom name book, baby shower gift" style={{ ...ctl, width: "100%" }} />
+              </div>
+
+              <div>
+                <label style={lab}>Description</label>
+                <textarea value={nw.description} onChange={(e) => setNwField("description", e.target.value)} rows={5} style={{ ...ctl, width: "100%", resize: "vertical", lineHeight: 1.5 }} />
+              </div>
+
+              <div>
+                <label style={lab}>Variations</label>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {nw.variations.map((v, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "150px 1fr 34px", gap: 8, alignItems: "center" }}>
+                      <input value={v.name} onChange={(e) => setNw((s) => ({ ...s, variations: s.variations.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))} placeholder="Size" style={{ ...ctl, width: "100%" }} />
+                      <input value={v.values} onChange={(e) => setNw((s) => ({ ...s, variations: s.variations.map((x, j) => j === i ? { ...x, values: e.target.value } : x) }))} placeholder='8"x8", 11"x8.5"' style={{ ...ctl, width: "100%" }} />
+                      <button onClick={() => setNw((s) => ({ ...s, variations: s.variations.filter((_, j) => j !== i) }))} style={{ ...ghost, padding: "8px 0", justifyContent: "center", color: "var(--danger, #D92D20)" }}>×</button>
+                    </div>
+                  ))}
+                </div>
+                {nw.variations.length < 6 && (
+                  <button onClick={() => setNw((s) => ({ ...s, variations: [...s.variations, { name: "", values: "" }] }))} style={{ ...ghost, marginTop: 8, fontSize: 12.5 }}>+ Add variation</button>
+                )}
+              </div>
+
+              <div>
+                <label style={lab}>Images</label>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  {nw.images.map((u, i) => (
+                    <div key={i} style={{ position: "relative", width: 76, height: 76, borderRadius: 10, overflow: "hidden", border: "1px solid var(--line)" }}>
+                      <ThumbZoom src={u} size={76} />
+                      <button onClick={() => setNw((s) => ({ ...s, images: s.images.filter((_, j) => j !== i) }))}
+                        style={{ position: "absolute", top: 2, right: 2, border: "none", background: "rgba(16,24,40,.72)", color: "#fff", borderRadius: 6, width: 20, height: 20, cursor: "pointer", fontSize: 12, lineHeight: 1 }}>×</button>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button style={{ ...ghost, fontSize: 12.5 }} disabled={busy} onClick={() => newFileRef.current?.click()}>Upload image</button>
+                  <button style={{ ...ghost, fontSize: 12.5 }} disabled={busy} onClick={newAddImgUrl}>Add by URL</button>
+                  <input ref={newFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { newUploadImg(e.target.files?.[0]); e.target.value = ""; }} />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "14px 22px", borderTop: "1px solid var(--line)" }}>
+              <button style={ghost} disabled={busy} onClick={() => setNewOpen(false)}>Cancel</button>
+              <button style={{ ...pill("#F1641E", "#fff"), opacity: busy || !nw.storeId || !nw.title.trim() ? .5 : 1 }} disabled={busy || !nw.storeId || !nw.title.trim()} onClick={doCreate}>
+                {busy ? "Creating…" : "Create listing"}
               </button>
             </div>
           </div>
@@ -579,6 +750,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
 /* ---- inline icons (stroke) ---- */
 const IcUpload = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>;
+const IcPlus = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>;
 const IcTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>;
 const IcSearch = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>;
 const IcShop = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18M9 20v-6h6v6" /></svg>;
