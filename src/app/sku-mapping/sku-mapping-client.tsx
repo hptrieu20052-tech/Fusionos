@@ -10,6 +10,19 @@ import { IconTrash, IconRefresh, IconPlus, IconPin, IconPrinter } from "@/compon
 type Ff = { id: string; name: string; method: string; credentials: string | null; shopId: string | null; logoUrl?: string | null; mapCount?: number; pinnedCount?: number };
 type Map = { id: string; internalSku: string; fulfillerId: string; fulfillerSku: string; fulfillerProduct: string | null; variant: string | null; baseCost: string; shipCost: string; active: boolean; pinned?: boolean; pfBlueprintId?: number | null; pfProviderId?: number | null; pfVariantId?: number | null };
 
+// ĐỌC JSON AN TOÀN — trước đây mọi lỗi đều hiện đúng 1 chữ "network", không biết hỏng ở đâu.
+// Khi route chưa deploy (404), function timeout (504) hoặc crash (500), Vercel trả TRANG HTML;
+// r.json() ném lỗi → rơi vào catch. Giờ hiện thẳng mã HTTP + đoạn đầu body để biết lỗi thật.
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+async function readJson(r: Response): Promise<any> {
+  const text = await r.text().catch(() => "");
+  try { return JSON.parse(text); } catch { /* không phải JSON → dựng thông báo ở dưới */ }
+  const body = text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
+  const hint = r.status === 404 ? " (route chưa deploy?)" : r.status === 504 ? " (quá thời gian chờ)" : "";
+  return { ok: false, error: `HTTP ${r.status}${hint} — ${body || "empty response"}` };
+}
+const errJson = (e: unknown) => ({ ok: false, error: `Không gọi được server: ${String((e as Error)?.message ?? e).slice(0, 160)}` });
+
 const inp = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, font: "inherit", fontSize: 12.5, width: "100%" } as const;
 const money = (v: string | number) => `$${Number(v).toFixed(2)}`;
 const pgBtn = (disabled: boolean): CSSProperties => ({ background: "#fff", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 700, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.45 : 1, color: "var(--ink)" });
@@ -110,7 +123,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     const body = importAllPv
       ? { fulfillerId: active, blueprintId: rc.bp, allProviders: true, blueprintTitle: title }
       : { fulfillerId: active, blueprintId: rc.bp, providerId: rc.pv, blueprintTitle: title };
-    const j = await fetch("/api/fulfillers/printify-import-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch("/api/fulfillers/printify-import-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(readJson).catch(errJson);
     setImporting(false);
     if (j.ok) {
       const more = j.done === false ? t("sk.moreClickAgain2") : "";
@@ -171,7 +184,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   }
   async function openPicker() {
     setPickerLoading(true); setPicker([]); setMsg("");
-    const j = await fetch("/api/fulfillers/printify-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch("/api/fulfillers/printify-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     setPickerLoading(false);
     if (j.ok) {
       setPicker(j.products);
@@ -182,7 +195,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   }
   async function syncPicker() {
     setMsg(t("sk.syncing"));
-    const j = await fetch("/api/fulfillers/printify-sync-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, selectedProductIds: Array.from(sel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch("/api/fulfillers/printify-sync-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, selectedProductIds: Array.from(sel) }) }).then(readJson).catch(errJson);
     if (j.ok) { setMsg(t("sk.syncResult").replace("{a}", String(j.added)).replace("{r}", String(j.removed))); setPicker(null); refresh(); }
     else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
@@ -232,7 +245,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     if (!products.length) { setMsg(t("sk.warnNoProductToDelete")); return; }
     if (!(await confirm({ message: t("sk.deleteProductsConfirm").replace("{n}", String(products.length)).replace("{ff}", ff?.name ?? t("sk.thisProvider")), danger: true }))) return;
     setDelBusy(true);
-    const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products }) }).then(readJson).catch(errJson);
     setDelBusy(false);
     if (j.ok) { setMsg(t("sk.deletedResult").replace("{d}", String(j.deleted)).replace("{n}", String(products.length))); setDelPicker(null); refresh(); }
     else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
@@ -240,28 +253,28 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   async function delAllOfFf() {
     if (!(await confirm({ message: t("sk.deleteAllConfirm").replace("{n}", countBy(active).toLocaleString()).replace("{ff}", ff?.name ?? t("sk.thisProvider")), danger: true }))) return;
     setDelBusy(true);
-    const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, all: true }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch("/api/mappings", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, all: true }) }).then(readJson).catch(errJson);
     setDelBusy(false);
     if (j.ok) { setMsg(t("sk.deletedAllResult").replace("{d}", String(j.deleted))); setDelPicker(null); refresh(); }
     else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   async function savePins() {
     setMsg(t("sk.savingPin"));
-    const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products: Array.from(pinSel) }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, products: Array.from(pinSel) }) }).then(readJson).catch(errJson);
     if (j.ok) { setMsg(t("sk.pinnedResult").replace("{p}", String(j.pinned)).replace("{n}", String(j.products))); setPinPicker(null); refresh(); }
     else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   // Ghim/bỏ ghim nhanh 1 sản phẩm ngay trên bảng (khỏi mở popup)
   async function togglePinProduct(product: string | null, pin: boolean) {
     if (!product) { setMsg(t("sk.warnNoNameToPin")); return; }
-    const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, toggleProduct: product, pinned: pin }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch("/api/fulfillers/pin-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, toggleProduct: product, pinned: pin }) }).then(readJson).catch(errJson);
     if (j.ok) { setMsg(pin ? t("sk.pinnedStar").replace("{p}", product).replace("{n}", String(j.count)) : t("sk.unpinnedName").replace("{p}", product)); refresh(); }
     else setMsg("⚠ " + (j.error ?? t("sk.errLow")));
   }
   // 1 nút t("sk.updateSku"): kéo SP mới → điền màu/size + base + ship từ catalog. Chạy tuần tự, tăng dần.
   async function getSkuMerchize() {
     setMsg(t("sk.pullingMerchize"));
-    const imp = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const imp = await fetch("/api/fulfillers/merchize-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     setMsg(t("sk.addedFilling").replace("{n}", String(imp.created)));
     const enr = await fetch("/api/fulfillers/merchize-enrich-variants", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false }));
@@ -274,7 +287,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Kéo catalog Lenful (2 pha, bấm lại để mở rộng tiếp variants) → thêm mapping mới
   async function getSkuLenful() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Lenful"));
-    const imp = await fetch("/api/fulfillers/lenful-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const imp = await fetch("/api/fulfillers/lenful-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} products` + (imp.remaining ? ` · ${imp.remaining} left — click again to continue` : ""));
@@ -283,7 +296,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Kéo catalog Vinaway (products + product-skus → "product_id:sku_id") → thêm mapping mới
   async function getSkuVinaway() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Vinaway"));
-    const imp = await fetch("/api/fulfillers/vinaway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const imp = await fetch("/api/fulfillers/vinaway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped` + (imp.unmatched ? ` · ${imp.unmatched} unmatched product_id` : ""));
@@ -294,7 +307,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Kéo catalog Hogoto POD (GET /v1/product) → thêm mapping mới (fulfillerSku = Product Code)
   async function getSkuHogoto() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Hogoto POD"));
-    const imp = await fetch("/api/fulfillers/hogoto-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const imp = await fetch("/api/fulfillers/hogoto-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.products} products, ${imp.found} variants, ${imp.skipped} skipped`);
@@ -304,7 +317,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Kéo catalog SKU Printway (GET /products/list-sku-catalogs) → thêm mapping mới
   async function getSkuPrintway() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Printway"));
-    const imp = await fetch("/api/fulfillers/printway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const imp = await fetch("/api/fulfillers/printway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped`);
@@ -313,7 +326,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Kéo catalog ONOS (GET /products) → thêm mapping mới (variant = Color / Size)
   async function getSkuOnos() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "ONOS"));
-    const imp = await fetch("/api/fulfillers/onos-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const imp = await fetch("/api/fulfillers/onos-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped` + (imp.productsPending ? ` · ${imp.productsPending} products pending` : "") + (imp.done === false ? t("sk.moreClickAgain") : ""));
@@ -322,7 +335,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Kéo catalog Wembroidery (GET /public/catalog) → dựng SKU WEM-{catalogId}-{COLOR}-{SIZE}
   async function getSkuWembroidery() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Wembroidery"));
-    const imp = await fetch("/api/fulfillers/wembroidery-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const imp = await fetch("/api/fulfillers/wembroidery-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped`);
@@ -331,7 +344,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // Kéo variant FlashShip (GET /orders/list-variant-sku) → upsert mapping (API không trả giá)
   async function getSkuFlashship() {
     setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "FlashShip"));
-    const imp = await fetch("/api/fulfillers/flashship-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const imp = await fetch("/api/fulfillers/flashship-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
     if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
     refresh();
     setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.updated} updated · FlashShip API has no prices — enter Base/Ship manually`);
@@ -736,7 +749,7 @@ function CompassupImport({ fulfillerId, onDone }: { fulfillerId: string; onDone:
     const j = await fetch("/api/fulfillers/compassup-import-skus", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ fulfillerId, link: link.trim() }),
-    }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    }).then(readJson).catch(errJson);
     setLoading(false);
     if (!j.ok) { setMsg("✗ " + (j.error ?? "error")); return; }
     const p = j.product as CuProduct;
