@@ -281,5 +281,8 @@ async function handlePush(req: NextRequest) {
     occurredAt: (order.orderedAt ? new Date(order.orderedAt) : new Date()).toISOString().slice(0, 10),
   });
 
-  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost: finalCost, simulated: pushRes.simulated, reason: pushRes.reason });
+  // v156 · trả nguyên response của fulfiller về client để in ra Console (F12). Toast quá ngắn nên mỗi
+  // vòng chỉ moi được một mẩu ⇒ tốn một lần ĐẨY ĐƠN THẬT cho mỗi mẩu. Dump hết một lần cho xong.
+  // GỠ field `raw` này ngay sau khi vá đúng tên field DST — không để lộ payload nhà cung cấp lâu dài.
+  return NextResponse.json({ ok: true, ffOrderId: ffo.id, externalFfId, cost: finalCost, simulated: pushRes.simulated, reason: pushRes.reason, raw: pushRes.raw });
 }

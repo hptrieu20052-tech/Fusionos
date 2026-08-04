@@ -308,30 +308,33 @@ function hogotoAdapter(): FulfillerAdapter {
         const codes = products.map((p) => String(p.productCode)).join(",");
         throw new Error(`${m} · [v148 ref="${refCode}" ship="${shippingMethod}" products="${codes}"]`);
       }
-      // v155 · CHẨN ĐOÁN FILE DST. Storage key R2 GIỮ NGUYÊN đuôi file (`designs/<id>/emb_center-….dst`)
-      // nên v152 KHÔNG phải nguyên nhân thật — file thêu đáng lẽ đã được gửi từ trước.
-      // Đơn Y018_51 vẫn "2/3 file" ⇒ phải biết chắc: (1) mình CÓ gửi designEmbUrl không, (2) Hogoto
-      // có nhả lại giá trị đó trong response không, (3) tên field thật của object đính kèm bên họ.
-      // Chỉ ĐỌC response, không đổi payload. Gỡ khi đã xác định đúng tên field.
+      // v156 · CHẨN ĐOÁN FILE DST — VÒNG 2. Kết quả v155: sent=1/1 echo=YES att{trống}.
+      // Nghĩa là: mình CÓ gửi designEmbUrl, Hogoto CÓ nhả lại đúng URL đó trong response,
+      // nhưng response KHÔNG có object nào mang key `designUrl` ⇒ cấu trúc đính kèm bên họ dùng
+      // tên field khác hẳn tên mình đoán. v155 chỉ soi đúng key `designUrl` nên mù phần còn lại.
+      // v156 đi tìm ĐƯỜNG DẪN thật sự chứa URL .dst và liệt kê các key ANH EM cạnh nó — đó chính
+      // là tên field thật của Hogoto. Vẫn CHỈ ĐỌC response, không đổi payload. Gỡ sau khi vá xong.
       const sentEmb = products.filter((p) => (p.designAttachments ?? []).some((a) => !!a.designEmbUrl)).length;
       const embUrls = new Set(
         products.flatMap((p) => (p.designAttachments ?? []).map((a) => a.designEmbUrl).filter(Boolean) as string[]),
       );
-      let attKeys = "";
-      let echoed = false;
-      const walk = (v: unknown, depth: number): void => {
-        if (depth > 6 || !v || typeof v !== "object") return;
-        if (Array.isArray(v)) { for (const x of v.slice(0, 20)) walk(x, depth + 1); return; }
-        const o = v as Record<string, unknown>;
-        const keys = Object.keys(o);
-        if (!attKeys && keys.some((k) => /^design_?url$/i.test(k))) attKeys = keys.slice(0, 20).join(",");
-        for (const val of Object.values(o)) {
-          if (typeof val === "string" && embUrls.has(val)) echoed = true;
-          else walk(val, depth + 1);
+      let hitPath = "";      // đường dẫn tới chỗ Hogoto cất URL .dst, vd: result.products[0].designs[0].embFile
+      let hitSiblings = "";  // các key cùng cấp — tên field thật nằm ở đây
+      const walk = (v: unknown, path: string, depth: number): void => {
+        if (depth > 8 || !v || typeof v !== "object") return;
+        if (Array.isArray(v)) { v.slice(0, 20).forEach((x, i) => walk(x, `${path}[${i}]`, depth + 1)); return; }
+        const obj = v as Record<string, unknown>;
+        for (const [k, val] of Object.entries(obj)) {
+          const p = path ? `${path}.${k}` : k;
+          if (typeof val === "string" && embUrls.has(val)) {
+            if (!hitPath) { hitPath = p; hitSiblings = Object.keys(obj).slice(0, 25).join(","); }
+          } else walk(val, p, depth + 1);
         }
       };
-      walk(res.raw, 0);
-      const dstDiag = `v155 dst: sent=${sentEmb}/${products.length} echo=${echoed ? "YES" : "NO"} att{${attKeys || "response không có object đính kèm"}}`;
+      walk(res.raw, "", 0);
+      const dstDiag = hitPath
+        ? `v156 dst: sent=${sentEmb}/${products.length} tại "${hitPath}" · anh em{${hitSiblings}}`
+        : `v156 dst: sent=${sentEmb}/${products.length} · response KHÔNG chứa url .dst`;
       return { externalFfId: res.orderCode, simulated: false, raw: res.raw, baseCost: res.baseCost, shipCost: res.shipCost, reason: dstDiag };
     },
   };

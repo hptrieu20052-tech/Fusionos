@@ -1173,6 +1173,13 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
     }
     setBusy(false);
     if (j.ok) {
+      // v156 · in NGUYÊN response của fulfiller ra Console. Toast chỉ chứa được một mẩu chẩn đoán,
+      // mà mỗi mẩu lại tốn một lần đẩy đơn thật. Mở F12 → Console → copy khối "[HOGOTO RAW]".
+      // Gỡ dòng này cùng lúc với field `raw` bên push/route.ts.
+      if (j.raw !== undefined) {
+        try { console.log("[HOGOTO RAW]", JSON.stringify(j.raw, null, 2)); }
+        catch { console.log("[HOGOTO RAW]", j.raw); }
+      }
       if (j.simulated) flash(t("o.simPushWarn") + (j.reason ?? t("o.checkFfConfig")));
       else if (j.ttLabelWarn) flash("⚠ Pushed, but TikTok label: " + j.ttLabelWarn);
       // v155 · đẩy THẬT mà adapter có ghi chú (chẩn đoán DST, cảnh báo trùng đơn…) thì phải hiện ra,
