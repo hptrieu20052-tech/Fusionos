@@ -8,6 +8,13 @@ import { storeOwnerScopeIds } from "@/lib/scope";
 export const dynamic = "force-dynamic";
 
 type TplOption = { name: string; values: string[] };
+// Câu hỏi personalization — copy đúng mô hình Etsy đang cho seller setup:
+//   text     : question_text ≤45 · instructions ≤120 · required · max_allowed_characters 1-1024
+//   dropdown : question_text ≤45 · required · options 1-30, mỗi option ≤20 ký tự (Etsy KHÔNG cho instructions)
+//   upload   : question_text ≤45 · instructions ≤120 · required · max_allowed_files 1-10
+//              options rỗng = upload không nhãn; options có nhãn = labeled upload (mỗi nhãn 1 ô file)
+// Giới hạn: tối đa 5 câu/listing, tối đa 1 câu upload.
+type PQ = { type: "text" | "dropdown" | "upload"; label: string; instructions: string; required: boolean; maxChars: number; options: string[]; maxFiles: number };
 type TplVariant = { options: Record<string, string>; price: string; compareAtPrice?: string | null; sku?: string };
 type TplBody = {
   id?: string; storeId?: string; name?: string;
@@ -17,6 +24,7 @@ type TplBody = {
   category?: { id: string; name: string } | null;
   categoryMetafields?: { namespace: string; key: string; type: string; value: string; label?: string; valueLabel?: string }[];
   baseDescription?: string; productDetails?: string; shippingInfo?: string;
+  personalization?: unknown;                 // PQ[] — ô khách điền trên trang sản phẩm
   // Estimated delivery — số NGÀY LÀM VIỆC cho widget trên trang sản phẩm
   shipProcMin?: number | null; shipProcMax?: number | null;
   shipUsMin?: number | null; shipUsMax?: number | null;
@@ -81,6 +89,38 @@ const clampVariants = (v: unknown): TplVariant[] =>
     };
   });
 
+// Chuẩn hoá + siết đúng luật Etsy. Câu nào không có label thì bỏ hẳn — ô không nhãn ra tới
+// storefront là đơn về không biết khách điền gì.
+function clampPersonalization(v: unknown): PQ[] {
+  const src = Array.isArray(v) ? v : [];
+  const out: PQ[] = [];
+  let uploadUsed = false;
+  for (const x of src) {
+    const q = x as Partial<PQ>;
+    const type: PQ["type"] = q?.type === "dropdown" ? "dropdown" : q?.type === "upload" ? "upload" : "text";
+    if (type === "upload") { if (uploadUsed) continue; uploadUsed = true; }   // Etsy: tối đa 1 câu upload
+    const label = String(q?.label ?? "").trim().slice(0, 45);
+    if (!label) continue;
+    // options: dropdown ≤20 ký tự/option (luật Etsy); labeled upload dùng nhãn dài hơn nên cho 45.
+    const optCap = type === "dropdown" ? 20 : 45;
+    const options = (Array.isArray(q?.options) ? q!.options! : [])
+      .map((s) => String(s).trim().slice(0, optCap)).filter(Boolean).slice(0, 30);
+    if (type === "dropdown" && !options.length) continue;                     // dropdown rỗng = ô chết
+    const maxChars = Math.min(Math.max(Math.round(Number(q?.maxChars) || 0) || 100, 1), 1024);
+    const maxFiles = Math.min(Math.max(Math.round(Number(q?.maxFiles) || 0) || 1, 1), 10);
+    out.push({
+      type, label,
+      instructions: type === "dropdown" ? "" : String(q?.instructions ?? "").trim().slice(0, 120),
+      required: !!q?.required,
+      maxChars: type === "text" ? maxChars : 0,
+      options,
+      maxFiles: type === "upload" ? (options.length ? options.length : maxFiles) : 0,
+    });
+    if (out.length >= 5) break;                                               // Etsy: tối đa 5 câu
+  }
+  return out;
+}
+
 const clampMeta = (v: unknown) =>
   (Array.isArray(v) ? v : []).slice(0, 20).map((x) => {
     const m = x as { namespace?: string; key?: string; type?: string; value?: string; label?: string; valueLabel?: string };
@@ -103,6 +143,7 @@ function payloadOf(b: TplBody) {
     baseDescription: String(b.baseDescription ?? "").slice(0, 6000).trim() || null,
     productDetails: String(b.productDetails ?? "").slice(0, 6000).trim() || null,
     shippingInfo: String(b.shippingInfo ?? "").slice(0, 6000).trim() || null,
+    personalization: clampPersonalization(b.personalization),
     // Số ngày giao hàng — max/min tự đảo nếu người dùng gõ ngược (min 8, max 4 → 4..8).
     ...(() => {
       const pmin = clampDays(b.shipProcMin), pmax = clampDays(b.shipProcMax);

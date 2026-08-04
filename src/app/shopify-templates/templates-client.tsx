@@ -6,6 +6,9 @@ type Store = { id: string; name: string };
 type Opt = { name: string; values: string[] };
 type Vari = { options: Record<string, string>; price: string; compareAtPrice: string | null; sku: string };
 type Meta = { namespace: string; key: string; type: string; value: string };
+// Personalization — cùng mô hình Etsy: tối đa 5 câu, tối đa 1 câu upload.
+type PQType = "text" | "dropdown" | "upload";
+type PQ = { type: PQType; label: string; instructions: string; required: boolean; maxChars: number; options: string[]; maxFiles: number };
 type Cat = { id: string; name: string } | null;
 type Draft = {
   id?: string; storeId: string; name: string;
@@ -14,6 +17,7 @@ type Draft = {
   status: string; productType: string; vendor: string; themeTemplate: string;
   category: Cat; categoryMetafields: Meta[];
   baseDescription: string; productDetails: string; shippingInfo: string;
+  personalization: PQ[];
   // Estimated delivery — số NGÀY LÀM VIỆC. null = widget dùng mặc định.
   shipProcMin: number | null; shipProcMax: number | null;
   shipUsMin: number | null; shipUsMax: number | null;
@@ -53,7 +57,16 @@ const SHIP_COUNTRIES: { cc: string; label: string; ph: [string, string] }[] = [
 ];
 // Ô số ngày trong editor: "" → null (bỏ trống = widget tự dùng mặc định của nó).
 const numOrNull = (s: string): number | null => { const n = parseInt(s, 10); return isFinite(n) && n >= 0 ? n : null; };
-const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [], baseDescription: "", productDetails: "", shippingInfo: "", ...DEFAULT_SHIP });
+const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [], baseDescription: "", productDetails: "", shippingInfo: "", personalization: [], ...DEFAULT_SHIP });
+
+const PQ_LABEL: Record<PQType, string> = { text: "Text box", dropdown: "Dropdown", upload: "Photo upload" };
+const newPQ = (type: PQType): PQ => ({ type, label: "", instructions: "", required: type !== "text" ? true : false, maxChars: 100, options: [], maxFiles: 1 });
+// Mảng câu hỏi từ DB có thể thiếu field (template cũ) → vá đủ trước khi đưa vào editor.
+const normPQ = (v: unknown): PQ[] => (Array.isArray(v) ? v : []).map((x) => {
+  const q = x as Partial<PQ>;
+  const type: PQType = q?.type === "dropdown" ? "dropdown" : q?.type === "upload" ? "upload" : "text";
+  return { type, label: String(q?.label ?? ""), instructions: String(q?.instructions ?? ""), required: !!q?.required, maxChars: Number(q?.maxChars) || 100, options: Array.isArray(q?.options) ? q!.options!.map(String) : [], maxFiles: Number(q?.maxFiles) || 1 };
+}).slice(0, 5);
 
 export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) {
   const confirm = useConfirm();
@@ -68,6 +81,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
   const [pubs, setPubs] = useState<NamedItem[]>([]);
   const [catQ, setCatQ] = useState(""); const [catHits, setCatHits] = useState<NamedItem[]>([]);
   const [optTexts, setOptTexts] = useState<string[]>([]); // text thô cho ô values (tránh strip dấu phẩy khi gõ)
+  const [pqTexts, setPqTexts] = useState<string[]>([]);   // text thô cho ô options của câu personalization
   // "new from product"
   const [prodPick, setProdPick] = useState<{ storeId: string; list: { id: string; title: string }[] } | null>(null);
 
@@ -90,11 +104,12 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
     } catch { /* offline */ }
   }, []);
 
-  const openEditor = async (d: Draft) => { setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setCatQ(""); setCatHits([]); await loadPickers(d.storeId); };
+  const openEditor = async (d: Draft) => { setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setPqTexts(d.personalization.map((q) => q.options.join(", "))); setCatQ(""); setCatHits([]); await loadPickers(d.storeId); };
   const newBlank = () => { if (!storeFilter) return flash("✗ Pick a store first", false); openEditor(emptyDraft(storeFilter)); };
   const editTpl = (t: Tpl) => openEditor({
     ...t, category: t.category ?? null,
     baseDescription: t.baseDescription ?? "", productDetails: t.productDetails ?? "", shippingInfo: t.shippingInfo ?? "",
+    personalization: normPQ(t.personalization),
     // template cũ chưa có số ngày → để trống, KHÔNG tự điền, tránh ghi số bịa lên listing đang chạy
     shipProcMin: t.shipProcMin ?? null, shipProcMax: t.shipProcMax ?? null,
     shipUsMin: t.shipUsMin ?? null, shipUsMax: t.shipUsMax ?? null,
@@ -131,9 +146,9 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
         collectionIds: p.collectionIds ?? [], publicationIds: p.publicationIds ?? [],
         status: "DRAFT", productType: p.productType ?? "", vendor: p.vendor ?? "", themeTemplate: p.themeTemplate ?? "",
         category: p.category ?? null, categoryMetafields: p.categoryMetafields ?? [],
-        baseDescription: "", productDetails: "", shippingInfo: "", ...DEFAULT_SHIP,
+        baseDescription: "", productDetails: "", shippingInfo: "", personalization: [], ...DEFAULT_SHIP,
       };
-      setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setCatQ(""); setCatHits([]);
+      setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setPqTexts([]); setCatQ(""); setCatHits([]);
       // đảm bảo picker có tên collection/kênh từ product kể cả khi chưa nạp full store
       loadPickers(p.storeId);
     } catch { flash("✗ Network error", false); }
@@ -184,6 +199,28 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
     setOptTexts((ts) => ts.filter((_, k) => k !== i));
   };
   const setVariant = (i: number, patch: Partial<Vari>) => setDraft((d) => d ? { ...d, variants: d.variants.map((v, k) => k === i ? { ...v, ...patch } : v) } : d);
+
+  // ---- personalization (giới hạn Etsy: ≤5 câu, ≤1 câu upload) ----
+  const hasUpload = !!draft?.personalization.some((q) => q.type === "upload");
+  const setPQ = (i: number, patch: Partial<PQ>) => setDraft((d) => d ? { ...d, personalization: d.personalization.map((q, k) => k === i ? { ...q, ...patch } : q) } : d);
+  const addPQ = (type: PQType) => {
+    setDraft((d) => (d && d.personalization.length < 5) ? { ...d, personalization: [...d.personalization, newPQ(type)] } : d);
+    setPqTexts((ts) => ts.length < 5 ? [...ts, ""] : ts);
+  };
+  const removePQ = (i: number) => {
+    setDraft((d) => d ? { ...d, personalization: d.personalization.filter((_, k) => k !== i) } : d);
+    setPqTexts((ts) => ts.filter((_, k) => k !== i));
+  };
+  const movePQ = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    setDraft((d) => { if (!d || j < 0 || j >= d.personalization.length) return d; const a = [...d.personalization]; [a[i], a[j]] = [a[j], a[i]]; return { ...d, personalization: a }; });
+    setPqTexts((ts) => { if (j < 0 || j >= ts.length) return ts; const a = [...ts]; [a[i], a[j]] = [a[j], a[i]]; return a; });
+  };
+  // Ô options giữ text thô như bên Options, để gõ dấu phẩy không bị nuốt.
+  const setPQOptionsText = (i: number, text: string) => {
+    setPqTexts((ts) => { const n = [...ts]; n[i] = text; return n; });
+    setPQ(i, { options: text.split(",").map((x) => x.trim()).filter(Boolean) });
+  };
   const toggleId = (field: "collectionIds" | "publicationIds", id: string) => setDraft((d) => {
     if (!d) return d;
     const set = new Set(d[field]); set.has(id) ? set.delete(id) : set.add(id);
@@ -203,6 +240,9 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
   const save = async () => {
     if (!draft) return;
     if (!draft.name.trim()) return flash("✗ Template name required", false);
+    // Câu personalization thiếu nhãn / dropdown rỗng sẽ bị server bỏ im lặng → chặn ở đây để anh biết.
+    const badPQ = draft.personalization.findIndex((q) => !q.label.trim() || (q.type === "dropdown" && !q.options.length));
+    if (badPQ >= 0) return flash(`✗ Personalization #${badPQ + 1}: question text${draft.personalization[badPQ].type === "dropdown" ? " and choices are" : " is"} required`, false);
     setBusy(true);
     try {
       const method = draft.id ? "PATCH" : "POST";
@@ -246,7 +286,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t.name}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-                    {storeName(t.storeId)} · {t.options.map((o) => `${o.name} (${o.values.length})`).join(" × ") || "no options"} · {t.variants.length} variants · {t.collectionIds.length} collections · {t.publicationIds.length} channels · {t.status}
+                    {storeName(t.storeId)} · {t.options.map((o) => `${o.name} (${o.values.length})`).join(" × ") || "no options"} · {t.variants.length} variants · {normPQ(t.personalization).length} personalization · {t.collectionIds.length} collections · {t.publicationIds.length} channels · {t.status}
                   </div>
                 </div>
                 <button onClick={() => editTpl(t)} style={ghost}>Edit</button>
@@ -393,6 +433,77 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
                 </div>
               </div>
             )}
+
+            {/* ── PERSONALIZATION ── ô khách tự điền trên trang sản phẩm.
+                Giống Etsy: tối đa 5 câu, tối đa 1 câu upload. Bấm "Push personalization"
+                trong Manage Products để đẩy lên listing (metafield fusion.options). */}
+            <div style={{ border: "1px solid #F0DCC6", background: "#FFFBF5", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800 }}>✏️ Personalization · buyer inputs</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>{draft.personalization.length}/5</div>
+              </div>
+
+              {draft.personalization.map((q, i) => (
+                <div key={i} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select
+                      value={q.type}
+                      onChange={(e) => {
+                        const t = e.target.value as PQType;
+                        if (t === "upload" && q.type !== "upload" && hasUpload) return;   // Etsy chỉ cho 1 câu upload
+                        setPQ(i, { type: t, options: [], instructions: t === "dropdown" ? "" : q.instructions });
+                        setPqTexts((ts) => { const n = [...ts]; n[i] = ""; return n; });
+                      }}
+                      style={{ ...ctl, width: 140, padding: "8px 10px" }}
+                    >
+                      <option value="text">{PQ_LABEL.text}</option>
+                      <option value="dropdown">{PQ_LABEL.dropdown}</option>
+                      <option value="upload" disabled={hasUpload && q.type !== "upload"}>{PQ_LABEL.upload}</option>
+                    </select>
+                    <input value={q.label} maxLength={45} onChange={(e) => setPQ(i, { label: e.target.value })} placeholder="Question shown to the buyer (e.g. Name for Dedication)" style={{ ...ctl, flex: 1, padding: "8px 10px" }} />
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, whiteSpace: "nowrap", cursor: "pointer" }}>
+                      <input type="checkbox" checked={q.required} onChange={(e) => setPQ(i, { required: e.target.checked })} />Required
+                    </label>
+                    <button onClick={() => movePQ(i, -1)} disabled={i === 0} style={{ ...ghost, padding: "7px 9px", opacity: i === 0 ? .35 : 1 }}>↑</button>
+                    <button onClick={() => movePQ(i, 1)} disabled={i === draft.personalization.length - 1} style={{ ...ghost, padding: "7px 9px", opacity: i === draft.personalization.length - 1 ? .35 : 1 }}>↓</button>
+                    <button onClick={() => removePQ(i)} style={{ ...ghost, color: "var(--red)", padding: "7px 10px" }}>×</button>
+                  </div>
+
+                  {q.type === "text" && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <input value={q.instructions} maxLength={120} onChange={(e) => setPQ(i, { instructions: e.target.value })} placeholder="Hint under the field (optional)" style={{ ...ctl, flex: 1, padding: "8px 10px" }} />
+                      <input type="number" min={1} max={1024} value={q.maxChars} onChange={(e) => setPQ(i, { maxChars: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 1024) })} style={{ ...ctl, width: 100, padding: "8px 10px" }} />
+                      <span style={{ fontSize: 12, color: "var(--muted)", alignSelf: "center", whiteSpace: "nowrap" }}>max chars</span>
+                    </div>
+                  )}
+
+                  {q.type === "dropdown" && (
+                    <div style={{ marginTop: 8 }}>
+                      <input value={pqTexts[i] ?? q.options.join(", ")} onChange={(e) => setPQOptionsText(i, e.target.value)} placeholder="Choices, comma-separated (e.g. Girl-themed, Boy-themed)" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    </div>
+                  )}
+
+                  {q.type === "upload" && (
+                    <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+                      <input value={q.instructions} maxLength={120} onChange={(e) => setPQ(i, { instructions: e.target.value })} placeholder="Hint under the field (optional)" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <input value={pqTexts[i] ?? q.options.join(", ")} onChange={(e) => setPQOptionsText(i, e.target.value)} placeholder="Photo labels, comma-separated — leave empty for unlabeled" style={{ ...ctl, flex: 1, padding: "8px 10px" }} />
+                        <input type="number" min={1} max={10} disabled={q.options.length > 0} value={q.options.length > 0 ? q.options.length : q.maxFiles} onChange={(e) => setPQ(i, { maxFiles: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 10) })} style={{ ...ctl, width: 90, padding: "8px 10px", background: q.options.length > 0 ? "#F5F6F8" : "#fff" }} />
+                        <span style={{ fontSize: 12, color: "var(--muted)", alignSelf: "center", whiteSpace: "nowrap" }}>photos</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {draft.personalization.length < 5 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => addPQ("text")} style={{ ...ghost, fontSize: 12.5 }}>+ Text box</button>
+                  <button onClick={() => addPQ("dropdown")} style={{ ...ghost, fontSize: 12.5 }}>+ Dropdown</button>
+                  <button onClick={() => addPQ("upload")} disabled={hasUpload} style={{ ...ghost, fontSize: 12.5, opacity: hasUpload ? .4 : 1 }}>+ Photo upload</button>
+                </div>
+              )}
+            </div>
 
             {/* CATEGORY */}
             <div style={{ ...lab, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>Category</div>

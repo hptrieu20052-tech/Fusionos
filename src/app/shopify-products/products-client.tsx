@@ -17,7 +17,21 @@ type Row = {
   feedAt: string | null; feedTitleLen: number; feedDescLen: number;
   // v127: cột PIPELINE. skuDone/skuTotal = số variant đã có SKU; altDone/altTotal = số ảnh đã có alt.
   skuDone: number; skuTotal: number; altDone: number; altTotal: number;
+  // v141: Custom options. persOwn = listing đã tự đặt bộ ô riêng (không còn ăn theo template).
+  persOwn: boolean; persCount: number;
 };
+// v141: một field cá nhân hoá — đúng mô hình "Custom options" của Etsy.
+type PQ = { type: "text" | "dropdown" | "upload"; label: string; instructions: string; required: boolean; maxChars: number; options: string[]; maxFiles: number };
+const NEW_PQ = (type: PQ["type"]): PQ => ({
+  type, label: "", instructions: "", required: true,
+  maxChars: type === "text" ? 100 : 0, options: type === "dropdown" ? [""] : [], maxFiles: type === "upload" ? 1 : 0,
+});
+const PQ_TYPE: { k: PQ["type"]; t: string; d: string }[] = [
+  { k: "text", t: "Text box", d: "Buyer types a name, a date or a short message." },
+  { k: "dropdown", t: "List of options", d: "Buyer picks one of the choices you set." },
+  { k: "upload", t: "Photo upload", d: "Buyer attaches photos. One upload field per listing." },
+];
+const PQ_LABEL = (q: PQ) => PQ_TYPE.find((t) => t.k === q.type)?.t ?? "Text box";
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
 type Img = { id: string; src: string; altText: string; position: number };
@@ -86,7 +100,7 @@ async function postJSON<T = any>(url: string, body: unknown): Promise<T> {
 // 3 kiểu push-từ-template gộp thành 1 modal có checkbox; 3 bước Google feed gộp thành 1 lệnh
 // chạy tuần tự. Catalogs đã BỎ HẲN — đó là tính năng Shopify B2B, Talewix không bán B2B.
 type ActKey =
-  | "set_template" | "push_template" | "find_replace"
+  | "set_template" | "push_template" | "find_replace" | "personalization"
   | "google_prep" | "feed_copy" | "feed_export"
   | "tags" | "collection" | "channels"
   | "active" | "draft" | "archive" | "delete";
@@ -100,6 +114,8 @@ const ACTION_GROUPS: ActionGroup[] = [
       { key: "set_template", label: "Set AI template…" },
       // Gộp của: Apply template + Push delivery times + Push personalization fields.
       { key: "push_template", label: "Push template fields…" },
+      // v141: bộ ô cá nhân hoá RIÊNG của listing đang chọn — không đụng template.
+      { key: "personalization", label: "Custom options…" },
       { key: "find_replace", label: "Find & replace in text…" },
     ],
   },
@@ -184,6 +200,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [pinOpen, setPinOpen] = useState(false);
   const [pinPerProduct, setPinPerProduct] = useState(1);
   const [pinPerFile, setPinPerFile] = useState(200);
+  // v141 · Custom options — bộ ô cá nhân hoá RIÊNG của listing đang chọn (mô hình Etsy).
+  // persOpen mở modal; persFields là bộ đang sửa; persEdit = index field đang mở ra sửa (null = chỉ xem danh sách).
+  const [persOpen, setPersOpen] = useState(false);
+  const [persLoading, setPersLoading] = useState(false);
+  const [persFields, setPersFields] = useState<PQ[]>([]);
+  const [persEdit, setPersEdit] = useState<number | null>(null);
+  const [persInfo, setPersInfo] = useState<{ title: string; source: "product" | "template" | "none"; templateName: string; count: number; withOwn: number }>({ title: "", source: "none", templateName: "", count: 0, withOwn: 0 });
   const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template" | "replace" | "pushtpl" | "gprep"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
   const [tagInput, setTagInput] = useState("");
   // Hai lệnh gộp dùng checkbox chọn bước nào chạy; tags/collection/channels dùng công tắc Add↔Remove.
@@ -570,6 +593,77 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
   };
 
+  // ══ v141 · CUSTOM OPTIONS (personalization theo TỪNG listing) ═══════════════
+  // Mỗi listing hỏi khách một kiểu khác nhau ⇒ đây là đường CHÍNH, template chỉ là bộ khởi điểm.
+  // Mở modal → nạp bộ ĐANG áp cho listing đầu tiên đang chọn (bộ riêng nếu có, không thì của template)
+  // → sửa → Save. Save ghi vào FUSION rồi đẩy luôn metafield fusion.options lên Shopify.
+  const openPers = async (ids: string[]) => {
+    setPersOpen(true); setPersLoading(true); setPersEdit(null); setPersFields([]);
+    try {
+      const j = await postJSON("/api/shopify-products/personalization", { action: "read", ids });
+      if (!j.ok) { flash("✗ " + String(j.error ?? "load failed"), false); setPersOpen(false); setPersLoading(false); return; }
+      setPersFields(Array.isArray(j.fields) ? j.fields : []);
+      setPersInfo({ title: String(j.title ?? ""), source: j.source ?? "none", templateName: String(j.templateName ?? ""), count: Number(j.count ?? ids.length), withOwn: Number(j.withOwn ?? 0) });
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "network"), false); setPersOpen(false); }
+    setPersLoading(false);
+  };
+  // Save = ghi bộ riêng cho TẤT CẢ listing đang chọn, rồi đẩy lên Shopify ngay.
+  // Không tách 2 nút: lưu mà không đẩy thì trang sản phẩm vẫn trống, người dùng tưởng hỏng.
+  const savePers = async () => {
+    const ids = Array.from(sel);
+    if (!ids.length) return flash("✗ Select products first", false);
+    const bad = persFields.find((q) => !q.label.trim()) ;
+    if (bad) return flash("✗ Every field needs a title", false);
+    const emptyDd = persFields.find((q) => q.type === "dropdown" && !q.options.filter((o) => o.trim()).length);
+    if (emptyDd) return flash(`✗ "${emptyDd.label}" is a list of options but has no options`, false);
+    if (ids.length > 1) {
+      const okGo = await confirm({
+        title: "Custom options",
+        danger: true,
+        confirmText: `Apply to ${ids.length}`,
+        message: `Ghi bộ ${persFields.length} field này cho ${ids.length} listing — mỗi listing hiện có bộ riêng sẽ bị GHI ĐÈ.\n\nMỗi listing custom một kiểu thì nên chọn ĐÚNG 1 listing rồi sửa, đừng áp cả lô.`,
+      });
+      if (!okGo) return;
+    }
+    setPersOpen(false); setBusy(true); setFails([]);
+    try {
+      const j = await postJSON("/api/shopify-products/personalization", { action: "save", ids, fields: persFields });
+      if (!j.ok) { flash("✗ " + String(j.error ?? "save failed"), false); setBusy(false); return; }
+      const n = (j.fields ?? []).length;
+      // Đẩy luôn lên Shopify để trang sản phẩm đổi ngay — dùng chung thanh tiến độ của các lệnh khác.
+      setProg({ label: "Pushing personalization fields", done: 0, total: ids.length, fail: 0 });
+      const r = await passPersonalization(ids);
+      setProg(null); setFails(r.failed);
+      flash(`${r.failed.length ? "⚠" : "✓"} ${n} field(s) saved on ${ids.length} listing(s) · pushed to Shopify: ${r.counts.pushed ?? 0}${r.failed.length ? ` · ${r.failed.length} failed — see the list below` : ""}`, r.failed.length === 0);
+    } catch (e) { setProg(null); flash("✗ " + String((e as Error)?.message ?? "network"), false); }
+    await load();
+    setBusy(false);
+  };
+  // Bỏ bộ riêng ⇒ listing quay về ăn theo template (và đẩy lại ngay cho khớp).
+  const clearPers = async () => {
+    const ids = Array.from(sel);
+    if (!ids.length) return;
+    const okGo = await confirm({
+      title: "Use the template instead",
+      confirmText: `Reset ${ids.length}`,
+      tone: "green",
+      message: `Xoá bộ Custom options riêng của ${ids.length} listing. Từ giờ listing lấy theo template, và "Push template fields" sẽ ghi đè được như cũ.`,
+    });
+    if (!okGo) return;
+    setPersOpen(false); setBusy(true); setFails([]);
+    try {
+      const j = await postJSON("/api/shopify-products/personalization", { action: "clear", ids });
+      if (!j.ok) { flash("✗ " + String(j.error ?? "failed"), false); setBusy(false); return; }
+      setProg({ label: "Pushing personalization fields", done: 0, total: ids.length, fail: 0 });
+      const r = await passPersonalization(ids);
+      setProg(null); setFails(r.failed);
+      flash(`${r.failed.length ? "⚠" : "✓"} ${ids.length} listing(s) back on the template${r.failed.length ? ` · ${r.failed.length} failed — see the list below` : ""}`, r.failed.length === 0);
+    } catch (e) { setProg(null); flash("✗ " + String((e as Error)?.message ?? "network"), false); }
+    await load();
+    setBusy(false);
+  };
+  const setPQ = (i: number, patch: Partial<PQ>) => setPersFields((a) => a.map((q, k) => k === i ? { ...q, ...patch } : q));
+
   // AI Optimize theo LÔ 6 + hiện tiến độ + TỰ CHẠY LẠI con fail (2 vòng nữa) vì lỗi hay gặp là
   // 429 rate limit / provider chậm — chạy lại là qua. Con nào vẫn hỏng thì liệt kê kèm lý do.
   // KHÔNG tự Push: gen xong sản phẩm ở trạng thái EDITED → xem lại → bấm "⬆ Push to Shopify".
@@ -686,6 +780,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     if (key === "feed_export") return doFeedExport(Array.from(sel));
     // Find & replace: chạy được trên nhiều store cùng lúc — mỗi listing dùng credential store của nó.
     if (key === "find_replace") { setAct({ key, title: "Find & replace in text", kind: "replace", storeId: "", loading: false, items: [] }); return; }
+    // Custom options — modal riêng, không dùng khung act (nội dung phức tạp hơn hẳn các lệnh kia).
+    if (key === "personalization") return openPers(Array.from(sel));
     // Google feed: 3 bước, mặc định tick cả 3 vì lô mới nào cũng cần cả 3.
     if (key === "google_prep") {
       setParts({ sku: true, fields: true, alt: true });
@@ -1090,6 +1186,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                       style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...chipTone(r.skuDone, r.skuTotal) }}>sku {r.skuDone}/{r.skuTotal}</span>
                     <span title={r.altTotal === 0 ? "No images" : r.altDone === r.altTotal ? `All ${r.altTotal} image(s) have alt text` : `${r.altTotal - r.altDone} image(s) still have no alt text — run Prepare for Google feed with a vision model`}
                       style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...chipTone(r.altDone, r.altTotal) }}>alt {r.altDone}/{r.altTotal}</span>
+                    {/* v141: đã tự đặt Custom options chưa. Xanh = bộ riêng của listing này,
+                        xám = còn ăn theo template (Push template fields vẫn ghi đè được). */}
+                    <span title={r.persOwn ? `${r.persCount} custom option field(s) set on this listing` : r.persCount ? `Following the template — ${r.persCount} field(s)` : "No custom options"}
+                      style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...(r.persOwn ? { background: "#E9F7EF", color: "#1F6F45" } : { background: "#F1F1F4", color: "#8794A5" }) }}>opt {r.persCount}</span>
                   </div>
                 </td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap" }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
@@ -1354,6 +1454,128 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <button onClick={() => setAct(null)} style={ghost}>Cancel</button>
               <button disabled={busy || act.loading} onClick={submitAct} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: (busy || act.loading) ? .6 : 1 }}>{busy ? "Working…" : "Apply"}</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* v141 · CUSTOM OPTIONS — bố cục theo đúng trình soạn listing của Etsy:
+          danh sách field (Edit / Delete) + nút Add field, tối đa 5 field. */}
+      {persOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setPersOpen(false)}>
+          <div style={{ ...card, width: 560, maxWidth: "96vw", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <b style={{ fontSize: 16 }}>Custom options</b>
+              <button onClick={() => setPersOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
+              {persInfo.count > 1
+                ? <><b>{persInfo.count}</b> listings selected — loaded from <b>{persInfo.title}</b>. Saving writes the same fields to all {persInfo.count}.</>
+                : <><b>{persInfo.title}</b>{persInfo.source === "template" ? <> — currently following the template <b>{persInfo.templateName}</b>. Saving makes it this listing&apos;s own.</> : persInfo.source === "product" ? <> — this listing has its own fields.</> : <> — no fields yet.</>}</>}
+            </div>
+
+            {persLoading ? <div style={{ padding: "28px 0", textAlign: "center", color: "var(--muted)" }}>Loading…</div> : (
+              <>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {persFields.map((q, i) => persEdit === i ? (
+                    <div key={i} style={{ border: "1px solid #BFE3CD", background: "#F7FCF9", borderRadius: 12, padding: 14, display: "grid", gap: 12 }}>
+                      <div>
+                        <label style={lab}>Field type</label>
+                        <select value={q.type} onChange={(e) => { const t = e.target.value as PQ["type"]; setPQ(i, { ...NEW_PQ(t), label: q.label, instructions: t === "dropdown" ? "" : q.instructions, required: q.required }); }} style={{ ...ctl, width: "100%" }}>
+                          {PQ_TYPE.map((t) => <option key={t.k} value={t.k} disabled={t.k === "upload" && persFields.some((x, k) => k !== i && x.type === "upload")}>{t.t}</option>)}
+                        </select>
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 5 }}>{PQ_TYPE.find((t) => t.k === q.type)?.d}</div>
+                      </div>
+                      <div>
+                        <label style={lab}>Field title ({q.label.length}/45)</label>
+                        <input autoFocus maxLength={45} value={q.label} onChange={(e) => setPQ(i, { label: e.target.value })} placeholder="e.g. Child's name" style={{ ...ctl, width: "100%" }} />
+                      </div>
+                      {q.type !== "dropdown" && (
+                        <div>
+                          <label style={lab}>Instructions for buyers ({q.instructions.length}/120)</label>
+                          <input maxLength={120} value={q.instructions} onChange={(e) => setPQ(i, { instructions: e.target.value })} placeholder="e.g. Exactly as it should be printed" style={{ ...ctl, width: "100%" }} />
+                        </div>
+                      )}
+                      {q.type === "text" && (
+                        <div>
+                          <label style={lab}>Character limit (1–1024)</label>
+                          <input type="number" min={1} max={1024} value={q.maxChars} onChange={(e) => setPQ(i, { maxChars: Math.min(1024, Math.max(1, Number(e.target.value) || 1)) })} style={{ ...ctl, width: 140 }} />
+                        </div>
+                      )}
+                      {q.type === "dropdown" && (
+                        <div>
+                          <label style={lab}>Options ({q.options.length}/30)</label>
+                          <div style={{ display: "grid", gap: 6 }}>
+                            {q.options.map((o, k) => (
+                              <div key={k} style={{ display: "flex", gap: 8 }}>
+                                <input maxLength={20} value={o} onChange={(e) => setPQ(i, { options: q.options.map((x, j) => j === k ? e.target.value : x) })} placeholder={`Option ${k + 1}`} style={{ ...ctl, flex: 1 }} />
+                                <button onClick={() => setPQ(i, { options: q.options.filter((_, j) => j !== k) })} style={{ ...ghost, padding: "8px 12px" }}>✕</button>
+                              </div>
+                            ))}
+                          </div>
+                          {q.options.length < 30 && <button onClick={() => setPQ(i, { options: [...q.options, ""] })} style={{ ...linkBtn(SHOP_GREEN), marginTop: 8 }}>+ Add option</button>}
+                        </div>
+                      )}
+                      {q.type === "upload" && (
+                        <div style={{ display: "grid", gap: 12 }}>
+                          <div>
+                            <label style={lab}>Number of photos (1–10)</label>
+                            <input type="number" min={1} max={10} disabled={q.options.length > 0} value={q.options.length || q.maxFiles} onChange={(e) => setPQ(i, { maxFiles: Math.min(10, Math.max(1, Number(e.target.value) || 1)) })} style={{ ...ctl, width: 140, opacity: q.options.length ? .5 : 1 }} />
+                          </div>
+                          <div>
+                            <label style={lab}>Label each photo (optional — one upload box per label)</label>
+                            <div style={{ display: "grid", gap: 6 }}>
+                              {q.options.map((o, k) => (
+                                <div key={k} style={{ display: "flex", gap: 8 }}>
+                                  <input maxLength={45} value={o} onChange={(e) => setPQ(i, { options: q.options.map((x, j) => j === k ? e.target.value : x) })} placeholder={`Photo ${k + 1} — e.g. Front cover`} style={{ ...ctl, flex: 1 }} />
+                                  <button onClick={() => setPQ(i, { options: q.options.filter((_, j) => j !== k) })} style={{ ...ghost, padding: "8px 12px" }}>✕</button>
+                                </div>
+                              ))}
+                            </div>
+                            {q.options.length < 10 && <button onClick={() => setPQ(i, { options: [...q.options, ""] })} style={{ ...linkBtn(SHOP_GREEN), marginTop: 8 }}>+ Add label</button>}
+                          </div>
+                        </div>
+                      )}
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, cursor: "pointer" }}>
+                        <input type="checkbox" checked={q.required} onChange={(e) => setPQ(i, { required: e.target.checked })} /> This field is required
+                      </label>
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                        <button onClick={() => { setPersFields((a) => a.filter((_, k) => k !== i)); setPersEdit(null); }} style={{ ...ghost, color: "#D14343" }}>Delete</button>
+                        <button disabled={!q.label.trim()} onClick={() => setPersEdit(null)} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: q.label.trim() ? 1 : .5 }}>Done</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "11px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {q.label || <span style={{ color: "#D14343" }}>(no title)</span>}
+                          {q.required && <span style={{ color: "#D14343" }}> *</span>}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                          {PQ_LABEL(q)}
+                          {q.type === "text" ? ` · ${q.maxChars} characters` : q.type === "dropdown" ? ` · ${q.options.length} option(s)` : ` · ${q.options.length || q.maxFiles} photo(s)`}
+                        </div>
+                      </div>
+                      <button onClick={() => setPersEdit(i)} style={linkBtn(SHOP_GREEN)}>Edit</button>
+                      <button onClick={() => setPersFields((a) => a.filter((_, k) => k !== i))} style={linkBtn("#D14343")}>Delete</button>
+                    </div>
+                  ))}
+                </div>
+
+                {persFields.length < 5 && persEdit === null && (
+                  <button onClick={() => { setPersFields((a) => [...a, NEW_PQ("text")]); setPersEdit(persFields.length); }}
+                    style={{ ...ghost, width: "100%", justifyContent: "center", marginTop: persFields.length ? 10 : 0 }}>+ Add field</button>
+                )}
+                {persFields.length >= 5 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>5 of 5 fields — the maximum for one listing.</div>}
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginTop: 18 }}>
+                  <button onClick={clearPers} disabled={busy || persInfo.source !== "product"} style={{ ...linkBtn("var(--muted)"), opacity: persInfo.source === "product" ? 1 : .4, cursor: persInfo.source === "product" ? "pointer" : "default" }}>Use the template instead</button>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => setPersOpen(false)} style={ghost}>Cancel</button>
+                    <button disabled={busy || persEdit !== null} onClick={savePers} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: (busy || persEdit !== null) ? .6 : 1 }}>{busy ? "Working…" : "Save & push"}</button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}

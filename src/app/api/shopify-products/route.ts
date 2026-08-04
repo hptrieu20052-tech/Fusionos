@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     (new Date(b.p.createdAt ?? 0).getTime() - new Date(a.p.createdAt ?? 0).getTime()));
 
   // Template FUSION của từng listing: gán tay (templateId) > tự khớp theo Product type (cùng store).
-  const tpls = await db.select({ id: schema.shopifyTemplates.id, storeId: schema.shopifyTemplates.storeId, name: schema.shopifyTemplates.name, productType: schema.shopifyTemplates.productType, status: schema.shopifyTemplates.status, baseDescription: schema.shopifyTemplates.baseDescription, productDetails: schema.shopifyTemplates.productDetails, shippingInfo: schema.shopifyTemplates.shippingInfo }).from(schema.shopifyTemplates);
+  const tpls = await db.select({ id: schema.shopifyTemplates.id, storeId: schema.shopifyTemplates.storeId, name: schema.shopifyTemplates.name, productType: schema.shopifyTemplates.productType, status: schema.shopifyTemplates.status, baseDescription: schema.shopifyTemplates.baseDescription, productDetails: schema.shopifyTemplates.productDetails, shippingInfo: schema.shopifyTemplates.shippingInfo, personalization: schema.shopifyTemplates.personalization }).from(schema.shopifyTemplates);
   const byId = new Map(tpls.map((t) => [t.id, t]));
   const matchTpl = (storeId: string, productType: string | null) => {
     const list = tpls.filter((t) => t.storeId === storeId);
@@ -82,6 +82,12 @@ export async function GET(req: NextRequest) {
       // fill-sku và image-alt đều ghi ngược variants/images về DB local ngay sau khi Shopify nhận
       // (fill-sku/route.ts:156, image-alt/route.ts:138) ⇒ 4 số này là tình trạng THẬT trên Shopify,
       // không phải phỏng đoán, và không cần bấm Sync mới thấy.
+      // v141: listing đã tự đặt Custom options chưa (mảng = rồi, null = còn ăn theo template).
+      // Chỉ trả CỜ + SỐ field, không trả nội dung — bảng 135 dòng không cần chở theo cả bộ câu hỏi.
+      persOwn: Array.isArray(r.p.personalization),
+      persCount: Array.isArray(r.p.personalization)
+        ? (r.p.personalization as unknown[]).length
+        : (Array.isArray(tpl?.personalization) ? (tpl!.personalization as unknown[]).length : 0),
       skuTotal: vs.length, skuDone: vs.filter((v) => String(v?.sku ?? "").trim()).length,
       altTotal: imgs.length, altDone: imgs.filter((i) => String(i?.altText ?? "").trim()).length,
       optionsSummary: (Array.isArray(r.p.options) ? r.p.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${o.values.length}`).join(" · "),

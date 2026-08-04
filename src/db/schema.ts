@@ -273,6 +273,13 @@ export const shopifyProducts = pgTable("shopify_products", {
   // Template FUSION gán cho listing này — nguồn facts cho AI Optimize + 3 tab mô tả.
   // null = tự khớp theo Product type (fallback), gán tay = luôn dùng template này.
   templateId: uuid("template_id"),
+  // ---- Custom options — bộ ô cá nhân hoá RIÊNG của listing này (v141) ----
+  // [{ type:"text"|"dropdown"|"upload", label, instructions, required, maxChars, options[], maxFiles }]
+  // NULL  = listing chưa đặt riêng ⇒ Push personalization lấy bộ của TEMPLATE (như trước).
+  // Mảng  = listing tự quyết (kể cả mảng rỗng = cố tình không có ô nào) ⇒ Push template fields
+  //         KHÔNG ghi đè nữa. Đây là đường chính khi mỗi listing custom một kiểu.
+  // Cần MIGRATION_v141_product_personalization.sql
+  personalization: jsonb("personalization"),
   // ---- Google supplemental feed — CHỈ nằm trong FUSION OS, KHÔNG BAO GIỜ push lên Shopify ----
   // Merchant Center cho description tới 5000 ký tự, nhưng feed đang lấy seo_description (≤155,
   // vì ô đó là dòng snippet trên Google Search, dài hơn là bị cắt). Hai field dưới đây để xuất
