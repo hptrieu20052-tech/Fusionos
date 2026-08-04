@@ -1175,7 +1175,9 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
     if (j.ok) {
       if (j.simulated) flash(t("o.simPushWarn") + (j.reason ?? t("o.checkFfConfig")));
       else if (j.ttLabelWarn) flash("⚠ Pushed, but TikTok label: " + j.ttLabelWarn);
-      else flash(t("o.pushedReal"));
+      // v155 · đẩy THẬT mà adapter có ghi chú (chẩn đoán DST, cảnh báo trùng đơn…) thì phải hiện ra,
+      // trước đây chỉ hiện khi simulated ⇒ mọi ghi chú của bản đẩy thật bị nuốt.
+      else flash(t("o.pushedReal") + (j.reason ? " · " + j.reason : ""));
       // GIỮ NGUYÊN card để kiểm tra lại (không reload list làm nó biến mất khỏi tab NEW):
       // chỉ đổi badge status tại chỗ + refresh chi tiết (push record/tracking). Card sẽ tự về đúng tab khi đổi trang/filter.
       patchOrder?.(o.id, { status: "created" });

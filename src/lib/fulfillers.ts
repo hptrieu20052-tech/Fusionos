@@ -308,7 +308,31 @@ function hogotoAdapter(): FulfillerAdapter {
         const codes = products.map((p) => String(p.productCode)).join(",");
         throw new Error(`${m} · [v148 ref="${refCode}" ship="${shippingMethod}" products="${codes}"]`);
       }
-      return { externalFfId: res.orderCode, simulated: false, raw: res.raw, baseCost: res.baseCost, shipCost: res.shipCost };
+      // v155 · CHẨN ĐOÁN FILE DST. Storage key R2 GIỮ NGUYÊN đuôi file (`designs/<id>/emb_center-….dst`)
+      // nên v152 KHÔNG phải nguyên nhân thật — file thêu đáng lẽ đã được gửi từ trước.
+      // Đơn Y018_51 vẫn "2/3 file" ⇒ phải biết chắc: (1) mình CÓ gửi designEmbUrl không, (2) Hogoto
+      // có nhả lại giá trị đó trong response không, (3) tên field thật của object đính kèm bên họ.
+      // Chỉ ĐỌC response, không đổi payload. Gỡ khi đã xác định đúng tên field.
+      const sentEmb = products.filter((p) => (p.designAttachments ?? []).some((a) => !!a.designEmbUrl)).length;
+      const embUrls = new Set(
+        products.flatMap((p) => (p.designAttachments ?? []).map((a) => a.designEmbUrl).filter(Boolean) as string[]),
+      );
+      let attKeys = "";
+      let echoed = false;
+      const walk = (v: unknown, depth: number): void => {
+        if (depth > 6 || !v || typeof v !== "object") return;
+        if (Array.isArray(v)) { for (const x of v.slice(0, 20)) walk(x, depth + 1); return; }
+        const o = v as Record<string, unknown>;
+        const keys = Object.keys(o);
+        if (!attKeys && keys.some((k) => /^design_?url$/i.test(k))) attKeys = keys.slice(0, 20).join(",");
+        for (const val of Object.values(o)) {
+          if (typeof val === "string" && embUrls.has(val)) echoed = true;
+          else walk(val, depth + 1);
+        }
+      };
+      walk(res.raw, 0);
+      const dstDiag = `v155 dst: sent=${sentEmb}/${products.length} echo=${echoed ? "YES" : "NO"} att{${attKeys || "response không có object đính kèm"}}`;
+      return { externalFfId: res.orderCode, simulated: false, raw: res.raw, baseCost: res.baseCost, shipCost: res.shipCost, reason: dstDiag };
     },
   };
 }
