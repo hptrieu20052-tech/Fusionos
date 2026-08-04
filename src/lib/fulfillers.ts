@@ -9,6 +9,7 @@ import { createLenfulOrder, type LenfulDesign, type LenfulItem } from "@/lib/len
 import { createVinawayOrder, type VinawayItem, type VinawaySurface } from "@/lib/vinaway";
 import { createHogotoOrder } from "@/lib/hogoto";
 import { getSheetHeaders, appendSheetRow, normHeader } from "@/lib/gsheet";
+import { createHash } from "crypto";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
  * ------------------------------------------------------------------
@@ -326,8 +327,25 @@ function lenfulAdapter(): FulfillerAdapter {
           if (l.designBack) designs.push({ position: 2, link: l.designBack });
           if (l.designSleeve) { designs.push({ position: 5, link: l.designSleeve }); designs.push({ position: 6, link: l.designSleeve }); }
         }
+        // DESIGN_SKU PHẢI GẮN VỚI ẢNH, KHÔNG PHẢI VỚI SẢN PHẨM.
+        //
+        // Lỗi cũ: design_sku = internalSku/fulfillerSku (SKU sản phẩm) → mọi đơn của cùng 1 sản phẩm
+        // dùng chung 1 bản ghi design bên Lenful. Đơn sau gửi ảnh khác → Lenful hiểu là UPDATE design
+        // đó, và chặn nếu có đơn cũ đang in:
+        //   "Update design [xxx] fail … Have some orders using this design in process with status
+        //    not in [Pending,Updating] … You cannot update it"
+        // Với hàng cá nhân hoá (mỗi đơn 1 ảnh riêng) thì lỗi này chắc chắn xảy ra.
+        //
+        // Sửa: gắn thêm hash của CHÍNH danh sách link ảnh vào sku.
+        //   • ảnh khác → sku khác → Lenful TẠO MỚI, không update cái đang in → hết 400.
+        //   • ảnh y hệt (đẩy lại đơn lỗi) → hash y hệt → sku y hệt → Lenful dùng lại, không tạo rác.
+        const designKey = designs.map((d) => `${d.position}:${d.link}`).sort().join("|");
+        const baseSku = (l.internalSku || l.fulfillerSku).slice(0, 80);
+        const designSku = designs.length
+          ? `${baseSku}-${createHash("sha1").update(designKey).digest("hex").slice(0, 10)}`
+          : baseSku;
         return {
-          design_sku: (l.internalSku || l.fulfillerSku).slice(0, 100),
+          design_sku: designSku.slice(0, 100),
           product_sku: l.fulfillerSku,
           quantity: l.qty,
           ...(l.image ? { mockups: [l.image] } : {}),
