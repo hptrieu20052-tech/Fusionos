@@ -12,14 +12,13 @@ type Row = {
   id: string; storeId: string; title: string; price: string | null; quantity: number | null;
   tags: string | null; sku: string | null; status: string; importedAt: string | null;
   storeName: string | null; mainImageUrl: string | null; variationsSummary: string;
-  shopifyTitle: string | null; sellerId: string | null; sellerName: string | null; pushed?: boolean;
+  sellerId: string | null; sellerName: string | null; pushed?: boolean;
   persCount?: number; // v142 · số ô Custom options của listing
 };
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
 type Detail = {
   id: string; title: string; price: string | null; tags: string | null; description: string | null;
-  shopifyTitle: string | null; shopifyTags: string | null; shopifyDesc: string | null;
   images: string[]; variations: { name?: string; values?: string[] }[]; quantity: number | null; sku: string | null;
   storeName: string | null; sellerName: string | null;
   personalization: PQ[]; // v142 · ô khách phải điền trước khi Add to cart (Push Shopify ghi metafield)
@@ -126,7 +125,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     (!sellerFilter || r.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (pushFilter === "" || (pushFilter === "pushed" ? r.pushed : !r.pushed)) &&
-    (!kw.trim() || (r.title + " " + (r.shopifyTitle ?? "") + " " + (r.sku ?? "") + " " + (r.tags ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
+    (!kw.trim() || (r.title + " " + (r.sku ?? "") + " " + (r.tags ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
   ), [rows, kw, sellerFilter, storeFilter, pushFilter]);
   const pushedCount = useMemo(() => rows.filter((r) => r.pushed).length, [rows]);
   const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
@@ -235,11 +234,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       const j = await fetch(`/api/etsy-products?id=${id}`).then((r) => r.json());
       if (j.ok) setEdit({
         id: j.item.id, title: j.item.title, price: j.item.price, tags: j.item.tags, description: j.item.description,
-        // Etsy title/tags/desc GIỮ NGUYÊN (read-only). Ô Shopify là bản RIÊNG do AI Optimize/sửa tay điền
-        // (rỗng nếu chưa tối ưu). Export Shopify lấy bản Shopify; rỗng thì fallback bản Etsy.
-        shopifyTitle: j.item.shopifyTitle ?? "",
-        shopifyTags: j.item.shopifyTags ?? "",
-        shopifyDesc: j.item.shopifyDesc ?? "",
+        // v144: bỏ 3 ô ghi đè Shopify (title/tags/desc) — sửa nội dung Shopify bên Manage Products · Shopify.
+        // Ở đây chỉ còn thông tin gốc Etsy, hiển thị read-only; Push Shopify dùng luôn bản Etsy.
         images: Array.isArray(j.item.images) ? j.item.images : [],
         variations: Array.isArray(j.item.variations) ? j.item.variations : [],
         quantity: j.item.quantity, sku: j.item.sku, storeName: j.item.storeName, sellerName: j.item.sellerName,
@@ -258,7 +254,9 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     try {
       const res = await fetch("/api/etsy-products", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: edit.id, title: edit.shopifyTitle ?? "", tags: edit.shopifyTags ?? "", description: edit.shopifyDesc ?? "", price: edit.price ?? "", images: edit.images, variations: edit.variations, personalization: edit.personalization }),
+        // v144: KHÔNG gửi title/tags/description nữa ⇒ API bỏ qua, 3 cột shopify_* trong DB giữ nguyên,
+        // listing đã push trước đây không bị đổi nội dung. Chỉ lưu giá / ảnh / biến thể / Custom options.
+        body: JSON.stringify({ id: edit.id, price: edit.price ?? "", images: edit.images, variations: edit.variations, personalization: edit.personalization }),
       });
       const j = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
       if (j.ok) { flash("✓ Saved"); setEditId(null); setEdit(null); load(); }
@@ -667,7 +665,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <MarketplaceLogo mk="etsy" size={20} />
                 <div style={{ fontWeight: 800, fontSize: 17 }}>Edit listing</div>
-                <span style={{ fontSize: 11.5, color: "var(--muted)" }}>· exported to Shopify (Etsy original kept intact)</span>
+                <span style={{ fontSize: 11.5, color: "var(--muted)" }}>· Etsy info · edit Shopify content in Manage Products · Shopify</span>
               </div>
               <button onClick={() => setEditId(null)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
             </div>
@@ -728,33 +726,21 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                     style={{ ...linkBtn("var(--blue)"), fontSize: 12 }}>+ Add variation</button>
                 </div>
 
-                {/* RIGHT — Shopify fields (separate from Etsy original). Export uses these; empty = fallback to Etsy. */}
+                {/* RIGHT — v144: thông tin Etsy gốc (read-only) + giá + Custom options.
+                    3 ô ghi đè Shopify đã bỏ; nội dung Shopify sửa bên Manage Products · Shopify. */}
                 <div style={{ padding: 20, overflowY: "auto" }}>
-                  <label style={lab}>
-                    Shopify title <span style={{ fontWeight: 500, color: (edit.shopifyTitle ?? "").length > 140 ? "var(--red)" : "var(--muted)" }}>({(edit.shopifyTitle ?? "").length}/140)</span>
-                    <button onClick={() => setEdit({ ...edit, shopifyTitle: edit.title })} style={{ ...linkBtn("var(--blue)"), float: "right", fontSize: 11 }}>Use Etsy title</button>
-                  </label>
-                  <textarea value={edit.shopifyTitle ?? ""} onChange={(e) => setEdit({ ...edit, shopifyTitle: e.target.value })}
-                    rows={2} placeholder="Filled by AI Optimize, or type a short Shopify title…" style={{ ...ctl, width: "100%", marginBottom: 5, resize: "vertical" }} />
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 16, lineHeight: 1.4 }}><b>Etsy original:</b> {edit.title}</div>
+                  <label style={lab}>Title <span style={{ fontWeight: 500, color: "var(--muted)" }}>(Etsy · read-only)</span></label>
+                  <div style={{ ...ctl, width: "100%", background: "#FAFBFD", color: "var(--ink)", lineHeight: 1.45, marginBottom: 16, boxSizing: "border-box" }}>{edit.title}</div>
 
                   <label style={lab}>Price (USD)</label>
                   <input value={edit.price ?? ""} inputMode="decimal" onChange={(e) => setEdit({ ...edit, price: e.target.value.replace(/[^0-9.]/g, "") })}
                     placeholder="0.00" style={{ ...ctl, width: 160, marginBottom: 16 }} />
 
-                  <label style={lab}>
-                    Shopify tags <span style={{ fontWeight: 500 }}>(comma-separated)</span>
-                    <button onClick={() => setEdit({ ...edit, shopifyTags: (edit.tags ?? "").replace(/_/g, " ") })} style={{ ...linkBtn("var(--blue)"), float: "right", fontSize: 11 }}>Use Etsy tags</button>
-                  </label>
-                  <textarea value={edit.shopifyTags ?? ""} onChange={(e) => setEdit({ ...edit, shopifyTags: e.target.value })} rows={3}
-                    placeholder="Filled by AI Optimize, or type your own…" style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 16 }} />
+                  <label style={lab}>Tags <span style={{ fontWeight: 500, color: "var(--muted)" }}>(Etsy · read-only)</span></label>
+                  <div style={{ ...ctl, width: "100%", background: "#FAFBFD", color: edit.tags ? "var(--ink)" : "var(--muted)", lineHeight: 1.5, marginBottom: 16, boxSizing: "border-box" }}>{(edit.tags ?? "").replace(/_/g, " ") || "—"}</div>
 
-                  <label style={lab}>
-                    Shopify description
-                    <button onClick={() => setEdit({ ...edit, shopifyDesc: edit.description ?? "" })} style={{ ...linkBtn("var(--blue)"), float: "right", fontSize: 11 }}>Use Etsy description</button>
-                  </label>
-                  <textarea value={edit.shopifyDesc ?? ""} onChange={(e) => setEdit({ ...edit, shopifyDesc: e.target.value })} rows={8}
-                    placeholder="Filled by AI Optimize, or type your own…" style={{ ...ctl, width: "100%", resize: "vertical" }} />
+                  <label style={lab}>Description <span style={{ fontWeight: 500, color: "var(--muted)" }}>(Etsy · read-only)</span></label>
+                  <div style={{ ...ctl, width: "100%", background: "#FAFBFD", color: edit.description ? "var(--ink)" : "var(--muted)", lineHeight: 1.5, maxHeight: 200, overflowY: "auto", whiteSpace: "pre-wrap", boxSizing: "border-box" }}>{edit.description || "—"}</div>
 
                   {/* v142 · Custom options — seller tự đặt ô khách phải điền trước khi Add to cart.
                       Lưu cùng nút Save; Push to Shopify ghi tiếp vào metafield fusion.options. */}
