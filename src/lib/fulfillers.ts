@@ -9,7 +9,7 @@ import { createLenfulOrder, type LenfulDesign, type LenfulItem } from "@/lib/len
 import { createVinawayOrder, type VinawayItem, type VinawaySurface } from "@/lib/vinaway";
 import { createHogotoOrder } from "@/lib/hogoto";
 import { getSheetHeaders, appendSheetRow, normHeader } from "@/lib/gsheet";
-import { EMB_FILE_RX } from "@/lib/design-kinds";
+import { EMB_FILE_RX, isEmbKind } from "@/lib/design-kinds";
 import { createHash } from "crypto";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
@@ -232,9 +232,14 @@ function hogotoAdapter(): FulfillerAdapter {
         // thì nó bị nhét vào ô ẢNH, còn ô file thêu để trống; nếu file đầu là ảnh thì Hogoto không
         // bao giờ nhận được .dst → đơn thêu treo ở "1/2 file", xưởng không chạy được.
         // Sửa: tách sides theo ĐUÔI FILE, ảnh vào designUrl, file thêu vào designEmbUrl.
+        // v152 · Nhận diện file máy thêu phải xét CẢ `kind` (emb_front/emb_center/…) chứ không chỉ
+        // đuôi file: storage key trên R2 thường KHÔNG giữ đuôi .dst ⇒ EMB_FILE_RX không khớp ⇒
+        // file DST bị coi là ảnh, nhét vào designUrl, còn designEmbUrl để trống (card design có 2
+        // file nhưng Hogoto chỉ nhận 1). Card #2884 dính đúng lỗi này.
         const sides = (l.designSides ?? []).filter((s) => !!s.url);
-        const imgUrl = sides.find((s) => !EMB_FILE_RX.test(s.url))?.url || l.designFront || null;
-        const embUrl = sides.find((s) => EMB_FILE_RX.test(s.url))?.url || null;
+        const isEmb = (s: { kind: string; url: string }) => isEmbKind(s.kind) || EMB_FILE_RX.test(s.url);
+        const imgUrl = sides.find((s) => !isEmb(s))?.url || l.designFront || null;
+        const embUrl = sides.find((s) => isEmb(s))?.url || null;
         const designUrl = imgUrl || embUrl;   // chỉ có file thêu thì vẫn phải gửi để đơn không rỗng
         // v146 · thứ tự tin cậy: extraJson của SKU → tên sản phẩm fulfiller (đoán từ khoá) →
         // có file .dst/.emb thì chắc chắn là đơn thêu. Vẫn null thì bỏ hẳn field.
@@ -267,7 +272,11 @@ function hogotoAdapter(): FulfillerAdapter {
           zip: o.zip || "",
         },
         customerNote: ctx.lines.map((l) => (l.personalization || "").trim()).filter(Boolean).join(" | ") || null,
-        autoDeposit: true,
+        // v151 · MẶC ĐỊNH FALSE. autoDeposit=true khiến Hogoto ĐẶT CỌC/TRỪ TIỀN NGAY khi nhận đơn:
+        // đơn rời trạng thái "Tạo mới" ⇒ KHÔNG sửa được file thiết kế / dịch vụ bổ sung nữa,
+        // và mất bước duyệt trước khi trả tiền. Muốn tự cọc thì đặt credential
+        // autoDeposit = "1" | "true" | "yes" ở Settings → Fulfillers.
+        autoDeposit: /^(1|true|yes)$/i.test(String(cred.autoDeposit || "")),
         products,
         recipient: {
           email: o.email || "",
@@ -1209,7 +1218,7 @@ function compassupAdapter(): FulfillerAdapter {
           // Nếu chưa cấp attachments nhưng có designSides → dùng chúng
           if (!it.attachments.length && l.designSides?.length) {
             // Bỏ file máy thêu (.dst/.emb) — nhà này nhận ảnh in, gửi file máy vào là đơn hỏng.
-            it.attachments = l.designSides.filter((d) => !EMB_FILE_RX.test(d.url)).map((d) => ({ src: d.url, type: "link" }));
+            it.attachments = l.designSides.filter((d) => !isEmbKind(d.kind) && !EMB_FILE_RX.test(d.url)).map((d) => ({ src: d.url, type: "link" })); // v152 · xét cả kind, storage key không giữ đuôi .dst
           }
         }
         return it;

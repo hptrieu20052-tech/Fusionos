@@ -38,8 +38,13 @@ export async function createHogotoOrder(cfg: HogotoCfg, body: unknown): Promise<
   //   { "code": "VALIDATION_ERROR", "message": "...", "data": null }
   // Bản cũ lấy luôn `j.code` làm orderCode ⇒ đơn hiện PUSHED với mã "VALIDATION_ERROR"
   // trong khi bên seller.hogotopod.com KHÔNG hề có đơn. Phải coi đây là THẤT BẠI.
-  const hasData = !!j.data && typeof j.data === "object" && !Array.isArray(j.data);
-  const data = (hasData ? j.data : j) as Record<string, unknown>;
+  // v150 · GỐC BỆNH: envelope Hogoto là { result, message, code, count, error, showMessage } —
+  // payload nằm trong `result`, KHÔNG phải `data`. Bản cũ chỉ mở `data` ⇒ đơn tạo THÀNH CÔNG
+  // vẫn không đọc được orderCode ⇒ ném lỗi ⇒ người dùng bấm push lại ⇒ Hogoto báo trùng
+  // ORDER.REFERENCE_CODE_EXISTS. Mở cả `result` là hết vòng lặp này.
+  const wrap = j.data ?? (j as Record<string, unknown>).result;
+  const hasData = !!wrap && typeof wrap === "object" && !Array.isArray(wrap);
+  const data = (hasData ? wrap : j) as Record<string, unknown>;
 
   // Chỉ nhận các khoá THỰC SỰ là mã đơn. Không bao giờ lấy `code` ở cấp envelope
   // (đó là mã trạng thái/mã lỗi), chỉ chấp nhận `code` khi nó nằm trong data{}.
@@ -54,9 +59,18 @@ export async function createHogotoOrder(cfg: HogotoCfg, body: unknown): Promise<
   const envCode = typeof j.code === "string" ? j.code.trim() : "";
   const envStatus = num(j.status ?? j.statusCode ?? j.httpStatus);
   const errish =
-    /error|fail|invalid|denied|unauthor|forbid|missing|reject|exception|not_?found/i.test(envCode) ||
+    /error|fail|invalid|denied|unauthor|forbid|missing|reject|exception|not_?found|exists|duplicate/i.test(envCode) ||
     (typeof j.success === "boolean" && j.success === false) ||
+    (typeof j.error === "boolean" && j.error === true) ||   // v150 · envelope Hogoto có cờ `error`
     (envStatus !== undefined && envStatus >= 400);
+
+  // v150 · Trùng reference: đơn ĐÃ nằm bên Hogoto. Nói thẳng để không ai push lại lần nữa.
+  if (/REFERENCE_CODE_EXISTS|DUPLICATE/i.test(envCode)) {
+    throw new Error(
+      `Đơn này ĐÃ tồn tại trên Hogoto (Hogoto trả [${envCode}]). KHÔNG push lại — sẽ không tạo trùng được. ` +
+      `Mở seller.hogotopod.com tìm đơn theo reference code, lấy mã đơn + chi phí rồi nhập tay vào FUSION OS.`,
+    );
+  }
 
   if (errish || !orderCode) {
     // Gom mọi mô tả lỗi Hogoto trả về để hiện nguyên văn trong toast — không nuốt lỗi,
