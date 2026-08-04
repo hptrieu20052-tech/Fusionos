@@ -271,7 +271,11 @@ async function handlePush(req: NextRequest) {
   // Ghi chi phí vào sổ (âm) — trang Tài chính SUM là ra
   await db.insert(schema.transactions).values({
     type: "base_cost", amount: (-finalCost).toFixed(2),
-    orderId: order.id, storeId: order.storeId, sellerId: order.sellerId,
+    // GHI CÔNG THEO CHỦ SHOP LÚC ĐƠN VỀ, không phải chủ shop hiện tại.
+    // Sau bàn giao, người mới đẩy đơn CŨ lên nhà in: doanh thu đơn đó vẫn thuộc seller cũ
+    // (orders.seller_at_order) nên cost phải nằm cùng chỗ. Ghi theo seller_id hiện tại =
+    // seller cũ lãi ảo (có rev, không cost) + seller mới lỗ ảo (có cost, không rev).
+    orderId: order.id, storeId: order.storeId, sellerId: order.sellerAtOrder ?? order.sellerId,
     note: `${ff.name} · ${externalFfId}${lineNote}`,
     // Chi phí ghi theo NGÀY KÉO ĐƠN VỀ (ordered_at) — trùng mốc doanh thu.
     occurredAt: (order.orderedAt ? new Date(order.orderedAt) : new Date()).toISOString().slice(0, 10),

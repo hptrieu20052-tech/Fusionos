@@ -62,7 +62,8 @@ export async function refundOrderCost(orderId: string, note: string) {
     const [ord] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
     await db.insert(schema.transactions).values({
       type: "base_cost", amount: (-bal).toFixed(2),
-      orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
+      // Cost ghi cho CHỦ SHOP LÚC ĐƠN VỀ để nằm cùng chỗ với doanh thu (xem fulfillment/push).
+      orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerAtOrder ?? ord?.sellerId ?? null,
       // Ghi chi phí theo NGÀY KÉO ĐƠN VỀ (ordered_at) để trùng mốc với doanh thu — báo cáo theo ngày mới khớp.
       note, occurredAt: (ord?.orderedAt ? new Date(ord.orderedAt) : new Date()).toISOString().slice(0, 10),
     });
@@ -100,7 +101,8 @@ export async function rebalanceOrderCost(orderId: string, note = "Cost adjustmen
     const [ord] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
     await db.insert(schema.transactions).values({
       type: "base_cost", amount: (target - cur).toFixed(2),
-      orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerId ?? null,
+      // Cost ghi cho CHỦ SHOP LÚC ĐƠN VỀ để nằm cùng chỗ với doanh thu (xem fulfillment/push).
+      orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerAtOrder ?? ord?.sellerId ?? null,
       note,
       // Theo NGÀY KÉO ĐƠN VỀ (ordered_at) để cost trùng mốc doanh thu.
       occurredAt: (ord?.orderedAt ? new Date(ord.orderedAt) : new Date()).toISOString().slice(0, 10),

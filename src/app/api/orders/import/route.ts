@@ -60,10 +60,10 @@ export async function POST(req: NextRequest) {
     const key = (ext || label).trim();
     const tail = key.includes("-") ? key.slice(key.lastIndexOf("-") + 1) : key;
     const [order] = (await db.execute(sql`
-      SELECT id, store_id, seller_id, status, ordered_at FROM orders
+      SELECT id, store_id, seller_id, seller_at_order, status, ordered_at FROM orders
       WHERE external_id = ${key} OR order_label = ${key} OR external_id = ${tail}
       ORDER BY ordered_at DESC LIMIT 1
-    `)).rows as { id: string; store_id: string | null; seller_id: string | null; status: string; ordered_at: string | Date | null }[];
+    `)).rows as { id: string; store_id: string | null; seller_id: string | null; seller_at_order: string | null; status: string; ordered_at: string | Date | null }[];
     if (!order) { errors.push(`Dòng ${i + 2}: không tìm thấy đơn ${key}`); continue; }
 
     // --- Các trường fulfill (đúng form nhập tay) ---
@@ -155,7 +155,8 @@ export async function POST(req: NextRequest) {
       if (Math.abs(delta) >= 0.01) {
         await db.insert(schema.transactions).values({
           type: "base_cost", amount: (-delta).toFixed(2),
-          orderId: order.id, storeId: order.store_id, sellerId: order.seller_id,
+          // Cost ghi cho CHỦ SHOP LÚC ĐƠN VỀ để nằm cùng chỗ với doanh thu (xem fulfillment/push).
+          orderId: order.id, storeId: order.store_id, sellerId: order.seller_at_order ?? order.seller_id,
           note: `Import Excel: base cost ${cur.toFixed(2)} → ${target.toFixed(2)}`,
           // Theo NGÀY KÉO ĐƠN VỀ (ordered_at) — trùng mốc doanh thu.
           occurredAt: (order.ordered_at ? new Date(order.ordered_at) : new Date()).toISOString().slice(0, 10),
