@@ -254,6 +254,9 @@ function hogotoAdapter(): FulfillerAdapter {
         };
       });
 
+      // v148 · tính TRƯỚC để in được ra thông báo lỗi (khối try/catch cuối hàm).
+      const refCode = hogotoRef(orderExtNumber(o)) || hogotoRef(o.externalId) || `FO${Date.now()}`;
+
       const body: Record<string, unknown> = {
         address: {
           addressText2: o.addr2 || "",
@@ -274,7 +277,7 @@ function hogotoAdapter(): FulfillerAdapter {
           phone: o.phone || "",
         },
         // v147 · chỉ chữ + số. FUSION OS vẫn hiển thị order label có dấu "-" như cũ.
-        referenceCode: hogotoRef(orderExtNumber(o)) || hogotoRef(o.externalId) || `FO${Date.now()}`,
+        referenceCode: refCode,
         shippingMethod,
       };
       // Ship-by-TikTok: đưa nhãn + tracking cho Hogoto (đúng luồng đơn TikTok mình giữ label).
@@ -286,7 +289,16 @@ function hogotoAdapter(): FulfillerAdapter {
         };
       }
 
-      const res = await createHogotoOrder({ endpoint: ctx.fulfiller.apiEndpoint, apiKey, tenant }, body);
+      // v148 · CHẨN ĐOÁN: đính kèm đúng chuỗi đã gửi + dấu build vào thông báo lỗi.
+      // Nếu toast KHÔNG có "[v148 ...]" ⇒ Vercel vẫn đang chạy bản cũ, không phải lỗi logic.
+      let res;
+      try {
+        res = await createHogotoOrder({ endpoint: ctx.fulfiller.apiEndpoint, apiKey, tenant }, body);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        const codes = products.map((p) => String(p.productCode)).join(",");
+        throw new Error(`${m} · [v148 ref="${refCode}" ship="${shippingMethod}" products="${codes}"]`);
+      }
       return { externalFfId: res.orderCode, simulated: false, raw: res.raw, baseCost: res.baseCost, shipCost: res.shipCost };
     },
   };
