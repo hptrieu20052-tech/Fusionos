@@ -167,6 +167,20 @@ function hogotoPType(v: unknown): string | null {
   return null;
 }
 
+// v147 · referenceCode của Hogoto CHỈ nhận chữ và số ("Reference code can only contain letters and
+// numbers, no special characters allowed"). Order label của mình là "HEARTHOOPJAHNTSHOP-4134058147"
+// (có dấu "-") ⇒ bị chặn. CHỈ lọc ở call site Hogoto, KHÔNG sửa orderExtNumber() vì ~10 adapter khác
+// (Lenful, FlashShip, Merchize, Onos, WeMakePOD…) đã gửi mã có dấu "-" cho nhà cung cấp của họ rồi,
+// đổi chung sẽ hỏng đối chiếu đơn + ghi ngược tracking.
+function hogotoRef(v: string): string {
+  const s = v
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")   // bỏ dấu tiếng Việt
+    .replace(/đ/g, "d").replace(/Đ/g, "D")
+    .replace(/[^A-Za-z0-9]/g, "");     // bỏ mọi ký tự đặc biệt còn lại
+  return s.slice(0, 60);
+}
+
 /**
  * Adapter HOGOTO POD THẬT — POST /v1/partner/order/store (X-API-Key + X-Tenant).
  * credentials (Settings → Fulfillers): apiKey = API Key; (tuỳ chọn) tenant, shippingMethod mặc định.
@@ -259,7 +273,8 @@ function hogotoAdapter(): FulfillerAdapter {
           note: null,
           phone: o.phone || "",
         },
-        referenceCode: orderExtNumber(o),
+        // v147 · chỉ chữ + số. FUSION OS vẫn hiển thị order label có dấu "-" như cũ.
+        referenceCode: hogotoRef(orderExtNumber(o)) || hogotoRef(o.externalId) || `FO${Date.now()}`,
         shippingMethod,
       };
       // Ship-by-TikTok: đưa nhãn + tracking cho Hogoto (đúng luồng đơn TikTok mình giữ label).
