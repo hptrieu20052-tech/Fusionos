@@ -9,6 +9,7 @@ import { createLenfulOrder, type LenfulDesign, type LenfulItem } from "@/lib/len
 import { createVinawayOrder, type VinawayItem, type VinawaySurface } from "@/lib/vinaway";
 import { createHogotoOrder } from "@/lib/hogoto";
 import { getSheetHeaders, appendSheetRow, normHeader } from "@/lib/gsheet";
+import { EMB_FILE_RX } from "@/lib/design-kinds";
 import { createHash } from "crypto";
 /**
  * KHUNG ADAPTER ĐẨY ĐƠN THEO TỪNG NHÀ FULFILL
@@ -163,10 +164,9 @@ function hogotoAdapter(): FulfillerAdapter {
         // thì nó bị nhét vào ô ẢNH, còn ô file thêu để trống; nếu file đầu là ảnh thì Hogoto không
         // bao giờ nhận được .dst → đơn thêu treo ở "1/2 file", xưởng không chạy được.
         // Sửa: tách sides theo ĐUÔI FILE, ảnh vào designUrl, file thêu vào designEmbUrl.
-        const HG_EMB_RX = /\.(emb|dst|pes|exp|jef|vp3|xxx)(\?|#|$)/i;
         const sides = (l.designSides ?? []).filter((s) => !!s.url);
-        const imgUrl = sides.find((s) => !HG_EMB_RX.test(s.url))?.url || l.designFront || null;
-        const embUrl = sides.find((s) => HG_EMB_RX.test(s.url))?.url || null;
+        const imgUrl = sides.find((s) => !EMB_FILE_RX.test(s.url))?.url || l.designFront || null;
+        const embUrl = sides.find((s) => EMB_FILE_RX.test(s.url))?.url || null;
         const designUrl = imgUrl || embUrl;   // chỉ có file thêu thì vẫn phải gửi để đơn không rỗng
         const designAttachments = designUrl ? [{
           positionCode, designUrl, designEmbUrl: embUrl, mockupUrl: l.image ?? null,
@@ -1124,7 +1124,8 @@ function compassupAdapter(): FulfillerAdapter {
           it.attachments = att.map((a) => ({ src: String(a.src), type: a.type || "link" }));
           // Nếu chưa cấp attachments nhưng có designSides → dùng chúng
           if (!it.attachments.length && l.designSides?.length) {
-            it.attachments = l.designSides.map((d) => ({ src: d.url, type: "link" }));
+            // Bỏ file máy thêu (.dst/.emb) — nhà này nhận ảnh in, gửi file máy vào là đơn hỏng.
+            it.attachments = l.designSides.filter((d) => !EMB_FILE_RX.test(d.url)).map((d) => ({ src: d.url, type: "link" }));
           }
         }
         return it;

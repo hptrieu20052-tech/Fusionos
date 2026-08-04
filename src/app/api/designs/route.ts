@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
 import { scopeOwnerIds, resolveScope } from "@/lib/scope";
 import { fileUrl } from "@/lib/storage";
+import { isEmbFile } from "@/lib/design-kinds";
 
 export const dynamic = "force-dynamic";
 
@@ -109,7 +110,8 @@ export async function GET(req: NextRequest) {
     const f = files.filter((x) => x.designId === d.id);
     // Cover mặc định = mặt trước; nếu không có thì mockup, rồi file đầu
     const front = f.find((x) => x.kind === "design_front");
-    const cover = front ?? f.find((x) => x.kind === "mockup") ?? f[0];
+    // File máy thêu (.dst) không hiển thị được → không bao giờ lấy làm ảnh bìa card.
+    const cover = front ?? f.find((x) => x.kind === "mockup") ?? f.find((x) => !isEmbFile(x.filename) && !isEmbFile(x.storageKey));
     const main = front ?? cover;
     const m = mmap.get(d.id);
     // Các mặt/ảnh khác (khác cover) để hiện thumbnail dưới chân card

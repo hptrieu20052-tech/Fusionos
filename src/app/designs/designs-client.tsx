@@ -5,7 +5,11 @@ import { useConfirm } from "@/components/confirm-provider";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { IconCopy, IconDownload, IconEyeOpen, IconTrash, IconSparkle, IconUpload, IconRefresh } from "@/components/icons";
-import { DESIGN_KINDS } from "@/lib/design-kinds";
+import { DESIGN_KINDS, EMB_KINDS, isEmbFile } from "@/lib/design-kinds";
+
+// Đuôi file máy thêu cho hộp thoại chọn file (trình duyệt lọc theo đuôi, không theo MIME —
+// file .dst thường không có content-type nên accept="image/*" là không chọn được).
+const EMB_ACCEPT = ".dst,.emb,.pes,.exp,.jef,.vp3,.xxx";
 
 const KIND_KEY: Record<string, string> = { design_front: "d.kindFront", design_back: "d.kindBack", mockup: "d.kindMockup", video: "d.kindVideo" };
 const pad2 = (n: number) => String(n).padStart(2, "0");
@@ -17,6 +21,8 @@ const sideLabel = (t: (k: string) => string): Record<string, string> => ({
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.mo" + (i + 1))])),
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`grid_${pad2(i + 1)}`, t("dz.gridOf").replace("{m}", t("dz.mo" + (i + 1)))])),
   ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`page_${pad2(i + 1)}`, t("dz.page").replace("{n}", String(i + 1))])),
+  emb_front: "Embroidery file — Front", emb_back: "Embroidery file — Back",
+  emb_left: "Embroidery file — Left", emb_right: "Embroidery file — Right", emb_center: "Embroidery file — Center",
   mockup: "Mockup", video: "Video",
 });
 // Nhóm mặt in để thêm (theo loại sản phẩm)
@@ -26,6 +32,8 @@ const sideGroups = (t: (k: string) => string): { group: string; sides: string[] 
   // Wall Calendars (Blank): bìa trước → (tháng + lưới) x12 → bìa sau. Dùng lại tên mặt đã có, chỉ thêm grid_01..12.
   { group: "Wall Calendars (Blank)", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, `grid_${pad2(i + 1)}`]).flat(), "back_cover"] },
   { group: t("dz.photoBookHard"), sides: ["book_cover", ...bookPages] },
+  // Đơn thêu: 1 vị trí = ảnh design (mặt ở nhóm trên) + file máy thêu .dst/.emb ở nhóm này.
+  { group: "Embroidery (.DST)", sides: [...EMB_KINDS] },
 ]);
 type FileRow = { id: string; kind: string; filename?: string | null; uploaderName?: string | null; thumbUrl: string | null; previewUrl: string | null; originalUrl: string | null; processingStatus: string; sizeBytes: number; width: number | null; height: number | null };
 type Design = {
@@ -343,6 +351,16 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const folderRef = useRef<HTMLInputElement | null>(null);
   const kindFromFilename = (name: string): string | null => {
     let base = name.replace(/\.[^.]+$/, "").toLowerCase().trim().replace(/[\s-]+/g, "_").replace(/[^a-z0-9_]/g, "").replace(/_+/g, "_");
+    // FILE MÁY THÊU: map theo VỊ TRÍ, không theo mặt in. front.dst → emb_front; chỉ "abc.dst" → emb_center.
+    if (isEmbFile(name)) {
+      if (EMB_KINDS.includes(base)) return base;
+      const embAlias: Record<string, string> = {
+        front: "emb_front", design_front: "emb_front", back: "emb_back", design_back: "emb_back",
+        left: "emb_left", sleeve_left: "emb_left", right: "emb_right", sleeve_right: "emb_right",
+        center: "emb_center", centre: "emb_center",
+      };
+      return embAlias[base] ?? "emb_center";
+    }
     if (DESIGN_KINDS.includes(base)) return base;
     // page1 / page_1 / page01 → page_01 (cả month/grid)
     const m = base.match(/^(page|month|grid)_?0*(\d{1,2})$/);
@@ -366,7 +384,8 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     const unmatchedNames: string[] = [];
     let dup = 0;
     for (const file of files) {
-      if (!file.type.startsWith("image/")) { unmatchedNames.push(file.name); continue; }
+      // File máy thêu không có MIME image/* → cho qua theo ĐUÔI FILE.
+      if (!file.type.startsWith("image/") && !isEmbFile(file.name)) { unmatchedNames.push(file.name); continue; }
       const kind = kindFromFilename(file.name);
       if (!kind) { unmatchedNames.push(file.name); continue; }
       if (existing.has(kind) || queued.has(kind)) { dup++; continue; } // mặt đã có → bỏ qua, không đè
@@ -506,7 +525,12 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                 <div key={x.id} className="file-item">
                   <div className="file-cell checker">
                     <span className="file-kind">{sideLabel(t)[x.kind] || t(KIND_KEY[x.kind]) || x.kind}</span>
-                    {x.thumbUrl || x.originalUrl
+                    {/* File máy thêu không có ảnh xem trước → hiện đuôi file thay vì ô trống. */}
+                    {isEmbFile(x.filename) || isEmbFile(x.originalUrl)
+                      ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 15, fontWeight: 800, letterSpacing: ".5px", color: "var(--muted)" }}>
+                          {(x.filename ?? "").split(".").pop()?.toUpperCase() || "DST"}
+                        </div>
+                      : x.thumbUrl || x.originalUrl
                       ? <img src={x.thumbUrl ?? x.originalUrl!} alt="" loading="lazy" />
                       : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</div>}
                     <span className="file-badge">{x.width && x.height ? `${x.width}×${x.height} · ` : ""}{(x.sizeBytes / 1048576).toFixed(1)}MB</span>
@@ -592,10 +616,10 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "6px 0 2px" }}>{t("d.noFiles")}</div>
             )}
             <input ref={fileRef} type="file"
-              accept={tab === "video" ? "video/*" : "image/*"}
+              accept={tab === "video" ? "video/*" : `image/*,${EMB_ACCEPT}`}
               onChange={(e) => { const file = e.target.files?.[0]; if (file) onPicked(file); }}
               style={{ display: "none" }} />
-            <input ref={folderRef} type="file" multiple accept="image/*"
+            <input ref={folderRef} type="file" multiple accept={`image/*,${EMB_ACCEPT}`}
               onChange={(e) => onFolderPicked(e.target.files)}
               style={{ display: "none" }} />
           </div>

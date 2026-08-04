@@ -1,6 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { readFile, writeFile } from "@/lib/storage";
+import { isEmbFile } from "@/lib/design-kinds";
 
 export const MAX_ATTEMPTS = 3;
 
@@ -20,6 +21,12 @@ export async function processFile(fileId: string): Promise<ProcessResult> {
   if (f.kind === "video") {
     await db.update(schema.designFiles).set({ processingStatus: "ready" }).where(eq(schema.designFiles.id, f.id));
     return { ok: true, skipped: "video" };
+  }
+  // FILE MÁY THÊU (.dst/.emb…) không phải ảnh — sharp mở là lỗi, hàng đợi sẽ thử lại 3 lần rồi
+  // đánh "failed" đỏ trên UI dù file hoàn toàn hợp lệ. Đánh ready luôn, không sinh thumbnail.
+  if (isEmbFile(f.filename) || isEmbFile(f.storageKey)) {
+    await db.update(schema.designFiles).set({ processingStatus: "ready" }).where(eq(schema.designFiles.id, f.id));
+    return { ok: true, skipped: "embroidery" };
   }
 
   await db.update(schema.designFiles).set({ processingStatus: "processing" }).where(eq(schema.designFiles.id, f.id));
