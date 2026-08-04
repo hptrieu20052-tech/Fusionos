@@ -4,6 +4,7 @@ import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
+import { payloadOf } from "@/lib/personalization";
 
 export const dynamic = "force-dynamic";
 
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
     sku: schema.etsyProducts.sku,
     status: schema.etsyProducts.status,
     shopifyTitle: schema.etsyProducts.shopifyTitle,
+    personalization: schema.etsyProducts.personalization,
     shopifyProductId: schema.etsyProducts.shopifyProductId,
     importedAt: schema.etsyProducts.importedAt,
     storeName: schema.stores.name,
@@ -64,6 +66,9 @@ export async function GET(req: NextRequest) {
   const out = rows.map((r) => ({
     ...r,
     images: undefined,
+    // v142: số ô cá nhân hoá của listing — để hiện chip trong bảng, khỏi mở từng cái ra xem.
+    persCount: Array.isArray(r.personalization) ? r.personalization.length : 0,
+    personalization: undefined,
     pushed: !!r.shopifyProductId, // đã push qua Shopify chưa
     mainImageUrl: Array.isArray(r.images) && r.images.length ? String((r.images as string[])[0]) : null,
     variationsSummary: Array.isArray(r.variations)
@@ -109,6 +114,10 @@ export async function PATCH(req: NextRequest) {
         .filter((v: { name: string; values: string[] }) => v.name && v.values.length)
         .slice(0, 6);
     }
+    // v142 · Custom options. Gửi mảng = ghi đè; gửi null = xoá hẳn (listing không có ô nào).
+    // Không gửi field này ⇒ giữ nguyên, để Save bên tab khác không xoá nhầm.
+    if (Array.isArray(b.personalization)) patch.personalization = payloadOf(b.personalization);
+    else if (b.personalization === null) patch.personalization = null;
     const upd = await db.update(schema.etsyProducts).set(patch)
       .where(sql`${schema.etsyProducts.id} = ${id}::uuid AND ${schema.etsyProducts.storeId} IN (${sql.join(storeIds.map((x) => sql`${x}::uuid`), sql`, `)})`)
       .returning({ id: schema.etsyProducts.id });
@@ -163,6 +172,7 @@ export async function POST(req: NextRequest) {
         tags: String(b?.tags ?? "").trim().slice(0, 600) || null,
         sku: String(b?.sku ?? "").trim().slice(0, 100) || null,
         images, variations, status: "active",
+        personalization: Array.isArray(b?.personalization) ? payloadOf(b.personalization) : null,
       }).returning({ id: schema.etsyProducts.id });
       return NextResponse.json({ ok: true, id: ins?.id });
     } catch (e) {

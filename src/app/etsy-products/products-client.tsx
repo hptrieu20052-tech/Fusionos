@@ -3,12 +3,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
+// v142: dùng chung editor Custom options với Manage Products · Shopify — 1 bản, không copy code.
+import CustomOptions, { pqProblem, toPQ, type PQ } from "@/components/custom-options";
+
+const ETSY_ORANGE = "#F1641E";
 
 type Row = {
   id: string; storeId: string; title: string; price: string | null; quantity: number | null;
   tags: string | null; sku: string | null; status: string; importedAt: string | null;
   storeName: string | null; mainImageUrl: string | null; variationsSummary: string;
   shopifyTitle: string | null; sellerId: string | null; sellerName: string | null; pushed?: boolean;
+  persCount?: number; // v142 · số ô Custom options của listing
 };
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
@@ -17,17 +22,20 @@ type Detail = {
   shopifyTitle: string | null; shopifyTags: string | null; shopifyDesc: string | null;
   images: string[]; variations: { name?: string; values?: string[] }[]; quantity: number | null; sku: string | null;
   storeName: string | null; sellerName: string | null;
+  personalization: PQ[]; // v142 · ô khách phải điền trước khi Add to cart (Push Shopify ghi metafield)
 };
 
 type NewListing = {
   sellerId: string; storeId: string; title: string; price: string; quantity: string; sku: string;
   tags: string; description: string; images: string[]; variations: { name: string; values: string }[];
+  personalization: PQ[];
 };
 // Mặc định 2 biến thể giống hàng import từ Etsy (Size / Paper) — sửa hoặc xoá thoải mái.
 const BLANK_NEW: NewListing = {
   sellerId: "", storeId: "", title: "", price: "", quantity: "999", sku: "",
   tags: "", description: "", images: [],
   variations: [{ name: "Size", values: "" }, { name: "Paper", values: "" }],
+  personalization: [],
 };
 
 /* ---- style tokens (modern) ---- */
@@ -71,6 +79,9 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [editId, setEditId] = useState<string | null>(null);
   const [edit, setEdit] = useState<Detail | null>(null);
   const [editLoading, setEditLoading] = useState(false);
+  // v142: đang mở 1 field Custom options ra sửa ⇒ chặn Save để không lưu nửa chừng.
+  const [persEditing, setPersEditing] = useState(false);
+  const [newPersEditing, setNewPersEditing] = useState(false);
   const load = async () => {
     setLoading(true);
     try { const j = await fetch("/api/etsy-products").then((r) => r.json()); if (j.ok) setRows(j.rows); } catch { /* noop */ }
@@ -198,6 +209,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const doCreate = async () => {
     if (!nw.storeId) return flash("✗ Select a store first", false);
     if (!nw.title.trim()) return flash("✗ Title is required", false);
+    const problem = pqProblem(nw.personalization);
+    if (problem) return flash("✗ " + problem, false);
     setBusy(true);
     try {
       const res = await fetch("/api/etsy-products", {
@@ -206,6 +219,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           action: "create", storeId: nw.storeId, title: nw.title, price: nw.price, quantity: nw.quantity,
           sku: nw.sku, tags: nw.tags, description: nw.description, images: nw.images,
           variations: nw.variations.map((v) => ({ name: v.name, values: v.values.split(",").map((x) => x.trim()).filter(Boolean) })),
+          personalization: nw.personalization,
         }),
       });
       const j = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
@@ -229,6 +243,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         images: Array.isArray(j.item.images) ? j.item.images : [],
         variations: Array.isArray(j.item.variations) ? j.item.variations : [],
         quantity: j.item.quantity, sku: j.item.sku, storeName: j.item.storeName, sellerName: j.item.sellerName,
+        personalization: toPQ(j.item.personalization),
       });
       else { flash("✗ " + (j.error ?? "Load failed"), false); setEditId(null); }
     } catch { flash("✗ Network error", false); setEditId(null); }
@@ -237,11 +252,13 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
   const saveEdit = async () => {
     if (!edit) return;
+    const problem = pqProblem(edit.personalization);
+    if (problem) return flash("✗ " + problem, false);
     setBusy(true);
     try {
       const res = await fetch("/api/etsy-products", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: edit.id, title: edit.shopifyTitle ?? "", tags: edit.shopifyTags ?? "", description: edit.shopifyDesc ?? "", price: edit.price ?? "", images: edit.images, variations: edit.variations }),
+        body: JSON.stringify({ id: edit.id, title: edit.shopifyTitle ?? "", tags: edit.shopifyTags ?? "", description: edit.shopifyDesc ?? "", price: edit.price ?? "", images: edit.images, variations: edit.variations, personalization: edit.personalization }),
       });
       const j = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
       if (j.ok) { flash("✓ Saved"); setEditId(null); setEdit(null); load(); }
@@ -539,6 +556,13 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                 )}
               </div>
 
+              {/* v142 · Custom options — seller tự đặt ô khách phải điền, y như màn Etsy thật.
+                  Push Shopify sẽ ghi bộ này vào metafield fusion.options để snippet Liquid render. */}
+              <div>
+                <label style={lab}>Custom options ({nw.personalization.length}/5)</label>
+                <CustomOptions fields={nw.personalization} onChange={(f) => setNwField("personalization", f)} accent={ETSY_ORANGE} onEditingChange={setNewPersEditing} />
+              </div>
+
               <div>
                 <label style={lab}>Images</label>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
@@ -560,7 +584,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "14px 22px", borderTop: "1px solid var(--line)" }}>
               <button style={ghost} disabled={busy} onClick={() => setNewOpen(false)}>Cancel</button>
-              <button style={{ ...pill("#F1641E", "#fff"), opacity: busy || !nw.storeId || !nw.title.trim() ? .5 : 1 }} disabled={busy || !nw.storeId || !nw.title.trim()} onClick={doCreate}>
+              <button style={{ ...pill(ETSY_ORANGE, "#fff"), opacity: busy || newPersEditing || !nw.storeId || !nw.title.trim() ? .5 : 1 }} disabled={busy || newPersEditing || !nw.storeId || !nw.title.trim()} onClick={doCreate}>
                 {busy ? "Creating…" : "Create listing"}
               </button>
             </div>
@@ -731,6 +755,16 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                   </label>
                   <textarea value={edit.shopifyDesc ?? ""} onChange={(e) => setEdit({ ...edit, shopifyDesc: e.target.value })} rows={8}
                     placeholder="Filled by AI Optimize, or type your own…" style={{ ...ctl, width: "100%", resize: "vertical" }} />
+
+                  {/* v142 · Custom options — seller tự đặt ô khách phải điền trước khi Add to cart.
+                      Lưu cùng nút Save; Push to Shopify ghi tiếp vào metafield fusion.options. */}
+                  <div style={{ border: `1px solid ${ETSY_ORANGE}44`, borderRadius: 12, padding: "12px 14px", marginTop: 18, background: "#FFF9F5" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: ETSY_ORANGE }}>Custom options ({edit.personalization.length}/5)</div>
+                    </div>
+                    <CustomOptions fields={edit.personalization} onChange={(f) => setEdit({ ...edit, personalization: f })} accent={ETSY_ORANGE} onEditingChange={setPersEditing} />
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Saved with this listing. Push to Shopify writes them onto the product so buyers see the fields on the storefront.</div>
+                  </div>
                 </div>
               </div>
             )}
@@ -738,7 +772,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             {/* footer */}
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "14px 22px", borderTop: "1px solid var(--line)" }}>
               <button style={ghost} disabled={busy} onClick={() => setEditId(null)}>Cancel</button>
-              <button style={{ ...pill("var(--blue)", "#fff"), opacity: busy || !edit ? .6 : 1 }} disabled={busy || !edit} onClick={saveEdit}>{busy ? "Saving…" : "Save"}</button>
+              <button style={{ ...pill("var(--blue)", "#fff"), opacity: busy || persEditing || !edit ? .6 : 1 }} disabled={busy || persEditing || !edit} onClick={saveEdit}>{busy ? "Saving…" : "Save"}</button>
             </div>
           </div>
         </div>

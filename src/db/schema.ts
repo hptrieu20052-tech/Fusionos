@@ -235,6 +235,9 @@ export const etsyProducts = pgTable("etsy_products", {
   variantPrices: jsonb("variant_prices").notNull().default({}),
   sku: text("sku"),
   status: text("status").notNull().default("active"),
+  // v142 · Custom options của listing (mảng PQ, xem src/lib/personalization.ts).
+  // null = chưa đặt → Push Shopify không ghi metafield fusion.options.
+  personalization: jsonb("personalization"),
   // AI tối ưu SEO Shopify (title ngắn + tag chuẩn) — KHÔNG đè title gốc Etsy (dùng dedupe).
   shopifyTitle: text("shopify_title"),
   shopifyTags: text("shopify_tags"),

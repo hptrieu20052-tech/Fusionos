@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { shopifyGraphQL, shopHost, type ShopifyCred } from "@/lib/shopify";
 import { applyTemplate, type Template } from "@/lib/shopify-template";
+import { payloadOf } from "@/lib/personalization";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -25,6 +26,26 @@ const MUT = `mutation Push($input: ProductSetInput!) {
 }`;
 
 const CANON = /digital/i;
+
+// v142 · Ghi bộ Custom options của listing Etsy lên metafield fusion.options của sản phẩm Shopify.
+// Snippet Liquid fusion-personalization đọc đúng metafield này để render ô nhập ngoài storefront.
+// Không có ô nào ⇒ bỏ qua, KHÔNG ghi mảng rỗng đè lên bộ đang chạy trên Shopify.
+const MF_MUT = `mutation SetPers($metafields: [MetafieldsSetInput!]!) {
+  metafieldsSet(metafields: $metafields) { userErrors { field message } }
+}`;
+async function pushPersonalization(cred: ShopifyCred, productGid: string, raw: unknown): Promise<string | null> {
+  const fields = payloadOf(raw);
+  if (!fields.length) return null;
+  try {
+    const d = await shopifyGraphQL<{ metafieldsSet?: { userErrors?: { message: string }[] } }>(cred, MF_MUT, {
+      metafields: [{ ownerId: productGid, namespace: "fusion", key: "options", type: "json", value: JSON.stringify(fields) }],
+    });
+    const ue = d.metafieldsSet?.userErrors ?? [];
+    return ue.length ? ue.map((e) => e.message).join("; ").slice(0, 160) : null;
+  } catch (e) {
+    return String((e as Error)?.message ?? e).slice(0, 160);
+  }
+}
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -83,7 +104,8 @@ export async function POST(req: NextRequest) {
         const res = await applyTemplate(cred, tpl, { id: existingGidT, title: titleT, descriptionHtml: descT, images: imgsT }, { includeImages: true, statusOverride: existingGidT ? null : "DRAFT" });
         if (!res.ok || !res.productId) { results.push({ id: p.id, title: titleT, ok: false, error: res.error ?? "apply failed" }); continue; }
         await db.update(schema.etsyProducts).set({ shopifyProductId: res.productId, updatedAt: new Date() }).where(eq(schema.etsyProducts.id, p.id));
-        results.push({ id: p.id, title: titleT, ok: true, handle: res.handle });
+        const mfErrT = await pushPersonalization(cred, res.productId, (p as { personalization?: unknown }).personalization);
+        results.push({ id: p.id, title: titleT, ok: true, handle: res.handle, ...(mfErrT ? { error: "custom options not written: " + mfErrT } : {}) });
         continue;
       }
       const vars = (Array.isArray(p.variations) ? p.variations as { name?: string; values?: string[] }[] : [])
@@ -137,10 +159,12 @@ export async function POST(req: NextRequest) {
       const ue = data.productSet?.userErrors ?? [];
       if (ue.length) { results.push({ id: p.id, title, ok: false, error: ue.map((e) => e.message).join("; ").slice(0, 200) }); continue; }
       const prod = data.productSet?.product;
+      let mfErr: string | null = null;
       if (prod?.id) {
         await db.update(schema.etsyProducts).set({ shopifyProductId: prod.id, updatedAt: new Date() }).where(eq(schema.etsyProducts.id, p.id));
+        mfErr = await pushPersonalization(cred, prod.id, (p as { personalization?: unknown }).personalization);
       }
-      results.push({ id: p.id, title, ok: true, handle: prod?.handle });
+      results.push({ id: p.id, title, ok: true, handle: prod?.handle, ...(mfErr ? { error: "custom options not written: " + mfErr } : {}) });
     } catch (e) {
       results.push({ id: p.id, title: p.shopifyTitle || p.title, ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) });
     }
