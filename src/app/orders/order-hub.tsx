@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 import { useLang } from "@/components/lang-provider";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
+import { isEmbFile, isEmbKind } from "@/lib/design-kinds"; // v154 · nhận diện file máy thêu để gắn chip DST
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { SupplierLogo } from "@/components/supplier-logo";
 import { IconCopy, IconPin, IconTruck, IconTrash, IconUpload, IconWarn, IconDownload, IconReport, IconCheck, IconPencil, IconRefresh, IconSend, IconLink } from "@/components/icons";
@@ -82,6 +83,7 @@ type Order = {
   id: string; external_id: string; platform: string; status: string; ordered_at: string;
   buyer_first: string | null; buyer_last: string | null;
   addr1: string | null; addr2: string | null; city: string | null; state: string | null; zip: string | null; country: string;
+  formatted_address?: string | null;
   // fee_estimated = true → platform_fee là số ƯỚC TÍNH theo % của shop (sàn chưa quyết toán) → nhãn "Fee (est.)"
   total: string; platform_fee: string; fee_estimated?: boolean; seller_name: string | null; seller_team?: string | null; store_name: string | null; order_label: string | null; note: string | null; buyer_note?: string | null; shipping_type?: string | null;
   designer_sent_to?: string | null; designer_sent_at?: string | null;
@@ -1236,6 +1238,28 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                 </div>
               )}
               <div className="o2-addr"><IconPin width={15} height={15} /><span>{[o.addr1, o.addr2, o.city, o.state, o.zip, o.country].filter(Boolean).join(", ") || t("o.noAddress")}</span></div>
+              {/* Địa chỉ đầy đủ do sàn ghép (Copy address) — nguồn chuẩn + cảnh báo nếu field tách rời thiếu unit/apt */}
+              {o.formatted_address && (() => {
+                const fa = String(o.formatted_address);
+                const hasUnit = /\b(apt|apartment|unit|suite|ste|fl|floor|rm|room|bldg|building)\b|#\s*\w/i.test(fa);
+                const missingUnit = hasUnit && !(o.addr2 && o.addr2.trim());
+                return (
+                  <div style={{ marginTop: 5 }} onClick={(e) => e.stopPropagation()}>
+                    {missingUnit && (
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, fontWeight: 700, color: "#B4541E", background: "#FFF3E6", border: "1px solid #F5D6AE", borderRadius: 8, padding: "3px 9px", marginBottom: 5 }}>
+                        ⚠ Full address has a unit/apt but Address 2 is empty — verify before shipping
+                      </div>
+                    )}
+                    <details style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                      <summary style={{ cursor: "pointer", userSelect: "none" }}>Full address (from marketplace)</summary>
+                      <div style={{ whiteSpace: "pre-line", marginTop: 4, padding: "7px 9px", background: "#FAFBFC", border: "1px solid var(--line)", borderRadius: 8, display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                        <span>{fa}</span>
+                        <span style={{ ...copyPill, flexShrink: 0 }} title="Copy full address" onClick={(e) => { e.stopPropagation(); copyText(fa); }}>Copy</span>
+                      </div>
+                    </details>
+                  </div>
+                );
+              })()}
               {/* Note khách/seller đã dời xuống khu item (dưới Variants) — xem ItemRow. */}
               {/* Tài chính đơn */}
               <div className="o2-fin">
@@ -1757,6 +1781,27 @@ function ItemRow({ it, onSaved, flash, canEdit = true, canDup = false, showPicke
                   ))}
                 </div>
               )}
+            </div>
+          );
+        })()}
+        {/* v154 · CHIP FILE THÊU. Dải preview ở trên lọc theo `thumb`, mà file .dst/.emb không có
+            thumbnail ⇒ nhìn card KHÔNG biết design đã đính file máy thêu hay chưa (đúng ca đơn
+            #4134058147: design 2884 CÓ file DST nhưng card chỉ hiện "Front side 1/1"). Chip chỉ
+            hiện KHI CÓ file thêu; bấm để tải về kiểm tra. Không có chip = chưa có file máy thêu. */}
+        {(() => {
+          const emb = (it.designSides ?? []).filter((s) => isEmbKind(s.kind) || isEmbFile(s.original));
+          if (!it.design_id || !emb.length) return null;
+          const pos = (k: string) => k.replace(/^emb_?/i, "").toUpperCase() || "FILE";
+          return (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+              {emb.map((s, idx) => (
+                <a key={idx} href={s.original ?? undefined} target="_blank" rel="noreferrer" download
+                  onClick={(e) => e.stopPropagation()}
+                  title={`Embroidery file · ${pos(s.kind)} · click to download`}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#E7F6EC", border: "1px solid #BFE3CC", borderRadius: 8, padding: "3px 9px", fontSize: 10.5, fontWeight: 800, color: "#1E8E4E", textDecoration: "none", letterSpacing: 0.3 }}>
+                  <IconCheck width={12} height={12} /> DST {pos(s.kind)}
+                </a>
+              ))}
             </div>
           );
         })()}

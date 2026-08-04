@@ -49,9 +49,11 @@ export async function createHogotoOrder(cfg: HogotoCfg, body: unknown): Promise<
   // Chỉ nhận các khoá THỰC SỰ là mã đơn. Không bao giờ lấy `code` ở cấp envelope
   // (đó là mã trạng thái/mã lỗi), chỉ chấp nhận `code` khi nó nằm trong data{}.
   const orderObj = (typeof data.order === "object" && data.order ? data.order : {}) as Record<string, unknown>;
+  // v153 · Ưu tiên MÃ HỆ THỐNG Hogoto (Y018_50) hơn referenceCode: mã hệ thống ngắn, là thứ
+  // support Hogoto tra cứu. referenceCode chỉ là chuỗi mình tự gửi sang nên để cuối cùng.
   let orderCode = String(
-    data.orderCode ?? data.order_code ?? data.referenceCode ?? data.reference_code ??
-    orderObj.orderCode ?? orderObj.code ?? "",
+    data.orderCode ?? data.order_code ?? (hasData ? (data.systemCode ?? data.code) : undefined) ??
+    orderObj.orderCode ?? orderObj.code ?? data.referenceCode ?? data.reference_code ?? "",
   ).trim();
   if (!orderCode && hasData) orderCode = String(data.code ?? data.id ?? "").trim();
 
@@ -104,8 +106,26 @@ export async function createHogotoOrder(cfg: HogotoCfg, body: unknown): Promise<
     throw new Error(`Hogoto từ chối đơn${envCode ? ` [${envCode}]` : ""} · ${diag} · ${detail}`);
   }
 
-  const baseCost = num(data.baseCost ?? data.productAmount ?? data.itemsAmount ?? data.itemAmount);
-  const shipCost = num(data.shippingFee ?? data.shippingAmount ?? data.shipping_fee);
+  // v153 · CHI PHÍ THẬT. Hogoto trả TỔNG tiền đơn ở field `amount` (thấy trong body: "amount":15.44)
+  // chứ không phải baseCost/shippingFee. Bản cũ chỉ đọc baseCost/shippingFee ⇒ cả hai undefined ⇒
+  // push/route.ts rơi về giá catalog SKU-mapping ($8.30 / $0.00) trong khi Hogoto thu $15.44
+  // ⇒ Profit after cost bịa ra $11.98. Phải lấy đúng số Hogoto tính, và tự suy phần còn thiếu.
+  let baseCost = num(data.baseCost ?? data.productAmount ?? data.itemsAmount ?? data.itemAmount ??
+    orderObj.baseCost ?? orderObj.productAmount ?? orderObj.itemsAmount);
+  let shipCost = num(data.shippingFee ?? data.shippingAmount ?? data.shipping_fee ??
+    orderObj.shippingFee ?? orderObj.shippingAmount);
+  const totalCost = num(data.amount ?? data.totalAmount ?? data.total ?? data.grandTotal ??
+    data.orderAmount ?? data.totalPrice ?? orderObj.amount ?? orderObj.totalAmount ?? orderObj.total);
+  if (totalCost != null && totalCost > 0) {
+    if (baseCost == null && shipCost == null) { baseCost = totalCost; shipCost = 0; }
+    else if (baseCost == null) { baseCost = Math.max(0, totalCost - (shipCost as number)); }
+    else if (shipCost == null) { shipCost = Math.max(0, totalCost - baseCost); }
+    else if (Math.abs(baseCost + shipCost - totalCost) > 0.01) {
+      // Hogoto còn thu phụ phí (dịch vụ thêm, thuế…) — nhét phần chênh vào ship để TỔNG luôn khớp
+      // với số tiền Hogoto đòi. Thà ship hơi cao còn hơn báo lãi ảo.
+      shipCost = Math.max(0, totalCost - baseCost);
+    }
+  }
   return { orderCode, baseCost, shipCost, raw: j };
 }
 
