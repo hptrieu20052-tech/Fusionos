@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, or, ilike, asc } from "drizzle-orm";
+import { and, eq, or, ilike, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf, hasRestriction } from "@/lib/rbac";
 import { parseVariant } from "@/lib/variant";
 
 export const dynamic = "force-dynamic";
 
+// Tên sản phẩm dùng cho dropdown STYLE.
+// Nhiều nhà (Hogoto…) không trả product_type → cột đó NULL và dropdown Style rỗng dù ĐÃ ghim.
+// Lấy fulfiller_product (tên sản phẩm — cũng là thứ popup ghim đang gom nhóm) làm dự phòng
+// để hai chỗ luôn khớp nhau.
+const STYLE_EXPR = sql<string>`coalesce(nullif(btrim(${schema.skuMappings.productType}), ''), ${schema.skuMappings.fulfillerProduct})`;
+
 // GET /api/fulfillers/variants?ff=<id>&q=<search>&limit=200
-//   ?styles=1        → trả danh sách SẢN PHẨM (productType) riêng, nhẹ — để dựng dropdown STYLE khi có hàng nghìn SKU.
+//   ?styles=1        → trả danh sách SẢN PHẨM riêng, nhẹ — để dựng dropdown STYLE khi có hàng nghìn SKU.
 //   ?product=<name>  → trả variant của đúng 1 sản phẩm (chọn STYLE xong nạp variant của nó).
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -22,13 +28,18 @@ export async function GET(req: NextRequest) {
   const pinnedOnly = sp.get("pinned") === "1";
   const product = (sp.get("product") ?? "").trim();
 
-  // ---- Chế độ styles: danh sách sản phẩm (blueprint) để dựng dropdown STYLE, không nạp toàn bộ variant ----
+  // ---- Chế độ styles: danh sách sản phẩm để dựng dropdown STYLE, không nạp toàn bộ variant ----
   if (sp.get("styles") === "1") {
     const c = [eq(schema.skuMappings.active, true), eq(schema.skuMappings.fulfillerId, ff)];
-    if (pinnedOnly) c.push(eq(schema.skuMappings.pinned, true));
-    if (q) c.push(ilike(schema.skuMappings.productType, `%${q}%`));
-    const rows = await db.selectDistinct({ style: schema.skuMappings.productType })
-      .from(schema.skuMappings).where(and(...c)).orderBy(asc(schema.skuMappings.productType)).limit(q ? 500 : 2000);
+    // CÓ gõ tìm kiếm → bỏ giới hạn "chỉ SP đã ghim" (giống chế độ variant bên dưới),
+    // để chưa ghim gì vẫn tìm được sản phẩm mà đặt đơn.
+    if (pinnedOnly && !q) c.push(eq(schema.skuMappings.pinned, true));
+    if (q) {
+      const like = `%${q}%`;
+      c.push(or(ilike(schema.skuMappings.productType, like), ilike(schema.skuMappings.fulfillerProduct, like))!);
+    }
+    const rows = await db.selectDistinct({ style: STYLE_EXPR })
+      .from(schema.skuMappings).where(and(...c)).orderBy(sql`1 asc`).limit(q ? 500 : 2000);
     const styles = rows.map((r) => r.style).filter((s): s is string => !!s);
     return NextResponse.json({ ok: true, styles });
   }
@@ -41,7 +52,7 @@ export async function GET(req: NextRequest) {
       : Math.min(Math.max(Number(sp.get("limit")) || 200, 1), 500);
 
   const conds = [eq(schema.skuMappings.active, true), eq(schema.skuMappings.fulfillerId, ff)];
-  if (product) conds.push(eq(schema.skuMappings.productType, product));
+  if (product) conds.push(sql`${STYLE_EXPR} = ${product}`);
   // Không tìm kiếm + không chọn SP → chỉ trả SP đã ghim (mặc định form).
   else if (pinnedOnly && !q) conds.push(eq(schema.skuMappings.pinned, true));
   if (q) {
@@ -51,6 +62,7 @@ export async function GET(req: NextRequest) {
         ilike(schema.skuMappings.internalSku, like),
         ilike(schema.skuMappings.fulfillerSku, like),
         ilike(schema.skuMappings.productType, like),
+        ilike(schema.skuMappings.fulfillerProduct, like),
         ilike(schema.skuMappings.variant, like),
       )!,
     );
@@ -60,7 +72,9 @@ export async function GET(req: NextRequest) {
   const hideProfit = await hasRestriction(session, "hide_profit");
 
   const variants = rows.map((m) => {
-    const { style, color, size } = parseVariant(m.variant, m.productType);
+    // Cùng công thức với STYLE_EXPR — lệch là dropdown Style chọn xong không ra variant nào.
+    const styleSrc = (m.productType ?? "").trim() || m.fulfillerProduct || null;
+    const { style, color, size } = parseVariant(m.variant, styleSrc);
     // Printify: nhà in nằm sau " · " trong fulfillerProduct ("Blueprint · Nhà in") → tách ra làm cột Provider.
     const fp = m.fulfillerProduct ?? "";
     const provider = (m.fulfillerSku?.startsWith("PF-") && fp.includes(" · ")) ? fp.split(" · ").slice(1).join(" · ").trim() : "";
