@@ -158,10 +158,18 @@ function hogotoAdapter(): FulfillerAdapter {
         const colorCode = String(ex.colorCode || "AS_DESIGN").trim();
         const positionCode = String(ex.positionCode || "CENTER").trim();
         if (ex.shippingMethod) shippingMethod = String(ex.shippingMethod);
-        // Design: ưu tiên mặt design đầu tiên của card, else designFront; mockup = ảnh item.
-        const designUrl = (l.designSides && l.designSides[0]?.url) || l.designFront || null;
+        // ĐƠN THÊU CẦN 2 FILE / 1 VỊ TRÍ: ảnh design (D) + file máy thêu (DST).
+        // Bug cũ: chỉ lấy designSides[0] và luôn gửi designEmbUrl = null → nếu file đầu tiên là .dst
+        // thì nó bị nhét vào ô ẢNH, còn ô file thêu để trống; nếu file đầu là ảnh thì Hogoto không
+        // bao giờ nhận được .dst → đơn thêu treo ở "1/2 file", xưởng không chạy được.
+        // Sửa: tách sides theo ĐUÔI FILE, ảnh vào designUrl, file thêu vào designEmbUrl.
+        const HG_EMB_RX = /\.(emb|dst|pes|exp|jef|vp3|xxx)(\?|#|$)/i;
+        const sides = (l.designSides ?? []).filter((s) => !!s.url);
+        const imgUrl = sides.find((s) => !HG_EMB_RX.test(s.url))?.url || l.designFront || null;
+        const embUrl = sides.find((s) => HG_EMB_RX.test(s.url))?.url || null;
+        const designUrl = imgUrl || embUrl;   // chỉ có file thêu thì vẫn phải gửi để đơn không rỗng
         const designAttachments = designUrl ? [{
-          positionCode, designUrl, designEmbUrl: null, mockupUrl: l.image ?? null,
+          positionCode, designUrl, designEmbUrl: embUrl, mockupUrl: l.image ?? null,
           note: l.personalization || null, glitterColors: null, embroidery3DColors: null, fabricPatterns: null, outline: null,
         }] : [];
         return {
