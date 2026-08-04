@@ -79,7 +79,15 @@ export async function createHogotoOrder(cfg: HogotoCfg, body: unknown): Promise<
       }
     }
     const detail = bits.join(" · ") || text.slice(0, 500) || "(Hogoto không trả nội dung)";
-    throw new Error(`Hogoto từ chối đơn${envCode ? ` [${envCode}]` : ""}: ${detail}`);
+    // v149 · CHẨN ĐOÁN: toast bị cắt ngang nên phải đưa thông tin quyết định LÊN ĐẦU:
+    //   err=1 ⇒ envelope có mùi lỗi thật; err=0 ⇒ chỉ vì KHÔNG đọc được mã đơn (parser sai tên field).
+    //   dataKeys ⇒ tên field thật của Hogoto để biết lấy mã đơn ở đâu.
+    const kz = (v: unknown): string =>
+      Array.isArray(v) ? `ARRAY[${v.length}]`
+      : v && typeof v === "object" ? Object.keys(v as object).slice(0, 25).join(",")
+      : String(v);
+    const diag = `v149 err=${errish ? 1 : 0} oc="${orderCode}" env{${kz(j)}} data{${kz(j.data)}}`;
+    throw new Error(`Hogoto từ chối đơn${envCode ? ` [${envCode}]` : ""} · ${diag} · ${detail}`);
   }
 
   const baseCost = num(data.baseCost ?? data.productAmount ?? data.itemsAmount ?? data.itemAmount);
