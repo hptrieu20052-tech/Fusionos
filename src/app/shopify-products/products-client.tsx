@@ -135,6 +135,14 @@ const ACTION_GROUPS: ActionGroup[] = [
   },
 ];
 
+// Logo Pinterest — dùng cho nút Export Pinterest (bảng sản phẩm) để nhìn phát biết ngay là việc gì.
+const PIN_RED = "#E60023";
+const PinLogo = ({ size = 15, color = "#fff" }: { size?: number; color?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={color} aria-hidden="true" style={{ flex: "none" }}>
+    <path d="M12 0C5.373 0 0 5.372 0 12c0 5.084 3.163 9.426 7.627 11.174-.105-.949-.2-2.405.042-3.441.218-.937 1.407-5.965 1.407-5.965s-.359-.719-.359-1.782c0-1.668.967-2.914 2.171-2.914 1.023 0 1.518.769 1.518 1.69 0 1.029-.655 2.568-.994 3.995-.283 1.194.599 2.169 1.777 2.169 2.133 0 3.772-2.249 3.772-5.495 0-2.873-2.064-4.882-5.012-4.882-3.414 0-5.418 2.561-5.418 5.208 0 1.031.397 2.137.893 2.738a.36.36 0 0 1 .083.345c-.091.379-.293 1.194-.333 1.361-.052.22-.174.267-.401.161-1.499-.698-2.436-2.889-2.436-4.649 0-3.785 2.75-7.262 7.929-7.262 4.163 0 7.398 2.967 7.398 6.931 0 4.136-2.608 7.464-6.227 7.464-1.216 0-2.359-.632-2.75-1.378l-.748 2.853c-.271 1.043-1.002 2.35-1.492 3.146A12 12 0 0 0 12 24c6.627 0 12-5.373 12-12S18.627 0 12 0z" />
+  </svg>
+);
+
 const statusBadge = (s: string) => {
   const up = (s || "").toUpperCase();
   const c = up === "ACTIVE" ? { bg: "#EAF7F0", fg: "#158A57" } : up === "ARCHIVED" ? { bg: "#F1F1F4", fg: "#66788E" } : { bg: "#FFF6E6", fg: "#B7791F" };
@@ -172,6 +180,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [visionIds, setVisionIds] = useState<Set<string>>(new Set());
   // Bulk actions ("More actions")
   const [actionsOpen, setActionsOpen] = useState(false);
+  // Export Pinterest — file CSV nạp vào Pinterest (Settings → Import content). Không đụng Shopify.
+  const [pinOpen, setPinOpen] = useState(false);
+  const [pinPerProduct, setPinPerProduct] = useState(1);
+  const [pinPerFile, setPinPerFile] = useState(200);
   const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template" | "replace" | "pushtpl" | "gprep"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
   const [tagInput, setTagInput] = useState("");
   // Hai lệnh gộp dùng checkbox chọn bước nào chạy; tags/collection/channels dùng công tắc Add↔Remove.
@@ -521,6 +533,37 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
       flash(`${nSkip ? "⚠" : "✓"} Exported ${nRows} variant row(s)${nSkip ? ` · ${nSkip} listing(s) skipped — run "Generate feed title + long description" on them first` : ""}`, nSkip === 0);
+    } catch (e) {
+      flash("✗ " + String((e as Error)?.message ?? "network"), false);
+    }
+    setBusy(false);
+  };
+
+  // ---- Export Pinterest ----
+  // Xuất CSV để nạp vào Pinterest: Settings → Import content → upload .csv.
+  // Ảnh lấy thẳng link CDN Shopify (vốn công khai) nên KHÔNG cần hosting, không vẽ card, không tốn credit.
+  // Pinterest chỉ nhận 200 dòng/lần ⇒ server cắt sẵn thành nhiều file, tải lần lượt.
+  const doPinterest = async () => {
+    const ids = Array.from(sel);
+    if (!ids.length) return flash("✗ Select products first", false);
+    setBusy(true);
+    try {
+      const j = await postJSON<{ ok: boolean; error?: string; files?: { name: string; content: string }[]; rows?: number; noImage?: number; noLink?: number; noBoard?: number }>(
+        "/api/shopify-products/pinterest-csv", { ids, perProduct: pinPerProduct, perFile: pinPerFile },
+      );
+      if (!j.ok || !j.files?.length) { flash("✗ " + String(j.error ?? "export failed"), false); setBusy(false); return; }
+      for (const f of j.files) {
+        const url = URL.createObjectURL(new Blob([f.content], { type: "text/csv;charset=utf-8" }));
+        const a = document.createElement("a");
+        a.href = url; a.download = f.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        // Trình duyệt chặn tải nhiều file liên tiếp — giãn ra cho chắc.
+        if (j.files.length > 1) await new Promise((r) => setTimeout(r, 700));
+      }
+      const skip = (j.noImage ?? 0) + (j.noLink ?? 0);
+      setPinOpen(false);
+      flash(`✓ ${j.rows} pin(s) in ${j.files.length} file(s)${skip ? ` · ${skip} product(s) skipped (no image or no product URL)` : ""}${j.noBoard ? ` · ${j.noBoard} without collection — board fell back to product type` : ""}`, skip === 0);
     } catch (e) {
       flash("✗ " + String((e as Error)?.message ?? "network"), false);
     }
@@ -891,6 +934,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <button disabled={busy || !sel.size} title="Re-apply each product's Template to its Shopify listing: product type, vendor, theme template, category, options + variants + prices, delivery times, sales channels and personalization fields. Collections, title, AI description, images, SEO, tags and Active/Draft status are left untouched." onClick={() => runAction("push_template")} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: busy || !sel.size ? .45 : 1 }}>🔄 Update Template{sel.size ? ` (${sel.size})` : ""}</button>
             </span>
           )}
+
+          {/* Chỉ xuất file — không ghi gì lên Shopify, nên seller đọc-only cũng bấm được. */}
+          <span style={grp}>
+            <button disabled={busy || !sel.size} title="Export a Pinterest bulk-import CSV from the selected products (image, title, description, link, board = collection). Upload it in Pinterest → Settings → Import content. Nothing is written to Shopify." onClick={() => setPinOpen(true)}
+              style={{ ...pill(PIN_RED, "#fff"), padding: "9px 14px", opacity: busy || !sel.size ? .45 : 1 }}><PinLogo /> Export Pinterest{sel.size ? ` (${sel.size})` : ""}</button>
+          </span>
 
           {canEdit && (
             <span style={grp}>
@@ -1308,6 +1357,52 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
           </div>
         </div>
       )}
+
+      {/* EXPORT PINTEREST — chỉ tạo file CSV, không chạm Shopify. */}
+      {pinOpen && (() => {
+        const picked = rows.filter((r) => sel.has(r.id));
+        const pins = picked.reduce((n, r) => n + Math.min(r.imageCount || 0, pinPerProduct), 0);
+        const noColl = picked.filter((r) => !r.collectionTitles?.length).length;
+        const files = Math.max(1, Math.ceil(pins / Math.max(pinPerFile, 1)));
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setPinOpen(false)}>
+            <div style={{ ...card, width: 440, maxWidth: "96vw", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                <b style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 16 }}><PinLogo size={18} color={PIN_RED} /> Export Pinterest</b>
+                <button onClick={() => setPinOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+              </div>
+              <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 16 }}>
+                <b>{pins}</b> pin(s) from <b>{picked.length}</b> product(s) → <b>{files}</b> file(s). Board = collection name. Upload in Pinterest → Settings → Import content.
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={lab}>Images per product</label>
+                  <select value={pinPerProduct} onChange={(e) => setPinPerProduct(Number(e.target.value))} style={{ ...ctl, width: "100%" }}>
+                    {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={lab}>Pins per file (max 200)</label>
+                  <input type="number" min={1} max={200} value={pinPerFile}
+                    onChange={(e) => setPinPerFile(Math.min(200, Math.max(1, Number(e.target.value) || 1)))} style={{ ...ctl, width: "100%" }} />
+                </div>
+              </div>
+
+              {noColl > 0 && (
+                <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 10, background: "#FEF6E7", color: "#8A5B00", fontSize: 12.5, lineHeight: 1.5 }}>
+                  {noColl} of {picked.length} product(s) are in no collection — their board falls back to the product type. Add them to a collection first if you want a specific board name.
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+                <button onClick={() => setPinOpen(false)} style={ghost}>Cancel</button>
+                <button disabled={busy || pins === 0} onClick={doPinterest} style={{ ...pill(PIN_RED, "#fff"), opacity: (busy || pins === 0) ? .6 : 1 }}>{busy ? "Working…" : "Download CSV"}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
