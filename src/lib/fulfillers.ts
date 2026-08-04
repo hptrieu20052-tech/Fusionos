@@ -120,6 +120,27 @@ export const FULFILLER_ADAPTERS: Record<string, FulfillerAdapter> = {
   hogoto: hogotoAdapter(),
 };
 
+// v143 · Hogoto chỉ nhận ĐÚNG 6 giá trị enum này cho shippingMethod. Gửi chuỗi khác là HTTP 400
+// "Cannot deserialize value of type Order$ShippingMethod from String ..." và đơn KHÔNG vào xưởng.
+// Trước đây mình mặc định "FAST_US_SHIPPING" — không có trong enum ⇒ mọi đơn US đều fail.
+const HOGOTO_SHIP = ["NON_SHIPPING", "HOGOTOFAST", "HOGOTO_EPACKET", "SHIPPING_OUTSIDE_US", "SHIPPING_TIKTOK_UK", "TIKTOK"];
+// Tên cũ đã lỡ lưu trong Settings → Fulfillers / extraJson của SKU → quy về enum đúng, khỏi sửa tay từng dòng.
+const HOGOTO_SHIP_ALIAS: Record<string, string> = {
+  FAST_US_SHIPPING: "HOGOTOFAST", FAST_US: "HOGOTOFAST", US_FAST: "HOGOTOFAST", FAST: "HOGOTOFAST",
+  STANDARD: "HOGOTOFAST", HOGOTO_FAST: "HOGOTOFAST",
+  EPACKET: "HOGOTO_EPACKET", HOGOTOEPACKET: "HOGOTO_EPACKET",
+  OUTSIDE_US: "SHIPPING_OUTSIDE_US", INTERNATIONAL: "SHIPPING_OUTSIDE_US", INTL: "SHIPPING_OUTSIDE_US",
+  TIKTOK_UK: "SHIPPING_TIKTOK_UK", SBTT: "TIKTOK", SHIP_BY_TIKTOK: "TIKTOK",
+  NONE: "NON_SHIPPING", NO_SHIPPING: "NON_SHIPPING",
+};
+/** Chuẩn hoá 1 chuỗi bất kỳ về enum Hogoto; không khớp thì trả null để dùng mặc định theo nước. */
+function hogotoShip(v: unknown): string | null {
+  const s = String(v ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (!s) return null;
+  if (HOGOTO_SHIP.includes(s)) return s;
+  return HOGOTO_SHIP_ALIAS[s] ?? null;
+}
+
 /**
  * Adapter HOGOTO POD THẬT — POST /v1/partner/order/store (X-API-Key + X-Tenant).
  * credentials (Settings → Fulfillers): apiKey = API Key; (tuỳ chọn) tenant, shippingMethod mặc định.
@@ -148,7 +169,14 @@ function hogotoAdapter(): FulfillerAdapter {
       const shipType = (o.shippingType || "").toUpperCase();
       const isTiktok = shipType.includes("TIKTOK") || !!o.labelUrl;
 
-      let shippingMethod = cred.shippingMethod || (isTiktok ? "TIKTOK" : "FAST_US_SHIPPING");
+      // v143: mặc định theo NƯỚC NHẬN, không hard-code chuỗi ngoài enum nữa.
+      //   TikTok  → TIKTOK (đơn UK dùng SHIPPING_TIKTOK_UK)
+      //   Mỹ      → HOGOTOFAST
+      //   ngoài Mỹ→ SHIPPING_OUTSIDE_US
+      const hgIso2 = toISO2(o.country) || "US";
+      let shippingMethod = hogotoShip(cred.shippingMethod)
+        || (isTiktok ? (hgIso2 === "GB" ? "SHIPPING_TIKTOK_UK" : "TIKTOK")
+                     : (hgIso2 === "US" ? "HOGOTOFAST" : "SHIPPING_OUTSIDE_US"));
 
       const products = ctx.lines.map((l) => {
         const ex = (l.extra ?? {}) as Record<string, unknown>;
@@ -158,7 +186,8 @@ function hogotoAdapter(): FulfillerAdapter {
         const productType = String(ex.productType || l.fulfillerProduct || "").trim();
         const colorCode = String(ex.colorCode || "AS_DESIGN").trim();
         const positionCode = String(ex.positionCode || "CENTER").trim();
-        if (ex.shippingMethod) shippingMethod = String(ex.shippingMethod);
+        const exShip = hogotoShip(ex.shippingMethod); // sai enum ⇒ bỏ qua, giữ mặc định theo nước
+        if (exShip) shippingMethod = exShip;
         // ĐƠN THÊU CẦN 2 FILE / 1 VỊ TRÍ: ảnh design (D) + file máy thêu (DST).
         // Bug cũ: chỉ lấy designSides[0] và luôn gửi designEmbUrl = null → nếu file đầu tiên là .dst
         // thì nó bị nhét vào ô ẢNH, còn ô file thêu để trống; nếu file đầu là ảnh thì Hogoto không
