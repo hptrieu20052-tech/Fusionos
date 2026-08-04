@@ -34,15 +34,57 @@ export async function createHogotoOrder(cfg: HogotoCfg, body: unknown): Promise<
     const msg = (typeof j.message === "string" && j.message) || (typeof j.error === "string" && j.error) || text.slice(0, 400);
     throw new Error(`Hogoto HTTP ${res.status}: ${msg}`);
   }
-  // Response: bọc trong data{} hoặc phẳng — bóc orderCode ở nhiều tên khả dĩ.
-  const data = (j.data && typeof j.data === "object" ? j.data : j) as Record<string, unknown>;
-  const orderCode = String(
-    data.orderCode ?? data.code ?? data.order_code ?? data.referenceCode ??
-    (typeof data.order === "object" && data.order ? (data.order as Record<string, unknown>).orderCode : "") ?? "",
-  );
+  // v145 · Hogoto CÓ THỂ trả HTTP 200 kèm envelope LỖI, ví dụ:
+  //   { "code": "VALIDATION_ERROR", "message": "...", "data": null }
+  // Bản cũ lấy luôn `j.code` làm orderCode ⇒ đơn hiện PUSHED với mã "VALIDATION_ERROR"
+  // trong khi bên seller.hogotopod.com KHÔNG hề có đơn. Phải coi đây là THẤT BẠI.
+  const hasData = !!j.data && typeof j.data === "object" && !Array.isArray(j.data);
+  const data = (hasData ? j.data : j) as Record<string, unknown>;
+
+  // Chỉ nhận các khoá THỰC SỰ là mã đơn. Không bao giờ lấy `code` ở cấp envelope
+  // (đó là mã trạng thái/mã lỗi), chỉ chấp nhận `code` khi nó nằm trong data{}.
+  const orderObj = (typeof data.order === "object" && data.order ? data.order : {}) as Record<string, unknown>;
+  let orderCode = String(
+    data.orderCode ?? data.order_code ?? data.referenceCode ?? data.reference_code ??
+    orderObj.orderCode ?? orderObj.code ?? "",
+  ).trim();
+  if (!orderCode && hasData) orderCode = String(data.code ?? data.id ?? "").trim();
+
+  // Cờ lỗi ở cấp envelope: code chữ có mùi lỗi, success=false, hoặc status/statusCode >= 400.
+  const envCode = typeof j.code === "string" ? j.code.trim() : "";
+  const envStatus = num(j.status ?? j.statusCode ?? j.httpStatus);
+  const errish =
+    /error|fail|invalid|denied|unauthor|forbid|missing|reject|exception|not_?found/i.test(envCode) ||
+    (typeof j.success === "boolean" && j.success === false) ||
+    (envStatus !== undefined && envStatus >= 400);
+
+  if (errish || !orderCode) {
+    // Gom mọi mô tả lỗi Hogoto trả về để hiện nguyên văn trong toast — không nuốt lỗi,
+    // không bịa mã đơn. Thiếu message thì in thẳng body để còn biết trường nào sai.
+    const bits: string[] = [];
+    for (const k of ["message", "error", "detail", "details", "errorMessage", "description"]) {
+      const v = j[k];
+      if (typeof v === "string" && v.trim()) bits.push(v.trim());
+    }
+    const errArr = Array.isArray(j.errors) ? j.errors : Array.isArray((j as Record<string, unknown>).violations) ? (j as Record<string, unknown>).violations : null;
+    if (Array.isArray(errArr)) {
+      for (const e of errArr.slice(0, 6)) {
+        if (typeof e === "string") bits.push(e);
+        else if (e && typeof e === "object") {
+          const o = e as Record<string, unknown>;
+          const f = String(o.field ?? o.property ?? o.path ?? "").trim();
+          const m = String(o.message ?? o.error ?? o.defaultMessage ?? "").trim();
+          if (f || m) bits.push(f ? `${f}: ${m}` : m);
+        }
+      }
+    }
+    const detail = bits.join(" · ") || text.slice(0, 500) || "(Hogoto không trả nội dung)";
+    throw new Error(`Hogoto từ chối đơn${envCode ? ` [${envCode}]` : ""}: ${detail}`);
+  }
+
   const baseCost = num(data.baseCost ?? data.productAmount ?? data.itemsAmount ?? data.itemAmount);
   const shipCost = num(data.shippingFee ?? data.shippingAmount ?? data.shipping_fee);
-  return { orderCode: orderCode || `HGT-${res.status}`, baseCost, shipCost, raw: j };
+  return { orderCode, baseCost, shipCost, raw: j };
 }
 
 
