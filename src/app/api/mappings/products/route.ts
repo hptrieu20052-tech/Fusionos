@@ -20,6 +20,9 @@ export async function GET(req: NextRequest) {
     product: schema.skuMappings.fulfillerProduct,
     count: sql<number>`count(*)::int`,
     pinned: sql<boolean>`bool_or(${schema.skuMappings.pinned})`,
+    // Ảnh thumbnail: lấy URL đầu tiên khác rỗng trong extra_json của các SKU cùng sản phẩm.
+    // Nhà nào importer chưa lưu extra_json.image thì trả null → UI hiện ô chữ cái thay ảnh.
+    image: sql<string | null>`max(${schema.skuMappings.extraJson} ->> 'image')`,
   }).from(schema.skuMappings)
     .where(and(eq(schema.skuMappings.fulfillerId, ff), isNotNull(schema.skuMappings.fulfillerProduct)))
     .groupBy(schema.skuMappings.fulfillerProduct)
@@ -37,5 +40,5 @@ export async function GET(req: NextRequest) {
   }
 
   const rows = await qb.orderBy(asc(schema.skuMappings.fulfillerProduct)).limit(5000);
-  return NextResponse.json({ ok: true, products: rows.map((r) => ({ product: r.product as string, count: r.count, pinned: !!r.pinned })) });
+  return NextResponse.json({ ok: true, products: rows.map((r) => ({ product: r.product as string, count: r.count, pinned: !!r.pinned, image: r.image || null })) });
 }

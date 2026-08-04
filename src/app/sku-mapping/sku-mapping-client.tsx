@@ -63,7 +63,7 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const [importing, setImporting] = useState(false);
   const [cuOpen, setCuOpen] = useState(false); // panel Import-từ-link của Compassup
   // Ghim sản phẩm cho form tạo đơn
-  const [pinPicker, setPinPicker] = useState<{ product: string; count: number }[] | null>(null);
+  const [pinPicker, setPinPicker] = useState<{ product: string; count: number; image?: string | null }[] | null>(null);
   const [pinSel, setPinSel] = useState<Set<string>>(new Set());
   const [delPicker, setDelPicker] = useState<{ product: string; count: number }[] | null>(null);
   const [delSel, setDelSel] = useState<Set<string>>(new Set());
@@ -161,10 +161,10 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   const pinShown = (() => {
     const all = pinPicker ?? [];
     if (!pinOnlySel) return all;
-    const cmap = new Map(all.map((p) => [p.product, p.count]));
+    const cmap = new Map(all.map((p) => [p.product, p]));
     return Array.from(pinSel).sort((a, b) => a.localeCompare(b))
       .filter((p) => !pinQ || p.toLowerCase().includes(pinQ.toLowerCase()))
-      .map((product) => ({ product, count: cmap.get(product) ?? 0 }));
+      .map((product) => ({ product, count: cmap.get(product)?.count ?? 0, image: cmap.get(product)?.image ?? null }));
   })();
 
   async function addMap() {
@@ -204,14 +204,14 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
   // ---- Ghim sản phẩm cho form tạo đơn (danh sách SP lấy từ server, không kéo toàn bộ variant) ----
   const fetchPinProducts = useCallback(async (query: string) => {
     const j = await fetch(`/api/mappings/products?ff=${active}&q=${encodeURIComponent(query)}`).then((r) => r.json()).catch(() => ({ ok: false }));
-    return j.ok ? (j.products as { product: string; count: number; pinned: boolean }[]) : [];
+    return j.ok ? (j.products as { product: string; count: number; pinned: boolean; image?: string | null }[]) : [];
   }, [active]);
   async function openPinPicker() {
     setPinQ(""); setPinOnlySel(false);
     setMsg(t("sk.loadingProducts"));
     const products = await fetchPinProducts("");
     setMsg("");
-    setPinPicker(products.map((p) => ({ product: p.product, count: p.count })));
+    setPinPicker(products.map((p) => ({ product: p.product, count: p.count, image: p.image ?? null })));
     setPinSel(new Set(products.filter((p) => p.pinned).map((p) => p.product)));
   }
   // Tìm trong popup ghim (server-side: theo tên hoặc SKU) — debounce, giữ nguyên lựa chọn đã tick
@@ -572,6 +572,12 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
               {pinShown.map((p) => (
                 <label key={p.product} style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 13px", borderBottom: "1px solid var(--line)", cursor: "pointer" }}>
                   <input type="checkbox" checked={pinSel.has(p.product)} onChange={() => togglePin(p.product)} style={{ width: 17, height: 17, cursor: "pointer" }} />
+                  {/* Thumbnail lấy từ extra_json.image lúc import; nhà nào API không trả ảnh thì hiện chữ cái đầu. */}
+                  <div style={{ width: 40, height: 40, flex: "0 0 40px", borderRadius: 8, overflow: "hidden", background: "var(--bg)", border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {p.image
+                      ? <img src={p.image} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                      : <span style={{ fontSize: 13, fontWeight: 800, color: "var(--muted)" }}>{(p.product || "?").trim().charAt(0).toUpperCase()}</span>}
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.product}</div>
                     <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.count} SKU</div>

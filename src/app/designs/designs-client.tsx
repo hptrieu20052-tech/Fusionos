@@ -21,8 +21,9 @@ const sideLabel = (t: (k: string) => string): Record<string, string> => ({
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.mo" + (i + 1))])),
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`grid_${pad2(i + 1)}`, t("dz.gridOf").replace("{m}", t("dz.mo" + (i + 1)))])),
   ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`page_${pad2(i + 1)}`, t("dz.page").replace("{n}", String(i + 1))])),
-  emb_front: "Embroidery file — Front", emb_back: "Embroidery file — Back",
-  emb_left: "Embroidery file — Left", emb_right: "Embroidery file — Right", emb_center: "Embroidery file — Center",
+  // Viết tắt DST — nhãn dài bị cắt mất chữ trong ô "Add print face".
+  emb_front: "DST Front", emb_back: "DST Back",
+  emb_left: "DST Left", emb_right: "DST Right", emb_center: "DST Center",
   mockup: "Mockup", video: "Video",
 });
 // Nhóm mặt in để thêm (theo loại sản phẩm)

@@ -30,7 +30,10 @@ export async function POST(req: NextRequest) {
 
   let out;
   try {
-    out = await listHogotoProducts({ endpoint: ff.apiEndpoint ?? "https://seller.hogotopod.com/api", apiKey: c.apiKey, tenant: c.tenant || "fulfillment" });
+    out = await listHogotoProducts(
+      { endpoint: ff.apiEndpoint ?? "https://seller.hogotopod.com/api", apiKey: c.apiKey, tenant: c.tenant || "fulfillment" },
+      { deadlineMs: 42_000 },   // chừa chỗ cho phần ghi DB bên dưới trong giới hạn 60s của Vercel
+    );
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 400) }, { status: 500 });
   }
@@ -53,7 +56,13 @@ export async function POST(req: NextRequest) {
       variant: r.size?.slice(0, 120) || null,
       baseCost: (r.baseCost ?? 0).toFixed(2),
       shipCost: (r.shipCost ?? 0).toFixed(2),
-      extraJson: { productType: r.productType || null, positionCode: r.positionCode || "CENTER", colorCode: "AS_DESIGN", size: r.size || null },
+      // image → hiện thumbnail ở popup chọn sản phẩm; prices → giữ nguyên bảng giá theo từng
+      // phương thức ship của Hogoto (Fast US / Ship by TikTok US / ePacket / Outside US / UK...).
+      extraJson: {
+        productType: r.productType || null, positionCode: r.positionCode || "CENTER",
+        colorCode: "AS_DESIGN", size: r.size || null,
+        image: r.image || null, prices: r.prices || null,
+      },
     });
   }
 
@@ -73,9 +82,17 @@ export async function POST(req: NextRequest) {
   }
 
   // Không parse được sản phẩm nào → nhiều khả năng field JSON khác → trả mẫu để chỉnh.
+  // Đọc được sản phẩm nhưng KHÔNG ra variation → báo rõ đã thử URL nào, mã HTTP bao nhiêu.
   const note = out.count === 0 || out.rows.length === 0
     ? `Không đọc được product từ Hogoto (count=${out.count}). Cấu trúc JSON có thể khác — gửi admin mẫu này: ${JSON.stringify(out.sample).slice(0, 800)}`
-    : undefined;
+    : !out.detailPattern
+      ? `Chỉ lấy được cấp sản phẩm, KHÔNG có size/giá. Đã thử: ${out.probes.map((p) => `${p.url} → ${p.status}`).join(" | ") || "(không thử được)"}. Gửi admin dòng này để map đúng endpoint chi tiết.`
+      : out.detailed < out.count
+        ? `Lấy chi tiết được ${out.detailed}/${out.count} sản phẩm (hết thời gian hoặc lỗi lẻ) — bấm Update SKU lần nữa để lấy nốt.`
+        : undefined;
 
-  return NextResponse.json({ ok: true, found: out.rows.length, created, skipped, products: out.count, note });
+  return NextResponse.json({
+    ok: true, found: out.rows.length, created, skipped, products: out.count,
+    detailPattern: out.detailPattern, detailed: out.detailed, note,
+  });
 }
