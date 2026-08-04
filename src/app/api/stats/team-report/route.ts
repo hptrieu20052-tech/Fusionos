@@ -23,14 +23,14 @@ export async function GET(req: NextRequest) {
 
   // Phạm vi: team/own → chỉ đơn trong phạm vi (→ chỉ team của mình hiện ra)
   const scopeIds = await scopeOwnerIds(session, "orders");
-  const inO = scopeIds ? sql` AND o.seller_id IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+  const inO = scopeIds ? sql` AND o.seller_at_order IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const r = await db.execute(sql`
     SELECT ${sql.raw(bucketExpr)} AS bucket, min(${sql.raw(bucketOrd)}) AS ord,
            coalesce(u.team,'(chưa gán team)') AS team,
            count(*)::int AS o, coalesce(sum(oi.qty),0)::int AS i, coalesce(sum(o.total),0)::numeric AS r
     FROM orders o
-    LEFT JOIN users u ON u.id = o.seller_id
+    LEFT JOIN users u ON u.id = o.seller_at_order
     LEFT JOIN (SELECT order_id, sum(qty) qty FROM order_items GROUP BY 1) oi ON oi.order_id = o.id
     WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')${inO}
     GROUP BY 1, u.team ORDER BY ord
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const mem = await db.execute(sql`
     SELECT coalesce(u.team,'(chưa gán team)') AS team, u.full_name AS name, u.role,
            count(o.id)::int AS orders, coalesce(sum(o.total),0)::numeric AS revenue
-    FROM orders o JOIN users u ON u.id = o.seller_id
+    FROM orders o JOIN users u ON u.id = o.seller_at_order
     WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')${inO}
     GROUP BY 1, u.full_name, u.role ORDER BY revenue DESC
   `);

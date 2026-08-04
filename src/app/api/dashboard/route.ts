@@ -23,8 +23,8 @@ export async function GET(req: NextRequest) {
   const cond = rangeCond("o.ordered_at", range, from, to);
   const scopeIds = self ? [session.sub] : await scopeOwnerIds(session, "orders");
   const inList = scopeIds ? sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `) : null;
-  const own = inList ? sql` AND o.seller_id IN (${inList})` : sql``;
-  const ownItems = inList ? sql` AND o2.seller_id IN (${inList})` : sql``;
+  const own = inList ? sql` AND o.seller_at_order IN (${inList})` : sql``;
+  const ownItems = inList ? sql` AND o2.seller_at_order IN (${inList})` : sql``;
 
   // Kỳ trước cùng độ dài để tính delta (chỉ cho các range đơn giản)
   const prevCond: string | null = ({
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
   `)).rows as { pending_new: number; issues: number; designs: number }[];
 
   // Dự toán lợi nhuận trong kỳ = doanh thu - phí sàn - giá vốn (từ transactions)
-  const own2 = inList ? sql` AND o2.seller_id IN (${inList})` : sql``;
+  const own2 = inList ? sql` AND o2.seller_at_order IN (${inList})` : sql``;
   const [pnl] = (await db.execute(sql`
     SELECT
       coalesce(sum(o.total),0)::numeric AS revenue,

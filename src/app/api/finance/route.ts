@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
     ownerIds = await scopeOwnerIds(session, "orders").catch(() => null); // dùng scope orders (finance chưa có scope riêng)
     if (!ownerIds && session.role === "seller") ownerIds = [session.sub];
   }
-  const inSeller = ownerIds ? sql` AND o.seller_id IN (${sql.join(ownerIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+  const inSeller = ownerIds ? sql` AND o.seller_at_order IN (${sql.join(ownerIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
   const inTxSeller = ownerIds ? sql` AND t.seller_id IN (${sql.join(ownerIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days") ?? 30), 1), 92);
@@ -72,7 +72,7 @@ export async function GET(req: NextRequest) {
           WHERE t.seller_id = u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
           WHERE t.seller_id = u.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
-      FROM orders o JOIN users u ON u.id = o.seller_id
+      FROM orders o JOIN users u ON u.id = o.seller_at_order
       WHERE ${ordersWhere}
       GROUP BY 1,2 ORDER BY rev DESC`),
     // THEO STORE (chi tiết store của seller): store + marketplace + seller
@@ -83,7 +83,7 @@ export async function GET(req: NextRequest) {
           WHERE t.store_id = s.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
           WHERE t.store_id = s.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
-      FROM orders o JOIN stores s ON s.id = o.store_id LEFT JOIN users u ON u.id = o.seller_id
+      FROM orders o JOIN stores s ON s.id = o.store_id LEFT JOIN users u ON u.id = o.seller_at_order
       WHERE ${ordersWhere}
       GROUP BY 1,2,3,4 ORDER BY rev DESC`),
     db.execute(sql`

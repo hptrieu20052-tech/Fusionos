@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     ownerIds = await scopeOwnerIds(session, "orders").catch(() => null);
     if (!ownerIds && session.role === "seller") ownerIds = [session.sub];
   }
-  const inSeller = ownerIds ? sql` AND o.seller_id IN (${sql.join(ownerIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+  const inSeller = ownerIds ? sql` AND o.seller_at_order IN (${sql.join(ownerIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days") ?? 30), 1), 92);
   const dOk = (x: string | null) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
       coalesce(f.tracking, '') AS tracking
     FROM orders o
     LEFT JOIN stores s ON s.id = o.store_id
-    LEFT JOIN users u ON u.id = o.seller_id
+    LEFT JOIN users u ON u.id = o.seller_at_order
     LEFT JOIN LATERAL (
       SELECT sum(fo.base_cost) AS base, sum(fo.ship_cost) AS ship, sum(fo.extra_fee) AS extra, sum(fo.cost) AS total,
              string_agg(DISTINCT ff.name, ' + ') AS suppliers,

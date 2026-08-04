@@ -24,13 +24,13 @@ export async function GET(req: NextRequest) {
   const TO = useRange ? sql`${toQ}::date` : sql`CURRENT_DATE`;
   const metric = req.nextUrl.searchParams.get("metric") === "items" ? "items" : "orders";
   const _si = await scopeOwnerIds(session, "orders");
-  const inO = _si ? sql` AND o.seller_id IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+  const inO = _si ? sql` AND o.seller_at_order IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const val = metric === "items" ? sql`coalesce(sum(oi.qty),0)::int` : sql`count(DISTINCT o.id)::int`;
   const r = await db.execute(sql`
     SELECT u.id seller_id, u.full_name seller, o.ordered_at::date d, ${val} v
     FROM orders o
-    JOIN users u ON u.id = o.seller_id
+    JOIN users u ON u.id = o.seller_at_order
     LEFT JOIN order_items oi ON oi.order_id = o.id
     WHERE o.ordered_at::date >= ${FROM} AND o.ordered_at::date <= ${TO} AND o.status NOT IN ('cancel','trash')${inO}
     GROUP BY 1,2,3 ORDER BY 3

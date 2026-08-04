@@ -24,17 +24,17 @@ export async function GET(req: NextRequest) {
   const { bucketExpr, bucketOrd } = bucketExprs("o.ordered_at", isMonthly(range, from, to));
 
   const _si = await scopeOwnerIds(session, "dashboard");
-  const own = _si ? sql` AND o.seller_id IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+  const own = _si ? sql` AND o.seller_at_order IN (${sql.join(_si.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
   const r = await db.execute(sql`
     SELECT ${sql.raw(bucketExpr)} AS bucket, min(${sql.raw(bucketOrd)}) AS ord,
-           o.seller_id, coalesce(u.full_name,'(chưa gán)') AS name,
+           o.seller_at_order AS seller_id, coalesce(u.full_name,'(chưa gán)') AS name,
            count(*)::int AS o, coalesce(sum(oi.qty),0)::int AS i
     FROM orders o
-    LEFT JOIN users u ON u.id = o.seller_id
+    LEFT JOIN users u ON u.id = o.seller_at_order
     LEFT JOIN (SELECT order_id, sum(qty) qty FROM order_items GROUP BY 1) oi ON oi.order_id = o.id
     WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash') ${own}
-    GROUP BY 1, o.seller_id, u.full_name
+    GROUP BY 1, o.seller_at_order, u.full_name
     ORDER BY ord
   `);
   const rows = r.rows as { bucket: string; seller_id: string | null; name: string; o: number; i: number }[];
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
   const money = { revenue: 0, fee: 0, feeEst: 0, cost: 0, profit: 0 };
   if (showMoney) {
     const mr = (await db.execute(sql`
-      SELECT o.seller_id,
+      SELECT o.seller_at_order AS seller_id,
         coalesce(sum(o.total),0)::numeric AS revenue,
         coalesce(sum(o.platform_fee),0)::numeric AS fee,
         -- phần phí đang là ƯỚC TÍNH (%) → UI ghi rõ "Fee (est.)"
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
         WHERE type IN ('base_cost','shipping','ads','sample') GROUP BY order_id
       ) oc ON oc.order_id = o.id
       WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash') ${own}
-      GROUP BY o.seller_id
+      GROUP BY o.seller_at_order
     `)).rows as { seller_id: string | null; revenue: string; fee: string; fee_est: string; cost: string; platforms: string[] }[];
     const mMap = new Map(mr.map((x) => [x.seller_id ?? "none", x]));
     for (const s of sellers) {

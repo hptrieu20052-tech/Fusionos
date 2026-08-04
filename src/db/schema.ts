@@ -74,7 +74,12 @@ export const orders = pgTable("orders", {
   externalId: text("external_id").notNull(),
   platform: marketplaceEnum("platform").notNull(),
   storeId: uuid("store_id").references(() => stores.id),
+  // Chủ shop HIỆN TẠI — dùng cho phân quyền (seller scope "own"). Bàn giao shop sẽ ghi đè cột này.
   sellerId: uuid("seller_id").references(() => users.id),
+  // Chủ shop TẠI THỜI ĐIỂM đơn về — ghi 1 lần lúc INSERT (trigger trg_seller_at_order),
+  // KHÔNG đổi khi bàn giao. Mọi báo cáo doanh số/KPI group theo cột này để công của seller
+  // cũ không nhảy sang seller mới, và seller mới không bị cộng trùng. Xem MIGRATION_seller_at_order.sql.
+  sellerAtOrder: uuid("seller_at_order").references(() => users.id),
   status: orderStatusEnum("status").notNull().default("new"),
   platformStatus: text("platform_status"),
   source: orderSourceEnum("source").notNull(),
@@ -112,6 +117,7 @@ export const orders = pgTable("orders", {
 }, (t) => [
   uniqueIndex("uq_orders_platform_external").on(t.platform, t.externalId),
   index("idx_orders_seller_date").on(t.sellerId, t.orderedAt),
+  index("idx_orders_seller_at_date").on(t.sellerAtOrder, t.orderedAt),
   index("idx_orders_status").on(t.status),
 ]);
 
