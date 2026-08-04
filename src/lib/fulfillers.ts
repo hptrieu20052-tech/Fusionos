@@ -141,6 +141,32 @@ function hogotoShip(v: unknown): string | null {
   return HOGOTO_SHIP_ALIAS[s] ?? null;
 }
 
+// v146 · productType của Hogoto CŨNG là enum, chỉ nhận EMBROIDERY | PRINT_2D | PRINT_3D.
+// Bug cũ: fallback `l.fulfillerProduct` là TÊN sản phẩm ("Embroidedy Pillow Cover") ⇒ Hogoto trả
+// VALIDATION_ERROR "Invalid product type ... for product at index 0" và đơn không vào xưởng.
+const HOGOTO_PTYPE = ["EMBROIDERY", "PRINT_2D", "PRINT_3D"];
+const HOGOTO_PTYPE_ALIAS: Record<string, string> = {
+  EMB: "EMBROIDERY", EMBROIDER: "EMBROIDERY", EMBROIDERED: "EMBROIDERY", EMBROIDERY_3D: "EMBROIDERY", THEU: "EMBROIDERY",
+  PRINT: "PRINT_2D", PRINT2D: "PRINT_2D", "2D": "PRINT_2D", DTG: "PRINT_2D", DTF: "PRINT_2D", UV: "PRINT_2D",
+  SUBLIMATION: "PRINT_2D", FLAT_PRINT: "PRINT_2D",
+  PRINT3D: "PRINT_3D", "3D": "PRINT_3D", AOP: "PRINT_3D", ALL_OVER_PRINT: "PRINT_3D", ALLOVER: "PRINT_3D",
+};
+/**
+ * Quy mọi thứ về đúng enum productType. Nhận cả tên sản phẩm tự do và cả chính tả sai
+ * ("Embroidedy" → chứa "EMB" → EMBROIDERY). Không đoán được thì trả null ⇒ KHÔNG gửi field này,
+ * để Hogoto tự lấy loại mặc định của product code, còn hơn gửi bừa rồi bị chặn.
+ */
+function hogotoPType(v: unknown): string | null {
+  const s = String(v ?? "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+  if (!s) return null;
+  if (HOGOTO_PTYPE.includes(s)) return s;
+  if (HOGOTO_PTYPE_ALIAS[s]) return HOGOTO_PTYPE_ALIAS[s];
+  if (/EMB|THEU|TH[ÊE]U/.test(s)) return "EMBROIDERY";
+  if (/3D|ALL_?OVER|AOP/.test(s)) return "PRINT_3D";
+  if (/PRINT|DTG|DTF|UV|SUBLIM/.test(s)) return "PRINT_2D";
+  return null;
+}
+
 /**
  * Adapter HOGOTO POD THẬT — POST /v1/partner/order/store (X-API-Key + X-Tenant).
  * credentials (Settings → Fulfillers): apiKey = API Key; (tuỳ chọn) tenant, shippingMethod mặc định.
@@ -183,7 +209,6 @@ function hogotoAdapter(): FulfillerAdapter {
         const productCode = String(l.fulfillerSku || "").trim();
         if (!productCode) throw new Error(`Hogoto: item "${l.internalSku ?? ""}" chưa map Product Code (vd P201) vào ô Fulfiller SKU.`);
         const size = String(ex.size || l.variant || "").trim();
-        const productType = String(ex.productType || l.fulfillerProduct || "").trim();
         const colorCode = String(ex.colorCode || "AS_DESIGN").trim();
         const positionCode = String(ex.positionCode || "CENTER").trim();
         const exShip = hogotoShip(ex.shippingMethod); // sai enum ⇒ bỏ qua, giữ mặc định theo nước
@@ -197,6 +222,9 @@ function hogotoAdapter(): FulfillerAdapter {
         const imgUrl = sides.find((s) => !EMB_FILE_RX.test(s.url))?.url || l.designFront || null;
         const embUrl = sides.find((s) => EMB_FILE_RX.test(s.url))?.url || null;
         const designUrl = imgUrl || embUrl;   // chỉ có file thêu thì vẫn phải gửi để đơn không rỗng
+        // v146 · thứ tự tin cậy: extraJson của SKU → tên sản phẩm fulfiller (đoán từ khoá) →
+        // có file .dst/.emb thì chắc chắn là đơn thêu. Vẫn null thì bỏ hẳn field.
+        const productType = hogotoPType(ex.productType) || hogotoPType(l.fulfillerProduct) || (embUrl ? "EMBROIDERY" : null);
         const designAttachments = designUrl ? [{
           positionCode, designUrl, designEmbUrl: embUrl, mockupUrl: l.image ?? null,
           note: l.personalization || null, glitterColors: null, embroidery3DColors: null, fabricPatterns: null, outline: null,
