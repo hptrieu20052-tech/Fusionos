@@ -69,20 +69,27 @@ export async function GET(req: NextRequest) {
   const header = ["Date", "Marketplace", "Store", "Seller", "Order ID", "Order Label", "Status", "Supplier", "Tracking", "Revenue", "Platform Fee", "Fee Type", "Base Cost", "Ship Fee", "Other Fee", "Fulfillment Cost", "Profit"];
   const lines = [header.join(",")];
   const tot = { revenue: 0, fee: 0, base: 0, ship: 0, extra: 0, cost: 0 };
+  // v166 — ĐƠN HUỶ: mọi con số về 0 (dòng vẫn hiện để đối chiếu, nhưng KHÔNG cộng vào TOTAL).
+  // Bug cũ: trang Finance loại cancel/trash còn CSV vẫn cộng → 105 đơn vs 102 đơn, doanh thu lệch
+  // 52.19, phí lệch 3.40. Giờ hai bên cùng một tập đơn, số phải khớp tuyệt đối.
+  let live = 0;
   for (const r of rows) {
-    const revenue = Number(r.revenue), fee = Number(r.fee), cost = Number(r.ff_cost);
+    const dead = r.status === "cancel" || r.status === "trash";
+    const revenue = dead ? 0 : Number(r.revenue), fee = dead ? 0 : Number(r.fee), cost = dead ? 0 : Number(r.ff_cost);
+    const base = dead ? 0 : Number(r.base_cost), ship = dead ? 0 : Number(r.ship_fee), extra = dead ? 0 : Number(r.other_fee);
     const profit = revenue - fee - cost;
+    if (!dead) live++;
     tot.revenue += revenue; tot.fee += fee;
-    tot.base += Number(r.base_cost); tot.ship += Number(r.ship_fee); tot.extra += Number(r.other_fee); tot.cost += cost;
+    tot.base += base; tot.ship += ship; tot.extra += extra; tot.cost += cost;
     lines.push([
       String(r.d).slice(0, 10), esc(r.platform), esc(r.store), esc(r.seller),
       `="${r.external_id}"`, esc(r.order_label), r.status, esc(r.suppliers), r.tracking ? `="${r.tracking}"` : "",
-      n2(revenue), n2(fee), r.fee_estimated ? "EST" : "REAL", n2(r.base_cost), n2(r.ship_fee), n2(r.other_fee), n2(cost), n2(profit),
+      n2(revenue), n2(fee), r.fee_estimated ? "EST" : "REAL", n2(base), n2(ship), n2(extra), n2(cost), n2(profit),
     ].join(","));
   }
   const totProfit = tot.revenue - tot.fee - tot.cost;
   lines.push([
-    "TOTAL", "", "", "", `${rows.length} orders`, "", "", "", "",
+    "TOTAL", "", "", "", `${live} orders`, "", "", "", "",
     n2(tot.revenue), n2(tot.fee), "", n2(tot.base), n2(tot.ship), n2(tot.extra), n2(tot.cost), n2(totProfit),
   ].join(","));
 

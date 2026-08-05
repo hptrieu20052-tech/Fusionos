@@ -59,14 +59,15 @@ export async function refundOrderCost(orderId: string, note: string) {
     `)).rows[0] as { s: string };
     const bal = Number(sum.s);
     if (bal >= 0) return false;
-    const [ord] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
-    await db.insert(schema.transactions).values({
-      type: "base_cost", amount: (-bal).toFixed(2),
-      // Cost ghi cho CHỦ SHOP LÚC ĐƠN VỀ để nằm cùng chỗ với doanh thu (xem fulfillment/push).
-      orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerAtOrder ?? ord?.sellerId ?? null,
-      // Ghi chi phí theo NGÀY KÉO ĐƠN VỀ (ordered_at) để trùng mốc với doanh thu — báo cáo theo ngày mới khớp.
-      note, occurredAt: (ord?.orderedAt ? new Date(ord.orderedAt) : new Date()).toISOString().slice(0, 10),
-    });
+    // v166: XOÁ SẠCH thay vì chèn dòng bù +X.
+    // Cách cũ để lại 2 dòng cộng lại = 0; nhiều luồng khác xoá bút toán theo `note LIKE %external_ff_id%`
+    // (dòng bù không chứa ff id) nên hay bỏ sót → sổ hiện cost ÂM. Đơn huỷ thì chi phí phải bằng 0
+    // và KHÔNG còn bút toán nào cả — sạch, không bẫy.
+    void note;
+    await db.delete(schema.transactions).where(and(
+      eq(schema.transactions.orderId, orderId),
+      eq(schema.transactions.type, "base_cost"),
+    ));
     return true;
   } catch { return false; }
 }
@@ -90,17 +91,27 @@ export async function rebalanceOrderCost(orderId: string, note = "Cost adjustmen
       SELECT coalesce(sum(amount),0)::numeric s FROM transactions WHERE order_id = ${orderId}::uuid AND type = 'base_cost'
     `)).rows[0] as { s: string }).s);
 
-    if (Math.abs(cur - target) < 0.005) return false; // đã khớp tới cent
-    if (Math.abs(target) < 0.005) {
-      await db.delete(schema.transactions).where(and(
-        eq(schema.transactions.orderId, orderId),
-        eq(schema.transactions.type, "base_cost"),
-      ));
-      return true;
-    }
+    // Số DÒNG base_cost đang có — cần để bắt ca "tổng đúng nhưng nằm rải ở nhiều dòng".
+    const nRows = Number(((await db.execute(sql`
+      SELECT count(*)::int n FROM transactions WHERE order_id = ${orderId}::uuid AND type = 'base_cost'
+    `)).rows[0] as { n: number }).n);
+
+    if (Math.abs(cur - target) < 0.005 && nRows <= 1) return false; // đã khớp tới cent VÀ gọn 1 dòng
+    // GHI ĐÈ, KHÔNG CỘNG DỒN (v166).
+    // BUG CŨ: đọc tổng hiện tại `cur` rồi CHÈN THÊM dòng chênh lệch (target − cur). Chỉ đúng nếu
+    // `cur` đọc được chính xác; thực tế poll Compassup chạy lại nhiều vòng đã chèn NGUYÊN số tiền
+    // mỗi lần → sổ gấp 2×/3×/5× chi phí thật (đơn 4118710879: 4 dòng −38.61 cùng note
+    // "Compassup · … — cost poll" trong khi ffo cost chỉ 38.61).
+    // base_cost là số DẪN XUẤT từ fulfillment_orders → luôn tái tạo được. Nên xoá sạch rồi ghi lại
+    // ĐÚNG 1 dòng: idempotent tuyệt đối, chạy bao nhiêu lần kết quả vẫn thế, không phụ thuộc `cur`.
+    await db.delete(schema.transactions).where(and(
+      eq(schema.transactions.orderId, orderId),
+      eq(schema.transactions.type, "base_cost"),
+    ));
+    if (Math.abs(target) < 0.005) return true; // không còn bản ghi đẩy nào có chi phí → sổ về rỗng
     const [ord] = await db.select().from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
     await db.insert(schema.transactions).values({
-      type: "base_cost", amount: (target - cur).toFixed(2),
+      type: "base_cost", amount: target.toFixed(2),
       // Cost ghi cho CHỦ SHOP LÚC ĐƠN VỀ để nằm cùng chỗ với doanh thu (xem fulfillment/push).
       orderId, storeId: ord?.storeId ?? null, sellerId: ord?.sellerAtOrder ?? ord?.sellerId ?? null,
       note,

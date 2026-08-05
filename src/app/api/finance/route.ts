@@ -30,6 +30,10 @@ export async function GET(req: NextRequest) {
   }
   const inSeller = ownerIds ? sql` AND o.seller_at_order IN (${sql.join(ownerIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
   const inTxSeller = ownerIds ? sql` AND t.seller_id IN (${sql.join(ownerIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+  // v166 — ĐƠN HUỶ THÌ MỌI CON SỐ = 0.
+  // Bug cũ: doanh thu tính từ orders (đã loại cancel/trash) nhưng COST tính từ transactions KHÔNG hề
+  // loại đơn huỷ → chi phí của đơn không tồn tại vẫn ăn vào lợi nhuận. Lọc ngay tại nguồn.
+  const txLive = sql` AND (t.order_id IS NULL OR NOT EXISTS (SELECT 1 FROM orders oc WHERE oc.id = t.order_id AND oc.status IN ('cancel','trash')))`;
 
   const days = Math.min(Math.max(Number(req.nextUrl.searchParams.get("days") ?? 30), 1), 92);
   const dOk = (x: string | null) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
@@ -54,14 +58,14 @@ export async function GET(req: NextRequest) {
     // Cost theo type (transactions âm; bút toán 'revenue' nhập tay vẫn cộng vào doanh thu qua totals riêng)
     db.execute(sql`
       SELECT type, sum(amount) total FROM transactions t
-      WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}
+      WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}
       GROUP BY 1 ORDER BY total`),
     db.execute(sql`
       SELECT o.ordered_at::date d, sum(o.total) rev, sum(o.platform_fee) fee
       FROM orders o WHERE ${ordersWhere} GROUP BY 1`),
     db.execute(sql`
       SELECT t.occurred_at d, sum(t.amount) FILTER (WHERE t.type <> 'revenue') cost
-      FROM transactions t WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller} GROUP BY 1`),
+      FROM transactions t WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive} GROUP BY 1`),
     // Theo SELLER: rev/fee từ orders + cost từ transactions
     // CỘT COST = CHI PHÍ FULFILL THUẦN: loại 'revenue' và loại luôn 'platform_fee'
     // (bút toán phí sàn nhập tay được cộng sang cột FEE, tuyệt đối KHÔNG nằm trong Cost → không đếm 2 lần).
@@ -69,9 +73,9 @@ export async function GET(req: NextRequest) {
       SELECT u.id, u.full_name name,
         coalesce(sum(o.total),0) rev,
         coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.seller_id = u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) fee,
+          WHERE t.seller_id = u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.seller_id = u.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
+          WHERE t.seller_id = u.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) cost
       FROM orders o JOIN users u ON u.id = o.seller_at_order
       WHERE ${ordersWhere}
       GROUP BY 1,2 ORDER BY rev DESC`),
@@ -80,9 +84,9 @@ export async function GET(req: NextRequest) {
       SELECT s.id, s.name store, s.marketplace, u.full_name seller,
         coalesce(sum(o.total),0) rev, count(*)::int orders,
         coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.store_id = s.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) fee,
+          WHERE t.store_id = s.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.store_id = s.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}),0) cost
+          WHERE t.store_id = s.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id LEFT JOIN users u ON u.id = o.seller_at_order
       WHERE ${ordersWhere}
       GROUP BY 1,2,3,4 ORDER BY rev DESC`),
@@ -90,9 +94,9 @@ export async function GET(req: NextRequest) {
       SELECT s.marketplace,
         coalesce(sum(o.total),0) rev,
         coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t JOIN stores s2 ON s2.id = t.store_id
-          WHERE s2.marketplace = s.marketplace AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}),0) fee,
+          WHERE s2.marketplace = s.marketplace AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t JOIN stores s2 ON s2.id = t.store_id
-          WHERE s2.marketplace = s.marketplace AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}),0) cost
+          WHERE s2.marketplace = s.marketplace AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id
       WHERE ${ordersWhere}
       GROUP BY 1 ORDER BY rev DESC`),
