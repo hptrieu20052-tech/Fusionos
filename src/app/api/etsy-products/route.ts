@@ -114,6 +114,18 @@ export async function PATCH(req: NextRequest) {
         .filter((v: { name: string; values: string[] }) => v.name && v.values.length)
         .slice(0, 6);
     }
+    // v159 · Giá riêng theo từng giá trị biến thể: { "8\" x 8\"": "16.65", ... }.
+    // Set ngay trong form Edit listing (cột Price khi tick "Prices vary"), không còn phải qua Bulk Price.
+    // Chuỗi rỗng / số không hợp lệ ⇒ bỏ khoá đó ⇒ variant dùng giá gốc của listing.
+    if (b.variantPrices && typeof b.variantPrices === "object" && !Array.isArray(b.variantPrices)) {
+      const vp: Record<string, string> = {};
+      for (const [k, v] of Object.entries(b.variantPrices as Record<string, unknown>)) {
+        const key = String(k).trim().slice(0, 120);
+        const n = Number(String(v ?? "").trim());
+        if (key && String(v ?? "").trim() !== "" && Number.isFinite(n) && n >= 0) vp[key] = n.toFixed(2);
+      }
+      patch.variantPrices = vp;
+    }
     // v142 · Custom options. Gửi mảng = ghi đè; gửi null = xoá hẳn (listing không có ô nào).
     // Không gửi field này ⇒ giữ nguyên, để Save bên tab khác không xoá nhầm.
     if (Array.isArray(b.personalization)) patch.personalization = payloadOf(b.personalization);
@@ -162,6 +174,17 @@ export async function POST(req: NextRequest) {
       }))
       .filter((v: { name: string; values: string[] }) => v.name && v.values.length)
       .slice(0, 6);
+    // v160 · giá riêng theo từng giá trị biến thể, set ngay khi tạo listing (giống form Edit v159).
+    // Chỉ giữ khoá thật sự nằm trong variations ở trên ⇒ không sót rác khi seller đổi ý.
+    const valSet = new Set(variations.flatMap((v: { values: string[] }) => v.values));
+    const variantPrices: Record<string, string> = {};
+    if (b?.variantPrices && typeof b.variantPrices === "object" && !Array.isArray(b.variantPrices)) {
+      for (const [k, v] of Object.entries(b.variantPrices as Record<string, unknown>)) {
+        const key = String(k).trim().slice(0, 120);
+        const n = Number(String(v ?? "").trim());
+        if (key && valSet.has(key) && String(v ?? "").trim() !== "" && Number.isFinite(n) && n >= 0) variantPrices[key] = n.toFixed(2);
+      }
+    }
 
     try {
       const [ins] = await db.insert(schema.etsyProducts).values({
@@ -171,7 +194,7 @@ export async function POST(req: NextRequest) {
         quantity: Number.isFinite(qtyNum) && qtyNum >= 0 ? Math.floor(qtyNum) : null,
         tags: String(b?.tags ?? "").trim().slice(0, 600) || null,
         sku: String(b?.sku ?? "").trim().slice(0, 100) || null,
-        images, variations, status: "active",
+        images, variations, variantPrices, status: "active",
         personalization: Array.isArray(b?.personalization) ? payloadOf(b.personalization) : null,
       }).returning({ id: schema.etsyProducts.id });
       return NextResponse.json({ ok: true, id: ins?.id });

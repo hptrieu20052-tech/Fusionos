@@ -21,19 +21,25 @@ type Detail = {
   id: string; title: string; price: string | null; tags: string | null; description: string | null;
   images: string[]; variations: { name?: string; values?: string[] }[]; quantity: number | null; sku: string | null;
   storeName: string | null; sellerName: string | null;
+  // v159 · giá theo từng giá trị biến thể (Size "8x8" = 16.65…). Trước đây chỉ sửa được ở màn Bulk Price.
+  variantPrices: Record<string, string>;
   personalization: PQ[]; // v142 · ô khách phải điền trước khi Add to cart (Push Shopify ghi metafield)
 };
 
 type NewListing = {
   sellerId: string; storeId: string; title: string; price: string; quantity: string; sku: string;
-  tags: string; description: string; images: string[]; variations: { name: string; values: string }[];
+  tags: string; description: string; images: string[];
+  // v160 · mỗi giá trị một dòng riêng (giống form Edit) — bỏ chuỗi dấu phẩy dễ gõ sai.
+  variations: { name: string; values: string[] }[];
+  variantPrices: Record<string, string>;
   personalization: PQ[];
 };
 // Mặc định 2 biến thể giống hàng import từ Etsy (Size / Paper) — sửa hoặc xoá thoải mái.
 const BLANK_NEW: NewListing = {
   sellerId: "", storeId: "", title: "", price: "", quantity: "999", sku: "",
   tags: "", description: "", images: [],
-  variations: [{ name: "Size", values: "" }, { name: "Paper", values: "" }],
+  variations: [{ name: "Size", values: [""] }, { name: "Paper", values: [""] }],
+  variantPrices: {},
   personalization: [],
 };
 
@@ -44,6 +50,11 @@ const pill = (bg: string, fg: string): React.CSSProperties => ({ display: "inlin
 const ghost: React.CSSProperties = { ...pill("#fff", "var(--ink)"), border: "1px solid var(--line)" };
 const lab: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 };
 const linkBtn = (c: string): React.CSSProperties => ({ border: "none", background: "none", padding: 0, cursor: "pointer", color: c, fontWeight: 700, fontSize: 12.5 });
+/* v159 · khối section kiểu form Etsy: card trắng xếp dọc trên nền xám, tiêu đề ở đầu mỗi khối */
+const sec: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 14, padding: "15px 17px", marginBottom: 13 };
+const secTitle: React.CSSProperties = { fontWeight: 800, fontSize: 14.5, marginBottom: 12 };
+const secSub: React.CSSProperties = { fontWeight: 500, fontSize: 11.5, color: "var(--muted)" };
+const ro: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 13, background: "#F7F8FA", color: "var(--ink)", lineHeight: 1.5, marginBottom: 14, boxSizing: "border-box" };
 
 export default function EtsyProductsClient({ stores, sellers, shopifyStores = [], canEdit }: { stores: Store[]; sellers: Seller[]; shopifyStores?: { id: string; name: string; sellerId: string | null }[]; canEdit: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
@@ -81,6 +92,12 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   // v142: đang mở 1 field Custom options ra sửa ⇒ chặn Save để không lưu nửa chừng.
   const [persEditing, setPersEditing] = useState(false);
   const [newPersEditing, setNewPersEditing] = useState(false);
+  // v159 · kéo thả sắp lại ảnh + tick "Prices vary" cho từng variation
+  const [dragImg, setDragImg] = useState<number | null>(null);
+  const [vary, setVary] = useState<boolean[]>([]);
+  // v160 · form Create Manual dùng đúng bộ điều khiển đó (state riêng để 2 modal không đè nhau)
+  const [newDragImg, setNewDragImg] = useState<number | null>(null);
+  const [newVary, setNewVary] = useState<boolean[]>([false, false]);
   const load = async () => {
     setLoading(true);
     try { const j = await fetch("/api/etsy-products").then((r) => r.json()); if (j.ok) setRows(j.rows); } catch { /* noop */ }
@@ -187,7 +204,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   };
 
   // ---- Create Manual ----
-  const openCreate = () => { setNw({ ...BLANK_NEW, storeId: stores[0]?.id ?? "", sellerId: "" }); setNewOpen(true); };
+  const openCreate = () => { setNw({ ...BLANK_NEW, variations: BLANK_NEW.variations.map((v) => ({ ...v, values: [...v.values] })), variantPrices: {}, storeId: stores[0]?.id ?? "", sellerId: "" }); setNewVary(BLANK_NEW.variations.map(() => false)); setNewDragImg(null); setNewOpen(true); };
   const setNwField = <K extends keyof NewListing>(k: K, v: NewListing[K]) => setNw((s) => ({ ...s, [k]: v }));
   const newAddImgUrl = async () => {
     const url = await askPrompt({ title: "Add image by URL", message: "Paste an image URL (https://...)", input: { placeholder: "https://…" } });
@@ -205,6 +222,36 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
+  /* ---------- v160 · editor biến thể + kéo thả ảnh cho form Create Manual (đối xứng với form Edit) ---------- */
+  const nMoveImg = (from: number, to: number) => setNw((s) => { const n = [...s.images]; const [x] = n.splice(from, 1); n.splice(to, 0, x); return { ...s, images: n }; });
+  const nSetVarName = (i: number, name: string) => setNw((s) => ({ ...s, variations: s.variations.map((v, k) => k === i ? { ...v, name } : v) }));
+  const nAddVar = () => { setNw((s) => ({ ...s, variations: [...s.variations, { name: "", values: [""] }] })); setNewVary((s) => [...s, false]); };
+  const nRemoveVar = (i: number) => { setNw((s) => ({ ...s, variations: s.variations.filter((_, k) => k !== i) })); setNewVary((s) => s.filter((_, k) => k !== i)); };
+  const nAddVal = (i: number, at: number) => setNw((s) => ({ ...s, variations: s.variations.map((v, k) => { if (k !== i) return v; const vals = [...v.values]; vals.splice(at, 0, ""); return { ...v, values: vals }; }) }));
+  const nRemoveVal = (i: number, j: number) => setNw((s) => ({ ...s, variations: s.variations.map((v, k) => k === i ? { ...v, values: v.values.filter((_, x) => x !== j) } : v) }));
+  // Dán chuỗi cũ kiểu '8"x8", 11"x8.5"' vào một ô ⇒ tự tách thành nhiều dòng.
+  const nSetVal = (i: number, j: number, text: string) => setNw((s) => {
+    const old = s.variations[i].values[j] ?? "";
+    const parts = text.split(/[\n,]+/).map((x) => x.trim());
+    const vals = [...s.variations[i].values];
+    if (parts.length > 1) vals.splice(j, 1, ...parts.filter(Boolean));
+    else vals[j] = text;
+    const vp = { ...s.variantPrices };
+    if (parts.length === 1 && old && old !== text && vp[old] != null) { vp[text] = vp[old]; delete vp[old]; }
+    return { ...s, variations: s.variations.map((v, k) => k === i ? { ...v, values: vals } : v), variantPrices: vp };
+  });
+  const nSetVP = (val: string, price: string) => setNw((s) => ({ ...s, variantPrices: { ...s.variantPrices, [val]: price } }));
+  const nToggleVary = (i: number, on: boolean) => {
+    setNewVary((s) => s.map((x, k) => k === i ? on : x));
+    if (!on) setNw((s) => { const vp = { ...s.variantPrices }; for (const v of s.variations[i].values) delete vp[v]; return { ...s, variantPrices: vp }; });
+  };
+  // Cảnh báo trần Shopify: tối đa 3 option/sản phẩm và 100 variant.
+  const nvVars = nw.variations.filter((v) => v.name.trim() && v.values.filter(Boolean).length);
+  const nvCombos = nvVars.reduce((a, v) => a * v.values.filter(Boolean).length, 1);
+  const nvWarn = nvVars.length > 3
+    ? "Shopify allows 3 options per product — only the first 3 variations will be pushed."
+    : nvCombos > 100 ? "Shopify allows 100 variants per product — only the first 100 combinations will be created." : "";
+
   const doCreate = async () => {
     if (!nw.storeId) return flash("✗ Select a store first", false);
     if (!nw.title.trim()) return flash("✗ Title is required", false);
@@ -217,7 +264,9 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         body: JSON.stringify({
           action: "create", storeId: nw.storeId, title: nw.title, price: nw.price, quantity: nw.quantity,
           sku: nw.sku, tags: nw.tags, description: nw.description, images: nw.images,
-          variations: nw.variations.map((v) => ({ name: v.name, values: v.values.split(",").map((x) => x.trim()).filter(Boolean) })),
+          // v160: values đã là mảng — không còn split(",") nên tên có dấu phẩy vẫn nguyên vẹn.
+          variations: nw.variations.map((v) => ({ name: v.name.trim(), values: v.values.map((x) => x.trim()).filter(Boolean) })),
+          variantPrices: nw.variantPrices,
           personalization: nw.personalization,
         }),
       });
@@ -232,15 +281,22 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     setEditId(id); setEdit(null); setEditLoading(true);
     try {
       const j = await fetch(`/api/etsy-products?id=${id}`).then((r) => r.json());
-      if (j.ok) setEdit({
+      if (j.ok) {
+      const vars0: { name?: string; values?: string[] }[] = Array.isArray(j.item.variations) ? j.item.variations : [];
+      const vp0: Record<string, string> = j.item.variantPrices && typeof j.item.variantPrices === "object" ? j.item.variantPrices : {};
+      // Ô "Prices vary" tick sẵn nếu biến thể đó đã có giá riêng trong DB.
+      setVary(vars0.map((v) => (v.values ?? []).some((x) => vp0[x] != null && String(vp0[x]).trim() !== "")));
+      setEdit({
         id: j.item.id, title: j.item.title, price: j.item.price, tags: j.item.tags, description: j.item.description,
         // v144: bỏ 3 ô ghi đè Shopify (title/tags/desc) — sửa nội dung Shopify bên Manage Products · Shopify.
         // Ở đây chỉ còn thông tin gốc Etsy, hiển thị read-only; Push Shopify dùng luôn bản Etsy.
         images: Array.isArray(j.item.images) ? j.item.images : [],
-        variations: Array.isArray(j.item.variations) ? j.item.variations : [],
+        variations: vars0,
+        variantPrices: vp0,
         quantity: j.item.quantity, sku: j.item.sku, storeName: j.item.storeName, sellerName: j.item.sellerName,
         personalization: toPQ(j.item.personalization),
       });
+      }
       else { flash("✗ " + (j.error ?? "Load failed"), false); setEditId(null); }
     } catch { flash("✗ Network error", false); setEditId(null); }
     setEditLoading(false);
@@ -256,7 +312,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         method: "PATCH", headers: { "Content-Type": "application/json" },
         // v144: KHÔNG gửi title/tags/description nữa ⇒ API bỏ qua, 3 cột shopify_* trong DB giữ nguyên,
         // listing đã push trước đây không bị đổi nội dung. Chỉ lưu giá / ảnh / biến thể / Custom options.
-        body: JSON.stringify({ id: edit.id, price: edit.price ?? "", images: edit.images, variations: edit.variations, personalization: edit.personalization }),
+        // v159: gửi thêm variantPrices — giá theo size set ngay trong form này, khỏi vòng qua Bulk Price.
+        body: JSON.stringify({ id: edit.id, price: edit.price ?? "", images: edit.images, variations: edit.variations, variantPrices: edit.variantPrices, personalization: edit.personalization }),
       });
       const j = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
       if (j.ok) { flash("✓ Saved"); setEditId(null); setEdit(null); load(); }
@@ -278,6 +335,40 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
+
+  /* ---------- v159 · editor biến thể kiểu Etsy + kéo thả ảnh ---------- */
+  const moveImg = (from: number, to: number) => setEdit((e) => { if (!e) return e; const n = [...e.images]; const [x] = n.splice(from, 1); n.splice(to, 0, x); return { ...e, images: n }; });
+  const setVarName = (i: number, name: string) => setEdit((e) => e ? { ...e, variations: e.variations.map((v, k) => k === i ? { ...v, name } : v) } : e);
+  const addVar = () => { setEdit((e) => e ? { ...e, variations: [...e.variations, { name: "", values: [""] }] } : e); setVary((s) => [...s, false]); };
+  const removeVar = (i: number) => { setEdit((e) => e ? { ...e, variations: e.variations.filter((_, k) => k !== i) } : e); setVary((s) => s.filter((_, k) => k !== i)); };
+  const addVal = (i: number, at: number) => setEdit((e) => e ? { ...e, variations: e.variations.map((v, k) => { if (k !== i) return v; const vals = [...(v.values ?? [])]; vals.splice(at, 0, ""); return { ...v, values: vals }; }) } : e);
+  const removeVal = (i: number, j: number) => setEdit((e) => e ? { ...e, variations: e.variations.map((v, k) => k === i ? { ...v, values: (v.values ?? []).filter((_, x) => x !== j) } : v) } : e);
+  // Gõ/dán: nếu chuỗi có dấu phẩy hoặc xuống dòng ⇒ tự tách thành nhiều dòng
+  // (dán nguyên chuỗi kiểu cũ "8x8, 11x8.5" vào vẫn ra đúng, khỏi nhập lại 134 listing).
+  const setVal = (i: number, j: number, text: string) => setEdit((e) => {
+    if (!e) return e;
+    const old = (e.variations[i].values ?? [])[j] ?? "";
+    const parts = text.split(/[\n,]+/).map((s) => s.trim());
+    const vals = [...(e.variations[i].values ?? [])];
+    if (parts.length > 1) vals.splice(j, 1, ...parts.filter(Boolean));
+    else vals[j] = text;
+    // Đổi tên một giá trị ⇒ mang theo giá của nó (variantPrices khoá theo giá trị).
+    const vp = { ...e.variantPrices };
+    if (parts.length === 1 && old && old !== text && vp[old] != null) { vp[text] = vp[old]; delete vp[old]; }
+    return { ...e, variations: e.variations.map((v, k) => k === i ? { ...v, values: vals } : v), variantPrices: vp };
+  });
+  const setVP = (val: string, price: string) => setEdit((e) => e ? { ...e, variantPrices: { ...e.variantPrices, [val]: price } } : e);
+  const toggleVary = (i: number, on: boolean) => {
+    setVary((s) => s.map((x, k) => k === i ? on : x));
+    // Bỏ tick ⇒ xoá hẳn giá riêng, mọi giá trị quay về giá gốc của listing.
+    if (!on) setEdit((e) => { if (!e) return e; const vp = { ...e.variantPrices }; for (const v of e.variations[i].values ?? []) delete vp[v]; return { ...e, variantPrices: vp }; });
+  };
+  // Cảnh báo trần Shopify: tối đa 3 option/sản phẩm và 100 variant — trước đây code cắt âm thầm.
+  const evVars = edit ? edit.variations.filter((v) => String(v.name ?? "").trim() && (v.values ?? []).filter(Boolean).length) : [];
+  const evCombos = evVars.reduce((a, v) => a * (v.values ?? []).filter(Boolean).length, 1);
+  const evWarn = evVars.length > 3
+    ? "Shopify allows 3 options per product — only the first 3 variations will be pushed."
+    : evCombos > 100 ? "Shopify allows 100 variants per product — only the first 100 combinations will be created." : "";
 
   const storeName = (id: string) => stores.find((s) => s.id === id)?.name ?? "";
 
@@ -477,7 +568,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       {/* CREATE MANUAL MODAL */}
       {newOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setNewOpen(false)}>
-          <div style={{ background: "#fff", width: 820, maxWidth: "96vw", maxHeight: "92vh", borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: "#fff", width: 940, maxWidth: "96vw", maxHeight: "92vh", borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--line)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <MarketplaceLogo mk="etsy" size={20} />
@@ -486,97 +577,153 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
               <button onClick={() => setNewOpen(false)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
             </div>
 
-            <div style={{ padding: "18px 22px", overflowY: "auto", display: "grid", gap: 14 }}>
-              <div style={{ display: "grid", gridTemplateColumns: showSellerFilter ? "1fr 1fr" : "1fr", gap: 12 }}>
-                {showSellerFilter && (
+            <div style={{ padding: "16px 18px 20px", overflowY: "auto", flex: 1, background: "#F5F6F8" }}>
+
+              {/* 0 · STORE — listing tạo tay vẫn phải thuộc về 1 shop Etsy trong hệ thống */}
+              <div style={sec}>
+                <div style={secTitle}>Store</div>
+                <div style={{ display: "grid", gridTemplateColumns: showSellerFilter ? "1fr 1fr" : "1fr", gap: 12 }}>
+                  {showSellerFilter && (
+                    <div>
+                      <label style={lab}>Seller</label>
+                      <select value={nw.sellerId} onChange={(e) => setNw((s) => ({ ...s, sellerId: e.target.value, storeId: stores.find((x) => x.sellerId === e.target.value)?.id ?? "" }))} style={{ ...ctl, width: "100%" }}>
+                        <option value="">All sellers</option>
+                        {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div>
-                    <label style={lab}>Seller</label>
-                    <select value={nw.sellerId} onChange={(e) => setNw((s) => ({ ...s, sellerId: e.target.value, storeId: stores.find((x) => x.sellerId === e.target.value)?.id ?? "" }))} style={{ ...ctl, width: "100%" }}>
-                      <option value="">All sellers</option>
-                      {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    <label style={lab}>Store *</label>
+                    <select value={nw.storeId} onChange={(e) => setNwField("storeId", e.target.value)} style={{ ...ctl, width: "100%" }}>
+                      <option value="">(Select store)</option>
+                      {newStores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.sellerName ? ` · ${s.sellerName}` : ""}</option>)}
                     </select>
                   </div>
-                )}
-                <div>
-                  <label style={lab}>Store *</label>
-                  <select value={nw.storeId} onChange={(e) => setNwField("storeId", e.target.value)} style={{ ...ctl, width: "100%" }}>
-                    <option value="">(Select store)</option>
-                    {newStores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.sellerName ? ` · ${s.sellerName}` : ""}</option>)}
-                  </select>
                 </div>
               </div>
 
-              <div>
-                <label style={lab}>Title * <span style={{ fontWeight: 500 }}>({nw.title.length}/200)</span></label>
-                <textarea value={nw.title} onChange={(e) => setNwField("title", e.target.value)} rows={2}
-                  placeholder="Personalized Bedtime Story Book, Custom Name Children's Book, Dragon Unicorn Fairy Adventure, Baby Shower Birthday Gift"
-                  style={{ ...ctl, width: "100%", resize: "vertical", lineHeight: 1.45 }} />
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-                <div>
-                  <label style={lab}>Price (USD)</label>
-                  <input value={nw.price} onChange={(e) => setNwField("price", e.target.value)} placeholder="16.65" inputMode="decimal" style={{ ...ctl, width: "100%" }} />
-                </div>
-                <div>
-                  <label style={lab}>Quantity</label>
-                  <input value={nw.quantity} onChange={(e) => setNwField("quantity", e.target.value)} inputMode="numeric" style={{ ...ctl, width: "100%" }} />
-                </div>
-                <div>
-                  <label style={lab}>SKU</label>
-                  <input value={nw.sku} onChange={(e) => setNwField("sku", e.target.value)} style={{ ...ctl, width: "100%" }} />
-                </div>
-              </div>
-
-              <div>
-                <label style={lab}>Tags <span style={{ fontWeight: 500 }}>(comma separated)</span></label>
-                <input value={nw.tags} onChange={(e) => setNwField("tags", e.target.value)} placeholder="personalized book, custom name book, baby shower gift" style={{ ...ctl, width: "100%" }} />
-              </div>
-
-              <div>
-                <label style={lab}>Description</label>
-                <textarea value={nw.description} onChange={(e) => setNwField("description", e.target.value)} rows={5} style={{ ...ctl, width: "100%", resize: "vertical", lineHeight: 1.5 }} />
-              </div>
-
-              <div>
-                <label style={lab}>Variations</label>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {nw.variations.map((v, i) => (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "150px 1fr 34px", gap: 8, alignItems: "center" }}>
-                      <input value={v.name} onChange={(e) => setNw((s) => ({ ...s, variations: s.variations.map((x, j) => j === i ? { ...x, name: e.target.value } : x) }))} placeholder="Size" style={{ ...ctl, width: "100%" }} />
-                      <input value={v.values} onChange={(e) => setNw((s) => ({ ...s, variations: s.variations.map((x, j) => j === i ? { ...x, values: e.target.value } : x) }))} placeholder='8"x8", 11"x8.5"' style={{ ...ctl, width: "100%" }} />
-                      <button onClick={() => setNw((s) => ({ ...s, variations: s.variations.filter((_, j) => j !== i) }))} style={{ ...ghost, padding: "8px 0", justifyContent: "center", color: "var(--danger, #D92D20)" }}>×</button>
-                    </div>
-                  ))}
-                </div>
-                {nw.variations.length < 6 && (
-                  <button onClick={() => setNw((s) => ({ ...s, variations: [...s.variations, { name: "", values: "" }] }))} style={{ ...ghost, marginTop: 8, fontSize: 12.5 }}>+ Add variation</button>
-                )}
-              </div>
-
-              {/* v142 · Custom options — seller tự đặt ô khách phải điền, y như màn Etsy thật.
-                  Push Shopify sẽ ghi bộ này vào metafield fusion.options để snippet Liquid render. */}
-              <div>
-                <label style={lab}>Custom options ({nw.personalization.length}/5)</label>
-                <CustomOptions fields={nw.personalization} onChange={(f) => setNwField("personalization", f)} accent={ETSY_ORANGE} onEditingChange={setNewPersEditing} />
-              </div>
-
-              <div>
-                <label style={lab}>Images</label>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+              {/* 1 · PHOTOS — tile lớn, kéo thả đổi thứ tự, ô đầu là Thumbnail */}
+              <div style={sec}>
+                <div style={secTitle}>Photos <span style={secSub}>({nw.images.length}/20) · drag to reorder · the first photo is the thumbnail</span></div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {nw.images.map((u, i) => (
-                    <div key={i} style={{ position: "relative", width: 76, height: 76, borderRadius: 10, overflow: "hidden", border: "1px solid var(--line)" }}>
-                      <ThumbZoom src={u} size={76} />
-                      <button onClick={() => setNw((s) => ({ ...s, images: s.images.filter((_, j) => j !== i) }))}
-                        style={{ position: "absolute", top: 2, right: 2, border: "none", background: "rgba(16,24,40,.72)", color: "#fff", borderRadius: 6, width: 20, height: 20, cursor: "pointer", fontSize: 12, lineHeight: 1 }}>×</button>
+                    <div key={i} draggable
+                      onDragStart={() => setNewDragImg(i)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => { if (newDragImg !== null && newDragImg !== i) nMoveImg(newDragImg, i); setNewDragImg(null); }}
+                      onDragEnd={() => setNewDragImg(null)}
+                      style={{ position: "relative", width: 94, height: 94, borderRadius: 10, overflow: "hidden", background: "#fff", cursor: "grab", opacity: newDragImg === i ? .45 : 1, border: newDragImg === i ? `2px dashed ${ETSY_ORANGE}` : "1px solid var(--line)" }}>
+                      <ThumbZoom src={u} size={94} />
+                      {i === 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, fontSize: 9.5, fontWeight: 800, background: "rgba(0,0,0,.62)", color: "#fff", padding: "2px 0", textAlign: "center", letterSpacing: .2 }}>Thumbnail</span>}
+                      <button title="Remove photo" onClick={() => setNw((s) => ({ ...s, images: s.images.filter((_, k) => k !== i) }))}
+                        style={{ position: "absolute", top: 3, right: 3, border: "none", background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 6, width: 20, height: 20, fontSize: 12, lineHeight: "20px", padding: 0, cursor: "pointer" }}>×</button>
                     </div>
                   ))}
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button style={{ ...ghost, fontSize: 12.5 }} disabled={busy} onClick={() => newFileRef.current?.click()}>Upload image</button>
-                  <button style={{ ...ghost, fontSize: 12.5 }} disabled={busy} onClick={newAddImgUrl}>Add by URL</button>
+                  <button disabled={busy} onClick={() => newFileRef.current?.click()}
+                    style={{ width: 94, height: 94, borderRadius: 10, border: `1.5px dashed ${ETSY_ORANGE}88`, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, color: ETSY_ORANGE, fontSize: 11, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .5 : 1 }}>
+                    <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photo"}
+                  </button>
                   <input ref={newFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { newUploadImg(e.target.files?.[0]); e.target.value = ""; }} />
                 </div>
+                <button onClick={newAddImgUrl} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
+              </div>
+
+              {/* 2 · LISTING DETAILS — form này TẠO dữ liệu nên 3 ô đều sửa được (khác form Edit: bên đó là bản gốc Etsy) */}
+              <div style={sec}>
+                <div style={secTitle}>Listing details</div>
+                <label style={lab}>Title * <span style={secSub}>· {nw.title.length}/200</span></label>
+                <textarea value={nw.title} onChange={(e) => setNwField("title", e.target.value)} rows={2}
+                  placeholder="Personalized Bedtime Story Book, Custom Name Children's Book, Dragon Unicorn Fairy Adventure, Baby Shower Birthday Gift"
+                  style={{ ...ctl, width: "100%", boxSizing: "border-box", resize: "vertical", lineHeight: 1.45, marginBottom: 14 }} />
+                <label style={lab}>Description</label>
+                <textarea value={nw.description} onChange={(e) => setNwField("description", e.target.value)} rows={5}
+                  style={{ ...ctl, width: "100%", boxSizing: "border-box", resize: "vertical", lineHeight: 1.5, marginBottom: 14 }} />
+                <label style={lab}>Tags <span style={secSub}>· comma separated</span></label>
+                <input value={nw.tags} onChange={(e) => setNwField("tags", e.target.value)} placeholder="personalized book, custom name book, baby shower gift"
+                  style={{ ...ctl, width: "100%", boxSizing: "border-box" }} />
+              </div>
+
+              {/* 3 · INVENTORY AND PRICING */}
+              <div style={sec}>
+                <div style={secTitle}>Inventory and pricing</div>
+                <div style={{ display: "grid", gridTemplateColumns: "170px 130px 1fr", gap: 12 }}>
+                  <div>
+                    <label style={lab}>Price (USD)</label>
+                    <input value={nw.price} inputMode="decimal" placeholder="16.65"
+                      onChange={(e) => setNwField("price", e.target.value.replace(/[^0-9.]/g, ""))}
+                      style={{ ...ctl, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  <div>
+                    <label style={lab}>Quantity</label>
+                    <input value={nw.quantity} inputMode="numeric"
+                      onChange={(e) => setNwField("quantity", e.target.value.replace(/[^0-9]/g, ""))}
+                      style={{ ...ctl, width: "100%", boxSizing: "border-box" }} />
+                  </div>
+                  <div>
+                    <label style={lab}>SKU</label>
+                    <input value={nw.sku} onChange={(e) => setNwField("sku", e.target.value)}
+                      style={{ ...ctl, width: "100%", boxSizing: "border-box", fontFamily: "ui-monospace,monospace", fontSize: 12.5 }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* 4 · VARIATIONS — giống hệt form Edit: mỗi giá trị một dòng + cột Price khi tick "Prices vary" */}
+              <div style={sec}>
+                <div style={secTitle}>Variations <span style={secSub}>· {nvVars.length} variation{nvVars.length === 1 ? "" : "s"} → {nvCombos} variant{nvCombos === 1 ? "" : "s"} on Shopify</span></div>
+                {nw.variations.length === 0 && (
+                  <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>No variations — this listing pushes as a single variant.</div>
+                )}
+                {nw.variations.map((v, i) => {
+                  const cols = newVary[i] ? "1fr 120px 26px" : "1fr 26px";
+                  return (
+                    <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, marginBottom: 12, overflow: "hidden" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "#FAFBFD", borderBottom: "1px solid var(--line)" }}>
+                        <input value={v.name} placeholder="Size" list="etsy-props-new" onChange={(e) => nSetVarName(i, e.target.value)}
+                          style={{ ...ctl, padding: "7px 11px", fontSize: 13, fontWeight: 700, width: 190 }} />
+                        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--muted)", cursor: "pointer", userSelect: "none" }}>
+                          <input type="checkbox" checked={!!newVary[i]} onChange={(e) => nToggleVary(i, e.target.checked)} style={{ cursor: "pointer" }} />
+                          Prices vary for each {v.name.trim() || "option"}
+                        </label>
+                        <div style={{ flex: 1 }} />
+                        <button title="Remove variation" onClick={() => nRemoveVar(i)} style={{ ...linkBtn("var(--red)"), fontSize: 17 }}>×</button>
+                      </div>
+                      <div style={{ padding: "10px 12px" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8, fontSize: 11, fontWeight: 700, color: "var(--muted)", marginBottom: 6, letterSpacing: .3 }}>
+                          <div>OPTION</div>{newVary[i] && <div>PRICE (USD)</div>}<div />
+                        </div>
+                        {v.values.map((val, j) => (
+                          <div key={j} style={{ display: "grid", gridTemplateColumns: cols, gap: 8, marginBottom: 6, alignItems: "center" }}>
+                            <input value={val} placeholder={'8" x 8"'} onChange={(e) => nSetVal(i, j, e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); nAddVal(i, j + 1); } }}
+                              style={{ ...ctl, padding: "7px 11px", fontSize: 12.5, width: "100%", boxSizing: "border-box" }} />
+                            {newVary[i] && (
+                              <input value={nw.variantPrices[val] ?? ""} inputMode="decimal" placeholder={nw.price || "0.00"}
+                                onChange={(e) => nSetVP(val, e.target.value.replace(/[^0-9.]/g, ""))}
+                                style={{ ...ctl, padding: "7px 11px", fontSize: 12.5, width: "100%", boxSizing: "border-box" }} />
+                            )}
+                            <button title="Remove option" onClick={() => nRemoveVal(i, j)} style={{ ...linkBtn("var(--red)"), fontSize: 17 }}>×</button>
+                          </div>
+                        ))}
+                        <button onClick={() => nAddVal(i, v.values.length)} style={{ ...linkBtn(ETSY_ORANGE), fontSize: 12.5, marginTop: 2 }}>+ Add another option</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {nw.variations.length < 6 && (
+                  <button onClick={nAddVar} style={{ ...ghost, fontSize: 12.5, padding: "8px 14px" }}>+ Add variation</button>
+                )}
+                {nvWarn && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: "#B54708", background: "#FFFAEB", border: "1px solid #FEDF89", borderRadius: 10, padding: "8px 11px" }}>{nvWarn}</div>
+                )}
+                <datalist id="etsy-props-new">
+                  <option value="Size" /><option value="Color" /><option value="Material" /><option value="Paper" /><option value="Style" /><option value="Finish" />
+                </datalist>
+              </div>
+
+              {/* 5 · PERSONALIZATION — v142 · ô khách phải điền trước khi Add to cart */}
+              <div style={{ ...sec, border: `1px solid ${ETSY_ORANGE}44`, background: "#FFF9F5", marginBottom: 0 }}>
+                <div style={{ ...secTitle, color: ETSY_ORANGE }}>Personalization <span style={secSub}>· {nw.personalization.length}/5 fields</span></div>
+                <CustomOptions fields={nw.personalization} onChange={(f) => setNwField("personalization", f)} accent={ETSY_ORANGE} onEditingChange={setNewPersEditing} />
               </div>
             </div>
 
@@ -659,7 +806,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       {/* EDIT MODAL (centered, full detail) */}
       {editId && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setEditId(null)}>
-          <div style={{ background: "#fff", width: 860, maxWidth: "96vw", maxHeight: "92vh", borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: "#fff", width: 940, maxWidth: "96vw", maxHeight: "92vh", borderRadius: 18, overflow: "hidden", display: "flex", flexDirection: "column", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
             {/* header */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: "1px solid var(--line)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -673,84 +820,125 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             {editLoading || !edit ? (
               <div style={{ padding: 50, textAlign: "center", color: "var(--muted)" }}>Loading…</div>
             ) : (
-              <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 0, overflow: "hidden", flex: 1 }}>
-                {/* LEFT — images (deletable) + variations (editable) + read-only info */}
-                <div style={{ borderRight: "1px solid var(--line)", padding: 18, overflowY: "auto", background: "#FAFBFD" }}>
-                  <div style={{ ...lab, marginBottom: 6 }}>Images <span style={{ fontWeight: 500 }}>({edit.images.length}) · hover to remove</span></div>
-                  {edit.images.length === 0
-                    ? <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>No images.</div>
-                    : (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 6, marginBottom: 14 }}>
-                        {edit.images.map((u, i) => (
-                          <div key={i} style={{ position: "relative", aspectRatio: "1", borderRadius: 8, overflow: "hidden" }}>
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                            {i === 0 && <span style={{ position: "absolute", left: 3, bottom: 3, fontSize: 9, fontWeight: 800, background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 5, padding: "1px 5px" }}>MAIN</span>}
-                            <button title="Remove image" onClick={() => setEdit({ ...edit, images: edit.images.filter((_, k) => k !== i) })}
-                              style={{ position: "absolute", top: 3, right: 3, border: "none", background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 6, width: 20, height: 20, fontSize: 12, lineHeight: "20px", padding: 0, cursor: "pointer" }}>×</button>
-                          </div>
-                        ))}
+              <div style={{ padding: "16px 18px 20px", overflowY: "auto", flex: 1, background: "#F5F6F8" }}>
+
+                {/* 1 · PHOTOS — tile lớn xếp ngang, kéo thả đổi thứ tự, ô đầu là Thumbnail (đúng chữ Etsy dùng) */}
+                <div style={sec}>
+                  <div style={secTitle}>Photos <span style={secSub}>({edit.images.length}/20) · drag to reorder · the first photo is the thumbnail</span></div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                    {edit.images.map((u, i) => (
+                      <div key={i} draggable
+                        onDragStart={() => setDragImg(i)}
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={() => { if (dragImg !== null && dragImg !== i) moveImg(dragImg, i); setDragImg(null); }}
+                        onDragEnd={() => setDragImg(null)}
+                        style={{ position: "relative", width: 94, height: 94, borderRadius: 10, overflow: "hidden", background: "#fff", cursor: "grab", opacity: dragImg === i ? .45 : 1, border: dragImg === i ? `2px dashed ${ETSY_ORANGE}` : "1px solid var(--line)" }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={u} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        {i === 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, fontSize: 9.5, fontWeight: 800, background: "rgba(0,0,0,.62)", color: "#fff", padding: "2px 0", textAlign: "center", letterSpacing: .2 }}>Thumbnail</span>}
+                        <button title="Remove photo" onClick={() => setEdit({ ...edit, images: edit.images.filter((_, k) => k !== i) })}
+                          style={{ position: "absolute", top: 3, right: 3, border: "none", background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 6, width: 20, height: 20, fontSize: 12, lineHeight: "20px", padding: 0, cursor: "pointer" }}>×</button>
                       </div>
-                    )}
-                  <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-                    <label style={{ ...linkBtn("var(--blue)"), fontSize: 12, cursor: busy ? "default" : "pointer", opacity: busy ? .5 : 1 }}>
-                      {busy ? "Uploading…" : "↑ Upload image"}
+                    ))}
+                    <label style={{ width: 94, height: 94, borderRadius: 10, border: `1.5px dashed ${ETSY_ORANGE}88`, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, color: ETSY_ORANGE, fontSize: 11, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .5 : 1 }}>
+                      <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photo"}
                       <input type="file" accept="image/*" disabled={busy} onChange={(e) => { uploadImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
                     </label>
-                    <button onClick={addImgUrl} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12 }}>+ Add by URL</button>
                   </div>
-
-                  <div style={{ fontSize: 12, lineHeight: 1.9, marginBottom: 12 }}>
-                    <div><span style={{ color: "var(--muted)" }}>Store: </span><b>{edit.storeName ?? "—"}</b></div>
-                    {edit.sellerName && <div><span style={{ color: "var(--muted)" }}>Seller: </span><b>{edit.sellerName}</b></div>}
-                    {edit.sku && <div><span style={{ color: "var(--muted)" }}>SKU: </span><b style={{ fontFamily: "ui-monospace,monospace" }}>{edit.sku}</b></div>}
-                    <div><span style={{ color: "var(--muted)" }}>Qty: </span><b>{edit.quantity ?? "—"}</b></div>
-                  </div>
-
-                  {/* Variations — editable: name + comma-separated values, remove/add */}
-                  <div style={{ ...lab, marginBottom: 6 }}>Variations</div>
-                  {edit.variations.map((v, i) => (
-                    <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 8, marginBottom: 8, background: "#fff" }}>
-                      <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                        <input value={v.name ?? ""} placeholder="Name (e.g. Size)" onChange={(e) => { const n = [...edit.variations]; n[i] = { ...n[i], name: e.target.value }; setEdit({ ...edit, variations: n }); }}
-                          style={{ ...ctl, padding: "6px 9px", fontSize: 12, flex: 1 }} />
-                        <button title="Remove variation" onClick={() => setEdit({ ...edit, variations: edit.variations.filter((_, k) => k !== i) })}
-                          style={{ ...linkBtn("var(--red)"), fontSize: 16 }}>×</button>
-                      </div>
-                      <input value={(v.values ?? []).join(", ")} placeholder="Values, comma-separated"
-                        onChange={(e) => { const n = [...edit.variations]; n[i] = { ...n[i], values: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) }; setEdit({ ...edit, variations: n }); }}
-                        style={{ ...ctl, padding: "6px 9px", fontSize: 12, width: "100%" }} />
-                    </div>
-                  ))}
-                  <button onClick={() => setEdit({ ...edit, variations: [...edit.variations, { name: "", values: [] }] })}
-                    style={{ ...linkBtn("var(--blue)"), fontSize: 12 }}>+ Add variation</button>
+                  <button onClick={addImgUrl} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
                 </div>
 
-                {/* RIGHT — v144: thông tin Etsy gốc (read-only) + giá + Custom options.
-                    3 ô ghi đè Shopify đã bỏ; nội dung Shopify sửa bên Manage Products · Shopify. */}
-                <div style={{ padding: 20, overflowY: "auto" }}>
-                  <label style={lab}>Title <span style={{ fontWeight: 500, color: "var(--muted)" }}>(Etsy · read-only)</span></label>
-                  <div style={{ ...ctl, width: "100%", background: "#FAFBFD", color: "var(--ink)", lineHeight: 1.45, marginBottom: 16, boxSizing: "border-box" }}>{edit.title}</div>
+                {/* 2 · LISTING DETAILS — bản gốc Etsy, read-only (nội dung Shopify sửa bên Manage Products · Shopify) */}
+                <div style={sec}>
+                  <div style={secTitle}>Listing details <span style={secSub}>· from Etsy · read-only</span></div>
+                  <label style={lab}>Title</label>
+                  <div style={ro}>{edit.title}</div>
+                  <label style={lab}>Description</label>
+                  <div style={{ ...ro, maxHeight: 170, overflowY: "auto", whiteSpace: "pre-wrap", color: edit.description ? "var(--ink)" : "var(--muted)" }}>{edit.description || "—"}</div>
+                  <label style={lab}>Tags</label>
+                  <div style={{ ...ro, marginBottom: 0, color: edit.tags ? "var(--ink)" : "var(--muted)" }}>{(edit.tags ?? "").replace(/_/g, " ") || "—"}</div>
+                </div>
 
-                  <label style={lab}>Price (USD)</label>
-                  <input value={edit.price ?? ""} inputMode="decimal" onChange={(e) => setEdit({ ...edit, price: e.target.value.replace(/[^0-9.]/g, "") })}
-                    placeholder="0.00" style={{ ...ctl, width: 160, marginBottom: 16 }} />
-
-                  <label style={lab}>Tags <span style={{ fontWeight: 500, color: "var(--muted)" }}>(Etsy · read-only)</span></label>
-                  <div style={{ ...ctl, width: "100%", background: "#FAFBFD", color: edit.tags ? "var(--ink)" : "var(--muted)", lineHeight: 1.5, marginBottom: 16, boxSizing: "border-box" }}>{(edit.tags ?? "").replace(/_/g, " ") || "—"}</div>
-
-                  <label style={lab}>Description <span style={{ fontWeight: 500, color: "var(--muted)" }}>(Etsy · read-only)</span></label>
-                  <div style={{ ...ctl, width: "100%", background: "#FAFBFD", color: edit.description ? "var(--ink)" : "var(--muted)", lineHeight: 1.5, maxHeight: 200, overflowY: "auto", whiteSpace: "pre-wrap", boxSizing: "border-box" }}>{edit.description || "—"}</div>
-
-                  {/* v142 · Custom options — seller tự đặt ô khách phải điền trước khi Add to cart.
-                      Lưu cùng nút Save; Push to Shopify ghi tiếp vào metafield fusion.options. */}
-                  <div style={{ border: `1px solid ${ETSY_ORANGE}44`, borderRadius: 12, padding: "12px 14px", marginTop: 18, background: "#FFF9F5" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 800, color: ETSY_ORANGE }}>Custom options ({edit.personalization.length}/5)</div>
+                {/* 3 · INVENTORY AND PRICING — gom Price/Quantity/SKU về một chỗ như Etsy */}
+                <div style={sec}>
+                  <div style={secTitle}>Inventory and pricing</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "170px 130px 1fr", gap: 12 }}>
+                    <div>
+                      <label style={lab}>Price (USD)</label>
+                      <input value={edit.price ?? ""} inputMode="decimal" placeholder="0.00"
+                        onChange={(e) => setEdit({ ...edit, price: e.target.value.replace(/[^0-9.]/g, "") })}
+                        style={{ ...ctl, width: "100%", boxSizing: "border-box" }} />
                     </div>
-                    <CustomOptions fields={edit.personalization} onChange={(f) => setEdit({ ...edit, personalization: f })} accent={ETSY_ORANGE} onEditingChange={setPersEditing} />
-                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Saved with this listing. Push to Shopify writes them onto the product so buyers see the fields on the storefront.</div>
+                    <div>
+                      <label style={lab}>Quantity <span style={secSub}>· Etsy</span></label>
+                      <div style={{ ...ro, marginBottom: 0 }}>{edit.quantity ?? "—"}</div>
+                    </div>
+                    <div>
+                      <label style={lab}>SKU <span style={secSub}>· Etsy</span></label>
+                      <div style={{ ...ro, marginBottom: 0, fontFamily: "ui-monospace,monospace", fontSize: 12.5 }}>{edit.sku || "—"}</div>
+                    </div>
                   </div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 10 }}>
+                    Store <b style={{ color: "var(--ink)" }}>{edit.storeName ?? "—"}</b>{edit.sellerName ? <> · Seller <b style={{ color: "var(--ink)" }}>{edit.sellerName}</b></> : null}
+                  </div>
+                </div>
+
+                {/* 4 · VARIATIONS — mỗi giá trị một dòng riêng + cột Price khi tick "Prices vary", đúng kiểu Etsy */}
+                <div style={sec}>
+                  <div style={secTitle}>Variations <span style={secSub}>· {evVars.length} variation{evVars.length === 1 ? "" : "s"} → {evCombos} variant{evCombos === 1 ? "" : "s"} on Shopify</span></div>
+                  {edit.variations.length === 0 && (
+                    <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 10 }}>No variations — this listing pushes as a single variant.</div>
+                  )}
+                  {edit.variations.map((v, i) => {
+                    const vals = v.values ?? [];
+                    const cols = vary[i] ? "1fr 120px 26px" : "1fr 26px";
+                    return (
+                      <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, marginBottom: 12, overflow: "hidden" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", background: "#FAFBFD", borderBottom: "1px solid var(--line)" }}>
+                          <input value={v.name ?? ""} placeholder="Size" list="etsy-props" onChange={(e) => setVarName(i, e.target.value)}
+                            style={{ ...ctl, padding: "7px 11px", fontSize: 13, fontWeight: 700, width: 190 }} />
+                          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "var(--muted)", cursor: "pointer", userSelect: "none" }}>
+                            <input type="checkbox" checked={!!vary[i]} onChange={(e) => toggleVary(i, e.target.checked)} style={{ cursor: "pointer" }} />
+                            Prices vary for each {String(v.name ?? "").trim() || "option"}
+                          </label>
+                          <div style={{ flex: 1 }} />
+                          <button title="Remove variation" onClick={() => removeVar(i)} style={{ ...linkBtn("var(--red)"), fontSize: 17 }}>×</button>
+                        </div>
+                        <div style={{ padding: "10px 12px" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: cols, gap: 8, fontSize: 11, fontWeight: 700, color: "var(--muted)", marginBottom: 6, letterSpacing: .3 }}>
+                            <div>OPTION</div>{vary[i] && <div>PRICE (USD)</div>}<div />
+                          </div>
+                          {vals.map((val, j) => (
+                            <div key={j} style={{ display: "grid", gridTemplateColumns: cols, gap: 8, marginBottom: 6, alignItems: "center" }}>
+                              <input value={val} placeholder={'8" x 8"'} onChange={(e) => setVal(i, j, e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addVal(i, j + 1); } }}
+                                style={{ ...ctl, padding: "7px 11px", fontSize: 12.5, width: "100%", boxSizing: "border-box" }} />
+                              {vary[i] && (
+                                <input value={edit.variantPrices[val] ?? ""} inputMode="decimal" placeholder={edit.price ?? "0.00"}
+                                  onChange={(e) => setVP(val, e.target.value.replace(/[^0-9.]/g, ""))}
+                                  style={{ ...ctl, padding: "7px 11px", fontSize: 12.5, width: "100%", boxSizing: "border-box" }} />
+                              )}
+                              <button title="Remove option" onClick={() => removeVal(i, j)} style={{ ...linkBtn("var(--red)"), fontSize: 17 }}>×</button>
+                            </div>
+                          ))}
+                          <button onClick={() => addVal(i, vals.length)} style={{ ...linkBtn(ETSY_ORANGE), fontSize: 12.5, marginTop: 2 }}>+ Add another option</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <button onClick={addVar} style={{ ...ghost, fontSize: 12.5, padding: "8px 14px" }}>+ Add variation</button>
+                  {evWarn && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: "#B54708", background: "#FFFAEB", border: "1px solid #FEDF89", borderRadius: 10, padding: "8px 11px" }}>{evWarn}</div>
+                  )}
+                  <datalist id="etsy-props">
+                    <option value="Size" /><option value="Color" /><option value="Material" /><option value="Paper" /><option value="Style" /><option value="Finish" />
+                  </datalist>
+                </div>
+
+                {/* 5 · PERSONALIZATION — v142 · ô khách phải điền trước khi Add to cart */}
+                <div style={{ ...sec, border: `1px solid ${ETSY_ORANGE}44`, background: "#FFF9F5", marginBottom: 0 }}>
+                  <div style={{ ...secTitle, color: ETSY_ORANGE }}>Personalization <span style={secSub}>· {edit.personalization.length}/5 fields</span></div>
+                  <CustomOptions fields={edit.personalization} onChange={(f) => setEdit({ ...edit, personalization: f })} accent={ETSY_ORANGE} onEditingChange={setPersEditing} />
                 </div>
               </div>
             )}
