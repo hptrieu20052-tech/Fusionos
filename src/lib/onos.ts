@@ -249,13 +249,53 @@ function deepStr(obj: unknown, re: RegExp, depth = 0): string | undefined {
   return undefined;
 }
 
+// BUG CÒN SÓT (thấy trên ff-debug HV-29913-04812 và ZW-09189-02108): ONOS trả tracking dạng KHỐI,
+// và tên field số hiệu là "tracking" TRẦN:
+//   data.tracking = { "tracking": "9200190384072909663158", "carrier": "usps", "url": "https://tools.usps.com/..." }
+// TRACK_RE bắt buộc có hậu tố (number|code|no) → KHÔNG khớp "tracking" trần, nên chỉ bóc được carrier;
+// số tracking rơi mất im lặng, đơn đứng mãi ở in_production dù ONOS đã ship. URL cũng mất vì key là "url".
+const firstStr = (o: Record<string, unknown>, keys: string[]): string | undefined => {
+  for (const k of keys) {
+    const v = o[k];
+    if (typeof v !== "string" && typeof v !== "number") continue;
+    const s = String(v).trim();
+    if (s && s.toLowerCase() !== "null") return s;
+  }
+  return undefined;
+};
+
+/** Tìm KHỐI tracking (object có field số hiệu) rồi lấy cả số + carrier + url từ ĐÚNG khối đó. */
+function trackBox(obj: unknown, depth = 0): { trackingNumber?: string; carrier?: string; trackingUrl?: string } | undefined {
+  if (!obj || typeof obj !== "object" || depth > 4) return undefined;
+  const entries: [string, unknown][] = Array.isArray(obj)
+    ? (obj as unknown[]).map((v, i) => [String(i), v] as [string, unknown])
+    : Object.entries(obj as Record<string, unknown>);
+  for (const [k, v] of entries) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+    if (!/^(tracking|shipment|shipping|track)$/i.test(k)) continue;
+    const o = v as Record<string, unknown>;
+    const num = firstStr(o, ["tracking", "tracking_number", "trackingNumber", "tracking_code", "trackingCode", "code", "number", "awb", "awb_code"]);
+    // Số tracking thật ≥6 ký tự, không khoảng trắng — chặn nhận nhầm chữ trạng thái.
+    if (num && num.length >= 6 && !/\s/.test(num)) {
+      return {
+        trackingNumber: num,
+        carrier: firstStr(o, ["carrier", "carrier_name", "carrier_code", "courier", "shipping_carrier"]),
+        trackingUrl: firstStr(o, ["url", "tracking_url", "trackingUrl", "link", "tracking_link"]),
+      };
+    }
+  }
+  for (const [, v] of entries) { const r = trackBox(v, depth + 1); if (r) return r; }
+  return undefined;
+}
+
 export function extractOnosTracking(raw: unknown): { trackingNumber?: string; carrier?: string; trackingUrl?: string } {
   const root = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const d = (root.data && typeof root.data === "object" ? root.data : root) as Record<string, unknown>;
+  const box = trackBox(d) ?? trackBox(root);
   return {
-    trackingNumber: deepStr(d, TRACK_RE) ?? deepStr(root, TRACK_RE),
-    carrier: deepStr(d, CARRIER_RE) ?? deepStr(root, CARRIER_RE),
-    trackingUrl: deepStr(d, TRACKURL_RE) ?? deepStr(root, TRACKURL_RE),
+    trackingNumber: box?.trackingNumber ?? deepStr(d, TRACK_RE) ?? deepStr(root, TRACK_RE),
+    carrier: box?.carrier ?? deepStr(d, CARRIER_RE) ?? deepStr(root, CARRIER_RE),
+    trackingUrl: box?.trackingUrl ?? deepStr(d, TRACKURL_RE) ?? deepStr(root, TRACKURL_RE),
   };
 }
 
