@@ -1,5 +1,5 @@
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray, isNotNull, like, notInArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, like, ne, notInArray } from "drizzle-orm";
 import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrderCost } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
@@ -196,9 +196,43 @@ function wemCost(o: Record<string, unknown>): { base?: number; ship?: number; ta
   return total > 0 ? { base: base || undefined, ship: ship || undefined, tax: tax || undefined, fees: Object.keys(fees).length ? fees : undefined, total } : undefined;
 }
 
+/**
+ * v170 — TỰ CHỮA: bản ghi ĐÃ CÓ tracking mà status vẫn pending/pushed/in_production/error.
+ * Có tracking = hàng đã rời nhà in; giữ ở "pushed" là sai trạng thái, và không có ai chữa hộ vì:
+ *   1. openFfosOf LOẠI status "error" → 9 dòng FlashShip có tracking nhưng kẹt "error" VĨNH VIỄN
+ *      không bao giờ được poll lại.
+ *   2. Nhánh Compassup chỉ hỏi lẻ những dòng CHƯA có tracking (`!f.trackingNumber` ở bước 1b) →
+ *      36 dòng đã có tracking mà status còn "pushed" không bao giờ được hỏi lại → status kẹt.
+ *   3. Nhập tay tracking qua /api/orders/[id]/tracking trước v168 không ghi ffo.status, và bản ghi
+ *      MANUAL-* thì poll bỏ qua hoàn toàn.
+ * Đây là phép sửa CỤC BỘ, KHÔNG gọi API nhà in — chỉ áp đúng luật "có tracking = shipped" mà mọi
+ * nhánh khác trong file này đã dùng. Bỏ qua đơn đã cancel/trash (huỷ rồi thì không nâng lên shipped).
+ */
+async function healTrackedFfos(): Promise<number> {
+  const rows = await db.select({
+    id: schema.fulfillmentOrders.id, orderId: schema.fulfillmentOrders.orderId,
+  }).from(schema.fulfillmentOrders)
+    .innerJoin(schema.orders, eq(schema.orders.id, schema.fulfillmentOrders.orderId))
+    .where(and(
+      isNotNull(schema.fulfillmentOrders.trackingNumber),
+      ne(schema.fulfillmentOrders.trackingNumber, ""),
+      inArray(schema.fulfillmentOrders.status, ["pending", "pushed", "in_production", "error"]),
+      notInArray(schema.orders.status, ["cancel", "trash"]),
+    ))
+    .limit(200);
+  if (!rows.length) return 0;
+  await db.update(schema.fulfillmentOrders).set({ status: "shipped" as never })
+    .where(inArray(schema.fulfillmentOrders.id, rows.map((r) => r.id)));
+  // Nâng status ĐƠN theo đúng luật cũ: markShippedOnTracking tự bỏ qua đơn tách nhiều nhà in
+  // mà còn bản ghi thiếu tracking → không kéo nhầm đơn mới ship một nửa.
+  for (const orderId of Array.from(new Set(rows.map((r) => r.orderId)))) await markShippedOnTracking(orderId);
+  return rows.length;
+}
+
 export async function syncOnosWem(opts: { force?: boolean } = {}) {
   const fulfillers = await db.select().from(schema.fulfillers);
   let updated = 0, checked = 0, skipped = 0;
+  updated += await healTrackedFfos();
   const errors: string[] = [];
   const BATCH = 5, BUDGET_MS = 22000;
   const started = Date.now();
