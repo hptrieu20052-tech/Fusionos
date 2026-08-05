@@ -101,16 +101,22 @@ async function tick(req: NextRequest) {
   //           BAO GIỜ được quét → shop nào TikTok trả field rỗng là chết im. Giờ quét cả NULL/lạ,
   //           chỉ loại thẳng 'TIKTOK'; hàm push tự hỏi lại TikTok rồi ghi đúng loại vào DB.
   // BUG CŨ 2: `catch {}` nuốt sạch lỗi, summary chỉ có tried/pushed → không đời nào biết vì sao trượt.
+  // BUG CŨ 3 (head-of-line): không có backoff → đơn hỏng vĩnh viễn được thử lại MỖI vòng, ăn hết
+  //           ngân sách 50s, đơn mới có tracking không bao giờ tới lượt. Giờ lọc theo
+  //           tiktok_push_next_at và ưu tiên đơn ít lần thử nhất + mới nhất (cần MIGRATION v163).
   let ttTrackSweep: { tried: number; pushed: number; failed?: number; reasons?: string[]; error?: string } = { tried: 0, pushed: 0 };
   if (Date.now() < deadline) {
     try {
       const rows = (await db.execute(sql`
-        SELECT DISTINCT o.id FROM orders o
+        SELECT o.id FROM orders o
         JOIN fulfillment_orders fo ON fo.order_id = o.id
         WHERE o.platform='tiktok' AND (o.shipping_type IS DISTINCT FROM 'TIKTOK')
           AND fo.tracking_number IS NOT NULL AND fo.tiktok_tracking_pushed_at IS NULL
+          AND (fo.tiktok_push_next_at IS NULL OR fo.tiktok_push_next_at < now())
           AND o.status NOT IN ('cancel','trash')
           AND o.ordered_at > now() - interval '60 days'
+        GROUP BY o.id, o.ordered_at
+        ORDER BY min(fo.tiktok_push_attempts) ASC, o.ordered_at DESC
         LIMIT 200
       `)).rows as { id: string }[];
       const reasons: string[] = [];

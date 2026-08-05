@@ -187,7 +187,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                 return (
                 <div>
                 <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-                  <input placeholder={isMerchize ? "Base URL (…/bo-api)" : (f.apiEndpoint ?? "API endpoint")} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setE(f.id, "apiEndpoint", e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
+                  <input name="ff-endpoint" autoComplete="off" inputMode="url" placeholder={isMerchize ? "Base URL (…/bo-api)" : (f.apiEndpoint ?? "API endpoint")} value={edit[f.id]?.apiEndpoint ?? ""} onChange={(e) => setE(f.id, "apiEndpoint", e.target.value)} style={{ ...inp, flex: 1, minWidth: 180 }} />
                   <EyeInput placeholder={isMerchize ? "API Key (x-api-key)" : (isLenful || isVinaway) ? "Password (login)" : t("s.apiTokenNew")} value={edit[f.id]?.apiKey ?? ""} onChange={(v) => setE(f.id, "apiKey", v)} width={200} />
                   {isLenful && <>
                     <input placeholder="user_name (email login Lenful)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 210 }} />

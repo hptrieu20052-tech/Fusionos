@@ -58,7 +58,15 @@ export async function PATCH(req: NextRequest) {
   const b = await req.json().catch(() => null);
   if (!b?.id) return NextResponse.json({ ok: false, error: "invalid" }, { status: 400 });
   const patch: Record<string, unknown> = {};
-  if (typeof b.apiEndpoint === "string") patch.apiEndpoint = b.apiEndpoint || null;
+  // CHẶN: Chrome autofill hay nhét EMAIL vào ô API endpoint. Lưu vào là mọi call của nhà in đó
+  // đổi base URL thành chuỗi rác → hỏng toàn bộ, mà nhìn màn hình không thấy gì bất thường.
+  if (typeof b.apiEndpoint === "string") {
+    const ep = b.apiEndpoint.trim();
+    if (ep && !/^https?:\/\/[^\s]+$/i.test(ep)) {
+      return NextResponse.json({ ok: false, error: `API endpoint must be a URL starting with https:// — got "${ep.slice(0, 60)}". Clear the field if the fulfiller uses the default endpoint.` }, { status: 400 });
+    }
+    patch.apiEndpoint = ep || null;
+  }
   if (typeof b.webhookSecret === "string" && b.webhookSecret) patch.webhookSecret = b.webhookSecret;
   // Credentials: gộp apiKey (token) + shopId (Printify) + identifier + warehouse/carrier (Merchize TikTok Shipping). Giữ giá trị cũ nếu chỉ đổi 1 phần.
   // apiKey/shopId/identifier: ô rỗng = KHÔNG đổi (tránh xoá nhầm token). warehouse/carrier: gửi ô (kể cả rỗng) = ĐẶT đúng giá trị đó, rỗng = XOÁ.

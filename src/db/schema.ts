@@ -422,6 +422,11 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   etsyTrackingPushedAt: timestamp("etsy_tracking_pushed_at", { withTimezone: true }),
   // Thời điểm đã đẩy tracking lên TikTok (Seller Shipping, ship package). null = chưa đẩy.
   tiktokTrackingPushedAt: timestamp("tiktok_tracking_pushed_at", { withTimezone: true }),
+  // Vì sao lần đẩy TikTok gần nhất trượt + số lần đã thử + mốc được thử lại (backoff).
+  // Không có 3 cột này thì đơn hỏng vĩnh viễn bị quét lại MỖI vòng cron, ăn hết 50s → đơn mới đói.
+  tiktokPushError: text("tiktok_push_error"),
+  tiktokPushAttempts: integer("tiktok_push_attempts").notNull().default(0),
+  tiktokPushNextAt: timestamp("tiktok_push_next_at", { withTimezone: true }),
   // Thời điểm đã tạo fulfillment + tracking NGƯỢC lên Shopify qua Admin API. null = chưa đẩy.
   shopifyTrackingPushedAt: timestamp("shopify_tracking_pushed_at", { withTimezone: true }),
   errorMessage: text("error_message"),
