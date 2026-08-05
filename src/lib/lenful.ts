@@ -225,9 +225,20 @@ export function extractLenfulOrder(root: Record<string, unknown>): {
   //   (first_item_price/second_item_price chỉ là BẢNG GIÁ tier, không cộng!)
   const items = Array.isArray(root.items) ? (root.items as Record<string, unknown>[]) : [];
   const shipFromItems = Math.round(items.reduce((s, it) => s + (Number(it?.shipping_price) || 0) + (Number(it?.shipping_xbase) || 0), 0) * 100) / 100;
+  // v167 — root.items KHÔNG TỒN TẠI ở đơn thật (Lenful gọi là `line_items`, mà line_items lại
+  // không mang tiền ship). Tiền ship nằm ở root.shipping_method.price (+ .xbase), và chi tiết
+  // theo từng dòng ở shipping_method.items[].shipping_price. Vì deepNum cố tình không đi vào
+  // mảng nên nó cũng không bao giờ chạm tới → ship về undefined và $8.50 bị dồn hết sang
+  // "Other fee". Tổng vẫn đúng, nhưng nhãn sai ở mọi đơn Lenful.
+  const shipMethod = (root.shipping_method ?? {}) as Record<string, unknown>;
+  const shipFromMethod = Math.round(((Number(shipMethod.price) || 0) + (Number(shipMethod.xbase) || 0)) * 100) / 100;
+  const smItems = Array.isArray(shipMethod.items) ? (shipMethod.items as Record<string, unknown>[]) : [];
+  const shipFromSmItems = Math.round(smItems.reduce((s, it) => s + (Number(it?.shipping_price) || 0) + (Number(it?.shipping_xbase) || 0), 0) * 100) / 100;
   const base = lNum(o.subtotal_price, o.subtotal, o.sub_total, o.summary_amount, o.items_total, o.total_item)
     ?? deepNum(root, /^(sub.?total([._-]?price)?|summary|item.?(total|price|amount)|product.?(total|price|amount))$/i);
   const ship = lNum(o.shipping_fee, o.shipping, o.ship_fee, o.shipping_price, o.shipping_cost)
+    ?? (shipFromMethod > 0 ? shipFromMethod : undefined)
+    ?? (shipFromSmItems > 0 ? shipFromSmItems : undefined)
     ?? (shipFromItems > 0 ? shipFromItems : undefined)
     ?? deepNum(root, /^(ship(ping)?[._-]?(fee|cost|price|amount|total)|fee[._-]?ship(ping)?|total[._-]?ship(ping)?)$/i);
   const tax = lNum(o.tax, o.tax_amount, o.tax_fee) ?? deepNum(root, /^(tax([._-]?(fee|amount|total))?)$/i);
@@ -255,11 +266,40 @@ export function extractLenfulOrder(root: Record<string, unknown>): {
   };
   const L_TRACK_RE = /^(tracking[._-]?(number|code|no)|trackingnumber|track[._-]?(number|code)|awb([._-]?(code|number))?)$/i;
   const L_CARRIER_RE = /^(carrier([._-]?(code|name))?|shipping[._-]?carrier|tracking[._-]?company|courier)$/i;
+
+  // v167 — CẤU TRÚC THẬT (xác nhận từ raw ff-debug đơn ZINASHOPFUN-4126448923):
+  //   root.fulfillments[].trackings[] = { company:"USPS", number:"92001903840…", status:"InTransit",
+  //                                       created_at, isHidden, translation:{name}, events[] }
+  // Key là "number"/"company" TRẦN → mọi regex cũ (tracking_number/awb/…) đều trượt, và root
+  // không hề có object `tracking`. Hệ quả: MỌI đơn Lenful đều về trackingNumber = undefined,
+  // nên không đơn nào được đẩy tracking sang Etsy/TikTok/Shopify. Đọc thẳng đúng đường dẫn,
+  // KHÔNG nới regex thành /^number$/ (sẽ dính đủ thứ field "number" khác trong cây JSON).
+  let fNum: string | undefined, fCarrier: string | undefined, fStatus: string | undefined, fAt = "";
+  for (const f of (Array.isArray(root.fulfillments) ? (root.fulfillments as Record<string, unknown>[]) : [])) {
+    for (const t of (Array.isArray(f?.trackings) ? (f.trackings as Record<string, unknown>[]) : [])) {
+      if (t?.isHidden === true) continue;
+      const num = String(t?.number ?? "").trim();
+      if (!num || num.toLowerCase() === "null") continue;
+      const at = String(t?.created_at ?? "");
+      if (fNum && at <= fAt) continue; // nhiều package → giữ tracking mới nhất
+      fNum = num; fAt = at;
+      fCarrier = lStr((t?.translation as Record<string, unknown>)?.name, t?.company);
+      fStatus = lStr(t?.status);
+    }
+  }
+  // Trạng thái đơn ở root vẫn là "Fulfillment" kể cả khi kiện đã Delivered → ưu tiên trạng thái
+  // của chính tracking khi nó đã giao xong, để mapGenericStatus không kẹt ở "shipped".
+  const statusOut = (fStatus && /deliver/i.test(fStatus) && !/out.?for.?deliver/i.test(fStatus))
+    ? "Delivered"
+    : lStr(o.status, o.order_status, o.state);
+
   return {
-    status: lStr(o.status, o.order_status, o.state),
-    trackingNumber: lStr(o.tracking_number, o.tracking_code, o.trackingNumber, track.tracking_number, track.code, track.number)
+    status: statusOut,
+    trackingNumber: fNum
+      ?? lStr(o.tracking_number, o.tracking_code, o.trackingNumber, track.tracking_number, track.code, track.number)
       ?? deepStr(root, L_TRACK_RE),
-    carrier: lStr(o.carrier, o.shipping_carrier, o.tracking_company, track.carrier, track.company)
+    carrier: fCarrier
+      ?? lStr(o.carrier, o.shipping_carrier, o.tracking_company, track.carrier, track.company)
       ?? deepStr(root, L_CARRIER_RE),
     base, ship, tax, total,
   };
