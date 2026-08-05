@@ -121,12 +121,15 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
       )}
       </>}
 
-      {/* Thứ tự: Team → Seller → Designer, cùng ăn theo range */}
+      {/* Thứ tự: Team → Seller → Designer → Content, cùng ăn theo range */}
       {ready && (
         <>
           {isAdmin && <div className="section"><TeamReport range={range} from={f} to={t} title="All Team Report" /></div>}
           {(canOrders || canDesigns) && <div className="section"><SellerReport range={range} from={f} to={t} title={isAdmin ? "All Seller Report" : "Team Seller Report"} /></div>}
           {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Designer Report" : "Team Designer Report"} /></div>}
+          {/* Content = ô "Creator" trên mỗi design (danh sách chọn đã lọc role='content').
+              Design ID nào gắn tên bạn Content đó, sale của design đó tính cho bạn đó. */}
+          {canDesigns && <div className="section"><DesignerReport by="content" range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Content Report" : "Team Content Report"} /></div>}
         </>
       )}
       {!ready && <div className="panel empty">{tr("rep.chooseDates")}</div>}

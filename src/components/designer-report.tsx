@@ -15,19 +15,22 @@ const PALETTE = [
 ];
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-type RangeProps = { range: string; from?: string; to?: string; hideMoney?: boolean; title?: string };
-export default function DesignerReport({ range, from, to, hideMoney, title }: RangeProps) {
+// by="designer" → gom theo người thiết kế. by="content" → gom theo ô Creator của design (role content).
+// Dùng chung một component: cùng API, chỉ khác tham số `by` và nhãn cột đầu.
+type RangeProps = { range: string; from?: string; to?: string; hideMoney?: boolean; title?: string; by?: "designer" | "content" };
+export default function DesignerReport({ range, from, to, hideMoney, title, by = "designer" }: RangeProps) {
   const { t: tr } = useLang();
   const [metric, setMetric] = useState<"d" | "s">("d"); // d = design tạo, s = đơn phát sinh
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const isContent = by === "content";
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/stats/designer-report?range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
+    fetch(`/api/stats/designer-report?by=${by}&range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
       .then((j) => { if (j.ok) setData(j); }).finally(() => setLoading(false));
-  }, [range, from, to]);
+  }, [by, range, from, to]);
 
   // Cột bar cuộn ngang trong panel → tự nhảy tới NGÀY MỚI NHẤT (mép phải) mỗi khi đổi dữ liệu/metric
   const barsRef = useRef<HTMLDivElement>(null);
@@ -46,7 +49,9 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
   return (
     <div className="card" style={{ padding: "20px 22px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-        <a href="/stats/designers" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Designer Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
+        {isContent
+          ? <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{title ?? "Content Report"}</span>
+          : <a href="/stats/designers" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Designer Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>}
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
           {([["d", "Design"], ["s", "Sale"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
@@ -100,7 +105,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title }: Ra
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "right" }}>
-                  <th style={{ textAlign: "left", padding: "3px 4px" }}>#  Designer</th>
+                  <th style={{ textAlign: "left", padding: "3px 4px" }}>#  {isContent ? "Content" : "Designer"}</th>
                   <th style={{ padding: "3px 4px" }}>Design</th>
                   <th style={{ padding: "3px 4px" }}>Sale</th>
                   {!hideMoney && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>Revenue</th>}
