@@ -68,7 +68,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     trackingSyncedAt: patch.trackingNumber ? new Date() : null,
   }).returning();
   if (patch.baseCost != null || patch.shipCost != null) await rebalanceOrderCost(params.id, "Manual cost entry — reconciled ledger");
-  if (patch.trackingNumber) { await autoPushEtsyTracking(params.id); await markShippedOnTracking(params.id); } // CÓ TRACKING mới nhảy Shipped (bug cũ: thiếu {} → sửa SĐT/cost cũng làm đơn Shipped)
+  // BUG (v165): nhánh TẠO MỚI này chỉ đẩy Etsy — THIẾU TikTok và Shopify, trong khi nhánh cập nhật
+  // ở trên có đủ 3. Support nhập tay tracking cho đơn CHƯA có bản ghi fulfill (đơn tự xử lý, đơn
+  // supplier không kết nối API) → đơn nhảy Shipped trong FusionOS nhưng KHÔNG bao giờ được đẩy ngay
+  // lên TikTok; phải chờ sweep cron vớt, và đơn quá 60 ngày thì sweep bỏ qua luôn → mất vĩnh viễn.
+  if (patch.trackingNumber) { await autoPushEtsyTracking(params.id); await autoPushTiktokTracking(params.id); await autoPushShopifyTracking(params.id); await markShippedOnTracking(params.id); }
   return NextResponse.json({ ok: true, id: row.id, created: true });
 }
 
