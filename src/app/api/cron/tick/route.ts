@@ -97,23 +97,39 @@ async function tick(req: NextRequest) {
   }
 
   // ---- 1d. TikTok Seller Shipping: tự đẩy tracking (supplier trả về) lên TikTok. Idempotent qua tiktok_tracking_pushed_at. ----
-  let ttTrackSweep: { tried: number; pushed: number; error?: string } = { tried: 0, pushed: 0 };
+  // BUG CŨ 1: lọc `shipping_type='SELLER'` nên đơn lưu NULL (do bug đọc shipping_type rỗng) KHÔNG
+  //           BAO GIỜ được quét → shop nào TikTok trả field rỗng là chết im. Giờ quét cả NULL/lạ,
+  //           chỉ loại thẳng 'TIKTOK'; hàm push tự hỏi lại TikTok rồi ghi đúng loại vào DB.
+  // BUG CŨ 2: `catch {}` nuốt sạch lỗi, summary chỉ có tried/pushed → không đời nào biết vì sao trượt.
+  let ttTrackSweep: { tried: number; pushed: number; failed?: number; reasons?: string[]; error?: string } = { tried: 0, pushed: 0 };
   if (Date.now() < deadline) {
     try {
       const rows = (await db.execute(sql`
         SELECT DISTINCT o.id FROM orders o
         JOIN fulfillment_orders fo ON fo.order_id = o.id
-        WHERE o.platform='tiktok' AND o.shipping_type='SELLER'
+        WHERE o.platform='tiktok' AND (o.shipping_type IS DISTINCT FROM 'TIKTOK')
           AND fo.tracking_number IS NOT NULL AND fo.tiktok_tracking_pushed_at IS NULL
           AND o.status NOT IN ('cancel','trash')
           AND o.ordered_at > now() - interval '60 days'
         LIMIT 200
       `)).rows as { id: string }[];
+      const reasons: string[] = [];
+      let failed = 0;
       for (const r of rows) {
         if (Date.now() > deadline) break;
         ttTrackSweep.tried++;
-        try { const res = await pushTiktokTrackingForOrder(r.id); ttTrackSweep.pushed += res.pushed; } catch { /* skip */ }
+        try {
+          const res = await pushTiktokTrackingForOrder(r.id);
+          ttTrackSweep.pushed += res.pushed;
+          if (!res.pushed) {
+            failed++;
+            const why = res.errors?.[0] ?? res.reason ?? "unknown";
+            if (why !== "no new tracking to push" && reasons.length < 8) reasons.push(`${r.id.slice(0, 8)}: ${why.slice(0, 140)}`);
+          }
+        } catch (e) { failed++; if (reasons.length < 8) reasons.push(`${r.id.slice(0, 8)}: ${String((e as Error)?.message ?? e).slice(0, 140)}`); }
       }
+      ttTrackSweep.failed = failed;
+      if (reasons.length) ttTrackSweep.reasons = reasons;
     } catch (e) { ttTrackSweep = { tried: 0, pushed: 0, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 

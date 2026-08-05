@@ -485,6 +485,37 @@ export async function ttSearchOrders(cfg: TtCfg, p?: { createdAfter?: number; pa
 const s = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
 const cents = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 
+/**
+ * Xác định đơn TikTok là "TIKTOK" (Ship by TikTok) hay "SELLER" (Ship by Seller).
+ *
+ * BUG CŨ — nguyên nhân "shop này đẩy tracking được, shop kia không":
+ *   String(o.shipping_type ?? o.fulfillment_type ?? o.delivery_option_type ?? "")
+ *   `??` CHỈ nhảy tiếp khi null/undefined. TikTok trả shipping_type = "" (chuỗi rỗng) thì
+ *   biểu thức DỪNG ngay ở đó → raw = "" → shippingType = undefined → cột shipping_type NULL.
+ *   Mà sweep đẩy tracking lọc `WHERE shipping_type='SELLER'` → đơn đó KHÔNG BAO GIỜ được quét,
+ *   và pushTiktokTrackingForOrder cũng chặn ở guard shippingType !== "SELLER". Im lặng hoàn toàn.
+ *   Shop nào version API trả đủ shipping_type thì chạy; shop trả rỗng thì chết — đúng kiểu "chỉ một số".
+ * Giờ: lấy giá trị KHÔNG RỖNG đầu tiên trong mọi field ứng viên, kể cả trong packages[].
+ */
+export function ttShippingType(o: Record<string, unknown>): string | undefined {
+  const pick = (v: unknown) => { const t = String(v ?? "").trim(); return t ? t.toUpperCase() : ""; };
+  const pkgs = Array.isArray(o.packages) ? (o.packages as Record<string, unknown>[]) : [];
+  const cands = [
+    o.shipping_type, o.fulfillment_type, o.delivery_option_type, o.shipping_provider_type,
+    (o.delivery_option as Record<string, unknown> | undefined)?.type,
+    ...pkgs.map((p) => p?.shipping_type),
+  ];
+  for (const c of cands) {
+    const raw = pick(c);
+    if (!raw) continue;
+    if (/FULFILLED_BY_TIKTOK|FULFILLMENT_BY_TIKTOK|SHIP_BY_TIKTOK|TIKTOK|PLATFORM|FBT/.test(raw)) return "TIKTOK";
+    if (/SELLER|SELF|MERCHANT/.test(raw)) return "SELLER";
+  }
+  // Còn lại: trả chuỗi thô đầu tiên để nhìn thấy được khi soi, thay vì nuốt mất.
+  for (const c of cands) { const raw = pick(c); if (raw) return raw; }
+  return undefined;
+}
+
 export function ttNormalizeOrder(o: Record<string, unknown>) {
   const addr = (o.recipient_address ?? {}) as Record<string, unknown>;
   const pay = (o.payment ?? {}) as Record<string, unknown>;
@@ -524,12 +555,7 @@ export function ttNormalizeOrder(o: Record<string, unknown>) {
     platformStatus: s(o.status) ?? undefined,
     // Fulfillment type: "TIKTOK" = Ship by TikTok (get label) · "SELLER" = Ship by Seller.
     // TikTok đặt tên field khác nhau theo version API → dò cả 3.
-    shippingType: ((): string | undefined => {
-      const raw = String(o.shipping_type ?? o.fulfillment_type ?? o.delivery_option_type ?? "").toUpperCase();
-      if (/TIKTOK|TT|PLATFORM|FBT|FULFILLED_BY_TIKTOK/.test(raw)) return "TIKTOK";
-      if (/SELLER|SELF|MERCHANT/.test(raw)) return "SELLER";
-      return raw || undefined;
-    })(),
+    shippingType: ttShippingType(o),
     items: merged,
   };
 }

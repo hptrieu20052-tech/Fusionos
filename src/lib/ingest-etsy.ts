@@ -102,6 +102,13 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         fillIf("state", dup.state, s(o.state));
         fillIf("zip", dup.zip, s(o.zip));
         fillIf("buyerNote", dup.buyerNote, s(o.note)); // note KHÁCH vào cột riêng buyer_note
+        // shipping_type: đơn cũ lưu NULL/chuỗi lạ (bug đọc field rỗng của TikTok) → sweep đẩy tracking
+        // không bao giờ chạm tới. Chỉ VÁ khi bản mới rõ ràng SELLER/TIKTOK và bản cũ chưa chuẩn.
+        {
+          const nt = s(o.shippingType);
+          const cur = String(dup.shippingType ?? "").trim();
+          if (nt && (nt === "SELLER" || nt === "TIKTOK") && cur !== "SELLER" && cur !== "TIKTOK") patch.shippingType = nt;
+        }
         if (s(o.country) && (!dup.country || dup.country === "United States")) {
           if (s(o.country) !== dup.country) patch.country = s(o.country);
         }

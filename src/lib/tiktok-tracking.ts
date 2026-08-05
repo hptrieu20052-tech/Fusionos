@@ -2,7 +2,7 @@
 const platformExtId = (ext: string) => ext.replace(/-CLONE-\d+$/, "");
 import { db, schema } from "@/lib/db";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
-import { ttGetValidCfg, ttGetOrderDetail, ttShipPackage } from "@/lib/tiktok-shop";
+import { ttGetValidCfg, ttGetOrderDetail, ttShipPackage, ttShippingType } from "@/lib/tiktok-shop";
 
 export type TtPushResult = { ok: boolean; pushed: number; errors: string[]; reason?: string };
 
@@ -18,8 +18,29 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
   }).from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
   if (!order) return { ok: false, pushed: 0, errors: [], reason: "order not found" };
   if (order.platform !== "tiktok") return { ok: false, pushed: 0, errors: [], reason: "not a TikTok order" };
-  if (order.shippingType !== "SELLER") return { ok: false, pushed: 0, errors: [], reason: "not Seller Shipping (TikTok Shipping has its own tracking)" };
+  if (order.shippingType === "TIKTOK") return { ok: false, pushed: 0, errors: [], reason: "TikTok Shipping (has its own tracking)" };
   if (!order.storeId) return { ok: false, pushed: 0, errors: [], reason: "order has no store" };
+  // TỰ CHỮA: đơn cũ lưu shipping_type NULL/lạ (do bug `??` với chuỗi rỗng) thì KHÔNG bỏ qua nữa —
+  // hỏi thẳng TikTok Order Detail để biết chắc, rồi ghi lại vào DB. Vẫn tuyệt đối không đẩy nhầm
+  // đơn TikTok-Shipping: chỉ đi tiếp khi TikTok xác nhận là SELLER.
+  let shipType = order.shippingType;
+  let detail: Record<string, unknown> | undefined;
+  let cfg0: Awaited<ReturnType<typeof ttGetValidCfg>> | undefined;
+  const [store0] = await db.select({ c: schema.stores.apiCredentials }).from(schema.stores).where(eq(schema.stores.id, order.storeId)).limit(1);
+  if (shipType !== "SELLER") {
+    try {
+      cfg0 = await ttGetValidCfg(order.storeId, (store0?.c ?? null) as Record<string, string> | null);
+      detail = (await ttGetOrderDetail(cfg0, [platformExtId(order.externalId)]))[0] as Record<string, unknown> | undefined;
+    } catch (e) { return { ok: false, pushed: 0, errors: [String((e as Error)?.message ?? e)], reason: "token/order detail error" }; }
+    const resolved = detail ? ttShippingType(detail) : undefined;
+    if (resolved && resolved !== order.shippingType) {
+      await db.update(schema.orders).set({ shippingType: resolved }).where(eq(schema.orders.id, order.id));
+    }
+    shipType = resolved ?? null;
+    if (shipType !== "SELLER") {
+      return { ok: false, pushed: 0, errors: [], reason: `not Seller Shipping (TikTok says shipping_type=${shipType ?? "empty"})` };
+    }
+  }
 
   // Các bản ghi fulfill có tracking mà CHƯA đẩy lên TikTok
   const ffos = await db.select({
@@ -31,18 +52,18 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
   ));
   if (!ffos.length) return { ok: true, pushed: 0, errors: [], reason: "no new tracking to push" };
 
-  const [store] = await db.select({ c: schema.stores.apiCredentials }).from(schema.stores).where(eq(schema.stores.id, order.storeId)).limit(1);
-  let cfg;
-  try { cfg = await ttGetValidCfg(order.storeId, (store?.c ?? null) as Record<string, string> | null); }
-  catch (e) { return { ok: false, pushed: 0, errors: [String((e as Error)?.message ?? e)], reason: "token error" }; }
+  let cfg = cfg0;
+  if (!cfg) {
+    try { cfg = await ttGetValidCfg(order.storeId, (store0?.c ?? null) as Record<string, string> | null); }
+    catch (e) { return { ok: false, pushed: 0, errors: [String((e as Error)?.message ?? e)], reason: "token error" }; }
+  }
 
-  // Lấy line_item_ids + shipping_provider_id từ order detail
+  // Lấy line_item_ids + shipping_provider_id từ order detail (tái dùng bản đã lấy ở bước xác định shipping type)
   let lineItemIds: string[] = [], providerId = "";
   try {
-    const orders = await ttGetOrderDetail(cfg, [platformExtId(order.externalId)]);
-    const d = orders[0] as Record<string, unknown> | undefined;
+    const d = detail ?? ((await ttGetOrderDetail(cfg, [platformExtId(order.externalId)]))[0] as Record<string, unknown> | undefined);
     lineItemIds = (((d?.line_items ?? []) as Record<string, unknown>[])).map((x) => String(x.id ?? "")).filter(Boolean);
-    providerId = String(d?.shipping_provider_id ?? "");
+    providerId = String(d?.shipping_provider_id ?? (d?.packages as Record<string, unknown>[] | undefined)?.[0]?.shipping_provider_id ?? "");
   } catch (e) { return { ok: false, pushed: 0, errors: [String((e as Error)?.message ?? e)], reason: "order detail error" }; }
 
   let pushed = 0;
