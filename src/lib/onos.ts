@@ -224,6 +224,41 @@ export async function getOnosShipmentEvents(c: Cred, onosId: string): Promise<Re
   return json;
 }
 
+// ---- Bóc tracking từ BẤT KỲ shape nào ONOS trả về ----
+// BUG CŨ: poll chỉ đọc d.tracking_number và d.tracking.tracking_number — coi `tracking` là OBJECT.
+// ONOS trả `tracking`/`shipments`/`packages` dạng MẢNG thì typeof vẫn là "object", nên
+// tr.tracking_number = undefined → tracking bị bỏ IM LẶNG, đơn đứng mãi ở in_production.
+// Giờ quét sâu cả object LẪN mảng (≤4 tầng), lấy chuỗi đầu tiên khớp tên field.
+const TRACK_RE = /^(tracking[._-]?(number|code|no)|trackingnumber|track[._-]?(number|code)|awb([._-]?(code|number))?)$/i;
+const CARRIER_RE = /^(carrier([._-]?(code|name))?|shipping[._-]?carrier|tracking[._-]?company|courier)$/i;
+const TRACKURL_RE = /^(tracking[._-]?(url|link)|track[._-]?(url|link))$/i;
+
+function deepStr(obj: unknown, re: RegExp, depth = 0): string | undefined {
+  if (!obj || typeof obj !== "object" || depth > 4) return undefined;
+  const entries: [string, unknown][] = Array.isArray(obj)
+    ? (obj as unknown[]).map((v, i) => [String(i), v] as [string, unknown])
+    : Object.entries(obj as Record<string, unknown>);
+  // Tầng nông trước: field khớp tên ở cấp này thắng field lồng sâu hơn.
+  for (const [k, v] of entries) {
+    if (v === null || typeof v === "object") continue;
+    if (!re.test(k)) continue;
+    const s = String(v).trim();
+    if (s && s.toLowerCase() !== "null") return s;
+  }
+  for (const [, v] of entries) { const r = deepStr(v, re, depth + 1); if (r) return r; }
+  return undefined;
+}
+
+export function extractOnosTracking(raw: unknown): { trackingNumber?: string; carrier?: string; trackingUrl?: string } {
+  const root = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const d = (root.data && typeof root.data === "object" ? root.data : root) as Record<string, unknown>;
+  return {
+    trackingNumber: deepStr(d, TRACK_RE) ?? deepStr(root, TRACK_RE),
+    carrier: deepStr(d, CARRIER_RE) ?? deepStr(root, CARRIER_RE),
+    trackingUrl: deepStr(d, TRACKURL_RE) ?? deepStr(root, TRACKURL_RE),
+  };
+}
+
 // ---- Cancel: DELETE /order/{onos_id} ----
 export async function cancelOnosOrder(c: Cred, onosId: string): Promise<{ ok: boolean; message: string }> {
   const { status, json } = await call(c, `/order/${encodeURIComponent(onosId)}`, { method: "DELETE" });

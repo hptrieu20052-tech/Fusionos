@@ -233,10 +233,34 @@ export function extractLenfulOrder(root: Record<string, unknown>): {
   const tax = lNum(o.tax, o.tax_amount, o.tax_fee) ?? deepNum(root, /^(tax([._-]?(fee|amount|total))?)$/i);
   const total = lNum(o.total_price, o.total, o.total_amount, o.grand_total, o.amount)
     ?? deepNum(root, /^(grand.?total|total([._-]?(price|amount|cost))?)$/i);
+  // TRACKING: y hệt bài học của SHIP — số tiền ship không nằm ở root mà trong items[].
+  // Tracking cũng vậy: Lenful gắn mã vận đơn theo TỪNG ITEM / package, không phải ở root.
+  // BUG CŨ: chỉ dò root + root.tracking (object) → đơn đã ship vẫn về trackingNumber = undefined,
+  // nên applyUpdate không đổi gì và Etsy/TikTok/Shopify không bao giờ được đẩy tracking.
+  // deepStr đi XUYÊN CẢ MẢNG (deepNum cố tình không, vì sợ dính "shippings":[0,1,2] — mã ship,
+  // không phải tiền; với chuỗi thì không có bẫy đó).
+  const deepStr = (obj: unknown, re: RegExp, depth = 0): string | undefined => {
+    if (!obj || typeof obj !== "object" || depth > 4) return undefined;
+    const entries: [string, unknown][] = Array.isArray(obj)
+      ? (obj as unknown[]).map((v, i) => [String(i), v] as [string, unknown])
+      : Object.entries(obj as Record<string, unknown>);
+    for (const [k, v] of entries) {
+      if (v === null || typeof v === "object") continue;
+      if (!re.test(k)) continue;
+      const s = String(v).trim();
+      if (s && s.toLowerCase() !== "null") return s;
+    }
+    for (const [, v] of entries) { const r = deepStr(v, re, depth + 1); if (r) return r; }
+    return undefined;
+  };
+  const L_TRACK_RE = /^(tracking[._-]?(number|code|no)|trackingnumber|track[._-]?(number|code)|awb([._-]?(code|number))?)$/i;
+  const L_CARRIER_RE = /^(carrier([._-]?(code|name))?|shipping[._-]?carrier|tracking[._-]?company|courier)$/i;
   return {
     status: lStr(o.status, o.order_status, o.state),
-    trackingNumber: lStr(o.tracking_number, o.tracking_code, o.trackingNumber, track.tracking_number, track.code, track.number),
-    carrier: lStr(o.carrier, o.shipping_carrier, o.tracking_company, track.carrier, track.company),
+    trackingNumber: lStr(o.tracking_number, o.tracking_code, o.trackingNumber, track.tracking_number, track.code, track.number)
+      ?? deepStr(root, L_TRACK_RE),
+    carrier: lStr(o.carrier, o.shipping_carrier, o.tracking_company, track.carrier, track.company)
+      ?? deepStr(root, L_CARRIER_RE),
     base, ship, tax, total,
   };
 }

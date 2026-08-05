@@ -4,7 +4,7 @@ import { syncOrderFromFf, markShippedOnTracking, refundOrderCost, rebalanceOrder
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 import { autoPushShopifyTracking } from "@/lib/shopify";
-import { getOnosOrder, mapOnosStatus, isPaidWord } from "@/lib/onos";
+import { getOnosOrder, getOnosShipmentEvents, extractOnosTracking, mapOnosStatus, isPaidWord } from "@/lib/onos";
 import { getCompassupTracking, getCompassupFees, type CompassupCred } from "@/lib/compassup";
 import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
@@ -231,19 +231,39 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
       if (!cCred.tenant || !cCred.restKey) { skipped++; continue; }
 
       // 1) TRACKING theo lô 20
+      // BUG CŨ: API /orders/track KHÔNG chắc trả kèm order_id trong từng track. Lô >1 đơn mà thiếu
+      // order_id thì dòng dưới cho ffo = undefined → `continue` → TOÀN BỘ tracking bị vứt IM LẶNG.
+      // Nghĩa là chỉ khi trong hệ thống còn ĐÚNG 1 đơn Compassup mở thì tracking mới về được.
+      // Giờ: lô nào trả code mà không có order_id → hỏi lại TỪNG ĐƠN (chỉ khi đúng tình huống đó,
+      // không có tracking thì không tốn thêm request nào).
+      const ambiguous: OpenFfo[] = [];
       for (let i = 0; i < open.length; i += 20) {
         if (Date.now() - started > BUDGET_MS) break;
         const batch = open.slice(i, i + 20);
         try {
           const { tracks } = await getCompassupTracking(cCred, batch.map((f) => f.externalFfId!));
           checked += batch.length;
+          const matched = new Set<string>();
           for (const tk of tracks) {
             // API tracks có thể không kèm order_id → nếu chỉ 1 đơn trong lô thì gán thẳng
             const ffo = tk.orderId ? batch.find((f) => f.externalFfId === tk.orderId) : (batch.length === 1 ? batch[0] : undefined);
             if (!ffo || !tk.code) continue;
+            matched.add(ffo.id);
             if (await applyUpdate(ffo, { status: "shipped", trackingNumber: tk.code, carrier: tk.carrier || undefined })) updated++;
           }
+          if (batch.length > 1 && tracks.some((t) => t.code && !t.orderId)) {
+            for (const f of batch) if (!matched.has(f.id) && !f.trackingNumber) ambiguous.push(f);
+          }
         } catch (e) { if (errors.length < 5) errors.push(`${ff.name} track: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
+      }
+      // 1b) Hỏi lẻ từng đơn — lô 1 đơn thì code trả về chắc chắn là của đơn đó, hết mơ hồ.
+      for (const ffo of ambiguous.slice(0, 20)) {
+        if (Date.now() - started > BUDGET_MS) break;
+        try {
+          const { tracks } = await getCompassupTracking(cCred, [ffo.externalFfId!]);
+          const tk = tracks.find((t) => t.code && (!t.orderId || t.orderId === ffo.externalFfId));
+          if (tk && await applyUpdate(ffo, { status: "shipped", trackingNumber: tk.code, carrier: tk.carrier || undefined })) updated++;
+        } catch (e) { if (errors.length < 5) errors.push(`${ff.name} track1: ${String((e as Error)?.message ?? e).slice(0, 120)}`); }
       }
 
       // 2) COST — poll CẢ đơn ĐÃ CÓ cost, không chỉ đơn $0.
@@ -301,12 +321,25 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
           if (kind === "onos") {
             const raw = await getOnosOrder(api, ffo.externalFfId!);
             const d = (raw.data && typeof raw.data === "object" ? raw.data : raw) as Record<string, unknown>;
-            const tr = (d.tracking && typeof d.tracking === "object" ? d.tracking : {}) as Record<string, unknown>;
-            const trackingNumber = S(d.tracking_number ?? tr.tracking_number ?? d.trackingNumber);
-            const carrier = S(d.carrier ?? tr.carrier ?? d.carrier_code);
+            // Quét sâu (object LẪN mảng) thay cho d.tracking.tracking_number — xem extractOnosTracking.
+            const t0 = extractOnosTracking(raw);
+            let trackingNumber = t0.trackingNumber ?? "";
+            let carrier = t0.carrier ?? "";
+            let trackingUrl = t0.trackingUrl ?? "";
+            // FALLBACK: ONOS để tracking ở endpoint RIÊNG /order/{id}/shipment/events. Hàm
+            // getOnosShipmentEvents có sẵn từ đầu nhưng CHƯA TỪNG được gọi ở đâu — đơn đã ship
+            // mà detail không kèm mã thì FUSION không bao giờ biết. Chỉ gọi khi thật sự chưa có mã.
+            if (!trackingNumber && !ffo.trackingNumber) {
+              try {
+                const t1 = extractOnosTracking(await getOnosShipmentEvents(api, ffo.externalFfId!));
+                trackingNumber = t1.trackingNumber ?? "";
+                carrier = carrier || (t1.carrier ?? "");
+                trackingUrl = trackingUrl || (t1.trackingUrl ?? "");
+              } catch { /* chưa có shipment → bỏ qua êm, vòng sau thử lại */ }
+            }
             const status = mapOnosStatus(S(d.status ?? d.order_status), !!(trackingNumber || ffo.trackingNumber));
             const oc = onosCost(d);
-            if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, carrier: carrier || undefined, cost: oc })) updated++;
+            if (await applyUpdate(ffo, { status, trackingNumber: trackingNumber || undefined, trackingUrl: trackingUrl || undefined, carrier: carrier || undefined, cost: oc })) updated++;
           } else if (kind === "wem") {
             const raw = await getWembroideryOrder(api, ffo.externalFfId!);
             const root = (raw.data && typeof raw.data === "object" ? raw.data : raw) as Record<string, unknown>;

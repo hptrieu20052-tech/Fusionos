@@ -11,6 +11,8 @@ import { getFlashshipOrdersByCodes } from "@/lib/flashship";
 import { getCompassupTracking, getCompassupFees, type CompassupCred } from "@/lib/compassup";
 import { getLenfulOrder, extractLenfulOrder } from "@/lib/lenful";
 import { getVinawayOrder, extractVinawayOrder } from "@/lib/vinaway";
+import { getOnosOrder, getOnosShipmentEvents, extractOnosTracking } from "@/lib/onos";
+import { getWembroideryOrder } from "@/lib/wembroidery";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -113,6 +115,28 @@ export async function GET(req: NextRequest) {
       if (!vCred.email || !vCred.password) return NextResponse.json({ ok: false, error: "Vinaway: thiếu email / password" }, { status: 400 });
       const raw = await getVinawayOrder(vCred, ffo.externalFfId ?? "");
       return NextResponse.json({ ok: true, fusion, sentAs: { id: ffo.externalFfId }, parsed: extractVinawayOrder(raw), raw });
+    }
+
+    if (name.includes("onos")) {
+      if (!apiKey) return NextResponse.json({ ok: false, error: "ONOS: thiếu API Key (token hoặc email:password)" }, { status: 400 });
+      const api = { apiKey, endpoint: ff.apiEndpoint };
+      const oid = ffo.externalFfId ?? "";
+      // Gọi CẢ HAI: chi tiết đơn và endpoint tracking riêng — xem cái nào thật sự có mã.
+      const [order, events] = await Promise.all([
+        getOnosOrder(api, oid).catch((e) => ({ error: String((e as Error)?.message ?? e) })),
+        getOnosShipmentEvents(api, oid).catch((e) => ({ error: String((e as Error)?.message ?? e) })),
+      ]);
+      return NextResponse.json({
+        ok: true, fusion, sentAs: { onos_id: oid },
+        parsed: { fromOrder: extractOnosTracking(order), fromEvents: extractOnosTracking(events) },
+        order, events,
+      });
+    }
+
+    if (name.includes("wembroidery") || name.includes("wem embroidery")) {
+      if (!apiKey) return NextResponse.json({ ok: false, error: "WEM: thiếu API Key" }, { status: 400 });
+      const raw = await getWembroideryOrder({ apiKey, endpoint: ff.apiEndpoint }, ffo.externalFfId ?? "");
+      return NextResponse.json({ ok: true, fusion, sentAs: { wem_id: ffo.externalFfId }, raw });
     }
 
     if (name.includes("flashship") || name.includes("flashpod")) {

@@ -117,27 +117,26 @@ async function tick(req: NextRequest) {
     } catch (e) { ttTrackSweep = { tried: 0, pushed: 0, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
-  // ---- 2. Printway poll backup (throttle 10' nội bộ — gọi dày cũng không spam API) ----
-  let printway: unknown = null;
-  if (Date.now() < deadline) {
-    try { printway = await syncPrintway({ force: false }); }
-    catch (e) { printway = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+  // ---- 2/2b/3. Ba poll backup: Printway · Printify · ONOS+WEM ----
+  // BUG CŨ: chạy CỐ ĐỊNH theo thứ tự printway → printify → onosWem. Hết 50s ở giữa chừng thì
+  // onosWem BỊ BỎ mà summary vẫn để `null` — nhìn log không phân biệt được "không có gì để làm"
+  // với "hết giờ, không chạy". ONOS/Compassup/Lenful nằm trong onosWem nên nó luôn là thằng đói.
+  // Sửa: (a) đánh dấu rõ `skipped (time budget)`, (b) XOAY vòng thứ tự theo phút để không nhà nào
+  // vĩnh viễn đứng cuối hàng.
+  const results: Record<string, unknown> = { printway: null, printify: null, onosWem: null };
+  const jobs: Array<{ key: string; run: () => Promise<unknown> }> = [
+    { key: "printway", run: () => syncPrintway({ force: false }) },
+    { key: "printify", run: () => syncPrintify({ force: false }) },
+    { key: "onosWem", run: () => syncOnosWem({ force: false }) },
+  ];
+  const rot = Math.floor(started / 600_000) % jobs.length; // đổi thứ tự mỗi 10 phút
+  for (let i = 0; i < jobs.length; i++) {
+    const job = jobs[(i + rot) % jobs.length];
+    if (Date.now() >= deadline) { results[job.key] = { ok: false, error: "skipped (time budget)" }; continue; }
+    try { results[job.key] = await job.run(); }
+    catch (e) { results[job.key] = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
-
-  // ---- 2b. Printify poll backup: webhook chỉ đăng ký 1 lần/shop → đổi token/shop id là mất
-  //          webhook → đơn đứng $0, không tracking. Poll gọi thẳng GET order nên luôn lấy được.
-  let printify: unknown = null;
-  if (Date.now() < deadline) {
-    try { printify = await syncPrintify({ force: false }); }
-    catch (e) { printify = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
-  }
-
-  // ---- 3. ONOS + Wembroidery poll backup (webhook 2 nhà này là kênh chính, poll chống lỡ) ----
-  let onosWem: unknown = null;
-  if (Date.now() < deadline) {
-    try { onosWem = await syncOnosWem({ force: false }); }
-    catch (e) { onosWem = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
-  }
+  const { printway, printify, onosWem } = results;
 
   const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, ttTrackSweep, printway, printify, onosWem };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
