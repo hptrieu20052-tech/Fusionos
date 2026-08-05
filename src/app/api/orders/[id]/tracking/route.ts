@@ -43,11 +43,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const cost = patch.baseCost != null || patch.shipCost != null
       ? (Number(patch.baseCost ?? ffo.baseCost ?? 0) + Number(patch.shipCost ?? ffo.shipCost ?? 0)).toFixed(2)
       : ffo.cost;
+    // v168 — BUG: nhập tay tracking KHÔNG bao giờ đổi fulfillment_orders.status → thẻ nhà in kẹt
+    // ở "PUSHED" vĩnh viễn dù đã có mã vận đơn (bản ghi MANUAL-* bị poll bỏ qua nên không ai chữa
+    // hộ). markShippedOnTracking bên dưới chỉ đụng orders.status, không đụng ffo.status.
+    // Quy tắc giống poll: CÓ TRACKING = shipped, và chỉ tiến tới, không kéo lùi delivered/cancelled.
+    const nextFfStatus = patch.trackingNumber && ["pending", "pushed", "in_production", "error"].includes(String(ffo.status))
+      ? ("shipped" as const) : ffo.status;
     await db.update(schema.fulfillmentOrders).set({
       ...patch,
       baseCost: patch.baseCost ?? ffo.baseCost,
       shipCost: patch.shipCost ?? ffo.shipCost,
       cost,
+      status: nextFfStatus,
       trackingSyncedAt: patch.trackingNumber ? new Date() : ffo.trackingSyncedAt,
     }).where(eq(schema.fulfillmentOrders.id, ffo.id));
     // ĐỒNG BỘ SỔ: sửa base/ship cost tay phải ghi lại bút toán base_cost (Dashboard/Finance tính từ transactions).
@@ -63,7 +70,8 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const cost = (Number(patch.baseCost ?? 0) + Number(patch.shipCost ?? 0)).toFixed(2);
   const [row] = await db.insert(schema.fulfillmentOrders).values({
     orderId: params.id, fulfillerId: b.fulfillerId,
-    status: "pushed", externalFfId: `MANUAL-${Date.now()}`,
+    // v168 — tạo mới KÈM tracking thì phải là "shipped" ngay, không phải "pushed" (xem ghi chú trên).
+    status: patch.trackingNumber ? "shipped" : "pushed", externalFfId: `MANUAL-${Date.now()}`,
     ...patch, cost, pushedAt: new Date(),
     trackingSyncedAt: patch.trackingNumber ? new Date() : null,
   }).returning();
