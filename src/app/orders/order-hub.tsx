@@ -1031,9 +1031,13 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ffSel, selFfIsGsheet]);
   const canCreateBase = ["new", "has_issues"].includes(o.status); // đơn NEW / Has issues đẩy như cũ
-  // REVIEW: đơn vừa đẩy xong (status = created) → giữ nguyên panel variant + design nhưng KHOÁ,
-  // để support đối chiếu đã đẩy đúng variant/design chưa. Sang in_production trở đi thì ẩn.
-  const isReview = o.status === "created";
+  // REVIEW: đơn ĐÃ ĐẨY → giữ nguyên panel variant + design nhưng KHOÁ, để support đối chiếu
+  // đã đẩy đúng variant/design chưa.
+  // v169 — trước đây chỉ hiện đúng status "created", nên từ in_production trở đi (và shipped /
+  // delivered / has_issues / cancel) support mất hẳn chỗ xem variant + SKU đã gửi nhà in. Nay
+  // hiện ở MỌI status trừ "new", với điều kiện đơn thật sự có bản ghi fulfill (đơn chưa đẩy thì
+  // vẫn rơi về ghi chú "đưa về NEW để đẩy" như cũ, không hiện panel rỗng).
+  const isReview = o.status !== "new" && (detail?.ffOrders ?? []).length > 0;
   // Chưa gán đủ design cho mọi sản phẩm thì chưa cho chọn nhà fulfill — tránh đẩy đơn thiếu file in.
   // Item qty 0 = đã tách sang đơn khác (Duplicate/Split) → khỏi cần design, khỏi fulfill từ đơn này.
   const liveItems = o.items.filter((i) => (i.qty ?? 0) >= 1);
