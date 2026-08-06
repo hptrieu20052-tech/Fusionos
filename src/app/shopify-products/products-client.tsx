@@ -95,7 +95,7 @@ async function postJSON<T = any>(url: string, body: unknown): Promise<T> {
 type ActKey =
   | "set_template" | "push_template" | "find_replace" | "personalization"
   | "google_prep" | "feed_copy" | "feed_export"
-  | "tags" | "collection" | "channels"
+  | "ai_collection" | "tags" | "collection" | "channels"
   | "active" | "draft" | "archive" | "delete";
 type ActionItem = { key: ActKey; label: string; danger?: boolean };
 type ActionGroup = { title: string; items: ActionItem[] };
@@ -127,6 +127,9 @@ const ACTION_GROUPS: ActionGroup[] = [
   {
     title: "Organize",
     items: [
+      // v173: AI nhìn ảnh + title rồi tự chọn 1–2 collection ĐANG CÓ (không tạo mới). Con nào không
+      // hợp cái nào → đánh dấu unmatched để tự xử. Cần model có 👁 (đọc ảnh).
+      { key: "ai_collection", label: "Auto-assign collections (AI) ✦" },
       { key: "tags", label: "Add / remove tags…" },
       { key: "collection", label: "Add / remove collection…" },
       { key: "channels", label: "Include / exclude sales channels…" },
@@ -242,9 +245,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const filtered = useMemo(() => rows.filter((r) =>
     (!sellerFilter || stores.find((s) => s.id === r.storeId)?.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
-    (!typeFilter || r.productType === typeFilter) &&
-    (!categoryFilter || r.categoryName === categoryFilter) &&
-    (!collectionFilter || (r.collectionTitles ?? []).includes(collectionFilter)) &&
+    (!typeFilter || (typeFilter === "__none__" ? !(r.productType ?? "").trim() : r.productType === typeFilter)) &&
+    (!categoryFilter || (categoryFilter === "__none__" ? !(r.categoryName ?? "").trim() : r.categoryName === categoryFilter)) &&
+    (!collectionFilter || (collectionFilter === "__none__" ? !(r.collectionTitles ?? []).length : (r.collectionTitles ?? []).includes(collectionFilter))) &&
     (!statusFilter || (r.status || "").toUpperCase() === statusFilter) &&
     (!aiFilter || (aiFilter === "todo" ? !r.aiAt : aiFilter === "done" ? !!r.aiAt : !!r.aiAt && r.dirty)) &&
     (!feedFilter || (feedFilter === "done" ? feedOk(r) : !feedOk(r))) &&
@@ -764,6 +767,37 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
   };
 
+  // v173 · AI Auto-Collection theo LÔ 8. Sản phẩm thật (có gid) được gắn collection NGAY trên Shopify;
+  // bản nháp chỉ ghi local, Push sẽ áp. Con nào AI thấy không hợp collection nào → đếm vào "unmatched"
+  // và liệt kê để người tự xử (KHÔNG tạo collection mới). Cần model có 👁 để đọc ảnh.
+  const CHUNK_AICOL = 8;
+  const doAiCollection = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    setBusy(true); setMsg(null); setFails([]);
+    let assigned = 0, unmatched = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "AI sorting into collections", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += CHUNK_AICOL) {
+      const batch = ids.slice(i, i + CHUNK_AICOL);
+      try {
+        const j = await postJSON("/api/shopify-products/ai-collections", { ids: batch, model: aiModel || undefined });
+        assigned += j.assigned ?? 0; unmatched += j.unmatched ?? 0;
+        const res = (j.results ?? []) as { id: string; title: string; ok: boolean; unmatched?: boolean; error?: string }[];
+        res.filter((x) => !x.ok).forEach((x) => failed.push({ id: x.id, title: x.title, error: x.error ?? "failed" }));
+        res.filter((x) => x.ok && x.unmatched).forEach((x) => failed.push({ id: x.id, title: x.title, error: "no matching collection — assign by hand or create one" }));
+        if (!res.length && !j.ok) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error ?? "request failed" }));
+      } catch (e) {
+        const err = String((e as Error)?.message ?? "network error");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: err }));
+      }
+      setProg({ label: "AI sorting into collections", done: Math.min(i + batch.length, ids.length), total: ids.length, fail: failed.length });
+    }
+    setProg(null); setFails(failed);
+    if (assigned + unmatched > 0) flash(`✓ AI sorted ${assigned}/${ids.length} into collections${unmatched ? ` · ${unmatched} had no fit (listed below — assign by hand)` : ""}. Drafts apply their collection on Push.`, unmatched === 0 && !failed.length);
+    else flash(`✗ AI Auto-Collection failed on all ${ids.length}: ${failed[0]?.error ?? "unknown"}`, false);
+    await load();
+    setBusy(false);
+  };
+
   // Find & replace: thay chuỗi NGUYÊN VĂN trong mô tả/tiêu đề rồi ghi thẳng lên Shopify qua API.
   // Chạy dry-run trước để biết chính xác bao nhiêu listing dính chuỗi, rồi mới hỏi xác nhận.
   const CHUNK_FR = 25;
@@ -828,6 +862,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     // Feed phụ — không đụng Shopify, không cần chọn gì thêm.
     if (key === "feed_copy") return doFeedCopy(Array.from(sel));
     if (key === "feed_export") return doFeedExport(Array.from(sel));
+    // v173 · AI tự gán collection — chạy theo lô, dùng model đang chọn (cần 👁 để đọc ảnh).
+    if (key === "ai_collection") return doAiCollection(Array.from(sel));
     // Find & replace: chạy được trên nhiều store cùng lúc — mỗi listing dùng credential store của nó.
     if (key === "find_replace") { setAct({ key, title: "Find & replace in text", kind: "replace", storeId: "", loading: false, items: [] }); return; }
     // Custom options — modal riêng, không dùng khung act (nội dung phức tạp hơn hẳn các lệnh kia).
@@ -993,9 +1029,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
       <div style={{ ...card, padding: "12px 14px", marginBottom: 12 }}>
-        {/* v172: MỘT hàng — nowrap + cuộn ngang khi màn hẹp, thay vì rớt xuống hàng 2. */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", alignItems: "center", paddingBottom: 2 }}>
-          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "0 1 190px", maxWidth: "none", minWidth: 130 }} />
+        {/* v173: cho filter TỰ XUỐNG HÀNG khi màn hẹp (wrap) — thấy hết, không phải kéo thanh cuộn ngang. */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "1 1 200px", maxWidth: "none", minWidth: 150 }} />
           {showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
               <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1005,13 +1041,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             <option value="">All stores</option>{storesForFilter.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} title="Product type" style={fsel(!!typeFilter)}>
-            <option value="">All types</option>{typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            <option value="">All types</option><option value="__none__">— No product type —</option>{typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
           <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} title="Category" style={fsel(!!categoryFilter)}>
-            <option value="">All categories</option>{categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+            <option value="">All categories</option><option value="__none__">— No category —</option>{categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} title="Collection" style={fsel(!!collectionFilter)}>
-            <option value="">All collections</option>{collectionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+            <option value="">All collections</option><option value="__none__">— Not in any collection —</option>{collectionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} title="Shopify status" style={fsel(!!statusFilter)}>
             <option value="">All status</option>

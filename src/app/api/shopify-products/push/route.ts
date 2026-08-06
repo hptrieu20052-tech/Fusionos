@@ -88,13 +88,16 @@ async function createOnShopify(cred: ShopifyCred, p: Row, tpl?: Template | null)
 }
 
 // v172b · Collections + sales channels của template — áp sau khi có GID (giống applyTemplate lúc tạo mới).
-// Lỗi phụ không chặn kết quả chính, gom lại báo "partial".
-async function applyTplExtras(cred: ShopifyCred, tpl: Template, gid: string): Promise<string> {
+// v173 · Cộng thêm collection RIÊNG của bản nháp (do AI Auto-Collection chọn, lưu ở p.collections) —
+// union với collection của template, khử trùng theo id. Lỗi phụ không chặn kết quả chính.
+async function applyTplExtras(cred: ShopifyCred, tpl: Template | null, gid: string, ownCollections?: unknown): Promise<string> {
   const warn: string[] = [];
-  for (const cid of tpl.collectionIds ?? []) {
+  const own = (Array.isArray(ownCollections) ? ownCollections as { id?: string }[] : []).map((c) => String(c?.id ?? "")).filter(Boolean);
+  const cids = Array.from(new Set([...(tpl?.collectionIds ?? []), ...own]));
+  for (const cid of cids) {
     try { await collectionAddProducts(cred, cid, [gid]); } catch (e) { warn.push("collection: " + String((e as Error)?.message ?? e).slice(0, 80)); }
   }
-  if ((tpl.publicationIds ?? []).length) {
+  if (tpl && (tpl.publicationIds ?? []).length) {
     try { await publishToPublications(cred, gid, tpl.publicationIds); } catch (e) { warn.push("channels: " + String((e as Error)?.message ?? e).slice(0, 80)); }
   }
   return warn.join("; ");
@@ -165,7 +168,7 @@ export async function POST(req: NextRequest) {
         const tpl = r.p.templateId ? tplById.get(r.p.templateId) ?? null : null;
         const made = await createOnShopify(cred, r.p, tpl);
         if (!made.gid) { results.push({ id: r.p.id, title: r.p.title, ok: false, error: made.error ?? "create failed" }); continue; }
-        const warn = tpl ? await applyTplExtras(cred, tpl, made.gid) : "";
+        const warn = await applyTplExtras(cred, tpl, made.gid, r.p.collections);
         await adoptCreated(cred, r.p, made.gid);
         results.push({ id: r.p.id, title: r.p.title, ok: true, ...(warn ? { error: "partial: " + warn } : {}) });
         continue;
@@ -201,7 +204,7 @@ export async function POST(req: NextRequest) {
         const tpl = r.p.templateId ? tplById.get(r.p.templateId) ?? null : null;
         const made = await createOnShopify(cred, r.p, tpl);
         if (!made.gid) { results.push({ id: r.p.id, title: r.p.title, ok: false, error: "old product was deleted on Shopify; re-create failed: " + (made.error ?? "") }); continue; }
-        const warn = tpl ? await applyTplExtras(cred, tpl, made.gid) : "";
+        const warn = await applyTplExtras(cred, tpl, made.gid, r.p.collections);
         await adoptCreated(cred, { ...r.p, shopifyProductId: made.gid }, made.gid);
         results.push({ id: r.p.id, title: r.p.title, ok: true, ...(warn ? { error: "partial: " + warn } : {}) });
       } else results.push({ id: r.p.id, title: r.p.title, ok: false, error: res.error });
