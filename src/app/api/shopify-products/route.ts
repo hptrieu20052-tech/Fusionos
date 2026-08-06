@@ -40,7 +40,11 @@ export async function GET(req: NextRequest) {
   // feed copy, Save hay Push chạm vào sản phẩm, nên chạy AI vài con là cả bảng đảo thứ tự —
   // đúng cái "lộn xộn" đang thấy. Product ID của Shopify tăng dần theo thời gian tạo ⇒ ID lớn = mới hơn.
   const pidNum = (gid: string | null) => { const m = String(gid ?? "").match(/(\d+)\s*$/); return m ? Number(m[1]) : 0; };
+  // v172: bản NHÁP stage từ Etsy (chưa có Shopify ID) lên ĐẦU bảng — đó là những con đang cần
+  // hoàn thiện để Push, không được để chìm xuống trang cuối vì pid = 0.
+  const draftFirst = (gid: string | null) => (gid ? 0 : 1);
   scoped.sort((a, b) =>
+    (draftFirst(b.p.shopifyProductId) - draftFirst(a.p.shopifyProductId)) ||
     (pidNum(b.p.shopifyProductId) - pidNum(a.p.shopifyProductId)) ||
     (new Date(b.p.createdAt ?? 0).getTime() - new Date(a.p.createdAt ?? 0).getTime()));
 
