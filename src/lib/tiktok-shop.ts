@@ -413,6 +413,26 @@ export async function ttGetShippingProviders(cfg: TtCfg): Promise<{ ok: boolean;
   return { ok: false, errors };
 }
 
+// v174 · Danh sách shipping provider (id + tên) để map carrier → provider_id khi mark shipped.
+// TikTok 202309 BẮT BUỘC shipping_provider_id (thiếu → HTTP 400 code=36009004), và order detail
+// của đơn Seller-shipping KHÔNG trả sẵn id này, nên phải tự tra từ đây.
+// Endpoint chuẩn: GET /logistics/202309/shipping_providers → { shipping_providers: [{ id, name }] }.
+export async function ttListShippingProviders(cfg: TtCfg): Promise<{ id: string; name: string }[]> {
+  const d = await ttFetch(cfg, "GET", "/logistics/202309/shipping_providers", {});
+  const list = (d?.shipping_providers as { id?: string; name?: string }[] | undefined) ?? [];
+  return list.map((p) => ({ id: String(p.id ?? ""), name: String(p.name ?? "") })).filter((p) => p.id && p.name);
+}
+
+// Chọn provider_id khớp carrier (vd "USPS"): ưu tiên khớp chính xác tên, sau đó khớp "chứa".
+export function pickProviderId(providers: { id: string; name: string }[], carrier: string): string {
+  const c = (carrier || "").trim().toLowerCase();
+  if (!c || !providers.length) return "";
+  const exact = providers.find((p) => p.name.trim().toLowerCase() === c);
+  if (exact) return exact.id;
+  const contains = providers.find((p) => { const n = p.name.toLowerCase(); return n.includes(c) || c.includes(n); });
+  return contains?.id ?? "";
+}
+
 // Lấy package_id của ĐÚNG 1 đơn. Order Detail.packages có sau khi Arrange; nếu trống thì
 // search (trả cả shop) rồi lọc theo orders[].id === orderExtId. Trả [{ id, trackingNumber }].
 export async function ttGetPackageIdsForOrder(cfg: TtCfg, orderExtId: string): Promise<{ id: string; trackingNumber?: string }[]> {

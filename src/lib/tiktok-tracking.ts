@@ -2,9 +2,29 @@
 const platformExtId = (ext: string) => ext.replace(/-CLONE-\d+$/, "");
 import { db, schema } from "@/lib/db";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { ttGetValidCfg, ttGetOrderDetail, ttShipPackage, ttShippingType } from "@/lib/tiktok-shop";
+import { ttGetValidCfg, ttGetOrderDetail, ttShipPackage, ttShippingType, ttListShippingProviders, pickProviderId, type TtCfg } from "@/lib/tiktok-shop";
 
 export type TtPushResult = { ok: boolean; pushed: number; errors: string[]; reason?: string };
+
+// v174 · Cache danh sách shipping provider theo store (10') — sweep chạy hàng chục đơn/1 lần gọi,
+// khỏi tra lại provider mỗi đơn. Serverless: cache sống trong 1 lần invoke, đủ cho vòng sweep.
+const providerCache = new Map<string, { at: number; list: { id: string; name: string }[] }>();
+async function providersFor(storeId: string, cfg: TtCfg): Promise<{ id: string; name: string }[]> {
+  const hit = providerCache.get(storeId);
+  if (hit && Date.now() - hit.at < 600_000) return hit.list;
+  const list = await ttListShippingProviders(cfg);
+  providerCache.set(storeId, { at: Date.now(), list });
+  return list;
+}
+
+// Đoán carrier từ format tracking khi ffo không lưu (USPS: 22 số bắt đầu 92/93/94, hoặc 9400…).
+function inferCarrier(tracking: string): string {
+  const t = (tracking || "").replace(/\s+/g, "");
+  if (/^9[0-5]\d{18,24}$/.test(t) || /^94\d{20}$/.test(t)) return "USPS";
+  if (/^1Z[0-9A-Z]{16}$/i.test(t)) return "UPS";
+  if (/^\d{12,15}$/.test(t)) return "FedEx";
+  return "";
+}
 
 /**
  * Ghi nhận LẦN TRƯỢT: lưu lý do + tăng số lần thử + hẹn giờ thử lại (5' → 10' → 20' … tối đa 6h).
@@ -68,6 +88,7 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
   // Các bản ghi fulfill có tracking mà CHƯA đẩy lên TikTok
   const ffos = await db.select({
     id: schema.fulfillmentOrders.id, tracking: schema.fulfillmentOrders.trackingNumber,
+    carrier: schema.fulfillmentOrders.trackingCarrier,
   }).from(schema.fulfillmentOrders).where(and(
     eq(schema.fulfillmentOrders.orderId, order.id),
     isNotNull(schema.fulfillmentOrders.trackingNumber),
@@ -82,12 +103,20 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
   }
 
   // Lấy line_item_ids + shipping_provider_id từ order detail (tái dùng bản đã lấy ở bước xác định shipping type)
-  let lineItemIds: string[] = [], providerId = "";
+  let lineItemIds: string[] = [], detailProviderId = "";
   try {
     const d = detail ?? ((await ttGetOrderDetail(cfg, [platformExtId(order.externalId)]))[0] as Record<string, unknown> | undefined);
     lineItemIds = (((d?.line_items ?? []) as Record<string, unknown>[])).map((x) => String(x.id ?? "")).filter(Boolean);
-    providerId = String(d?.shipping_provider_id ?? (d?.packages as Record<string, unknown>[] | undefined)?.[0]?.shipping_provider_id ?? "");
+    detailProviderId = String(d?.shipping_provider_id ?? (d?.packages as Record<string, unknown>[] | undefined)?.[0]?.shipping_provider_id ?? "");
   } catch (e) { return fail("order detail error", [String((e as Error)?.message ?? e)]); }
+
+  // v174 · TikTok BẮT BUỘC shipping_provider_id (code=36009004 nếu thiếu). Order detail của đơn
+  // Seller-shipping không trả sẵn id này → tự tra danh sách provider của shop rồi map theo carrier.
+  let providers: { id: string; name: string }[] = [];
+  if (!detailProviderId) {
+    try { providers = await providersFor(order.storeId, cfg); }
+    catch (e) { return fail("cannot load shipping providers", [String((e as Error)?.message ?? e)]); }
+  }
 
   let pushed = 0;
   const errors: string[] = [];
@@ -95,7 +124,14 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
   for (const f of ffos) {
     const code = (f.tracking || "").trim();
     if (!code) continue;
+    // provider_id: ưu tiên từ order detail; không có thì map theo carrier (ffo lưu, hoặc đoán từ tracking).
+    const carrier = (f.carrier || "").trim() || inferCarrier(code);
+    const providerId = detailProviderId || pickProviderId(providers, carrier);
     try {
+      if (!providerId) {
+        // Không map được → báo rõ carrier + danh sách provider để chỉnh nếu tên lệch, thay vì để TikTok trả 36009004 khó hiểu.
+        throw new Error(`no TikTok provider for carrier "${carrier || "?"}" — available: ${providers.map((p) => p.name).join(", ").slice(0, 200)}`);
+      }
       if (!done.has(code)) {
         await ttShipPackage(cfg, { orderId: platformExtId(order.externalId), orderLineItemIds: lineItemIds, trackingNumber: code, providerId });
         done.add(code); pushed++;
@@ -104,7 +140,17 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
         .set({ tiktokTrackingPushedAt: new Date(), tiktokPushError: null, tiktokPushNextAt: null })
         .where(eq(schema.fulfillmentOrders.id, f.id));
     } catch (e) {
-      errors.push(`${code}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
+      const msg = String((e as Error)?.message ?? e);
+      // v174 · "These orders are already shipped" (code 21042056) = TikTok đã có tracking rồi ⇒ coi là
+      // THÀNH CÔNG, đánh dấu pushed để thôi quét lại mỗi vòng cron.
+      if (/21042056|already shipped/i.test(msg)) {
+        done.add(code); pushed++;
+        await db.update(schema.fulfillmentOrders)
+          .set({ tiktokTrackingPushedAt: new Date(), tiktokPushError: null, tiktokPushNextAt: null })
+          .where(eq(schema.fulfillmentOrders.id, f.id));
+        continue;
+      }
+      errors.push(`${code}: ${msg.slice(0, 160)}`);
     }
   }
   if (errors.length) await stampFail(orderId, errors[0]);
