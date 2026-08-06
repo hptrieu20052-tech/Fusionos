@@ -128,7 +128,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       const j = await fetch("/api/etsy-products/push-shopify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel), storeId: pushStore, templateId: pushTemplate }) }).then((r) => r.json());
       if (j.ok || j.created) {
         const fail = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
-        flash(`✓ Pushed ${j.created}/${(j.results ?? []).length} to ${j.store}${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`, j.failed === 0);
+        flash(`✓ Staged ${j.created}/${(j.results ?? []).length} for ${j.store} — finish them in Manage Products · Shopify, then Push${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`, j.failed === 0);
         load();
       } else {
         const first = (j.results ?? [])[0];
@@ -432,7 +432,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--blue)" }}>{sel.size} selected</span>
           <div style={{ flex: 1 }} />
           {canEdit && shopifyStores.length > 0 && (
-            <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={() => setPushOpen(true)} title="Create the selected listings directly on Shopify via API"><IcShop /> Push to Shopify</button>
+            <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={() => setPushOpen(true)} title="Send the selected listings to Manage Products · Shopify as drafts — finish them there, then Push to create on Shopify"><IcShop /> Push to Shopify</button>
           )}
           {canEdit && <button disabled={busy} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }} onClick={doDelete}><IcTrash /> Delete</button>}
           <button style={{ ...ghost, padding: "9px 12px" }} onClick={() => setSel(new Set())}>Clear</button>
@@ -552,7 +552,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             )}
 
             <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, padding: "10px 12px", background: "#F8FAFF", borderRadius: 10, border: "1px solid #DCE6FB" }}>
-              New products are created as <b style={{ color: "var(--ink)" }}>DRAFT</b>.
+              Nothing is sent to Shopify yet. Listings are staged as <b style={{ color: "var(--ink)" }}>DRAFT</b> in <b style={{ color: "var(--ink)" }}>Manage Products · Shopify</b> — finish them there, then hit <b style={{ color: "var(--ink)" }}>Push to Shopify</b> to create them live.
             </div>
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>

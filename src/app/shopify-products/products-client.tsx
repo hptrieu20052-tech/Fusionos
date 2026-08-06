@@ -45,12 +45,13 @@ const linkBtn = (c: string): React.CSSProperties => ({ border: "none", backgroun
 const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
 const SHOP_GREEN = "#5E8E3E";
 // Control nhỏ dùng cho thanh filter/action — nhỏ hơn ctl để cả hàng nằm gọn 1 dòng.
-const fctl: React.CSSProperties = { ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 155 };
+const fctl: React.CSSProperties = { ...ctl, padding: "7px 8px", fontSize: 12, maxWidth: 140 };
 // Select đang có giá trị thì đổi màu — nhìn phát biết đang lọc cái gì.
 const fsel = (on: boolean, fg = "#1F6F45", bd = "#BFE3CD", bg = "#F3FBF6"): React.CSSProperties =>
   ({ ...fctl, borderColor: on ? bd : "var(--line)", background: on ? bg : "#fff", color: on ? fg : "inherit", fontWeight: on ? 700 : 400 });
 // Nhóm nút theo bước làm việc — chỉ còn vạch ngăn, bỏ nhãn 1/2/3 cho đỡ rối.
-const grp: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 7, padding: "5px 10px 5px 8px", borderLeft: "1px solid #CDEFD8", flexWrap: "wrap" };
+// v172: nowrap + flexShrink 0 — action bar phải nằm gọn MỘT hàng, không cho nhóm nào rơi xuống dòng dưới.
+const grp: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 8px 3px 6px", borderLeft: "1px solid #CDEFD8", flexWrap: "nowrap", flexShrink: 0 };
 // "2h ago" / "3d ago" — nhìn phát biết listing nào vừa chạy AI, khỏi chạy lại tốn tiền.
 // v119: một dòng chỉ được coi là CÓ FEED khi đủ điều kiện Export — feed-export bỏ qua dòng
 // thiếu title/description, và dưới 600 ký tự thì viết feed coi như hỏng mục đích.
@@ -300,6 +301,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         seoTitle: edit.seoTitle, seoDescription: edit.seoDescription,
       }) }).then((r) => r.json());
       if (!p.ok) { flash("✗ " + (p.error ?? "Save failed"), false); setBusy(false); return; }
+      // v172: bản NHÁP stage từ Etsy (chưa có Shopify ID) — Save chỉ lưu local, KHÔNG tự tạo trên
+      // Shopify. Hoàn thiện xong bấm Push to Shopify ngoài action bar mới tạo thật.
+      if (!edit.shopifyProductId) { flash("✓ Draft saved — hit Push to Shopify when it's ready"); setEditId(null); setBusy(false); load(); return; }
       const j = await postJSON("/api/shopify-products/push", { ids: [edit.id] });
       if (j.ok || j.pushed) { flash("✓ Saved & updated on Shopify"); setEditId(null); load(); }
       else { const err = (j.results ?? [])[0]?.error ?? j.error ?? "push failed"; flash("✗ Saved locally but Shopify update failed: " + err + (/write_products|scope|access/i.test(String(err)) ? " — add scope write_products + reinstall app" : ""), false); setEditId(null); load(); }
@@ -989,8 +993,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
       <div style={{ ...card, padding: "12px 14px", marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "1 1 220px", maxWidth: "none", minWidth: 180 }} />
+        {/* v172: MỘT hàng — nowrap + cuộn ngang khi màn hẹp, thay vì rớt xuống hàng 2. */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", alignItems: "center", paddingBottom: 2 }}>
+          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "0 1 190px", maxWidth: "none", minWidth: 130 }} />
           {showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
               <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1048,20 +1053,20 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
       {/* ── ACTION BAR ── xếp theo đúng thứ tự làm việc: ① viết nội dung → ② đẩy lên Shopify → ③ sửa khác */}
       {sel.size > 0 && (
-        <div style={{ ...card, padding: "10px 14px", marginBottom: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", background: "#F3FBF6", borderColor: "#CDEFD8" }}>
-          <span style={{ fontSize: 13, fontWeight: 800, color: SHOP_GREEN, whiteSpace: "nowrap" }}>{sel.size} selected</span>
+        <div style={{ ...card, padding: "10px 12px", marginBottom: 12, display: "flex", gap: 6, flexWrap: "nowrap", alignItems: "center", background: "#F3FBF6", borderColor: "#CDEFD8" }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: SHOP_GREEN, whiteSpace: "nowrap", flexShrink: 0 }}>{sel.size} selected</span>
 
           {canEdit && (
             <span style={grp}>
               {/* Ô này là NGUỒN DUY NHẤT cho mọi hành động AI của trang: AI Optimize, feed copy, alt text.
                   Model nào đọc được ảnh thì có dấu 👁 — alt text chỉ dùng được model có dấu đó. */}
-              <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model for every AI action on this page (Optimize, feed copy, image alt). 👁 = can read images, required for image alt text. Avoid ':free' models, they get rate-limited." style={{ ...fctl, maxWidth: 170 }}>
+              <select value={aiModel} onChange={(e) => chooseModel(e.target.value)} title="AI model for every AI action on this page (Optimize, feed copy, image alt). 👁 = can read images, required for image alt text. Avoid ':free' models, they get rate-limited." style={{ ...fctl, maxWidth: 145 }}>
                 <option value="">Model: Default</option>{aiModels.map((m) => <option key={m.id} value={m.id}>{visionIds.has(m.id) ? "👁 " : ""}{m.name}</option>)}
               </select>
               {selDone > 0 && (
                 <button disabled={busy} title="Deselect listings AI has already rewritten — don't pay to write the same content twice" onClick={() => setSel(new Set(rows.filter((r) => sel.has(r.id) && !r.aiAt).map((r) => r.id)))} style={{ ...ghost, padding: "8px 11px", fontSize: 12.5, borderColor: "#D7CCF5", color: "#5B3FBF" }}>Skip {selDone} done</button>
               )}
-              <button disabled={busy} onClick={() => doAiOptimize()} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), padding: "9px 14px", opacity: busy ? .6 : 1 }}>✦ AI Optimize{selTodo !== sel.size ? ` (${sel.size})` : ""}</button>
+              <button disabled={busy} onClick={() => doAiOptimize()} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), padding: "8px 11px", opacity: busy ? .6 : 1 }}>✦ AI Optimize{selTodo !== sel.size ? ` (${sel.size})` : ""}</button>
             </span>
           )}
 
@@ -1071,7 +1076,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 const ids = rows.filter((r) => sel.has(r.id) && r.dirty).map((r) => r.id);
                 if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
                 doPush(ids);
-              }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), padding: "9px 14px", opacity: busy || !selDirty ? .45 : 1 }}>⬆ Push to Shopify{selDirty ? ` (${selDirty})` : ""}</button>
+              }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), padding: "8px 11px", opacity: busy || !selDirty ? .45 : 1 }}>⬆ Push to Shopify{selDirty ? ` (${selDirty})` : ""}</button>
               {/* Template đổi gì → đẩy hết xuống listing. Chạy được cả trên con đã sạch (không cần dirty). */}
               <button disabled={busy || !sel.size} title="Re-apply each product's Template to its Shopify listing: product type, vendor, theme template, category, options + variants + prices, delivery times, sales channels and personalization fields. Collections, title, AI description, images, SEO, tags and Active/Draft status are left untouched." onClick={() => runAction("push_template")} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: busy || !sel.size ? .45 : 1 }}>🔄 Update Template{sel.size ? ` (${sel.size})` : ""}</button>
             </span>
@@ -1080,7 +1085,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
           {/* Chỉ xuất file — không ghi gì lên Shopify, nên seller đọc-only cũng bấm được. */}
           <span style={grp}>
             <button disabled={busy || !sel.size} title="Export a Pinterest bulk-import CSV from the selected products (image, title, description, link, board = collection). Upload it in Pinterest → Settings → Import content. Nothing is written to Shopify." onClick={() => setPinOpen(true)}
-              style={{ ...pill(PIN_RED, "#fff"), padding: "9px 14px", opacity: busy || !sel.size ? .45 : 1 }}><PinLogo /> Export Pinterest{sel.size ? ` (${sel.size})` : ""}</button>
+              style={{ ...pill(PIN_RED, "#fff"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}><PinLogo /> Export Pinterest{sel.size ? ` (${sel.size})` : ""}</button>
           </span>
 
           {canEdit && (

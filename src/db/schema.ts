@@ -283,6 +283,10 @@ export const shopifyProducts = pgTable("shopify_products", {
   //         KHÔNG ghi đè nữa. Đây là đường chính khi mỗi listing custom một kiểu.
   // Cần MIGRATION_v141_product_personalization.sql
   personalization: jsonb("personalization"),
+  // v172 · Listing Etsy gốc (nếu bản ghi này được STAGE từ Manage Products · Etsy).
+  // Flow mới: Etsy → bản nháp ở đây (shopify_product_id = '') → hoàn thiện → Push mới TẠO trên Shopify.
+  // Cần MIGRATION_v172_etsy_staging.sql
+  etsyProductId: uuid("etsy_product_id"),
   // ---- Google supplemental feed — CHỈ nằm trong FUSION OS, KHÔNG BAO GIỜ push lên Shopify ----
   // Merchant Center cho description tới 5000 ký tự, nhưng feed đang lấy seo_description (≤155,
   // vì ô đó là dòng snippet trên Google Search, dài hơn là bị cắt). Hai field dưới đây để xuất
