@@ -4,6 +4,19 @@ const OR_CHAT = "https://openrouter.ai/api/v1/chat/completions";
 const KEY = () => (process.env.OPENROUTER_API_KEY ?? "").trim();
 const TEXT_MODEL = () => (process.env.OPENROUTER_TEXT_MODEL ?? "anthropic/claude-3.5-sonnet").trim();
 
+// Dọn ký tự "rác Unicode" trước khi nhét vào JSON gửi OpenRouter. Nguồn dữ liệu (title/mô tả Etsy…)
+// có thể chứa emoji bị đứt đôi (lone surrogate) — hoặc do slice() cắt trúng giữa cặp surrogate.
+// JSON.stringify vẫn tạo ra chuỗi "hợp lệ" nhưng provider trả HTTP 400 "no low surrogate in string".
+// Xoá: (1) high surrogate không có low theo sau, (2) low surrogate không có high đứng trước,
+// (3) ký tự điều khiển C0 (trừ \t \n \r) — cũng hay làm hỏng thân JSON.
+function sanitizeForJSON(s: string): string {
+  return String(s ?? "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g, "")
+    .replace(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "")
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+}
+
 // Gọi chat completions, ÉP trả JSON object. Ném lỗi rõ ràng để UI hiện.
 //
 // reasoning: model dòng suy luận (GPT-5.x, o-series, Gemini Thinking, Claude thinking) tiêu token
@@ -13,11 +26,15 @@ const TEXT_MODEL = () => (process.env.OPENROUTER_TEXT_MODEL ?? "anthropic/claude
 export async function orChatJSON<T>(system: string, user: string, opts?: { model?: string; maxTokens?: number; temperature?: number; images?: string[]; timeoutMs?: number; reasoning?: "low" | "medium" | "high" }): Promise<T> {
   const key = KEY();
   if (!key) throw new Error("OPENROUTER_API_KEY chưa cấu hình trong env (Vercel → Settings → Environment Variables).");
+  // Dọn lone-surrogate / ký tự điều khiển trước khi dựng JSON — nếu không, provider trả HTTP 400
+  // "no low surrogate in string" và đổi model bao nhiêu cũng vẫn hỏng (lỗi ở dữ liệu, không ở model).
+  const systemSafe = sanitizeForJSON(system);
+  const userSafe = sanitizeForJSON(user);
   // Nếu có ảnh (data URL) → gửi multimodal: [text, image_url…]. Model text phải hỗ trợ vision.
   const imgs = (opts?.images ?? []).filter(Boolean);
   const userContent = imgs.length
-    ? [{ type: "text", text: user }, ...imgs.map((u) => ({ type: "image_url", image_url: { url: u } }))]
-    : user;
+    ? [{ type: "text", text: userSafe }, ...imgs.map((u) => ({ type: "image_url", image_url: { url: u } }))]
+    : userSafe;
   let res: Response;
   try {
     res = await fetch(OR_CHAT, {
@@ -30,7 +47,7 @@ export async function orChatJSON<T>(system: string, user: string, opts?: { model
       },
       body: JSON.stringify({
         model: opts?.model ?? TEXT_MODEL(),
-        messages: [{ role: "system", content: system }, { role: "user", content: userContent }],
+        messages: [{ role: "system", content: systemSafe }, { role: "user", content: userContent }],
         response_format: { type: "json_object" },
         max_tokens: opts?.maxTokens ?? 3000,
         temperature: opts?.temperature ?? 0.8,
