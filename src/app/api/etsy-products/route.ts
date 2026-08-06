@@ -62,6 +62,17 @@ export async function GET(req: NextRequest) {
     .where(inArray(schema.etsyProducts.storeId, storeIds))
     .orderBy(desc(schema.etsyProducts.importedAt)).limit(2000);
 
+  // v172 · Bản NHÁP đã stage sang Manage Products · Shopify nhưng CHƯA Push (gid rỗng).
+  // Badge STAGED để phân biệt với ↑ SHOPIFY (đã tạo thật). Tra theo etsy_product_id.
+  const etsyIds = rows.map((r) => r.id);
+  const stagedSet = new Set<string>();
+  if (etsyIds.length) {
+    const st = await db.select({ eid: schema.shopifyProducts.etsyProductId, gid: schema.shopifyProducts.shopifyProductId })
+      .from(schema.shopifyProducts)
+      .where(inArray(schema.shopifyProducts.etsyProductId, etsyIds));
+    for (const s of st) { if (s.eid && !s.gid) stagedSet.add(s.eid); }
+  }
+
   // Chỉ giữ ảnh đầu cho list (payload nhẹ); variations rút gọn thành chuỗi tóm tắt
   const out = rows.map((r) => ({
     ...r,
@@ -69,7 +80,8 @@ export async function GET(req: NextRequest) {
     // v142: số ô cá nhân hoá của listing — để hiện chip trong bảng, khỏi mở từng cái ra xem.
     persCount: Array.isArray(r.personalization) ? r.personalization.length : 0,
     personalization: undefined,
-    pushed: !!r.shopifyProductId, // đã push qua Shopify chưa
+    pushed: !!r.shopifyProductId, // đã push qua Shopify chưa (tạo thật)
+    staged: stagedSet.has(r.id) && !r.shopifyProductId, // đã stage sang Shopify side, chờ hoàn thiện + Push
     mainImageUrl: Array.isArray(r.images) && r.images.length ? String((r.images as string[])[0]) : null,
     variationsSummary: Array.isArray(r.variations)
       ? (r.variations as { name?: string; values?: string[] }[]).map((v) => `${v.name}: ${(v.values ?? []).length}`).join(" · ")

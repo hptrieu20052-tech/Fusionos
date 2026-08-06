@@ -12,7 +12,7 @@ type Row = {
   id: string; storeId: string; title: string; price: string | null; quantity: number | null;
   tags: string | null; sku: string | null; status: string; importedAt: string | null;
   storeName: string | null; mainImageUrl: string | null; variationsSummary: string;
-  sellerId: string | null; sellerName: string | null; pushed?: boolean;
+  sellerId: string | null; sellerName: string | null; pushed?: boolean; staged?: boolean;
   persCount?: number; // v142 · số ô Custom options của listing
 };
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
@@ -479,7 +479,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                   <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.title}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
                     {r.sku && <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "ui-monospace,monospace" }}>{r.sku}</span>}
-                    {r.pushed && <span title="Đã push qua Shopify — push lại sẽ CẬP NHẬT, không tạo trùng" style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px" }}>↑ SHOPIFY</span>}
+                    {r.pushed && <span title="Đã tạo thật trên Shopify — push lại sẽ CẬP NHẬT, không tạo trùng" style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px" }}>↑ SHOPIFY</span>}
+                    {r.staged && !r.pushed && <span title="Đã tạo bản nháp trong Manage Products · Shopify — hoàn thiện rồi bấm Push bên đó để tạo trên Shopify" style={{ fontSize: 10, fontWeight: 800, color: "#8A5A00", background: "#FCEFCB", border: "1px solid #F0D897", borderRadius: 6, padding: "1px 7px" }}>◷ STAGED</span>}
                   </div>
                 </td>
                 <td style={{ padding: "10px 6px", whiteSpace: "nowrap" }}>
