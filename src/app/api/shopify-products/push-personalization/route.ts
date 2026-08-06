@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { shopHost, shopifyGraphQL, type ShopifyCred } from "@/lib/shopify";
-import { payloadOf } from "@/lib/personalization";
+import { payloadOf, type PQ } from "@/lib/personalization";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -77,6 +77,22 @@ export async function POST(req: NextRequest) {
 
   const tpls = await db.select().from(schema.shopifyTemplates);
 
+  // v171 · Listing chưa có bộ riêng (NULL) nhưng được đẩy sang từ Etsy: bộ Custom options
+  // của listing ETSY GỐC thắng template — đúng nghĩa "seller đã khai rồi thì lấy của seller".
+  // Tra ngược theo shopify_product_id, chỉ nhận bộ KHÔNG rỗng; tìm được thì ghi luôn vào
+  // shopify_products.personalization (tự vá dữ liệu cũ — các listing đẩy trước v171).
+  const nullGids = rows.filter((r) => !Array.isArray(r.pers) && r.gid).map((r) => r.gid as string);
+  const etsyByGid = new Map<string, PQ[]>();
+  if (nullGids.length) {
+    const src = await db.select({ gid: schema.etsyProducts.shopifyProductId, pers: schema.etsyProducts.personalization })
+      .from(schema.etsyProducts).where(inArray(schema.etsyProducts.shopifyProductId, nullGids));
+    for (const s of src) {
+      if (!s.gid || etsyByGid.has(s.gid)) continue;
+      const f = payloadOf(s.pers);
+      if (f.length) etsyByGid.set(s.gid, f);
+    }
+  }
+
   const results: { id: string; title: string; ok: boolean; error?: string }[] = [];
   let cleared = 0;   // số listing bị xoá ô (template không khai câu nào) — báo lại để khỏi tưởng đã đẩy được ô
   const byStore = new Map<string, typeof rows>();
@@ -94,9 +110,17 @@ export async function POST(req: NextRequest) {
       if (!r.gid) { results.push({ id: r.id, title: r.title, ok: false, error: "listing chưa có Shopify product ID — Sync lại" }); continue; }
       // v141: listing có bộ RIÊNG (Custom options) thì bộ đó thắng — bấm Push template fields
       // cũng không ghi đè. Chỉ listing chưa đặt riêng (NULL) mới lấy theo template.
+      // v171: NULL nhưng có listing Etsy gốc đã khai ô → bộ của seller thắng template.
       let fields;
       if (Array.isArray(r.pers)) {
         fields = payloadOf(r.pers);
+      } else if (etsyByGid.has(r.gid as string)) {
+        fields = etsyByGid.get(r.gid as string)!;
+        try {
+          await db.update(schema.shopifyProducts)
+            .set({ personalization: fields, updatedAt: new Date() })
+            .where(eq(schema.shopifyProducts.id, r.id));
+        } catch { /* không vá được thì lần sau vá tiếp, vẫn đẩy đúng bộ */ }
       } else {
         const t = tplFor(tpls, r.storeId, r.productType, r.templateId);
         if (!t) { results.push({ id: r.id, title: r.title, ok: false, error: `chưa đặt Custom options riêng và không khớp template nào (Product type "${r.productType ?? ""}")` }); continue; }

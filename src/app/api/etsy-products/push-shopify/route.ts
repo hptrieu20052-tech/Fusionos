@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -45,6 +45,21 @@ async function pushPersonalization(cred: ShopifyCred, productGid: string, raw: u
   } catch (e) {
     return String((e as Error)?.message ?? e).slice(0, 160);
   }
+}
+
+// v171 · Bộ Custom options của listing Etsy cũng được LƯU vào shopify_products.personalization
+// (bộ RIÊNG của listing) — để Manage Products · Shopify mở modal ra thấy đúng bộ của seller,
+// và "Push personalization" theo template KHÔNG ghi đè nữa (bộ riêng luôn thắng, luật v141).
+// Dòng shopify_products chưa tồn tại (store chưa Sync) thì bỏ qua — push-personalization (v171)
+// đã biết tự tra ngược listing Etsy gốc theo shopify_product_id.
+async function saveOwnFields(storeId: string, gid: string, raw: unknown) {
+  const fields = payloadOf(raw);
+  if (!fields.length) return;
+  try {
+    await db.update(schema.shopifyProducts)
+      .set({ personalization: fields, updatedAt: new Date() })
+      .where(and(eq(schema.shopifyProducts.storeId, storeId), eq(schema.shopifyProducts.shopifyProductId, gid)));
+  } catch { /* lỗi lưu local không được chặn kết quả push */ }
 }
 
 export async function POST(req: NextRequest) {
@@ -105,6 +120,7 @@ export async function POST(req: NextRequest) {
         if (!res.ok || !res.productId) { results.push({ id: p.id, title: titleT, ok: false, error: res.error ?? "apply failed" }); continue; }
         await db.update(schema.etsyProducts).set({ shopifyProductId: res.productId, updatedAt: new Date() }).where(eq(schema.etsyProducts.id, p.id));
         const mfErrT = await pushPersonalization(cred, res.productId, (p as { personalization?: unknown }).personalization);
+        await saveOwnFields(storeId, res.productId, (p as { personalization?: unknown }).personalization); // v171
         results.push({ id: p.id, title: titleT, ok: true, handle: res.handle, ...(mfErrT ? { error: "custom options not written: " + mfErrT } : {}) });
         continue;
       }
@@ -163,6 +179,7 @@ export async function POST(req: NextRequest) {
       if (prod?.id) {
         await db.update(schema.etsyProducts).set({ shopifyProductId: prod.id, updatedAt: new Date() }).where(eq(schema.etsyProducts.id, p.id));
         mfErr = await pushPersonalization(cred, prod.id, (p as { personalization?: unknown }).personalization);
+        await saveOwnFields(storeId, prod.id, (p as { personalization?: unknown }).personalization); // v171
       }
       results.push({ id: p.id, title, ok: true, handle: prod?.handle, ...(mfErr ? { error: "custom options not written: " + mfErr } : {}) });
     } catch (e) {

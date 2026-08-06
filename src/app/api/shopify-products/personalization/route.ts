@@ -53,6 +53,7 @@ export async function POST(req: NextRequest) {
     id: schema.shopifyProducts.id, title: schema.shopifyProducts.title, storeId: schema.shopifyProducts.storeId,
     productType: schema.shopifyProducts.productType, templateId: schema.shopifyProducts.templateId,
     pers: schema.shopifyProducts.personalization, seller: schema.stores.sellerId,
+    gid: schema.shopifyProducts.shopifyProductId,
   }).from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
   if (!rows.length) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
@@ -62,10 +63,24 @@ export async function POST(req: NextRequest) {
   if (action === "read") {
     // Mở modal lên là thấy đúng cái listing ĐANG dùng, để sửa tiếp chứ không phải gõ lại từ đầu.
     const first = rows.find((r) => r.id === ids[0]) ?? rows[0];
-    const own = Array.isArray(first.pers);
+    let own = Array.isArray(first.pers);
     let fields: PQ[] = own ? payloadOf(first.pers) : [];
     let source: "product" | "template" | "none" = own ? "product" : "none";
     let templateName = "";
+    // v171 · NULL nhưng sản phẩm được đẩy sang từ Etsy và listing gốc đã khai ô → bộ của seller
+    // là bộ đang chạy thật trên Shopify (push-shopify đã ghi metafield). Nhận làm bộ RIÊNG luôn
+    // (ghi vào shopify_products) để modal, push-personalization và template nhìn cùng một sự thật.
+    if (!own && first.gid) {
+      const [src] = await db.select({ pers: schema.etsyProducts.personalization })
+        .from(schema.etsyProducts).where(eq(schema.etsyProducts.shopifyProductId, first.gid)).limit(1);
+      const f = src ? payloadOf(src.pers) : [];
+      if (f.length) {
+        await db.update(schema.shopifyProducts)
+          .set({ personalization: f, updatedAt: new Date() })
+          .where(eq(schema.shopifyProducts.id, first.id));
+        own = true; fields = f; source = "product";
+      }
+    }
     if (!own) {
       const tpls = await db.select().from(schema.shopifyTemplates);
       const t = tplFor(tpls, first.storeId, first.productType, first.templateId);
