@@ -119,8 +119,8 @@ export async function POST(req: NextRequest) {
   }
 
   // Template (tuỳ chọn) — cấu trúc options/variants/giá của bản nháp lấy theo template.
-  // Category / collections / sales channels của template áp sau bằng các nút sẵn có bên
-  // Manage Products · Shopify (Push template fields / Apply template) — stage không đụng Shopify.
+  // Category / category metafields / theme template / collections / sales channels của template
+  // được tự áp lúc PUSH bản nháp (v172b, xem shopify-products/push) — stage không đụng Shopify.
   let tpl: Template | null = null;
   if (templateId) {
     const [t] = await db.select().from(schema.shopifyTemplates).where(eq(schema.shopifyTemplates.id, templateId)).limit(1);

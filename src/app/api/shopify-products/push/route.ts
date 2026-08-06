@@ -7,9 +7,13 @@ import { storeOwnerScopeIds } from "@/lib/scope";
 import { shopHost, shopifyGraphQL, type ShopifyCred } from "@/lib/shopify";
 import { pushProductToShopify, fetchOneShopifyProduct, type SyncedVariant, type SyncedImage, type SyncedOption } from "@/lib/shopify-products";
 import { payloadOf } from "@/lib/personalization";
+import { collectionAddProducts, publishToPublications } from "@/lib/shopify-bulk";
+import type { Template } from "@/lib/shopify-template";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// v172b: 60 → 300. Tạo mới từ bản nháp (productSet synchronous + upload media + chờ media xử lý)
+// chậm hơn update nhiều; 60s là bị Vercel cắt giữa lô 5 con.
+export const maxDuration = 300;
 
 /**
  * POST /api/shopify-products/push { ids } — đẩy chỉnh sửa local lên Shopify.
@@ -32,7 +36,9 @@ const MF_SET = `mutation SetPers($m: [MetafieldsSetInput!]!) {
 type Row = typeof schema.shopifyProducts.$inferSelect;
 
 // v172 · Tạo sản phẩm MỚI trên Shopify từ bản nháp local. Trả về GID hoặc lỗi.
-async function createOnShopify(cred: ShopifyCred, p: Row): Promise<{ gid?: string; error?: string }> {
+// v172b · tpl (nếu bản nháp có template): lấy thêm category + category metafields + theme template
+// ngay trong productSet — structure/giá vẫn theo BẢN NHÁP (người dùng sửa gì giữ nấy), không theo template.
+async function createOnShopify(cred: ShopifyCred, p: Row, tpl?: Template | null): Promise<{ gid?: string; error?: string }> {
   const opts = (Array.isArray(p.options) ? p.options as SyncedOption[] : []).filter((o) => o?.name && Array.isArray(o.values) && o.values.length);
   const productOptions = opts.map((o, i) => ({ name: o.name, position: i + 1, values: o.values.map((v) => ({ name: v })) }));
   const localVariants = (Array.isArray(p.variants) ? p.variants as SyncedVariant[] : []);
@@ -57,10 +63,14 @@ async function createOnShopify(cred: ShopifyCred, p: Row): Promise<{ gid?: strin
     status: (p.status || "DRAFT").toUpperCase(),
     tags: (p.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean).slice(0, 250),
     ...((p.seoTitle || p.seoDescription) ? { seo: { title: p.seoTitle ?? "", description: p.seoDescription ?? "" } } : {}),
+    ...(tpl?.category?.id ? { category: tpl.category.id } : {}),
+    ...(tpl?.themeTemplate ? { templateSuffix: tpl.themeTemplate } : {}),
     ...(productOptions.length ? { productOptions } : {}),
     variants,
     ...(files.length ? { files } : {}),
   };
+  const catMfs = (tpl?.categoryMetafields ?? []).filter((m) => m.namespace && m.key && m.type && String(m.value ?? "").trim() !== "");
+  if (catMfs.length) input.metafields = catMfs.map((m) => ({ namespace: m.namespace, key: m.key, type: m.type, value: m.value }));
   const data = await shopifyGraphQL<{ productSet?: { product?: { id: string }; userErrors?: { message: string }[] } }>(cred, PRODUCT_SET, { input });
   const ue2 = data.productSet?.userErrors ?? [];
   if (ue2.length) return { error: ue2.map((e) => e.message).join("; ").slice(0, 200) };
@@ -77,6 +87,19 @@ async function createOnShopify(cred: ShopifyCred, p: Row): Promise<{ gid?: strin
   return { gid };
 }
 
+// v172b · Collections + sales channels của template — áp sau khi có GID (giống applyTemplate lúc tạo mới).
+// Lỗi phụ không chặn kết quả chính, gom lại báo "partial".
+async function applyTplExtras(cred: ShopifyCred, tpl: Template, gid: string): Promise<string> {
+  const warn: string[] = [];
+  for (const cid of tpl.collectionIds ?? []) {
+    try { await collectionAddProducts(cred, cid, [gid]); } catch (e) { warn.push("collection: " + String((e as Error)?.message ?? e).slice(0, 80)); }
+  }
+  if ((tpl.publicationIds ?? []).length) {
+    try { await publishToPublications(cred, gid, tpl.publicationIds); } catch (e) { warn.push("channels: " + String((e as Error)?.message ?? e).slice(0, 80)); }
+  }
+  return warn.join("; ");
+}
+
 // v172 · Sau khi TẠO xong trên Shopify: nối GID vào bản ghi (NGAY — lỡ refetch lỗi cũng không tạo trùng
 // lần Push sau), ghi ngược GID về listing Etsy gốc, rồi nạp lại bản mới (variant GID / media GID).
 async function adoptCreated(cred: ShopifyCred, p: Row, gid: string) {
@@ -87,14 +110,26 @@ async function adoptCreated(cred: ShopifyCred, p: Row, gid: string) {
         .where(eq(schema.etsyProducts.id, p.etsyProductId));
     } catch { /* ghi ngược Etsy lỗi không chặn kết quả push */ }
   }
+  // v172b · Media upload là BẤT ĐỒNG BỘ: đọc lại ngay sau productSet thường được 0 ảnh, lưu đè là
+  // "mất ảnh" cho tới lần Sync sau. Chờ và đọc lại vài lần cho tới khi đủ số ảnh đã gửi.
+  const expectedImages = (Array.isArray(p.images) ? p.images as SyncedImage[] : []).filter((im) => /^https?:\/\//i.test(im?.src ?? "")).length;
   let fresh: Awaited<ReturnType<typeof fetchOneShopifyProduct>> = null;
-  try { fresh = await fetchOneShopifyProduct(cred, gid); } catch { /* refetch lỗi không chặn — Shopify đã nhận */ }
+  for (let i = 0; i < 4; i++) {
+    try { fresh = await fetchOneShopifyProduct(cred, gid); } catch { /* refetch lỗi không chặn — Shopify đã nhận */ }
+    if ((fresh?.images.length ?? 0) >= expectedImages || i === 3) break;
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  // Vẫn chưa đủ ảnh (Shopify xử lý chậm) → giữ ảnh của bản nháp cho hiển thị, Sync sau sẽ thay bằng
+  // bản có media GID thật.
+  const freshImages = fresh && fresh.images.length >= expectedImages
+    ? fresh.images
+    : (Array.isArray(p.images) ? p.images as SyncedImage[] : []);
   await db.update(schema.shopifyProducts).set({
     ...(fresh ? {
       handle: fresh.handle, title: fresh.title, bodyHtml: fresh.bodyHtml, vendor: fresh.vendor, productType: fresh.productType,
       tags: fresh.tags, status: fresh.status, seoTitle: fresh.seoTitle, seoDescription: fresh.seoDescription,
       category: fresh.category, collections: fresh.collections, options: fresh.options,
-      variants: fresh.variants, images: fresh.images,
+      variants: fresh.variants, images: freshImages,
       onlineStoreUrl: fresh.onlineStoreUrl, totalInventory: fresh.totalInventory, syncedAt: new Date(),
     } : {}),
     dirty: false, pushedAt: new Date(), updatedAt: new Date(),
@@ -113,6 +148,11 @@ export async function POST(req: NextRequest) {
   const scopeIds = await storeOwnerScopeIds(session);
   if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
+  // v172b · Template của các bản nháp — cần cho category / collections / sales channels lúc TẠO MỚI.
+  const tplIds = Array.from(new Set(rows.map((r) => r.p.templateId).filter(Boolean))) as string[];
+  const tplRows = tplIds.length ? await db.select().from(schema.shopifyTemplates).where(inArray(schema.shopifyTemplates.id, tplIds)) : [];
+  const tplById = new Map(tplRows.map((t) => [t.id, t as unknown as Template]));
+
   const results: { id: string; title: string; ok: boolean; error?: string }[] = [];
   for (const r of rows) {
     const cred = (r.cred ?? {}) as ShopifyCred;
@@ -122,10 +162,12 @@ export async function POST(req: NextRequest) {
     try {
       // ---- v172 · Bản nháp stage từ Etsy: TẠO MỚI thay vì update ----
       if (!r.p.shopifyProductId) {
-        const made = await createOnShopify(cred, r.p);
+        const tpl = r.p.templateId ? tplById.get(r.p.templateId) ?? null : null;
+        const made = await createOnShopify(cred, r.p, tpl);
         if (!made.gid) { results.push({ id: r.p.id, title: r.p.title, ok: false, error: made.error ?? "create failed" }); continue; }
+        const warn = tpl ? await applyTplExtras(cred, tpl, made.gid) : "";
         await adoptCreated(cred, r.p, made.gid);
-        results.push({ id: r.p.id, title: r.p.title, ok: true });
+        results.push({ id: r.p.id, title: r.p.title, ok: true, ...(warn ? { error: "partial: " + warn } : {}) });
         continue;
       }
 
@@ -156,10 +198,12 @@ export async function POST(req: NextRequest) {
       } else if (/does not exist|doesn'?t exist|not found/i.test(res.error ?? "")) {
         // v172 · Sản phẩm đã bị XOÁ tay trên Shopify mà bản ghi vẫn giữ GID cũ → tự gỡ liên kết
         // và TẠO LẠI ngay trong lần Push này (nội dung lấy từ bản local đang có).
-        const made = await createOnShopify(cred, r.p);
+        const tpl = r.p.templateId ? tplById.get(r.p.templateId) ?? null : null;
+        const made = await createOnShopify(cred, r.p, tpl);
         if (!made.gid) { results.push({ id: r.p.id, title: r.p.title, ok: false, error: "old product was deleted on Shopify; re-create failed: " + (made.error ?? "") }); continue; }
+        const warn = tpl ? await applyTplExtras(cred, tpl, made.gid) : "";
         await adoptCreated(cred, { ...r.p, shopifyProductId: made.gid }, made.gid);
-        results.push({ id: r.p.id, title: r.p.title, ok: true });
+        results.push({ id: r.p.id, title: r.p.title, ok: true, ...(warn ? { error: "partial: " + warn } : {}) });
       } else results.push({ id: r.p.id, title: r.p.title, ok: false, error: res.error });
     } catch (e) {
       results.push({ id: r.p.id, title: r.p.title, ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) });
