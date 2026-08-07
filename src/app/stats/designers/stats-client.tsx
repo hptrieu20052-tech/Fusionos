@@ -9,7 +9,7 @@ type Designer = { id: string; name: string; values: number[]; total: number; poi
 type SaleRow = {
   id: string; sku: string; title: string; platform: string | null; store: string | null;
   seller: string | null; designer: string | null; creator: string | null;
-  orders: number; qty: number; revenue: number; lastOrder: string | null; createdAt: string;
+  orders: number; qty: number; revenue: number | null; lastOrder: string | null; createdAt: string;
   productLink: string | null; thumb: string | null;
 };
 type PersonOpt = { id: string; name: string };
@@ -32,6 +32,8 @@ export function DesignSales() {
   const [creators, setCreators] = useState<PersonOpt[]>([]);
   const [loading, setLoading] = useState(false);
   const [offset, setOffset] = useState(0);
+  // v176b · Tiền chỉ hiện cho admin — API quyết định (showMoney), UI chỉ nghe theo.
+  const [showMoney, setShowMoney] = useState(false);
   const LIMIT = 50;
 
   const load = useCallback((off: number, append: boolean) => {
@@ -46,7 +48,7 @@ export function DesignSales() {
     fetch(`/api/stats/design-sales?${p}`).then((r) => r.json()).then((j) => {
       if (!j.ok) return;
       setRows((prev) => (append ? [...prev, ...j.rows] : j.rows));
-      setTotal(j.total);
+      setTotal(j.total); setShowMoney(!!j.showMoney);
       setSellers(j.filters?.sellers ?? []); setDesigners(j.filters?.designers ?? []); setCreators(j.filters?.creators ?? []);
     }).finally(() => setLoading(false));
   }, [dr, q, platform, sellerId, designerId, creatorId, salesF, sortF]);
@@ -58,7 +60,7 @@ export function DesignSales() {
   const fmtDate = (s: string | null) => (s ? String(s).slice(0, 10) : "—");
   const sel: React.CSSProperties = { padding: "7px 9px", fontSize: 12.5, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", maxWidth: 150 };
   const totalOrders = rows.reduce((t, r) => t + r.orders, 0);
-  const totalRevenue = rows.reduce((t, r) => t + r.revenue, 0);
+  const totalRevenue = rows.reduce((t, r) => t + (r.revenue ?? 0), 0);
 
   return (
     <div className="panel">
@@ -93,20 +95,20 @@ export function DesignSales() {
         <select value={sortF} onChange={(e) => setSortF(e.target.value)} style={sel}>
           <option value="orders">Sort: most orders</option>
           <option value="qty">Sort: most quantity</option>
-          <option value="revenue">Sort: most revenue</option>
+          {showMoney && <option value="revenue">Sort: most revenue</option>}
           <option value="newest">Sort: newest design</option>
         </select>
       </div>
 
       <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--muted)" }}>
-        <b style={{ color: "var(--ink)" }}>{total}</b> design(s) · shown {rows.length}: <b style={{ color: "var(--ink)" }}>{totalOrders}</b> orders · <b style={{ color: "var(--ink)" }}>{money(totalRevenue)}</b>
+        <b style={{ color: "var(--ink)" }}>{total}</b> design(s) · shown {rows.length}: <b style={{ color: "var(--ink)" }}>{totalOrders}</b> orders{showMoney && <> · <b style={{ color: "var(--ink)" }}>{money(totalRevenue)}</b></>}
       </div>
 
       <div style={{ overflowX: "auto", marginTop: 8 }}>
         <table>
           <thead><tr>
             <th style={{ width: 56 }}></th><th>SKU</th><th>Title</th><th>Marketplace</th><th>Seller</th><th>Designer</th><th>Creator</th>
-            <th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Revenue</th><th>Last order</th>
+            <th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Qty</th>{showMoney && <th style={{ textAlign: "right" }}>Revenue</th>}<th>Last order</th>
           </tr></thead>
           <tbody>
             {rows.map((r) => (
@@ -131,11 +133,11 @@ export function DesignSales() {
                 <td>{r.creator ?? "—"}</td>
                 <td style={{ textAlign: "right", fontWeight: 800 }}>{r.orders}</td>
                 <td style={{ textAlign: "right" }}>{r.qty}</td>
-                <td style={{ textAlign: "right", fontWeight: 700 }}>{r.revenue ? money(r.revenue) : "—"}</td>
+                {showMoney && <td style={{ textAlign: "right", fontWeight: 700 }}>{r.revenue ? money(r.revenue) : "—"}</td>}
                 <td style={{ whiteSpace: "nowrap" }}>{fmtDate(r.lastOrder)}</td>
               </tr>
             ))}
-            {!rows.length && !loading && <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No designs match these filters.</td></tr>}
+            {!rows.length && !loading && <tr><td colSpan={showMoney ? 11 : 10} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No designs match these filters.</td></tr>}
           </tbody>
         </table>
       </div>

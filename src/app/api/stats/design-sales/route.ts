@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import { sql } from "drizzle-orm";
+import { db, schema } from "@/lib/db";
+import { eq, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { scopeOwnerIds } from "@/lib/scope";
 import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -49,21 +48,29 @@ export async function GET(req: NextRequest) {
   const designerId = uuidOk(sp.get("designerId"));
   const creatorId = uuidOk(sp.get("creatorId"));
   const salesF = ["has", "none", "all"].includes(sp.get("sales") ?? "") ? sp.get("sales")! : "has";
-  const sortF = ["orders", "qty", "revenue", "newest"].includes(sp.get("sort") ?? "") ? sp.get("sort")! : "orders";
+  let sortF = ["orders", "qty", "revenue", "newest"].includes(sp.get("sort") ?? "") ? sp.get("sort")! : "orders";
   const limit = Math.min(Math.max(Number(sp.get("limit") ?? 50), 1), 200);
   const offset = Math.max(Number(sp.get("offset") ?? 0), 0);
 
-  // ---- Scope: admin/content thấy tất; còn lại own/team trên cả 3 vai ----
-  let scopeIds = session.role === "admin" || session.role === "content" ? null : await scopeOwnerIds(session, "designs");
-  if (scopeIds === null && session.role !== "admin" && session.role !== "content" && session.role !== "seller") {
-    // chưa cấu hình scope → sàn an toàn: chỉ thấy design của chính mình
-    scopeIds = [session.sub];
+  // ---- Scope (v176b): admin thấy tất + thấy tiền. Mọi role khác: CHỈ team mình, KHÔNG thấy tiền.
+  // Team xác định theo SELLER của design — design gán chéo cho seller team khác bị ẩn hoàn toàn
+  // (kể cả khi mình đứng tên designer/creator trên đó).
+  const isAdmin = session.role === "admin";
+  let teamIds: string[] | null = null;
+  if (!isAdmin) {
+    const [me] = await db.select({ team: schema.users.team }).from(schema.users).where(eq(schema.users.id, session.sub)).limit(1);
+    if (me?.team) {
+      const members = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.team, me.team));
+      teamIds = members.map((m) => m.id);
+    } else {
+      teamIds = [session.sub]; // chưa vào team nào → chỉ thấy design mình đứng tên seller
+    }
   }
 
   const conds = [sql`TRUE`];
-  if (scopeIds) {
-    const idsSql = sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `);
-    conds.push(sql`(d.designer_id IN (${idsSql}) OR d.creator_id IN (${idsSql}) OR d.seller_id IN (${idsSql}))`);
+  if (teamIds) {
+    const idsSql = sql.join(teamIds.map((x) => sql`${x}::uuid`), sql`, `);
+    conds.push(sql`d.seller_id IN (${idsSql})`);
   }
   if (q) {
     // Tìm theo title (ILIKE, có index trigram) hoặc đúng số SKU
@@ -91,6 +98,8 @@ export async function GET(req: NextRequest) {
       AND o.status NOT IN ('new','cancel','trash')
       AND o.ordered_at::date >= ${FROM} AND o.ordered_at::date <= ${TO}
     GROUP BY 1`;
+
+  if (!isAdmin && sortF === "revenue") sortF = "orders"; // không thấy tiền thì không sort theo tiền
 
   const JOIN = salesF === "has" ? sql`JOIN` : sql`LEFT JOIN`;
   const NONE = salesF === "none" ? sql` AND s.design_id IS NULL` : sql``;
@@ -158,6 +167,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true, total,
+    // v176b · showMoney: tiền CHỈ trả về cho admin — ẩn từ API, không phải giấu trên UI.
+    showMoney: isAdmin,
     rows: rows.map((r) => ({
       id: r.id,
       sku: "TLW-" + String(r.sku_code).padStart(4, "0"),
@@ -165,7 +176,8 @@ export async function GET(req: NextRequest) {
       platform: r.platform,
       store: r.store,
       seller: r.seller, designer: r.designer, creator: r.creator,
-      orders: Number(r.orders), qty: Number(r.qty), revenue: Number(r.revenue),
+      orders: Number(r.orders), qty: Number(r.qty),
+      revenue: isAdmin ? Number(r.revenue) : null,
       lastOrder: r.last_order, createdAt: r.created_at,
       productLink: r.product_link,
       thumb: thumbBy.get(r.id) ?? null,
