@@ -47,7 +47,8 @@ const linkBtn = (c: string): React.CSSProperties => ({ border: "none", backgroun
 const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
 const SHOP_GREEN = "#5E8E3E";
 // Control nhỏ dùng cho thanh filter/action — nhỏ hơn ctl để cả hàng nằm gọn 1 dòng.
-const fctl: React.CSSProperties = { ...ctl, padding: "7px 8px", fontSize: 12, maxWidth: 140 };
+// v179b: nén thêm để 10 ô filter nằm gọn MỘT hàng (Search → Risk) không phải cuộn/xuống dòng.
+const fctl: React.CSSProperties = { ...ctl, padding: "6px 7px", fontSize: 11.5, maxWidth: 122, borderRadius: 10 };
 // Select đang có giá trị thì đổi màu — nhìn phát biết đang lọc cái gì.
 const fsel = (on: boolean, fg = "#1F6F45", bd = "#BFE3CD", bg = "#F3FBF6"): React.CSSProperties =>
   ({ ...fctl, borderColor: on ? bd : "var(--line)", background: on ? bg : "#fff", color: on ? fg : "inherit", fontWeight: on ? 700 : 400 });
@@ -1073,9 +1074,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
       <div style={{ ...card, padding: "12px 14px", marginBottom: 12 }}>
-        {/* v173: cho filter TỰ XUỐNG HÀNG khi màn hẹp (wrap) — thấy hết, không phải kéo thanh cuộn ngang. */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "1 1 200px", maxWidth: "none", minWidth: 150 }} />
+        {/* v179b: MỘT hàng gọn — ô nén nhỏ đủ chứa cả 10 filter; màn quá hẹp mới sinh cuộn ngang (hiếm). */}
+        <div style={{ display: "flex", gap: 5, flexWrap: "nowrap", overflowX: "auto", alignItems: "center", paddingBottom: 2 }}>
+          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "1 1 150px", maxWidth: "none", minWidth: 110 }} />
           {showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
               <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
