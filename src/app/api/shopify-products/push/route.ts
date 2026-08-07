@@ -9,6 +9,7 @@ import { pushProductToShopify, fetchOneShopifyProduct, type SyncedVariant, type 
 import { payloadOf } from "@/lib/personalization";
 import { collectionAddProducts, publishToPublications } from "@/lib/shopify-bulk";
 import type { Template } from "@/lib/shopify-template";
+import { hitsSummary, type PolicyHit } from "@/lib/policy-scan";
 
 export const dynamic = "force-dynamic";
 // v172b: 60 → 300. Tạo mới từ bản nháp (productSet synchronous + upload media + chờ media xử lý)
@@ -163,6 +164,15 @@ export async function POST(req: NextRequest) {
       results.push({ id: r.p.id, title: r.p.title, ok: false, error: "store chưa cấu hình Shopify API" }); continue;
     }
     try {
+      // ---- v179 · CHỐT CHẶN policy: theo kết quả AI POLICY AUDIT đã lưu (nguồn sự thật duy nhất,
+      // blacklist chữ đã bỏ). HIGH → KHÔNG cho lên Shopify. Muốn mở khoá: sửa theo các fix mà
+      // audit đã chỉ, rồi chạy lại "AI policy check" — ra sạch là Push qua.
+      if (r.p.policyRisk === "high") {
+        const hits = (Array.isArray(r.p.policyHits) ? r.p.policyHits : []) as PolicyHit[];
+        results.push({ id: r.p.id, title: r.p.title, ok: false, error: "BLOCKED — policy audit found HIGH risk: " + hitsSummary(hits) + ". Apply the suggested fixes, then re-run AI policy check." });
+        continue;
+      }
+
       // ---- v172 · Bản nháp stage từ Etsy: TẠO MỚI thay vì update ----
       if (!r.p.shopifyProductId) {
         const tpl = r.p.templateId ? tplById.get(r.p.templateId) ?? null : null;

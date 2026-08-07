@@ -21,6 +21,8 @@ type Row = {
   skuDone: number; skuTotal: number; altDone: number; altTotal: number;
   // v141: Custom options. persOwn = listing đã tự đặt bộ ô riêng (không còn ăn theo template).
   persOwn: boolean; persCount: number;
+  // v177: Policy & trademark scan. null = chưa quét.
+  policyRisk: "clean" | "medium" | "high" | null; policyHitsSummary: string;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -95,7 +97,7 @@ async function postJSON<T = any>(url: string, body: unknown): Promise<T> {
 type ActKey =
   | "set_template" | "push_template" | "find_replace" | "personalization"
   | "google_prep" | "feed_copy" | "feed_export"
-  | "ai_collection" | "tags" | "collection" | "channels"
+  | "policy_ai" | "ai_collection" | "tags" | "collection" | "channels"
   | "active" | "draft" | "archive" | "delete";
 type ActionItem = { key: ActKey; label: string; danger?: boolean };
 type ActionGroup = { title: string; items: ActionItem[] };
@@ -127,6 +129,9 @@ const ACTION_GROUPS: ActionGroup[] = [
   {
     title: "Organize",
     items: [
+      // v179: AI audit TOÀN BỘ listing (artwork + title/desc/tags + SEO + Google feed) —
+      // trả cảnh báo + CÁCH SỬA từng chỗ. HIGH bị chặn ở nút Push. Cần model 👁.
+      { key: "policy_ai", label: "AI policy check (full listing) ✦" },
       // v173: AI nhìn ảnh + title rồi tự chọn 1–2 collection ĐANG CÓ (không tạo mới). Con nào không
       // hợp cái nào → đánh dấu unmatched để tự xử. Cần model có 👁 (đọc ảnh).
       { key: "ai_collection", label: "Auto-assign collections (AI) ✦" },
@@ -178,6 +183,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [aiFilter, setAiFilter] = useState<"" | "todo" | "done" | "unpushed">("");
   const [feedFilter, setFeedFilter] = useState<"" | "todo" | "done">("");
   const [prepFilter, setPrepFilter] = useState<"" | "sku" | "alt" | "done">(""); // v127
+  const [riskFilter, setRiskFilter] = useState<"" | "high" | "medium" | "clean" | "unchecked">(""); // v177
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
@@ -252,18 +258,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     (!aiFilter || (aiFilter === "todo" ? !r.aiAt : aiFilter === "done" ? !!r.aiAt : !!r.aiAt && r.dirty)) &&
     (!feedFilter || (feedFilter === "done" ? feedOk(r) : !feedOk(r))) &&
     (!prepFilter || (prepFilter === "sku" ? r.skuDone < r.skuTotal : prepFilter === "alt" ? r.altDone < r.altTotal : r.skuDone >= r.skuTotal && r.altDone >= r.altTotal)) &&
+    (!riskFilter || (riskFilter === "unchecked" ? !r.policyRisk : r.policyRisk === riskFilter)) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
   ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
   // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
   const selDirty = useMemo(() => rows.filter((r) => sel.has(r.id) && r.dirty).length, [rows, sel]);
-  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter);
-  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); setPrepFilter(""); };
+  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter || riskFilter);
+  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); setPrepFilter(""); setRiskFilter(""); };
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
@@ -767,6 +774,41 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     setBusy(false);
   };
 
+  // v179 · AI policy audit theo LÔ 6 — soi TOÀN BỘ listing (artwork + text + SEO + feed),
+  // mỗi phát hiện kèm CÁCH SỬA. Danh sách dưới thanh tiến độ liệt kê từng vấn đề → fix.
+  const CHUNK_POLAI = 6;
+  const doPolicyAi = async (ids: string[]) => {
+    if (!ids.length) return flash("✗ Select products first", false);
+    setBusy(true); setMsg(null); setFails([]);
+    let clean = 0, medium = 0, high = 0; const failed: { id: string; title: string; error: string }[] = [];
+    setProg({ label: "AI checking policy risks", done: 0, total: ids.length, fail: 0 });
+    for (let i = 0; i < ids.length; i += CHUNK_POLAI) {
+      const batch = ids.slice(i, i + CHUNK_POLAI);
+      try {
+        const j = await postJSON("/api/shopify-products/policy-ai", { ids: batch, model: aiModel || undefined });
+        clean += j.clean ?? 0; medium += j.medium ?? 0; high += j.high ?? 0;
+        const res = (j.results ?? []) as { id: string; title: string; ok: boolean; risk?: string; summary?: string; findings?: { term: string; field: string; severity: string; fix?: string }[]; error?: string }[];
+        res.filter((x) => !x.ok).forEach((x) => failed.push({ id: x.id, title: x.title, error: x.error ?? "failed" }));
+        // Liệt kê từng vấn đề kèm fix để sửa được ngay tại chỗ, không phải mở từng listing đoán mò.
+        res.filter((x) => x.ok && x.risk !== "clean").forEach((x) => failed.push({
+          id: x.id, title: x.title,
+          error: `${(x.risk ?? "").toUpperCase()} — ` + (x.findings ?? []).map((f) => `[${f.field}] ${f.term}${f.fix ? ` → Fix: ${f.fix}` : ""}`).join(" · "),
+        }));
+        if (!res.length && !j.ok) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error ?? "request failed" }));
+      } catch (e) {
+        const err = String((e as Error)?.message ?? "network error");
+        batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: err }));
+      }
+      setProg({ label: "AI checking policy risks", done: Math.min(i + batch.length, ids.length), total: ids.length, fail: failed.length });
+    }
+    setProg(null); setFails(failed);
+    flash(high
+      ? `⚠ AI checked ${ids.length}: ${high} HIGH (push BLOCKED) · ${medium} medium · ${clean} clean`
+      : `✓ AI checked ${ids.length}: ${clean} clean · ${medium} medium · 0 high`, high === 0);
+    await load();
+    setBusy(false);
+  };
+
   // v173 · AI Auto-Collection theo LÔ 8. Sản phẩm thật (có gid) được gắn collection NGAY trên Shopify;
   // bản nháp chỉ ghi local, Push sẽ áp. Con nào AI thấy không hợp collection nào → đếm vào "unmatched"
   // và liệt kê để người tự xử (KHÔNG tạo collection mới). Cần model có 👁 để đọc ảnh.
@@ -864,6 +906,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     if (key === "feed_export") return doFeedExport(Array.from(sel));
     // v173 · AI tự gán collection — chạy theo lô, dùng model đang chọn (cần 👁 để đọc ảnh).
     if (key === "ai_collection") return doAiCollection(Array.from(sel));
+    // v179 · AI audit toàn bộ listing — dùng model đang chọn (cần 👁).
+    if (key === "policy_ai") return doPolicyAi(Array.from(sel));
     // Find & replace: chạy được trên nhiều store cùng lúc — mỗi listing dùng credential store của nó.
     if (key === "find_replace") { setAct({ key, title: "Find & replace in text", kind: "replace", storeId: "", loading: false, items: [] }); return; }
     // Custom options — modal riêng, không dùng khung act (nội dung phức tạp hơn hẳn các lệnh kia).
@@ -1074,6 +1118,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
             <option value="alt">Missing image alt</option>
             <option value="done">SKU + alt complete</option>
           </select>
+          {/* v177: policy scan — HIGH bị chặn ở Push cho tới khi sửa sạch */}
+          <select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value as "" | "high" | "medium" | "clean" | "unchecked")} title="Trademark & policy scan result — run 'Scan trademark & policy risks' in More actions first" style={fsel(!!riskFilter, "#B42318", "#F3C9C9", "#FEF3F2")}>
+            <option value="">Risk: all</option>
+            <option value="high">⛔ High risk</option>
+            <option value="medium">⚠ Medium</option>
+            <option value="clean">✓ Clean</option>
+            <option value="unchecked">Not scanned yet</option>
+          </select>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
@@ -1131,12 +1183,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 {/* v118: 4 cột ngang → 1 cột DỌC. Bốn cột rộng hơn màn hình nên tràn sang phải,
                     phải kéo ngang mới thấy hết. Neo right:0 để menu mở về bên trái, không tràn mép. */}
                 {actionsOpen && (
-                  <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 30, width: 320, maxHeight: "min(72vh, 640px)", overflowY: "auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 30px rgba(0,0,0,.12)", padding: 6 }} onMouseLeave={() => setActionsOpen(false)}>
-                    {ACTION_GROUPS.map((g, gi) => (
-                      <div key={g.title} style={{ padding: "2px 2px", borderTop: gi ? "1px solid var(--line)" : "none", marginTop: gi ? 5 : 0, paddingTop: gi ? 5 : 2 }}>
-                        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", color: "var(--muted)", padding: "6px 8px 4px" }}>{g.title}</div>
+                  // v179: 1 cột hẹp phải cuộn → PANEL RỘNG 2 CỘT hiện trọn mọi lệnh, không cuộn,
+                  // không bị viewport cắt (maxWidth theo màn hình, tự co về 1 cột khi quá hẹp).
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 30, width: "min(680px, calc(100vw - 48px))", background: "#fff", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "0 12px 36px rgba(0,0,0,.14)", padding: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "4px 16px" }} onMouseLeave={() => setActionsOpen(false)}>
+                    {ACTION_GROUPS.map((g) => (
+                      <div key={g.title} style={{ padding: 2, minWidth: 0 }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", color: "var(--muted)", padding: "6px 8px 4px", borderBottom: "1px solid var(--line)", marginBottom: 3 }}>{g.title}</div>
                         {g.items.map((a) => (
-                          <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, lineHeight: 1.35, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")}>{a.label}</button>
+                          <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, lineHeight: 1.35, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")} title={a.label}>{a.label}</button>
                         ))}
                       </div>
                     ))}
@@ -1263,6 +1317,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                       <span title={`Feed copy is too short to export — title ${r.feedTitleLen} chars, description ${r.feedDescLen} chars, needs 600+`} style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#FEF6E7", color: "#B7791F" }}>feed {r.feedDescLen}</span>
                     ) : (
                       <span title="No feed copy — Export supplemental feed skips this listing" style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#F1F1F4", color: "#8794A5" }}>no feed</span>
+                    )}
+                    {/* v177: chip policy scan — chỉ hiện khi có vấn đề (clean thì im cho gọn bảng) */}
+                    {r.policyRisk === "high" && (
+                      <span title={`Push BLOCKED — trademark/policy risk: ${r.policyHitsSummary}. Clean the text, then Push again.`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEE4E2", color: "#B42318" }}>⛔ risk</span>
+                    )}
+                    {r.policyRisk === "medium" && (
+                      <span title={`Policy warning: ${r.policyHitsSummary}`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEF6E7", color: "#B7791F" }}>⚠ risk</span>
                     )}
                   </div>
                   {/* v127: dòng 3 = 2 việc còn lại của google_prep. Đếm THẬT từ variants[].sku và

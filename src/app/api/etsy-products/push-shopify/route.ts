@@ -160,6 +160,8 @@ export async function POST(req: NextRequest) {
         .map((src, i) => ({ id: "", src: String(src), altText: "", position: i + 1 }));
       const persFields = payloadOf((p as { personalization?: unknown }).personalization);
 
+      // v179 · Bản nháp stage vào ở trạng thái CHƯA AUDIT (policy_risk = null) — chạy
+      // "AI policy check" bên Manage Products · Shopify trước khi Push; HIGH sẽ bị Push chặn.
       const draft = {
         storeId,
         title,
@@ -174,6 +176,7 @@ export async function POST(req: NextRequest) {
         personalization: persFields.length ? persFields : null,
         templateId: templateId || null,
         etsyProductId: p.id,
+        policyRisk: null, policyHits: null, policyCheckedAt: null, // v179: chưa audit — quét bằng AI trước khi Push
         dirty: true,
         updatedAt: new Date(),
       };

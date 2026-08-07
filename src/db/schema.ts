@@ -287,6 +287,12 @@ export const shopifyProducts = pgTable("shopify_products", {
   // Flow mới: Etsy → bản nháp ở đây (shopify_product_id = '') → hoàn thiện → Push mới TẠO trên Shopify.
   // Cần MIGRATION_v172_etsy_staging.sql
   etsyProductId: uuid("etsy_product_id"),
+  // v177 · Policy & Trademark scan (src/lib/policy-scan.ts) — lưới an toàn cửa Shopify.
+  // risk: clean/medium/high (NULL = chưa quét) · hits: [{term, field, severity}]
+  // HIGH bị CHẶN ở nút Push. Cần MIGRATION_v177_policy_scan.sql
+  policyRisk: text("policy_risk"),
+  policyHits: jsonb("policy_hits"),
+  policyCheckedAt: timestamp("policy_checked_at", { withTimezone: true }),
   // ---- Google supplemental feed — CHỈ nằm trong FUSION OS, KHÔNG BAO GIỜ push lên Shopify ----
   // Merchant Center cho description tới 5000 ký tự, nhưng feed đang lấy seo_description (≤155,
   // vì ô đó là dòng snippet trên Google Search, dài hơn là bị cắt). Hai field dưới đây để xuất

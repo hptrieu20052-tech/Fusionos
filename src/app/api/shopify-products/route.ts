@@ -79,6 +79,11 @@ export async function GET(req: NextRequest) {
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,
       templateId: tpl?.id ?? null, templateName: tpl?.name ?? "", templatePinned: !!pinned, templateHasFacts: tplHasFacts,
       syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt, aiAt: r.p.aiAt,
+      // v177 · Policy scan: risk + tóm tắt hit (chỉ chuỗi ngắn, không chở nguyên mảng cho nhẹ bảng).
+      policyRisk: r.p.policyRisk ?? null,
+      policyHitsSummary: Array.isArray(r.p.policyHits)
+        ? (r.p.policyHits as { term: string; field: string }[]).slice(0, 6).map((h) => `"${h.term}" (${h.field})`).join(", ")
+        : "",
       // v119: feed Merchant Center. Chỉ trả ĐỘ DÀI, không trả nguyên văn — 134 dòng × 1300 ký tự
       // là ~180KB thừa mỗi lần load bảng. Nội dung đầy đủ lấy ở GET ?id= khi mở Edit.
       feedAt: r.p.feedAt, feedTitleLen: (r.p.feedTitle ?? "").length, feedDescLen: (r.p.feedDescription ?? "").length,
