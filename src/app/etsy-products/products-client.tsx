@@ -13,7 +13,7 @@ type Row = {
   tags: string | null; sku: string | null; status: string; importedAt: string | null;
   storeName: string | null; mainImageUrl: string | null; variationsSummary: string;
   sellerId: string | null; sellerName: string | null; pushed?: boolean; staged?: boolean;
-  shopifyListing?: { title: string } | null; // v183: chỉ có khi người xem có quyền trên store Shopify đích
+  shopifyListing?: { id: string; title: string } | null; // v183: chỉ có khi người xem có quyền trên store Shopify đích
   persCount?: number; // v142 · số ô Custom options của listing
 };
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
@@ -64,6 +64,12 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [kw, setKw] = useState(() => {
     if (typeof window === "undefined") return "";
     try { return new URLSearchParams(window.location.search).get("q") ?? ""; } catch { return ""; }
+  });
+  // v184: ?pid= — nút "Etsy" bên Manage Products · Shopify nhảy về ĐÚNG listing theo id (khớp 100%,
+  // không sợ 2 listing trùng title hay title đã bị đổi).
+  const [pidFilter, setPidFilter] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try { return new URLSearchParams(window.location.search).get("pid") ?? ""; } catch { return ""; }
   });
   const [sellerFilter, setSellerFilter] = useState("");
   const [storeFilter, setStoreFilter] = useState("");
@@ -147,8 +153,9 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     (!sellerFilter || r.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (pushFilter === "" || (pushFilter === "pushed" ? r.pushed : !r.pushed)) &&
+    (!pidFilter || r.id === pidFilter) &&
     (!kw.trim() || (r.title + " " + (r.sku ?? "") + " " + (r.tags ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, pushFilter]);
+  ), [rows, kw, sellerFilter, storeFilter, pushFilter, pidFilter]);
   const pushedCount = useMemo(() => rows.filter((r) => r.pushed).length, [rows]);
   const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
 
@@ -428,6 +435,11 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           <option value="not">Not pushed</option>
           <option value="pushed">Pushed to Shopify</option>
         </select>
+        {/* v184: đang xem đúng 1 listing nhảy từ Manage Products · Shopify qua — bấm × để xem lại tất cả */}
+        {pidFilter && (
+          <button onClick={() => setPidFilter("")} title="Showing only the listing linked from Manage Products · Shopify — click to show all"
+            style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #DCE6FB", background: "#F8FAFF", color: "var(--blue)", borderRadius: 999, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🔗 Linked listing ×</button>
+        )}
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>{sel.size ? `${sel.size} selected` : `${filtered.length} listings`}</span>
       </div>
@@ -503,7 +515,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                     {/* v183: nhảy qua bản tương ứng bên Manage Products · Shopify — API chỉ trả field này
                         khi người xem có quyền trên store Shopify đích (admin / seller của chính shop đó) */}
                     {r.shopifyListing && (
-                      <a href={`/shopify-products?q=${encodeURIComponent(r.shopifyListing.title)}`} target="_blank" rel="noreferrer"
+                      <a href={`/shopify-products?pid=${encodeURIComponent(r.shopifyListing.id)}`} target="_blank" rel="noreferrer"
                         title={`View in Manage Products · Shopify: ${r.shopifyListing.title}`}
                         style={{ ...linkBtn("#5E8E3E"), textDecoration: "none" }}>Shopify</a>
                     )}

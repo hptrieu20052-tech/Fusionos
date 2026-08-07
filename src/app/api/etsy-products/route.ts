@@ -69,12 +69,13 @@ export async function GET(req: NextRequest) {
   const etsyIds = rows.map((r) => r.id);
   const linkGids = rows.map((r) => r.shopifyProductId).filter(Boolean) as string[];
   const stagedSet = new Set<string>();
-  const shopByEid = new Map<string, { title: string }>();
-  const shopByGid = new Map<string, { title: string }>();
+  const shopByEid = new Map<string, { id: string; title: string }>();
+  const shopByGid = new Map<string, { id: string; title: string }>();
   if (etsyIds.length) {
     const conds = [inArray(schema.shopifyProducts.etsyProductId, etsyIds)];
     if (linkGids.length) conds.push(inArray(schema.shopifyProducts.shopifyProductId, linkGids));
     const st = await db.select({
+      rowId: schema.shopifyProducts.id,
       eid: schema.shopifyProducts.etsyProductId,
       gid: schema.shopifyProducts.shopifyProductId,
       title: schema.shopifyProducts.title,
@@ -87,7 +88,8 @@ export async function GET(req: NextRequest) {
     for (const s of st) {
       if (s.eid && !s.gid) stagedSet.add(s.eid);
       if (!canSee(s.shopSellerId)) continue; // seller Etsy khác team không thấy nút Shopify
-      const item = { title: s.title };
+      // v184: kèm id để nút "Shopify" nhảy về ĐÚNG dòng (?pid=), không dò theo title nữa
+      const item = { id: s.rowId, title: s.title };
       if (s.eid) shopByEid.set(s.eid, item);
       if (s.gid) shopByGid.set(s.gid, item);
     }

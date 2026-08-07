@@ -182,6 +182,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   // v183: nhận ?q= từ nút "Shopify" bên Manage Products · Etsy — mở trang là ô search điền sẵn title.
   const [kw, setKw] = useState(() => { if (typeof window === "undefined") return "";
     try { return new URLSearchParams(window.location.search).get("q") ?? ""; } catch { return ""; } });
+  // v184: ?pid= — nút "Shopify" bên Manage Products · Etsy nhảy về ĐÚNG 1 dòng theo id, khớp 100%
+  // (không dò theo title nữa: title có thể đã bị AI đổi, hoặc trùng nhau giữa 2 product).
+  const [pidFilter, setPidFilter] = useState(() => { if (typeof window === "undefined") return "";
+    try { return new URLSearchParams(window.location.search).get("pid") ?? ""; } catch { return ""; } });
   const [sellerFilter, setSellerFilter] = useState(""); const [storeFilter, setStoreFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState(""); const [categoryFilter, setCategoryFilter] = useState(""); const [collectionFilter, setCollectionFilter] = useState("");
   // Lọc theo trạng thái Shopify — listing đẩy từ Etsy sang luôn là DRAFT, lọc "Draft" để soát trước khi bật Active.
@@ -266,8 +270,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     (!feedFilter || (feedFilter === "done" ? feedOk(r) : !feedOk(r))) &&
     (!prepFilter || (prepFilter === "sku" ? r.skuDone < r.skuTotal : prepFilter === "alt" ? r.altDone < r.altTotal : r.skuDone >= r.skuTotal && r.altDone >= r.altTotal)) &&
     (!riskFilter || (riskFilter === "unchecked" ? !r.policyRisk : r.policyRisk === riskFilter)) &&
+    (!pidFilter || r.id === pidFilter) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, stores]);
+  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, pidFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
@@ -276,8 +281,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
   const selDirty = useMemo(() => rows.filter((r) => sel.has(r.id) && r.dirty).length, [rows, sel]);
-  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter || riskFilter);
-  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); setPrepFilter(""); setRiskFilter(""); };
+  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter || riskFilter || pidFilter);
+  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); setPrepFilter(""); setRiskFilter(""); setPidFilter(""); };
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
@@ -1138,6 +1143,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
           <span style={{ fontSize: 12.5, fontWeight: 700 }}>{filtered.length}</span>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{anyFilter ? `of ${rows.length} products match` : "products"}</span>
+          {/* v184: đang xem đúng 1 listing nhảy từ Manage Products · Etsy qua — bấm × để xem lại tất cả */}
+          {pidFilter && (
+            <button onClick={() => setPidFilter("")} title="Showing only the listing linked from Manage Products · Etsy — click to show all"
+              style={{ display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid #DCE6FB", background: "#F8FAFF", color: "var(--blue)", borderRadius: 999, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>🔗 Linked listing ×</button>
+          )}
           {anyFilter && <button onClick={clearFilters} style={{ ...linkBtn("var(--blue)"), fontSize: 12, whiteSpace: "nowrap", flex: "0 0 auto" }}>Clear filters</button>}
           <div style={{ flex: 1 }} />
           {sel.size > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: SHOP_GREEN }}>{sel.size} selected</span>}
@@ -1361,7 +1371,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                   {r.onlineStoreUrl && <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" style={{ ...linkBtn(SHOP_GREEN), textDecoration: "none", marginRight: 10 }}>Open</a>}
                   {/* v181: nhảy về listing Etsy gốc (mở Manage Products · Etsy với ô search điền sẵn title) */}
                   {r.etsyListing && (
-                    <a href={`/etsy-products?q=${encodeURIComponent(r.etsyListing.title)}`} target="_blank" rel="noreferrer"
+                    <a href={`/etsy-products?pid=${encodeURIComponent(r.etsyListing.id)}`} target="_blank" rel="noreferrer"
                       title={`View source listing in Manage Products · Etsy — ${r.etsyListing.store}: ${r.etsyListing.title}`}
                       style={{ ...linkBtn("#F1641E"), textDecoration: "none", marginRight: 10 }}>Etsy</a>
                   )}
