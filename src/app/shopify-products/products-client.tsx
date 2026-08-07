@@ -52,8 +52,9 @@ const SHOP_GREEN = "#5E8E3E";
 // v179b: nén thêm để 10 ô filter nằm gọn MỘT hàng (Search → Risk) không phải cuộn/xuống dòng.
 const fctl: React.CSSProperties = { ...ctl, padding: "6px 7px", fontSize: 11.5, maxWidth: 122, borderRadius: 10 };
 // Select đang có giá trị thì đổi màu — nhìn phát biết đang lọc cái gì.
+// v182: co giãn theo bề ngang màn hình (flex 1 1) — 10 ô LUÔN vừa đúng 1 hàng, KHÔNG bao giờ sinh thanh cuộn.
 const fsel = (on: boolean, fg = "#1F6F45", bd = "#BFE3CD", bg = "#F3FBF6"): React.CSSProperties =>
-  ({ ...fctl, borderColor: on ? bd : "var(--line)", background: on ? bg : "#fff", color: on ? fg : "inherit", fontWeight: on ? 700 : 400 });
+  ({ ...fctl, maxWidth: "none", width: "auto", flex: "1 1 72px", minWidth: 0, borderColor: on ? bd : "var(--line)", background: on ? bg : "#fff", color: on ? fg : "inherit", fontWeight: on ? 700 : 400 });
 // Nhóm nút theo bước làm việc — chỉ còn vạch ngăn, bỏ nhãn 1/2/3 cho đỡ rối.
 // v172: nowrap + flexShrink 0 — action bar phải nằm gọn MỘT hàng, không cho nhóm nào rơi xuống dòng dưới.
 const grp: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 8px 3px 6px", borderLeft: "1px solid #CDEFD8", flexWrap: "nowrap", flexShrink: 0 };
@@ -178,7 +179,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [prog, setProg] = useState<{ label: string; done: number; total: number; fail: number } | null>(null);
   // Danh sách sản phẩm AI viết hỏng + lý do — phải thấy được lý do mới sửa được.
   const [fails, setFails] = useState<{ id: string; title: string; error: string }[]>([]);
-  const [kw, setKw] = useState(""); const [sellerFilter, setSellerFilter] = useState(""); const [storeFilter, setStoreFilter] = useState("");
+  // v183: nhận ?q= từ nút "Shopify" bên Manage Products · Etsy — mở trang là ô search điền sẵn title.
+  const [kw, setKw] = useState(() => { if (typeof window === "undefined") return "";
+    try { return new URLSearchParams(window.location.search).get("q") ?? ""; } catch { return ""; } });
+  const [sellerFilter, setSellerFilter] = useState(""); const [storeFilter, setStoreFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState(""); const [categoryFilter, setCategoryFilter] = useState(""); const [collectionFilter, setCollectionFilter] = useState("");
   // Lọc theo trạng thái Shopify — listing đẩy từ Etsy sang luôn là DRAFT, lọc "Draft" để soát trước khi bật Active.
   const [statusFilter, setStatusFilter] = useState("");
@@ -1076,9 +1080,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
       <div style={{ ...card, padding: "12px 14px", marginBottom: 12 }}>
-        {/* v179b: MỘT hàng gọn — ô nén nhỏ đủ chứa cả 10 filter; màn quá hẹp mới sinh cuộn ngang (hiếm). */}
-        <div style={{ display: "flex", gap: 5, flexWrap: "nowrap", overflowX: "auto", alignItems: "center", paddingBottom: 2 }}>
-          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "1 1 150px", maxWidth: "none", minWidth: 110 }} />
+        {/* v182: MỘT hàng CỐ ĐỊNH — bỏ hẳn cuộn ngang; mỗi ô flex co giãn nên 10 filter luôn chia đều vừa khít bề ngang. */}
+        <div style={{ display: "flex", gap: 5, flexWrap: "nowrap", alignItems: "center" }}>
+          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "2 1 110px", maxWidth: "none", minWidth: 80 }} />
           {showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
               <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1134,7 +1138,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
           <span style={{ fontSize: 12.5, fontWeight: 700 }}>{filtered.length}</span>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{anyFilter ? `of ${rows.length} products match` : "products"}</span>
-          {anyFilter && <button onClick={clearFilters} style={{ ...linkBtn("var(--blue)"), fontSize: 12 }}>Clear filters</button>}
+          {anyFilter && <button onClick={clearFilters} style={{ ...linkBtn("var(--blue)"), fontSize: 12, whiteSpace: "nowrap", flex: "0 0 auto" }}>Clear filters</button>}
           <div style={{ flex: 1 }} />
           {sel.size > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: SHOP_GREEN }}>{sel.size} selected</span>}
           <button onClick={() => setSel(new Set(filtered.map((r) => r.id)))} disabled={!filtered.length} title="Select every product matching the filters above — not just this page" style={{ ...ghost, padding: "7px 12px", fontSize: 12.5, opacity: filtered.length ? 1 : .5 }}>Select all {filtered.length}</button>
@@ -1253,20 +1257,22 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
 
       {/* Table */}
       <div style={{ ...card, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        {/* v182: tableLayout fixed — bảng LUÔN đúng 100% bề ngang, cột Actions không bao giờ bị cắt khuất.
+            Cột Title là cột co giãn (không đặt width), các cột còn lại width cố định. */}
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ background: "#FAFBFC", color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase" }}>
               <th style={{ padding: "10px 12px", textAlign: "left", width: 34 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
-              <th style={{ padding: "10px 6px", textAlign: "left" }}>Image</th>
+              <th style={{ padding: "10px 6px", textAlign: "left", width: 54 }}>Image</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Title</th>
-              <th style={{ padding: "10px 8px", textAlign: "left" }}>Store / Seller</th>
-              <th style={{ padding: "10px 8px", textAlign: "left" }}>Type / Category</th>
-              <th style={{ padding: "10px 8px", textAlign: "left" }}>Collections</th>
-              <th style={{ padding: "10px 8px", textAlign: "left" }}>Template</th>
-              <th style={{ padding: "10px 8px", textAlign: "center" }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
-              <th style={{ padding: "10px 8px", textAlign: "right" }}>Price</th>
-              <th style={{ padding: "10px 8px", textAlign: "center" }}>Status</th>
-              <th style={{ padding: "10px 12px", textAlign: "right" }}>Actions</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: 92 }}>Store / Seller</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: 140 }}>Type / Category</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: 130 }}>Collections</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: 130 }}>Template</th>
+              <th style={{ padding: "10px 8px", textAlign: "center", width: 195 }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
+              <th style={{ padding: "10px 8px", textAlign: "right", width: 96 }}>Price</th>
+              <th style={{ padding: "10px 8px", textAlign: "center", width: 84 }}>Status</th>
+              <th style={{ padding: "10px 12px", textAlign: "right", width: 150 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1277,7 +1283,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} alt={r.title} size={42} radius={8} border /></td>
                 <td style={{ padding: "8px" }}>
-                  <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
+                  <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.variantCount} variants · {r.imageCount} images{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}{r.optionsSummary ? ` · ${r.optionsSummary}` : ""}</div>
                 </td>
                 <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.sellerName ?? "—"}</div></td>
@@ -1304,7 +1310,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                   ) : <span title="No template matched — AI Optimize writes the Description only (no 3 tabs)" style={{ color: "var(--muted)" }}>—</span>}
                 </td>
                 {/* AI: đã viết lại chưa + cách đây bao lâu. Chấm cam = đã viết nhưng chưa Push lên Shopify. */}
-                <td style={{ padding: "8px", textAlign: "center", whiteSpace: "nowrap" }}>
+                <td style={{ padding: "8px", textAlign: "center" }}>
                   {r.aiAt ? (
                     <span title={`AI Optimize last run ${new Date(r.aiAt).toLocaleString()}${r.dirty ? " — not pushed to Shopify yet" : ""}`} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#F1EBFF", color: "#5B3FBF" }}>
                       ✦ {ago(r.aiAt)}{r.dirty && <span style={{ color: "#B7791F" }}>●</span>}
@@ -1336,7 +1342,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                   {/* v127: dòng 3 = 2 việc còn lại của google_prep. Đếm THẬT từ variants[].sku và
                       images[].altText đã ghi ngược về DB, nên không cần Sync mới thấy đúng.
                       Xanh = đủ, vàng = làm dở, xám = chưa chạy. */}
-                  <div style={{ marginTop: 3, display: "flex", gap: 4, justifyContent: "center" }}>
+                  <div style={{ marginTop: 3, display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap" }}>
                     <span title={r.skuTotal === 0 ? "No variants" : r.skuDone === r.skuTotal ? `All ${r.skuTotal} variant(s) have a SKU` : `${r.skuTotal - r.skuDone} variant(s) still have no SKU — run Prepare for Google feed`}
                       style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...chipTone(r.skuDone, r.skuTotal) }}>sku {r.skuDone}/{r.skuTotal}</span>
                     <span title={r.altTotal === 0 ? "No images" : r.altDone === r.altTotal ? `All ${r.altTotal} image(s) have alt text` : `${r.altTotal - r.altDone} image(s) still have no alt text — run Prepare for Google feed with a vision model`}
@@ -1347,9 +1353,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                       style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...(r.persOwn ? { background: "#E9F7EF", color: "#1F6F45" } : { background: "#F1F1F4", color: "#8794A5" }) }}>opt {r.persCount}</span>
                   </div>
                 </td>
-                <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap" }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
+                <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12 }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
-                <td style={{ padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                {/* v182: bỏ nowrap — nút thừa thì rơi xuống dòng dưới trong CHÍNH ô Actions, không bao giờ bị cắt khuất. */}
+                <td style={{ padding: "8px 12px", textAlign: "right" }}>
                   {canEdit && <button onClick={() => openEdit(r.id)} style={{ ...linkBtn("var(--blue)"), marginRight: 10 }}>Edit</button>}
                   {r.onlineStoreUrl && <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" style={{ ...linkBtn(SHOP_GREEN), textDecoration: "none", marginRight: 10 }}>Open</a>}
                   {/* v181: nhảy về listing Etsy gốc (mở Manage Products · Etsy với ô search điền sẵn title) */}

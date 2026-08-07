@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { desc, eq, inArray, sql } from "drizzle-orm";
+import { desc, eq, inArray, or, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -64,13 +64,33 @@ export async function GET(req: NextRequest) {
 
   // v172 · Bản NHÁP đã stage sang Manage Products · Shopify nhưng CHƯA Push (gid rỗng).
   // Badge STAGED để phân biệt với ↑ SHOPIFY (đã tạo thật). Tra theo etsy_product_id.
+  // v183 · kèm nút "Shopify" chiều ngược: link theo etsy_product_id HOẶC theo gid (flow cũ),
+  //        CHỈ trả về khi người xem có quyền trên store Shopify đích (admin, hoặc seller của chính shop đó).
   const etsyIds = rows.map((r) => r.id);
+  const linkGids = rows.map((r) => r.shopifyProductId).filter(Boolean) as string[];
   const stagedSet = new Set<string>();
+  const shopByEid = new Map<string, { title: string }>();
+  const shopByGid = new Map<string, { title: string }>();
   if (etsyIds.length) {
-    const st = await db.select({ eid: schema.shopifyProducts.etsyProductId, gid: schema.shopifyProducts.shopifyProductId })
-      .from(schema.shopifyProducts)
-      .where(inArray(schema.shopifyProducts.etsyProductId, etsyIds));
-    for (const s of st) { if (s.eid && !s.gid) stagedSet.add(s.eid); }
+    const conds = [inArray(schema.shopifyProducts.etsyProductId, etsyIds)];
+    if (linkGids.length) conds.push(inArray(schema.shopifyProducts.shopifyProductId, linkGids));
+    const st = await db.select({
+      eid: schema.shopifyProducts.etsyProductId,
+      gid: schema.shopifyProducts.shopifyProductId,
+      title: schema.shopifyProducts.title,
+      shopSellerId: schema.stores.sellerId,
+    }).from(schema.shopifyProducts)
+      .leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
+      .where(conds.length > 1 ? or(...conds) : conds[0]);
+    const scopeIds = await storeOwnerScopeIds(session);
+    const canSee = (sid: string | null) => !scopeIds || (!!sid && scopeIds.includes(sid));
+    for (const s of st) {
+      if (s.eid && !s.gid) stagedSet.add(s.eid);
+      if (!canSee(s.shopSellerId)) continue; // seller Etsy khác team không thấy nút Shopify
+      const item = { title: s.title };
+      if (s.eid) shopByEid.set(s.eid, item);
+      if (s.gid) shopByGid.set(s.gid, item);
+    }
   }
 
   // Chỉ giữ ảnh đầu cho list (payload nhẹ); variations rút gọn thành chuỗi tóm tắt
@@ -82,6 +102,8 @@ export async function GET(req: NextRequest) {
     personalization: undefined,
     pushed: !!r.shopifyProductId, // đã push qua Shopify chưa (tạo thật)
     staged: stagedSet.has(r.id) && !r.shopifyProductId, // đã stage sang Shopify side, chờ hoàn thiện + Push
+    // v183: bản ghi tương ứng bên Manage Products · Shopify — null nếu chưa stage/push hoặc người xem không có quyền
+    shopifyListing: shopByEid.get(r.id) ?? (r.shopifyProductId ? shopByGid.get(String(r.shopifyProductId)) ?? null : null) ?? null,
     mainImageUrl: Array.isArray(r.images) && r.images.length ? String((r.images as string[])[0]) : null,
     variationsSummary: Array.isArray(r.variations)
       ? (r.variations as { name?: string; values?: string[] }[]).map((v) => `${v.name}: ${(v.values ?? []).length}`).join(" · ")

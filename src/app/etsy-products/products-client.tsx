@@ -13,6 +13,7 @@ type Row = {
   tags: string | null; sku: string | null; status: string; importedAt: string | null;
   storeName: string | null; mainImageUrl: string | null; variationsSummary: string;
   sellerId: string | null; sellerName: string | null; pushed?: boolean; staged?: boolean;
+  shopifyListing?: { title: string } | null; // v183: chỉ có khi người xem có quyền trên store Shopify đích
   persCount?: number; // v142 · số ô Custom options của listing
 };
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
@@ -498,13 +499,20 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                 <td style={{ padding: "10px 6px", textAlign: "right" }}>{r.quantity ?? "—"}</td>
                 <td style={{ padding: "10px 6px", whiteSpace: "nowrap", color: "var(--muted)" }}>{r.importedAt ? String(r.importedAt).slice(0, 10) : "—"}</td>
                 <td style={{ padding: "10px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                  {canEdit && (
-                    <div style={{ display: "inline-flex", gap: 12, alignItems: "center", fontSize: 12.5, fontWeight: 700 }}>
+                  <div style={{ display: "inline-flex", gap: 12, alignItems: "center", fontSize: 12.5, fontWeight: 700 }}>
+                    {/* v183: nhảy qua bản tương ứng bên Manage Products · Shopify — API chỉ trả field này
+                        khi người xem có quyền trên store Shopify đích (admin / seller của chính shop đó) */}
+                    {r.shopifyListing && (
+                      <a href={`/shopify-products?q=${encodeURIComponent(r.shopifyListing.title)}`} target="_blank" rel="noreferrer"
+                        title={`View in Manage Products · Shopify: ${r.shopifyListing.title}`}
+                        style={{ ...linkBtn("#5E8E3E"), textDecoration: "none" }}>Shopify</a>
+                    )}
+                    {canEdit && (<>
                       <button onClick={() => openEdit(r.id)} style={linkBtn("var(--blue)")}>Edit</button>
                       <button disabled={busy} onClick={() => doDuplicate(r.id)} style={linkBtn("#158A57")}>Duplicate</button>
                       <button disabled={busy} onClick={() => doDeleteOne(r.id, r.title)} style={linkBtn("var(--red)")}>Delete</button>
-                    </div>
-                  )}
+                    </>)}
+                  </div>
                 </td>
               </tr>
             ))}
