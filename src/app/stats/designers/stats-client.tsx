@@ -82,7 +82,7 @@ export function DesignSales() {
       </div>
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU" style={{ ...sel, flex: "1 1 190px", maxWidth: "none", minWidth: 140 }} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / design ID" style={{ ...sel, flex: "1 1 190px", maxWidth: "none", minWidth: 140 }} />
         <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={sel}>
           <option value="">All marketplaces</option>{PLATFORMS.map((x) => <option key={x} value={x}>{x}</option>)}
         </select>
@@ -115,7 +115,7 @@ export function DesignSales() {
       <div style={{ overflowX: "auto", marginTop: 8 }}>
         <table>
           <thead><tr>
-            <th style={{ width: 56 }}></th><th>SKU</th><th>Title</th><th>Marketplace</th><th>Seller</th><th>Designer</th><th>Creator</th>
+            <th style={{ width: 56 }}></th><th>Design ID</th><th>Title</th><th>Marketplace</th><th>Seller</th><th>Designer</th><th>Creator</th>
             <th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Qty</th>{showMoney && <th style={{ textAlign: "right" }}>Revenue</th>}<th>Last order</th>
           </tr></thead>
           <tbody>
