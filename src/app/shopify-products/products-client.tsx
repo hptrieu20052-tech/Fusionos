@@ -22,7 +22,7 @@ type Row = {
   // v141: Custom options. persOwn = listing đã tự đặt bộ ô riêng (không còn ăn theo template).
   persOwn: boolean; persCount: number;
   // v177: Policy & trademark scan. null = chưa quét.
-  policyRisk: "clean" | "medium" | "high" | null; policyHitsSummary: string;
+  policyRisk: "clean" | "medium" | "high" | null; policyHitsSummary: string; policyCheckedAt: string | null;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -1319,12 +1319,16 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                     ) : (
                       <span title="No feed copy — Export supplemental feed skips this listing" style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#F1F1F4", color: "#8794A5" }}>no feed</span>
                     )}
-                    {/* v177: chip policy scan — chỉ hiện khi có vấn đề (clean thì im cho gọn bảng) */}
+                    {/* v179c: chip policy audit — hiện CẢ 3 trạng thái để nhìn phát biết đã check hay chưa.
+                        Không có chip nào = CHƯA audit. */}
                     {r.policyRisk === "high" && (
-                      <span title={`Push BLOCKED — trademark/policy risk: ${r.policyHitsSummary}. Clean the text, then Push again.`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEE4E2", color: "#B42318" }}>⛔ risk</span>
+                      <span title={`AI policy audit ${r.policyCheckedAt ? new Date(r.policyCheckedAt).toLocaleString() : ""} — Push BLOCKED: ${r.policyHitsSummary}. Apply the fixes, then re-run AI policy check.`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEE4E2", color: "#B42318" }}>⛔ risk</span>
                     )}
                     {r.policyRisk === "medium" && (
-                      <span title={`Policy warning: ${r.policyHitsSummary}`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEF6E7", color: "#B7791F" }}>⚠ risk</span>
+                      <span title={`AI policy audit ${r.policyCheckedAt ? new Date(r.policyCheckedAt).toLocaleString() : ""} — warnings: ${r.policyHitsSummary}`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEF6E7", color: "#B7791F" }}>⚠ risk</span>
+                    )}
+                    {r.policyRisk === "clean" && (
+                      <span title={`AI policy audit passed${r.policyCheckedAt ? " " + new Date(r.policyCheckedAt).toLocaleString() : ""} — no trademark/policy issues found`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#E9F7EF", color: "#1F6F45" }}>✓ policy</span>
                     )}
                   </div>
                   {/* v127: dòng 3 = 2 việc còn lại của google_prep. Đếm THẬT từ variants[].sku và

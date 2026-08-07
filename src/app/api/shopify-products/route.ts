@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
       syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt, aiAt: r.p.aiAt,
       // v177 · Policy scan: risk + tóm tắt hit (chỉ chuỗi ngắn, không chở nguyên mảng cho nhẹ bảng).
       policyRisk: r.p.policyRisk ?? null,
+      policyCheckedAt: r.p.policyCheckedAt,
       policyHitsSummary: Array.isArray(r.p.policyHits)
         ? (r.p.policyHits as { term: string; field: string }[]).slice(0, 6).map((h) => `"${h.term}" (${h.field})`).join(", ")
         : "",
