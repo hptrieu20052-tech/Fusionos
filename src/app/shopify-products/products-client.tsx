@@ -1241,29 +1241,54 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, padding: "10px 14px", borderRadius: 12, background: msg.ok ? "#EAF7F0" : "#FDECEC", color: msg.ok ? "#158A57" : "#C0392B", border: `1px solid ${msg.ok ? "#C7EAD8" : "#F5CFCF"}` }}>{msg.text}</div>}
 
       {/* Sản phẩm AI viết hỏng + LÝ DO THẬT — không đoán mò nữa. Retry chỉ chạy lại đúng mấy con này. */}
-      {fails.length > 0 && !prog && (
-        <div style={{ ...card, padding: "12px 16px", marginBottom: 12, borderColor: "#F5CFCF", background: "#FFF8F8" }}>
+      {/* v187: khung này dùng chung cho 2 loại nội dung — LỖI thật (đỏ) và KẾT QUẢ policy audit (vàng).
+          Nhận diện: doPolicyAi ghi mọi finding với tiền tố "HIGH — " / "MEDIUM — ". Nếu TẤT CẢ các dòng
+          đều là finding ⇒ đây là kết quả audit, KHÔNG phải lỗi: đổi tiêu đề, đổi nút (Re-check thay vì
+          Retry chạy nhầm AI Optimize), bỏ đoạn hướng dẫn 429/402. */}
+      {fails.length > 0 && !prog && (() => {
+        const isPolicy = fails.every((f) => /^(HIGH|MEDIUM|LOW) — /.test(f.error));
+        const hasHigh = fails.some((f) => f.error.startsWith("HIGH"));
+        const bd = isPolicy && !hasHigh ? "#F0D897" : "#F5CFCF";
+        const bg = isPolicy && !hasHigh ? "#FFFDF3" : "#FFF8F8";
+        const fg = isPolicy && !hasHigh ? "#8A5A00" : "#C0392B";
+        return (
+        <div style={{ ...card, padding: "12px 16px", marginBottom: 12, borderColor: bd, background: bg }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-            <b style={{ fontSize: 13, color: "#C0392B" }}>{fails.length} listing(s) failed after 3 attempts</b>
+            <b style={{ fontSize: 13, color: fg }}>
+              {isPolicy
+                ? `Policy audit — ${fails.length} listing(s) with findings (the check itself succeeded)`
+                : `${fails.length} listing(s) failed after 3 attempts`}
+            </b>
             <div style={{ flex: 1 }} />
-            {canEdit && <button disabled={busy} onClick={() => doAiOptimize(fails.map((f) => f.id))} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), padding: "7px 13px", fontSize: 12.5, opacity: busy ? .6 : 1 }}>↻ Retry failed</button>}
+            {canEdit && (isPolicy
+              ? <button disabled={busy} onClick={() => doPolicyAi(fails.map((f) => f.id))} style={{ ...pill("linear-gradient(135deg,#B42318,#8E1A12)", "#fff"), padding: "7px 13px", fontSize: 12.5, opacity: busy ? .6 : 1 }}>↻ Re-check policy</button>
+              : <button disabled={busy} onClick={() => doAiOptimize(fails.map((f) => f.id))} style={{ ...pill("linear-gradient(135deg,#7C5CFF,#6D48C9)", "#fff"), padding: "7px 13px", fontSize: 12.5, opacity: busy ? .6 : 1 }}>↻ Retry failed</button>)}
             <button onClick={() => setFails([])} style={{ ...ghost, padding: "7px 12px", fontSize: 12.5 }}>Dismiss</button>
           </div>
           <div style={{ maxHeight: 210, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
             {fails.map((f) => (
-              <div key={f.id} style={{ fontSize: 12, lineHeight: 1.45, borderTop: "1px solid #F5DEDE", paddingTop: 6 }}>
+              <div key={f.id} style={{ fontSize: 12, lineHeight: 1.45, borderTop: `1px solid ${isPolicy && !hasHigh ? "#F0E4C0" : "#F5DEDE"}`, paddingTop: 6 }}>
                 <div style={{ fontWeight: 700 }}>{f.title.slice(0, 70)}</div>
-                <div style={{ color: "#C0392B", wordBreak: "break-word" }}>{f.error}</div>
+                <div style={{ color: f.error.startsWith("HIGH") ? "#C0392B" : isPolicy ? "#8A5A00" : "#C0392B", wordBreak: "break-word" }}>{f.error}</div>
               </div>
             ))}
           </div>
-          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
-            <b>429 / rate limit</b> → the AI model is throttling you: pick a paid model instead of a <code>:free</code> one, or retry in a few minutes.
-            {" "}<b>402 / credit</b> → top up OpenRouter. <b>timeout</b> → the model is too slow, switch to a faster one.
-            {" "}<b>server ngắt giữa chừng</b> → not an AI error: the request ran past its time limit and was killed. Select fewer listings and press Retry failed.
-          </div>
+          {isPolicy ? (
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
+              <b>MEDIUM</b> = warning only, Push is NOT blocked — apply the fix via Edit if you agree with it.
+              {" "}<b>HIGH</b> = Push is blocked until you apply the fixes and re-run the check.
+              {" "}Listings not shown here came back <b>clean</b>.
+            </div>
+          ) : (
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
+              <b>429 / rate limit</b> → the AI model is throttling you: pick a paid model instead of a <code>:free</code> one, or retry in a few minutes.
+              {" "}<b>402 / credit</b> → top up OpenRouter. <b>timeout</b> → the model is too slow, switch to a faster one.
+              {" "}<b>server ngắt giữa chừng</b> → not an AI error: the request ran past its time limit and was killed. Select fewer listings and press Retry failed.
+            </div>
+          )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Table */}
       <div style={{ ...card, overflow: "hidden" }}>

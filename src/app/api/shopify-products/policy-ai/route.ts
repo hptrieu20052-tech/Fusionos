@@ -17,13 +17,20 @@ export const maxDuration = 300;
  *   ảnh (artwork) + title + description + tags + SEO title + SEO meta + Google feed title/description.
  * Trả về từng vấn đề: nằm ở đâu, nặng nhẹ, và CẦN SỬA THẾ NÀO (fix cụ thể, dùng được ngay).
  *
- * Phạm vi soi:
+ * Phạm vi soi (v188 · đa sàn — mọi kênh catalog này chảy tới):
  *   - Trademark/IP: thương hiệu, nhân vật có bản quyền, likeness nghệ sĩ/người nổi tiếng — cả trong
  *     ARTWORK lẫn text (kể cả viết lái/che chữ).
- *   - Policy Google Shopping/marketplace: chữ khuyến mãi trong title/feed title ("free shipping",
- *     "sale", "% off" — GMC cấm), ALL CAPS, số điện thoại/URL nhét trong text, claim y tế,
- *     "officially licensed" không có license, replica/dupe, claim tuyệt đối gian dối.
+ *   - Google Shopping/GMC: chữ khuyến mãi trong title/feed title ("free shipping", "sale", "% off"),
+ *     ALL CAPS, số điện thoại/URL nhét trong text, claim y tế, "officially licensed" không có license,
+ *     replica/dupe, claim tuyệt đối gian dối; ẢNH có chữ khuyến mãi đè lên / watermark (GMC disapprove).
+ *   - Meta (FB/IG Shops & ads): câu chữ khẳng định/ám chỉ đặc điểm cá nhân của người mua/người nhận
+ *     (bệnh lý, tôn giáo, chủng tộc, tài chính — "for your autistic son"...), claim before/after,
+ *     nội dung gợi dục.
+ *   - Pinterest shopping: clickbait/thúc ép quá đà ("you won't believe", "miracle", "last chance"),
+ *     nhét contact info vào description, giá/tồn kho ghi trong text không khớp listing.
  *   - SEO fields: meta/feed sai bản chất sản phẩm (misrepresentation), nhồi từ khoá lộ liễu.
+ *   - KHÔNG flag sản phẩm tôn giáo (Bible/baptism hợp lệ trên mọi sàn — chỉ bị Limited personalized
+ *     ads, không phải vi phạm) — tránh báo láo trên đúng dòng hàng chủ lực.
  *
  * Kết quả GHI ĐÈ policy_risk/policy_hits (nguồn sự thật duy nhất). HIGH → nút Push chặn cho tới khi
  * sửa xong và chạy lại audit ra sạch. AI là máy sàng lọc, không phải luật sư — người duyệt cuối.
@@ -44,13 +51,17 @@ function imgUrls(v: unknown): string[] {
 
 const FIELDS = ["title", "description", "tags", "seo_title", "seo_description", "feed_title", "feed_description", "image", "other"] as const;
 
-const SYSTEM = `You audit ONE e-commerce product listing for trademark/IP and marketplace-policy risks (Google Shopping, Shopify). THE PRODUCT IMAGES ARE ATTACHED — EXAMINE THEM FIRST, then every text field provided.
+const SYSTEM = `You audit ONE e-commerce product listing for trademark/IP and marketplace-policy risks across EVERY channel this catalog feeds: Shopify, Google Shopping / Google Merchant Center, Meta (Facebook & Instagram Shops and ads), Pinterest shopping, TikTok Shop. A finding on ANY of these platforms counts. THE PRODUCT IMAGES ARE ATTACHED — EXAMINE THEM FIRST, then every text field provided.
 
 Check EVERY part of the listing:
-- image (artwork): recognizable copyrighted characters (Disney/Pixar/Marvel/Nintendo/anime/kids-show characters), brand logos or wordmarks, celebrity or musician likenesses, or artwork clearly imitating one specific franchise's distinctive style. Generic princesses/superheroes/animals and original characters are FINE.
+- image (artwork): recognizable copyrighted characters (Disney/Pixar/Marvel/Nintendo/anime/kids-show characters), brand logos or wordmarks, celebrity or musician likenesses, or artwork clearly imitating one specific franchise's distinctive style. Generic princesses/superheroes/animals and original characters are FINE. Also (GMC & Pinterest image rules): promotional text overlaid on product images ("SALE", "Free shipping"), watermarks, phone numbers or URLs burned into the image.
 - title, tags, description: protected brand/franchise/band/celebrity names — including leetspeak or masked spellings (B4ckstreet, Tr**p); "officially licensed"/"authentic" without a license; replica/dupe/counterfeit language; medical or absolute claims ("cures", "FDA approved", "#1 best seller").
 - title and feed_title (Google Shopping rules): promotional text does NOT belong in titles — "free shipping", "sale", "% off", "best price"; no ALL-CAPS words, no phone numbers, no URLs, no emoji.
 - seo_title, seo_description, feed_description: same brand/claim rules; also flag if they misrepresent what the product actually is (mismatch vs the images), or obvious keyword stuffing.
+- Meta commerce rules (any text field): wording that asserts or implies personal attributes of the buyer or recipient — a medical/mental condition (ADHD, autism, anxiety...), religion, race, sexual orientation, or financial status ("for your autistic son" → suggest a neutral rewrite like "for kids who love..."); before/after transformation claims; sexualized content on any product.
+- Pinterest merchant rules (any text field): clickbait or exaggerated urgency ("you won't believe", "miracle", "act now", "last chance"), contact info or off-platform CTAs in descriptions, price or availability claims in text that contradict the listing.
+
+Do NOT flag: religious or faith-based products themselves — Bible storybooks, baptism gifts and similar are allowed on all these platforms (belief-related content merely limits personalized-ads eligibility on Google; that is a platform status, NOT a violation). Mentioning the product's own religious theme is fine; only flag wording that asserts the BUYER's/recipient's beliefs as a personal attribute.
 
 For EACH problem found, return an object:
   {"issue":"<short, concrete — name the exact word/element>","where":"<one of: title|description|tags|seo_title|seo_description|feed_title|feed_description|image|other>","severity":"high"|"medium","fix":"<the exact, actionable correction — e.g. the replacement wording, or 'replace the cover artwork: character X is recognizable'>"}
