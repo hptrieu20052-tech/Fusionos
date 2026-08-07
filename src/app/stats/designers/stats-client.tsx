@@ -42,7 +42,7 @@ export function DesignSales() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox]);
-  const LIMIT = 50;
+  const LIMIT = 20; // v176e · 20 dòng/trang theo yêu cầu — trang nhẹ, Load more lấy tiếp 20
 
   const load = useCallback((off: number, append: boolean) => {
     setLoading(true);
