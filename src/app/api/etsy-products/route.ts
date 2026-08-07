@@ -252,16 +252,35 @@ export async function POST(req: NextRequest) {
 }
 
 // DELETE /api/etsy-products { ids: string[] } — bulk delete (only listings in your store scope)
+// v185: listing đã stage/push sang Shopify thì CHỈ ADMIN được xoá — seller xoá mất là đứt dấu link,
+//       không còn dò được bản Shopify sinh ra từ listing nào. Chặn ở API (giấu nút ở UI chỉ là phụ).
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const b = await req.json().catch(() => null);
-  const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 500);
+  let ids: string[] = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 500).map(String);
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
   const storeIds = await scopedEtsyStoreIds(session);
   if (!storeIds.length) return NextResponse.json({ ok: false, error: "no stores in scope" }, { status: 403 });
+
+  let blocked = 0;
+  if (session.role !== "admin") {
+    const linked = new Set<string>();
+    // link kiểu cũ: gid ghi ngay trên dòng Etsy
+    const own = await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId })
+      .from(schema.etsyProducts).where(inArray(schema.etsyProducts.id, ids));
+    for (const r of own) if (r.gid) linked.add(r.id);
+    // link kiểu staging v172: shopify_products.etsy_product_id trỏ về
+    const st = await db.select({ eid: schema.shopifyProducts.etsyProductId })
+      .from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.etsyProductId, ids));
+    for (const r of st) if (r.eid) linked.add(r.eid);
+    blocked = ids.filter((x) => linked.has(x)).length;
+    ids = ids.filter((x) => !linked.has(x));
+    if (!ids.length) return NextResponse.json({ ok: false, blocked, error: "Locked — already staged/pushed to Shopify. Only an admin can delete these listings." }, { status: 403 });
+  }
+
   const del = await db.delete(schema.etsyProducts)
     .where(sql`${schema.etsyProducts.id} IN (${sql.join(ids.map((x: string) => sql`${x}::uuid`), sql`, `)}) AND ${schema.etsyProducts.storeId} IN (${sql.join(storeIds.map((x) => sql`${x}::uuid`), sql`, `)})`)
     .returning({ id: schema.etsyProducts.id });
-  return NextResponse.json({ ok: true, deleted: del.length });
+  return NextResponse.json({ ok: true, deleted: del.length, blocked });
 }

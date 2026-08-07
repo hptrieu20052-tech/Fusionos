@@ -57,7 +57,7 @@ const secTitle: React.CSSProperties = { fontWeight: 800, fontSize: 14.5, marginB
 const secSub: React.CSSProperties = { fontWeight: 500, fontSize: 11.5, color: "var(--muted)" };
 const ro: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 13, background: "#F7F8FA", color: "var(--ink)", lineHeight: 1.5, marginBottom: 14, boxSizing: "border-box" };
 
-export default function EtsyProductsClient({ stores, sellers, shopifyStores = [], canEdit }: { stores: Store[]; sellers: Seller[]; shopifyStores?: { id: string; name: string; sellerId: string | null }[]; canEdit: boolean }) {
+export default function EtsyProductsClient({ stores, sellers, shopifyStores = [], canEdit, isAdmin = false }: { stores: Store[]; sellers: Seller[]; shopifyStores?: { id: string; name: string; sellerId: string | null }[]; canEdit: boolean; isAdmin?: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   // v181: nhận ?q= từ URL — nút "Etsy" bên Manage Products · Shopify nhảy thẳng về listing gốc ở đây.
@@ -196,7 +196,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     if (!(await confirm({ message: `Delete ${sel.size} listing(s) from FUSION?\nYour Etsy shop is NOT affected.`, danger: true }))) return;
     setBusy(true);
     const j = await fetch("/api/etsy-products", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json()).catch(() => ({ ok: false }));
-    if (j.ok) { flash(`✓ Deleted ${j.deleted}`); setSel(new Set()); load(); } else flash("✗ " + (j.error ?? "Delete failed"), false);
+    if (j.ok) { flash(`✓ Deleted ${j.deleted}${j.blocked ? ` · ${j.blocked} locked (already on Shopify — admin only)` : ""}`); setSel(new Set()); load(); } else flash("✗ " + (j.error ?? "Delete failed"), false);
     setBusy(false);
   };
 
@@ -522,7 +522,12 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                     {canEdit && (<>
                       <button onClick={() => openEdit(r.id)} style={linkBtn("var(--blue)")}>Edit</button>
                       <button disabled={busy} onClick={() => doDuplicate(r.id)} style={linkBtn("#158A57")}>Duplicate</button>
-                      <button disabled={busy} onClick={() => doDeleteOne(r.id, r.title)} style={linkBtn("var(--red)")}>Delete</button>
+                      {/* v185: đã stage/push sang Shopify → seller KHÔNG xoá được (mất dấu link); chỉ admin thấy nút Delete */}
+                      {(r.pushed || r.staged) && !isAdmin ? (
+                        <span title="Locked — this listing is already staged/pushed to Shopify. Only an admin can delete it." style={{ color: "#8794A5", fontSize: 12.5, fontWeight: 700, cursor: "not-allowed" }}>🔒</span>
+                      ) : (
+                        <button disabled={busy} onClick={() => doDeleteOne(r.id, r.title)} style={linkBtn("var(--red)")}>Delete</button>
+                      )}
                     </>)}
                   </div>
                 </td>

@@ -31,7 +31,8 @@ export function DesignSales() {
   const [designers, setDesigners] = useState<PersonOpt[]>([]);
   const [creators, setCreators] = useState<PersonOpt[]>([]);
   const [loading, setLoading] = useState(false);
-  const [offset, setOffset] = useState(0);
+  // v186 · Phân trang THẬT (Prev/Next) thay cho Load more dồn trang — mỗi trang đúng 20 dòng.
+  const [page, setPage] = useState(1);
   // v176b · Tiền chỉ hiện cho admin — API quyết định (showMoney), UI chỉ nghe theo.
   const [showMoney, setShowMoney] = useState(false);
   // v176c · Lightbox: click thumbnail → xem ảnh to; click nền / Esc để đóng.
@@ -42,12 +43,12 @@ export function DesignSales() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox]);
-  const LIMIT = 20; // v176e · 20 dòng/trang theo yêu cầu — trang nhẹ, Load more lấy tiếp 20
+  const LIMIT = 20; // 20 dòng / trang
 
-  const load = useCallback((off: number, append: boolean) => {
+  const load = useCallback((pageN: number) => {
     setLoading(true);
     const { from, to } = rangeToDates(dr);
-    const p = new URLSearchParams({ from, to, sales: salesF, sort: sortF, limit: String(LIMIT), offset: String(off) });
+    const p = new URLSearchParams({ from, to, sales: salesF, sort: sortF, limit: String(LIMIT), offset: String((pageN - 1) * LIMIT) });
     if (q.trim()) p.set("q", q.trim());
     if (platform) p.set("platform", platform);
     if (sellerId) p.set("sellerId", sellerId);
@@ -55,14 +56,16 @@ export function DesignSales() {
     if (creatorId) p.set("creatorId", creatorId);
     fetch(`/api/stats/design-sales?${p}`).then((r) => r.json()).then((j) => {
       if (!j.ok) return;
-      setRows((prev) => (append ? [...prev, ...j.rows] : j.rows));
+      setRows(j.rows);
       setTotal(j.total); setShowMoney(!!j.showMoney);
       setSellers(j.filters?.sellers ?? []); setDesigners(j.filters?.designers ?? []); setCreators(j.filters?.creators ?? []);
     }).finally(() => setLoading(false));
   }, [dr, q, platform, sellerId, designerId, creatorId, salesF, sortF]);
 
-  // Đổi filter → nạp lại từ đầu (debounce nhẹ cho ô search)
-  useEffect(() => { const t = setTimeout(() => { setOffset(0); load(0, false); }, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
+  // Đổi filter → về trang 1 (debounce nhẹ cho ô search)
+  useEffect(() => { const t = setTimeout(() => { setPage(1); load(1); }, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
+  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+  const goPage = (pn: number) => { const p2 = Math.min(Math.max(1, pn), totalPages); setPage(p2); load(p2); };
 
   const money = (v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtDate = (s: string | null) => (s ? String(s).slice(0, 10) : "—");
@@ -82,7 +85,7 @@ export function DesignSales() {
       </div>
 
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU" style={{ ...sel, flex: "1 1 190px", maxWidth: "none", minWidth: 140 }} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / design ID" style={{ ...sel, flex: "1 1 190px", maxWidth: "none", minWidth: 140 }} />
         <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={sel}>
           <option value="">All marketplaces</option>{PLATFORMS.map((x) => <option key={x} value={x}>{x}</option>)}
         </select>
@@ -109,13 +112,13 @@ export function DesignSales() {
       </div>
 
       <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--muted)" }}>
-        <b style={{ color: "var(--ink)" }}>{total}</b> design(s) · shown {rows.length}: <b style={{ color: "var(--ink)" }}>{totalOrders}</b> orders{showMoney && <> · <b style={{ color: "var(--ink)" }}>{money(totalRevenue)}</b></>}
+        <b style={{ color: "var(--ink)" }}>{total}</b> design(s) · this page: <b style={{ color: "var(--ink)" }}>{totalOrders}</b> orders{showMoney && <> · <b style={{ color: "var(--ink)" }}>{money(totalRevenue)}</b></>}
       </div>
 
       <div style={{ overflowX: "auto", marginTop: 8 }}>
         <table>
           <thead><tr>
-            <th style={{ width: 56 }}></th><th>SKU</th><th>Title</th><th>Marketplace</th><th>Seller</th><th>Designer</th><th>Creator</th>
+            <th style={{ width: 56 }}></th><th>Design ID</th><th>Title</th><th>Marketplace</th><th>Seller</th><th>Designer</th><th>Creator</th>
             <th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Qty</th>{showMoney && <th style={{ textAlign: "right" }}>Revenue</th>}<th>Last order</th>
           </tr></thead>
           <tbody>
@@ -155,12 +158,15 @@ export function DesignSales() {
         </table>
       </div>
 
-      {rows.length < total && (
-        <div style={{ textAlign: "center", marginTop: 10 }}>
-          <button disabled={loading} onClick={() => { const off = offset + LIMIT; setOffset(off); load(off, true); }}
-            style={{ padding: "8px 18px", borderRadius: 10, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13, opacity: loading ? .6 : 1 }}>
-            {loading ? "Loading…" : `Load more (${total - rows.length} left)`}
-          </button>
+      {/* v186 · Phân trang Prev/Next — giống các trang Manage Products */}
+      {total > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, fontSize: 13, color: "var(--muted)" }}>
+          <span>Page {page}/{totalPages} · {total} designs</span>
+          <div style={{ flex: 1 }} />
+          <button disabled={loading || page <= 1} onClick={() => goPage(page - 1)}
+            style={{ padding: "7px 14px", borderRadius: 10, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13, opacity: loading || page <= 1 ? .5 : 1 }}>Prev</button>
+          <button disabled={loading || page >= totalPages} onClick={() => goPage(page + 1)}
+            style={{ padding: "7px 14px", borderRadius: 10, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13, opacity: loading || page >= totalPages ? .5 : 1 }}>Next</button>
         </div>
       )}
 

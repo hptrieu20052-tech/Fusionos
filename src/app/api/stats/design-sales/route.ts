@@ -73,8 +73,8 @@ export async function GET(req: NextRequest) {
     conds.push(sql`d.seller_id IN (${idsSql})`);
   }
   if (q) {
-    // Tìm theo title (ILIKE, có index trigram) hoặc đúng số SKU
-    const num = Number(q.replace(/^TLW-?0*/i, ""));
+    // Tìm theo title (ILIKE, có index trigram) hoặc đúng số SKU (gõ số là ra)
+    const num = Number(q.replace(/^#?0*/, ""));
     conds.push(Number.isInteger(num) && num > 0
       ? sql`(d.title ILIKE ${"%" + q + "%"} OR d.sku_code = ${num})`
       : sql`d.title ILIKE ${"%" + q + "%"}`);
@@ -183,7 +183,8 @@ export async function GET(req: NextRequest) {
     showMoney: isAdmin,
     rows: rows.map((r) => ({
       id: r.id,
-      sku: "TLW-" + String(r.sku_code).padStart(4, "0"),
+      // v176f · Mã design là SỐ serial thuần (khớp cột DesignId bên Orders) — không gắn prefix.
+      sku: String(r.sku_code),
       title: r.title,
       platform: r.platform,
       // Sàn thực sự RA SALE trong khoảng đang xem (từ đơn hàng) — UI ưu tiên hiện cái này.
