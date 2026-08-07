@@ -7,10 +7,10 @@ type Designer = { id: string; name: string; values: number[]; total: number; poi
 
 // ═══ v175 · DESIGN SALES — design nào ra bao nhiêu sale (cho Designer + Creator Content) ═══
 type SaleRow = {
-  id: string; sku: string; title: string; platform: string | null; store: string | null;
+  id: string; sku: string; title: string; platform: string | null; salesPlatforms: string[]; store: string | null;
   seller: string | null; designer: string | null; creator: string | null;
   orders: number; qty: number; revenue: number | null; lastOrder: string | null; createdAt: string;
-  productLink: string | null; thumb: string | null;
+  productLink: string | null; thumb: string | null; preview: string | null;
 };
 type PersonOpt = { id: string; name: string };
 const PLATFORMS = ["tiktok", "etsy", "shopify", "amazon", "other"];
@@ -34,6 +34,14 @@ export function DesignSales() {
   const [offset, setOffset] = useState(0);
   // v176b · Tiền chỉ hiện cho admin — API quyết định (showMoney), UI chỉ nghe theo.
   const [showMoney, setShowMoney] = useState(false);
+  // v176c · Lightbox: click thumbnail → xem ảnh to; click nền / Esc để đóng.
+  const [lightbox, setLightbox] = useState<{ src: string; title: string } | null>(null);
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLightbox(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
   const LIMIT = 50;
 
   const load = useCallback((off: number, append: boolean) => {
@@ -114,7 +122,9 @@ export function DesignSales() {
             {rows.map((r) => (
               <tr key={r.id}>
                 <td>{r.thumb
-                  ? <img src={r.thumb} alt="" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />
+                  ? <img src={r.thumb} alt="" title="Click to enlarge"
+                      onClick={() => setLightbox({ src: r.preview ?? r.thumb!, title: `${r.sku} · ${r.title}` })}
+                      style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)", cursor: "zoom-in" }} />
                   : <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px dashed var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--muted)" }}>no img</div>}
                 </td>
                 <td style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{r.sku}</td>
@@ -124,9 +134,12 @@ export function DesignSales() {
                     : r.title}
                   {r.store && <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.store}</div>}
                 </td>
-                <td>{r.platform
-                  ? <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: PLAT_COLOR[r.platform] ?? "#64748B", borderRadius: 6, padding: "2px 8px", textTransform: "uppercase" }}>{r.platform}</span>
-                  : "—"}
+                <td>
+                  {/* v176d · Sàn RA SALE (từ đơn hàng); chưa có sale thì rơi về platform gắn trên design */}
+                  {(r.salesPlatforms?.length ? r.salesPlatforms : r.platform ? [r.platform] : []).map((p) => (
+                    <span key={p} style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: PLAT_COLOR[p] ?? "#64748B", borderRadius: 6, padding: "2px 8px", textTransform: "uppercase", marginRight: 4, display: "inline-block", marginBottom: 2 }}>{p}</span>
+                  ))}
+                  {!r.salesPlatforms?.length && !r.platform && "—"}
                 </td>
                 <td>{r.seller ?? "—"}</td>
                 <td>{r.designer ?? "—"}</td>
@@ -148,6 +161,15 @@ export function DesignSales() {
             style={{ padding: "8px 18px", borderRadius: 10, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13, opacity: loading ? .6 : 1 }}>
             {loading ? "Loading…" : `Load more (${total - rows.length} left)`}
           </button>
+        </div>
+      )}
+
+      {/* v176c · Lightbox xem ảnh to — click nền hoặc Esc để đóng */}
+      {lightbox && (
+        <div onClick={() => setLightbox(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "zoom-out", padding: 24 }}>
+          <img src={lightbox.src} alt="" style={{ maxWidth: "min(92vw, 900px)", maxHeight: "82vh", borderRadius: 12, background: "#fff", objectFit: "contain", boxShadow: "0 20px 60px rgba(0,0,0,.4)" }} />
+          <div style={{ marginTop: 12, color: "#fff", fontSize: 13, maxWidth: "min(92vw, 900px)", textAlign: "center", textShadow: "0 1px 4px rgba(0,0,0,.6)" }}>{lightbox.title}</div>
         </div>
       )}
     </div>

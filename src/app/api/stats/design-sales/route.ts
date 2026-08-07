@@ -79,11 +79,16 @@ export async function GET(req: NextRequest) {
       ? sql`(d.title ILIKE ${"%" + q + "%"} OR d.sku_code = ${num})`
       : sql`d.title ILIKE ${"%" + q + "%"}`);
   }
-  if (platform) conds.push(sql`d.platform = ${platform}::marketplace`);
   if (sellerId) conds.push(sql`d.seller_id = ${sellerId}::uuid`);
   if (designerId) conds.push(sql`d.designer_id = ${designerId}::uuid`);
   if (creatorId) conds.push(sql`d.creator_id = ${creatorId}::uuid`);
   const WHERE = sql.join(conds, sql` AND `);
+  // v176d · Marketplace = SÀN RA SALE (lấy từ đơn), không phải trường platform gắn trên design
+  // (đa số trống). Filter khớp khi design bán trên sàn đó HOẶC design được gắn tay platform đó.
+  // Điều kiện này tham chiếu s.platforms nên chỉ dùng ở query chính + count (có JOIN s).
+  const PLATC = platform
+    ? sql` AND (position(${platform} in coalesce(s.platforms, '')) > 0 OR d.platform = ${platform}::marketplace)`
+    : sql``;
 
   // ---- Sale trong khoảng, gộp trước theo design (1 lần, không lateral từng dòng) ----
   const SALES_CTE = sql`
@@ -91,7 +96,8 @@ export async function GET(req: NextRequest) {
            count(DISTINCT oi.order_id)::int AS orders,
            coalesce(sum(oi.qty), 0)::int AS qty,
            coalesce(sum(oi.qty * oi.unit_price), 0)::numeric(14,2) AS revenue,
-           max(o.ordered_at) AS last_order
+           max(o.ordered_at) AS last_order,
+           string_agg(DISTINCT o.platform::text, ',') AS platforms
     FROM order_items oi
     JOIN orders o ON o.id = oi.order_id
     WHERE oi.design_id IS NOT NULL
@@ -115,32 +121,33 @@ export async function GET(req: NextRequest) {
            su.full_name AS seller, du.full_name AS designer, cu.full_name AS creator,
            st.name AS store,
            coalesce(s.orders, 0) AS orders, coalesce(s.qty, 0) AS qty,
-           coalesce(s.revenue, 0) AS revenue, s.last_order
+           coalesce(s.revenue, 0) AS revenue, s.last_order, s.platforms
     FROM designs d
     ${JOIN} s ON s.design_id = d.id
     LEFT JOIN users su ON su.id = d.seller_id
     LEFT JOIN users du ON du.id = d.designer_id
     LEFT JOIN users cu ON cu.id = d.creator_id
     LEFT JOIN stores st ON st.id = d.store_id
-    WHERE ${WHERE}${NONE}
+    WHERE ${WHERE}${NONE}${PLATC}
     ORDER BY ${ORDER}
     LIMIT ${limit} OFFSET ${offset}
   `)).rows as {
     id: string; sku_code: number; title: string; platform: string | null; created_at: string; product_link: string | null;
     seller: string | null; designer: string | null; creator: string | null; store: string | null;
-    orders: number; qty: number; revenue: string; last_order: string | null;
+    orders: number; qty: number; revenue: string; last_order: string | null; platforms: string | null;
   }[];
 
   const [{ total }] = (await db.execute(sql`
     WITH s AS (${SALES_CTE})
     SELECT count(*)::int AS total
     FROM designs d ${JOIN} s ON s.design_id = d.id
-    WHERE ${WHERE}${NONE}
+    WHERE ${WHERE}${NONE}${PLATC}
   `)).rows as { total: number }[];
 
   // ---- Thumbnail cho đúng trang này (front > mockup > file thường; bỏ .dst/video) ----
+  // v176c · trả kèm bản preview to để UI mở lightbox khi click thumbnail.
   const ids = rows.map((r) => r.id);
-  const thumbBy = new Map<string, string | null>();
+  const thumbBy = new Map<string, { thumb: string | null; preview: string | null }>();
   if (ids.length) {
     const fr = (await db.execute(sql`
       SELECT DISTINCT ON (design_id) design_id, thumb_key, preview_key
@@ -151,7 +158,12 @@ export async function GET(req: NextRequest) {
         AND coalesce(storage_key, '') NOT ILIKE '%.dst'
       ORDER BY design_id, (kind = 'design_front') DESC, (kind = 'mockup') DESC, created_at ASC
     `)).rows as { design_id: string; thumb_key: string | null; preview_key: string | null }[];
-    for (const f of fr) thumbBy.set(f.design_id, fileUrl(f.thumb_key) ?? fileUrl(f.preview_key));
+    for (const f of fr) {
+      thumbBy.set(f.design_id, {
+        thumb: fileUrl(f.thumb_key) ?? fileUrl(f.preview_key),
+        preview: fileUrl(f.preview_key) ?? fileUrl(f.thumb_key),
+      });
+    }
   }
 
   // ---- Dropdown filter (danh sách người/nền tảng đang có trong designs, theo scope) ----
@@ -174,13 +186,16 @@ export async function GET(req: NextRequest) {
       sku: "TLW-" + String(r.sku_code).padStart(4, "0"),
       title: r.title,
       platform: r.platform,
+      // Sàn thực sự RA SALE trong khoảng đang xem (từ đơn hàng) — UI ưu tiên hiện cái này.
+      salesPlatforms: (r.platforms ?? "").split(",").map((x) => x.trim()).filter(Boolean),
       store: r.store,
       seller: r.seller, designer: r.designer, creator: r.creator,
       orders: Number(r.orders), qty: Number(r.qty),
       revenue: isAdmin ? Number(r.revenue) : null,
       lastOrder: r.last_order, createdAt: r.created_at,
       productLink: r.product_link,
-      thumb: thumbBy.get(r.id) ?? null,
+      thumb: thumbBy.get(r.id)?.thumb ?? null,
+      preview: thumbBy.get(r.id)?.preview ?? null,
     })),
     filters: {
       sellers: people.filter((p) => p.role === "seller"),
