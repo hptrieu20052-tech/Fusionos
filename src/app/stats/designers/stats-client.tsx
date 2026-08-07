@@ -5,6 +5,153 @@ import { BarChart, Heat, HBarList } from "@/components/charts";
 
 type Designer = { id: string; name: string; values: number[]; total: number; points: number; avgScore: number; reviews: number; bizOrders: number; kpi: number };
 
+// ═══ v175 · DESIGN SALES — design nào ra bao nhiêu sale (cho Designer + Creator Content) ═══
+type SaleRow = {
+  id: string; sku: string; title: string; platform: string | null; store: string | null;
+  seller: string | null; designer: string | null; creator: string | null;
+  orders: number; qty: number; revenue: number; lastOrder: string | null; createdAt: string;
+  productLink: string | null; thumb: string | null;
+};
+type PersonOpt = { id: string; name: string };
+const PLATFORMS = ["tiktok", "etsy", "shopify", "amazon", "other"];
+const PLAT_COLOR: Record<string, string> = { tiktok: "#111", etsy: "#F1641E", shopify: "#5E8E3E", amazon: "#FF9900", other: "#64748B" };
+
+export function DesignSales() {
+  const [dr, setDr] = useState<RangeValue>({ range: "30d" });
+  const [q, setQ] = useState("");
+  const [platform, setPlatform] = useState("");
+  const [sellerId, setSellerId] = useState("");
+  const [designerId, setDesignerId] = useState("");
+  const [creatorId, setCreatorId] = useState("");
+  const [salesF, setSalesF] = useState("has");
+  const [sortF, setSortF] = useState("orders");
+  const [rows, setRows] = useState<SaleRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [sellers, setSellers] = useState<PersonOpt[]>([]);
+  const [designers, setDesigners] = useState<PersonOpt[]>([]);
+  const [creators, setCreators] = useState<PersonOpt[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const LIMIT = 50;
+
+  const load = useCallback((off: number, append: boolean) => {
+    setLoading(true);
+    const { from, to } = rangeToDates(dr);
+    const p = new URLSearchParams({ from, to, sales: salesF, sort: sortF, limit: String(LIMIT), offset: String(off) });
+    if (q.trim()) p.set("q", q.trim());
+    if (platform) p.set("platform", platform);
+    if (sellerId) p.set("sellerId", sellerId);
+    if (designerId) p.set("designerId", designerId);
+    if (creatorId) p.set("creatorId", creatorId);
+    fetch(`/api/stats/design-sales?${p}`).then((r) => r.json()).then((j) => {
+      if (!j.ok) return;
+      setRows((prev) => (append ? [...prev, ...j.rows] : j.rows));
+      setTotal(j.total);
+      setSellers(j.filters?.sellers ?? []); setDesigners(j.filters?.designers ?? []); setCreators(j.filters?.creators ?? []);
+    }).finally(() => setLoading(false));
+  }, [dr, q, platform, sellerId, designerId, creatorId, salesF, sortF]);
+
+  // Đổi filter → nạp lại từ đầu (debounce nhẹ cho ô search)
+  useEffect(() => { const t = setTimeout(() => { setOffset(0); load(0, false); }, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
+
+  const money = (v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtDate = (s: string | null) => (s ? String(s).slice(0, 10) : "—");
+  const sel: React.CSSProperties = { padding: "7px 9px", fontSize: 12.5, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", maxWidth: 150 };
+  const totalOrders = rows.reduce((t, r) => t + r.orders, 0);
+  const totalRevenue = rows.reduce((t, r) => t + r.revenue, 0);
+
+  return (
+    <div className="panel">
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ fontWeight: 800, fontSize: 14.5, margin: 0 }}>Design sales</h3>
+          <div className="sub">Which design generates how many orders — excludes new/cancelled/trash</div>
+        </div>
+        <div style={{ flex: 1 }} />
+        <DateRangePicker value={dr} onChange={setDr} align="right" />
+      </div>
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU" style={{ ...sel, flex: "1 1 190px", maxWidth: "none", minWidth: 140 }} />
+        <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={sel}>
+          <option value="">All marketplaces</option>{PLATFORMS.map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+        <select value={sellerId} onChange={(e) => setSellerId(e.target.value)} style={sel}>
+          <option value="">All sellers</option>{sellers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <select value={designerId} onChange={(e) => setDesignerId(e.target.value)} style={sel}>
+          <option value="">All designers</option>{designers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <select value={creatorId} onChange={(e) => setCreatorId(e.target.value)} style={sel}>
+          <option value="">All creators</option>{creators.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <select value={salesF} onChange={(e) => setSalesF(e.target.value)} style={sel}>
+          <option value="has">Has sales</option>
+          <option value="none">No sales yet</option>
+          <option value="all">All designs</option>
+        </select>
+        <select value={sortF} onChange={(e) => setSortF(e.target.value)} style={sel}>
+          <option value="orders">Sort: most orders</option>
+          <option value="qty">Sort: most quantity</option>
+          <option value="revenue">Sort: most revenue</option>
+          <option value="newest">Sort: newest design</option>
+        </select>
+      </div>
+
+      <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--muted)" }}>
+        <b style={{ color: "var(--ink)" }}>{total}</b> design(s) · shown {rows.length}: <b style={{ color: "var(--ink)" }}>{totalOrders}</b> orders · <b style={{ color: "var(--ink)" }}>{money(totalRevenue)}</b>
+      </div>
+
+      <div style={{ overflowX: "auto", marginTop: 8 }}>
+        <table>
+          <thead><tr>
+            <th style={{ width: 56 }}></th><th>SKU</th><th>Title</th><th>Marketplace</th><th>Seller</th><th>Designer</th><th>Creator</th>
+            <th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Qty</th><th style={{ textAlign: "right" }}>Revenue</th><th>Last order</th>
+          </tr></thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id}>
+                <td>{r.thumb
+                  ? <img src={r.thumb} alt="" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />
+                  : <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px dashed var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--muted)" }}>no img</div>}
+                </td>
+                <td style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{r.sku}</td>
+                <td style={{ maxWidth: 340 }}>
+                  {r.productLink
+                    ? <a href={r.productLink} target="_blank" rel="noreferrer" style={{ color: "var(--blue)", textDecoration: "none" }}>{r.title}</a>
+                    : r.title}
+                  {r.store && <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.store}</div>}
+                </td>
+                <td>{r.platform
+                  ? <span style={{ fontSize: 10.5, fontWeight: 800, color: "#fff", background: PLAT_COLOR[r.platform] ?? "#64748B", borderRadius: 6, padding: "2px 8px", textTransform: "uppercase" }}>{r.platform}</span>
+                  : "—"}
+                </td>
+                <td>{r.seller ?? "—"}</td>
+                <td>{r.designer ?? "—"}</td>
+                <td>{r.creator ?? "—"}</td>
+                <td style={{ textAlign: "right", fontWeight: 800 }}>{r.orders}</td>
+                <td style={{ textAlign: "right" }}>{r.qty}</td>
+                <td style={{ textAlign: "right", fontWeight: 700 }}>{r.revenue ? money(r.revenue) : "—"}</td>
+                <td style={{ whiteSpace: "nowrap" }}>{fmtDate(r.lastOrder)}</td>
+              </tr>
+            ))}
+            {!rows.length && !loading && <tr><td colSpan={11} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>No designs match these filters.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+
+      {rows.length < total && (
+        <div style={{ textAlign: "center", marginTop: 10 }}>
+          <button disabled={loading} onClick={() => { const off = offset + LIMIT; setOffset(off); load(off, true); }}
+            style={{ padding: "8px 18px", borderRadius: 10, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13, opacity: loading ? .6 : 1 }}>
+            {loading ? "Loading…" : `Load more (${total - rows.length} left)`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DesignerStats() {
   const [days, setDays] = useState(7);
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days — chỉnh bằng picker
@@ -97,6 +244,9 @@ export function DesignerStats() {
           </tbody>
         </table>
       </div>
+
+      {/* v175 · Bảng design × sale — admin thấy trong dashboard đầy đủ */}
+      <DesignSales />
     </>
   );
 }

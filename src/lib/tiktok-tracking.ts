@@ -2,18 +2,19 @@
 const platformExtId = (ext: string) => ext.replace(/-CLONE-\d+$/, "");
 import { db, schema } from "@/lib/db";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
-import { ttGetValidCfg, ttGetOrderDetail, ttShipPackage, ttShippingType, ttListShippingProviders, pickProviderId, type TtCfg } from "@/lib/tiktok-shop";
+import { ttGetValidCfg, ttGetOrderDetail, ttShipPackage, ttShippingType, ttShippingProvidersForDeliveryOption, pickProviderId, type TtCfg } from "@/lib/tiktok-shop";
 
 export type TtPushResult = { ok: boolean; pushed: number; errors: string[]; reason?: string };
 
-// v174 · Cache danh sách shipping provider theo store (10') — sweep chạy hàng chục đơn/1 lần gọi,
-// khỏi tra lại provider mỗi đơn. Serverless: cache sống trong 1 lần invoke, đủ cho vòng sweep.
+// v175 · Cache danh sách shipping provider theo (store × delivery option) — sweep chạy hàng chục
+// đơn/1 lần gọi, các đơn cùng delivery option dùng chung. Cache sống trong 1 lần invoke, đủ cho sweep.
 const providerCache = new Map<string, { at: number; list: { id: string; name: string }[] }>();
-async function providersFor(storeId: string, cfg: TtCfg): Promise<{ id: string; name: string }[]> {
-  const hit = providerCache.get(storeId);
+async function providersFor(storeId: string, deliveryOptionId: string, cfg: TtCfg): Promise<{ id: string; name: string }[]> {
+  const key = `${storeId}:${deliveryOptionId}`;
+  const hit = providerCache.get(key);
   if (hit && Date.now() - hit.at < 600_000) return hit.list;
-  const list = await ttListShippingProviders(cfg);
-  providerCache.set(storeId, { at: Date.now(), list });
+  const list = await ttShippingProvidersForDeliveryOption(cfg, deliveryOptionId);
+  providerCache.set(key, { at: Date.now(), list });
   return list;
 }
 
@@ -102,19 +103,26 @@ export async function pushTiktokTrackingForOrder(orderId: string): Promise<TtPus
     catch (e) { return fail("token error", [String((e as Error)?.message ?? e)]); }
   }
 
-  // Lấy line_item_ids + shipping_provider_id từ order detail (tái dùng bản đã lấy ở bước xác định shipping type)
-  let lineItemIds: string[] = [], detailProviderId = "";
+  // Lấy line_item_ids + shipping_provider_id + delivery_option_id từ order detail
+  // (tái dùng bản đã lấy ở bước xác định shipping type)
+  let lineItemIds: string[] = [], detailProviderId = "", deliveryOptionId = "";
   try {
     const d = detail ?? ((await ttGetOrderDetail(cfg, [platformExtId(order.externalId)]))[0] as Record<string, unknown> | undefined);
     lineItemIds = (((d?.line_items ?? []) as Record<string, unknown>[])).map((x) => String(x.id ?? "")).filter(Boolean);
     detailProviderId = String(d?.shipping_provider_id ?? (d?.packages as Record<string, unknown>[] | undefined)?.[0]?.shipping_provider_id ?? "");
+    deliveryOptionId = String(d?.delivery_option_id
+      ?? ((d?.line_items ?? []) as Record<string, unknown>[])[0]?.delivery_option_id
+      ?? (d?.packages as Record<string, unknown>[] | undefined)?.[0]?.delivery_option_id ?? "");
   } catch (e) { return fail("order detail error", [String((e as Error)?.message ?? e)]); }
 
   // v174 · TikTok BẮT BUỘC shipping_provider_id (code=36009004 nếu thiếu). Order detail của đơn
-  // Seller-shipping không trả sẵn id này → tự tra danh sách provider của shop rồi map theo carrier.
+  // Seller-shipping không trả sẵn id này → tự tra danh sách provider rồi map theo carrier.
+  // v175 · Tra theo delivery option của ĐƠN (đường /logistics/202309/shipping_providers không tồn tại —
+  // 403 code=40006). Không có delivery_option_id thì chịu, báo rõ để còn thấy.
   let providers: { id: string; name: string }[] = [];
   if (!detailProviderId) {
-    try { providers = await providersFor(order.storeId, cfg); }
+    if (!deliveryOptionId) return fail("order detail has no delivery_option_id — cannot resolve shipping provider");
+    try { providers = await providersFor(order.storeId, deliveryOptionId, cfg); }
     catch (e) { return fail("cannot load shipping providers", [String((e as Error)?.message ?? e)]); }
   }
 

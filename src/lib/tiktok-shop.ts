@@ -415,10 +415,12 @@ export async function ttGetShippingProviders(cfg: TtCfg): Promise<{ ok: boolean;
 
 // v174 · Danh sách shipping provider (id + tên) để map carrier → provider_id khi mark shipped.
 // TikTok 202309 BẮT BUỘC shipping_provider_id (thiếu → HTTP 400 code=36009004), và order detail
-// của đơn Seller-shipping KHÔNG trả sẵn id này, nên phải tự tra từ đây.
-// Endpoint chuẩn: GET /logistics/202309/shipping_providers → { shipping_providers: [{ id, name }] }.
-export async function ttListShippingProviders(cfg: TtCfg): Promise<{ id: string; name: string }[]> {
-  const d = await ttFetch(cfg, "GET", "/logistics/202309/shipping_providers", {});
+// của đơn Seller-shipping KHÔNG trả sẵn id này, nên phải tự tra.
+// v175 · Đường /logistics/202309/shipping_providers KHÔNG tồn tại (403 code=40006 "no schema found",
+// xác nhận từ log thật). Đường ĐÚNG đi theo delivery option của ĐƠN:
+//   order detail → delivery_option_id → GET /logistics/202309/delivery_options/{id}/shipping_providers
+export async function ttShippingProvidersForDeliveryOption(cfg: TtCfg, deliveryOptionId: string): Promise<{ id: string; name: string }[]> {
+  const d = await ttFetch(cfg, "GET", `/logistics/202309/delivery_options/${deliveryOptionId}/shipping_providers`, {});
   const list = (d?.shipping_providers as { id?: string; name?: string }[] | undefined) ?? [];
   return list.map((p) => ({ id: String(p.id ?? ""), name: String(p.name ?? "") })).filter((p) => p.id && p.name);
 }
