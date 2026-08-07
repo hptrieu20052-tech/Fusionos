@@ -59,7 +59,11 @@ const ro: React.CSSProperties = { border: "1px solid var(--line)", borderRadius:
 export default function EtsyProductsClient({ stores, sellers, shopifyStores = [], canEdit }: { stores: Store[]; sellers: Seller[]; shopifyStores?: { id: string; name: string; sellerId: string | null }[]; canEdit: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [kw, setKw] = useState("");
+  // v181: nhận ?q= từ URL — nút "Etsy" bên Manage Products · Shopify nhảy thẳng về listing gốc ở đây.
+  const [kw, setKw] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try { return new URLSearchParams(window.location.search).get("q") ?? ""; } catch { return ""; }
+  });
   const [sellerFilter, setSellerFilter] = useState("");
   const [storeFilter, setStoreFilter] = useState("");
   const [sel, setSel] = useState<Set<string>>(new Set());

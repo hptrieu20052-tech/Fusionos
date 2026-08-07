@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray, desc } from "drizzle-orm";
+import { and, eq, inArray, desc, or, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -35,6 +35,24 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(schema.shopifyProducts.updatedAt));
 
   const scoped = scopeIds ? rows.filter((r) => r.storeSeller && scopeIds.includes(r.storeSeller)) : rows;
+
+  // v181 · Listing Etsy GỐC của từng sản phẩm (để nút "Etsy" nhảy về Manage Products · Etsy):
+  //   - flow mới (v172): shopify_products.etsy_product_id
+  //   - flow cũ: etsy_products.shopify_product_id = gid
+  const linkEtsyIds = Array.from(new Set(scoped.map((r) => r.p.etsyProductId).filter(Boolean))) as string[];
+  const linkGids = Array.from(new Set(scoped.map((r) => r.p.shopifyProductId).filter(Boolean))) as string[];
+  const etsyRows = (linkEtsyIds.length || linkGids.length)
+    ? await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId, title: schema.etsyProducts.title, storeName: schema.stores.name })
+        .from(schema.etsyProducts)
+        .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+        .where(or(
+          linkEtsyIds.length ? inArray(schema.etsyProducts.id, linkEtsyIds) : sql`FALSE`,
+          linkGids.length ? inArray(schema.etsyProducts.shopifyProductId, linkGids) : sql`FALSE`,
+        ))
+    : [];
+  const etsyById = new Map(etsyRows.map((e) => [e.id, e]));
+  const etsyByGid = new Map<string, typeof etsyRows[number]>();
+  for (const e of etsyRows) { if (e.gid && !etsyByGid.has(e.gid)) etsyByGid.set(e.gid, e); }
 
   // v119: SẮP XẾP MỚI → CŨ. Trước đây orderBy updated_at: cột đó bị ghi lại mỗi lần AI Optimize,
   // feed copy, Save hay Push chạm vào sản phẩm, nên chạy AI vài con là cả bảng đảo thứ tự —
@@ -82,6 +100,12 @@ export async function GET(req: NextRequest) {
       // v177 · Policy scan: risk + tóm tắt hit (chỉ chuỗi ngắn, không chở nguyên mảng cho nhẹ bảng).
       policyRisk: r.p.policyRisk ?? null,
       policyCheckedAt: r.p.policyCheckedAt,
+      // v181 · Listing Etsy gốc (null = không có / đã xoá bên Manage Etsy)
+      etsyListing: (() => {
+        const e = (r.p.etsyProductId ? etsyById.get(r.p.etsyProductId) : undefined)
+          ?? (r.p.shopifyProductId ? etsyByGid.get(r.p.shopifyProductId) : undefined);
+        return e ? { id: e.id, title: e.title, store: e.storeName ?? "" } : null;
+      })(),
       policyHitsSummary: Array.isArray(r.p.policyHits)
         ? (r.p.policyHits as { term: string; field: string }[]).slice(0, 6).map((h) => `"${h.term}" (${h.field})`).join(", ")
         : "",

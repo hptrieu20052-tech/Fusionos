@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { payloadOf } from "@/lib/personalization";
+import { titleKey } from "@/lib/title-key";
 import { shopHost, shopifyGraphQL, type ShopifyCred } from "@/lib/shopify";
 import type { Template } from "@/lib/shopify-template";
 import type { SyncedImage, SyncedOption, SyncedVariant } from "@/lib/shopify-products";
@@ -133,11 +134,31 @@ export async function POST(req: NextRequest) {
   const cred = (store.apiCredentials ?? {}) as ShopifyCred;
   const canVerify = !!shopHost(cred) && !!(cred.adminToken || (cred.clientId && cred.clientSecret));
 
+  // v180 · CHỐT CHỐNG TRÙNG XUYÊN STORE: một mẫu (titleKey giống nhau) chỉ được vào Talewix
+  // MỘT lần — seller bán cùng design ở nhiều shop Etsy là hợp lệ, nhưng bản thứ 2+ stage sang
+  // sẽ bị từ chối kèm handle của bản đã có. So bằng titleKey nên mojibake/nháy cong không lách được.
+  const catalog = await db.select({
+    id: schema.shopifyProducts.id, title: schema.shopifyProducts.title,
+    handle: schema.shopifyProducts.handle, etsyId: schema.shopifyProducts.etsyProductId,
+  }).from(schema.shopifyProducts).where(eq(schema.shopifyProducts.storeId, storeId));
+  const byTitleKey = new Map<string, { handle: string | null; etsyId: string | null }>();
+  for (const c of catalog) {
+    const k = titleKey(c.title);
+    if (k && !byTitleKey.has(k)) byTitleKey.set(k, { handle: c.handle, etsyId: c.etsyId });
+  }
+
   const results: { id: string; title: string; ok: boolean; error?: string }[] = [];
   let staged = 0;
   for (const { p } of rows) {
     const title = p.shopifyTitle || p.title;
     try {
+      // Trùng mẫu với catalog Shopify (từ BẤT KỲ shop/seller nào) → từ chối, trừ khi chính là
+      // bản nháp của listing này (re-stage ghi đè hợp lệ, xử ở cur bên dưới).
+      const dupHit = byTitleKey.get(titleKey(title));
+      if (dupHit && dupHit.etsyId !== p.id) {
+        results.push({ id: p.id, title, ok: false, error: `duplicate design — already on this store as "${dupHit.handle ?? "?"}"${dupHit.etsyId ? " (pushed from another Etsy listing)" : ""}. Not staged.` });
+        continue;
+      }
       // Listing đang giữ GID (flow cũ hoặc đã Push xong): còn sống → sửa bên Manage Products · Shopify;
       // đã bị xoá bên Shopify → gỡ liên kết cũ rồi stage lại như listing mới.
       const oldGid = (p as { shopifyProductId?: string }).shopifyProductId || "";

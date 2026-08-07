@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { titleKey } from "@/lib/title-key";
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
@@ -53,37 +54,39 @@ export async function POST(req: NextRequest) {
   const unesc = (v: string) => v.replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/&#39;/g, "'");
   let inserted = 0, updated = 0, skipped = 0, renamed = 0;
 
-  // ---- CHỐNG TRÙNG (v118) ----------------------------------------------------------------
-  // Cũ: so title KHỚP TỪNG KÝ TỰ ⇒ lệch 1 ký tự là ra listing mới. Ba đường sinh trùng:
-  //   1. Sửa title trên Etsy rồi export lại  2. Bản import trước lúc ép UTF-8 bị mojibake
-  //   3. Dấu nháy cong ' / space không ngắt / hai space liền / ký tự zero-width.
-  // Mới: khoá theo SKU trước (bền khi đổi title), không có SKU thì title ĐÃ CHUẨN HOÁ.
-  // SKU chỉ được dùng làm khoá khi nó DUY NHẤT — cả trong file CSV lẫn trong store. POD hay
-  // dùng chung một SKU cho nhiều listing, khoá theo SKU trùng là gộp nhầm hai sản phẩm khác nhau.
-  const norm = (v: string) => v
-    .normalize("NFKC")
-    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "")   // zero-width, BOM, soft hyphen
-    .replace(/[\u2018\u2019\u02BC]/g, "'")          // nháy đơn cong → thẳng
-    .replace(/[\u201C\u201D]/g, '"')                // nháy kép cong → thẳng
-    .replace(/[\u2010-\u2015]/g, "-")               // các loại gạch ngang → -
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+  // ---- CHONG TRUNG (v118 -> v180 "tron ven") -----------------------------------------
+  // Etsy CHO PHEP nhieu listing cung title, va CSV Etsy KHONG co listing_id, nen nhan dien theo:
+  //   1. SKU duy nhat (ca trong file lan trong store)                    -> UPDATE
+  //   2. titleKey + MA ANH IMAGE1 (il_xxx.<photoid> vinh vien theo anh
+  //      da upload; listing khac nhau luon khac ma anh)                  -> UPDATE
+  //      (bat duoc ca title mojibake: "Children<a-euro-tm>s" == "Children's")
+  //   3. titleKey 1-doi-1 (store dung 1 ban, file dung 1 dong cung key)  -> UPDATE
+  //      (seller doi anh chinh roi export lai — khong co gi de nham)
+  //   4. Con lai (cung title nhung anh khac, hoac nhieu ban mo ho)       -> INSERT
+  //      — phan chieu dung thuc te Etsy, KHONG gop bay 2 listing that.
+  const norm = titleKey;
   const skuKey = (v: unknown) => s(v).toLowerCase();
+  // Ma anh on dinh tu URL Etsy CDN: il_fullxfull.8384941631_55uu / il_570xN.8384941631 -> "8384941631"
+  const imgKey = (u: unknown) => { const t = s(u); const m = /il_[^./]+\.(\d{6,})/i.exec(t); return m ? m[1] : t; };
 
   const data = rows.slice(0, 1000);
-  // SKU xuất hiện mấy lần trong chính file CSV này
+  // SKU / titleKey xuat hien may lan trong CHINH file nay (de biet truong hop mo ho)
   const fileSku = new Map<string, number>();
-  for (const r of data) { const k = skuKey(r.SKU); if (k) fileSku.set(k, (fileSku.get(k) ?? 0) + 1); }
+  const fileTitle = new Map<string, number>();
+  for (const r of data) {
+    const k = skuKey(r.SKU); if (k) fileSku.set(k, (fileSku.get(k) ?? 0) + 1);
+    const t = norm(s(r.TITLE)); if (t) fileTitle.set(t, (fileTitle.get(t) ?? 0) + 1);
+  }
 
-  // Nạp 1 lần toàn bộ listing của store — 1 query thay vì 1 query/dòng như bản cũ.
-  const existing = await db.select({ id: schema.etsyProducts.id, title: schema.etsyProducts.title, sku: schema.etsyProducts.sku })
+  // Nap 1 lan toan bo listing cua store (kem IMAGE1) — 1 query.
+  const existing = await db.select({ id: schema.etsyProducts.id, title: schema.etsyProducts.title, sku: schema.etsyProducts.sku, images: schema.etsyProducts.images })
     .from(schema.etsyProducts).where(eq(schema.etsyProducts.storeId, storeId));
-  const byTitle = new Map<string, string>();
+  const byTitle = new Map<string, { id: string; img: string; title: string }[]>();
   const dbSkuCount = new Map<string, number>();
   for (const e of existing) {
     const t = norm(e.title);
-    if (t && !byTitle.has(t)) byTitle.set(t, e.id);
+    const img0 = imgKey(Array.isArray(e.images) ? (e.images as unknown[])[0] : "");
+    if (t) { const a = byTitle.get(t) ?? []; a.push({ id: e.id, img: img0, title: e.title }); byTitle.set(t, a); }
     const k = skuKey(e.sku); if (k) dbSkuCount.set(k, (dbSkuCount.get(k) ?? 0) + 1);
   }
   const bySku = new Map<string, string>();
@@ -111,24 +114,34 @@ export async function POST(req: NextRequest) {
       sku: s(r.SKU) || null,
       updatedAt: new Date(),
     };
-    // Khoá 1: SKU — chỉ khi SKU đó DUY NHẤT cả trong file lẫn trong store (xem chú thích trên).
     const sk = skuKey(r.SKU);
     const tk = norm(title);
+    const img0 = imgKey(images[0] ?? "");
+    const cands = byTitle.get(tk) ?? [];
     let hitId: string | undefined;
+    // Khoa 1: SKU duy nhat
     if (sk && fileSku.get(sk) === 1) hitId = bySku.get(sk);
-    // Khoá 2: title đã chuẩn hoá — bắt được nháy cong / space thừa / zero-width.
-    if (!hitId) hitId = byTitle.get(tk);
+    // Khoa 2: titleKey + anh IMAGE1 trung ma
+    if (!hitId && img0) { const m = cands.find((c) => c.img && c.img === img0); if (m) hitId = m.id; }
+    // Khoa 3: 1-doi-1 khong mo ho (doi anh chinh)
+    if (!hitId && cands.length === 1 && (fileTitle.get(tk) ?? 0) <= 1) hitId = cands[0].id;
 
     if (hitId) {
-      // Ghi đè cả title: listing đổi tên trên Etsy thì CẬP NHẬT, không đẻ dòng mới.
+      // Ghi de ca title: mojibake/doi ten -> CAP NHAT ban cu, khong de dong moi.
+      const c = cands.find((x) => x.id === hitId);
+      if (c && c.title !== title) renamed++;
       await db.update(schema.etsyProducts).set({ ...vals, title }).where(eq(schema.etsyProducts.id, hitId));
       updated++;
-      if (!byTitle.has(tk)) { byTitle.set(tk, hitId); renamed++; }
+      if (c) { c.img = img0; c.title = title; }
+      else { cands.push({ id: hitId, img: img0, title }); byTitle.set(tk, cands); }
     } else {
+      // Cung title nhung anh khac = listing THAT khac nhau tren Etsy -> giu rieng.
       const [ins] = await db.insert(schema.etsyProducts).values({ storeId, title, ...vals }).returning({ id: schema.etsyProducts.id });
       inserted++;
-      // Đăng ký ngay vào map: file CSV có 2 dòng cùng title thì dòng thứ 2 UPDATE, không INSERT tiếp.
-      if (ins?.id) { byTitle.set(tk, ins.id); if (sk && fileSku.get(sk) === 1) bySku.set(sk, ins.id); }
+      if (ins?.id) {
+        cands.push({ id: ins.id, img: img0, title }); byTitle.set(tk, cands);
+        if (sk && fileSku.get(sk) === 1) bySku.set(sk, ins.id);
+      }
     }
   }
 

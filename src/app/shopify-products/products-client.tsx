@@ -23,6 +23,8 @@ type Row = {
   persOwn: boolean; persCount: number;
   // v177: Policy & trademark scan. null = chưa quét.
   policyRisk: "clean" | "medium" | "high" | null; policyHitsSummary: string; policyCheckedAt: string | null;
+  // v181: listing Etsy gốc — nút "Etsy" nhảy sang Manage Products · Etsy để đối chiếu.
+  etsyListing: { id: string; title: string; store: string } | null;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -1350,6 +1352,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 <td style={{ padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
                   {canEdit && <button onClick={() => openEdit(r.id)} style={{ ...linkBtn("var(--blue)"), marginRight: 10 }}>Edit</button>}
                   {r.onlineStoreUrl && <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" style={{ ...linkBtn(SHOP_GREEN), textDecoration: "none", marginRight: 10 }}>Open</a>}
+                  {/* v181: nhảy về listing Etsy gốc (mở Manage Products · Etsy với ô search điền sẵn title) */}
+                  {r.etsyListing && (
+                    <a href={`/etsy-products?q=${encodeURIComponent(r.etsyListing.title)}`} target="_blank" rel="noreferrer"
+                      title={`View source listing in Manage Products · Etsy — ${r.etsyListing.store}: ${r.etsyListing.title}`}
+                      style={{ ...linkBtn("#F1641E"), textDecoration: "none", marginRight: 10 }}>Etsy</a>
+                  )}
                   {canEdit && r.dirty && <button onClick={() => doPush([r.id])} style={linkBtn("#B7791F")}>Push</button>}
                 </td>
               </tr>
