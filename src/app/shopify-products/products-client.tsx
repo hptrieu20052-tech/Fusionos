@@ -1300,17 +1300,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, tableLayout: "fixed" }}>
           <thead>
             <tr style={{ background: "#FAFBFC", color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase" }}>
+              {/* v194: cân lại cột — Title là cột auto ăn phần còn lại (to nhất), cột phụ chuyển sang %
+                  nhỏ để không chèn ép Title như v182 (title từng bị bóp mỗi từ một dòng). */}
               <th style={{ padding: "10px 12px", textAlign: "left", width: 34 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
               <th style={{ padding: "10px 6px", textAlign: "left", width: 54 }}>Image</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Title</th>
-              <th style={{ padding: "10px 8px", textAlign: "left", width: 92 }}>Store / Seller</th>
-              <th style={{ padding: "10px 8px", textAlign: "left", width: 140 }}>Type / Category</th>
-              <th style={{ padding: "10px 8px", textAlign: "left", width: 130 }}>Collections</th>
-              <th style={{ padding: "10px 8px", textAlign: "left", width: 130 }}>Template</th>
-              <th style={{ padding: "10px 8px", textAlign: "center", width: 195 }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
-              <th style={{ padding: "10px 8px", textAlign: "right", width: 96 }}>Price</th>
-              <th style={{ padding: "10px 8px", textAlign: "center", width: 84 }}>Status</th>
-              <th style={{ padding: "10px 12px", textAlign: "right", width: 150 }}>Actions</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: "7%" }}>Store / Seller</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: "10%" }}>Type / Category</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: "8%" }}>Collections</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Template</th>
+              <th style={{ padding: "10px 8px", textAlign: "center", width: 175 }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
+              <th style={{ padding: "10px 8px", textAlign: "right", width: 84 }}>Price</th>
+              <th style={{ padding: "10px 8px", textAlign: "center", width: 70 }}>Status</th>
+              <th style={{ padding: "10px 12px", textAlign: "right", width: 138 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
