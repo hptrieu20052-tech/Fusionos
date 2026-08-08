@@ -51,10 +51,15 @@ export async function GET(req: NextRequest) {
     variants: schema.shopifyProducts.variants,
     feedTitle: schema.shopifyProducts.feedTitle,
     feedDescription: schema.shopifyProducts.feedDescription,
+    productType: schema.shopifyProducts.productType,
   }).from(schema.shopifyProducts).where(eq(schema.shopifyProducts.storeId, storeId));
 
+  // v193 · shipping_label = slug Product type — GIỐNG HỆT feed-export (v190). GMC shipping policy
+  // áp theo label này; thêm product type mới là tự có label mới, không sửa gì.
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+
   let skipped = 0;
-  const lines: string[] = ["id\ttitle\tdescription"];
+  const lines: string[] = ["id\ttitle\tdescription\tshipping_label"];
   for (const r of rows) {
     const t = cell(r.feedTitle);
     const d = cell(r.feedDescription);
@@ -64,7 +69,8 @@ export async function GET(req: NextRequest) {
     if (!pid) { skipped++; continue; }
     const vids = ((Array.isArray(r.variants) ? r.variants : []) as { id?: string }[]).map((v) => num(v?.id)).filter(Boolean);
     if (!vids.length) { skipped++; continue; }
-    for (const vid of vids) lines.push(`shopify_${prefix}_${pid}_${vid}\t${t}\t${d}`);
+    const label = slug(cell(r.productType));
+    for (const vid of vids) lines.push(`shopify_${prefix}_${pid}_${vid}\t${t}\t${d}\t${label}`);
   }
 
   return new NextResponse(lines.join("\n") + "\n", {
