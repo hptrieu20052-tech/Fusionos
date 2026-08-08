@@ -70,6 +70,8 @@ severity high = clearly identifiable protected brand/character/person, or a clai
 
 Be conservative and evidence-based; do not invent findings; empty fields are not problems. If the whole listing is clean, findings = [].
 
+LANGUAGE (v192): write the "issue" and "fix" texts in VIETNAMESE — the review team reads Vietnamese. BUT keep every quoted term, brand/character name, and every exact replacement wording in its original ENGLISH inside quotation marks, because the listing itself stays in English and the team will copy-paste those exact English words. Example fix: Thay cụm "The personalized photo book" bằng "The personalized illustrated storybook". Example issue: Ảnh thứ 2 và 3 có chữ quảng cáo đè lên sản phẩm: "THE PERFECT FAMILY GIFT", "Add your Name".
+
 Return STRICT JSON: {"risk":"clean"|"medium"|"high","findings":[...]}. risk = highest severity present (clean when none).`;
 
 export async function POST(req: NextRequest) {
