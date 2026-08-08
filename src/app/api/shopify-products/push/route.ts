@@ -83,6 +83,42 @@ async function assignDeliveryProfile(
 
 type Row = typeof schema.shopifyProducts.$inferSelect;
 
+// v195 · fusion.delivery ghi NGAY trong productSet lúc TẠO MỚI — widget Estimated delivery trên theme
+// hiện đúng số của template từ giây đầu, không phải nhớ bấm "Push delivery" riêng cho listing mới.
+// (Cùng luật số với /api/shopify-products/push-delivery: chỉ ghi cặp min-max đầy đủ.)
+type TplShip = {
+  shipProcMin?: number | null; shipProcMax?: number | null;
+  shipUsMin?: number | null; shipUsMax?: number | null;
+  shipIntlMin?: number | null; shipIntlMax?: number | null;
+  shipCountries?: unknown; shipCutoffHour?: number | null;
+};
+function deliveryValueOf(tpl: Template | null | undefined): string | null {
+  if (!tpl) return null;
+  const t = tpl as unknown as TplShip;
+  const pair = (min?: number | null, max?: number | null): [number, number] | null =>
+    (min == null || max == null) ? null : [Math.min(min, max), Math.max(min, max)];
+  const cty: Record<string, [number, number]> = {};
+  if (t.shipCountries && typeof t.shipCountries === "object") {
+    for (const [k, a] of Object.entries(t.shipCountries as Record<string, unknown>)) {
+      if (!Array.isArray(a) || a.length !== 2) continue;
+      const lo = Number(a[0]), hi = Number(a[1]);
+      if (!isFinite(lo) || !isFinite(hi) || lo < 0 || hi < 0) continue;
+      cty[k.toLowerCase()] = [Math.min(lo, hi), Math.max(lo, hi)];
+    }
+  }
+  const proc = pair(t.shipProcMin, t.shipProcMax);
+  const us = pair(t.shipUsMin, t.shipUsMax);
+  const intl = pair(t.shipIntlMin, t.shipIntlMax);
+  if (!proc && !us && !intl && !Object.keys(cty).length) return null;
+  const payload: Record<string, unknown> = {};
+  if (proc) payload.proc = proc;
+  if (us) payload.us = us;
+  if (intl) payload.intl = intl;
+  if (Object.keys(cty).length) payload.cty = cty;
+  if (t.shipCutoffHour != null) payload.cutoff = t.shipCutoffHour;
+  return JSON.stringify(payload);
+}
+
 // v172 · Tạo sản phẩm MỚI trên Shopify từ bản nháp local. Trả về GID hoặc lỗi.
 // v172b · tpl (nếu bản nháp có template): lấy thêm category + category metafields + theme template
 // ngay trong productSet — structure/giá vẫn theo BẢN NHÁP (người dùng sửa gì giữ nấy), không theo template.
@@ -118,7 +154,13 @@ async function createOnShopify(cred: ShopifyCred, p: Row, tpl?: Template | null)
     ...(files.length ? { files } : {}),
   };
   const catMfs = (tpl?.categoryMetafields ?? []).filter((m) => m.namespace && m.key && m.type && String(m.value ?? "").trim() !== "");
-  if (catMfs.length) input.metafields = catMfs.map((m) => ({ namespace: m.namespace, key: m.key, type: m.type, value: m.value }));
+  // v195 · kèm luôn fusion.delivery (số ngày giao của template) trong cùng request tạo
+  const dv = deliveryValueOf(tpl);
+  const allMfs = [
+    ...catMfs.map((m) => ({ namespace: m.namespace, key: m.key, type: m.type, value: m.value })),
+    ...(dv ? [{ namespace: "fusion", key: "delivery", type: "json", value: dv }] : []),
+  ];
+  if (allMfs.length) input.metafields = allMfs;
   const data = await shopifyGraphQL<{ productSet?: { product?: { id: string }; userErrors?: { message: string }[] } }>(cred, PRODUCT_SET, { input });
   const ue2 = data.productSet?.userErrors ?? [];
   if (ue2.length) return { error: ue2.map((e) => e.message).join("; ").slice(0, 200) };
