@@ -5,7 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { shopHost, type ShopifyCred } from "@/lib/shopify";
-import { listCustomCollections, collectionAddProducts } from "@/lib/shopify-bulk";
+import { listCustomCollections, collectionAddProducts, addTags } from "@/lib/shopify-bulk";
 import { orChatJSON } from "@/lib/ai/openrouter";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +48,19 @@ LOOK AT THE PRODUCT PHOTOS and read the title. Decide the collection by the book
 
 Match a book to the collection whose THEME fits, by meaning — the store's collection titles may be worded differently from these five buckets, so map by concept, not by exact words. Pick ONE collection normally; pick a SECOND only if the book genuinely belongs to both (e.g. a birthday book that is also a bedtime book). Never pick more than two. If NONE of the existing collections fit the book, return an empty array — do not force a bad match.
 
-Return STRICT JSON: {"collections": ["<exact title from the provided list>", ...]} — 0, 1 or 2 titles, each copied EXACTLY (character for character) from the provided list.`;
+ALSO decide HOLIDAY/OCCASION tags (v199b) — from this FIXED list only:
+christmas, easter, mothers day, fathers day, back to school, valentines day, halloween, thanksgiving, grandparents day, st patricks day, 4th of july, new year, hanukkah
+Pick 0-2 that the product CLEARLY matches by its artwork or title: Santa/tree/stocking/sleigh → christmas; bunny/eggs/spring pastel basket → easter; dad/daddy/father → fathers day; mom/mommy/mother → mothers day; school/classroom/ABC/backpack/routine chart → back to school; hearts/love/valentine → valentines day; pumpkin/ghost/witch → halloween; turkey/autumn harvest/thankful/gratitude → thanksgiving; grandma/grandpa/nana/papa/grandparent → grandparents day; shamrock/leprechaun/lucky → st patricks day; American flag/stars and stripes/fireworks → 4th of july; countdown/new year → new year; menorah/dreidel → hanukkah. A generic product with no clear holiday theme gets NO occasion tags — be conservative; these tags drive the store's holiday collections and a wrong tag puts the product on the wrong shelf.
+
+Return STRICT JSON: {"collections": ["<exact title from the provided list>", ...], "occasions": ["<from the fixed list>", ...]} — collections: 0-2 titles copied EXACTLY from the provided list; occasions: 0-2 from the fixed list.`;
+
+// v199b · danh sách tag dịp lễ hợp lệ — chỉ nhận đúng các slug này từ AI.
+// Thêm lễ mới: thêm slug vào đây + vào danh sách trong SYSTEM prompt, và tạo collection automated
+// theo tag đó bên Shopify. 3 chỗ phải khớp chuỗi tuyệt đối.
+const OCCASIONS = [
+  "christmas", "easter", "mothers day", "fathers day", "back to school", "valentines day", "halloween",
+  "thanksgiving", "grandparents day", "st patricks day", "4th of july", "new year", "hanukkah",
+];
 
 export async function POST(req: NextRequest) {
   const deadline = Date.now() + 290_000;
@@ -62,6 +74,7 @@ export async function POST(req: NextRequest) {
   const rows = await db.select({
     id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, title: schema.shopifyProducts.title,
     bodyHtml: schema.shopifyProducts.bodyHtml, images: schema.shopifyProducts.images, gid: schema.shopifyProducts.shopifyProductId,
+    tags: schema.shopifyProducts.tags,
     cred: schema.stores.apiCredentials, seller: schema.stores.sellerId, mk: schema.stores.marketplace,
   }).from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
@@ -78,8 +91,8 @@ export async function POST(req: NextRequest) {
     return list;
   }
 
-  const results: { id: string; title: string; ok: boolean; collections?: string[]; unmatched?: boolean; error?: string }[] =
-    await Promise.all(rows.map(async (r, idx): Promise<{ id: string; title: string; ok: boolean; collections?: string[]; unmatched?: boolean; error?: string }> => {
+  const results: { id: string; title: string; ok: boolean; collections?: string[]; occasions?: string[]; unmatched?: boolean; error?: string }[] =
+    await Promise.all(rows.map(async (r, idx): Promise<{ id: string; title: string; ok: boolean; collections?: string[]; occasions?: string[]; unmatched?: boolean; error?: string }> => {
       const cred = (r.cred ?? {}) as ShopifyCred;
       if (r.mk !== "shopify" || !shopHost(cred) || !(cred.adminToken || (cred.clientId && cred.clientSecret))) {
         return { id: r.id, title: r.title, ok: false, error: "store chưa cấu hình Shopify API" };
@@ -92,7 +105,7 @@ export async function POST(req: NextRequest) {
         const desc = clip((r.bodyHtml ?? "").replace(/<[^>]+>/g, " "), 700);
         const user = `AVAILABLE COLLECTIONS (pick only from these exact titles):\n${list}\n\nPRODUCT\nTitle: ${clip(r.title, 250)}\nDescription: ${desc || "(none)"}`;
 
-        const o = await orChatJSON<{ collections?: unknown }>(SYSTEM, user, {
+        const o = await orChatJSON<{ collections?: unknown; occasions?: unknown }>(SYSTEM, user, {
           model, maxTokens: 1500, temperature: 0.2, reasoning: "low", images: imgUrls(r.images),
           timeoutMs: Math.min(45000, deadline - Date.now() - 2000),
         });
@@ -106,7 +119,27 @@ export async function POST(req: NextRequest) {
         // Khử trùng theo id
         const uniq = Array.from(new Map(picked.map((c) => [c.id, c])).values());
 
-        if (!uniq.length) return { id: r.id, title: r.title, ok: true, unmatched: true, collections: [] };
+        // v199 · TAG DỊP LỄ: chỉ nhận slug trong danh sách cố định, cộng vào tags (không xoá tag cũ).
+        // Collection lễ chạy automated theo tag sẽ tự hút sản phẩm — Shopify không cho gán thẳng
+        // vào automated collection nên đây là đường duy nhất đúng.
+        const occ = (Array.isArray(o?.occasions) ? o!.occasions! : [])
+          .map((x) => norm(String(x)))
+          .filter((x) => OCCASIONS.includes(x))
+          .slice(0, 2);
+        let newTags: string[] = [];
+        if (occ.length) {
+          const cur = String(r.tags ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+          const curNorm = new Set(cur.map(norm));
+          newTags = occ.filter((x) => !curNorm.has(x));
+          if (newTags.length) {
+            await db.update(schema.shopifyProducts)
+              .set({ tags: [...cur, ...newTags].join(", "), updatedAt: new Date() })
+              .where(eq(schema.shopifyProducts.id, r.id));
+            if (r.gid) { try { await addTags(cred, r.gid, newTags); } catch { /* tag lỗi không chặn kết quả */ } }
+          }
+        }
+
+        if (!uniq.length) return { id: r.id, title: r.title, ok: true, unmatched: true, collections: [], occasions: newTags };
 
         // Ghi local (cả bản nháp lẫn sản phẩm thật) — nguồn sự thật cho bảng + cho Push bản nháp.
         await db.update(schema.shopifyProducts)
@@ -119,7 +152,7 @@ export async function POST(req: NextRequest) {
             try { await collectionAddProducts(cred, c.id, [r.gid]); } catch { /* lỗi 1 collection không chặn cả sản phẩm */ }
           }
         }
-        return { id: r.id, title: r.title, ok: true, collections: uniq.map((c) => c.title) };
+        return { id: r.id, title: r.title, ok: true, collections: uniq.map((c) => c.title), occasions: newTags };
       } catch (e) {
         return { id: r.id, title: r.title, ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) };
       }
@@ -128,5 +161,6 @@ export async function POST(req: NextRequest) {
   const assigned = results.filter((r) => r.ok && !r.unmatched).length;
   const unmatched = results.filter((r) => r.ok && r.unmatched).length;
   const failed = results.filter((r) => !r.ok).length;
-  return NextResponse.json({ ok: assigned + unmatched > 0, assigned, unmatched, failed, results });
+  const tagged = results.filter((r) => r.ok && (r.occasions ?? []).length > 0).length;
+  return NextResponse.json({ ok: assigned + unmatched > 0, assigned, unmatched, failed, tagged, results });
 }

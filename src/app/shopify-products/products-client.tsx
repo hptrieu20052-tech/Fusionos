@@ -828,13 +828,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const doAiCollection = async (ids: string[]) => {
     if (!ids.length) return flash("✗ Select products first", false);
     setBusy(true); setMsg(null); setFails([]);
-    let assigned = 0, unmatched = 0; const failed: { id: string; title: string; error: string }[] = [];
+    let assigned = 0, unmatched = 0, tagged = 0; const failed: { id: string; title: string; error: string }[] = [];
     setProg({ label: "AI sorting into collections", done: 0, total: ids.length, fail: 0 });
     for (let i = 0; i < ids.length; i += CHUNK_AICOL) {
       const batch = ids.slice(i, i + CHUNK_AICOL);
       try {
         const j = await postJSON("/api/shopify-products/ai-collections", { ids: batch, model: aiModel || undefined });
-        assigned += j.assigned ?? 0; unmatched += j.unmatched ?? 0;
+        assigned += j.assigned ?? 0; unmatched += j.unmatched ?? 0; tagged += j.tagged ?? 0;
         const res = (j.results ?? []) as { id: string; title: string; ok: boolean; unmatched?: boolean; error?: string }[];
         res.filter((x) => !x.ok).forEach((x) => failed.push({ id: x.id, title: x.title, error: x.error ?? "failed" }));
         res.filter((x) => x.ok && x.unmatched).forEach((x) => failed.push({ id: x.id, title: x.title, error: "no matching collection — assign by hand or create one" }));
@@ -846,7 +846,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       setProg({ label: "AI sorting into collections", done: Math.min(i + batch.length, ids.length), total: ids.length, fail: failed.length });
     }
     setProg(null); setFails(failed);
-    if (assigned + unmatched > 0) flash(`✓ AI sorted ${assigned}/${ids.length} into collections${unmatched ? ` · ${unmatched} had no fit (listed below — assign by hand)` : ""}. Drafts apply their collection on Push.`, unmatched === 0 && !failed.length);
+    if (assigned + unmatched > 0) flash(`✓ AI sorted ${assigned}/${ids.length} into collections${tagged ? ` · ${tagged} got holiday tags (christmas/easter/…)` : ""}${unmatched ? ` · ${unmatched} had no fit (assign by hand)` : ""}. Drafts apply their collection on Push.`, unmatched === 0 && !failed.length);
     else flash(`✗ AI Auto-Collection failed on all ${ids.length}: ${failed[0]?.error ?? "unknown"}`, false);
     await load();
     setBusy(false);
