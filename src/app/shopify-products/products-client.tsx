@@ -804,11 +804,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
         clean += j.clean ?? 0; medium += j.medium ?? 0; high += j.high ?? 0;
         const res = (j.results ?? []) as { id: string; title: string; ok: boolean; risk?: string; summary?: string; findings?: { term: string; field: string; severity: string; fix?: string }[]; error?: string }[];
         res.filter((x) => !x.ok).forEach((x) => failed.push({ id: x.id, title: x.title, error: x.error ?? "failed" }));
-        // Liệt kê từng vấn đề kèm fix để sửa được ngay tại chỗ, không phải mở từng listing đoán mò.
-        res.filter((x) => x.ok && x.risk !== "clean").forEach((x) => failed.push({
-          id: x.id, title: x.title,
-          error: `${(x.risk ?? "").toUpperCase()} — ` + (x.findings ?? []).map((f) => `[${f.field}] ${f.term}${f.fix ? ` → Fix: ${f.fix}` : ""}`).join(" · "),
-        }));
+        // v198: BỎ khung liệt kê findings sau khi audit — chi tiết xem từng listing bằng cách
+        // click chip ⛔/⚠/✓ (modal v191). Khung fails giờ chỉ còn dành cho LỖI THẬT (429/timeout...).
         if (!res.length && !j.ok) batch.forEach((id) => failed.push({ id, title: rows.find((r) => r.id === id)?.title ?? id, error: j.error ?? "request failed" }));
       } catch (e) {
         const err = String((e as Error)?.message ?? "network error");
@@ -818,8 +815,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     }
     setProg(null); setFails(failed);
     flash(high
-      ? `⚠ AI checked ${ids.length}: ${high} HIGH (push BLOCKED) · ${medium} medium · ${clean} clean`
-      : `✓ AI checked ${ids.length}: ${clean} clean · ${medium} medium · 0 high`, high === 0);
+      ? `⚠ AI checked ${ids.length}: ${high} HIGH (push BLOCKED) · ${medium} medium · ${clean} clean — click a listing's ⛔/⚠ chip for details & fixes`
+      : `✓ AI checked ${ids.length}: ${clean} clean · ${medium} medium · 0 high${medium ? " — click a listing's ⚠ chip for details & fixes" : ""}`, high === 0);
     await load();
     setBusy(false);
   };
