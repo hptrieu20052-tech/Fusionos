@@ -34,6 +34,53 @@ const MF_SET = `mutation SetPers($m: [MetafieldsSetInput!]!) {
   metafieldsSet(metafields: $m) { userErrors { message } }
 }`;
 
+// v190 · TỰ GÁN SHIPPING PROFILE THEO PRODUCT TYPE.
+// Quy ước tự cấu hình — KHÔNG cần bảng map: shipping profile Shopify nào có TÊN TRÙNG (không phân
+// biệt hoa thường) với Product type của sản phẩm (vd profile "Custom Shape Wooden Puzzle") thì sau
+// khi Push, toàn bộ variant của sản phẩm được đưa vào profile đó — khỏi vào Settings gán tay.
+// Không có profile trùng tên → không đụng gì (sản phẩm nằm General profile như mặc định Shopify).
+// Cần scope read_shipping + write_shipping; thiếu scope thì bỏ qua êm, Push vẫn thành công.
+const PROFILES_Q = `query fusionProfiles { deliveryProfiles(first: 25) { edges { node { id name default } } } }`;
+const PROFILE_ASSIGN = `mutation fusionAssign($id: ID!, $profile: DeliveryProfileInput!) {
+  deliveryProfileUpdate(id: $id, profile: $profile) { userErrors { field message } }
+}`;
+type ProfileMap = Map<string, string>; // lower(tên profile) → profile GID (bỏ profile default)
+async function loadProfiles(cred: ShopifyCred): Promise<ProfileMap> {
+  const map: ProfileMap = new Map();
+  try {
+    const d = await shopifyGraphQL<{ deliveryProfiles?: { edges?: { node?: { id?: string; name?: string; default?: boolean } }[] } }>(cred, PROFILES_Q);
+    for (const e of d.deliveryProfiles?.edges ?? []) {
+      const n = e?.node;
+      if (n?.id && n?.name && !n.default) map.set(String(n.name).trim().toLowerCase(), String(n.id));
+    }
+  } catch { /* thiếu read_shipping / lỗi mạng → coi như không có profile custom */ }
+  return map;
+}
+async function assignDeliveryProfile(
+  cred: ShopifyCred, profiles: ProfileMap, productType: string | null | undefined, gid: string, knownVariantGids?: string[],
+): Promise<string> {
+  const key = String(productType ?? "").trim().toLowerCase();
+  if (!key) return "";
+  const profileId = profiles.get(key);
+  if (!profileId) return ""; // không có profile trùng tên type → để General, không làm gì
+  try {
+    let vids = (knownVariantGids ?? []).filter((x) => x.startsWith("gid://"));
+    if (!vids.length) {
+      const fresh = await fetchOneShopifyProduct(cred, gid);
+      vids = (fresh?.variants ?? []).map((v) => String(v.id ?? "")).filter((x) => x.startsWith("gid://"));
+    }
+    if (!vids.length) return "shipping profile: no variant GIDs yet — run Sync then Push again";
+    const d = await shopifyGraphQL<{ deliveryProfileUpdate?: { userErrors?: { message?: string }[] } }>(
+      cred, PROFILE_ASSIGN, { id: profileId, profile: { variantsToAssociate: vids } },
+    );
+    const errs = d.deliveryProfileUpdate?.userErrors ?? [];
+    return errs.length ? "shipping profile: " + errs.map((x) => x.message).join("; ").slice(0, 100) : "";
+  } catch (e) {
+    const m = String((e as Error)?.message ?? e);
+    return "shipping profile: " + (/access|scope/i.test(m) ? "app thiếu scope write_shipping — thêm scope rồi Install lại app" : m.slice(0, 100));
+  }
+}
+
 type Row = typeof schema.shopifyProducts.$inferSelect;
 
 // v172 · Tạo sản phẩm MỚI trên Shopify từ bản nháp local. Trả về GID hoặc lỗi.
@@ -158,6 +205,14 @@ export async function POST(req: NextRequest) {
   const tplById = new Map(tplRows.map((t) => [t.id, t as unknown as Template]));
 
   const results: { id: string; title: string; ok: boolean; error?: string }[] = [];
+  // v190 · nạp shipping profiles 1 lần / store trong request (lazy)
+  const profCache = new Map<string, ProfileMap>();
+  const profilesFor = async (cred: ShopifyCred): Promise<ProfileMap> => {
+    const host = shopHost(cred);
+    let m = profCache.get(host);
+    if (!m) { m = await loadProfiles(cred); profCache.set(host, m); }
+    return m;
+  };
   for (const r of rows) {
     const cred = (r.cred ?? {}) as ShopifyCred;
     if (r.mk !== "shopify" || !shopHost(cred) || !(cred.adminToken || (cred.clientId && cred.clientSecret))) {
@@ -178,8 +233,11 @@ export async function POST(req: NextRequest) {
         const tpl = r.p.templateId ? tplById.get(r.p.templateId) ?? null : null;
         const made = await createOnShopify(cred, r.p, tpl);
         if (!made.gid) { results.push({ id: r.p.id, title: r.p.title, ok: false, error: made.error ?? "create failed" }); continue; }
-        const warn = await applyTplExtras(cred, tpl, made.gid, r.p.collections);
+        const warn0 = await applyTplExtras(cred, tpl, made.gid, r.p.collections);
         await adoptCreated(cred, r.p, made.gid);
+        // v190 · profile trùng tên Product type → gán variants vào (adoptCreated đã nạp variant GID vào DB, helper tự refetch)
+        const wProf = await assignDeliveryProfile(cred, await profilesFor(cred), r.p.productType, made.gid);
+        const warn = [warn0, wProf].filter(Boolean).join("; ");
         results.push({ id: r.p.id, title: r.p.title, ok: true, ...(warn ? { error: "partial: " + warn } : {}) });
         continue;
       }
@@ -207,15 +265,22 @@ export async function POST(req: NextRequest) {
           } : {}),
           dirty: false, pushedAt: new Date(), updatedAt: new Date(),
         }).where(eq(schema.shopifyProducts.id, r.p.id));
-        results.push({ id: r.p.id, title: r.p.title, ok: true });
+        // v190 · update path: dùng luôn variant GID vừa đọc lại, khỏi gọi thêm API
+        const wProf = await assignDeliveryProfile(
+          cred, await profilesFor(cred), fresh?.productType ?? r.p.productType, r.p.shopifyProductId,
+          (fresh?.variants ?? []).map((v) => String((v as SyncedVariant).id ?? "")),
+        );
+        results.push({ id: r.p.id, title: r.p.title, ok: true, ...(wProf ? { error: "partial: " + wProf } : {}) });
       } else if (/does not exist|doesn'?t exist|not found/i.test(res.error ?? "")) {
         // v172 · Sản phẩm đã bị XOÁ tay trên Shopify mà bản ghi vẫn giữ GID cũ → tự gỡ liên kết
         // và TẠO LẠI ngay trong lần Push này (nội dung lấy từ bản local đang có).
         const tpl = r.p.templateId ? tplById.get(r.p.templateId) ?? null : null;
         const made = await createOnShopify(cred, r.p, tpl);
         if (!made.gid) { results.push({ id: r.p.id, title: r.p.title, ok: false, error: "old product was deleted on Shopify; re-create failed: " + (made.error ?? "") }); continue; }
-        const warn = await applyTplExtras(cred, tpl, made.gid, r.p.collections);
+        const warn0 = await applyTplExtras(cred, tpl, made.gid, r.p.collections);
         await adoptCreated(cred, { ...r.p, shopifyProductId: made.gid }, made.gid);
+        const wProf = await assignDeliveryProfile(cred, await profilesFor(cred), r.p.productType, made.gid);
+        const warn = [warn0, wProf].filter(Boolean).join("; ");
         results.push({ id: r.p.id, title: r.p.title, ok: true, ...(warn ? { error: "partial: " + warn } : {}) });
       } else results.push({ id: r.p.id, title: r.p.title, ok: false, error: res.error });
     } catch (e) {

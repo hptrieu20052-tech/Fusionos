@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     variants: schema.shopifyProducts.variants,
     feedTitle: schema.shopifyProducts.feedTitle,
     feedDescription: schema.shopifyProducts.feedDescription,
+    productType: schema.shopifyProducts.productType,
     seller: schema.stores.sellerId,
   }).from(schema.shopifyProducts)
     .leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
@@ -52,8 +53,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
+  // v190 · shipping_label = slug của Product type ("Custom Shape Wooden Puzzle" → custom-shape-wooden-puzzle).
+  // Trong GMC → Shipping policy → Products, chọn áp theo shipping label ĐÚNG chuỗi slug này.
+  // Mỗi product type tự có label riêng — thêm type mới không phải sửa code.
+  const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+
   let skipped = 0;
-  const lines: string[] = ["id\ttitle\tdescription"];
+  const lines: string[] = ["id\ttitle\tdescription\tshipping_label"];
   for (const r of rows) {
     const t = cell(r.feedTitle);
     const d = cell(r.feedDescription);
@@ -64,7 +70,8 @@ export async function POST(req: NextRequest) {
     const vs = (Array.isArray(r.variants) ? r.variants : []) as { id?: string }[];
     const vids = vs.map((v) => num(v?.id)).filter(Boolean);
     if (!vids.length) { skipped++; continue; }
-    for (const vid of vids) lines.push(`shopify_${prefix}_${pid}_${vid}\t${t}\t${d}`);
+    const label = slug(cell(r.productType));
+    for (const vid of vids) lines.push(`shopify_${prefix}_${pid}_${vid}\t${t}\t${d}\t${label}`);
   }
 
   const body = lines.join("\n") + "\n";
