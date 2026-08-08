@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray } from "drizzle-orm";
-import { verifyShopifyHmac, normalizeShopifyOrder, shopHost, webhookSecretOf, type ShopifyCred } from "@/lib/shopify";
+import { and, eq, inArray, like, or } from "drizzle-orm";
+import { verifyShopifyHmac, normalizeShopifyOrder, splitShopifyOrderBySeller, shopHost, webhookSecretOf, type ShopifyCred } from "@/lib/shopify";
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
 
 export const dynamic = "force-dynamic";
@@ -39,40 +39,69 @@ export async function POST(req: NextRequest) {
   try { body = JSON.parse(raw); } catch { return NextResponse.json({ ok: false, error: "bad json" }, { status: 400 }); }
   if (!body) return NextResponse.json({ ok: false, error: "empty" }, { status: 400 });
 
-  // orders/cancelled → đưa đơn về cancel (không tạo mới)
+  // orders/cancelled → đưa đơn (và các bản -CLONE-n của nó) về cancel
   const isCancel = topic.includes("cancel") || !!body.cancelled_at;
 
   try {
     const norm = normalizeShopifyOrder(body);
     if (isCancel && norm.externalId) {
+      const base = norm.externalId.replace(/-CLONE-\d+$/, "");
       await db.update(schema.orders).set({ status: "cancel" as never, updatedAt: new Date() })
-        .where(and(eq(schema.orders.platform, "shopify" as never), eq(schema.orders.externalId, norm.externalId)));
-      return NextResponse.json({ ok: true, cancelled: norm.externalId });
+        .where(and(
+          eq(schema.orders.platform, "shopify" as never),
+          or(eq(schema.orders.externalId, base), like(schema.orders.externalId, `${base}-CLONE-%`)),
+        ));
+      return NextResponse.json({ ok: true, cancelled: base });
     }
-    // PHÂN BỔ SELLER THEO SẢN PHẨM: khớp product_id của line item ↔ listing đã Push (shopifyProductId)
-    // ↔ store Etsy gốc ↔ seller. Nhờ vậy cả công ty chung 1 store Shopify vẫn về đúng seller.
-    // Không khớp được (sản phẩm không do FUSION đẩy) → fallback về chủ store Shopify.
-    let sellerId = store.sellerId;
-    try {
-      const pids = Array.from(new Set((norm.items ?? [])
-        .map((it) => String(it.listingId ?? "").replace(/\D/g, "")).filter(Boolean)));
-      if (pids.length) {
-        const gids = pids.map((n) => `gid://shopify/Product/${n}`);
-        const [m] = await db.select({ sellerId: schema.stores.sellerId })
-          .from(schema.etsyProducts)
-          .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
-          .where(inArray(schema.etsyProducts.shopifyProductId, gids))
-          .limit(1);
-        if (m?.sellerId) sellerId = m.sellerId;
-      }
-    } catch { /* fallback store.sellerId */ }
 
-    // insertEtsyOrders tự bắn Telegram cho đơn mới (notifyNewSales bên trong) → không gọi lại ở đây.
-    const r = await insertEtsyOrders(
-      { id: store.id, sellerId, fx: store.fxRate, name: store.name },
-      [norm], "api", "shopify",
-    );
-    return NextResponse.json({ ok: true, seller: sellerId, ...r });
+    // PHÂN BỔ SELLER THEO SẢN PHẨM + TÁCH ĐƠN nếu giỏ trộn nhiều seller.
+    // 1) Map product_id ↔ seller: khớp shopifyProductId của listing đã Push.
+    const pids = Array.from(new Set((norm.items ?? [])
+      .map((it) => String(it.listingId ?? "").replace(/\D/g, "")).filter(Boolean)));
+    const pidToSeller = new Map<string, string>();
+    if (pids.length) {
+      const gids = pids.map((n) => `gid://shopify/Product/${n}`);
+      const matched = await db.select({ gid: schema.etsyProducts.shopifyProductId, sellerId: schema.stores.sellerId })
+        .from(schema.etsyProducts)
+        .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+        .where(inArray(schema.etsyProducts.shopifyProductId, gids));
+      for (const m of matched) { const n = String(m.gid ?? "").replace(/\D/g, ""); if (n && m.sellerId) pidToSeller.set(n, m.sellerId); }
+    }
+    // 2) Fallback cho item list tay (không map được): gán ADMIN đầu tiên để support/admin thấy mà fulfill.
+    const [admin] = await db.select({ id: schema.users.id }).from(schema.users)
+      .where(eq(schema.users.role, "admin")).orderBy(schema.users.createdAt).limit(1);
+    const adminSellerId = admin?.id ?? store.sellerId ?? null;
+
+    // v189 · ẢNH ITEM: webhook line_items của Shopify KHÔNG có ảnh — kéo từ Manage Products · Shopify
+    // (bảng shopify_products đã có sẵn images của mọi listing, kể cả listing tạo tay).
+    const pidToImg = new Map<string, string>();
+    if (pids.length) {
+      const gids = pids.map((n) => `gid://shopify/Product/${n}`);
+      const prods = await db.select({ gid: schema.shopifyProducts.shopifyProductId, images: schema.shopifyProducts.images })
+        .from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.shopifyProductId, gids));
+      for (const p of prods) {
+        const n = String(p.gid ?? "").replace(/\D/g, "");
+        const first = (Array.isArray(p.images) ? p.images as { src?: string }[] : [])[0];
+        const src = String(first?.src ?? "").trim();
+        if (n && /^https?:\/\//i.test(src)) pidToImg.set(n, src);
+      }
+    }
+
+    // 3) Tách đơn theo seller (1 nhóm → 1 đơn; nhiều nhóm → đơn gốc + -CLONE-n, chia doanh thu theo tỉ lệ).
+    const parts = splitShopifyOrderBySeller(body, (pid) => pidToSeller.get(pid) ?? null, adminSellerId);
+    const out: Record<string, unknown>[] = [];
+    for (const part of parts) {
+      for (const it of part.order.items ?? []) {
+        const n = String(it.listingId ?? "").replace(/\D/g, "");
+        if (!it.imageUrl && n && pidToImg.has(n)) it.imageUrl = pidToImg.get(n);
+      }
+      const r = await insertEtsyOrders(
+        { id: store.id, sellerId: part.sellerId, fx: store.fxRate, name: store.name },
+        [part.order], "api", "shopify",
+      );
+      out.push({ externalId: part.order.externalId, seller: part.sellerId, ...r });
+    }
+    return NextResponse.json({ ok: true, parts: out });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }

@@ -97,7 +97,8 @@ export function verifyShopifyHmac(rawBody: string, hmacHeader: string, secret: s
 const num = (v: unknown) => { const n = Number(v); return isNaN(n) ? 0 : n; };
 const strv = (v: unknown) => (v == null ? "" : String(v)).trim();
 
-// Gom line_items[].properties (cá nhân hoá) → chuỗi "Name: Value · …" + tách ảnh khách upload.
+// Gom line_items[].properties (cá nhân hoá) → mỗi field MỘT DÒNG "Name: Value" + tách ảnh khách upload.
+// v189 · đổi " · " thành xuống dòng — trước đây cả chục field dính thành 1 cục, không đọc nổi.
 function splitProperties(props: unknown): { personalization: string; files: { name: string; url: string }[] } {
   const arr = Array.isArray(props) ? (props as { name?: unknown; value?: unknown }[]) : [];
   const parts: string[] = []; const files: { name: string; url: string }[] = [];
@@ -110,7 +111,7 @@ function splitProperties(props: unknown): { personalization: string; files: { na
     if (/^https?:\/\/\S+/i.test(value)) { files.push({ name, url: value }); parts.push(`${name}: ${value}`); }
     else parts.push(`${name}: ${value}`);
   }
-  return { personalization: parts.join(" · "), files };
+  return { personalization: parts.join("\n"), files };
 }
 
 // Chuẩn hoá đơn Shopify (Admin API / webhook orders/create) → InOrder cho insertEtsyOrders.

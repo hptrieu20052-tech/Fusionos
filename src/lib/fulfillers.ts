@@ -300,13 +300,31 @@ function hogotoAdapter(): FulfillerAdapter {
 
       // v148 · CHẨN ĐOÁN: đính kèm đúng chuỗi đã gửi + dấu build vào thông báo lỗi.
       // Nếu toast KHÔNG có "[v148 ...]" ⇒ Vercel vẫn đang chạy bản cũ, không phải lỗi logic.
+      // v189 · TỰ VÁ MÀU: sách/photo book (P177...) không nhận "AS_DESIGN" — Hogoto trả
+      // "Color code 'X' is not available for product code 'Y' ... Available colors: WHITE".
+      // Đổi colorCode của đúng product đó sang màu đầu tiên sàn cho phép rồi gửi lại (tối đa 3 vòng,
+      // mỗi vòng vá 1 product code). Muốn khỏi vá: đặt extraJson.colorCode = "WHITE" trong SKU mapping.
       let res;
-      try {
-        res = await createHogotoOrder({ endpoint: ctx.fulfiller.apiEndpoint, apiKey, tenant }, body);
-      } catch (e) {
-        const m = e instanceof Error ? e.message : String(e);
-        const codes = products.map((p) => String(p.productCode)).join(",");
-        throw new Error(`${m} · [v148 ref="${refCode}" ship="${shippingMethod}" products="${codes}"]`);
+      let colorFixes = 0;
+      const colorFixed: string[] = [];
+      for (;;) {
+        try {
+          res = await createHogotoOrder({ endpoint: ctx.fulfiller.apiEndpoint, apiKey, tenant }, body);
+          break;
+        } catch (e) {
+          const m = e instanceof Error ? e.message : String(e);
+          const cm = /Color code '([^']+)' is not available for product code '([^']+)'.*?Available colors?:\s*([A-Za-z0-9_]+(?:\s*,\s*[A-Za-z0-9_]+)*)/i.exec(m);
+          const firstColor = cm ? cm[3].split(/\s*,\s*/).filter(Boolean)[0] : null;
+          if (cm && firstColor && colorFixes < 3) {
+            let patched = false;
+            for (const p of products) {
+              if (String(p.productCode) === cm[2] && String(p.colorCode) === cm[1]) { p.colorCode = firstColor; patched = true; }
+            }
+            if (patched) { colorFixes++; colorFixed.push(`${cm[2]}:${cm[1]}→${firstColor}`); continue; }
+          }
+          const codes = products.map((p) => String(p.productCode)).join(",");
+          throw new Error(`${m} · [v148 ref="${refCode}" ship="${shippingMethod}" products="${codes}"]`);
+        }
       }
       // v156 · CHẨN ĐOÁN FILE DST — VÒNG 2. Kết quả v155: sent=1/1 echo=YES att{trống}.
       // Nghĩa là: mình CÓ gửi designEmbUrl, Hogoto CÓ nhả lại đúng URL đó trong response,
@@ -318,24 +336,33 @@ function hogotoAdapter(): FulfillerAdapter {
       const embUrls = new Set(
         products.flatMap((p) => (p.designAttachments ?? []).map((a) => a.designEmbUrl).filter(Boolean) as string[]),
       );
-      let hitPath = "";      // đường dẫn tới chỗ Hogoto cất URL .dst, vd: result.products[0].designs[0].embFile
-      let hitSiblings = "";  // các key cùng cấp — tên field thật nằm ở đây
-      const walk = (v: unknown, path: string, depth: number): void => {
-        if (depth > 8 || !v || typeof v !== "object") return;
-        if (Array.isArray(v)) { v.slice(0, 20).forEach((x, i) => walk(x, `${path}[${i}]`, depth + 1)); return; }
+      // v157 · IN GIÁ TRỊ, KHÔNG IN TÊN KEY NỮA. v156 chỉ cho biết object file của Hogoto có các key
+      // {contentType,name,url,size,sizeName}; tôi đã SUY DIỄN từ đó là họ tải được file — sai lầm.
+      // Có vỏ object không có nghĩa là có ruột: nếu Hogoto tải file .dst từ img.fusiondn.com thất bại
+      // thì size/name/contentType đều null và ô DST vẫn trống (đúng hiện tượng "2/3 file").
+      // size > 0  ⇒ họ tải được, lỗi nằm ở giao diện Hogoto, code mình không phải sửa.
+      // size null ⇒ họ KHÔNG tải được, phải xử lý ở phía mình (quyền truy cập / content-type của R2).
+      let hitObj: Record<string, unknown> | null = null;
+      const walk = (v: unknown, depth: number): void => {
+        if (depth > 8 || !v || typeof v !== "object" || hitObj) return;
+        if (Array.isArray(v)) { for (const x of v.slice(0, 20)) walk(x, depth + 1); return; }
         const obj = v as Record<string, unknown>;
-        for (const [k, val] of Object.entries(obj)) {
-          const p = path ? `${path}.${k}` : k;
-          if (typeof val === "string" && embUrls.has(val)) {
-            if (!hitPath) { hitPath = p; hitSiblings = Object.keys(obj).slice(0, 25).join(","); }
-          } else walk(val, p, depth + 1);
+        for (const val of Object.values(obj)) {
+          if (typeof val === "string" && embUrls.has(val)) { hitObj = obj; return; }
+          walk(val, depth + 1);
         }
       };
-      walk(res.raw, "", 0);
-      const dstDiag = hitPath
-        ? `v156 dst: sent=${sentEmb}/${products.length} tại "${hitPath}" · anh em{${hitSiblings}}`
-        : `v156 dst: sent=${sentEmb}/${products.length} · response KHÔNG chứa url .dst`;
-      return { externalFfId: res.orderCode, simulated: false, raw: res.raw, baseCost: res.baseCost, shipCost: res.shipCost, reason: dstDiag };
+      walk(res.raw, 0);
+      const show = (k: string): string => {
+        const v = hitObj ? (hitObj as Record<string, unknown>)[k] : undefined;
+        return v === undefined ? "—" : v === null ? "null" : String(v).slice(0, 40);
+      };
+      const dstDiag = hitObj
+        ? `v157 dst: size=${show("size")} sizeName=${show("sizeName")} name=${show("name")} type=${show("contentType")}`
+        : `v157 dst: sent=${sentEmb}/${products.length} · response KHÔNG chứa url .dst`;
+      // v189 · báo lại nếu đã tự đổi màu — nên ghi hẳn colorCode đó vào SKU mapping cho lần sau.
+      const colorNote = colorFixed.length ? ` · auto-fixed color ${colorFixed.join(", ")} — set this colorCode in the SKU mapping` : "";
+      return { externalFfId: res.orderCode, simulated: false, raw: res.raw, baseCost: res.baseCost, shipCost: res.shipCost, reason: dstDiag + colorNote };
     },
   };
 }
@@ -386,25 +413,36 @@ function vinawayAdapter(): FulfillerAdapter {
       });
 
       const note = ctx.lines.map((l) => (l.personalization || "").trim()).filter(Boolean).join(" | ");
-      const res = await createVinawayOrder(
-        { endpoint: ctx.fulfiller.apiEndpoint, email, password },
-        {
-          type: Number(cred.type) || 1,                       // 1 Production
-          external_order_id: orderExtNumber(o),
-          production_line_id: Number(cred.productionLineId) || 1, // 1 Standard · 2 Express
-          note_seller: note || undefined,
-          customer_name: `${(o.buyerFirst || "").trim()} ${(o.buyerLast || "").trim()}`.trim() || "Customer",
-          address1: o.addr1 || "",
-          address2: o.addr2 || "",
-          city: o.city || "",
-          zip: o.zip || "",
-          country: toISO2(o.country || "") || o.country || "US",
-          state: o.state || "",
-          email: o.email || undefined,
-          tel: o.phone || undefined,
-          items,
-        },
-      );
+      let res;
+      try {
+        res = await createVinawayOrder(
+          { endpoint: ctx.fulfiller.apiEndpoint, email, password },
+          {
+            type: Number(cred.type) || 1,                       // 1 Production
+            external_order_id: orderExtNumber(o),
+            production_line_id: Number(cred.productionLineId) || 1, // 1 Standard · 2 Express
+            note_seller: note || undefined,
+            customer_name: `${(o.buyerFirst || "").trim()} ${(o.buyerLast || "").trim()}`.trim() || "Customer",
+            address1: o.addr1 || "",
+            address2: o.addr2 || "",
+            city: o.city || "",
+            zip: o.zip || "",
+            country: toISO2(o.country || "") || o.country || "US",
+            state: o.state || "",
+            email: o.email || undefined,
+            tel: o.phone || undefined,
+            items,
+          },
+        );
+      } catch (e) {
+        // v189 · "Invalid SKU code" mà không nói SKU nào = mò kim đáy bể. In rõ id đã gửi + cách sửa.
+        const m = e instanceof Error ? e.message : String(e);
+        const sent = items.map((i) => `${i.product_id}:${i.product_sku_id}`).join(", ");
+        const hint = /invalid sku|422/i.test(m)
+          ? " — Vinaway không nhận product_id:product_sku_id này. Mở Settings → Fulfillers → Import SKUs from Vinaway để lấy id mới nhất rồi sửa lại SKU mapping."
+          : "";
+        throw new Error(`${m} · [v189 sent="${sent}"]${hint}`);
+      }
       return { externalFfId: res.id, simulated: false, raw: res.raw };
     },
   };

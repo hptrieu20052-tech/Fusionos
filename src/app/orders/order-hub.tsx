@@ -1638,7 +1638,8 @@ function ItemRow({ it, onSaved, flash, canEdit = true, canDup = false, showPicke
           // Personalization GỘP vào Variants — nhưng KHÔNG thêm nếu nội dung đã nằm sẵn trong variant
           // (personalization thường là ghép các field đã có trong variant → thêm nữa sẽ LẶP).
           const varDecoded = decodeEntities(it.variant ?? "");
-          const pzPieces = pz.split(" · ").map((s) => s.trim()).filter(Boolean);
+          {/* v189: đơn Shopify mới nối field bằng xuống dòng (không còn " · ") — tách theo cả 2 kiểu */}
+          const pzPieces = pz.split(/ · |\n/).map((s) => s.trim()).filter(Boolean);
           const pzRedundant = pzPieces.length > 0 && pzPieces.every((pc) => varDecoded.includes(pc.slice(0, 25)));
           const lines: { label: string | null; value: string }[] = parts.map((v: VariantPart) => ({ label: v.label ?? null, value: v.value }));
           if (pz && !pzRedundant) lines.push({ label: t("o.personalization"), value: pz });
