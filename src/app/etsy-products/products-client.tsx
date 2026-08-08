@@ -73,6 +73,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   });
   const [sellerFilter, setSellerFilter] = useState("");
   const [storeFilter, setStoreFilter] = useState("");
+  // v197b · lọc theo Custom options — tìm nhanh listing CHƯA có field để bulk-áp
+  const [persFilter, setPersFilter] = useState<"" | "has" | "none">("");
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -157,9 +159,10 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     (!sellerFilter || r.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (pushFilter === "" || (pushFilter === "pushed" ? r.pushed : !r.pushed)) &&
+    (persFilter === "" || (persFilter === "has" ? (r.persCount ?? 0) > 0 : (r.persCount ?? 0) === 0)) &&
     (!pidFilter || r.id === pidFilter) &&
     (!kw.trim() || (r.title + " " + (r.sku ?? "") + " " + (r.tags ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, pushFilter, pidFilter]);
+  ), [rows, kw, sellerFilter, storeFilter, pushFilter, persFilter, pidFilter]);
   const pushedCount = useMemo(() => rows.filter((r) => r.pushed).length, [rows]);
   const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
 
@@ -457,6 +460,14 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           <option value="not">Not pushed</option>
           <option value="pushed">Pushed to Shopify</option>
         </select>
+        {/* v197b · lọc theo Custom options — chọn "No custom fields" rồi bulk-áp một phát là xong */}
+        <select value={persFilter} onChange={(e) => setPersFilter(e.target.value as "" | "has" | "none")}
+          style={{ ...ctl, ...(persFilter ? { borderColor: "#F0D897", background: "#FFFDF3", fontWeight: 700 } : {}) }}
+          title="Filter by personalization fields — pick 'No custom fields' then use bulk Custom options">
+          <option value="">Fields: all</option>
+          <option value="none">No custom fields</option>
+          <option value="has">Has custom fields</option>
+        </select>
         {/* v184: đang xem đúng 1 listing nhảy từ Manage Products · Shopify qua — bấm × để xem lại tất cả */}
         {pidFilter && (
           <button onClick={() => setPidFilter("")} title="Showing only the listing linked from Manage Products · Shopify — click to show all"
@@ -497,6 +508,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
               <th style={{ padding: "12px 6px" }}>Title</th>
               <th style={{ padding: "12px 6px" }}>Store / Seller</th>
               <th style={{ padding: "12px 6px" }}>Variations</th>
+              <th style={{ padding: "12px 6px", textAlign: "center" }} title="Personalization fields (Custom options) — buyers fill these on the product page">Custom</th>
               <th style={{ padding: "12px 6px", textAlign: "right" }}>Price</th>
               <th style={{ padding: "12px 6px", textAlign: "right" }}>Qty</th>
               <th style={{ padding: "12px 6px" }}>Imported</th>
@@ -504,9 +516,9 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={9} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+            {loading && <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
             {!loading && !filtered.length && (
-              <tr><td colSpan={9} style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
+              <tr><td colSpan={10} style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>No Etsy listings yet</div>
                 Click <b style={{ color: "#F1641E" }}>Import Etsy CSV</b> — file from Etsy → Shop Manager → Settings → Options → Download Data
               </td></tr>
@@ -534,6 +546,12 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                   {r.sellerName && <div style={{ fontSize: 11, color: "var(--muted)", marginLeft: 21 }}>{r.sellerName}</div>}
                 </td>
                 <td style={{ padding: "10px 6px", fontSize: 12, color: "var(--muted)" }}>{r.variationsSummary || "—"}</td>
+                {/* v197b · chip Custom options: xanh = đã có field, xám "none" = CHƯA có (cần bulk-áp trước khi Push) */}
+                <td style={{ padding: "10px 6px", textAlign: "center" }}>
+                  {(r.persCount ?? 0) > 0
+                    ? <span title={`${r.persCount} personalization field(s) set`} style={{ fontSize: 10.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "#E9F7EF", color: "#1F6F45" }}>⚙ {r.persCount}</span>
+                    : <span title="No personalization fields yet — select the listing and use bulk Custom options" style={{ fontSize: 10.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "#F1F1F4", color: "#8794A5" }}>none</span>}
+                </td>
                 <td style={{ padding: "10px 6px", textAlign: "right", fontWeight: 700 }}>{r.price ? `$${Number(r.price).toFixed(2)}` : "—"}</td>
                 <td style={{ padding: "10px 6px", textAlign: "right" }}>{r.quantity ?? "—"}</td>
                 <td style={{ padding: "10px 6px", whiteSpace: "nowrap", color: "var(--muted)" }}>{r.importedAt ? String(r.importedAt).slice(0, 10) : "—"}</td>
