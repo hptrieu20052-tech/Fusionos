@@ -103,6 +103,10 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   // v142: đang mở 1 field Custom options ra sửa ⇒ chặn Save để không lưu nửa chừng.
   const [persEditing, setPersEditing] = useState(false);
   const [newPersEditing, setNewPersEditing] = useState(false);
+  // v197 · BULK Custom options: soạn 1 bộ field rồi áp cho tất cả listing đã chọn.
+  const [bulkPersOpen, setBulkPersOpen] = useState(false);
+  const [bulkPers, setBulkPers] = useState<PQ[]>([]);
+  const [bulkPersEditing, setBulkPersEditing] = useState(false);
   // v159 · kéo thả sắp lại ảnh + tick "Prices vary" cho từng variation
   const [dragImg, setDragImg] = useState<number | null>(null);
   const [vary, setVary] = useState<boolean[]>([]);
@@ -197,6 +201,24 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     setBusy(true);
     const j = await fetch("/api/etsy-products", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: Array.from(sel) }) }).then((r) => r.json()).catch(() => ({ ok: false }));
     if (j.ok) { flash(`✓ Deleted ${j.deleted}${j.blocked ? ` · ${j.blocked} locked (already on Shopify — admin only)` : ""}`); setSel(new Set()); load(); } else flash("✗ " + (j.error ?? "Delete failed"), false);
+    setBusy(false);
+  };
+
+  // v197 · Áp (hoặc xoá) cùng một bộ Custom options cho mọi listing đã chọn.
+  const doBulkPers = async (fields: PQ[] | null) => {
+    const n = sel.size;
+    if (!n) return;
+    const msg = fields === null
+      ? `Remove ALL custom option fields from ${n} listing(s)?`
+      : `Apply this ${fields.length}-field set to ${n} listing(s)?\nExisting custom options on those listings will be REPLACED.`;
+    if (!(await confirm({ message: msg, danger: fields === null }))) return;
+    setBusy(true);
+    const j = await fetch("/api/etsy-products", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "set_personalization", ids: Array.from(sel), fields }),
+    }).then((r) => r.json()).catch(() => ({ ok: false }));
+    if (j.ok) { flash(`✓ Custom options ${fields === null ? "removed from" : "applied to"} ${j.updated} listing(s)`); setBulkPersOpen(false); load(); }
+    else flash("✗ " + (j.error ?? "Apply failed"), false);
     setBusy(false);
   };
 
@@ -448,6 +470,11 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         <div style={{ ...card, padding: "10px 14px", marginBottom: 14, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", background: "#F8FAFF", borderColor: "#DCE6FB" }}>
           <span style={{ fontSize: 13, fontWeight: 700, color: "var(--blue)" }}>{sel.size} selected</span>
           <div style={{ flex: 1 }} />
+          {/* v197 · Bulk Custom options — soạn 1 bộ field, áp cho cả lô đã chọn */}
+          {canEdit && (
+            <button disabled={busy} style={{ ...ghost }} onClick={() => { setBulkPers([]); setBulkPersEditing(false); setBulkPersOpen(true); }}
+              title="Build ONE set of personalization fields and apply it to every selected listing">Custom options</button>
+          )}
           {canEdit && shopifyStores.length > 0 && (
             <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={() => setPushOpen(true)} title="Send the selected listings to Manage Products · Shopify as drafts — finish them there, then Push to create on Shopify"><IcShop /> Push to Shopify</button>
           )}
@@ -556,6 +583,37 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       )}
 
       {/* PUSH TO SHOPIFY MODAL (centered) — chọn store + template ngay tại bước push */}
+      {/* v197 · BULK CUSTOM OPTIONS MODAL — 1 bộ field áp cho mọi listing đã chọn */}
+      {bulkPersOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setBulkPersOpen(false)}>
+          <div style={{ ...card, width: 760, maxWidth: "96vw", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>Custom options — {sel.size} selected listing(s)</div>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setBulkPersOpen(false)} style={{ ...ghost, padding: "6px 11px", fontSize: 12.5 }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14, lineHeight: 1.5 }}>
+              Build ONE set of personalization fields below, then apply it to every selected listing.
+              <b style={{ color: "var(--ink)" }}> Existing custom options on those listings will be replaced.</b> Listings staged/pushed to Shopify pick the new set up on the next Push.
+            </div>
+            <CustomOptions fields={bulkPers} onChange={setBulkPers} accent={ETSY_ORANGE} onEditingChange={setBulkPersEditing} />
+            <div style={{ display: "flex", gap: 10, marginTop: 18, alignItems: "center" }}>
+              <button disabled={busy} onClick={() => doBulkPers(null)} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9", fontSize: 12.5 }}
+                title="Delete every custom option field from the selected listings">Remove all from selected</button>
+              <div style={{ flex: 1 }} />
+              <button disabled={busy} onClick={() => setBulkPersOpen(false)} style={{ ...ghost }}>Cancel</button>
+              <button
+                disabled={busy || bulkPersEditing || !bulkPers.length || !!pqProblem(bulkPers)}
+                title={bulkPersEditing ? "Finish editing the open field first" : pqProblem(bulkPers) ?? (!bulkPers.length ? "Add at least one field" : "")}
+                onClick={() => { const p = pqProblem(bulkPers); if (p) { flash("✗ " + p, false); return; } doBulkPers(bulkPers); }}
+                style={{ ...pill(ETSY_ORANGE, "#fff"), opacity: busy || bulkPersEditing || !bulkPers.length || pqProblem(bulkPers) ? .5 : 1 }}>
+                Apply to {sel.size} listing(s)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pushOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setPushOpen(false)}>
           <div style={{ background: "#fff", width: 440, maxWidth: "94vw", maxHeight: "90vh", borderRadius: 18, padding: 24, overflowY: "auto", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>

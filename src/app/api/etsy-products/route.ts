@@ -239,6 +239,26 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // ----- v197 · BULK CUSTOM OPTIONS -----
+  // Ghi CÙNG MỘT bộ field cá nhân hoá cho nhiều listing đã chọn (seller đỡ mở từng con).
+  // fields = mảng → ghi đè toàn bộ; fields = null → xoá hết. Chỉ listing thuộc store trong scope.
+  if (b?.action === "set_personalization") {
+    const pIds = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 500).map(String);
+    if (!pIds.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
+    const scoped = await scopedEtsyStoreIds(session);
+    if (!scoped.length) return NextResponse.json({ ok: false, error: "no stores in scope" }, { status: 403 });
+    const value = Array.isArray(b?.fields) ? payloadOf(b.fields) : null;
+    try {
+      const upd = await db.update(schema.etsyProducts)
+        .set({ personalization: value, updatedAt: new Date() })
+        .where(sql`${schema.etsyProducts.id} IN (${sql.join(pIds.map((x: string) => sql`${x}::uuid`), sql`, `)}) AND ${schema.etsyProducts.storeId} IN (${sql.join(scoped.map((x) => sql`${x}::uuid`), sql`, `)})`)
+        .returning({ id: schema.etsyProducts.id });
+      return NextResponse.json({ ok: true, updated: upd.length });
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: "server: " + String((e as Error)?.message ?? e).slice(0, 200) }, { status: 500 });
+    }
+  }
+
   const id = String(b?.id ?? "");
   if (b?.action !== "duplicate" || !/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ ok: false, error: "bad request" }, { status: 400 });
   const storeIds = await scopedEtsyStoreIds(session);
