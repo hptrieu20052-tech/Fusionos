@@ -23,6 +23,7 @@ type Row = {
   persOwn: boolean; persCount: number;
   // v177: Policy & trademark scan. null = chưa quét.
   policyRisk: "clean" | "medium" | "high" | null; policyHitsSummary: string; policyCheckedAt: string | null;
+  policyHits?: { term: string; field: string; severity: string; fix?: string }[]; // v191: click chip → khung xem đầy đủ
   // v181: listing Etsy gốc — nút "Etsy" nhảy sang Manage Products · Etsy để đối chiếu.
   etsyListing: { id: string; title: string; store: string } | null;
 };
@@ -209,6 +210,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [visionIds, setVisionIds] = useState<Set<string>>(new Set());
   // Bulk actions ("More actions")
   const [actionsOpen, setActionsOpen] = useState(false);
+  // v191 · click chip policy (⛔/⚠/✓) → mở khung xem đầy đủ kết quả audit thay vì tooltip cụt
+  const [riskView, setRiskView] = useState<Row | null>(null);
   // Export Pinterest — file CSV nạp vào Pinterest (Settings → Import content). Không đụng Shopify.
   const [pinOpen, setPinOpen] = useState(false);
   const [pinPerProduct, setPinPerProduct] = useState(1);
@@ -1365,13 +1368,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                     {/* v179c: chip policy audit — hiện CẢ 3 trạng thái để nhìn phát biết đã check hay chưa.
                         Không có chip nào = CHƯA audit. */}
                     {r.policyRisk === "high" && (
-                      <span title={`AI policy audit ${r.policyCheckedAt ? new Date(r.policyCheckedAt).toLocaleString() : ""} — Push BLOCKED: ${r.policyHitsSummary}. Apply the fixes, then re-run AI policy check.`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEE4E2", color: "#B42318" }}>⛔ risk</span>
+                      <span onClick={() => setRiskView(r)} title="Click to view the full policy audit report" style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEE4E2", color: "#B42318", cursor: "pointer" }}>⛔ risk</span>
                     )}
                     {r.policyRisk === "medium" && (
-                      <span title={`AI policy audit ${r.policyCheckedAt ? new Date(r.policyCheckedAt).toLocaleString() : ""} — warnings: ${r.policyHitsSummary}`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEF6E7", color: "#B7791F" }}>⚠ risk</span>
+                      <span onClick={() => setRiskView(r)} title="Click to view the full policy audit report" style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FEF6E7", color: "#B7791F", cursor: "pointer" }}>⚠ risk</span>
                     )}
                     {r.policyRisk === "clean" && (
-                      <span title={`AI policy audit passed${r.policyCheckedAt ? " " + new Date(r.policyCheckedAt).toLocaleString() : ""} — no trademark/policy issues found`} style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#E9F7EF", color: "#1F6F45" }}>✓ policy</span>
+                      <span onClick={() => setRiskView(r)} title="Click to view the full policy audit report" style={{ marginLeft: 4, fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#E9F7EF", color: "#1F6F45", cursor: "pointer" }}>✓ policy</span>
                     )}
                   </div>
                   {/* v127: dòng 3 = 2 việc còn lại của google_prep. Đếm THẬT từ variants[].sku và
@@ -1418,6 +1421,50 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
           <button disabled={pageC >= totalPages} onClick={() => setPage(pageC + 1)} style={{ ...ghost, opacity: pageC >= totalPages ? .5 : 1 }}>Next</button>
         </div>
       )}
+
+      {/* v191 · POLICY AUDIT REPORT MODAL — click chip ⛔/⚠/✓ trong bảng để mở */}
+      {riskView && (() => {
+        const rv = riskView;
+        const hits = rv.policyHits ?? [];
+        const tone = rv.policyRisk === "high" ? { bg: "#FEE4E2", fg: "#B42318", label: "HIGH — Push blocked" }
+          : rv.policyRisk === "medium" ? { bg: "#FEF6E7", fg: "#B7791F", label: "MEDIUM — warning only, Push allowed" }
+          : { bg: "#E9F7EF", fg: "#1F6F45", label: "CLEAN — no issues found" };
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setRiskView(null)}>
+            <div style={{ ...card, width: 640, maxWidth: "96vw", maxHeight: "88vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>AI policy audit</div>
+                <button onClick={() => setRiskView(null)} style={{ ...ghost, padding: "6px 11px", fontSize: 12.5 }}>✕</button>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginTop: 8 }}>{rv.title}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, fontWeight: 800, padding: "3px 12px", borderRadius: 999, background: tone.bg, color: tone.fg }}>{tone.label}</span>
+                {rv.policyCheckedAt && <span style={{ fontSize: 12, color: "var(--muted)" }}>checked {new Date(rv.policyCheckedAt).toLocaleString()}</span>}
+              </div>
+              {hits.length > 0 ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+                  {hits.map((h, i) => (
+                    <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "10px 13px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 8px", borderRadius: 999, ...(h.severity === "high" ? { background: "#FEE4E2", color: "#B42318" } : { background: "#FEF6E7", color: "#B7791F" }) }}>{String(h.severity).toUpperCase()}</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "var(--muted)", background: "#F1F1F4", padding: "1px 8px", borderRadius: 999 }}>{h.field}</span>
+                      </div>
+                      <div style={{ fontSize: 13, lineHeight: 1.5 }}>{h.term}</div>
+                      {h.fix && <div style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 6, padding: "7px 10px", borderRadius: 9, background: "#EAF7F0", color: "#14683F" }}><b>Fix:</b> {h.fix}</div>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 14 }}>No trademark or policy issues were found in this listing (images, title, tags, description, SEO and feed fields).</div>
+              )}
+              <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+                {canEdit && <button disabled={busy} onClick={() => { setRiskView(null); openEdit(rv.id); }} style={{ ...ghost, padding: "8px 14px", fontSize: 12.5 }}>Edit listing</button>}
+                {canEdit && <button disabled={busy} onClick={() => { setRiskView(null); doPolicyAi([rv.id]); }} style={{ ...pill("linear-gradient(135deg,#B42318,#8E1A12)", "#fff"), padding: "8px 14px", fontSize: 12.5, opacity: busy ? .6 : 1 }}>↻ Re-check policy</button>}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* EDIT MODAL */}
       {editId && (

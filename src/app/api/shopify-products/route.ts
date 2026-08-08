@@ -109,6 +109,9 @@ export async function GET(req: NextRequest) {
       policyHitsSummary: Array.isArray(r.p.policyHits)
         ? (r.p.policyHits as { term: string; field: string }[]).slice(0, 6).map((h) => `"${h.term}" (${h.field})`).join(", ")
         : "",
+      // v191 · trả CẢ mảng hit (term/field/severity/fix) — click chip risk mở khung xem đầy đủ,
+      // không phải đọc tooltip cụt. Đa số dòng là []/null nên payload không đáng kể.
+      policyHits: Array.isArray(r.p.policyHits) ? r.p.policyHits : [],
       // v119: feed Merchant Center. Chỉ trả ĐỘ DÀI, không trả nguyên văn — 134 dòng × 1300 ký tự
       // là ~180KB thừa mỗi lần load bảng. Nội dung đầy đủ lấy ở GET ?id= khi mở Edit.
       feedAt: r.p.feedAt, feedTitleLen: (r.p.feedTitle ?? "").length, feedDescLen: (r.p.feedDescription ?? "").length,
