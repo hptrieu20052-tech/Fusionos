@@ -383,7 +383,7 @@ export default function OrderHub({ canEdit = true, canPushFf = true, isAdmin = f
             <select value={platform} onChange={(e) => { setPlatform(e.target.value); setFulfillerId(""); setPage(1); }}>
               <option value="">{t("o.allWord")}</option>
               {(data.filterMarketplaces?.length ? data.filterMarketplaces.map((m) => m.platform) : ["tiktok", "amazon", "etsy"])
-                .map((p) => <option key={p} value={p}>{({ tiktok: "TikTok", amazon: "Amazon", etsy: "Etsy" } as Record<string, string>)[p] ?? p}</option>)}
+                .map((p) => <option key={p} value={p}>{({ tiktok: "TikTok", amazon: "Amazon", etsy: "Etsy", shopify: "Shopify" } as Record<string, string>)[p] ?? (p.charAt(0).toUpperCase() + p.slice(1))}</option>)}
             </select>
           </div>
           <div className="field">

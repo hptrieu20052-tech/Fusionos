@@ -52,7 +52,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   "c.search": { vi: "Tìm kiếm", en: "Search" },
   "c.seller": { vi: "Seller", en: "Seller" },
   "c.store": { vi: "Store", en: "Store" },
-  "c.marketplace": { vi: "Sàn", en: "Marketplace" },
+  "c.marketplace": { vi: "Kênh", en: "Channel" },
   "c.supplier": { vi: "Supplier", en: "Supplier" },
   "c.designer": { vi: "Designer", en: "Designer" },
   "c.status": { vi: "Trạng thái", en: "Status" },
