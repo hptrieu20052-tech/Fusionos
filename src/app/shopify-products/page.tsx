@@ -28,5 +28,5 @@ export default async function ShopifyProductsPage() {
   for (const s of stores) if (s.sellerId) sellerMap.set(s.sellerId, s.sellerName ?? "—");
   const sellers = Array.from(sellerMap, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
 
-  return <ShopifyProductsClient stores={stores} sellers={sellers} canEdit={lvl >= 2} />;
+  return <ShopifyProductsClient stores={stores} sellers={sellers} canEdit={lvl >= 2} isAdmin={session.role === "admin"} />;
 }

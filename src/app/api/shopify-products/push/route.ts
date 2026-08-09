@@ -234,6 +234,9 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 50);
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
+  // v206 · HIGH risk không còn chặn cứng: admin bấm "Push anyway" ⇒ override:true ⇒ vẫn đẩy.
+  // CHỈ admin mới bỏ qua được — seller gửi override cũng vô hiệu (vẫn bị chặn).
+  const overrideHigh = b?.override === true && session.role === "admin";
 
   const rows = await db.select({ p: schema.shopifyProducts, cred: schema.stores.apiCredentials, seller: schema.stores.sellerId, mk: schema.stores.marketplace })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
@@ -261,13 +264,16 @@ export async function POST(req: NextRequest) {
       results.push({ id: r.p.id, title: r.p.title, ok: false, error: "store chưa cấu hình Shopify API" }); continue;
     }
     try {
-      // ---- v179 · CHỐT CHẶN policy: theo kết quả AI POLICY AUDIT đã lưu (nguồn sự thật duy nhất,
-      // blacklist chữ đã bỏ). HIGH → KHÔNG cho lên Shopify. Muốn mở khoá: sửa theo các fix mà
-      // audit đã chỉ, rồi chạy lại "AI policy check" — ra sạch là Push qua.
-      if (r.p.policyRisk === "high") {
+      // ---- v179/v206 · CẢNH BÁO policy theo kết quả AI POLICY AUDIT đã lưu. HIGH mặc định chặn,
+      // NHƯNG admin có thể xác nhận "Push anyway" (override) để đẩy qua — người quyết cuối là admin,
+      // AI chỉ tư vấn. Seller không có override ⇒ vẫn bị chặn như cũ.
+      if (r.p.policyRisk === "high" && !overrideHigh) {
         const hits = (Array.isArray(r.p.policyHits) ? r.p.policyHits : []) as PolicyHit[];
-        results.push({ id: r.p.id, title: r.p.title, ok: false, error: "BLOCKED — policy audit found HIGH risk: " + hitsSummary(hits) + ". Apply the suggested fixes, then re-run AI policy check." });
+        results.push({ id: r.p.id, title: r.p.title, ok: false, error: "BLOCKED — policy audit found HIGH risk: " + hitsSummary(hits) + ". Apply the suggested fixes and re-run AI policy check, or confirm to push anyway." });
         continue;
+      }
+      if (r.p.policyRisk === "high" && overrideHigh) {
+        console.warn(`[policy-override] admin ${session.sub} pushed HIGH-risk product ${r.p.id} "${r.p.title}"`);
       }
 
       // ---- v172 · Bản nháp stage từ Etsy: TẠO MỚI thay vì update ----

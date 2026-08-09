@@ -171,7 +171,7 @@ const statusBadge = (s: string) => {
   return <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: c.bg, color: c.fg }}>{up || "DRAFT"}</span>;
 };
 
-export default function ShopifyProductsClient({ stores, sellers, canEdit }: { stores: Store[]; sellers: Seller[]; canEdit: boolean }) {
+export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmin }: { stores: Store[]; sellers: Seller[]; canEdit: boolean; isAdmin: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -339,7 +339,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       // v172: bản NHÁP stage từ Etsy (chưa có Shopify ID) — Save chỉ lưu local, KHÔNG tự tạo trên
       // Shopify. Hoàn thiện xong bấm Push to Shopify ngoài action bar mới tạo thật.
       if (!edit.shopifyProductId) { flash("✓ Draft saved — hit Push to Shopify when it's ready"); setEditId(null); setBusy(false); load(); return; }
-      const j = await postJSON("/api/shopify-products/push", { ids: [edit.id] });
+      // v206 · HIGH risk: xác nhận trước khi đẩy (admin bỏ qua được). Huỷ ⇒ giữ bản lưu local, không push.
+      const ov = await confirmPolicy([edit.id]);
+      if (ov === null) { flash("✓ Saved locally — not pushed (HIGH policy risk not overridden)"); setEditId(null); setBusy(false); load(); return; }
+      const j = await postJSON("/api/shopify-products/push", { ids: [edit.id], override: ov });
       if (j.ok || j.pushed) { flash("✓ Saved & updated on Shopify"); setEditId(null); load(); }
       else { const err = (j.results ?? [])[0]?.error ?? j.error ?? "push failed"; flash("✗ Saved locally but Shopify update failed: " + err + (/write_products|scope|access/i.test(String(err)) ? " — add scope write_products + reinstall app" : ""), false); setEditId(null); load(); }
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
@@ -357,16 +360,37 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
+  // v206 · HIGH risk KHÔNG còn chặn cứng — chỉ cảnh báo. Admin xác nhận thì vẫn Push qua (gửi override).
+  //   trả null  = có HIGH nhưng người dùng huỷ / không phải admin ⇒ ĐỪNG push
+  //        false = không có gì HIGH ⇒ push bình thường
+  //        true  = có HIGH và admin đã bấm "Push anyway" ⇒ gửi override:true
+  const confirmPolicy = async (ids: string[]): Promise<boolean | null> => {
+    const highs = ids.filter((id) => rows.find((r) => r.id === id)?.policyRisk === "high");
+    if (!highs.length) return false;
+    if (!isAdmin) { flash(`✗ ${highs.length} listing flagged HIGH risk — only an admin can override the AI policy check`, false); return null; }
+    const lines = highs.slice(0, 6).map((id) => {
+      const r = rows.find((x) => x.id === id);
+      return `• ${(r?.title ?? id).slice(0, 50)} — ${r?.policyHitsSummary || "HIGH risk"}`;
+    }).join("\n");
+    const okGo = await confirm({
+      title: "AI policy flagged HIGH risk",
+      message: `${highs.length} listing(s) were flagged HIGH risk by the AI policy check:\n\n${lines}${highs.length > 6 ? `\n…and ${highs.length - 6} more` : ""}\n\nPush anyway? You are responsible for these listings.`,
+      danger: true, confirmText: "Push anyway",
+    });
+    return okGo ? true : null;
+  };
   // Push theo LÔ 5 — route /push chỉ có 60s trên Vercel, đẩy 20 con 1 lần là bị cắt giữa chừng.
   const doPush = async (ids: string[], keepProgress = false) => {
     if (!ids.length) return flash("✗ Select products first", false);
+    const ov = await confirmPolicy(ids);
+    if (ov === null) return;
     setBusy(true);
     let ok = 0; const errs: string[] = [];
     setProg({ label: "Pushing to Shopify", done: 0, total: ids.length, fail: 0 });
     for (let i = 0; i < ids.length; i += 5) {
       const batch = ids.slice(i, i + 5);
       try {
-        const j = await postJSON("/api/shopify-products/push", { ids: batch });
+        const j = await postJSON("/api/shopify-products/push", { ids: batch, override: ov });
         ok += j.pushed ?? 0;
         (j.results ?? []).filter((r: { ok: boolean; error?: string }) => !r.ok).forEach((r: { error?: string }) => { if (errs.length < 3) errs.push(r.error ?? "failed"); });
         if (!j.ok && !j.pushed && j.error && errs.length < 3) errs.push(j.error);
@@ -1459,7 +1483,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
       {riskView && (() => {
         const rv = riskView;
         const hits = rv.policyHits ?? [];
-        const tone = rv.policyRisk === "high" ? { bg: "#FEE4E2", fg: "#B42318", label: "HIGH — Push blocked" }
+        const tone = rv.policyRisk === "high" ? { bg: "#FEE4E2", fg: "#B42318", label: isAdmin ? "HIGH — confirm to Push (admin override)" : "HIGH — needs an admin to Push" }
           : rv.policyRisk === "medium" ? { bg: "#FEF6E7", fg: "#B7791F", label: "MEDIUM — warning only, Push allowed" }
           : { bg: "#E9F7EF", fg: "#1F6F45", label: "CLEAN — no issues found" };
         return (
