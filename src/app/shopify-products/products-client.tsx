@@ -1062,15 +1062,23 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   // v200 · kéo-thả đổi thứ tự ảnh (đồng bộ UI với Edit listing bên Etsy) — thả ảnh A vào vị trí B.
   const moveImgTo = (from: number, to: number) => { if (!edit || from === to) return; const a = edit.images.slice(); const [x] = a.splice(from, 1); a.splice(to, 0, x); setEdit({ ...edit, images: a }); };
   const addImg = async () => { if (!edit) return; const url = await askPrompt({ title: "Add image by URL", message: "Paste an image URL (https://...)", input: { placeholder: "https://…" } }); if (!url || !/^https?:\/\//i.test(url)) return; setEdit((e) => e ? { ...e, images: [...e.images, { id: "", src: url.trim(), altText: "", position: e.images.length + 1 }] } : e); };
-  const uploadImg = async (file: File | null | undefined) => {
-    if (!edit || !file) return;
+  // v205 · nhận NHIỀU file 1 lần — upload lần lượt, ảnh nào xong nối ngay vào cuối lưới.
+  const uploadImg = async (files: FileList | File[] | null | undefined) => {
+    if (!edit) return;
+    const list = (files ? Array.from(files) : []).filter((f) => f && f.type.startsWith("image/"));
+    if (!list.length) return;
     setBusy(true);
-    try {
-      const fd = new FormData(); fd.append("file", file);
-      const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
-      if (j.ok && j.url) setEdit((e) => e ? { ...e, images: [...e.images, { id: "", src: j.url, altText: "", position: e.images.length + 1 }] } : e);
-      else flash("✗ " + (j.error ?? "Upload failed"), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    let ok = 0, fail = 0;
+    for (const file of list) {
+      try {
+        const fd = new FormData(); fd.append("file", file);
+        const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+        if (j.ok && j.url) { setEdit((e) => e ? { ...e, images: [...e.images, { id: "", src: j.url, altText: "", position: e.images.length + 1 }] } : e); ok++; }
+        else fail++;
+      } catch { fail++; }
+    }
+    if (list.length > 1) flash(fail ? `✓ Uploaded ${ok}/${list.length} — ${fail} failed` : `✓ Uploaded ${ok} images`, fail === 0);
+    else if (fail) flash("✗ Upload failed", false);
     setBusy(false);
   };
 
@@ -1528,8 +1536,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                         </div>
                       ))}
                       <label style={{ width: 94, height: 94, borderRadius: 10, border: `1.5px dashed ${SHOP_GREEN}88`, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, color: SHOP_GREEN, fontSize: 11, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .5 : 1 }}>
-                        <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photo"}
-                        <input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { uploadImg(e.target.files?.[0]); e.currentTarget.value = ""; }} />
+                        <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photos"}
+                        <input type="file" accept="image/*" multiple hidden disabled={busy} onChange={(e) => { uploadImg(e.target.files); e.currentTarget.value = ""; }} />
                       </label>
                     </div>
                     <button onClick={addImg} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>

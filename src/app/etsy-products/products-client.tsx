@@ -248,15 +248,22 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     if (!url || !/^https?:\/\//i.test(url)) return;
     setNw((s) => ({ ...s, images: [...s.images, url.trim()] }));
   };
-  const newUploadImg = async (file: File | null | undefined) => {
-    if (!file) return;
+  // v205 · nhận NHIỀU file 1 lần cho form Create Manual
+  const newUploadImg = async (files: FileList | File[] | null | undefined) => {
+    const list = (files ? Array.from(files) : []).filter((f) => f && f.type.startsWith("image/"));
+    if (!list.length) return;
     setBusy(true);
-    try {
-      const fd = new FormData(); fd.append("file", file);
-      const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
-      if (j.ok && j.url) setNw((s) => ({ ...s, images: [...s.images, j.url] }));
-      else flash("✗ " + (j.error ?? "Upload failed"), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    let ok = 0, fail = 0;
+    for (const file of list) {
+      try {
+        const fd = new FormData(); fd.append("file", file);
+        const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+        if (j.ok && j.url) { setNw((s) => ({ ...s, images: [...s.images, j.url] })); ok++; }
+        else fail++;
+      } catch { fail++; }
+    }
+    if (list.length > 1) flash(fail ? `✓ Uploaded ${ok}/${list.length} — ${fail} failed` : `✓ Uploaded ${ok} images`, fail === 0);
+    else if (fail) flash("✗ Upload failed", false);
     setBusy(false);
   };
   /* ---------- v160 · editor biến thể + kéo thả ảnh cho form Create Manual (đối xứng với form Edit) ---------- */
@@ -361,15 +368,23 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
   // Thêm ảnh vào listing (Etsy edit modal): upload từ máy (R2) hoặc dán URL.
   const addImgUrl = async () => { if (!edit) return; const url = await askPrompt({ title: "Add image by URL", message: "Paste an image URL (https://...)", input: { placeholder: "https://…" } }); if (!url || !/^https?:\/\//i.test(url)) return; setEdit((e) => e ? { ...e, images: [...e.images, url.trim()] } : e); };
-  const uploadImg = async (file: File | null | undefined) => {
-    if (!edit || !file) return;
+  // v205 · nhận NHIỀU file 1 lần cho form Edit listing
+  const uploadImg = async (files: FileList | File[] | null | undefined) => {
+    if (!edit) return;
+    const list = (files ? Array.from(files) : []).filter((f) => f && f.type.startsWith("image/"));
+    if (!list.length) return;
     setBusy(true);
-    try {
-      const fd = new FormData(); fd.append("file", file);
-      const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
-      if (j.ok && j.url) setEdit((e) => e ? { ...e, images: [...e.images, j.url] } : e);
-      else flash("✗ " + (j.error ?? "Upload failed"), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    let ok = 0, fail = 0;
+    for (const file of list) {
+      try {
+        const fd = new FormData(); fd.append("file", file);
+        const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+        if (j.ok && j.url) { setEdit((e) => e ? { ...e, images: [...e.images, j.url] } : e); ok++; }
+        else fail++;
+      } catch { fail++; }
+    }
+    if (list.length > 1) flash(fail ? `✓ Uploaded ${ok}/${list.length} — ${fail} failed` : `✓ Uploaded ${ok} images`, fail === 0);
+    else if (fail) flash("✗ Upload failed", false);
     setBusy(false);
   };
 
@@ -726,9 +741,9 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                   ))}
                   <button disabled={busy} onClick={() => newFileRef.current?.click()}
                     style={{ width: 94, height: 94, borderRadius: 10, border: `1.5px dashed ${ETSY_ORANGE}88`, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, color: ETSY_ORANGE, fontSize: 11, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .5 : 1 }}>
-                    <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photo"}
+                    <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photos"}
                   </button>
-                  <input ref={newFileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={(e) => { newUploadImg(e.target.files?.[0]); e.target.value = ""; }} />
+                  <input ref={newFileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { newUploadImg(e.target.files); e.target.value = ""; }} />
                 </div>
                 <button onClick={newAddImgUrl} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
               </div>
@@ -946,8 +961,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                       </div>
                     ))}
                     <label style={{ width: 94, height: 94, borderRadius: 10, border: `1.5px dashed ${ETSY_ORANGE}88`, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, color: ETSY_ORANGE, fontSize: 11, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .5 : 1 }}>
-                      <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photo"}
-                      <input type="file" accept="image/*" disabled={busy} onChange={(e) => { uploadImg(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
+                      <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photos"}
+                      <input type="file" accept="image/*" multiple disabled={busy} onChange={(e) => { uploadImg(e.target.files); e.target.value = ""; }} style={{ display: "none" }} />
                     </label>
                   </div>
                   <button onClick={addImgUrl} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
