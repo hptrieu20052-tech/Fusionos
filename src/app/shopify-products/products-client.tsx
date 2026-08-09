@@ -25,7 +25,7 @@ type Row = {
   policyRisk: "clean" | "medium" | "high" | null; policyHitsSummary: string; policyCheckedAt: string | null;
   policyHits?: { term: string; field: string; severity: string; fix?: string }[]; // v191: click chip → khung xem đầy đủ
   // v181: listing Etsy gốc — nút "Etsy" nhảy sang Manage Products · Etsy để đối chiếu.
-  etsyListing: { id: string; title: string; store: string } | null;
+  etsyListing: { id: string; title: string; store: string; seller: string } | null;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -212,6 +212,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [actionsOpen, setActionsOpen] = useState(false);
   // v191 · click chip policy (⛔/⚠/✓) → mở khung xem đầy đủ kết quả audit thay vì tooltip cụt
   const [riskView, setRiskView] = useState<Row | null>(null);
+  // v200 · index ảnh đang kéo trong Edit modal (kéo-thả đổi thứ tự)
+  const [dragImg, setDragImg] = useState<number | null>(null);
   // Export Pinterest — file CSV nạp vào Pinterest (Settings → Import content). Không đụng Shopify.
   const [pinOpen, setPinOpen] = useState(false);
   const [pinPerProduct, setPinPerProduct] = useState(1);
@@ -1049,6 +1051,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const setV = (i: number, k: keyof Variant, val: string) => { if (!edit) return; const vs = edit.variants.slice(); (vs[i] as Record<string, unknown>)[k] = val; setEdit({ ...edit, variants: vs }); };
   const delImg = (i: number) => { if (!edit) return; setEdit({ ...edit, images: edit.images.filter((_, k) => k !== i) }); };
   const moveImg = (i: number, dir: -1 | 1) => { if (!edit) return; const j = i + dir; if (j < 0 || j >= edit.images.length) return; const a = edit.images.slice(); [a[i], a[j]] = [a[j], a[i]]; setEdit({ ...edit, images: a }); };
+  // v200 · kéo-thả đổi thứ tự ảnh (đồng bộ UI với Edit listing bên Etsy) — thả ảnh A vào vị trí B.
+  const moveImgTo = (from: number, to: number) => { if (!edit || from === to) return; const a = edit.images.slice(); const [x] = a.splice(from, 1); a.splice(to, 0, x); setEdit({ ...edit, images: a }); };
   const addImg = async () => { if (!edit) return; const url = await askPrompt({ title: "Add image by URL", message: "Paste an image URL (https://...)", input: { placeholder: "https://…" } }); if (!url || !/^https?:\/\//i.test(url)) return; setEdit((e) => e ? { ...e, images: [...e.images, { id: "", src: url.trim(), altText: "", position: e.images.length + 1 }] } : e); };
   const uploadImg = async (file: File | null | undefined) => {
     if (!edit || !file) return;
@@ -1323,7 +1327,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                   <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.variantCount} variants · {r.imageCount} images{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}{r.optionsSummary ? ` · ${r.optionsSummary}` : ""}</div>
                 </td>
-                <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.sellerName ?? "—"}</div></td>
+                <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.sellerName ?? "—"}</div>
+                  {/* v200 · nguồn Etsy gốc — biết xin mockup sạch của ai/shop nào */}
+                  {r.etsyListing && (r.etsyListing.store || r.etsyListing.seller) && (
+                    <div title={`Etsy source — store: ${r.etsyListing.store || "—"} · seller: ${r.etsyListing.seller || "—"}`}
+                      style={{ marginTop: 3, fontSize: 10.5, color: "#B45309", background: "#FEF3E2", border: "1px solid #F5D9A8", borderRadius: 6, padding: "1px 6px", display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      ⬈ Etsy: {r.etsyListing.store || "—"}{r.etsyListing.seller ? ` · ${r.etsyListing.seller}` : ""}
+                    </div>
+                  )}
+                </td>
                 <td style={{ padding: "8px", fontSize: 12, maxWidth: 150 }}>
                   <div title={r.productType || ""} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productType || "—"}</div>
                   <div title={r.categoryName || ""} style={{ color: "var(--muted)", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.categoryName || "—"}</div>
@@ -1482,28 +1494,31 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                     <select value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 14 }}>
                       {["ACTIVE", "DRAFT", "ARCHIVED"].map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
-                    <label style={lab}>Images ({edit.images.length}) — kéo xóa/đổi thứ tự, ảnh đầu là ảnh chính</label>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+                    {/* v200 · UI ảnh giống Edit listing bên Etsy: thumbnail lớn xếp ngang, KÉO-THẢ đổi thứ tự,
+                        × ở góc, ô "Add photo" ngay trong lưới. Ảnh đầu là ảnh chính (feed GMC). */}
+                    <label style={lab}>Images ({edit.images.length}) · drag to reorder · the first photo is the main image</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                       {edit.images.map((im, i) => (
-                        <div key={i} style={{ position: "relative", border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
-                          <img src={im.src} alt="" style={{ width: "100%", height: 78, objectFit: "cover", display: "block" }} />
-                          {i === 0 && <span style={{ position: "absolute", top: 3, left: 3, fontSize: 9, fontWeight: 800, background: SHOP_GREEN, color: "#fff", padding: "1px 5px", borderRadius: 6 }}>MAIN</span>}
+                        <div key={i} draggable
+                          onDragStart={() => setDragImg(i)}
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={() => { if (dragImg !== null) moveImgTo(dragImg, i); setDragImg(null); }}
+                          onDragEnd={() => setDragImg(null)}
+                          style={{ position: "relative", width: 94, height: 94, borderRadius: 10, overflow: "hidden", background: "#fff", cursor: "grab", opacity: dragImg === i ? .45 : 1, border: dragImg === i ? `2px dashed ${SHOP_GREEN}` : "1px solid var(--line)" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={im.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          {i === 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, fontSize: 9.5, fontWeight: 800, background: "rgba(0,0,0,.62)", color: "#fff", padding: "2px 0", textAlign: "center", letterSpacing: .2 }}>MAIN</span>}
                           {!im.id && <span style={{ position: "absolute", top: 3, left: 3, fontSize: 9, fontWeight: 800, background: "#B7791F", color: "#fff", padding: "1px 5px", borderRadius: 6 }}>NEW</span>}
-                          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, display: "flex", justifyContent: "space-between", background: "rgba(0,0,0,.45)", padding: "2px 4px" }}>
-                            <button onClick={() => moveImg(i, -1)} style={{ ...linkBtn("#fff"), fontSize: 13 }}>◀</button>
-                            <button onClick={() => delImg(i)} style={{ ...linkBtn("#FCA5A5"), fontSize: 12 }}>✕</button>
-                            <button onClick={() => moveImg(i, 1)} style={{ ...linkBtn("#fff"), fontSize: 13 }}>▶</button>
-                          </div>
+                          <button title="Remove photo" onClick={() => delImg(i)}
+                            style={{ position: "absolute", top: 3, right: 3, border: "none", background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 6, width: 20, height: 20, fontSize: 12, lineHeight: "20px", padding: 0, cursor: "pointer" }}>×</button>
                         </div>
                       ))}
-                    </div>
-                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                      <label style={{ ...ghost, fontSize: 12.5, flex: 1, textAlign: "center", cursor: busy ? "default" : "pointer", opacity: busy ? .6 : 1 }}>
-                        {busy ? "Uploading…" : "⬆ Upload image"}
+                      <label style={{ width: 94, height: 94, borderRadius: 10, border: `1.5px dashed ${SHOP_GREEN}88`, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, color: SHOP_GREEN, fontSize: 11, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? .5 : 1 }}>
+                        <span style={{ fontSize: 21, lineHeight: 1 }}>+</span>{busy ? "Uploading…" : "Add photo"}
                         <input type="file" accept="image/*" hidden disabled={busy} onChange={(e) => { uploadImg(e.target.files?.[0]); e.currentTarget.value = ""; }} />
                       </label>
-                      <button onClick={addImg} style={{ ...ghost, fontSize: 12.5, flex: 1 }}>+ Add by URL</button>
                     </div>
+                    <button onClick={addImg} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Store: {edit.storeName} · handle: {edit.handle}</div>
                   </div>
                   {/* RIGHT: fields + variants */}

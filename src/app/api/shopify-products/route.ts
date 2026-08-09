@@ -42,9 +42,10 @@ export async function GET(req: NextRequest) {
   const linkEtsyIds = Array.from(new Set(scoped.map((r) => r.p.etsyProductId).filter(Boolean))) as string[];
   const linkGids = Array.from(new Set(scoped.map((r) => r.p.shopifyProductId).filter(Boolean))) as string[];
   const etsyRows = (linkEtsyIds.length || linkGids.length)
-    ? await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId, title: schema.etsyProducts.title, storeName: schema.stores.name })
+    ? await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId, title: schema.etsyProducts.title, storeName: schema.stores.name, sellerName: schema.users.fullName })
         .from(schema.etsyProducts)
         .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+        .leftJoin(schema.users, eq(schema.users.id, schema.stores.sellerId))
         .where(or(
           linkEtsyIds.length ? inArray(schema.etsyProducts.id, linkEtsyIds) : sql`FALSE`,
           linkGids.length ? inArray(schema.etsyProducts.shopifyProductId, linkGids) : sql`FALSE`,
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest) {
       etsyListing: (() => {
         const e = (r.p.etsyProductId ? etsyById.get(r.p.etsyProductId) : undefined)
           ?? (r.p.shopifyProductId ? etsyByGid.get(r.p.shopifyProductId) : undefined);
-        return e ? { id: e.id, title: e.title, store: e.storeName ?? "" } : null;
+        return e ? { id: e.id, title: e.title, store: e.storeName ?? "", seller: e.sellerName ?? "" } : null;
       })(),
       policyHitsSummary: Array.isArray(r.p.policyHits)
         ? (r.p.policyHits as { term: string; field: string }[]).slice(0, 6).map((h) => `"${h.term}" (${h.field})`).join(", ")
