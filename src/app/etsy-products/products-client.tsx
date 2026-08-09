@@ -532,10 +532,17 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                 <td style={{ padding: "10px 6px", maxWidth: 420 }}>
                   {/* v118: LUÔN hiện title gốc từ CSV Etsy. Bỏ nhánh hiện shopify_title + badge AI —
                       bảng này là bản gốc Etsy, việc tối ưu chữ làm ở Optimize Products · Shopify. */}
-                  <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.title}</div>
+                  {/* v204 · click title để mở Edit (giống Shopify admin), bỏ nút Edit riêng */}
+                  <div onClick={() => canEdit && openEdit(r.id)} title={canEdit ? "Click to edit" : undefined}
+                    style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", cursor: canEdit ? "pointer" : "default", color: canEdit ? "var(--blue)" : "inherit" }}>{r.title}</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
                     {r.sku && <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "ui-monospace,monospace" }}>{r.sku}</span>}
-                    {r.pushed && <span title="Đã tạo thật trên Shopify — push lại sẽ CẬP NHẬT, không tạo trùng" style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px" }}>↑ SHOPIFY</span>}
+                    {/* v204 · badge ↑SHOPIFY giờ là LINK sang bản Shopify (khi có quyền); thay nút Shopify ở Actions */}
+                    {r.pushed && (r.shopifyListing
+                      ? <a href={`/shopify-products?pid=${encodeURIComponent(r.shopifyListing.id)}`} target="_blank" rel="noreferrer"
+                          title={`View in Manage Products · Shopify: ${r.shopifyListing.title}`}
+                          style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px", textDecoration: "none", cursor: "pointer" }}>↑ SHOPIFY</a>
+                      : <span title="Đã tạo thật trên Shopify — push lại sẽ CẬP NHẬT, không tạo trùng" style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px" }}>↑ SHOPIFY</span>)}
                     {r.staged && !r.pushed && <span title="Đã tạo bản nháp trong Manage Products · Shopify — hoàn thiện rồi bấm Push bên đó để tạo trên Shopify" style={{ fontSize: 10, fontWeight: 800, color: "#8A5A00", background: "#FCEFCB", border: "1px solid #F0D897", borderRadius: 6, padding: "1px 7px" }}>◷ STAGED</span>}
                   </div>
                 </td>
@@ -555,26 +562,18 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                 <td style={{ padding: "10px 6px", textAlign: "right", fontWeight: 700 }}>{r.price ? `$${Number(r.price).toFixed(2)}` : "—"}</td>
                 <td style={{ padding: "10px 6px", textAlign: "right" }}>{r.quantity ?? "—"}</td>
                 <td style={{ padding: "10px 6px", whiteSpace: "nowrap", color: "var(--muted)" }}>{r.importedAt ? String(r.importedAt).slice(0, 10) : "—"}</td>
+                {/* v204 · Actions gọn: Duplicate/Delete thành icon line. Edit → click title · Shopify → click badge ↑SHOPIFY */}
                 <td style={{ padding: "10px 10px", textAlign: "right", whiteSpace: "nowrap" }}>
-                  <div style={{ display: "inline-flex", gap: 12, alignItems: "center", fontSize: 12.5, fontWeight: 700 }}>
-                    {/* v183: nhảy qua bản tương ứng bên Manage Products · Shopify — API chỉ trả field này
-                        khi người xem có quyền trên store Shopify đích (admin / seller của chính shop đó) */}
-                    {r.shopifyListing && (
-                      <a href={`/shopify-products?pid=${encodeURIComponent(r.shopifyListing.id)}`} target="_blank" rel="noreferrer"
-                        title={`View in Manage Products · Shopify: ${r.shopifyListing.title}`}
-                        style={{ ...linkBtn("#5E8E3E"), textDecoration: "none" }}>Shopify</a>
-                    )}
-                    {canEdit && (<>
-                      <button onClick={() => openEdit(r.id)} style={linkBtn("var(--blue)")}>Edit</button>
-                      <button disabled={busy} onClick={() => doDuplicate(r.id)} style={linkBtn("#158A57")}>Duplicate</button>
-                      {/* v185: đã stage/push sang Shopify → seller KHÔNG xoá được (mất dấu link); chỉ admin thấy nút Delete */}
+                  {canEdit && (
+                    <div style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                      <button title="Duplicate listing" disabled={busy} onClick={() => doDuplicate(r.id)} style={iconBtn("#158A57")}><IcCopy /></button>
                       {(r.pushed || r.staged) && !isAdmin ? (
-                        <span title="Locked — this listing is already staged/pushed to Shopify. Only an admin can delete it." style={{ color: "#8794A5", fontSize: 12.5, fontWeight: 700, cursor: "not-allowed" }}>🔒</span>
+                        <span title="Locked — already staged/pushed to Shopify. Only an admin can delete it." style={{ ...iconBtn("#B8C0CC"), cursor: "not-allowed" }}>🔒</span>
                       ) : (
-                        <button disabled={busy} onClick={() => doDeleteOne(r.id, r.title)} style={linkBtn("var(--red)")}>Delete</button>
+                        <button title="Delete listing" disabled={busy} onClick={() => doDeleteOne(r.id, r.title)} style={iconBtn("var(--red)")}><IcTrash /></button>
                       )}
-                    </>)}
-                  </div>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -1066,6 +1065,10 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 const IcUpload = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>;
 const IcPlus = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>;
 const IcTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>;
+// v204 · icon copy (simple line) cho nút Duplicate
+const IcCopy = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
+// v204 · nút icon nhỏ chỉ có đường viền line — dùng cho Actions (Duplicate / Delete)
+const iconBtn = (c: string): React.CSSProperties => ({ border: "none", background: "none", padding: 4, cursor: "pointer", color: c, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 7 });
 const IcSearch = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>;
 const IcShop = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l1-5h16l1 5M4 9v10a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V9M3 9h18M9 20v-6h6v6" /></svg>;
 const IcEdit = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></svg>;

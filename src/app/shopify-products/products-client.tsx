@@ -214,6 +214,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
   const [riskView, setRiskView] = useState<Row | null>(null);
   // v200 · index ảnh đang kéo trong Edit modal (kéo-thả đổi thứ tự)
   const [dragImg, setDragImg] = useState<number | null>(null);
+  // v202 · click ảnh trong Edit modal → xem to (lightbox)
+  const [imgZoom, setImgZoom] = useState<string | null>(null);
+  useEffect(() => {
+    if (!imgZoom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setImgZoom(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [imgZoom]);
   // Export Pinterest — file CSV nạp vào Pinterest (Settings → Import content). Không đụng Shopify.
   const [pinOpen, setPinOpen] = useState(false);
   const [pinPerProduct, setPinPerProduct] = useState(1);
@@ -1306,14 +1314,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
               <th style={{ padding: "10px 12px", textAlign: "left", width: 34 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
               <th style={{ padding: "10px 6px", textAlign: "left", width: 54 }}>Image</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Title</th>
-              <th style={{ padding: "10px 8px", textAlign: "left", width: "7%" }}>Store / Seller</th>
-              <th style={{ padding: "10px 8px", textAlign: "left", width: "10%" }}>Type / Category</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: "11%" }}>Store / Seller</th>
+              <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Type / Category</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "8%" }}>Collections</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Template</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 175 }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
               <th style={{ padding: "10px 8px", textAlign: "right", width: 84 }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 70 }}>Status</th>
-              <th style={{ padding: "10px 12px", textAlign: "right", width: 138 }}>Actions</th>
+              <th style={{ padding: "10px 12px", textAlign: "right", width: 84 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1324,16 +1332,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} alt={r.title} size={42} radius={8} border /></td>
                 <td style={{ padding: "8px" }}>
-                  <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
+                  {/* v203 · click thẳng title để mở Edit (giống Shopify admin), bỏ nút Edit riêng */}
+                  <div onClick={() => canEdit && openEdit(r.id)} title={canEdit ? "Click to edit" : undefined}
+                    style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0, cursor: canEdit ? "pointer" : "default", color: canEdit ? "var(--blue)" : "inherit" }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.variantCount} variants · {r.imageCount} images{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}{r.optionsSummary ? ` · ${r.optionsSummary}` : ""}</div>
                 </td>
                 <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.sellerName ?? "—"}</div>
-                  {/* v200 · nguồn Etsy gốc — biết xin mockup sạch của ai/shop nào */}
+                  {/* v203 · chip Etsy giờ là LINK — click mở listing gốc bên Manage Products · Etsy (thay nút Etsy ở Actions) */}
                   {r.etsyListing && (r.etsyListing.store || r.etsyListing.seller) && (
-                    <div title={`Etsy source — store: ${r.etsyListing.store || "—"} · seller: ${r.etsyListing.seller || "—"}`}
-                      style={{ marginTop: 3, fontSize: 10.5, color: "#B45309", background: "#FEF3E2", border: "1px solid #F5D9A8", borderRadius: 6, padding: "1px 6px", display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      ⬈ Etsy: {r.etsyListing.store || "—"}{r.etsyListing.seller ? ` · ${r.etsyListing.seller}` : ""}
-                    </div>
+                    <a href={`/etsy-products?pid=${encodeURIComponent(r.etsyListing.id)}`} target="_blank" rel="noreferrer"
+                      title={`View source in Manage Products · Etsy — ${r.etsyListing.store || "—"} · ${r.etsyListing.title}`}
+                      style={{ marginTop: 3, fontSize: 10.5, fontWeight: 700, color: "#B45309", background: "#FEF3E2", border: "1px solid #F5D9A8", borderRadius: 6, padding: "2px 6px", display: "block", wordBreak: "break-word", lineHeight: 1.35, textDecoration: "none", cursor: "pointer" }}>
+                      ↗ Etsy: {r.etsyListing.store || r.etsyListing.seller || "—"}
+                    </a>
                   )}
                 </td>
                 <td style={{ padding: "8px", fontSize: 12, maxWidth: 150 }}>
@@ -1404,17 +1415,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                 </td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12 }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
-                {/* v182: bỏ nowrap — nút thừa thì rơi xuống dòng dưới trong CHÍNH ô Actions, không bao giờ bị cắt khuất. */}
-                <td style={{ padding: "8px 12px", textAlign: "right" }}>
-                  {canEdit && <button onClick={() => openEdit(r.id)} style={{ ...linkBtn("var(--blue)"), marginRight: 10 }}>Edit</button>}
-                  {r.onlineStoreUrl && <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" style={{ ...linkBtn(SHOP_GREEN), textDecoration: "none", marginRight: 10 }}>Open</a>}
-                  {/* v181: nhảy về listing Etsy gốc (mở Manage Products · Etsy với ô search điền sẵn title) */}
-                  {r.etsyListing && (
-                    <a href={`/etsy-products?pid=${encodeURIComponent(r.etsyListing.id)}`} target="_blank" rel="noreferrer"
-                      title={`View source listing in Manage Products · Etsy — ${r.etsyListing.store}: ${r.etsyListing.title}`}
-                      style={{ ...linkBtn("#F1641E"), textDecoration: "none", marginRight: 10 }}>Etsy</a>
-                  )}
-                  {canEdit && r.dirty && <button onClick={() => doPush([r.id])} style={linkBtn("#B7791F")}>Push</button>}
+                {/* v203 · Actions gọn như Shopify admin: 👁 = xem trên storefront · Push (khi có sửa).
+                    Edit chuyển sang click title · Etsy chuyển sang click chip nguồn ở cột Store/Seller. */}
+                <td style={{ padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                  {r.onlineStoreUrl && <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" title="View on Shopify storefront" style={{ ...linkBtn(SHOP_GREEN), textDecoration: "none", marginRight: 12, fontSize: 17 }}>👁</a>}
+                  {canEdit && r.dirty && <button onClick={() => doPush([r.id])} title="Push edits to Shopify" style={linkBtn("#B7791F")}>Push</button>}
                 </td>
               </tr>
             ))}
@@ -1430,6 +1435,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ ...ctl, padding: "6px 8px" }}>{[20, 50, 100].map((n) => <option key={n} value={n}>{n}/page</option>)}</select>
           <button disabled={pageC <= 1} onClick={() => setPage(pageC - 1)} style={{ ...ghost, opacity: pageC <= 1 ? .5 : 1 }}>Prev</button>
           <button disabled={pageC >= totalPages} onClick={() => setPage(pageC + 1)} style={{ ...ghost, opacity: pageC >= totalPages ? .5 : 1 }}>Next</button>
+        </div>
+      )}
+
+      {/* v202 · Lightbox xem ảnh to — click ảnh trong Edit modal; click nền / Esc để đóng */}
+      {imgZoom && (
+        <div onClick={() => setImgZoom(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 4000, background: "rgba(0,0,0,.8)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "zoom-out", padding: 24 }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imgZoom} alt="" style={{ maxWidth: "min(94vw, 1100px)", maxHeight: "90vh", objectFit: "contain", borderRadius: 10, boxShadow: "0 20px 60px rgba(0,0,0,.5)" }} />
         </div>
       )}
 
@@ -1506,10 +1520,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit }: { st
                           onDragEnd={() => setDragImg(null)}
                           style={{ position: "relative", width: 94, height: 94, borderRadius: 10, overflow: "hidden", background: "#fff", cursor: "grab", opacity: dragImg === i ? .45 : 1, border: dragImg === i ? `2px dashed ${SHOP_GREEN}` : "1px solid var(--line)" }}>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={im.src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                          {i === 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, fontSize: 9.5, fontWeight: 800, background: "rgba(0,0,0,.62)", color: "#fff", padding: "2px 0", textAlign: "center", letterSpacing: .2 }}>MAIN</span>}
-                          {!im.id && <span style={{ position: "absolute", top: 3, left: 3, fontSize: 9, fontWeight: 800, background: "#B7791F", color: "#fff", padding: "1px 5px", borderRadius: 6 }}>NEW</span>}
-                          <button title="Remove photo" onClick={() => delImg(i)}
+                          <img src={im.src} alt="" draggable={false} onClick={() => setImgZoom(im.src)} title="Click to view large · drag to reorder" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", cursor: "zoom-in" }} />
+                          {i === 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, fontSize: 9.5, fontWeight: 800, background: "rgba(0,0,0,.62)", color: "#fff", padding: "2px 0", textAlign: "center", letterSpacing: .2, pointerEvents: "none" }}>MAIN</span>}
+                          {!im.id && <span style={{ position: "absolute", top: 3, left: 3, fontSize: 9, fontWeight: 800, background: "#B7791F", color: "#fff", padding: "1px 5px", borderRadius: 6, pointerEvents: "none" }}>NEW</span>}
+                          <button title="Remove photo" onClick={(e) => { e.stopPropagation(); delImg(i); }}
                             style={{ position: "absolute", top: 3, right: 3, border: "none", background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 6, width: 20, height: 20, fontSize: 12, lineHeight: "20px", padding: 0, cursor: "pointer" }}>×</button>
                         </div>
                       ))}
