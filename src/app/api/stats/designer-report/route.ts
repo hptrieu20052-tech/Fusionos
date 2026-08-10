@@ -38,26 +38,24 @@ export async function GET(req: NextRequest) {
   const vPid = sql`coalesce(v.creator_id, v.uploaded_by)`;
   const inV = scopeIds ? sql` AND ${vPid} IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
-  // 1. SẢN LƯỢNG trong kỳ theo người × bucket (kèm points cho KPI).
-  //    · Designer  → đếm DESIGN tạo (points theo design).
-  //    · Creator   → đếm VIDEO upload (mỗi video = 1 point). Creator làm video, không phải design.
-  const dz = by === "content"
+  // 1. Design tạo trong kỳ theo người × bucket (kèm points cho KPI). Sale tính từ chính design này.
+  const dz = await db.execute(sql`
+    SELECT ${sql.raw(bucket("d.created_at"))} AS bucket, min(${sql.raw(bucketOrd("d.created_at"))}) AS ord,
+           d.${sql.raw(PC)} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
+           count(*)::int AS c, coalesce(sum(d.points),0)::int AS pts
+    FROM designs d LEFT JOIN users u ON u.id = d.${sql.raw(PC)}
+    WHERE ${sql.raw(cond("d.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
+    GROUP BY 1, d.${sql.raw(PC)}, u.full_name ORDER BY ord
+  `);
+  // v210e · Creator: thêm SỐ VIDEO trong kỳ (cột riêng trong bảng, KHÔNG thay Design). Sale vẫn từ design.
+  const vidCounts = by === "content"
     ? await db.execute(sql`
-        SELECT ${sql.raw(bucket("v.created_at"))} AS bucket, min(${sql.raw(bucketOrd("v.created_at"))}) AS ord,
-               ${vPid} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
-               count(*)::int AS c, count(*)::int AS pts
-        FROM product_videos v LEFT JOIN users u ON u.id = ${vPid}
+        SELECT ${vPid} AS pid, count(*)::int AS n
+        FROM product_videos v
         WHERE ${sql.raw(cond("v.created_at"))} AND ${vPid} IS NOT NULL${inV}
-        GROUP BY 1, ${vPid}, u.full_name ORDER BY ord
+        GROUP BY 1
       `)
-    : await db.execute(sql`
-        SELECT ${sql.raw(bucket("d.created_at"))} AS bucket, min(${sql.raw(bucketOrd("d.created_at"))}) AS ord,
-               d.${sql.raw(PC)} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
-               count(*)::int AS c, coalesce(sum(d.points),0)::int AS pts
-        FROM designs d LEFT JOIN users u ON u.id = d.${sql.raw(PC)}
-        WHERE ${sql.raw(cond("d.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
-        GROUP BY 1, d.${sql.raw(PC)}, u.full_name ORDER BY ord
-      `);
+    : { rows: [] as { pid: string; n: number }[] };
   // 2. Sale phát sinh trong kỳ từ design của người đó × bucket
   //    CHỈ tính khi đơn ĐÃ CREATE (đẩy đơn) trở đi — đơn còn NEW (chưa Create) chưa tính.
   const sales = await db.execute(sql`
@@ -89,9 +87,9 @@ export async function GET(req: NextRequest) {
   const buckets = Array.from(bmap.entries()).sort((a, b) => a[1] < b[1] ? -1 : 1).map(([b]) => b);
   const bIdx = new Map(buckets.map((b, i) => [b, i]));
 
-  const dmap = new Map<string, { id: string; name: string; designs: number; points: number; salesOrders: number; salesRevenue: number; avgScore: number; reviews: number; daily: { d: number; s: number }[] }>();
+  const dmap = new Map<string, { id: string; name: string; designs: number; videos: number; points: number; salesOrders: number; salesRevenue: number; avgScore: number; reviews: number; daily: { d: number; s: number }[] }>();
   const ensure = (id: string, name?: string) => {
-    if (!dmap.has(id)) dmap.set(id, { id, name: name ?? "", designs: 0, points: 0, salesOrders: 0, salesRevenue: 0, avgScore: 0, reviews: 0, daily: buckets.map(() => ({ d: 0, s: 0 })) });
+    if (!dmap.has(id)) dmap.set(id, { id, name: name ?? "", designs: 0, videos: 0, points: 0, salesOrders: 0, salesRevenue: 0, avgScore: 0, reviews: 0, daily: buckets.map(() => ({ d: 0, s: 0 })) });
     return dmap.get(id)!;
   };
   for (const r of dzRows) { const x = ensure(r.pid, r.name); x.name = r.name; x.designs += r.c; x.points += r.pts; x.daily[bIdx.get(r.bucket)!].d = r.c; }
@@ -99,6 +97,7 @@ export async function GET(req: NextRequest) {
   for (const r of scores.rows as { pid: string; score: string; reviews: number }[]) {
     const x = dmap.get(r.pid); if (x) { x.avgScore = Number(r.score); x.reviews = r.reviews; }
   }
+  for (const r of vidCounts.rows as { pid: string; n: number }[]) { ensure(r.pid).videos += r.n; }
   // Bổ sung tên cho người chỉ có sale (không có design mới trong kỳ)
   const missing = Array.from(dmap.values()).filter((x) => !x.name).map((x) => x.id);
   if (missing.length) {
@@ -118,6 +117,7 @@ export async function GET(req: NextRequest) {
 
   const totals = {
     designs: designers.reduce((a, x) => a + x.designs, 0),
+    videos: designers.reduce((a, x) => a + x.videos, 0),
     salesOrders: designers.reduce((a, x) => a + x.salesOrders, 0),
     salesRevenue: Number(designers.reduce((a, x) => a + x.salesRevenue, 0).toFixed(2)),
   };

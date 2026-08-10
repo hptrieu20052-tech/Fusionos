@@ -5,9 +5,10 @@ import { useEffect, useRef, useState } from "react";
 type Designer = {
   id: string; name: string; designs: number; points: number;
   salesOrders: number; salesRevenue: number; avgScore: number; reviews: number;
+  videos?: number;
   kpi: number; daily: { d: number; s: number }[];
 };
-type Data = { buckets: string[]; designers: Designer[]; totals: { designs: number; salesOrders: number; salesRevenue: number } };
+type Data = { buckets: string[]; designers: Designer[]; totals: { designs: number; videos?: number; salesOrders: number; salesRevenue: number } };
 
 const PALETTE = [
   "#9D89D4", "#5FAE87", "#E0A45E", "#D583AB", "#1D5FAE", "#CE7B7B", "#5FA8BC", "#9FB56B",
@@ -53,7 +54,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
           ? <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{title ?? "Creator Report"}</span>
           : <a href="/stats/designers" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Designer Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>}
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-          {([["d", isContent ? "Video" : "Design"], ["s", "Sale"]] as const).map(([k, label]) => (
+          {([["d", "Design"], ["s", "Sale"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
               padding: "6px 12px", fontSize: 12.5, border: "none", cursor: "pointer",
               background: metric === k ? "var(--blue-soft)" : "#fff", color: metric === k ? "var(--blue)" : "var(--muted)", fontWeight: 600,
@@ -61,7 +62,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
           ))}
         </div>
         <div style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14 }}>
-          {totals.designs.toLocaleString()} {isContent ? "video" : "design"} · {totals.salesOrders.toLocaleString()} {tr("rep.genOrdersUnit")}{!hideMoney && <> · <span style={{ color: "var(--green)" }}>{money(totals.salesRevenue)}</span></>}
+          {totals.designs.toLocaleString()} design{isContent ? ` · ${(totals.videos ?? 0).toLocaleString()} video` : ""} · {totals.salesOrders.toLocaleString()} {tr("rep.genOrdersUnit")}{!hideMoney && <> · <span style={{ color: "var(--green)" }}>{money(totals.salesRevenue)}</span></>}
         </div>
       </div>
 
@@ -100,13 +101,14 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
 
         {/* Donut + bảng xếp hạng KPI */}
         <div className="rep-side">
-          <Donut designers={designers} metric={metric} isContent={isContent} total={metric === "d" ? totals.designs : totals.salesOrders} />
+          <Donut designers={designers} metric={metric} total={metric === "d" ? totals.designs : totals.salesOrders} />
           <div className="rep-rank" style={{ marginTop: 12, maxHeight: 240, overflowY: "auto" }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "3px 4px" }}>#  {isContent ? "Creator" : "Designer"}</th>
-                  <th style={{ padding: "3px 4px" }}>{isContent ? "Video" : "Design"}</th>
+                  <th style={{ padding: "3px 4px" }}>Design</th>
+                  {isContent && <th style={{ padding: "3px 4px" }}>Video</th>}
                   <th style={{ padding: "3px 4px" }}>Sale</th>
                   {!hideMoney && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>Revenue</th>}
                   <th className="rep-col-opt" style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>
@@ -122,6 +124,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
                       <b style={{ fontWeight: si < 3 ? 700 : 500 }}>{s.name}</b>
                     </td>
                     <td style={{ padding: "5px 4px" }}><b>{s.designs}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.points}{tr("rep.ptSuffix")})</span></td>
+                    {isContent && <td style={{ padding: "5px 4px", fontWeight: 700, color: "#4338CA" }}>{s.videos ?? 0}</td>}
                     <td style={{ padding: "5px 4px" }}>{s.salesOrders}</td>
                     {!hideMoney && <td className="rep-col-opt" style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
                     <td className="rep-col-opt" style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
@@ -143,7 +146,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
           position: "fixed", left: Math.min(tip.x + 14, typeof window !== "undefined" ? window.innerWidth - 240 : tip.x), top: tip.y + 10, zIndex: 50,
           background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(17,24,39,.12)", padding: "10px 14px", minWidth: 200, pointerEvents: "none",
         }}>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "d" ? (isContent ? "video" : "design") : tr("rep.ordersWord")}</div>
+          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "d" ? "design" : tr("rep.ordersWord")}</div>
           {designers.map((s, si) => {
             const v = s.daily[tip.bi][metric];
             return v ? (
@@ -159,7 +162,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
   );
 }
 
-function Donut({ designers, metric, total, isContent }: { designers: Designer[]; metric: "d" | "s"; total: number; isContent?: boolean }) {
+function Donut({ designers, metric, total }: { designers: Designer[]; metric: "d" | "s"; total: number }) {
   const { t: tr } = useLang();
   const [hov, setHov] = useState<number | null>(null);
   const R = 70, r = 44, C = 100;
@@ -186,7 +189,7 @@ function Donut({ designers, metric, total, isContent }: { designers: Designer[];
       ))}
       <text x="100" y="94" textAnchor="middle" style={{ fontSize: 22, fontWeight: 800, fill: "var(--ink)" }}>{showV.toLocaleString()}</text>
       <text x="100" y="114" textAnchor="middle" style={{ fontSize: 11, fill: "var(--muted)" }}>
-        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "d" ? (isContent ? "total videos" : tr("rep.totalDesigns")) : tr("rep.totalGenOrders")}
+        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "d" ? tr("rep.totalDesigns") : tr("rep.totalGenOrders")}
       </text>
     </svg>
   );
