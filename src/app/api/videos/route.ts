@@ -14,12 +14,14 @@ export const dynamic = "force-dynamic";
  *   PATCH  /api/videos                                       → sửa / duyệt / đánh dấu đã đăng
  *   DELETE /api/videos?id=                                   → xoá bản ghi
  *
- * Quyền: xem/upload cần products≥1 HOẶC designs≥1 (creator thường chỉ có designs).
- *        DUYỆT (approved/rejected) chỉ admin — đây là cửa chặn nội dung ra ngoài.
- *        Người upload sửa/xoá được video CỦA MÌNH khi còn pending; admin toàn quyền.
+ * v208 · Quyền theo MODULE RIÊNG "videos" (ngang hàng Design Studio):
+ *   level 1 = xem thư viện · level 2 = upload, sửa, DUYỆT, đẩy Shopify · admin luôn full.
+ * Luồng giống Design Studio: seller giao việc → creator/designer quay & upload → người có
+ * level 2 duyệt. Người upload sửa/xoá được video CỦA MÌNH khi còn pending.
  */
 type Sess = Session;
-const canView = async (s: Sess) => (await levelOf(s, "products")) >= 1 || (await levelOf(s, "designs")) >= 1;
+const canView = async (s: Sess) => (await levelOf(s, "videos")) >= 1;
+const canManage = async (s: Sess) => (await levelOf(s, "videos")) >= 2;
 const isAdmin = (s: Sess) => s.role === "admin";
 
 const VALID_STATUS = new Set(["pending", "approved", "rejected"]);
@@ -67,16 +69,18 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(schema.productVideos.createdAt))
     .limit(300);
 
+  const manager = await canManage(session);
   return NextResponse.json({
     ok: true,
     isAdmin: isAdmin(session),
+    canManage: manager,
     rows: rows.map((r) => ({
       ...r.v,
       productTitle: r.productTitle ?? null,
       productGid: r.productGid ?? null,
       storeName: r.storeName ?? null,
       uploader: r.uploader ?? null,
-      canEdit: isAdmin(session) || (r.v.uploadedBy === session.sub && r.v.status === "pending"),
+      canEdit: manager || (r.v.uploadedBy === session.sub && r.v.status === "pending"),
     })),
   });
 }
@@ -84,7 +88,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  if (!(await canView(session))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!(await canManage(session))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const b = await req.json().catch(() => null);
   const storageKey = String(b?.storageKey ?? "").trim();
@@ -120,9 +124,8 @@ export async function POST(req: NextRequest) {
     sizeBytes: num(b?.sizeBytes, 5_000_000_000),
     durationSec: b?.durationSec != null && isFinite(Number(b.durationSec)) ? String(Number(b.durationSec).toFixed(2)) : null,
     width: w, height: h, aspect,
-    // Admin tự upload thì duyệt luôn — không bắt mình duyệt bài của chính mình.
-    status: isAdmin(session) ? "approved" : "pending",
-    ...(isAdmin(session) ? { reviewedBy: session.sub, reviewedAt: new Date() } : {}),
+    // Người có quyền duyệt mà tự upload thì duyệt luôn — không bắt tự duyệt bài của chính mình.
+    status: "pending",
     uploadedBy: session.sub,
   }).returning();
 
@@ -140,10 +143,10 @@ export async function PATCH(req: NextRequest) {
   const [cur] = await db.select().from(schema.productVideos).where(eq(schema.productVideos.id, String(b.id))).limit(1);
   if (!cur) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
-  const admin = isAdmin(session);
+  const manager = await canManage(session);
   const owner = cur.uploadedBy === session.sub;
-  if (!admin && !(owner && cur.status === "pending")) {
-    return NextResponse.json({ ok: false, error: "forbidden — approved videos can only be changed by an admin" }, { status: 403 });
+  if (!manager && !(owner && cur.status === "pending")) {
+    return NextResponse.json({ ok: false, error: "forbidden — approved videos can only be changed by someone with full Video Library access" }, { status: 403 });
   }
 
   const patch: Record<string, unknown> = { updatedAt: new Date() };
@@ -154,7 +157,7 @@ export async function PATCH(req: NextRequest) {
 
   // DUYỆT — chỉ admin. Đây là cửa chặn: video approved mới được đẩy Shopify / lấy caption.
   if (typeof b.status === "string" && VALID_STATUS.has(b.status)) {
-    if (!admin) return NextResponse.json({ ok: false, error: "only an admin can approve or reject" }, { status: 403 });
+    if (!manager) return NextResponse.json({ ok: false, error: "you need full Video Library access to approve or reject" }, { status: 403 });
     patch.status = b.status;
     patch.reviewedBy = session.sub;
     patch.reviewedAt = new Date();
@@ -185,7 +188,7 @@ export async function DELETE(req: NextRequest) {
 
   const [cur] = await db.select().from(schema.productVideos).where(eq(schema.productVideos.id, String(id))).limit(1);
   if (!cur) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  if (!isAdmin(session) && !(cur.uploadedBy === session.sub && cur.status === "pending")) {
+  if (!(await canManage(session)) && !(cur.uploadedBy === session.sub && cur.status === "pending")) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 

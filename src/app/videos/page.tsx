@@ -4,16 +4,15 @@ import VideosClient from "./videos-client";
 
 export const dynamic = "force-dynamic";
 
-// v207 · Video library — creator upload, admin duyệt, đẩy Shopify + lấy caption cho social.
-// Quyền xem/upload: products≥1 HOẶC designs≥1 (creator thường chỉ có designs).
-// Duyệt: admin. Đẩy Shopify / caption AI: products≥2.
+// v208 · Video Library là MODULE RIÊNG ("videos"), ngang hàng Design Studio.
+// Luồng giống Design Studio: seller giao việc → creator/designer quay & upload → duyệt.
+//   level 1 = xem thư viện · level 2 = upload, sửa, duyệt, đẩy Shopify · admin luôn full.
 export default async function VideosPage() {
   const session = await getSession();
-  if (!session) return <div className="panel empty">You don&apos;t have permission to view Videos.</div>;
+  if (!session) return <div className="panel empty">You don&apos;t have permission to view Video Library.</div>;
 
-  const prod = await levelOf(session, "products");
-  const des = await levelOf(session, "designs");
-  if (prod < 1 && des < 1) return <div className="panel empty">You don&apos;t have permission to view Videos.</div>;
+  const lvl = await levelOf(session, "videos");
+  if (lvl < 1) return <div className="panel empty">You don&apos;t have permission to view Video Library.</div>;
 
-  return <VideosClient isAdmin={session.role === "admin"} canPush={prod >= 2} />;
+  return <VideosClient isAdmin={session.role === "admin"} canManage={lvl >= 2} />;
 }

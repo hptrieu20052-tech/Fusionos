@@ -47,7 +47,7 @@ const STATUS_TONE: Record<string, { bg: string; fg: string; label: string }> = {
 const mb = (n: number | null) => n == null ? "—" : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
 const secs = (s: string | null) => { const n = Number(s); return isFinite(n) && n > 0 ? `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, "0")}` : "—"; };
 
-export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; canPush: boolean }) {
+export default function VideosClient({ isAdmin, canManage }: { isAdmin: boolean; canManage: boolean }) {
   const confirm = useConfirm();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -171,7 +171,7 @@ export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; c
       }
     }
     setProg(null); setBusy(false);
-    if (ok) flash(`✓ Uploaded ${ok} video${ok > 1 ? "s" : ""}${isAdmin ? "" : " — waiting for admin approval"}`);
+    if (ok) flash(`✓ Uploaded ${ok} video${ok > 1 ? "s" : ""} — waiting for review`);
     if (fileRef.current) fileRef.current.value = "";
     load();
   };
@@ -235,7 +235,7 @@ export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; c
         <div style={{ flex: 1, minWidth: 200 }}>
           <div style={{ fontWeight: 800, fontSize: 17 }}>Video library</div>
           <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-            Upload once — reuse on the product page, TikTok, Reels, Shorts, Facebook and Pinterest.
+            Seller giao việc → creator quay & upload → duyệt tại đây. Video dùng lại được cho product page và social.
             {counts.pending > 0 && <> · <b style={{ color: "#B7791F" }}>{counts.pending} waiting for review</b></>}
           </div>
         </div>
@@ -249,9 +249,12 @@ export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; c
           <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Mine only
         </label>
         <input ref={fileRef} type="file" accept="video/*" multiple hidden onChange={(e) => onPick(e.target.files)} />
-        <button disabled={busy} onClick={() => fileRef.current?.click()} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }}>
-          ⬆ Upload video
-        </button>
+        {/* Upload cần quyền đầy đủ (level 2) — level 1 chỉ xem thư viện. */}
+        {canManage && (
+          <button disabled={busy} onClick={() => fileRef.current?.click()} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }}>
+            ⬆ Upload video
+          </button>
+        )}
       </div>
 
       {prog && (
@@ -283,27 +286,69 @@ export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; c
             const posted = Object.keys(r.postedTo ?? {}).length;
             return (
               <div key={r.id} style={{ ...card, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                {/* Khung ảnh: tỷ lệ CỐ ĐỊNH 4:5 cho mọi video — hàng card thẳng đều, không so le. */}
                 <div onClick={() => setOpen(r.id)} title="Open"
-                  style={{ position: "relative", aspectRatio: "9/16", maxHeight: 260, background: "#0B1220", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  style={{ position: "relative", aspectRatio: "4/5", background: "#0B1220", cursor: "pointer", overflow: "hidden" }}>
                   {r.thumbUrl
-                    ? <img src={r.thumbUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : <span style={{ color: "#94A3B8", fontSize: 30 }}>▶</span>}
+                    ? <img src={r.thumbUrl} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 12, fontWeight: 700 }}>NO PREVIEW</div>}
+                  {/* nút play giữa khung */}
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                    <span style={{ width: 42, height: 42, borderRadius: 999, background: "rgba(0,0,0,.5)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+                    </span>
+                  </div>
                   <span style={{ position: "absolute", top: 8, left: 8, ...chip(tone.bg, tone.fg) }}>{tone.label}</span>
-                  {r.aspect && <span style={{ position: "absolute", bottom: 8, left: 8, ...chip("rgba(0,0,0,.65)", "#fff") }}>{r.aspect}</span>}
-                  <span style={{ position: "absolute", bottom: 8, right: 8, ...chip("rgba(0,0,0,.65)", "#fff") }}>{secs(r.durationSec)}</span>
+                  <div style={{ position: "absolute", bottom: 8, left: 8, right: 8, display: "flex", gap: 5, alignItems: "center" }}>
+                    <span style={chip("rgba(0,0,0,.62)", "#fff")}>{secs(r.durationSec)}</span>
+                    {r.aspect && <span style={chip(r.aspect === "9:16" ? "rgba(31,111,69,.85)" : "rgba(183,121,31,.9)", "#fff")}>{r.aspect}</span>}
+                    <span style={{ flex: 1 }} />
+                    <span style={chip("rgba(0,0,0,.62)", "#fff")}>{mb(r.sizeBytes)}</span>
+                  </div>
                 </div>
-                <div style={{ padding: 11, display: "grid", gap: 6, flex: 1 }}>
-                  <div onClick={() => setOpen(r.id)} style={{ fontWeight: 700, fontSize: 13, cursor: "pointer", color: "var(--blue)", lineHeight: 1.35 }}>
-                    {r.title.slice(0, 60)}
+
+                <div style={{ padding: "10px 11px", display: "grid", gap: 7, flex: 1, alignContent: "start" }}>
+                  <div onClick={() => setOpen(r.id)} title={r.title}
+                    style={{ fontWeight: 700, fontSize: 13, cursor: "pointer", color: "var(--blue)", lineHeight: 1.35,
+                             display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    {r.title}
                   </div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
-                    {r.productTitle ? r.productTitle.slice(0, 42) : <span style={{ color: "#B7791F", fontWeight: 700 }}>Not linked to a listing</span>}
+
+                  {/* Listing đang gắn — thiếu là cảnh báo, vì chưa gắn thì không đẩy Shopify được */}
+                  <div style={{ fontSize: 11.5, display: "flex", alignItems: "center", gap: 5, minWidth: 0 }}>
+                    {r.productTitle ? (
+                      <>
+                        <span style={{ color: "var(--muted)", flexShrink: 0 }}>▣</span>
+                        <span style={{ color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productTitle}</span>
+                      </>
+                    ) : (
+                      <span style={{ color: "#B7791F", fontWeight: 700 }}>⚠ Not linked to a listing</span>
+                    )}
                   </div>
-                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", fontSize: 10.5 }}>
-                    {r.shopifyMediaId && <span style={chip("#E9F7EF", "#1F6F45")}>ON SHOPIFY</span>}
-                    {r.captionsAt && <span style={chip("#EEF2FF", "#4338CA")}>CAPTIONS</span>}
-                    {posted > 0 && <span style={chip("#F3F4F6", "#374151")}>POSTED {posted}/5</span>}
+
+                  <div style={{ fontSize: 11, color: "var(--muted)", display: "flex", gap: 5, alignItems: "center" }}>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.uploader ?? "—"}</span>
+                    <span>·</span>
+                    <span style={{ flexShrink: 0 }}>{new Date(r.createdAt).toLocaleDateString()}</span>
                   </div>
+
+                  {(r.shopifyMediaId || r.captionsAt || posted > 0) && (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {r.shopifyMediaId && <span style={chip("#E9F7EF", "#1F6F45")}>ON SHOPIFY</span>}
+                      {r.captionsAt && <span style={chip("#EEF2FF", "#4338CA")}>CAPTIONS</span>}
+                      {posted > 0 && <span style={chip("#F3F4F6", "#374151")}>POSTED {posted}/5</span>}
+                    </div>
+                  )}
+
+                  {/* Duyệt ngay trên card — khỏi phải mở từng cái khi có cả loạt chờ */}
+                  {canManage && r.status === "pending" && (
+                    <div style={{ display: "flex", gap: 6, marginTop: 2 }}>
+                      <button disabled={busy} onClick={() => patch({ id: r.id, status: "approved" }, "Approved")}
+                        style={{ ...pill("#E9F7EF", "#1F6F45"), padding: "5px 10px", fontSize: 11.5, flex: 1, justifyContent: "center" }}>✓ Approve</button>
+                      <button disabled={busy} onClick={() => patch({ id: r.id, status: "rejected" }, "Rejected")}
+                        style={{ ...pill("#FEE4E2", "#B42318"), padding: "5px 10px", fontSize: 11.5 }}>✕</button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -348,7 +393,7 @@ export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; c
                 {/* Gắn listing */}
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", marginBottom: 5 }}>LINKED LISTING</div>
-                  {openRow.canEdit || isAdmin ? (
+                  {openRow.canEdit || canManage ? (
                     <>
                       <input value={pq} onChange={(e) => setPq(e.target.value)} placeholder="Search listings…" style={{ ...ctl, width: "100%", marginBottom: 6 }} />
                       <select value={openRow.productId ?? ""} disabled={busy}
@@ -370,7 +415,7 @@ export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; c
                 </div>
 
                 {/* Duyệt */}
-                {isAdmin && (
+                {canManage && (
                   <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
                     <button disabled={busy || openRow.status === "approved"} onClick={() => patch({ id: openRow.id, status: "approved" }, "Approved")}
                       style={{ ...pill("#E9F7EF", "#1F6F45"), opacity: openRow.status === "approved" ? .5 : 1 }}>✓ Approve</button>
@@ -380,7 +425,7 @@ export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; c
                 )}
 
                 {/* Hành động */}
-                {canPush && (
+                {canManage && (
                   <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
                     <button disabled={busy || openRow.status !== "approved" || !!openRow.shopifyMediaId || !openRow.productId}
                       onClick={() => doPushShopify(openRow)}
@@ -426,7 +471,7 @@ export default function VideosClient({ isAdmin, canPush }: { isAdmin: boolean; c
                   </div>
                 )}
 
-                {(openRow.canEdit || isAdmin) && (
+                {(openRow.canEdit || canManage) && (
                   <button disabled={busy} onClick={() => doDelete(openRow)} style={{ ...ghost, color: "#B42318", justifySelf: "start", padding: "6px 12px", fontSize: 12 }}>
                     Delete
                   </button>

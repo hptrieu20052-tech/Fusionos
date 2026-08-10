@@ -27,20 +27,22 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     const [u] = await db.select({ k: schema.users.avatarKey }).from(schema.users).where(eq(schema.users.id, session.sub)).limit(1);
     avatarUrl = fileUrl(u?.k ?? null);
   }
-  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners, products, support, marketing, financeTiktok, bookStudio, genImage, genVideo] = session
+  const [orders, stores, designs, ff, finance, settings, reviews, statsDesigners, products, support, marketing, financeTiktok, bookStudio, genImage, genVideo, videos] = session
     ? await Promise.all([
         can(session, "orders"), can(session, "stores"), can(session, "designs"),
         can(session, "fulfillment"), can(session, "finance"), can(session, "settings"),
         can(session, "reviews"), can(session, "statsDesigners"), can(session, "products"), can(session, "support"), can(session, "marketing"), can(session, "financeTiktok"),
-        can(session, "bookStudio"), can(session, "genImage"), can(session, "genVideo"),
+        can(session, "bookStudio"), can(session, "genImage"), can(session, "genVideo"), can(session, "videos"),
       ])
-    : [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
+    : [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false];
 
   const isAdmin = session?.role === "admin";
   const links: NavLink[] = session ? [
     { href: "/", label: "nav.dashboard", icon: "dashboard", section: "Operations" },
     ...(orders ? [{ href: "/orders", label: "nav.orders", icon: "orders", section: "Operations" }] : []),
     ...(designs ? [{ href: "/designs", label: "nav.designs", icon: "designs", section: "Operations" }] : []),
+    // v208 · Video Library đứng ngang hàng Design Studio (cùng luồng: seller giao → creator quay → upload).
+    ...(videos ? [{ href: "/videos", label: "nav.videos", icon: "videos", section: "Operations" }] : []),
     // Đã bỏ khỏi menu (route vẫn sống, vào bằng URL trực tiếp nếu cần): /fulfillment, /stats/orders, /supplier-report
     // Scoring + Designer Stats: TẠM ẨN với admin (chưa dùng đến). Non-admin có quyền vẫn thấy. Route vẫn sống qua URL.
     ...(reviews && !isAdmin ? [{ href: "/reviews", label: "nav.reviews", icon: "reviews", section: "Operations" }] : []),

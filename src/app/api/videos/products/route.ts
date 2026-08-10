@@ -17,8 +17,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  const allowed = (await levelOf(session, "products")) >= 1 || (await levelOf(session, "designs")) >= 1;
-  if (!allowed) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if ((await levelOf(session, "videos")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const q = String(req.nextUrl.searchParams.get("q") ?? "").trim().slice(0, 80);
   const conds = [isNotNull(schema.shopifyProducts.shopifyProductId), ne(schema.shopifyProducts.shopifyProductId, "")];

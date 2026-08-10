@@ -19,8 +19,7 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  const allowed = (await levelOf(session, "products")) >= 1 || (await levelOf(session, "designs")) >= 1;
-  if (!allowed) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if ((await levelOf(session, "videos")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const b = await req.json().catch(() => ({}));
   const rawName = String((b as { filename?: string })?.filename ?? "").trim();

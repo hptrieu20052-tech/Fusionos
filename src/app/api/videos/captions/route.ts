@@ -48,7 +48,7 @@ Every hashtag must start with "#", be lowercase, contain no spaces, and be relev
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || (await levelOf(session, "products")) < 2) {
+  if (!session || (await levelOf(session, "videos")) < 2) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
   const b = await req.json().catch(() => null);
