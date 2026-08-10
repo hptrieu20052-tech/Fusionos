@@ -6,6 +6,7 @@ import { useLang } from "@/components/lang-provider";
 import TeamReport from "@/components/team-report";
 import SellerReport from "@/components/seller-report";
 import DesignerReport from "@/components/designer-report";
+import CreatorReport from "@/components/creator-report";
 
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -13,7 +14,7 @@ type Pipe = { c: number; q: number };
 type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitFeeEst?: number; profitCost: number;
   pipeline: { order: { c: number; q: number; prev: number | null }; in_production: Pipe; in_transit: Pipe; delivered: Pipe } };
 
-export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { canDesigns: boolean; canOrders: boolean; isAdmin: boolean }) {
+export default function DashboardClient({ canDesigns, canOrders, canVideos, isAdmin }: { canDesigns: boolean; canOrders: boolean; canVideos?: boolean; isAdmin: boolean }) {
   const { t: tr } = useLang();
   const [dr, setDr] = useState<RangeValue>({ range: "30d" });
   const range = dr.range;
@@ -130,9 +131,18 @@ export default function DashboardClient({ canDesigns, canOrders, isAdmin }: { ca
           {/* Content = ô "Creator" trên mỗi design (danh sách chọn đã lọc role='content').
               Design ID nào gắn tên bạn Content đó, sale của design đó tính cho bạn đó. */}
           {canDesigns && <div className="section"><DesignerReport by="content" range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Content Report" : "Team Content Report"} /></div>}
+          {/* v209b · Video: khối DUY NHẤT mà role "content" thấy được — trước đây Dashboard của họ trống. */}
+          {canVideos && <div className="section"><CreatorReport range={range} from={f} to={t} title={isAdmin ? "All Creator Report" : "Creator Report"} /></div>}
         </>
       )}
       {!ready && <div className="panel empty">{tr("rep.chooseDates")}</div>}
+      {/* Lưới an toàn: tài khoản không có khối nào thì đừng để trang trắng — chỉ luôn chỗ cần vào. */}
+      {ready && !isAdmin && !canOrders && !canDesigns && !canVideos && (
+        <div className="panel empty" style={{ padding: 34, textAlign: "center" }}>
+          <div style={{ fontWeight: 700, color: "var(--ink)", marginBottom: 6 }}>Chưa có báo cáo nào được bật cho tài khoản này</div>
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>Nhờ admin cấp quyền trong Admin → Permissions.</div>
+        </div>
+      )}
     </>
   );
 }

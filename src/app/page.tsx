@@ -9,5 +9,7 @@ export default async function Dashboard() {
   if (!session) return null;
   const canDesigns = (await levelOf(session, "designs")) >= 1;
   const canOrders = (await levelOf(session, "orders")) >= 1;
-  return <DashboardClient canDesigns={canDesigns} canOrders={canOrders} isAdmin={session.role === "admin"} />;
+  // v209b · Người role "content" chỉ có quyền "videos" — thiếu cờ này thì Dashboard của họ trống trơn.
+  const canVideos = (await levelOf(session, "videos")) >= 1;
+  return <DashboardClient canDesigns={canDesigns} canOrders={canOrders} canVideos={canVideos} isAdmin={session.role === "admin"} />;
 }
