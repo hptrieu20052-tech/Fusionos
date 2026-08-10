@@ -650,8 +650,11 @@ export const productVideos = pgTable("product_videos", {
   // v209 · ID ngắn để người nói chuyện với nhau ("dùng video 102") — giống skuCode bên Design Studio.
   videoCode: serial("video_code").notNull(),
   storeId: uuid("store_id"),                              // store Shopify (để seller chỉ thấy video của mình)
-  // v209b · Seller đặt hàng video này (giống designs.sellerId). Seller ↔ creator tự làm việc với nhau.
+  // v209c · Bộ ba người giống designs: seller ĐẶT · creator QUAY · uploadedBy người bấm upload.
   sellerId: uuid("seller_id").references(() => users.id),
+  creatorId: uuid("creator_id").references(() => users.id),
+  // Số lần thay file (creator sửa clip rồi update đè) — giữ #ID, chỉ đổi file.
+  revision: integer("revision").notNull().default(1),
   productId: uuid("product_id"),                          // shopify_products.id (bản ghi local) — có thể để trống
   title: text("title").notNull(),
   note: text("note"),

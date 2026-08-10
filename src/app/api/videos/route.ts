@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lte, ne, or, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { getSession, type Session } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -44,9 +45,7 @@ export async function GET(req: NextRequest) {
   const sellerId = q.get("sellerId");
   if (uuidOk(sellerId)) conds.push(eq(schema.productVideos.sellerId, String(sellerId)));
   const creatorId = q.get("creatorId");
-  if (uuidOk(creatorId)) conds.push(eq(schema.productVideos.uploadedBy, String(creatorId)));
-  const kind = String(q.get("kind") ?? "").trim().slice(0, 40);
-  if (kind) conds.push(eq(schema.productVideos.kind, kind));
+  if (uuidOk(creatorId)) conds.push(eq(schema.productVideos.creatorId, String(creatorId)));
   const dOk = (x: string | null) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
   const from = dOk(q.get("from")), to = dOk(q.get("to"));
   if (from) conds.push(gte(schema.productVideos.createdAt, new Date(from + "T00:00:00Z")));
@@ -73,15 +72,21 @@ export async function GET(req: NextRequest) {
   const [{ n: total }] = await db.select({ n: sql<number>`count(*)::int` })
     .from(schema.productVideos).where(where);
 
+  const uSeller = alias(schema.users, "u_seller");
+  const uCreator = alias(schema.users, "u_creator");
   const rows = await db.select({
     v: schema.productVideos,
     productTitle: schema.shopifyProducts.title,
     storeName: schema.stores.name,
     uploader: schema.users.fullName,
+    sellerName: uSeller.fullName,
+    creatorName: uCreator.fullName,
   }).from(schema.productVideos)
     .leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.productVideos.productId))
     .leftJoin(schema.stores, eq(schema.stores.id, schema.productVideos.storeId))
     .leftJoin(schema.users, eq(schema.users.id, schema.productVideos.uploadedBy))
+    .leftJoin(uSeller, eq(uSeller.id, schema.productVideos.sellerId))
+    .leftJoin(uCreator, eq(uCreator.id, schema.productVideos.creatorId))
     .where(where)
     .orderBy(desc(schema.productVideos.createdAt))
     .limit(LIMIT).offset((page - 1) * LIMIT);
@@ -96,11 +101,18 @@ export async function GET(req: NextRequest) {
     : [];
   const useMap = new Map(useRows.map((u) => [String(u.videoId), u]));
 
-  // Danh sách cho 2 ô lọc — lấy từ chính dữ liệu video đang có, không liệt kê cả công ty.
-  const sellerRows = await db.selectDistinct({ id: schema.users.id, name: schema.users.fullName })
-    .from(schema.productVideos).innerJoin(schema.users, eq(schema.users.id, schema.productVideos.sellerId));
-  const creatorRows = await db.selectDistinct({ id: schema.users.id, name: schema.users.fullName })
-    .from(schema.productVideos).innerJoin(schema.users, eq(schema.users.id, schema.productVideos.uploadedBy));
+  // Danh sách người để CHỌN khi upload — lấy từ bảng users, giới hạn theo TEAM của người đang dùng
+  // (giống Design Studio). Lấy từ video đã có thì lúc thư viện còn rỗng sẽ không chọn được ai.
+  const [me] = await db.select({ team: schema.users.team }).from(schema.users)
+    .where(eq(schema.users.id, session.sub)).limit(1);
+  const teamCond = session.role === "admin" || !me?.team ? undefined : eq(schema.users.team, me.team);
+  const people = async (roles: ("seller" | "content" | "designer")[]) =>
+    db.select({ id: schema.users.id, name: schema.users.fullName })
+      .from(schema.users)
+      .where(and(inArray(schema.users.role, roles), ne(schema.users.status, "disabled"), ...(teamCond ? [teamCond] : [])))
+      .orderBy(schema.users.fullName);
+  const sellerRows = await people(["seller"]);
+  const creatorRows = await people(["content", "designer"]);
 
   const manager = await canManage(session);
   return NextResponse.json({
@@ -112,6 +124,8 @@ export async function GET(req: NextRequest) {
       productTitle: r.productTitle ?? null,
       storeName: r.storeName ?? null,
       uploader: r.uploader ?? null,
+      sellerName: r.sellerName ?? null,
+      creatorName: r.creatorName ?? null,
       usedBy: useMap.get(r.v.id)?.n ?? 0,
       usedPushed: useMap.get(r.v.id)?.pushed ?? 0,
       canEdit: manager || r.v.uploadedBy === session.sub,
@@ -130,6 +144,8 @@ export async function POST(req: NextRequest) {
   const title = String(b?.title ?? "").trim().slice(0, 200);
   if (!storageKey || !publicUrl) return NextResponse.json({ ok: false, error: "storageKey and publicUrl are required" }, { status: 400 });
   if (!title) return NextResponse.json({ ok: false, error: "title is required" }, { status: 400 });
+  // v209c · BẮT BUỘC chọn seller trước khi upload — giống Design Studio, video phải thuộc về ai đó.
+  if (!uuidOk(b?.sellerId)) return NextResponse.json({ ok: false, error: "pick a seller before uploading" }, { status: 400 });
 
   const num = (x: unknown, max: number) => {
     const n = Number(x);
@@ -158,8 +174,8 @@ export async function POST(req: NextRequest) {
     sizeBytes: num(b?.sizeBytes, 5_000_000_000),
     durationSec: b?.durationSec != null && isFinite(Number(b.durationSec)) ? String(Number(b.durationSec).toFixed(2)) : null,
     width: w, height: h, aspect,
-    sellerId: uuidOk(b?.sellerId) ? String(b.sellerId) : null,
-    kind: typeof b?.kind === "string" && b.kind ? String(b.kind).slice(0, 40) : null,
+    sellerId: String(b.sellerId),
+    creatorId: uuidOk(b?.creatorId) ? String(b.creatorId) : session.sub,
     language: typeof b?.language === "string" && b.language ? String(b.language).slice(0, 10) : null,
     uploadedBy: session.sub,
   }).returning();
@@ -191,8 +207,35 @@ export async function PATCH(req: NextRequest) {
   if ("storeId" in b) patch.storeId = uuidOk(b.storeId) ? String(b.storeId) : null;
 
   if ("sellerId" in b) patch.sellerId = uuidOk(b.sellerId) ? String(b.sellerId) : null;
+  if ("creatorId" in b) patch.creatorId = uuidOk(b.creatorId) ? String(b.creatorId) : null;
+  // THAY FILE — creator sửa clip rồi update đè. Giữ nguyên #ID, gán listing và caption;
+  // chỉ đổi file + poster, và xoá dấu media Shopify cũ để lần Push sau đẩy bản mới.
+  if (typeof b.storageKey === "string" && typeof b.publicUrl === "string" && b.storageKey && b.publicUrl) {
+    patch.storageKey = b.storageKey;
+    patch.publicUrl = b.publicUrl;
+    if (typeof b.thumbKey === "string") patch.thumbKey = b.thumbKey;
+    if (typeof b.thumbUrl === "string") patch.thumbUrl = b.thumbUrl;
+    if (typeof b.contentType === "string") patch.contentType = b.contentType.slice(0, 100);
+    const n = (x: unknown, max: number) => { const v = Number(x); return isFinite(v) && v > 0 && v <= max ? v : null; };
+    patch.sizeBytes = n(b.sizeBytes, 5_000_000_000);
+    patch.width = n(b.width, 20000); patch.height = n(b.height, 20000);
+    patch.durationSec = b.durationSec != null && isFinite(Number(b.durationSec)) ? String(Number(b.durationSec).toFixed(2)) : null;
+    const w = n(b.width, 20000), h = n(b.height, 20000);
+    patch.aspect = (() => {
+      if (!w || !h) return null;
+      const r = w / h;
+      if (Math.abs(r - 9 / 16) < 0.06) return "9:16";
+      if (Math.abs(r - 1) < 0.06) return "1:1";
+      if (Math.abs(r - 16 / 9) < 0.08) return "16:9";
+      return "other";
+    })();
+    patch.revision = (cur.revision ?? 1) + 1;
+    patch.shopifyMediaId = null; patch.shopifyPushedAt = null;
+    await db.update(schema.shopifyProducts)
+      .set({ videoMediaId: null, videoPushedAt: null })
+      .where(eq(schema.shopifyProducts.videoId, String(b.id)));
+  }
   // v209b · metadata để sau còn lọc & tái sử dụng clip
-  if ("kind" in b) patch.kind = typeof b.kind === "string" && b.kind ? String(b.kind).slice(0, 40) : null;
   if ("language" in b) patch.language = typeof b.language === "string" && b.language ? String(b.language).slice(0, 10) : null;
   if ("sourceName" in b) patch.sourceName = typeof b.sourceName === "string" && b.sourceName ? String(b.sourceName).slice(0, 120) : null;
   if ("shotAt" in b) patch.shotAt = typeof b.shotAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.shotAt) ? b.shotAt : null;
