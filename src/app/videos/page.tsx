@@ -5,8 +5,8 @@ import VideosClient from "./videos-client";
 export const dynamic = "force-dynamic";
 
 // v208 · Video Library là MODULE RIÊNG ("videos"), ngang hàng Design Studio.
-// Luồng giống Design Studio: seller giao việc → creator/designer quay & upload → duyệt.
-//   level 1 = xem thư viện · level 2 = upload, sửa, duyệt, đẩy Shopify · admin luôn full.
+// Luồng giống Design Studio: seller và creator tự làm việc với nhau, sửa clip rồi update. Không có bước duyệt.
+//   level 1 = xem thư viện · level 2 = upload, sửa, gán listing, đẩy Shopify · admin luôn full.
 export default async function VideosPage() {
   const session = await getSession();
   if (!session) return <div className="panel empty">You don&apos;t have permission to view Video Library.</div>;

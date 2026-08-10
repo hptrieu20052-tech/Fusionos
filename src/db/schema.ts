@@ -286,6 +286,11 @@ export const shopifyProducts = pgTable("shopify_products", {
   // v172 · Listing Etsy gốc (nếu bản ghi này được STAGE từ Manage Products · Etsy).
   // Flow mới: Etsy → bản nháp ở đây (shopify_product_id = '') → hoàn thiện → Push mới TẠO trên Shopify.
   // Cần MIGRATION_v172_etsy_staging.sql
+  // v209 · Video hiển thị trên listing này. MỖI LISTING ĐÚNG 1 VIDEO (một video dùng lại được cho
+  // nhiều listing, nhưng một listing chỉ hiện một cái). Cần MIGRATION_v209_listing_video.sql
+  videoId: uuid("video_id"),
+  videoMediaId: text("video_media_id"),            // GID media video trên Shopify của RIÊNG listing này
+  videoPushedAt: timestamp("video_pushed_at", { withTimezone: true }),
   etsyProductId: uuid("etsy_product_id"),
   // v177 · Policy & Trademark scan (src/lib/policy-scan.ts) — lưới an toàn cửa Shopify.
   // risk: clean/medium/high (NULL = chưa quét) · hits: [{term, field, severity}]
@@ -642,7 +647,11 @@ export const teams = pgTable("teams", {
 // Cần MIGRATION_v207_product_videos.sql
 export const productVideos = pgTable("product_videos", {
   id: uuid("id").primaryKey().defaultRandom(),
+  // v209 · ID ngắn để người nói chuyện với nhau ("dùng video 102") — giống skuCode bên Design Studio.
+  videoCode: serial("video_code").notNull(),
   storeId: uuid("store_id"),                              // store Shopify (để seller chỉ thấy video của mình)
+  // v209b · Seller đặt hàng video này (giống designs.sellerId). Seller ↔ creator tự làm việc với nhau.
+  sellerId: uuid("seller_id").references(() => users.id),
   productId: uuid("product_id"),                          // shopify_products.id (bản ghi local) — có thể để trống
   title: text("title").notNull(),
   note: text("note"),
@@ -656,6 +665,16 @@ export const productVideos = pgTable("product_videos", {
   width: integer("width"),
   height: integer("height"),
   aspect: text("aspect"),                                 // "9:16" | "1:1" | "16:9" | "other"
+  // ---- v209b · Metadata để SAU NÀY còn dùng lại được clip (lọc, chọn đúng clip cho đúng chỗ) ----
+  // kind = loại cảnh quay, khớp brief gửi creator: material / size / assembly / safety / unboxing /
+  //        lifestyle / howto / other. Đây là trục lọc chính khi thư viện lớn.
+  kind: text("kind"),
+  language: text("language"),                             // "none" (không lời) | "en" | "vi"
+  // flags: { voice, text, music } — có lời thoại / có chữ trên hình / có nhạc nền.
+  // Quyết định clip tái sử dụng được ở kênh nào và có phải dựng lại không.
+  flags: jsonb("flags"),
+  sourceName: text("source_name"),                        // creator/agency NGOÀI hệ thống (không có account)
+  shotAt: date("shot_at"),                                // ngày quay (khác ngày upload)
   // pending = chờ duyệt · approved = được dùng · rejected = loại
   status: text("status").notNull().default("pending"),
   reviewNote: text("review_note"),

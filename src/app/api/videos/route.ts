@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import { getSession, type Session } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -9,22 +9,20 @@ export const dynamic = "force-dynamic";
 
 /**
  * v207 · Thư viện video.
- *   GET    /api/videos?status=&storeId=&productId=&mine=1   → danh sách
+ *   GET    /api/videos?q=&sellerId=&creatorId=&from=&to=&page=  → danh sách (phân trang)
  *   POST   /api/videos                                       → tạo bản ghi SAU khi file đã lên R2
  *   PATCH  /api/videos                                       → sửa / duyệt / đánh dấu đã đăng
  *   DELETE /api/videos?id=                                   → xoá bản ghi
  *
- * v208 · Quyền theo MODULE RIÊNG "videos" (ngang hàng Design Studio):
- *   level 1 = xem thư viện · level 2 = upload, sửa, DUYỆT, đẩy Shopify · admin luôn full.
- * Luồng giống Design Studio: seller giao việc → creator/designer quay & upload → người có
- * level 2 duyệt. Người upload sửa/xoá được video CỦA MÌNH khi còn pending.
+ * v209b · Không có bước duyệt. Giống Design Studio: seller và creator tự làm việc với nhau,
+ * sửa video rồi update lại — hệ thống chỉ giữ file + thông tin, không gác cổng.
+ *   level 1 = xem thư viện · level 2 = upload / sửa / xoá / gán listing / đẩy Shopify.
  */
 type Sess = Session;
 const canView = async (s: Sess) => (await levelOf(s, "videos")) >= 1;
 const canManage = async (s: Sess) => (await levelOf(s, "videos")) >= 2;
 const isAdmin = (s: Sess) => s.role === "admin";
 
-const VALID_STATUS = new Set(["pending", "approved", "rejected"]);
 const uuidOk = (x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x));
 
 export async function GET(req: NextRequest) {
@@ -34,53 +32,89 @@ export async function GET(req: NextRequest) {
 
   const q = req.nextUrl.searchParams;
   const conds = [];
-  const status = String(q.get("status") ?? "");
-  if (VALID_STATUS.has(status)) conds.push(eq(schema.productVideos.status, status));
-  const storeId = q.get("storeId");
-  if (uuidOk(storeId)) conds.push(eq(schema.productVideos.storeId, String(storeId)));
-  const productId = q.get("productId");
-  if (uuidOk(productId)) conds.push(eq(schema.productVideos.productId, String(productId)));
-  if (q.get("mine") === "1") conds.push(eq(schema.productVideos.uploadedBy, session.sub));
 
-  // Seller chỉ thấy video thuộc store của mình. Video CHƯA gắn store thì chỉ người upload thấy —
-  // không để video của người này lọt sang mắt seller khác chỉ vì còn trống store.
+  // Tìm theo TÊN hoặc ID ngắn (#102 / 102) — giống ô search bên Design Studio.
+  const text = String(q.get("q") ?? "").trim().slice(0, 80);
+  if (text) {
+    const asCode = Number(text.replace(/^#*[vV]?-?/, ""));
+    conds.push(Number.isInteger(asCode) && asCode > 0
+      ? or(ilike(schema.productVideos.title, `%${text}%`), eq(schema.productVideos.videoCode, asCode))!
+      : ilike(schema.productVideos.title, `%${text}%`));
+  }
+  const sellerId = q.get("sellerId");
+  if (uuidOk(sellerId)) conds.push(eq(schema.productVideos.sellerId, String(sellerId)));
+  const creatorId = q.get("creatorId");
+  if (uuidOk(creatorId)) conds.push(eq(schema.productVideos.uploadedBy, String(creatorId)));
+  const kind = String(q.get("kind") ?? "").trim().slice(0, 40);
+  if (kind) conds.push(eq(schema.productVideos.kind, kind));
+  const dOk = (x: string | null) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
+  const from = dOk(q.get("from")), to = dOk(q.get("to"));
+  if (from) conds.push(gte(schema.productVideos.createdAt, new Date(from + "T00:00:00Z")));
+  if (to) conds.push(lte(schema.productVideos.createdAt, new Date(to + "T23:59:59Z")));
+
+  // Seller chỉ thấy video thuộc store mình, video mình đặt, hoặc video mình tự upload.
   const scopeIds = await storeOwnerScopeIds(session);
   if (scopeIds) {
     const myStores = await db.select({ id: schema.stores.id }).from(schema.stores)
       .where(and(eq(schema.stores.marketplace, "shopify"), inArray(schema.stores.sellerId, scopeIds)));
     const ids = myStores.map((s) => s.id);
-    const mineOnly = eq(schema.productVideos.uploadedBy, session.sub);
-    conds.push(ids.length
-      ? or(inArray(schema.productVideos.storeId, ids), mineOnly)!
-      : mineOnly);
+    const own = [
+      eq(schema.productVideos.uploadedBy, session.sub),
+      inArray(schema.productVideos.sellerId, scopeIds),
+      ...(ids.length ? [inArray(schema.productVideos.storeId, ids)] : []),
+    ];
+    conds.push(or(...own)!);
   }
+
+  const where = conds.length ? and(...conds) : undefined;
+  const LIMIT = Math.min(Math.max(Number(q.get("limit") ?? 24) || 24, 1), 60);
+  const page = Math.max(Number(q.get("page") ?? 1) || 1, 1);
+
+  const [{ n: total }] = await db.select({ n: sql<number>`count(*)::int` })
+    .from(schema.productVideos).where(where);
 
   const rows = await db.select({
     v: schema.productVideos,
     productTitle: schema.shopifyProducts.title,
-    productGid: schema.shopifyProducts.shopifyProductId,
     storeName: schema.stores.name,
     uploader: schema.users.fullName,
   }).from(schema.productVideos)
     .leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.productVideos.productId))
     .leftJoin(schema.stores, eq(schema.stores.id, schema.productVideos.storeId))
     .leftJoin(schema.users, eq(schema.users.id, schema.productVideos.uploadedBy))
-    .where(conds.length ? and(...conds) : undefined)
+    .where(where)
     .orderBy(desc(schema.productVideos.createdAt))
-    .limit(300);
+    .limit(LIMIT).offset((page - 1) * LIMIT);
+
+  // Số listing đang dùng từng video — cột "đang chạy ở đâu", tính một lượt cho cả trang.
+  const vids = rows.map((r) => r.v.id);
+  const useRows = vids.length
+    ? await db.select({ videoId: schema.shopifyProducts.videoId, n: sql<number>`count(*)::int`, pushed: sql<number>`count(${schema.shopifyProducts.videoPushedAt})::int` })
+        .from(schema.shopifyProducts)
+        .where(inArray(schema.shopifyProducts.videoId, vids))
+        .groupBy(schema.shopifyProducts.videoId)
+    : [];
+  const useMap = new Map(useRows.map((u) => [String(u.videoId), u]));
+
+  // Danh sách cho 2 ô lọc — lấy từ chính dữ liệu video đang có, không liệt kê cả công ty.
+  const sellerRows = await db.selectDistinct({ id: schema.users.id, name: schema.users.fullName })
+    .from(schema.productVideos).innerJoin(schema.users, eq(schema.users.id, schema.productVideos.sellerId));
+  const creatorRows = await db.selectDistinct({ id: schema.users.id, name: schema.users.fullName })
+    .from(schema.productVideos).innerJoin(schema.users, eq(schema.users.id, schema.productVideos.uploadedBy));
 
   const manager = await canManage(session);
   return NextResponse.json({
-    ok: true,
-    isAdmin: isAdmin(session),
-    canManage: manager,
+    ok: true, total, page, limit: LIMIT,
+    isAdmin: isAdmin(session), canManage: manager,
+    filters: { sellers: sellerRows, creators: creatorRows },
     rows: rows.map((r) => ({
       ...r.v,
       productTitle: r.productTitle ?? null,
-      productGid: r.productGid ?? null,
       storeName: r.storeName ?? null,
       uploader: r.uploader ?? null,
-      canEdit: manager || (r.v.uploadedBy === session.sub && r.v.status === "pending"),
+      usedBy: useMap.get(r.v.id)?.n ?? 0,
+      usedPushed: useMap.get(r.v.id)?.pushed ?? 0,
+      canEdit: manager || r.v.uploadedBy === session.sub,
     })),
   });
 }
@@ -124,8 +158,9 @@ export async function POST(req: NextRequest) {
     sizeBytes: num(b?.sizeBytes, 5_000_000_000),
     durationSec: b?.durationSec != null && isFinite(Number(b.durationSec)) ? String(Number(b.durationSec).toFixed(2)) : null,
     width: w, height: h, aspect,
-    // Người có quyền duyệt mà tự upload thì duyệt luôn — không bắt tự duyệt bài của chính mình.
-    status: "pending",
+    sellerId: uuidOk(b?.sellerId) ? String(b.sellerId) : null,
+    kind: typeof b?.kind === "string" && b.kind ? String(b.kind).slice(0, 40) : null,
+    language: typeof b?.language === "string" && b.language ? String(b.language).slice(0, 10) : null,
     uploadedBy: session.sub,
   }).returning();
 
@@ -143,10 +178,10 @@ export async function PATCH(req: NextRequest) {
   const [cur] = await db.select().from(schema.productVideos).where(eq(schema.productVideos.id, String(b.id))).limit(1);
   if (!cur) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
+  // Seller ↔ creator tự làm việc với nhau: ai có quyền đầy đủ, hoặc chính người upload, đều sửa được.
   const manager = await canManage(session);
-  const owner = cur.uploadedBy === session.sub;
-  if (!manager && !(owner && cur.status === "pending")) {
-    return NextResponse.json({ ok: false, error: "forbidden — approved videos can only be changed by someone with full Video Library access" }, { status: 403 });
+  if (!manager && cur.uploadedBy !== session.sub) {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
   const patch: Record<string, unknown> = { updatedAt: new Date() };
@@ -155,13 +190,15 @@ export async function PATCH(req: NextRequest) {
   if ("productId" in b) patch.productId = uuidOk(b.productId) ? String(b.productId) : null;
   if ("storeId" in b) patch.storeId = uuidOk(b.storeId) ? String(b.storeId) : null;
 
-  // DUYỆT — chỉ admin. Đây là cửa chặn: video approved mới được đẩy Shopify / lấy caption.
-  if (typeof b.status === "string" && VALID_STATUS.has(b.status)) {
-    if (!manager) return NextResponse.json({ ok: false, error: "you need full Video Library access to approve or reject" }, { status: 403 });
-    patch.status = b.status;
-    patch.reviewedBy = session.sub;
-    patch.reviewedAt = new Date();
-    if (typeof b.reviewNote === "string") patch.reviewNote = b.reviewNote.slice(0, 500);
+  if ("sellerId" in b) patch.sellerId = uuidOk(b.sellerId) ? String(b.sellerId) : null;
+  // v209b · metadata để sau còn lọc & tái sử dụng clip
+  if ("kind" in b) patch.kind = typeof b.kind === "string" && b.kind ? String(b.kind).slice(0, 40) : null;
+  if ("language" in b) patch.language = typeof b.language === "string" && b.language ? String(b.language).slice(0, 10) : null;
+  if ("sourceName" in b) patch.sourceName = typeof b.sourceName === "string" && b.sourceName ? String(b.sourceName).slice(0, 120) : null;
+  if ("shotAt" in b) patch.shotAt = typeof b.shotAt === "string" && /^\d{4}-\d{2}-\d{2}$/.test(b.shotAt) ? b.shotAt : null;
+  if ("flags" in b && b.flags && typeof b.flags === "object") {
+    const f = b.flags as Record<string, unknown>;
+    patch.flags = { voice: !!f.voice, text: !!f.text, music: !!f.music };
   }
 
   // Đánh dấu đã đăng tay ở một kênh: { markPosted: "tiktok" } · bỏ đánh dấu: { unmarkPosted: "tiktok" }
@@ -188,7 +225,7 @@ export async function DELETE(req: NextRequest) {
 
   const [cur] = await db.select().from(schema.productVideos).where(eq(schema.productVideos.id, String(id))).limit(1);
   if (!cur) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-  if (!(await canManage(session)) && !(cur.uploadedBy === session.sub && cur.status === "pending")) {
+  if (!(await canManage(session)) && cur.uploadedBy !== session.sub) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
