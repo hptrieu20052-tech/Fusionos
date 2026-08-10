@@ -635,3 +635,45 @@ export const teams = pgTable("teams", {
   telegramChatId: text("telegram_chat_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------- v207 · VIDEO LIBRARY (creator upload → duyệt → Shopify + caption cho social) ----------
+// File KHÔNG đi qua Vercel: browser PUT thẳng lên R2 bằng presigned URL (src/lib/storage.ts),
+// bảng này chỉ giữ metadata + trạng thái duyệt + caption AI cho từng kênh.
+// Cần MIGRATION_v207_product_videos.sql
+export const productVideos = pgTable("product_videos", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id"),                              // store Shopify (để seller chỉ thấy video của mình)
+  productId: uuid("product_id"),                          // shopify_products.id (bản ghi local) — có thể để trống
+  title: text("title").notNull(),
+  note: text("note"),
+  storageKey: text("storage_key").notNull(),              // key trên R2
+  publicUrl: text("public_url"),                          // URL công khai chốt lúc upload (Meta/TikTok cần tải về được)
+  thumbKey: text("thumb_key"),                            // ảnh poster (frame đầu) — client tự bắt bằng <canvas>
+  thumbUrl: text("thumb_url"),
+  contentType: text("content_type"),
+  sizeBytes: bigint("size_bytes", { mode: "number" }),
+  durationSec: numeric("duration_sec", { precision: 8, scale: 2 }),
+  width: integer("width"),
+  height: integer("height"),
+  aspect: text("aspect"),                                 // "9:16" | "1:1" | "16:9" | "other"
+  // pending = chờ duyệt · approved = được dùng · rejected = loại
+  status: text("status").notNull().default("pending"),
+  reviewNote: text("review_note"),
+  reviewedBy: uuid("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  uploadedBy: uuid("uploaded_by").references(() => users.id),
+  // caption AI theo từng kênh: { tiktok:{text,hashtags[]}, reels:{...}, shorts:{...}, facebook:{...}, pinterest:{...} }
+  captions: jsonb("captions"),
+  captionsAt: timestamp("captions_at", { withTimezone: true }),
+  shopifyMediaId: text("shopify_media_id"),               // GID media sau khi đẩy lên Shopify
+  shopifyPushedAt: timestamp("shopify_pushed_at", { withTimezone: true }),
+  // đánh dấu ĐÃ ĐĂNG tay ở kênh nào: { tiktok:"2026-08-10T…", reels:"…" }
+  postedTo: jsonb("posted_to").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_pvideos_store").on(t.storeId, t.createdAt),
+  index("idx_pvideos_product").on(t.productId),
+  index("idx_pvideos_status").on(t.status, t.createdAt),
+  index("idx_pvideos_uploader").on(t.uploadedBy, t.createdAt),
+]);
