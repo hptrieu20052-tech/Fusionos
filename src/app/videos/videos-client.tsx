@@ -207,7 +207,7 @@ export default function VideosClient({ isAdmin, canManage }: { isAdmin: boolean;
         }),
       }).then((r) => r.json());
       if (!j?.ok) throw new Error(j?.error ?? "replace failed");
-      flash("✓ File replaced — push lại Shopify để cập nhật bản mới");
+      flash("✓ File replaced — push to Shopify again to publish the new cut");
       await load(page);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e), false); }
     setProg(null); setBusy(false);
@@ -325,7 +325,7 @@ export default function VideosClient({ isAdmin, canManage }: { isAdmin: boolean;
 
       {showUpload && (
         <UploadModal
-          sellers={sellers} creators={creators} busy={busy}
+          sellers={sellers} busy={busy}
           close={() => setShowUpload(false)}
           go={async (files, who) => { setShowUpload(false); await onPick(files, who); }}
         />
@@ -483,7 +483,7 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
               </div>
               <div className="field" style={{ gridColumn: "span 2" }}>
                 <label>Note</label>
-                <input value={f.note} disabled={!canManage} placeholder="Ghi chú giữa seller và creator — cần sửa gì, quay lại cảnh nào…"
+                <input value={f.note} disabled={!canManage} placeholder="Notes between seller and creator — what to fix, what to reshoot…"
                   onChange={(e) => setF({ ...f, note: e.target.value })} />
               </div>
               <div className="field">
@@ -515,7 +515,7 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
               </div>
               <div className="field" style={{ gridColumn: "span 2" }}>
                 <label>Filmed by (outside creator)</label>
-                <input value={f.sourceName} disabled={!canManage} placeholder="Tên creator thuê ngoài, nếu không có tài khoản trong hệ thống"
+                <input value={f.sourceName} disabled={!canManage} placeholder="Name of an outside creator with no account in the system"
                   onChange={(e) => setF({ ...f, sourceName: e.target.value })} />
               </div>
             </div>
@@ -579,7 +579,7 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
                 <input ref={repRef} type="file" accept="video/*" hidden
                   onChange={(e) => { const fl = e.target.files?.[0]; if (fl) onReplace(row, fl); if (repRef.current) repRef.current.value = ""; }} />
                 <button disabled={busy} className="btn" onClick={() => repRef.current?.click()}
-                  title="Creator sửa clip xong thì thay file ở đây — giữ nguyên #ID, listing đã gán và caption">
+                  title="Replace the file after a re-edit — keeps the same #ID, listings and captions">
                   ⟳ Replace file{row.revision > 1 ? ` (v${row.revision})` : ""}
                 </button>
                 <button disabled={busy} className="btn" style={{ color: "#B42318" }} onClick={doDelete}>Delete</button>
@@ -613,13 +613,13 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
   );
 }
 
-/** Bulk upload — BẮT BUỘC chọn seller trước, giống Design Studio. */
-function UploadModal({ sellers, creators, busy, close, go }: {
-  sellers: Opt[]; creators: Opt[]; busy: boolean;
+/** Bulk upload — BẮT BUỘC chọn seller trước, giống Design Studio.
+ *  Creator = chính người đang upload, không hỏi lại. */
+function UploadModal({ sellers, busy, close, go }: {
+  sellers: Opt[]; busy: boolean;
   close: () => void; go: (files: File[], who: { sellerId: string; creatorId: string }) => Promise<void>;
 }) {
   const [sellerId, setSellerId] = useState("");
-  const [creatorId, setCreatorId] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const inRef = useRef<HTMLInputElement>(null);
   const ready = !!sellerId && files.length > 0;
@@ -628,24 +628,17 @@ function UploadModal({ sellers, creators, busy, close, go }: {
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.5)", zIndex: 3100, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onClick={close}>
       <div className="card" style={{ width: 560, maxWidth: "96vw", padding: 22 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
-          <div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>Bulk upload — mỗi file thành 1 video</div>
+          <div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>Bulk upload — each file becomes one video</div>
           <button onClick={close} className="btn" style={{ padding: "6px 11px" }}>✕</button>
         </div>
 
-        <div className="filters" style={{ gridTemplateColumns: "1fr 1fr" }}>
+        <div className="filters" style={{ gridTemplateColumns: "1fr" }}>
           <div className="field">
             <label>Seller <span style={{ color: "#B42318" }}>*</span></label>
             <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}
               style={{ borderColor: sellerId ? undefined : "#F0B4AE" }}>
-              <option value="">— chọn seller —</option>
+              <option value="">— select a seller —</option>
               {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label>Creator</label>
-            <select value={creatorId} onChange={(e) => setCreatorId(e.target.value)}>
-              <option value="">Tôi</option>
-              {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>
@@ -653,13 +646,13 @@ function UploadModal({ sellers, creators, busy, close, go }: {
         <input ref={inRef} type="file" accept="video/*" multiple hidden
           onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
         <button type="button" onClick={() => inRef.current?.click()} disabled={!sellerId}
-          title={sellerId ? "" : "Chọn seller trước đã"}
+          title={sellerId ? "" : "Select a seller first"}
           style={{
             width: "100%", marginTop: 12, padding: "22px 14px", borderRadius: 12, cursor: sellerId ? "pointer" : "not-allowed",
             border: "1.5px dashed var(--line)", background: sellerId ? "#F8FAFC" : "#F1F3F7",
             color: sellerId ? "var(--ink)" : "var(--muted)", fontWeight: 700, fontSize: 13.5, font: "inherit",
           }}>
-          {files.length ? `${files.length} file đã chọn — bấm để chọn lại` : sellerId ? "Chọn file video…" : "Chọn seller trước khi chọn file"}
+          {files.length ? `${files.length} file(s) selected — click to change` : sellerId ? "Choose video files…" : "Select a seller before choosing files"}
         </button>
 
         {!!files.length && (
@@ -674,9 +667,9 @@ function UploadModal({ sellers, creators, busy, close, go }: {
         )}
 
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
-          <button onClick={close} className="btn">Huỷ</button>
+          <button onClick={close} className="btn">Cancel</button>
           <button disabled={!ready || busy} className="btn btn-primary" style={{ opacity: ready && !busy ? 1 : .5 }}
-            onClick={() => go(files, { sellerId, creatorId })}>
+            onClick={() => go(files, { sellerId, creatorId: "" })}>
             Upload {files.length || ""}
           </button>
         </div>

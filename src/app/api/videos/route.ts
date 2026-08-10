@@ -112,7 +112,9 @@ export async function GET(req: NextRequest) {
       .where(and(inArray(schema.users.role, roles), ne(schema.users.status, "disabled"), ...(teamCond ? [teamCond] : [])))
       .orderBy(schema.users.fullName);
   const sellerRows = await people(["seller"]);
-  const creatorRows = await people(["content", "designer"]);
+  // Creator = NGƯỜI LÀM NỘI DUNG (role content). KHÔNG gộp designer — designer làm design,
+  // không phải người quay video. Admin luôn là một creator hợp lệ khi tự upload (xử lý ở POST).
+  const creatorRows = await people(["content"]);
 
   const manager = await canManage(session);
   return NextResponse.json({
