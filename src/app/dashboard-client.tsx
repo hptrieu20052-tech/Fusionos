@@ -132,15 +132,15 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
               Design ID nào gắn tên bạn Content đó, sale của design đó tính cho bạn đó. */}
           {canDesigns && <div className="section"><DesignerReport by="content" range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Content Report" : "Team Content Report"} /></div>}
           {/* v209b · Video: khối DUY NHẤT mà role "content" thấy được — trước đây Dashboard của họ trống. */}
-          {canVideos && <div className="section"><CreatorReport range={range} from={f} to={t} title={isAdmin ? "All Creator Report" : "Creator Report"} /></div>}
+          {canVideos && <div className="section"><CreatorReport range={range} from={f} to={t} title={isAdmin ? "All Creator Report" : "Team Creator Report"} /></div>}
         </>
       )}
       {!ready && <div className="panel empty">{tr("rep.chooseDates")}</div>}
       {/* Lưới an toàn: tài khoản không có khối nào thì đừng để trang trắng — chỉ luôn chỗ cần vào. */}
       {ready && !isAdmin && !canOrders && !canDesigns && !canVideos && (
         <div className="panel empty" style={{ padding: 34, textAlign: "center" }}>
-          <div style={{ fontWeight: 700, color: "var(--ink)", marginBottom: 6 }}>Chưa có báo cáo nào được bật cho tài khoản này</div>
-          <div style={{ fontSize: 13, color: "var(--muted)" }}>Nhờ admin cấp quyền trong Admin → Permissions.</div>
+          <div style={{ fontWeight: 700, color: "var(--ink)", marginBottom: 6 }}>No reports are enabled for this account</div>
+          <div style={{ fontSize: 13, color: "var(--muted)" }}>Ask an admin to grant access in Admin → Permissions.</div>
         </div>
       )}
     </>
