@@ -233,10 +233,9 @@ export default function VideosClient({ isAdmin, canManage }: { isAdmin: boolean;
     <div style={{ display: "grid", gap: 14 }}>
       <div style={{ ...card, padding: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontWeight: 800, fontSize: 17 }}>Video library</div>
-          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-            Seller giao việc → creator quay & upload → duyệt tại đây. Video dùng lại được cho product page và social.
-            {counts.pending > 0 && <> · <b style={{ color: "#B7791F" }}>{counts.pending} waiting for review</b></>}
+          <div style={{ fontWeight: 800, fontSize: 17, display: "flex", alignItems: "center", gap: 9 }}>
+            Video library
+            {counts.pending > 0 && <span style={chip("#FEF6E7", "#B7791F")}>{counts.pending} pending</span>}
           </div>
         </div>
         <select value={statusF} onChange={(e) => setStatusF(e.target.value)} style={ctl}>
@@ -275,10 +274,7 @@ export default function VideosClient({ isAdmin, canManage }: { isAdmin: boolean;
       {loading ? (
         <div className="panel empty">Loading…</div>
       ) : !rows.length ? (
-        <div style={{ ...card, padding: 34, textAlign: "center", color: "var(--muted)" }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--ink)" }}>No videos yet</div>
-          <div style={{ fontSize: 13, marginTop: 6 }}>Upload a clip — a puzzle being assembled or a book being flipped through converts far better than a still photo.</div>
-        </div>
+        <div style={{ ...card, padding: 34, textAlign: "center", color: "var(--muted)", fontSize: 14, fontWeight: 600 }}>No videos yet</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 14 }}>
           {rows.map((r) => {

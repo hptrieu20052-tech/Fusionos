@@ -117,6 +117,10 @@ export default function AppShell({ user, links, children, canProducts = false, c
 
   // Dropdown "Seller Hub" (gộp Products + Templates + Support) — sau "Design Studio"; hiện khi có quyền products HOẶC support.
   const hasDesigns = links.some((l) => !l.more && l.href === "/designs");
+  // Dropdown (AI Agent / Seller Hub) chèn SAU mục cuối cùng của cụm Operations, để Video Library
+  // đứng liền ngay sau Design Studio thay vì bị đẩy xuống sau các dropdown.
+  const hubAnchor = links.some((l) => !l.more && l.href === "/videos") ? "/videos" : "/designs";
+  const hasAnchor = links.some((l) => !l.more && l.href === hubAnchor);
   const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image", "/ai-video"].some((h) => path.startsWith(h));
@@ -222,12 +226,12 @@ export default function AppShell({ user, links, children, canProducts = false, c
                   {t(l.label)}
                 </Link>
               );
-              // AI Agent + Seller Hub dropdown nằm ngay sau "Design Studio"
-              return l.href === "/designs" ? [el, aiAgentDropdown, productsDropdown].filter(Boolean) as JSX.Element[] : [el];
+              // AI Agent + Seller Hub dropdown nằm ngay sau cụm Design Studio / Video Library
+              return l.href === hubAnchor ? [el, aiAgentDropdown, productsDropdown].filter(Boolean) as JSX.Element[] : [el];
             })}
-            {/* Fallback: nếu người này không thấy Design Studio thì vẫn hiện AI Agent / Products (nếu có quyền) */}
-            {!hasDesigns && aiAgentDropdown}
-            {!hasDesigns && productsDropdown}
+            {/* Fallback: không thấy Design Studio lẫn Video Library thì vẫn hiện AI Agent / Products */}
+            {!hasAnchor && aiAgentDropdown}
+            {!hasAnchor && productsDropdown}
             {links.some((l) => l.more) && (
               <div className="topnav-more">
                 <button className={`topnav-item${links.some((l) => l.more && isActive(l.href)) ? " active" : ""}`} onClick={() => { setAiOpen(false); setProdOpen(false); setMoreOpen((v) => !v); }}>
@@ -297,7 +301,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
                 </Link>
               );
               // Sau "Design Studio": chèn nhóm Seller Hub thu gọn (bấm để mở) — gom Products/Templates/Customer Messages/Marketing/Finance.
-              if (l.href === "/designs" && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
+              if (l.href === hubAnchor && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
                 const hubItems = [
                   ...(canProducts ? [
                     { href: "/tiktok-products", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Products Tiktok" },
