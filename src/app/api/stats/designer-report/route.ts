@@ -32,16 +32,30 @@ export async function GET(req: NextRequest) {
   // Phạm vi: team/own → chỉ designer trong phạm vi
   const scopeIds = await scopeOwnerIds(session, "dashboard");
   const inD = scopeIds ? sql` AND d.${sql.raw(PC)} IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
+  // v210c · Với Creator (by=content), phạm vi lọc theo người quay video.
+  const vPid = sql`coalesce(v.creator_id, v.uploaded_by)`;
+  const inV = scopeIds ? sql` AND ${vPid} IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
-  // 1. Design tạo trong kỳ theo người × bucket (kèm points cho KPI)
-  const dz = await db.execute(sql`
-    SELECT ${sql.raw(bucket("d.created_at"))} AS bucket, min(${sql.raw(bucketOrd("d.created_at"))}) AS ord,
-           d.${sql.raw(PC)} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
-           count(*)::int AS c, coalesce(sum(d.points),0)::int AS pts
-    FROM designs d LEFT JOIN users u ON u.id = d.${sql.raw(PC)}
-    WHERE ${sql.raw(cond("d.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
-    GROUP BY 1, d.${sql.raw(PC)}, u.full_name ORDER BY ord
-  `);
+  // 1. SẢN LƯỢNG trong kỳ theo người × bucket (kèm points cho KPI).
+  //    · Designer  → đếm DESIGN tạo (points theo design).
+  //    · Creator   → đếm VIDEO upload (mỗi video = 1 point). Creator làm video, không phải design.
+  const dz = by === "content"
+    ? await db.execute(sql`
+        SELECT ${sql.raw(bucket("v.created_at"))} AS bucket, min(${sql.raw(bucketOrd("v.created_at"))}) AS ord,
+               ${vPid} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
+               count(*)::int AS c, count(*)::int AS pts
+        FROM product_videos v LEFT JOIN users u ON u.id = ${vPid}
+        WHERE ${sql.raw(cond("v.created_at"))} AND ${vPid} IS NOT NULL${inV}
+        GROUP BY 1, ${vPid}, u.full_name ORDER BY ord
+      `)
+    : await db.execute(sql`
+        SELECT ${sql.raw(bucket("d.created_at"))} AS bucket, min(${sql.raw(bucketOrd("d.created_at"))}) AS ord,
+               d.${sql.raw(PC)} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
+               count(*)::int AS c, coalesce(sum(d.points),0)::int AS pts
+        FROM designs d LEFT JOIN users u ON u.id = d.${sql.raw(PC)}
+        WHERE ${sql.raw(cond("d.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
+        GROUP BY 1, d.${sql.raw(PC)}, u.full_name ORDER BY ord
+      `);
   // 2. Sale phát sinh trong kỳ từ design của người đó × bucket
   //    CHỈ tính khi đơn ĐÃ CREATE (đẩy đơn) trở đi — đơn còn NEW (chưa Create) chưa tính.
   const sales = await db.execute(sql`
