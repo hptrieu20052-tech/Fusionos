@@ -260,7 +260,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
               <div className="user-avatar">{user.avatarUrl ? <img src={user.avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "inherit", display: "block" }} /> : initials}</div>
               <div className="tb-user-txt">
                 <span className="tb-user-name">{user.name}</span>
-                <span className="tb-role">{user.role}</span>
+                <span className="tb-role">{user.role === "content" ? "creator" : user.role}</span>
               </div>
               <svg className="tb-caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
             </button>
@@ -270,7 +270,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
                 <div className="topnav-more-menu" style={{ minWidth: 200 }} onClick={() => setUserOpen(false)}>
                   <div style={{ padding: "8px 12px 6px", borderBottom: "1px solid var(--line)", marginBottom: 4 }}>
                     <div style={{ fontWeight: 800, fontSize: 13 }}>{user.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>{user.role}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>{user.role === "content" ? "creator" : user.role}</div>
                   </div>
                   <Link href="/account" prefetch className="topnav-more-item">
                     <span className="topnav-ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg></span>

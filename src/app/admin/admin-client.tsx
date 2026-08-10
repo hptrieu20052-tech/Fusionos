@@ -10,6 +10,8 @@ import { UserFunctionPermission } from "./user-function-permission";
 const MODULES = ["dashboard", "orders", "fulfillment", "designs", "products", "reviews", "statsDesigners", "finance", "hr", "stores", "support", "marketing", "financeTiktok", "settings"] as const;
 const MODULE_KEY: Record<string, string> = { dashboard: "adm.modDashboard", orders: "adm.modOrders", fulfillment: "adm.modFulfillment", designs: "adm.modDesigns", products: "adm.modProducts", reviews: "adm.modReviews", statsDesigners: "adm.modStatsDesigners", finance: "adm.modFinance", hr: "adm.modHr", stores: "adm.modStores", support: "adm.modSupport", marketing: "adm.modMarketing", financeTiktok: "adm.modFinanceTiktok", settings: "adm.modSettings" };
 const ROLES = ["admin", "seller", "designer", "support", "content", "hiring"] as const;
+// Hiển thị: role "content" là Creator. Giá trị lưu vẫn là "content" (không đổi DB).
+const roleLabel = (r: string) => (r === "content" ? "creator" : r);
 const LEVEL_KEY = ["adm.levelHide", "adm.levelView", "adm.levelFull"];
 const LEVEL_STYLE = [
   { background: "#EEF0F5", color: "#9CA3AF" },
@@ -259,7 +261,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
             <button type="button" title="Copy password" onClick={async () => { try { await navigator.clipboard.writeText(form.password); setMsg("✓ Password copied"); } catch { setMsg("⚠ Clipboard blocked"); } }} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "8px 9px", cursor: "pointer", display: "inline-flex" }}><IconCopy width={14} height={14} /></button>
           </span>
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={inp}>
-            {ROLES.map((r) => <option key={r}>{r}</option>)}
+            {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
           <select value={form.team} onChange={(e) => setForm({ ...form, team: e.target.value })} style={{ ...inp, width: 150 }}>
             <option value="">— team —</option>
@@ -281,7 +283,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
           <input value={sq} onChange={(e) => setSq(e.target.value)} placeholder={t("adm.searchName")} style={{ ...inp, padding: "7px 10px", fontSize: 13 }} />
           <select value={sRole} onChange={(e) => setSRole(e.target.value)} style={{ ...inp, padding: "7px 10px", fontSize: 13 }}>
             <option value="">{t("adm.allRoles")}</option>
-            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+            {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
           </select>
           <select value={sTeam} onChange={(e) => setSTeam(e.target.value)} style={{ ...inp, padding: "7px 10px", fontSize: 13 }}>
             <option value="">{t("adm.allTeams")}</option>
@@ -316,7 +318,7 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                 <td><EditableCell value={u.email} type="email" onSave={(v) => patchUser(u.id, { email: v }, `✓ Updated email → ${v}`)} /></td>
                 <td>
                   <select value={u.role} onChange={(e) => patchUser(u.id, { role: e.target.value })} style={{ ...inp, padding: "5px 8px", fontSize: 12.5 }}>
-                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                    {ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
                   </select>
                 </td>
                 <td>
@@ -412,14 +414,14 @@ export function AdminClient({ users: initialUsers, permissions, roleRestrictions
                     {tm.members.length === 0 && <div style={{ fontSize: 12, color: "var(--muted)" }}>{t("adm.noMembers")}</div>}
                     {tm.members.map((m) => (
                       <div key={m.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
-                        <span>{m.fullName} <span style={{ color: "var(--muted)" }}>· {m.role}</span></span>
+                        <span>{m.fullName} <span style={{ color: "var(--muted)" }}>· {roleLabel(m.role)}</span></span>
                         <button onClick={() => setMemberTeam(m.id, "")} title={t("adm.removeMember")} style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 13, padding: 0 }}>✕</button>
                       </div>
                     ))}
                   </div>
                   <select value="" onChange={(e) => e.target.value && setMemberTeam(e.target.value, tm.name)} style={{ ...inp, padding: "6px 9px", fontSize: 12, width: "100%" }}>
                     <option value="">{t("adm.addMember")}</option>
-                    {outside.map((u) => <option key={u.id} value={u.id}>{u.fullName} ({u.role}){u.team ? ` · ${t("adm.inTeam")} ${u.team}` : ""}</option>)}
+                    {outside.map((u) => <option key={u.id} value={u.id}>{u.fullName} ({roleLabel(u.role)}){u.team ? ` · ${t("adm.inTeam")} ${u.team}` : ""}</option>)}
                   </select>
                   {/* Telegram group nhận thông báo SALE của team */}
                   <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>

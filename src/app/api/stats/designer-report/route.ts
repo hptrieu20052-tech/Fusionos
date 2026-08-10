@@ -17,10 +17,12 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
-  if ((await levelOf(session, "designs")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-
   const sp = req.nextUrl.searchParams;
   const by = sp.get("by") === "content" ? "content" : "designer";
+  // Creator report (by=content) mở cho người có quyền videos — creator thường không có designs.
+  const okDesigns = (await levelOf(session, "designs")) >= 1;
+  const okVideos = (await levelOf(session, "videos")) >= 1;
+  if (!(okDesigns || (by === "content" && okVideos))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const PC = by === "content" ? "creator_id" : "designer_id"; // cột gom nhóm
   const range = sp.get("range") ?? "this_month";
   const from = sp.get("from"), to = sp.get("to");

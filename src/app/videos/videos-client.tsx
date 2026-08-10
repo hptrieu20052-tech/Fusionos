@@ -220,7 +220,6 @@ export default function VideosClient({ isAdmin, canManage }: { isAdmin: boolean;
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <h2 style={{ fontWeight: 800, fontSize: 19, margin: 0 }}>Video Library</h2>
         <div style={{ flex: 1 }} />
-        <Link href="/stats/creators" className="btn" style={{ fontSize: 12.5, padding: "7px 13px", textDecoration: "none" }}>Creator stats</Link>
         <DateRangePicker value={dr} onChange={setDr} align="right" />
         {canManage && <button disabled={busy} onClick={() => setShowUpload(true)} className="btn btn-primary">Bulk upload +</button>}
       </div>

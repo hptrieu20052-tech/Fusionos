@@ -114,7 +114,7 @@ export function UserFunctionPermission() {
               <button key={u.id} onClick={() => selectUser(u.id)}
                 style={{ display: "block", width: "100%", textAlign: "left", padding: "9px 12px", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", background: sel === u.id ? "var(--green-soft)" : "#fff" }}>
                 <div style={{ fontWeight: 700, fontSize: 13, color: "var(--ink)" }}>{u.fullName || u.email}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>{u.role}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", textTransform: "uppercase", fontWeight: 700 }}>{u.role === "content" ? "creator" : u.role}</div>
               </button>
             ))}
             {!shown.length && <div style={{ padding: 12, fontSize: 12, color: "var(--muted)" }}>{t("perm.noPeople")}</div>}
