@@ -118,7 +118,7 @@ export function DesignSales() {
       <div style={{ overflowX: "auto", marginTop: 8 }}>
         <table>
           <thead><tr>
-            <th style={{ width: 56 }}></th><th>Design ID</th><th>Title</th><th>Marketplace</th><th>Seller</th><th>Designer</th><th>Creator</th>
+            <th style={{ width: 56 }}></th><th>Design ID</th><th>Title</th><th>Channel</th><th>Seller</th><th>Designer</th><th>Creator</th>
             <th style={{ textAlign: "right" }}>Orders</th><th style={{ textAlign: "right" }}>Qty</th>{showMoney && <th style={{ textAlign: "right" }}>Revenue</th>}<th>Last order</th>
           </tr></thead>
           <tbody>
@@ -127,7 +127,7 @@ export function DesignSales() {
                 <td>{r.thumb
                   ? <img src={r.thumb} alt="" title="Click to enlarge"
                       onClick={() => setLightbox({ src: r.preview ?? r.thumb!, title: `${r.sku} · ${r.title}` })}
-                      style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)", cursor: "zoom-in" }} />
+                      style={{ width: 44, height: 44, objectFit: "contain", borderRadius: 8, border: "1px solid var(--line)", background: "#E8EDF3", cursor: "zoom-in" }} />
                   : <div style={{ width: 44, height: 44, borderRadius: 8, border: "1px dashed var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "var(--muted)" }}>no img</div>}
                 </td>
                 <td style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{r.sku}</td>
@@ -174,7 +174,7 @@ export function DesignSales() {
       {lightbox && (
         <div onClick={() => setLightbox(null)}
           style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,.75)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "zoom-out", padding: 24 }}>
-          <img src={lightbox.src} alt="" style={{ maxWidth: "min(92vw, 900px)", maxHeight: "82vh", borderRadius: 12, background: "#fff", objectFit: "contain", boxShadow: "0 20px 60px rgba(0,0,0,.4)" }} />
+          <img src={lightbox.src} alt="" style={{ maxWidth: "min(92vw, 900px)", maxHeight: "82vh", borderRadius: 12, background: "#E8EDF3", objectFit: "contain", boxShadow: "0 20px 60px rgba(0,0,0,.4)" }} />
           <div style={{ marginTop: 12, color: "#fff", fontSize: 13, maxWidth: "min(92vw, 900px)", textAlign: "center", textShadow: "0 1px 4px rgba(0,0,0,.6)" }}>{lightbox.title}</div>
         </div>
       )}
