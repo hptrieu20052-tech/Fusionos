@@ -6,7 +6,6 @@ import { useLang } from "@/components/lang-provider";
 import TeamReport from "@/components/team-report";
 import SellerReport from "@/components/seller-report";
 import DesignerReport from "@/components/designer-report";
-import CreatorReport from "@/components/creator-report";
 
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -130,14 +129,12 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
           {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Designer Report" : "Team Designer Report"} /></div>}
           {/* Content = ô "Creator" trên mỗi design (danh sách chọn đã lọc role='content').
               Design ID nào gắn tên bạn Content đó, sale của design đó tính cho bạn đó. */}
-          {canDesigns && <div className="section"><DesignerReport by="content" range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Content Report" : "Team Content Report"} /></div>}
-          {/* v209b · Video: khối DUY NHẤT mà role "content" thấy được — trước đây Dashboard của họ trống. */}
-          {canVideos && <div className="section"><CreatorReport range={range} from={f} to={t} title={isAdmin ? "All Creator Report" : "Team Creator Report"} /></div>}
+          {canDesigns && <div className="section"><DesignerReport by="content" range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Creator Report" : "Team Creator Report"} /></div>}
         </>
       )}
       {!ready && <div className="panel empty">{tr("rep.chooseDates")}</div>}
       {/* Lưới an toàn: tài khoản không có khối nào thì đừng để trang trắng — chỉ luôn chỗ cần vào. */}
-      {ready && !isAdmin && !canOrders && !canDesigns && !canVideos && (
+      {ready && !isAdmin && !canOrders && !canDesigns && (
         <div className="panel empty" style={{ padding: 34, textAlign: "center" }}>
           <div style={{ fontWeight: 700, color: "var(--ink)", marginBottom: 6 }}>No reports are enabled for this account</div>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>Ask an admin to grant access in Admin → Permissions.</div>
