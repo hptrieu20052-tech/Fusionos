@@ -46,6 +46,25 @@ async function getAccessToken(cred: ShopifyCred): Promise<string> {
   return d.access_token;
 }
 
+// Scope THỰC TẾ mà token đang cầm (khác với scope KHAI BÁO trong app config). Shopify:
+// GET /admin/oauth/access_scopes.json — endpoint nằm NGOÀI /admin/api/{ver}/ nên tự fetch riêng.
+// Dùng để chẩn đoán "config có scope nhưng token cũ chưa được cấp" — nguyên nhân #1 khiến
+// fulfillment_orders.json trả rỗng dù app đã tick đủ quyền (chưa reinstall để mint token mới).
+export async function shopifyGrantedScopes(cred: ShopifyCred): Promise<string[]> {
+  const host = shopHost(cred);
+  const token = await getAccessToken(cred);
+  const res = await fetch(`https://${host}/admin/oauth/access_scopes.json`, {
+    headers: { "X-Shopify-Access-Token": token, Accept: "application/json" },
+    signal: AbortSignal.timeout(15000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`Shopify access_scopes HTTP ${res.status}: ${text.slice(0, 160)}`);
+  try {
+    const d = JSON.parse(text) as { access_scopes?: { handle?: string }[] };
+    return (d.access_scopes ?? []).map((s) => String(s.handle ?? "")).filter(Boolean);
+  } catch { return []; }
+}
+
 // Gọi Admin REST API. Trả JSON (hoặc ném lỗi có nội dung để log).
 export async function shopifyApi(cred: ShopifyCred, path: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
   const host = shopHost(cred);

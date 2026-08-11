@@ -954,35 +954,21 @@ function DuplicateModal({ init, close, onConfirm }: {
 
 // Đẩy tracking NGƯỢC lên Shopify cho 1 bản ghi fulfill (đơn Shopify đã có tracking mà Shopify còn "Unfulfilled").
 // Hiện trạng thái: đã đẩy (xanh) / lỗi lần trước (đỏ, có nút thử lại) / chưa đẩy (nút Push). Lỗi hiện RÕ để biết vì sao.
-function ShopifyPush({ orderId, ff, flash, onDone }: { orderId: string; ff: FfOrder; flash: (m: string) => void; onDone: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(ff.shopifyPushError ?? null);
+// Trạng thái đẩy tracking NGƯỢC lên Shopify — CHỈ HIỂN THỊ, không có nút bấm tay. Đẩy tự động qua
+// webhook nhà in + sweep cron. Xanh = đã đẩy; đỏ = lần đẩy gần nhất trượt (cron tự thử lại theo backoff).
+function ShopifyPushStatus({ ff }: { ff: FfOrder }) {
   if (ff.shopifyTrackingPushedAt) {
     return <div style={{ fontSize: 11.5, color: "#1E8E4E", fontWeight: 700, marginTop: 4 }}>✓ Đã đẩy tracking lên Shopify</div>;
   }
-  const push = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setBusy(true); setErr(null);
-    try {
-      const j = await fetch(`/api/orders/${orderId}/push-shopify-tracking`, { method: "POST" }).then((r) => r.json());
-      if (j.ok && j.pushed > 0) { flash("✓ Đã đẩy tracking lên Shopify"); onDone(); }
-      else { const why = j.errors?.[0] ?? j.reason ?? "không đẩy được"; setErr(why); flash("✗ Đẩy Shopify trượt"); onDone(); }
-    } catch { setErr("Network error"); }
-    setBusy(false);
-  };
-  return (
-    <div style={{ marginTop: 5, display: "flex", flexDirection: "column", gap: 4 }}>
-      <button onClick={push} disabled={busy}
-        style={{ ...btnGhost, alignSelf: "flex-start", fontSize: 11, padding: "5px 11px", fontWeight: 700, color: "var(--blue)", opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}>
-        {busy ? "Đang đẩy…" : err ? "↻ Thử đẩy lại Shopify" : "⤴ Push tracking lên Shopify"}
-      </button>
-      {err && <div style={{ fontSize: 11, color: "#C0392B", fontWeight: 600, lineHeight: 1.5 }}>
-        ✗ {String(err).slice(0, 200)}
-        {/merchant_managed_fulfillment_orders|thiếu quyền|scope|access denied|not approved|401|403/i.test(String(err)) &&
-          <div style={{ color: "var(--muted)", fontWeight: 500, marginTop: 2 }}>Store Shopify thiếu quyền fulfillment — cấp 2 scope <b>read_merchant_managed_fulfillment_orders</b> + <b>write_merchant_managed_fulfillment_orders</b> cho app rồi kết nối lại store.</div>}
-      </div>}
-    </div>
-  );
+  if (ff.shopifyPushError) {
+    return (
+      <div style={{ fontSize: 11, color: "#C0392B", fontWeight: 600, lineHeight: 1.5, marginTop: 4 }}>
+        ✗ Chưa đẩy được lên Shopify: {String(ff.shopifyPushError).slice(0, 180)}
+        <div style={{ color: "var(--muted)", fontWeight: 500, marginTop: 2 }}>Hệ thống tự thử lại theo lịch (10′ · 30′ · 2h · 6h · 24h).</div>
+      </div>
+    );
+  }
+  return <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>⏳ Đang chờ đẩy tracking lên Shopify…</div>;
 }
 
 // Gửi đơn cho Designer qua Telegram — chọn 1 designer CÙNG TEAM với seller của đơn.
@@ -1391,8 +1377,8 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                       ) : (
                         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>{t("o.noTracking")}</div>
                       )}
-                      {o.platform === "shopify" && f.trackingNumber && canPushFf && (
-                        <ShopifyPush orderId={o.id} ff={f} flash={flash} onDone={loadDetail} />
+                      {o.platform === "shopify" && f.trackingNumber && (
+                        <ShopifyPushStatus ff={f} />
                       )}
                     </div>
                   ))}
