@@ -460,13 +460,13 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <rect x="8" y="3" width="8" height="4" rx="1" /><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><path d="M9 12h6M9 16h4" />
           </svg>
-          Seller lưu ý trước khi Push sang Shopify
+          Seller lưu ý
         </div>
         <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 5, fontSize: 12.8, color: "#5C4A2A", lineHeight: 1.5 }}>
-          <li><b>Kiểm tra bản quyền (Trademark) trước khi đẩy.</b></li>
-          <li><b>Thêm Custom cho listing cần cá nhân hoá trước khi Push.</b></li>
+          <li><b>Kiểm tra bản quyền (Trademark)</b></li>
+          <li><b>Thêm Custom cho listing cần cá nhân hoá</b></li>
           <li><b>Một sản phẩm list ở 2 shop Etsy → tự lọc trùng, giữ 1 listing, xóa bớt cái còn lại.</b></li>
-          <li><b>Listing đã Push sẽ bị khóa <span style={{ whiteSpace: "nowrap" }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: "-1px" }}><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg> không xóa được</span> (chỉ admin xóa được).</b></li>
+          <li><b>Listing đã Push sẽ bị khóa không xóa được (chỉ admin xóa được).</b></li>
         </ul>
       </div>
 
