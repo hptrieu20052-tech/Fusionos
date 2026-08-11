@@ -44,7 +44,7 @@ const mb = (n: number | null) => n == null ? "—" : n >= 1048576 ? `${(n / 1048
 const secs = (s: string | null) => { const n = Number(s); return isFinite(n) && n > 0 ? `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, "0")}` : "—"; };
 const LIMIT = 24;
 
-export default function VideosClient({ isAdmin, canManage }: { isAdmin: boolean; canManage: boolean }) {
+export default function VideosClient({ isAdmin, canManage, me }: { isAdmin: boolean; canManage: boolean; me: { id: string; name: string } }) {
   const confirm = useConfirm();
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
@@ -324,7 +324,7 @@ export default function VideosClient({ isAdmin, canManage }: { isAdmin: boolean;
 
       {showUpload && (
         <UploadModal
-          sellers={sellers} busy={busy}
+          sellers={sellers} creators={creators} isAdmin={isAdmin} me={me} busy={busy}
           close={() => setShowUpload(false)}
           go={async (files, who) => { setShowUpload(false); await onPick(files, who); }}
         />
@@ -614,11 +614,13 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
 
 /** Bulk upload — BẮT BUỘC chọn seller trước, giống Design Studio.
  *  Creator = chính người đang upload, không hỏi lại. */
-function UploadModal({ sellers, busy, close, go }: {
-  sellers: Opt[]; busy: boolean;
+function UploadModal({ sellers, creators, isAdmin, me, busy, close, go }: {
+  sellers: Opt[]; creators: Opt[]; isAdmin: boolean; me: { id: string; name: string }; busy: boolean;
   close: () => void; go: (files: File[], who: { sellerId: string; creatorId: string }) => Promise<void>;
 }) {
-  const [sellerId, setSellerId] = useState("");
+  // Admin: chọn cả seller + creator (danh sách đầy đủ). Seller: seller là CHÍNH MÌNH, chỉ chọn Creator trong team.
+  const [sellerId, setSellerId] = useState(isAdmin ? "" : me.id);
+  const [creatorId, setCreatorId] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const inRef = useRef<HTMLInputElement>(null);
   const ready = !!sellerId && files.length > 0;
@@ -631,13 +633,25 @@ function UploadModal({ sellers, busy, close, go }: {
           <button onClick={close} className="btn" style={{ padding: "6px 11px" }}>✕</button>
         </div>
 
-        <div className="filters" style={{ gridTemplateColumns: "1fr" }}>
+        <div className="filters" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <div className="field">
             <label>Seller <span style={{ color: "#B42318" }}>*</span></label>
-            <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}
-              style={{ borderColor: sellerId ? undefined : "#F0B4AE" }}>
-              <option value="">— select a seller —</option>
-              {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {isAdmin ? (
+              <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}
+                style={{ borderColor: sellerId ? undefined : "#F0B4AE" }}>
+                <option value="">— select a seller —</option>
+                {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            ) : (
+              // Seller: cố định chính mình, không cho đổi.
+              <input value={me.name} disabled style={{ background: "#F1F3F7", color: "var(--muted)" }} />
+            )}
+          </div>
+          <div className="field">
+            <label>Creator</label>
+            <select value={creatorId} onChange={(e) => setCreatorId(e.target.value)}>
+              <option value="">{isAdmin ? "— none —" : "Me"}</option>
+              {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
         </div>
@@ -668,7 +682,7 @@ function UploadModal({ sellers, busy, close, go }: {
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
           <button onClick={close} className="btn">Cancel</button>
           <button disabled={!ready || busy} className="btn btn-primary" style={{ opacity: ready && !busy ? 1 : .5 }}
-            onClick={() => go(files, { sellerId, creatorId: "" })}>
+            onClick={() => go(files, { sellerId, creatorId })}>
             Upload {files.length || ""}
           </button>
         </div>

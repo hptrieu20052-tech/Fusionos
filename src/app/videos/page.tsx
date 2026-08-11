@@ -14,5 +14,5 @@ export default async function VideosPage() {
   const lvl = await levelOf(session, "videos");
   if (lvl < 1) return <div className="panel empty">You don&apos;t have permission to view Video Library.</div>;
 
-  return <VideosClient isAdmin={session.role === "admin"} canManage={lvl >= 2} />;
+  return <VideosClient isAdmin={session.role === "admin"} canManage={lvl >= 2} me={{ id: session.sub, name: session.name }} />;
 }
