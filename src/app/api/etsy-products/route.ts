@@ -267,7 +267,10 @@ export async function POST(req: NextRequest) {
   if (!src) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const { id: _omit, importedAt: _i, updatedAt: _u, ...rest } = src as Record<string, unknown>;
   void _omit; void _i; void _u;
-  await db.insert(schema.etsyProducts).values({ ...(rest as typeof schema.etsyProducts.$inferInsert), title: `${src.title} (Copy)` });
+  // Clone = listing MỚI tinh: giữ variations/custom/giá/ảnh/tags/mô tả, nhưng XOÁ liên kết Shopify.
+  // Không xoá → bản copy thừa hưởng shopifyProductId của bản gốc ⇒ bị đánh dấu "đã push" + khóa xóa
+  // dù nó chưa hề lên Shopify. Bản copy phải push mới từ đầu như Etsy làm.
+  await db.insert(schema.etsyProducts).values({ ...(rest as typeof schema.etsyProducts.$inferInsert), title: `${src.title} (Copy)`, shopifyProductId: null });
   return NextResponse.json({ ok: true });
 }
 
