@@ -454,20 +454,29 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         </div>
       </div>
 
-      {/* SELLER CHECKLIST — nhắc việc trước khi Push sang Shopify */}
-      <div style={{ ...card, padding: "14px 18px", marginBottom: 16, background: "#FFFBF2", borderColor: "#F0D897" }}>
-        <div style={{ fontSize: 13.5, fontWeight: 800, color: "#8A5A00", marginBottom: 8, display: "flex", alignItems: "center", gap: 7 }}>
+      {/* SELLER CHECKLIST — cảnh báo luôn hiện, dồn 1 khối ngang gọn cho đỡ chiếm màn hình */}
+      <div style={{ ...card, padding: "9px 16px", marginBottom: 16, background: "#FFFBF2", borderColor: "#F0D897", display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 800, color: "#8A5A00", whiteSpace: "nowrap", flexShrink: 0, paddingTop: 1 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <rect x="8" y="3" width="8" height="4" rx="1" /><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><path d="M9 12h6M9 16h4" />
           </svg>
           Seller lưu ý
         </div>
-        <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 5, fontSize: 12.8, color: "#5C4A2A", lineHeight: 1.5 }}>
-          <li><b>Kiểm tra bản quyền (Trademark)</b></li>
-          <li><b>Thêm Custom cho listing cần cá nhân hoá</b></li>
-          <li><b>Một sản phẩm list ở 2 shop Etsy → tự lọc trùng, giữ 1 listing, xóa bớt cái còn lại.</b></li>
-          <li><b>Listing đã Push sẽ bị khóa không xóa được (chỉ admin xóa được).</b></li>
-        </ul>
+        {(() => {
+          const sep = <span style={{ color: "#E0C176", fontWeight: 400, margin: "0 2px" }}>•</span>;
+          const items = [
+            "Kiểm tra bản quyền (Trademark)",
+            "Thêm Custom cho listing cần cá nhân hoá",
+            "1 sản phẩm list ở 2 shop Etsy → lọc trùng, giữ 1, xóa bớt",
+            "Listing đã Push bị khóa không xóa được (chỉ admin)",
+            "Mockup / ảnh không chèn logo, watermark, chữ ký",
+          ];
+          return (
+            <div style={{ flex: 1, minWidth: 240, fontSize: 12.3, fontWeight: 700, color: "#5C4A2A", lineHeight: 1.65 }}>
+              {items.map((t, i) => <span key={i}>{i > 0 && sep}{t}</span>)}
+            </div>
+          );
+        })()}
       </div>
 
       {/* FILTER BAR */}
