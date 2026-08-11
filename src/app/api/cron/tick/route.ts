@@ -6,6 +6,7 @@ import { insertEtsyOrders } from "@/lib/ingest-etsy";
 import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/lib/tiktok-shop";
 import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
 import { pushTiktokTrackingForOrder } from "@/lib/tiktok-tracking";
+import { pushShopifyTrackingForOrder } from "@/lib/shopify";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
@@ -139,6 +140,44 @@ async function tick(req: NextRequest) {
     } catch (e) { ttTrackSweep = { tried: 0, pushed: 0, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
+  // ---- 1b. Shopify: đẩy tracking NGƯỢC lên Shopify cho đơn đã có tracking mà chưa đẩy ----
+  // Cùng khuôn với sweep TikTok: lọc theo shopify_push_next_at (backoff) + ưu tiên ít lần thử nhất,
+  // để 1 đơn hỏng (vd thiếu scope write_merchant_managed_fulfillment_orders) không ăn hết ngân sách.
+  let shTrackSweep: { tried: number; pushed: number; failed?: number; reasons?: string[]; error?: string } = { tried: 0, pushed: 0 };
+  if (Date.now() < deadline) {
+    try {
+      const rows = (await db.execute(sql`
+        SELECT o.id FROM orders o
+        JOIN fulfillment_orders fo ON fo.order_id = o.id
+        WHERE o.platform='shopify'
+          AND fo.tracking_number IS NOT NULL AND fo.shopify_tracking_pushed_at IS NULL
+          AND (fo.shopify_push_next_at IS NULL OR fo.shopify_push_next_at < now())
+          AND o.status NOT IN ('cancel','trash')
+          AND o.ordered_at > now() - interval '60 days'
+        GROUP BY o.id, o.ordered_at
+        ORDER BY min(fo.shopify_push_attempts) ASC, o.ordered_at DESC
+        LIMIT 200
+      `)).rows as { id: string }[];
+      const reasons: string[] = [];
+      let failed = 0;
+      for (const r of rows) {
+        if (Date.now() > deadline) break;
+        shTrackSweep.tried++;
+        try {
+          const res = await pushShopifyTrackingForOrder(r.id);
+          shTrackSweep.pushed += res.pushed;
+          if (!res.pushed) {
+            failed++;
+            const why = res.errors?.[0] ?? res.reason ?? "unknown";
+            if (why !== "no new tracking to push" && reasons.length < 8) reasons.push(`${r.id.slice(0, 8)}: ${why.slice(0, 140)}`);
+          }
+        } catch (e) { failed++; if (reasons.length < 8) reasons.push(`${r.id.slice(0, 8)}: ${String((e as Error)?.message ?? e).slice(0, 140)}`); }
+      }
+      shTrackSweep.failed = failed;
+      if (reasons.length) shTrackSweep.reasons = reasons;
+    } catch (e) { shTrackSweep = { tried: 0, pushed: 0, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+  }
+
   // ---- 2/2b/3. Ba poll backup: Printway · Printify · ONOS+WEM ----
   // BUG CŨ: chạy CỐ ĐỊNH theo thứ tự printway → printify → onosWem. Hết 50s ở giữa chừng thì
   // onosWem BỊ BỎ mà summary vẫn để `null` — nhìn log không phân biệt được "không có gì để làm"
@@ -160,7 +199,7 @@ async function tick(req: NextRequest) {
   }
   const { printway, printify, onosWem } = results;
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, ttTrackSweep, printway, printify, onosWem };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }

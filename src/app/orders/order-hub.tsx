@@ -94,7 +94,7 @@ type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unit
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
 type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; nonPod?: boolean; gsheet?: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
 type Opt = { id: string; name: string; marketplace?: string };
-type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; feeBreakdown?: { importTax: number; items: { kind: string; amount: number }[] } | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number }[] | null };
+type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; feeBreakdown?: { importTax: number; items: { kind: string; amount: number }[] } | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number }[] | null; shopifyTrackingPushedAt?: string | null; shopifyPushError?: string | null; shopifyPushAttempts?: number | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -952,6 +952,39 @@ function DuplicateModal({ init, close, onConfirm }: {
   );
 }
 
+// Đẩy tracking NGƯỢC lên Shopify cho 1 bản ghi fulfill (đơn Shopify đã có tracking mà Shopify còn "Unfulfilled").
+// Hiện trạng thái: đã đẩy (xanh) / lỗi lần trước (đỏ, có nút thử lại) / chưa đẩy (nút Push). Lỗi hiện RÕ để biết vì sao.
+function ShopifyPush({ orderId, ff, flash, onDone }: { orderId: string; ff: FfOrder; flash: (m: string) => void; onDone: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(ff.shopifyPushError ?? null);
+  if (ff.shopifyTrackingPushedAt) {
+    return <div style={{ fontSize: 11.5, color: "#1E8E4E", fontWeight: 700, marginTop: 4 }}>✓ Đã đẩy tracking lên Shopify</div>;
+  }
+  const push = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setBusy(true); setErr(null);
+    try {
+      const j = await fetch(`/api/orders/${orderId}/push-shopify-tracking`, { method: "POST" }).then((r) => r.json());
+      if (j.ok && j.pushed > 0) { flash("✓ Đã đẩy tracking lên Shopify"); onDone(); }
+      else { const why = j.errors?.[0] ?? j.reason ?? "không đẩy được"; setErr(why); flash("✗ Đẩy Shopify trượt"); onDone(); }
+    } catch { setErr("Network error"); }
+    setBusy(false);
+  };
+  return (
+    <div style={{ marginTop: 5, display: "flex", flexDirection: "column", gap: 4 }}>
+      <button onClick={push} disabled={busy}
+        style={{ ...btnGhost, alignSelf: "flex-start", fontSize: 11, padding: "5px 11px", fontWeight: 700, color: "var(--blue)", opacity: busy ? 0.6 : 1, cursor: busy ? "wait" : "pointer" }}>
+        {busy ? "Đang đẩy…" : err ? "↻ Thử đẩy lại Shopify" : "⤴ Push tracking lên Shopify"}
+      </button>
+      {err && <div style={{ fontSize: 11, color: "#C0392B", fontWeight: 600, lineHeight: 1.5 }}>
+        ✗ {String(err).slice(0, 200)}
+        {/write_merchant_managed_fulfillment_orders|fulfillment|scope|access denied|401|403/i.test(String(err)) &&
+          <div style={{ color: "var(--muted)", fontWeight: 500, marginTop: 2 }}>Store Shopify thiếu quyền tạo fulfillment — cần cấp scope <b>write_merchant_managed_fulfillment_orders</b> cho app rồi kết nối lại.</div>}
+      </div>}
+    </div>
+  );
+}
+
 // Gửi đơn cho Designer qua Telegram — chọn 1 designer CÙNG TEAM với seller của đơn.
 function SendDesigner({ order, designers, flash, reload }: { order: Order; designers: { id: string; name: string; team: string | null }[]; flash: (m: string) => void; reload: () => void }) {
   const [open, setOpen] = useState(false);
@@ -1357,6 +1390,9 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                         </div>
                       ) : (
                         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>{t("o.noTracking")}</div>
+                      )}
+                      {o.platform === "shopify" && f.trackingNumber && canPushFf && (
+                        <ShopifyPush orderId={o.id} ff={f} flash={flash} onDone={loadDetail} />
                       )}
                     </div>
                   ))}

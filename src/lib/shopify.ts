@@ -231,12 +231,16 @@ export async function pushShopifyTrackingForOrder(orderId: string): Promise<{ ok
   const ffos = await db.select({
     id: schema.fulfillmentOrders.id, tracking: schema.fulfillmentOrders.trackingNumber,
     carrier: schema.fulfillmentOrders.trackingCarrier, url: schema.fulfillmentOrders.trackingUrl,
+    attempts: schema.fulfillmentOrders.shopifyPushAttempts,
   }).from(schema.fulfillmentOrders).where(and(
     eq(schema.fulfillmentOrders.orderId, order.id),
     isNotNull(schema.fulfillmentOrders.trackingNumber),
     isNull(schema.fulfillmentOrders.shopifyTrackingPushedAt),
   ));
   if (!ffos.length) return { ok: true, pushed: 0, reason: "no new tracking to push", errors: [] };
+
+  // Backoff tăng dần: 10' · 30' · 2h · 6h · 24h (chặn tối đa) — giống retry TikTok.
+  const backoffMin = (n: number) => [10, 30, 120, 360, 1440][Math.min(n, 4)];
 
   let pushed = 0; const errors: string[] = []; const done = new Set<string>();
   for (const f of ffos) {
@@ -247,8 +251,20 @@ export async function pushShopifyTrackingForOrder(orderId: string): Promise<{ ok
         await createShopifyFulfillment(cred, platformExtId(order.externalId), { number: code, carrier: f.carrier || undefined, url: f.url || undefined });
         done.add(code); pushed++;
       }
-      await db.update(schema.fulfillmentOrders).set({ shopifyTrackingPushedAt: new Date() }).where(eq(schema.fulfillmentOrders.id, f.id));
-    } catch (e) { errors.push(`${code}: ${String((e as Error)?.message ?? e).slice(0, 140)}`); }
+      // Thành công → xoá cờ lỗi/đếm/hẹn giờ để không bị cron quét lại.
+      await db.update(schema.fulfillmentOrders).set({
+        shopifyTrackingPushedAt: new Date(),
+        shopifyPushError: null, shopifyPushNextAt: null,
+      }).where(eq(schema.fulfillmentOrders.id, f.id));
+    } catch (e) {
+      const msg = String((e as Error)?.message ?? e).slice(0, 300);
+      errors.push(`${code}: ${msg.slice(0, 140)}`);
+      const n = (f.attempts ?? 0) + 1;
+      await db.update(schema.fulfillmentOrders).set({
+        shopifyPushError: msg, shopifyPushAttempts: n,
+        shopifyPushNextAt: new Date(Date.now() + backoffMin(n) * 60_000),
+      }).where(eq(schema.fulfillmentOrders.id, f.id));
+    }
   }
   return { ok: errors.length === 0, pushed, errors };
 }

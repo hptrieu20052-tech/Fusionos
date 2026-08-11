@@ -444,6 +444,11 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   tiktokPushNextAt: timestamp("tiktok_push_next_at", { withTimezone: true }),
   // Thời điểm đã tạo fulfillment + tracking NGƯỢC lên Shopify qua Admin API. null = chưa đẩy.
   shopifyTrackingPushedAt: timestamp("shopify_tracking_pushed_at", { withTimezone: true }),
+  // Vì sao lần đẩy Shopify gần nhất trượt + số lần đã thử + mốc được thử lại (backoff).
+  // Giống bộ 3 cột TikTok: có lỗi lưu lại → hiện nút Push tay + cron retry, không im lặng nữa.
+  shopifyPushError: text("shopify_push_error"),
+  shopifyPushAttempts: integer("shopify_push_attempts").notNull().default(0),
+  shopifyPushNextAt: timestamp("shopify_push_next_at", { withTimezone: true }),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_ff_order").on(t.orderId)]);
