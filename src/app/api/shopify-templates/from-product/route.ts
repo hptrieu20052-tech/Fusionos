@@ -13,6 +13,7 @@ export const maxDuration = 60;
 const Q_CORE = `query One($id: ID!) {
   product(id: $id) {
     id title productType vendor templateSuffix
+    featuredImage { url }
     category { id fullName }
     options { name optionValues { name } }
     variants(first: 100) { nodes { price compareAtPrice sku selectedOptions { name value } } }
@@ -26,6 +27,7 @@ const Q_PUBS = `query P($id: ID!) { product(id: $id) { resourcePublicationsV2(fi
 
 type P = {
   title?: string; productType?: string; vendor?: string; templateSuffix?: string;
+  featuredImage?: { url?: string } | null;
   category?: { id?: string; fullName?: string } | null;
   options?: { name?: string; optionValues?: { name?: string }[] }[];
   variants?: { nodes?: { price?: string; compareAtPrice?: string | null; sku?: string; selectedOptions?: { name: string; value: string }[] }[] };
@@ -89,6 +91,13 @@ export async function GET(req: NextRequest) {
       prefill: {
         storeId: row.p.storeId,
         sourceTitle: p.title ?? row.p.title,
+        // Ảnh mẫu: ưu tiên featuredImage của listing; nếu null thì lấy ảnh position nhỏ nhất đã sync trong DB.
+        thumbUrl: (() => {
+          const fi = String(p.featuredImage?.url ?? "").trim();
+          if (/^https?:\/\//i.test(fi)) return fi;
+          const arr = (Array.isArray(row.p.images) ? row.p.images : []) as { src?: string; position?: number }[];
+          return [...arr].sort((a, b) => (a.position ?? 99) - (b.position ?? 99)).map((i) => String(i?.src ?? "")).find((s) => /^https?:\/\//i.test(s)) ?? "";
+        })(),
         productType: p.productType ?? "",
         vendor: p.vendor ?? "",
         themeTemplate: p.templateSuffix ?? "",

@@ -324,6 +324,9 @@ export const shopifyTemplates = pgTable("shopify_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   storeId: uuid("store_id").notNull(),          // template gắn với 1 store Shopify (collection/kênh theo store)
   name: text("name").notNull(),
+  // Ảnh mẫu để nhận diện template trong danh sách (tránh click nhầm). URL http(s) — ảnh Shopify CDN / R2 /
+  // link ảnh nhà in. Tự điền khi tạo "From Shopify product"; template Blank thì dán URL tay. Cần MIGRATION_v214.
+  thumbUrl: text("thumb_url"),
   // options: [{ name, values: string[] }]  (vd Size:[8x8,10x10], Paper:[Glossy,Matte]) — tối đa 3
   options: jsonb("options").notNull().default([]),
   // variants: [{ options: {OptionName:value,...}, price, compareAtPrice?, sku? }] — giá theo TỪNG tổ hợp

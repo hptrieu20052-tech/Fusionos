@@ -17,7 +17,7 @@ type TplOption = { name: string; values: string[] };
 type PQ = { type: "text" | "dropdown" | "upload"; label: string; instructions: string; required: boolean; maxChars: number; options: string[]; maxFiles: number };
 type TplVariant = { options: Record<string, string>; price: string; compareAtPrice?: string | null; sku?: string };
 type TplBody = {
-  id?: string; storeId?: string; name?: string;
+  id?: string; storeId?: string; name?: string; thumbUrl?: string | null;
   options?: TplOption[]; variants?: TplVariant[];
   collectionIds?: string[]; publicationIds?: string[];
   status?: string; productType?: string; vendor?: string; themeTemplate?: string;
@@ -130,6 +130,8 @@ const clampMeta = (v: unknown) =>
 function payloadOf(b: TplBody) {
   return {
     name: String(b.name ?? "").trim().slice(0, 120) || "Untitled template",
+    // Ảnh mẫu — chỉ nhận URL http(s), cắt 1000 ký tự; rác/rỗng → null (list hiện ô placeholder).
+    thumbUrl: (() => { const u = String(b.thumbUrl ?? "").trim().slice(0, 1000); return /^https?:\/\//i.test(u) ? u : null; })(),
     options: clampOptions(b.options),
     variants: clampVariants(b.variants),
     collectionIds: (Array.isArray(b.collectionIds) ? b.collectionIds : []).map(String).filter((s) => /^gid:\/\/shopify\/Collection\//.test(s)).slice(0, 50),

@@ -11,7 +11,7 @@ type PQType = "text" | "dropdown" | "upload";
 type PQ = { type: PQType; label: string; instructions: string; required: boolean; maxChars: number; options: string[]; maxFiles: number };
 type Cat = { id: string; name: string } | null;
 type Draft = {
-  id?: string; storeId: string; name: string;
+  id?: string; storeId: string; name: string; thumbUrl: string;
   options: Opt[]; variants: Vari[];
   collectionIds: string[]; publicationIds: string[];
   status: string; productType: string; vendor: string; themeTemplate: string;
@@ -57,7 +57,7 @@ const SHIP_COUNTRIES: { cc: string; label: string; ph: [string, string] }[] = [
 ];
 // Ô số ngày trong editor: "" → null (bỏ trống = widget tự dùng mặc định của nó).
 const numOrNull = (s: string): number | null => { const n = parseInt(s, 10); return isFinite(n) && n >= 0 ? n : null; };
-const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [], baseDescription: "", productDetails: "", shippingInfo: "", personalization: [], ...DEFAULT_SHIP });
+const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", thumbUrl: "", options: [], variants: [], collectionIds: [], publicationIds: [], status: "DRAFT", productType: "", vendor: "", themeTemplate: "", category: null, categoryMetafields: [], baseDescription: "", productDetails: "", shippingInfo: "", personalization: [], ...DEFAULT_SHIP });
 
 const PQ_LABEL: Record<PQType, string> = { text: "Text box", dropdown: "Dropdown", upload: "Photo upload" };
 const newPQ = (type: PQType): PQ => ({ type, label: "", instructions: "", required: type !== "text" ? true : false, maxChars: 100, options: [], maxFiles: 1 });
@@ -107,7 +107,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
   const openEditor = async (d: Draft) => { setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setPqTexts(d.personalization.map((q) => q.options.join(", "))); setCatQ(""); setCatHits([]); await loadPickers(d.storeId); };
   const newBlank = () => { if (!storeFilter) return flash("✗ Pick a store first", false); openEditor(emptyDraft(storeFilter)); };
   const editTpl = (t: Tpl) => openEditor({
-    ...t, category: t.category ?? null,
+    ...t, thumbUrl: t.thumbUrl ?? "", category: t.category ?? null,
     baseDescription: t.baseDescription ?? "", productDetails: t.productDetails ?? "", shippingInfo: t.shippingInfo ?? "",
     personalization: normPQ(t.personalization),
     // template cũ chưa có số ngày → để trống, KHÔNG tự điền, tránh ghi số bịa lên listing đang chạy
@@ -142,6 +142,7 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
       setPubs((p.publications ?? []).map((c: { id: string; name: string }) => ({ id: c.id, label: c.name })));
       const d: Draft = {
         storeId: p.storeId, name: (p.sourceTitle ? p.sourceTitle + " — template" : "New template").slice(0, 100),
+        thumbUrl: typeof p.thumbUrl === "string" ? p.thumbUrl : "",
         options: p.options ?? [], variants: p.variants ?? [],
         collectionIds: p.collectionIds ?? [], publicationIds: p.publicationIds ?? [],
         status: "DRAFT", productType: p.productType ?? "", vendor: p.vendor ?? "", themeTemplate: p.themeTemplate ?? "",
@@ -283,6 +284,9 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
         : <div style={{ display: "grid", gap: 10 }}>
             {filtered.map((t) => (
               <div key={t.id} style={{ ...card, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14 }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {t.thumbUrl ? <img src={t.thumbUrl} alt="" width={52} height={52} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0, background: "#F5F6F8" }} />
+                  : <div style={{ width: 52, height: 52, borderRadius: 10, border: "1px dashed var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--muted)", flexShrink: 0, background: "#FAFBFC" }}>🖼️</div>}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t.name}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
@@ -318,6 +322,22 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <b style={{ fontSize: 17 }}>{draft.id ? "Edit template" : "New template"}</b>
               <button onClick={() => setDraft(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+
+            {/* Thumbnail — ảnh mẫu để nhận diện template trong danh sách. Dán URL ảnh (Shopify CDN / R2 /
+                link nhà in). Tự điền khi tạo From Shopify product. */}
+            <div style={{ display: "flex", gap: 14, alignItems: "flex-start", marginBottom: 16 }}>
+              <div style={{ flexShrink: 0 }}>
+                <label style={lab}>Thumbnail</label>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {draft.thumbUrl ? <img src={draft.thumbUrl} alt="" width={72} height={72} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", display: "block", background: "#F5F6F8" }} />
+                  : <div style={{ width: 72, height: 72, borderRadius: 10, border: "1px dashed var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, color: "var(--muted)", background: "#FAFBFC" }}>🖼️</div>}
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={lab}>Thumbnail image URL</label>
+                <input value={draft.thumbUrl} onChange={(e) => setD({ thumbUrl: e.target.value })} placeholder="https://…  (dán link ảnh mẫu — Shopify CDN, R2, hoặc link nhà in)" style={{ ...ctl, width: "100%" }} />
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 5 }}>Tạo từ &quot;+ From Shopify product&quot; thì ô này tự điền ảnh listing. Template Blank thì dán URL ảnh vào đây.</div>
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
