@@ -195,8 +195,15 @@ export async function createShopifyFulfillment(
 ): Promise<void> {
   const foRes = await shopifyApi(cred, `orders/${encodeURIComponent(shopifyOrderId)}/fulfillment_orders.json`);
   const fos = (Array.isArray(foRes.fulfillment_orders) ? foRes.fulfillment_orders : []) as Record<string, unknown>[];
+  // MẢNG RỖNG = gần như luôn do THIẾU SCOPE. Shopify KHÔNG 403 khi app thiếu quyền đọc fulfillment
+  // order — nó trả 200 kèm fulfillment_orders:[]. Đơn đang Unfulfilled trên Shopify chắc chắn có ff order
+  // mở, nên rỗng nghĩa là token không có read_merchant_managed_fulfillment_orders. Phân biệt rõ để khỏi
+  // đổ oan "đã fulfill".
+  if (!fos.length) {
+    throw new Error("Shopify: API trả 0 fulfillment order (app thiếu quyền read/write_merchant_managed_fulfillment_orders) — cấp scope cho app rồi kết nối lại store");
+  }
   const open = fos.filter((f) => ["open", "in_progress", "scheduled"].includes(String(f.status)));
-  if (!open.length) throw new Error("Shopify: đơn không còn fulfillment order mở (có thể đã fulfill)");
+  if (!open.length) throw new Error(`Shopify: đơn không còn fulfillment order MỞ (trạng thái: ${fos.map((f) => f.status).join(", ")}) — có thể đã fulfill`);
   await shopifyApi(cred, "fulfillments.json", {
     method: "POST",
     body: JSON.stringify({

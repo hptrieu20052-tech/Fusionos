@@ -978,8 +978,8 @@ function ShopifyPush({ orderId, ff, flash, onDone }: { orderId: string; ff: FfOr
       </button>
       {err && <div style={{ fontSize: 11, color: "#C0392B", fontWeight: 600, lineHeight: 1.5 }}>
         ✗ {String(err).slice(0, 200)}
-        {/write_merchant_managed_fulfillment_orders|fulfillment|scope|access denied|401|403/i.test(String(err)) &&
-          <div style={{ color: "var(--muted)", fontWeight: 500, marginTop: 2 }}>Store Shopify thiếu quyền tạo fulfillment — cần cấp scope <b>write_merchant_managed_fulfillment_orders</b> cho app rồi kết nối lại.</div>}
+        {/merchant_managed_fulfillment_orders|thiếu quyền|scope|access denied|not approved|401|403/i.test(String(err)) &&
+          <div style={{ color: "var(--muted)", fontWeight: 500, marginTop: 2 }}>Store Shopify thiếu quyền fulfillment — cấp 2 scope <b>read_merchant_managed_fulfillment_orders</b> + <b>write_merchant_managed_fulfillment_orders</b> cho app rồi kết nối lại store.</div>}
       </div>}
     </div>
   );
