@@ -81,6 +81,10 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20); // default 20 listings/page
   const [pushFilter, setPushFilter] = useState(""); // "" | "pushed" | "not"
+  // Banner "Seller lưu ý" gập/mở — nhớ lựa chọn (localStorage) để khỏi chiếm màn hình mỗi lần vào.
+  const [notesOpen, setNotesOpen] = useState(true);
+  useEffect(() => { if (typeof window !== "undefined" && localStorage.getItem("etsy_seller_notes_open") === "0") setNotesOpen(false); }, []);
+  const toggleNotes = () => setNotesOpen((v) => { const nv = !v; try { localStorage.setItem("etsy_seller_notes_open", nv ? "1" : "0"); } catch { /* ignore */ } return nv; });
   const confirm = useConfirm();
   const askPrompt = usePrompt();
   const showSellerFilter = sellers.length > 1; // only when managing multiple sellers (admin)
@@ -454,29 +458,26 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         </div>
       </div>
 
-      {/* SELLER CHECKLIST — cảnh báo luôn hiện, dồn 1 khối ngang gọn cho đỡ chiếm màn hình */}
-      <div style={{ ...card, padding: "9px 16px", marginBottom: 16, background: "#FFFBF2", borderColor: "#F0D897", display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 800, color: "#8A5A00", whiteSpace: "nowrap", flexShrink: 0, paddingTop: 1 }}>
+      {/* SELLER CHECKLIST — cảnh báo, gập/mở được. Gập vẫn hiện tiêu đề "Seller lưu ý". */}
+      <div style={{ ...card, padding: notesOpen ? "12px 18px" : "9px 18px", marginBottom: 16, background: "#FFFBF2", borderColor: "#F0D897" }}>
+        <button onClick={toggleNotes} style={{ all: "unset", cursor: "pointer", width: "100%", boxSizing: "border-box", display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 800, color: "#8A5A00" }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
             <rect x="8" y="3" width="8" height="4" rx="1" /><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><path d="M9 12h6M9 16h4" />
           </svg>
           Seller lưu ý
-        </div>
-        {(() => {
-          const sep = <span style={{ color: "#E0C176", fontWeight: 400, margin: "0 2px" }}>•</span>;
-          const items = [
-            "Kiểm tra bản quyền (Trademark)",
-            "Thêm Custom cho listing cần cá nhân hoá",
-            "1 sản phẩm list ở 2 shop Etsy → lọc trùng, giữ 1, xóa bớt",
-            "Listing đã Push bị khóa không xóa được (chỉ admin)",
-            "Mockup / ảnh không chèn logo, watermark, chữ ký",
-          ];
-          return (
-            <div style={{ flex: 1, minWidth: 240, fontSize: 12.3, fontWeight: 700, color: "#5C4A2A", lineHeight: 1.65 }}>
-              {items.map((t, i) => <span key={i}>{i > 0 && sep}{t}</span>)}
-            </div>
-          );
-        })()}
+          {!notesOpen && <span style={{ fontWeight: 500, fontSize: 11.5, color: "#B08B3E" }}>· bấm để xem</span>}
+          <span style={{ flex: 1 }} />
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: notesOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}><path d="M6 9l6 6 6-6" /></svg>
+        </button>
+        {notesOpen && (
+          <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "grid", gap: 5, fontSize: 12.8, color: "#5C4A2A", lineHeight: 1.5 }}>
+            <li><b>Kiểm tra bản quyền (Trademark)</b></li>
+            <li><b>Thêm Custom cho listing cần cá nhân hoá</b></li>
+            <li><b>Một sản phẩm list ở 2 shop Etsy → tự lọc trùng, giữ 1 listing, xóa bớt cái còn lại.</b></li>
+            <li><b>Listing đã Push sẽ bị khóa không xóa được (chỉ admin xóa được).</b></li>
+            <li><b>Mockup / ảnh sản phẩm không chèn logo, watermark hay chữ ký.</b></li>
+          </ul>
+        )}
       </div>
 
       {/* FILTER BAR */}
