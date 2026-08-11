@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
   const rows = await db.select({
     gid: schema.shopifyProducts.shopifyProductId,
     variants: schema.shopifyProducts.variants,
+    images: schema.shopifyProducts.images,
     feedTitle: schema.shopifyProducts.feedTitle,
     feedDescription: schema.shopifyProducts.feedDescription,
     productType: schema.shopifyProducts.productType,
@@ -58,8 +59,17 @@ export async function GET(req: NextRequest) {
   // áp theo label này; thêm product type mới là tự có label mới, không sửa gì.
   const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 
+  // v211 · image_link — BACKFILL ẢNH. Kênh Shopify hay sync offer sang GMC lúc ảnh chưa xử lý xong
+  // ⇒ offer thiếu image_link ⇒ GMC "Missing product image". Feed phụ nhét thẳng URL CDN Shopify đã
+  // lưu vào image_link, khỏi chờ kênh Shopify sync lại. Ảnh chính = ảnh position nhỏ nhất, phải là https.
+  const mainImage = (imgs: unknown): string => {
+    const arr = (Array.isArray(imgs) ? imgs : []) as { src?: string; position?: number }[];
+    return [...arr].sort((a, b) => (a.position ?? 99) - (b.position ?? 99))
+      .map((i) => cell(i.src)).find((s) => /^https:\/\//i.test(s)) ?? "";
+  };
+
   let skipped = 0;
-  const lines: string[] = ["id\ttitle\tdescription\tshipping_label"];
+  const lines: string[] = ["id\ttitle\tdescription\tshipping_label\timage_link"];
   for (const r of rows) {
     const t = cell(r.feedTitle);
     const d = cell(r.feedDescription);
@@ -70,7 +80,8 @@ export async function GET(req: NextRequest) {
     const vids = ((Array.isArray(r.variants) ? r.variants : []) as { id?: string }[]).map((v) => num(v?.id)).filter(Boolean);
     if (!vids.length) { skipped++; continue; }
     const label = slug(cell(r.productType));
-    for (const vid of vids) lines.push(`shopify_${prefix}_${pid}_${vid}\t${t}\t${d}\t${label}`);
+    const img = mainImage(r.images); // rỗng ⇒ ô image_link trống, GMC bỏ qua (không xoá gì)
+    for (const vid of vids) lines.push(`shopify_${prefix}_${pid}_${vid}\t${t}\t${d}\t${label}\t${img}`);
   }
 
   return new NextResponse(lines.join("\n") + "\n", {
