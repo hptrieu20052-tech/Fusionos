@@ -47,9 +47,19 @@ export async function POST(req: NextRequest) {
 
   // GỠ video.
   if (!codeRaw || !code) {
+    // Video đang gắn trước khi xoá — để gỡ luôn "listing chính" của video nếu chính là listing này.
+    const [before] = await db.select({ vid: schema.shopifyProducts.videoId })
+      .from(schema.shopifyProducts).where(eq(schema.shopifyProducts.id, id)).limit(1);
     await db.update(schema.shopifyProducts)
       .set({ videoId: null, videoMediaId: null, videoPushedAt: null, updatedAt: new Date() })
       .where(eq(schema.shopifyProducts.id, id));
+    // Nếu listing này ĐANG là listing chính của video (productId trỏ về đây) → gỡ luôn productId/storeId
+    // để LISTING + Generate + Performance trong Video Library nhất quán (không còn trỏ về listing đã gỡ).
+    if (before?.vid) {
+      await db.update(schema.productVideos)
+        .set({ productId: null, storeId: null, updatedAt: new Date() })
+        .where(and(eq(schema.productVideos.id, before.vid), eq(schema.productVideos.productId, id)));
+    }
     return NextResponse.json({ ok: true, cleared: true });
   }
 

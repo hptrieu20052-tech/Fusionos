@@ -74,6 +74,22 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
   const [showUpload, setShowUpload] = useState(false);
   // Performance theo videoCode (chỉ admin xem — tránh lộ doanh thu cho creator/seller). Key = String(videoCode).
   const [perf, setPerf] = useState<Record<string, Perf>>({});
+  // Model AI cho nút Generate caption — chọn TRƯỚC khi generate. Dùng chung danh sách với các trang AI khác.
+  const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
+  const [aiModel, setAiModel] = useState("");
+  const [visionIds, setVisionIds] = useState<Set<string>>(new Set()); // model đọc được ảnh → mới gửi ảnh kèm caption
+  useEffect(() => {
+    try { const s = window.localStorage.getItem("videosAiModel"); if (s) setAiModel(s); } catch { /* ignore */ }
+    if (isAdmin) {
+      fetch("/api/books/models?type=text").then((r) => r.json())
+        .then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
+      fetch("/api/books/models?type=vision").then((r) => r.json())
+        .then((j) => { if (Array.isArray(j?.models)) setVisionIds(new Set((j.models as { id: string }[]).map((m) => m.id))); }).catch(() => {});
+    }
+  }, [isAdmin]);
+  // Model mặc định (aiModel trống) coi như đọc được ảnh (bản ship là Claude 3.5 Sonnet — có vision).
+  const aiModelIsVision = !aiModel || visionIds.has(aiModel);
+  const chooseModel = (m: string) => { setAiModel(m); try { window.localStorage.setItem("videosAiModel", m); } catch { /* ignore */ } };
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 6000); };
 
@@ -359,6 +375,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
           close={() => setOpen(null)} reload={() => load(page)} flash={flash} patch={patch}
           sellers={sellers} creators={creators} confirm={confirm} onReplace={doReplace}
           perf={perf[String(openRow.videoCode)]}
+          aiModels={aiModels} aiModel={aiModel} onChooseModel={chooseModel} aiModelIsVision={aiModelIsVision}
         />
       )}
     </div>
@@ -385,13 +402,14 @@ function Pager({ page, total, show, setPage, label }: { page: number; total: num
 }
 
 /** Chi tiết. Gán listing theo Product type là đường chính — 1 thao tác cho cả lô. */
-function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf }: {
+function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf, aiModels, aiModel, onChooseModel, aiModelIsVision }: {
   row: Row; canManage: boolean; isAdmin: boolean; busy: boolean; setBusy: (b: boolean) => void;
   close: () => void; reload: () => Promise<void> | void; flash: (m: string, ok?: boolean) => void;
   patch: (b: Record<string, unknown>, ok?: string) => Promise<void>;
   sellers: Opt[]; creators: Opt[]; confirm: ReturnType<typeof useConfirm>;
   onReplace: (row: Row, file: File) => Promise<void>;
   perf?: Perf;
+  aiModels: { id: string; name: string }[]; aiModel: string; onChooseModel: (m: string) => void; aiModelIsVision: boolean;
 }) {
   const [types, setTypes] = useState<TypeOpt[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -462,7 +480,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
   const doCaptions = async () => {
     setBusy(true);
     try {
-      const j = await fetch("/api/videos/captions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: row.id }) }).then((r) => r.json());
+      const j = await fetch("/api/videos/captions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: row.id, model: aiModel || undefined, withImages: aiModelIsVision }) }).then((r) => r.json());
       if (j.ok) { flash("✓ Captions written"); await reload(); } else flash("✗ " + (j.error ?? "failed"), false);
     } catch { flash("✗ Network error", false); }
     setBusy(false);
@@ -596,10 +614,19 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
 
                 {/* CONTENT — caption AI theo từng kênh (sinh 1 lượt cho cả 5 kênh) */}
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>CONTENT</div>
-                    <button disabled={busy || !row.productId} className="btn" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 11.5 }}
-                      onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}>✨ {row.captionsAt ? "Regenerate" : "Generate"}</button>
+                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                      {/* Chọn model AI TRƯỚC khi Generate — trống = model mặc định của server. */}
+                      <select value={aiModel} onChange={(e) => onChooseModel(e.target.value)} disabled={busy}
+                        title="AI model for caption generation. Blank = server default. Avoid ':free' models — they get rate-limited."
+                        style={{ maxWidth: 170, padding: "5px 8px", fontSize: 11.5, borderRadius: 8, border: "1px solid var(--line)", background: "#fff" }}>
+                        <option value="">Model: Default</option>
+                        {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      </select>
+                      <button disabled={busy || !row.productId} className="btn" style={{ padding: "4px 10px", fontSize: 11.5 }}
+                        onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}>✨ {row.captionsAt ? "Regenerate" : "Generate"}</button>
+                    </div>
                   </div>
                   {row.captions ? (
                     <div style={{ display: "grid", gap: 8 }}>

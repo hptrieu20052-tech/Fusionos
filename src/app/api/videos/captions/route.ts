@@ -41,6 +41,7 @@ ABSOLUTE RULES — breaking any of these makes the output unusable:
 4. NEVER invent reviews, ratings, star counts, customer numbers, or "best seller" / "#1" claims.
 5. NEVER state a price unless the price is given in the product facts.
 6. Write in natural US English. No emoji spam — at most 2 emoji per caption, and none is fine.
+7. If a product image and/or a still frame from the video are provided, use them to keep the description concrete and accurate (what the product actually is, its style, who it suits). But NEVER name or imply any real brand or copyrighted character even if you think you recognize one in the image (see rule 3).
 
 Return STRICT JSON only, no markdown fence:
 {"tiktok":{"text":"...","hashtags":["#a","#b"]},"reels":{...},"shorts":{...},"facebook":{...},"pinterest":{...}}
@@ -54,6 +55,11 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const id = String(b?.id ?? "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
+  // Model AI người dùng chọn ngay trước khi Generate — trống thì để orChatJSON dùng model mặc định (env).
+  const model = typeof b?.model === "string" && b.model.trim() ? String(b.model).trim().slice(0, 120) : undefined;
+  // Client báo model đang chọn có ĐỌC ĐƯỢC ẢNH không (fetch danh sách vision phía client, khỏi gọi lại ở đây).
+  // Chỉ nhét ảnh khi model đọc được ảnh — model text thuần mà kèm ảnh sẽ lỗi.
+  const withImages = b?.withImages !== false;
 
   const [row] = await db.select({
     v: schema.productVideos,
@@ -64,6 +70,7 @@ export async function POST(req: NextRequest) {
     pFeed: schema.shopifyProducts.feedDescription,
     pUrl: schema.shopifyProducts.onlineStoreUrl,
     pVariants: schema.shopifyProducts.variants,
+    pImages: schema.shopifyProducts.images,
   }).from(schema.productVideos)
     .leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.productVideos.productId))
     .where(eq(schema.productVideos.id, id)).limit(1);
@@ -101,9 +108,19 @@ export async function POST(req: NextRequest) {
     row.v.aspect ? `Video aspect ratio: ${row.v.aspect}` : "",
   ].filter(Boolean).join("\n");
 
+  // Ảnh giúp AI tả đúng cái đang thấy: (1) ảnh listing (sản phẩm sạch, đáng tin), (2) frame video (đúng cảnh clip).
+  // Chỉ gửi khi model đọc được ảnh. Tối đa 2 ảnh cho gọn token.
+  const images: string[] = [];
+  if (withImages) {
+    const arr = Array.isArray(row.pImages) ? row.pImages as { src?: unknown; position?: unknown }[] : [];
+    const firstSrc = arr.slice().sort((a, b) => (Number(a?.position) || 0) - (Number(b?.position) || 0))[0]?.src;
+    if (firstSrc && /^https?:\/\//i.test(String(firstSrc))) images.push(String(firstSrc));
+    if (row.v.thumbUrl && /^https?:\/\//i.test(String(row.v.thumbUrl))) images.push(String(row.v.thumbUrl));
+  }
+
   let out: Out;
   try {
-    out = await orChatJSON<Out>(SYSTEM, facts, { maxTokens: 1600, temperature: 0.8, timeoutMs: 90_000 });
+    out = await orChatJSON<Out>(SYSTEM, facts, { model, images: images.length ? images.slice(0, 2) : undefined, maxTokens: 1600, temperature: 0.8, timeoutMs: 90_000 });
   } catch (e) {
     return NextResponse.json({ ok: false, error: "AI error: " + String((e as Error)?.message ?? e).slice(0, 200) }, { status: 502 });
   }
