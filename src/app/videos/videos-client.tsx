@@ -281,40 +281,43 @@ export default function VideosClient({ isAdmin, canManage, me }: { isAdmin: bool
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
                   </span>
                 </div>
-                <span style={{ position: "absolute", top: 8, left: 8, ...chip("rgba(255,255,255,.93)", "#0B1220") }}>#{r.videoCode}</span>
-                <div style={{ position: "absolute", bottom: 8, left: 8, right: 8, display: "flex", gap: 5, alignItems: "center" }}>
+                <div style={{ position: "absolute", bottom: 8, left: 8, display: "flex", gap: 5, alignItems: "center" }}>
                   <span style={chip("rgba(0,0,0,.62)", "#fff")}>{secs(r.durationSec)}</span>
                   {r.aspect && <span style={chip("rgba(0,0,0,.62)", "#fff")}>{r.aspect}</span>}
-                  <span style={{ flex: 1 }} />
-                  <span style={chip("rgba(0,0,0,.62)", "#fff")}>{mb(r.sizeBytes)}</span>
                 </div>
               </div>
-              <div style={{ padding: "10px 12px", display: "grid", gap: 6, flex: 1, alignContent: "start" }}>
-                <div title={r.title} style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.35, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                  {r.title}
+              {/* Body đồng bộ với Card Design: mã # + ngày · title pill · Seller/Creator có nhãn · footer kích thước·size + listings */}
+              <div className="dc-body" style={{ flex: 1 }}>
+                <div className="dc-top">
+                  <span className="dc-id" style={{ cursor: "pointer" }} title="Copy ID"
+                    onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(String(r.videoCode)); }}>#{r.videoCode}</span>
+                  <span className="dc-date">{new Date(r.createdAt).toLocaleString()}</span>
                 </div>
-                <div style={{ fontSize: 11.5 }}>
-                  {r.usedBy > 0
-                    ? <span style={{ color: "var(--green)", fontWeight: 700 }}>▣ {r.usedBy} listing{r.usedBy > 1 ? "s" : ""}{r.usedPushed ? ` · ${r.usedPushed} on Shopify` : ""}</span>
-                    : <span style={{ color: "var(--muted)" }}>Not on any listing</span>}
+                <div className="dc-title">
+                  <span title={r.title} style={{ cursor: "pointer", background: "#EEF4FF", borderRadius: 6, padding: "1px 7px" }}
+                    onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.title); }}>{r.title}</span>
                 </div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {r.language && r.language !== "none" && <span style={chip("#F3F4F6", "#374151")}>{r.language.toUpperCase()}</span>}
-                  {r.flags?.voice && <span style={chip("#F3F4F6", "#374151")}>VOICE</span>}
-                  {r.flags?.text && <span style={chip("#FEF6E7", "#B7791F")}>TEXT ON SCREEN</span>}
-                  {r.flags?.music && <span style={chip("#F3F4F6", "#374151")}>MUSIC</span>}
-                  {r.captionsAt && <span style={chip("#EEF2FF", "#4338CA")}>CAPTIONS</span>}
-                  {r.revision > 1 && <span style={chip("#FEF6E7", "#B7791F")}>v{r.revision}</span>}
+                <div className="dc-meta"><span>Seller</span><b>{r.sellerName ?? "—"}</b></div>
+                <div className="dc-meta"><span>Creator</span><b>{r.sourceName || r.creatorName || r.uploader || "—"}</b></div>
+                <div className="dc-meta">
+                  <span>Listing</span>
+                  <b style={{ color: r.usedBy > 0 ? "var(--green)" : "var(--muted)" }}>
+                    {r.usedBy > 0 ? `${r.usedBy} listing${r.usedBy > 1 ? "s" : ""}${r.usedPushed ? ` · ${r.usedPushed} on Shopify` : ""}` : "Not on any listing"}
+                  </b>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.6 }}>
-                  <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    Seller: <b style={{ color: "var(--ink)" }}>{r.sellerName ?? "—"}</b>
+                {(r.language && r.language !== "none") || r.flags?.voice || r.flags?.text || r.flags?.music || r.captionsAt || r.revision > 1 ? (
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {r.language && r.language !== "none" && <span style={chip("#F3F4F6", "#374151")}>{r.language.toUpperCase()}</span>}
+                    {r.flags?.voice && <span style={chip("#F3F4F6", "#374151")}>VOICE</span>}
+                    {r.flags?.text && <span style={chip("#FEF6E7", "#B7791F")}>TEXT ON SCREEN</span>}
+                    {r.flags?.music && <span style={chip("#F3F4F6", "#374151")}>MUSIC</span>}
+                    {r.captionsAt && <span style={chip("#EEF2FF", "#4338CA")}>CAPTIONS</span>}
+                    {r.revision > 1 && <span style={chip("#FEF6E7", "#B7791F")}>v{r.revision}</span>}
                   </div>
-                  <div style={{ display: "flex", gap: 5 }}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.sourceName || r.creatorName || r.uploader || "—"}</span>
-                    <span>·</span>
-                    <span style={{ flexShrink: 0 }}>{new Date(r.createdAt).toLocaleDateString()}</span>
-                  </div>
+                ) : null}
+                <div className="dc-foot">
+                  <span>{r.width && r.height ? `${r.width}×${r.height}` : (r.aspect ?? "—")}{r.sizeBytes ? ` · ${mb(r.sizeBytes)}` : ""}</span>
+                  <span>{secs(r.durationSec)}</span>
                 </div>
               </div>
             </div>
@@ -474,61 +477,45 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
             )}
           </div>
 
-          <div style={{ display: "grid", gap: 14, alignContent: "start" }}>
-            <div className="filters" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <div className="field" style={{ gridColumn: "span 2" }}>
-                <label>Title</label>
-                <input value={f.title} disabled={!canManage} onChange={(e) => setF({ ...f, title: e.target.value })} />
+          <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
+            {/* 1 · Thông tin cơ bản — chỉ giữ field thật sự dùng ở Phase 1 */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 8 }}>DETAILS</div>
+              <div className="filters" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                <div className="field" style={{ gridColumn: "span 2" }}>
+                  <label>Title</label>
+                  <input value={f.title} disabled={!canManage} onChange={(e) => setF({ ...f, title: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label>Seller</label>
+                  <select value={row.sellerId ?? ""} disabled={!canManage}
+                    onChange={(e) => patch({ id: row.id, sellerId: e.target.value || null }, "Seller updated")}>
+                    <option value="">—</option>
+                    {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Creator</label>
+                  <select value={row.creatorId ?? ""} disabled={!canManage}
+                    onChange={(e) => patch({ id: row.id, creatorId: e.target.value || null }, "Creator updated")}>
+                    <option value="">—</option>
+                    {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="field" style={{ gridColumn: "span 2" }}>
+                  <label>Note <span style={{ fontWeight: 400, color: "var(--muted)" }}>· seller ↔ creator</span></label>
+                  <input value={f.note} disabled={!canManage} placeholder="Cần sửa gì, quay lại đoạn nào…"
+                    onChange={(e) => setF({ ...f, note: e.target.value })} />
+                </div>
               </div>
-              <div className="field" style={{ gridColumn: "span 2" }}>
-                <label>Note</label>
-                <input value={f.note} disabled={!canManage} placeholder="Notes between seller and creator — what to fix, what to reshoot…"
-                  onChange={(e) => setF({ ...f, note: e.target.value })} />
-              </div>
-              <div className="field">
-                <label>Language</label>
-                <select value={f.language} disabled={!canManage} onChange={(e) => setF({ ...f, language: e.target.value })}>
-                  <option value="">—</option>
-                  {LANGS.map((l) => <option key={l.v} value={l.v}>{l.label}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label>Seller</label>
-                <select value={row.sellerId ?? ""} disabled={!canManage}
-                  onChange={(e) => patch({ id: row.id, sellerId: e.target.value || null }, "Seller updated")}>
-                  <option value="">—</option>
-                  {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label>Creator</label>
-                <select value={row.creatorId ?? ""} disabled={!canManage}
-                  onChange={(e) => patch({ id: row.id, creatorId: e.target.value || null }, "Creator updated")}>
-                  <option value="">—</option>
-                  {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </div>
-              <div className="field">
-                <label>Shot on</label>
-                <input type="date" value={f.shotAt} disabled={!canManage} onChange={(e) => setF({ ...f, shotAt: e.target.value })} />
-              </div>
-              <div className="field" style={{ gridColumn: "span 2" }}>
-                <label>Filmed by (outside creator)</label>
-                <input value={f.sourceName} disabled={!canManage} placeholder="Name of an outside creator with no account in the system"
-                  onChange={(e) => setF({ ...f, sourceName: e.target.value })} />
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-              {cbx("voice", "Has voiceover")}
-              {cbx("text", "Text on screen")}
-              {cbx("music", "Background music")}
-              <div style={{ flex: 1 }} />
               {canManage && (
-                <button disabled={busy || !dirty} className="btn btn-primary" onClick={save} style={{ opacity: dirty ? 1 : .5 }}>Update</button>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+                  <button disabled={busy || !dirty} className="btn btn-primary" onClick={save} style={{ opacity: dirty ? 1 : .5 }}>Update</button>
+                </div>
               )}
             </div>
 
+            {/* 2 · Gắn vào listing */}
             <div>
               <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", marginBottom: 6 }}>
                 SHOWING ON {listings.length} LISTING{listings.length === 1 ? "" : "S"}
