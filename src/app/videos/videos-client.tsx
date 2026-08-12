@@ -11,7 +11,7 @@ import DateRangePicker, { rangeToDates, type RangeValue } from "@/components/dat
  * Mỗi listing gắn ĐÚNG 1 video; một video dùng lại cho nhiều listing (gán theo Product type).
  */
 
-type Caption = { text: string; hashtags: string[] };
+type Caption = { text: string; hashtags: string[]; title?: string };
 type Flags = { voice?: boolean; text?: boolean; music?: boolean };
 type Row = {
   id: string; videoCode: number; title: string; note: string | null;
@@ -650,14 +650,22 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                       {CHANNELS.map((ch) => {
                         const c = row.captions?.[ch.key];
                         if (!c) return null;
+                        // YT Short: Title tách riêng (copy riêng) khỏi Description; kênh khác: chỉ 1 ô caption.
                         const full = [c.text, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
                         return (
                           <div key={ch.key} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 9 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                               <span style={chip("#F3F4F6", "#374151")}>{ch.label}</span>
                               <span style={{ flex: 1 }} />
-                              <button onClick={() => copy(full)} className="btn" style={{ padding: "3px 9px", fontSize: 11 }}>Copy</button>
+                              <button onClick={() => copy(full)} className="btn" style={{ padding: "3px 9px", fontSize: 11 }}>{c.title ? "Copy desc" : "Copy"}</button>
                             </div>
+                            {c.title && (
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, background: "#F7FBFF", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px" }}>
+                                <span style={{ fontSize: 10.5, fontWeight: 800, color: "var(--muted)" }}>TITLE</span>
+                                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600 }}>{c.title}</span>
+                                <button onClick={() => copy(c.title!)} className="btn" style={{ padding: "2px 8px", fontSize: 11 }}>Copy</button>
+                              </div>
+                            )}
                             <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{c.text}</div>
                             {!!(c.hashtags ?? []).length && <div style={{ fontSize: 11.5, color: "#4338CA", marginTop: 4 }}>{c.hashtags.join(" ")}</div>}
                           </div>
