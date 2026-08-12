@@ -19,13 +19,17 @@ export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id");
 
   if (id) {
-    const [r] = await db.select({ p: schema.shopifyProducts, storeName: schema.stores.name, storeSeller: schema.stores.sellerId })
+    const [r] = await db.select({
+      p: schema.shopifyProducts, storeName: schema.stores.name, storeSeller: schema.stores.sellerId,
+      videoCode: schema.productVideos.videoCode, videoTitle: schema.productVideos.title, videoThumbUrl: schema.productVideos.thumbUrl,
+    })
       .from(schema.shopifyProducts)
       .leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
+      .leftJoin(schema.productVideos, eq(schema.productVideos.id, schema.shopifyProducts.videoId))
       .where(eq(schema.shopifyProducts.id, id)).limit(1);
     if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     if (scopeIds && (!r.storeSeller || !scopeIds.includes(r.storeSeller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-    return NextResponse.json({ ok: true, product: { ...r.p, storeName: r.storeName } });
+    return NextResponse.json({ ok: true, product: { ...r.p, storeName: r.storeName, videoCode: r.videoCode, videoTitle: r.videoTitle, videoThumbUrl: r.videoThumbUrl } });
   }
 
   const rows = await db.select({ p: schema.shopifyProducts, storeName: schema.stores.name, sellerName: schema.users.fullName, storeSeller: schema.stores.sellerId })

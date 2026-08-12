@@ -39,6 +39,8 @@ type Detail = {
   variants: Variant[]; images: Img[]; onlineStoreUrl: string | null; totalInventory: number | null; dirty: boolean;
   // v142: bộ Custom options RIÊNG của listing. null = chưa đặt riêng ⇒ đang ăn theo template.
   personalization: PQ[] | null;
+  // v223: video từ Video Library đang gắn vào listing (dán #videoCode). null = chưa gắn.
+  videoCode: number | null; videoTitle: string | null; videoThumbUrl: string | null;
 };
 
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -201,6 +203,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
   const [editId, setEditId] = useState<string | null>(null);
   const [edit, setEdit] = useState<Detail | null>(null);
+  const [vidCode, setVidCode] = useState(""); // ô dán #Video ID trong Edit modal
   const [editLoading, setEditLoading] = useState(false);
   // AI model
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
@@ -357,6 +360,20 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       const j = await postJSON("/api/shopify-products/feed-save", { id: edit.id, feedTitle: edit.feedTitle ?? "", feedDescription: edit.feedDescription ?? "" });
       if (j.ok) { flash("✓ Feed copy saved" + (j.warn ? " — " + j.warn : "")); load(); }
       else flash("✗ " + (j.error ?? "Save failed"), false);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
+  // v223 · Gắn/gỡ video vào listing bằng #Video ID (dán từ Video Library). Không đụng nội dung Shopify.
+  const setVideo = async (clear = false) => {
+    if (!edit) return;
+    setBusy(true);
+    try {
+      const j = await postJSON("/api/shopify-products/set-video", { id: edit.id, videoCode: clear ? "" : vidCode });
+      if (j.ok) {
+        if (j.cleared) { setEdit({ ...edit, videoCode: null, videoTitle: null, videoThumbUrl: null }); flash("✓ Đã gỡ video khỏi listing"); }
+        else { setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl }); flash(`✓ Đã gắn video #${j.video.code}`); }
+        setVidCode(""); load();
+      } else flash("✗ " + (j.error ?? "failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
@@ -1633,6 +1650,25 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         {edPersOwn && <button disabled={busy} onClick={clearEdPers} style={{ ...ghost, padding: "7px 14px", fontSize: 12.5 }}>Use the template instead</button>}
                         <span style={{ fontSize: 11, color: "var(--muted)" }}>Goes straight to the Shopify metafield — not included in Save below.</span>
                       </div>
+                    </div>
+                    {/* v223 · Video từ Video Library — dán #Video ID để gắn vào listing (không đi cùng Save chính). */}
+                    <div style={{ border: "1px solid #C9D8F0", borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#F7FAFF" }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2952B3", marginBottom: 8 }}>Video (từ Video Library)</div>
+                      {edit.videoCode ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {edit.videoThumbUrl && <img src={edit.videoThumbUrl} alt="" width={40} height={40} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
+                          <span style={{ fontWeight: 800 }}>#{edit.videoCode}</span>
+                          <span style={{ flex: 1, minWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: "var(--muted)" }}>{edit.videoTitle}</span>
+                          <button disabled={busy} onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Gỡ</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <input value={vidCode} onChange={(e) => setVidCode(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Dán #Video ID (vd 12)" style={{ ...ctl, width: 160, padding: "8px 11px" }} />
+                          <button disabled={busy || !vidCode} onClick={() => setVideo(false)} style={{ ...pill("#2952B3", "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || !vidCode) ? .6 : 1 }}>Gắn video</button>
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>Lấy #ID trong Video Library. Gắn xong, admin bấm <b>Push video to Shopify</b> ở Video Library để đẩy lên media.</span>
+                        </div>
+                      )}
                     </div>
                     <label style={lab}>Variants ({edit.variants.length}) — giá / compare-at / SKU</label>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
