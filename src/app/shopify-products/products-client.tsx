@@ -371,12 +371,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     try {
       const j = await postJSON("/api/shopify-products/set-video", { id: edit.id, videoCode: clear ? "" : vidCode });
       if (j.ok) {
-        if (j.cleared) { setEdit({ ...edit, videoCode: null, videoTitle: null, videoThumbUrl: null }); flash("✓ Đã gỡ video khỏi listing"); }
+        if (j.cleared) { setEdit({ ...edit, videoCode: null, videoTitle: null, videoThumbUrl: null }); flash("✓ Video removed"); }
         else {
           setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl });
-          if (j.push?.ok) flash(`✓ Đã gắn + đẩy video #${j.video.code} lên Shopify — đang xử lý, vài phút hiện trên trang.`);
-          else if (j.push && !j.push.ok) flash(`✓ Gắn video #${j.video.code} — nhưng đẩy Shopify lỗi: ${j.push.error}`, false);
-          else flash(`✓ Đã gắn video #${j.video.code}`);
+          if (j.push?.ok) flash(`✓ Attached + pushed video #${j.video.code} — Shopify is processing, appears in a few minutes.`);
+          else if (j.push && !j.push.ok) flash(`✓ Attached video #${j.video.code} — but Shopify push failed: ${j.push.error}`, false);
+          else flash(`✓ Attached video #${j.video.code}`);
         }
         setVidCode(""); load();
       } else flash("✗ " + (j.error ?? "failed"), false);
@@ -1603,6 +1603,24 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     </div>
                     <button onClick={addImg} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Store: {edit.storeName} · handle: {edit.handle}</div>
+                    {/* v224 · Video from Video Library — paste #Video ID to attach (auto-pushes to media). */}
+                    <div style={{ border: "1px solid #C9D8F0", borderRadius: 10, padding: "12px 14px", marginTop: 14, background: "#F7FAFF" }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2952B3", marginBottom: 8 }}>Video</div>
+                      {edit.videoCode ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          {edit.videoThumbUrl && <img src={edit.videoThumbUrl} alt="" width={40} height={40} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
+                          <span style={{ fontWeight: 800 }}>#{edit.videoCode}</span>
+                          <span style={{ flex: 1, minWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: "var(--muted)" }}>{edit.videoTitle}</span>
+                          <button disabled={busy} onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Remove</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <input value={vidCode} onChange={(e) => setVidCode(e.target.value.replace(/[^0-9]/g, ""))} placeholder="#Video ID" style={{ ...ctl, width: 110, padding: "8px 11px" }} />
+                          <button disabled={busy || !vidCode} onClick={() => setVideo(false)} style={{ ...pill("#2952B3", "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || !vidCode) ? .6 : 1 }}>Attach</button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {/* RIGHT: fields + variants */}
                   <div>
@@ -1671,26 +1689,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         <span style={{ fontSize: 11, color: "var(--muted)" }}>Goes straight to the Shopify metafield — not included in Save below.</span>
                       </div>
                     </div>
-                    {/* v223 · Video từ Video Library — dán #Video ID để gắn vào listing (không đi cùng Save chính). */}
-                    <div style={{ border: "1px solid #C9D8F0", borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#F7FAFF" }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2952B3", marginBottom: 8 }}>Video (từ Video Library)</div>
-                      {edit.videoCode ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          {edit.videoThumbUrl && <img src={edit.videoThumbUrl} alt="" width={40} height={40} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
-                          <span style={{ fontWeight: 800 }}>#{edit.videoCode}</span>
-                          <span style={{ flex: 1, minWidth: 120, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: "var(--muted)" }}>{edit.videoTitle}</span>
-                          <button disabled={busy} onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Gỡ</button>
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <input value={vidCode} onChange={(e) => setVidCode(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Dán #Video ID (vd 12)" style={{ ...ctl, width: 160, padding: "8px 11px" }} />
-                          <button disabled={busy || !vidCode} onClick={() => setVideo(false)} style={{ ...pill("#2952B3", "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || !vidCode) ? .6 : 1 }}>Gắn video</button>
-                          <span style={{ fontSize: 11, color: "var(--muted)" }}>Lấy #ID trong Video Library. Gắn xong <b>tự đẩy lên Shopify media</b> (vài phút hiện trên trang).</span>
-                        </div>
-                      )}
-                    </div>
-                    <label style={lab}>Variants ({edit.variants.length}) — giá / compare-at / SKU</label>
+                    <label style={lab}>Variants ({edit.variants.length}) — price / compare-at / SKU</label>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                         <thead><tr style={{ background: "#FAFBFC", color: "var(--muted)", fontSize: 11 }}>

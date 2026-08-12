@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     storageKey: schema.productVideos.storageKey, contentType: schema.productVideos.contentType,
   })
     .from(schema.productVideos).where(eq(schema.productVideos.videoCode, code)).limit(1);
-  if (!vid) return NextResponse.json({ ok: false, error: `Không tìm thấy video #${code} trong Video Library` }, { status: 404 });
+  if (!vid) return NextResponse.json({ ok: false, error: `Video #${code} not found in Video Library` }, { status: 404 });
 
   await db.update(schema.shopifyProducts)
     .set({ videoId: vid.id, videoMediaId: null, videoPushedAt: null, updatedAt: new Date() })
@@ -86,11 +86,11 @@ export async function POST(req: NextRequest) {
       if (r.ok) {
         await db.update(schema.shopifyProducts).set({ videoMediaId: r.mediaId ?? null, videoPushedAt: new Date() }).where(eq(schema.shopifyProducts.id, id));
         await db.update(schema.productVideos).set({ shopifyPushedAt: new Date(), updatedAt: new Date() }).where(eq(schema.productVideos.id, vid.id));
-        push = { ok: true, note: "Shopify đang xử lý — video hiện trên trang sản phẩm sau vài phút." };
+        push = { ok: true, note: "Shopify is processing — the video appears on the product page in a few minutes." };
       } else push = { ok: false, error: r.error ?? "push failed" };
     } catch (e) { push = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   } else if (!prod.gid) {
-    push = { ok: false, error: "Listing chưa có trên Shopify — Push listing trước rồi gắn lại video." };
+    push = { ok: false, error: "Listing is not on Shopify yet — push the listing first, then attach the video." };
   }
 
   return NextResponse.json({ ok: true, video: { code: vid.code, title: vid.title, thumbUrl: vid.thumbUrl }, push });

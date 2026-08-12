@@ -483,7 +483,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
     else delete n[ch];
     return n;
   });
-  const savePosted = () => patch({ id: row.id, postedTo: posted }, "Đã lưu trạng thái đăng");
+  const savePosted = () => patch({ id: row.id, postedTo: posted }, "Saved");
   const cbx = (k: "voice" | "text" | "music", label: string) => (
     <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600 }}>
       <input type="checkbox" checked={f[k]} disabled={!canManage} onChange={(e) => setF({ ...f, [k]: e.target.checked })} /> {label}
@@ -545,7 +545,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                 </div>
                 <div className="field" style={{ gridColumn: "span 2" }}>
                   <label>Note <span style={{ fontWeight: 400, color: "var(--muted)" }}>· seller ↔ creator</span></label>
-                  <input value={f.note} disabled={!canManage} placeholder="Cần sửa gì, quay lại đoạn nào…"
+                  <input value={f.note} disabled={!canManage} placeholder="What to fix, what to reshoot…"
                     onChange={(e) => setF({ ...f, note: e.target.value })} />
                 </div>
               </div>
@@ -556,8 +556,8 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
               )}
             </div>
 
-            {/* ─── ADMIN-ONLY: Shopify listing + phân phối. Creator/Seller KHÔNG thấy info Shopify. ─── */}
-            {isAdmin ? (
+            {/* ─── ADMIN-ONLY: Shopify listing + distribution ─── */}
+            {isAdmin && (
               <>
                 {/* Gắn listing */}
                 <div>
@@ -566,7 +566,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   </div>
                   <div style={{ position: "relative", marginBottom: 8 }}>
                     <input value={lq} onChange={(e) => setLq(e.target.value)}
-                      placeholder="🔎 Tìm listing theo tên rồi chọn để gán video…"
+                      placeholder="🔎 Search a listing by name to attach…"
                       style={{ width: "100%", padding: "8px 11px", fontSize: 13, borderRadius: 9, border: "1px solid var(--line)" }} />
                     {!!matches.length && (
                       <div style={{ position: "absolute", zIndex: 5, top: "100%", left: 0, right: 0, marginTop: 4, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 6px 20px rgba(16,24,40,.12)", maxHeight: 240, overflowY: "auto" }}>
@@ -574,12 +574,12 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                           const taken = !!m.videoId && m.videoId !== row.id;
                           const here = m.videoId === row.id;
                           return (
-                            <button key={m.id} disabled={busy || here} onClick={() => { assign({ videoId: row.id, productIds: [m.id] }, "Đã gán vào listing"); setLq(""); setMatches([]); }}
+                            <button key={m.id} disabled={busy || here} onClick={() => { assign({ videoId: row.id, productIds: [m.id] }, "Attached to listing"); setLq(""); setMatches([]); }}
                               style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "8px 11px", background: here ? "#F3FBF6" : "#fff", border: "none", borderBottom: "1px solid var(--line)", cursor: here ? "default" : "pointer", fontSize: 12.5 }}>
                               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</span>
-                              {here ? <span style={chip("#E9F7EF", "#1F6F45")}>ĐÃ GÁN</span>
-                                : taken ? <span style={chip("#FEF6E7", "#B7791F")} title="Listing này đã có video khác — chọn sẽ thay">có video</span>
-                                : <span style={{ color: "var(--blue)", fontWeight: 700, flexShrink: 0 }}>Gán →</span>}
+                              {here ? <span style={chip("#E9F7EF", "#1F6F45")}>ATTACHED</span>
+                                : taken ? <span style={chip("#FEF6E7", "#B7791F")} title="This listing already has a video — selecting replaces it">has video</span>
+                                : <span style={{ color: "var(--blue)", fontWeight: 700, flexShrink: 0 }}>Attach →</span>}
                             </button>
                           );
                         })}
@@ -589,7 +589,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
                     <select value={pickType} onChange={(e) => setPickType(e.target.value)}
                       style={{ padding: "7px 9px", fontSize: 12.5, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", maxWidth: 280 }}>
-                      <option value="">…hoặc gán cả một Product type</option>
+                      <option value="">…or attach a whole Product type</option>
                       {types.map((t) => <option key={t.productType!} value={t.productType!}>{t.productType} ({t.n})</option>)}
                     </select>
                     <button disabled={busy || !pickType} className="btn" style={{ padding: "7px 12px", fontSize: 12.5, opacity: pickType ? 1 : .5 }}
@@ -620,15 +620,9 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                 {/* ── DISTRIBUTION HUB (compact) · 1 dòng / điểm đến ── */}
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>PHÂN PHỐI</div>
-                    <span style={{ fontSize: 10.5, color: "var(--muted)" }}>· <b style={{ color: "#6D28D9" }}>tím</b>=Creator · <b style={{ color: "#1F6F45" }}>xanh</b>=Brand</span>
-                    <button disabled={busy} className="btn" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 11.5 }} onClick={savePosted}>Lưu</button>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>DISTRIBUTION</div>
+                    <button disabled={busy} className="btn" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 11.5 }} onClick={savePosted}>Save</button>
                   </div>
-                  {!row.productUrl && (
-                    <div style={{ fontSize: 11, color: "#B7791F", background: "#FEF6E7", border: "1px solid #F0D897", borderRadius: 8, padding: "6px 10px", marginBottom: 6 }}>
-                      Chưa có listing chính → chưa tạo được link UTM. Gán video vào listing + Push trước.
-                    </div>
-                  )}
                   <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
                     {([
                       { key: "tiktok", label: "TikTok", owner: "creator", opens: [["TikTok Studio", "https://www.tiktok.com/tiktokstudio/upload"]] },
@@ -636,9 +630,9 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                       { key: "facebook", label: "FB Page", owner: "brand", opens: [["FB composer", "https://business.facebook.com/latest/composer"]] },
                       { key: "pinterest", label: "Pinterest", owner: "brand", opens: [["Pin builder", "https://www.pinterest.com/pin-builder/"]] },
                       { key: "shorts", label: "YT Short", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"]] },
-                      { key: "meta_ads", label: "Meta Ads", owner: "brand", opens: [["Ads Manager", "https://adsmanager.facebook.com/adsmanager"]], note: "Tải video → upload creative mới (dark post). Link đích = UTM." },
-                      { key: "gmc", label: "GMC/PMax", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"], ["Google Ads", "https://ads.google.com/"]], note: "Up YouTube rồi dùng link cho Performance Max." },
-                    ] as { key: string; label: string; owner: "creator" | "brand"; opens: string[][]; note?: string }[]).map((d, i) => {
+                      { key: "meta_ads", label: "Meta Ads", owner: "brand", opens: [["Ads Manager", "https://adsmanager.facebook.com/adsmanager"]] },
+                      { key: "gmc", label: "GMC/PMax", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"], ["Google Ads", "https://ads.google.com/"]] },
+                    ] as { key: string; label: string; owner: "creator" | "brand"; opens: string[][] }[]).map((d, i) => {
                       const link = utmLink(d.key);
                       const cap = row.captions?.[d.key];
                       const capFull = cap ? [cap.text, (cap.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n") : "";
@@ -651,42 +645,46 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                             <span style={{ ...chip(cr ? "#EDE9FE" : "#E8F3EC", cr ? "#6D28D9" : "#1F6F45"), minWidth: 84, textAlign: "center" }}>{done ? "✓ " : ""}{d.label}</span>
                             {d.opens.map(([lbl, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="btn" style={mini}>{lbl} ↗</a>)}
                             {capFull && <button className="btn" style={mini} onClick={() => copy(capFull)}>caption</button>}
-                            <button disabled={!link} className="btn" style={{ ...mini, opacity: link ? 1 : .4 }} title={link || "Chưa có UTM"} onClick={() => link && copy(link)}>UTM</button>
-                            <input value={posted[d.key]?.url ?? ""} placeholder="link đã đăng…"
+                            <button disabled={!link} className="btn" style={{ ...mini, opacity: link ? 1 : .4 }} onClick={() => link && copy(link)}>UTM</button>
+                            <input value={posted[d.key]?.url ?? ""} placeholder="posted link…"
                               onChange={(e) => setPostedUrl(d.key, e.target.value)} onBlur={savePosted}
                               style={{ flex: 1, minWidth: 110, padding: "4px 8px", fontSize: 11.5, borderRadius: 7, border: "1px solid var(--line)" }} />
                             {done && <a href={posted[d.key].url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--blue)", textDecoration: "none", flexShrink: 0 }}>↗</a>}
                           </div>
-                          {d.note && <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 3 }}>{d.note}</div>}
                         </div>
                       );
                     })}
                   </div>
                 </div>
               </>
-            ) : (
-              <div style={{ fontSize: 12, color: "var(--muted)", background: "#F7F8FA", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px" }}>
-                Phần gán listing & phân phối do <b>admin/marketing</b> quản lý. Bạn dùng nút <b>Download</b> bên trái để tải video và đăng lên kênh của mình.
-              </div>
             )}
 
-            {/* Replace + Delete: cộng tác — creator/seller phụ trách video vẫn sửa/xoá được */}
+            {/* Download + Replace + Delete. Video đã gắn listing (usedBy>0) thì KHÓA Delete — tránh xoá
+                video đang hiển thị trên trang sản phẩm; gỡ khỏi listing (Manage Products) trước rồi mới xoá. */}
             {canManage && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                {row.publicUrl && (
+                  <a href={row.publicUrl} download className="btn" style={{ textDecoration: "none" }}>⬇ Download</a>
+                )}
                 <input ref={repRef} type="file" accept="video/*" hidden
                   onChange={(e) => { const fl = e.target.files?.[0]; if (fl) onReplace(row, fl); if (repRef.current) repRef.current.value = ""; }} />
                 <button disabled={busy} className="btn" onClick={() => repRef.current?.click()}
-                  title="Thay file sau khi sửa lại clip — giữ nguyên #ID, listing và caption">
+                  title="Replace the file after re-editing — keeps #ID, listings and captions">
                   ⟳ Replace file{row.revision > 1 ? ` (v${row.revision})` : ""}
                 </button>
                 <div style={{ flex: 1 }} />
-                <button disabled={busy} className="btn" style={{ color: "#B42318" }} onClick={doDelete}>Delete</button>
+                <button disabled={busy || row.usedBy > 0} className="btn"
+                  style={{ color: row.usedBy > 0 ? "var(--muted)" : "#B42318", opacity: row.usedBy > 0 ? .5 : 1, cursor: row.usedBy > 0 ? "not-allowed" : "pointer" }}
+                  title={row.usedBy > 0 ? "Attached to a listing — remove it in Manage Products before deleting" : "Delete video from the library"}
+                  onClick={doDelete}>
+                  {row.usedBy > 0 ? "🔒 Delete" : "Delete"}
+                </button>
               </div>
             )}
 
             {isAdmin && row.captions && (
               <details>
-                <summary style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>Xem caption đầy đủ từng kênh</summary>
+                <summary style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>View full captions</summary>
                 <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
                 {CHANNELS.map((ch) => {
                   const c = row.captions?.[ch.key];

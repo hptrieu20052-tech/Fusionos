@@ -300,6 +300,13 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
+  // KHÓA xoá khi video đang gắn ở listing — xoá là mất video trên trang sản phẩm. Gỡ khỏi listing trước.
+  const [used] = await db.select({ n: sql<number>`count(*)::int` })
+    .from(schema.shopifyProducts).where(eq(schema.shopifyProducts.videoId, String(id)));
+  if ((used?.n ?? 0) > 0) {
+    return NextResponse.json({ ok: false, error: `Attached to ${used.n} listing(s) — remove it in Manage Products before deleting.` }, { status: 409 });
+  }
+
   // Chỉ xoá bản ghi. File trên R2 giữ lại — rẻ, và lỡ xoá nhầm còn dò lại được bằng storage_key.
   await db.delete(schema.productVideos).where(eq(schema.productVideos.id, String(id)));
   return NextResponse.json({ ok: true });
