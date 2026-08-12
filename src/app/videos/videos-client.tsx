@@ -662,14 +662,13 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   </div>
                   <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
                     {([
-                      { key: "tiktok", label: "TikTok", owner: "creator", opens: [["TikTok Studio", "https://www.tiktok.com/tiktokstudio/upload"]] },
                       // Meta Reel = đăng 1 lần ra CẢ FB Page + Instagram (composer Meta mặc định tick cả 2).
                       // 1 link/bài nên gộp thành 1 kênh utm_source=meta; caption dùng bản IG Reel.
                       { key: "meta", label: "Meta Reel (FB+IG)", owner: "brand", capKey: "reels", opens: [["Reels composer", "https://business.facebook.com/latest/reels_composer"]] },
-                      { key: "pinterest", label: "Pinterest", owner: "brand", opens: [["Pin builder", "https://www.pinterest.com/pin-builder/"]] },
                       { key: "shorts", label: "YT Short", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"]] },
                       { key: "meta_ads", label: "Meta Ads", owner: "brand", opens: [["Ads Manager", "https://adsmanager.facebook.com/adsmanager"]] },
-                      { key: "gmc", label: "GMC/PMax", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"], ["Google Ads", "https://ads.google.com/"]] },
+                      // Đã bỏ TikTok (creator tự cầm + đơn qua TikTok Shop, UTM không đo được), Pinterest và GMC/PMax
+                      // — khi cần thêm lại: chèn 1 dòng { key, label, owner:"brand", opens:[[label,url]] } vào mảng này.
                     ] as { key: string; label: string; owner: "creator" | "brand"; capKey?: string; opens: string[][] }[]).map((d, i) => {
                       const link = utmLink(d.key);
                       const cap = row.captions?.[d.capKey ?? d.key];
