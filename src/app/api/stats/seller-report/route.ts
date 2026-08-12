@@ -14,8 +14,9 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   // Báo cáo seller chỉ có SỐ đơn/items (không có tiền) → cho mọi người xem được Dashboard (orders hoặc designs)
-  const [oLvl, dLvl] = await Promise.all([levelOf(session, "orders"), levelOf(session, "designs")]);
-  if (oLvl < 1 && dLvl < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // Creator (videos) cũng xem được Team Seller Report của team.
+  const [oLvl, dLvl, vLvl] = await Promise.all([levelOf(session, "orders"), levelOf(session, "designs"), levelOf(session, "videos")]);
+  if (oLvl < 1 && dLvl < 1 && vLvl < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const sp = req.nextUrl.searchParams;
   const range = sp.get("range") ?? "7d";

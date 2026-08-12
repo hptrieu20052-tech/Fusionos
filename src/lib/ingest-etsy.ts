@@ -15,6 +15,7 @@ export type InOrder = {
   addr1?: string; addr2?: string; city?: string; state?: string; zip?: string; country?: string;
   formattedAddress?: string; // địa chỉ đầy đủ sàn tự ghép (Copy address) — bảo hiểm không thiếu dòng
   total?: number; fee?: number; orderedAt?: string; note?: string; platformStatus?: string; shippingType?: string;
+  shippingMethod?: string; // mức ship khách chọn (Express/Standard…)
   items?: InItem[];
 };
 export type IngestStore = { id: string; sellerId: string | null; fx: unknown; name: string };
@@ -260,6 +261,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         storeId: store.id, sellerId: store.sellerId, source: source as never, status: "new",
         platformStatus: s(o.platformStatus),
         shippingType: s(o.shippingType),
+        shippingMethod: s(o.shippingMethod),
         buyerFirst: s(o.buyerFirst), buyerLast: s(o.buyerLast),
         addr1: s(o.addr1), addr2: resolveAddr2(o), city: s(o.city), state: cleanState(o.state), zip: s(o.zip),
         country: s(o.country) ?? "United States",

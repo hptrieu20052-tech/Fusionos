@@ -125,8 +125,9 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
       {ready && (
         <>
           {isAdmin && <div className="section"><TeamReport range={range} from={f} to={t} title="All Team Report" /></div>}
-          {(canOrders || canDesigns) && <div className="section"><SellerReport range={range} from={f} to={t} title={isAdmin ? "All Seller Report" : "Team Seller Report"} /></div>}
-          {canDesigns && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Designer Report" : "Team Designer Report"} /></div>}
+          {/* Creator (canVideos) cũng xem Team Seller + Team Designer report của team. */}
+          {(canOrders || canDesigns || canVideos) && <div className="section"><SellerReport range={range} from={f} to={t} title={isAdmin ? "All Seller Report" : "Team Seller Report"} /></div>}
+          {(canDesigns || canVideos) && <div className="section"><DesignerReport range={range} from={f} to={t} hideMoney={!isAdmin} title={isAdmin ? "All Designer Report" : "Team Designer Report"} /></div>}
           {/* Content = ô "Creator" trên mỗi design (danh sách chọn đã lọc role='content').
               Design ID nào gắn tên bạn Content đó, sale của design đó tính cho bạn đó. */}
           {/* Creator report — hiện cho canDesigns (attribution) HOẶC canVideos (creator xem report của mình). */}
@@ -135,7 +136,7 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
       )}
       {!ready && <div className="panel empty">{tr("rep.chooseDates")}</div>}
       {/* Lưới an toàn: tài khoản không có khối nào thì đừng để trang trắng — chỉ luôn chỗ cần vào. */}
-      {ready && !isAdmin && !canOrders && !canDesigns && (
+      {ready && !isAdmin && !canOrders && !canDesigns && !canVideos && (
         <div className="panel empty" style={{ padding: 34, textAlign: "center" }}>
           <div style={{ fontWeight: 700, color: "var(--ink)", marginBottom: 6 }}>No reports are enabled for this account</div>
           <div style={{ fontSize: 13, color: "var(--muted)" }}>Ask an admin to grant access in Admin → Permissions.</div>

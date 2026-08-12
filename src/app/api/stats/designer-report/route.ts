@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
   // Creator report (by=content) mở cho người có quyền videos — creator thường không có designs.
   const okDesigns = (await levelOf(session, "designs")) >= 1;
   const okVideos = (await levelOf(session, "videos")) >= 1;
-  if (!(okDesigns || (by === "content" && okVideos))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // Creator (videos) xem được cả Designer report lẫn Creator report của team.
+  if (!(okDesigns || okVideos)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const PC = by === "content" ? "creator_id" : "designer_id"; // cột gom nhóm
   const range = sp.get("range") ?? "this_month";
   const from = sp.get("from"), to = sp.get("to");

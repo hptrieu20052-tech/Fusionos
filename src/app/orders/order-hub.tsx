@@ -85,7 +85,7 @@ type Order = {
   addr1: string | null; addr2: string | null; city: string | null; state: string | null; zip: string | null; country: string;
   formatted_address?: string | null;
   // fee_estimated = true → platform_fee là số ƯỚC TÍNH theo % của shop (sàn chưa quyết toán) → nhãn "Fee (est.)"
-  total: string; platform_fee: string; fee_estimated?: boolean; seller_name: string | null; seller_team?: string | null; store_name: string | null; order_label: string | null; note: string | null; buyer_note?: string | null; shipping_type?: string | null;
+  total: string; platform_fee: string; fee_estimated?: boolean; seller_name: string | null; seller_team?: string | null; store_name: string | null; order_label: string | null; note: string | null; buyer_note?: string | null; shipping_type?: string | null; shipping_method?: string | null;
   designer_sent_to?: string | null; designer_sent_at?: string | null;
   tiktok_labels?: { packageId: string; trackingNumber?: string; key: string; url: string | null; fetchedAt: string }[] | null;
   items: Item[];
@@ -1252,6 +1252,12 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                 </span>
                 <span className="o2-chip seller">{o.seller_name ?? "—"}</span>
                 {o.store_name && <span className="o2-chip">{o.store_name}</span>}
+                {/* Mức ship khách chọn — Express/Priority tô đỏ nổi để người fulfill ship nhanh, không ship thường. */}
+                {o.shipping_method && (
+                  /express|priority|expedite|next.?day|overnight|fast|2.?day/i.test(o.shipping_method)
+                    ? <span className="o2-chip" style={{ background: "#FDECEA", color: "#C0392B", fontWeight: 800, border: "1px solid #F2C0B8" }} title="Buyer paid for faster shipping — fulfill with express service">🚀 {o.shipping_method}</span>
+                    : <span className="o2-chip" style={{ background: "#EEF2FF", color: "#4338CA", fontWeight: 700 }} title="Shipping method the buyer selected">{o.shipping_method}</span>
+                )}
                 {o.platform === "tiktok" && o.shipping_type && (
                   o.shipping_type === "TIKTOK"
                     ? <span className="o2-chip" style={{ background: "#111", color: "#fff", fontWeight: 800 }} title="Fulfilled by TikTok — get the shipping label, then send it to the supplier">{t("o.shipByTiktok")}</span>

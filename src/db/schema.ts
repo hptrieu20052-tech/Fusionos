@@ -107,6 +107,9 @@ export const orders = pgTable("orders", {
   designerSentAt: timestamp("designer_sent_at", { withTimezone: true }),
   // TikTok: "TIKTOK" (Fulfilled by TikTok — get label để đẩy nhà in) | "SELLER" (mình tự ship). Null = không rõ / sàn khác.
   shippingType: text("shipping_type"),
+  // Mức vận chuyển KHÁCH CHỌN lúc checkout (vd "Express", "Standard") — từ shipping_lines của Shopify/Etsy.
+  // Để người fulfill biết đơn nào phải ship nhanh. Cần MIGRATION_v229. null = không rõ / free standard.
+  shippingMethod: text("shipping_method"),
   // Label TikTok Shipping đã lấy về + lưu R2: [{ packageId, trackingNumber, key, url, fetchedAt }]. Gửi link cho supplier.
   tiktokLabels: jsonb("tiktok_labels"),
   // Thời điểm đã Arrange (Create Package) qua API — khoá chống arrange 2 lần (tốn tiền). null = chưa arrange.

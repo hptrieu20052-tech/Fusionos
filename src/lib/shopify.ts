@@ -152,8 +152,12 @@ export function normalizeShopifyOrder(o: Record<string, unknown>): InOrder {
   });
   const fullName = strv(ship.name) || `${strv(ship.first_name)} ${strv(ship.last_name)}`.trim();
   const sp = fullName.split(/\s+/);
+  // Mức ship khách chọn (Express/Standard…) — lấy title của shipping_lines đầu tiên.
+  const shipLines = (Array.isArray(o.shipping_lines) ? o.shipping_lines : []) as Record<string, unknown>[];
+  const shippingMethod = strv(shipLines[0]?.title) || strv(shipLines[0]?.code) || undefined;
   return {
     externalId: strv(o.id) || strv(o.name) || strv(o.order_number), // id SỐ để round-trip API (fulfillment) chắc chắn
+    shippingMethod,
     buyerFirst: strv(ship.first_name) || sp.slice(0, -1).join(" ") || sp[0] || undefined,
     buyerLast: strv(ship.last_name) || (sp.length > 1 ? sp[sp.length - 1] : undefined),
     addr1: strv(ship.address1) || undefined,
