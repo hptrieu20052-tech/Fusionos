@@ -653,8 +653,13 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                       {CHANNELS.map((ch) => {
                         const c = row.captions?.[ch.key];
                         if (!c) return null;
-                        // YT Short: Title tách riêng (copy riêng) khỏi Description; kênh khác: chỉ 1 ô caption.
-                        const full = [c.text, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
+                        // Thêm theo kênh khi copy: FB + YT chèn LINK UTM (bấm được); IG chèn câu CTA (link ở bio / Shop).
+                        const extra = ch.key === "facebook" ? utmLink("meta")
+                          : ch.key === "shorts" ? utmLink("shorts")
+                          : ch.key === "instagram" ? "✨ Link in bio — or tap 🛍 Shop — to make hers" : "";
+                        const isLink = extra.startsWith("http");
+                        // YT Short: Title tách riêng (copy riêng) khỏi Description; kênh khác: 1 ô caption.
+                        const full = [c.text, extra, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
                         return (
                           <div key={ch.key} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 9 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
@@ -663,13 +668,14 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                               <button onClick={() => copy(full)} className="btn" style={{ padding: "3px 9px", fontSize: 11 }}>{c.title ? "Copy desc" : "Copy"}</button>
                             </div>
                             {c.title && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, background: "#F7FBFF", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px" }}>
-                                <span style={{ fontSize: 10.5, fontWeight: 800, color: "var(--muted)" }}>TITLE</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, background: "#F7FBFF", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px" }}>
+                                <span style={chip("#E4EAF1", "#475569")}>TITLE</span>
                                 <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600 }}>{c.title}</span>
-                                <button onClick={() => copy(c.title!)} className="btn" style={{ padding: "2px 8px", fontSize: 11 }}>Copy</button>
+                                <button onClick={() => copy(c.title!)} className="btn" style={{ padding: "2px 8px", fontSize: 11, flexShrink: 0 }}>Copy</button>
                               </div>
                             )}
                             <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{c.text}</div>
+                            {extra && <div style={{ fontSize: 11.5, marginTop: 4, wordBreak: "break-all", color: isLink ? "var(--blue)" : "#1F6F45", fontWeight: isLink ? 400 : 700 }}>{extra}</div>}
                             {!!(c.hashtags ?? []).length && <div style={{ fontSize: 11.5, color: "#4338CA", marginTop: 4 }}>{c.hashtags.join(" ")}</div>}
                           </div>
                         );
