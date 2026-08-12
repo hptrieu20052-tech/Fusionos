@@ -673,6 +673,8 @@ export const productVideos = pgTable("product_videos", {
   creatorId: uuid("creator_id").references(() => users.id),
   // Số lần thay file (creator sửa clip rồi update đè) — giữ #ID, chỉ đổi file.
   revision: integer("revision").notNull().default(1),
+  // Điểm cho video (giống points bên Design) — dùng chấm công/thưởng creator. 0–10. Xem MIGRATION_v244.
+  points: integer("points").notNull().default(0),
   productId: uuid("product_id"),                          // shopify_products.id (bản ghi local) — có thể để trống
   title: text("title").notNull(),
   note: text("note"),

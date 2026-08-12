@@ -18,7 +18,7 @@ type Row = {
   storageKey: string; publicUrl: string | null; thumbUrl: string | null;
   contentType: string | null; sizeBytes: number | null; durationSec: string | null;
   width: number | null; height: number | null; aspect: string | null;
-  language: string | null; flags: Flags | null; revision: number;
+  language: string | null; flags: Flags | null; revision: number; points: number;
   sourceName: string | null; shotAt: string | null;
   productId: string | null; productTitle: string | null;
   productUrl: string | null; productHandle: string | null;
@@ -425,7 +425,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
   const [matches, setMatches] = useState<Match[]>([]);
   const repRef = useRef<HTMLInputElement>(null);
   const [f, setF] = useState({
-    title: row.title, note: row.note ?? "", language: row.language ?? "",
+    title: row.title, note: row.note ?? "", language: row.language ?? "", points: row.points ?? 0,
     sourceName: row.sourceName ?? "", shotAt: row.shotAt ?? "",
     voice: !!row.flags?.voice, text: !!row.flags?.text, music: !!row.flags?.music,
   });
@@ -451,12 +451,12 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
   }, [lq, row.id]);
 
   const dirty = f.title.trim() !== row.title || f.note !== (row.note ?? "")
-    || f.language !== (row.language ?? "")
+    || f.language !== (row.language ?? "") || f.points !== (row.points ?? 0)
     || f.sourceName !== (row.sourceName ?? "") || f.shotAt !== (row.shotAt ?? "")
     || f.voice !== !!row.flags?.voice || f.text !== !!row.flags?.text || f.music !== !!row.flags?.music;
 
   const save = () => patch({
-    id: row.id, title: f.title.trim(), note: f.note, language: f.language || null,
+    id: row.id, title: f.title.trim(), note: f.note, language: f.language || null, points: f.points,
     sourceName: f.sourceName || null, shotAt: f.shotAt || null,
     flags: { voice: f.voice, text: f.text, music: f.music },
   }, "Updated");
@@ -550,8 +550,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
             )}
             <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8, lineHeight: 1.8 }}>
               {row.width}×{row.height} · {row.aspect ?? "—"} · {secs(row.durationSec)} · {mb(row.sizeBytes)}<br />
-              Uploaded by {row.uploader ?? "—"} · {new Date(row.createdAt).toLocaleDateString()}<br />
-              {row.storeName ? <>Store: {row.storeName}</> : null}
+              Uploaded by {row.uploader ?? "—"} · {new Date(row.createdAt).toLocaleDateString()}
             </div>
             {row.publicUrl && (
               <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
@@ -571,6 +570,15 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   <input value={f.title} disabled={!canManage} onChange={(e) => setF({ ...f, title: e.target.value })} />
                 </div>
                 <div className="field">
+                  <label>ID</label>
+                  <input value={`#${row.videoCode}`} readOnly style={{ background: "#EDEFF4", color: "var(--muted)" }} />
+                </div>
+                <div className="field">
+                  <label>Points</label>
+                  <input type="number" min={0} max={10} value={f.points} disabled={!canManage}
+                    onChange={(e) => setF({ ...f, points: Math.max(0, Math.min(10, Number(e.target.value) || 0)) })} />
+                </div>
+                <div className="field">
                   <label>Seller</label>
                   <select value={row.sellerId ?? ""} disabled={!canManage}
                     onChange={(e) => patch({ id: row.id, sellerId: e.target.value || null }, "Seller updated")}>
@@ -585,11 +593,6 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                     <option value="">—</option>
                     {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
-                </div>
-                <div className="field" style={{ gridColumn: "span 2" }}>
-                  <label>Note <span style={{ fontWeight: 400, color: "var(--muted)" }}>· seller ↔ creator</span></label>
-                  <input value={f.note} disabled={!canManage} placeholder="What to fix, what to reshoot…"
-                    onChange={(e) => setF({ ...f, note: e.target.value })} />
                 </div>
               </div>
               {canManage && (

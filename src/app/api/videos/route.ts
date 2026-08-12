@@ -234,6 +234,7 @@ export async function PATCH(req: NextRequest) {
 
   if ("sellerId" in b) patch.sellerId = uuidOk(b.sellerId) ? String(b.sellerId) : null;
   if ("creatorId" in b) patch.creatorId = uuidOk(b.creatorId) ? String(b.creatorId) : null;
+  if ("points" in b) patch.points = Math.max(0, Math.min(10, Math.round(Number(b.points) || 0)));
   // Posted tracker: đánh dấu đã đăng lên kênh nào + link bài đăng. Chỉ giữ 5 kênh + URL http hợp lệ.
   if ("postedTo" in b) patch.postedTo = cleanPostedTo(b.postedTo);
   // THAY FILE — creator sửa clip rồi update đè. Giữ nguyên #ID, gán listing và caption;

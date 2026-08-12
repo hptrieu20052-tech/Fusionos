@@ -454,56 +454,17 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
               <b style={{ fontSize: 13.5 }}>{t("d.title")}</b>
               <CopyBtn v={f.title} tip={t("d.copy") + " " + t("d.title").toLowerCase()} />
-              {canEdit && (
-                <button onClick={genAI} disabled={aiBusy} style={{ ...btnDark, display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
-                  <IconSparkle width={13} height={13} /> {aiBusy ? t("d.generating") : t("d.genAI")}
-                </button>
-              )}
             </div>
             <input value={f.title} maxLength={140} onChange={(e) => setF({ ...f, title: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }} />
             <div style={{ fontSize: 11, color: f.title.length >= 140 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.title.length}/140</div>
 
             <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
-              <label style={rLbl}>{t("d.sku")}
+              <label style={rLbl}>ID
                 <input value={d.skuCode} readOnly style={{ ...inp, width: "100%", marginTop: 4, background: "#EDEFF4", color: "var(--muted)" }} />
               </label>
               <label style={rLbl}>{t("d.points")}
                 <input type="number" min={0} max={10} value={f.points} disabled={!canEdit}
                   onChange={(e) => setF({ ...f, points: Number(e.target.value) })} style={{ ...inp, width: "100%", marginTop: 4 }} />
-              </label>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0 4px" }}>
-              <b style={{ fontSize: 13.5 }}>{t("d.description")}</b>
-              <CopyBtn v={f.description} tip={t("d.copy") + " " + t("d.description").toLowerCase()} />
-            </div>
-            <textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} disabled={!canEdit} rows={3} style={{ ...inp, width: "100%", resize: "vertical" }} />
-
-            <label style={{ display: "flex", alignItems: "center", gap: 8, margin: "10px 0", fontSize: 13, cursor: "pointer" }}>
-              <input type="checkbox" checked={f.personalize} disabled={!canEdit} onChange={(e) => setF({ ...f, personalize: e.target.checked })} />
-              {t("d.personalize")}
-            </label>
-            {f.personalize && (
-              <div style={{ marginBottom: 6 }}>
-                <b style={{ fontSize: 13, display: "block", marginBottom: 5 }}>{t("d.personalizationText")}</b>
-                <textarea value={f.personalization} maxLength={256} onChange={(e) => setF({ ...f, personalization: e.target.value })} disabled={!canEdit}
-                  rows={2} placeholder={t("d.personalizationPh")} style={{ ...inp, width: "100%", resize: "vertical" }} />
-                <div style={{ fontSize: 11, color: f.personalization.length >= 256 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.personalization.length}/256</div>
-              </div>
-            )}
-
-            <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 4 }}>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <b style={{ fontSize: 13 }}>{t("d.productLink")}</b>
-                  {f.productLink && <CopyBtn v={f.productLink} tip={t("d.copy") + " link"} />}
-                </div>
-                <input value={f.productLink} placeholder={t("d.linkPlaceholder")} disabled={!canEdit}
-                  onChange={(e) => setF({ ...f, productLink: e.target.value })} style={{ ...inp, width: "100%" }} />
-              </div>
-              <label style={{ ...rLbl }}>{t("c.note")}
-                <input value={f.note} placeholder={t("c.note")} disabled={!canEdit}
-                  onChange={(e) => setF({ ...f, note: e.target.value })} style={{ ...inp, width: "100%", marginTop: 4 }} />
               </label>
             </div>
 
@@ -627,48 +588,11 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
 
           {/* CỘT PHẢI */}
           <div style={{ paddingBottom: 8 }}>
-            <label style={rLbl}>{t("d.platform")}
-              <select value={f.platform} onChange={(e) => setF({ ...f, platform: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%", marginTop: 4 }}>
-                <option value="">{t("c.all")}</option>
-                <option value="tiktok">TikTok</option><option value="amazon">Amazon</option><option value="etsy">Etsy</option>
-              </select>
-            </label>
-            <div style={{ marginTop: 10 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600 }}>
-                {t("d.tags")} <span style={{ color: f.tags.length >= 13 ? "var(--red)" : "var(--muted)", fontWeight: 500, fontSize: 11.5 }}>({f.tags.length}/13)</span>
-                <CopyBtn v={f.tags.join(", ")} tip={t("d.copy") + " tags"} />
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "6px 0" }}>
-                {f.tags.map((tag, i) => (
-                  <span key={i} style={{ background: "var(--blue-soft)", color: "var(--blue)", borderRadius: 8, padding: "2px 9px", fontSize: 11.5, fontWeight: 600 }}>
-                    {tag} {canEdit && <button onClick={() => setF({ ...f, tags: f.tags.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: "var(--blue)", cursor: "pointer", padding: 0, fontSize: 11 }}>✕</button>}
-                  </span>
-                ))}
-              </div>
-              {canEdit && <input placeholder={f.tags.length >= 13 ? t("d.tagsFull") : t("d.addTag")} value={tagInput} maxLength={20}
-                disabled={f.tags.length >= 13}
-                onChange={(e) => setTagInput(e.target.value.slice(0, 20))}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    const v = tagInput.trim().slice(0, 20);
-                    if (v && f.tags.length < 13 && !f.tags.includes(v)) { setF({ ...f, tags: [...f.tags, v] }); setTagInput(""); }
-                  }
-                }}
-                style={{ ...inp, width: "100%", opacity: f.tags.length >= 13 ? 0.6 : 1 }} />}
-            </div>
-            <div style={{ marginTop: 9 }}>{Sel("sellerId", t("c.seller"), detail.sellers)}</div>
-            <div style={{ marginTop: 9 }}>{Sel("storeId", t("c.store"), detail.stores)}</div>
+            <div style={{ marginTop: 2 }}>{Sel("sellerId", t("c.seller"), detail.sellers)}</div>
             <div style={{ marginTop: 9 }}>{Sel("designerId", t("c.designer"), detail.designers)}</div>
             <div style={{ marginTop: 9 }}>{Sel("creatorId", t("d.creator"), detail.creators)}</div>
 
-            <div style={{ marginTop: 10, fontSize: 13, fontWeight: 600 }}>{t("d.statusListing")}</div>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, cursor: "pointer", fontSize: 13.5, fontWeight: 700 }}>
-              <input type="checkbox" checked={f.listed} disabled={!canEdit} onChange={(e) => setF({ ...f, listed: e.target.checked })} />
-              {f.listed ? t("d.listed") : t("d.unlisted")}
-            </label>
-
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 12, lineHeight: 1.8 }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 14, lineHeight: 1.8, background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px" }}>
               {t("d.ordersGenerated")}: <b style={{ color: "var(--ink)" }}>{detail.ordersGenerated.c}</b> ({detail.ordersGenerated.items} {t("c.items")})
               <br />{t("d.score")}: <b style={{ color: "var(--ink)" }}>{detail.avgScore ? detail.avgScore.toFixed(1) : "—"}</b> ({detail.reviewCount} {t("d.reviews")})
             </div>
