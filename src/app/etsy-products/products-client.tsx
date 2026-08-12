@@ -472,6 +472,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         {notesOpen && (
           <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "grid", gap: 5, fontSize: 12.8, color: "#5C4A2A", lineHeight: 1.5 }}>
             <li><b>Kiểm tra bản quyền (Trademark)</b></li>
+            <li><b>Đổi giá → Variants. Khách chọn/nhập mà giá KHÔNG đổi (tên, lời nhắn, Girl/Boy, kiểu nhân vật Girl 1…) → Custom (Personalization), đừng cho vào Variants.</b></li>
             <li><b>Thêm Custom cho listing cần cá nhân hoá</b></li>
             <li><b>Một sản phẩm list ở 2 shop Etsy → tự lọc trùng, giữ 1 listing, xóa bớt cái còn lại.</b></li>
             <li><b>Listing đã Push sẽ bị khóa không xóa được (chỉ admin xóa được).</b></li>
