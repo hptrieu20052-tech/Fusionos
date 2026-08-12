@@ -21,17 +21,24 @@ export const maxDuration = 120;
  *   · KHÔNG bịa review, số sao, "best seller", "hàng nghìn khách".
  */
 type Caption = { text: string; hashtags: string[] };
-type Out = { meta: Caption; shorts: Caption; meta_ads: Caption };
+type Out = { facebook: Caption; instagram: Caption; shorts: Caption; meta_ads: Caption };
 
-// Khớp ĐÚNG 3 kênh trong khu DISTRIBUTION: meta (Reel FB+IG) · shorts (YT Short) · meta_ads (Meta Ads).
-const CHANNELS = ["meta", "shorts", "meta_ads"] as const;
+// Facebook & Instagram TÁCH RIÊNG (FB ít hashtag + có link; IG nhiều hashtag + link ở bio).
+const CHANNELS = ["facebook", "instagram", "shorts", "meta_ads"] as const;
 
 const SYSTEM = `You write short-form marketing copy for Talewix, a store selling personalized children's books and personalized wooden name puzzles, each made to order.
 
-Write copy for THREE destinations, each tuned to how it is used:
-- meta: ONE Reel caption used for BOTH Facebook and Instagram. 120-180 chars, warm and gift-focused, hook in the first line, natural spoken tone, 3-5 hashtags.
+Write copy for FOUR destinations, each tuned to how it is used (Facebook and Instagram are SEPARATE because their hashtag and link behavior differ):
+- facebook: a Facebook Reel caption. 120-180 chars, warm and gift-focused, hook in the first line, natural spoken tone. Only 2-3 hashtags (Facebook barely uses them). The user will paste a clickable product link after this text, so end the text cleanly.
+- instagram: an Instagram Reel caption. 120-180 chars, same warm hook style. Then 10-14 hashtags (Instagram relies heavily on them for discovery). The link goes in the bio, not the caption, so do NOT put a URL here.
 - shorts: a YouTube Shorts caption. Under 100 chars, punchy and searchable (people search YouTube), 3-5 hashtags.
 - meta_ads: PAID ad primary text (Facebook/Instagram ads). 90-125 chars, benefit-led and clear, speaks to a parent or grandparent buying a gift, no clickbait, 0-2 hashtags.
+
+HASHTAG STRATEGY (for the instagram hashtags): give a MIX so the post can rank in both big and niche feeds:
+- 3-4 BROAD high-reach tags (e.g. #personalizedgifts, #kidsbooks, #giftsforkids, #customgifts).
+- 4-5 NICHE/specific tags tied to THIS product and who it suits (e.g. #personalizedmermaidbook, #mermaidgift, #customstorybook, #keepsakebook).
+- 2-3 OCCASION/buyer tags (e.g. #birthdaygiftforgirls, #granddaughtergift, #giftforher).
+Order them broad → niche. Keep every tag genuinely relevant (no filler, no unrelated trending tags). You cannot know live hashtag volume, so favor clearly on-topic tags over guessing what's "trending".
 
 ABSOLUTE RULES — breaking any of these makes the output unusable:
 1. NEVER invent a discount, coupon code, sale, percentage off, or any "limited time" or "expires soon" urgency. The store runs no automatic discounts.
@@ -43,7 +50,7 @@ ABSOLUTE RULES — breaking any of these makes the output unusable:
 7. If a product image and/or a still frame from the video are provided, use them to keep the description concrete and accurate (what the product actually is, its style, who it suits). But NEVER name or imply any real brand or copyrighted character even if you think you recognize one in the image (see rule 3).
 
 Return STRICT JSON only, no markdown fence:
-{"meta":{"text":"...","hashtags":["#a","#b"]},"shorts":{...},"meta_ads":{...}}
+{"facebook":{"text":"...","hashtags":["#a","#b"]},"instagram":{...},"shorts":{...},"meta_ads":{...}}
 Every hashtag must start with "#", be lowercase, contain no spaces, and be relevant to personalized gifts for kids.`;
 
 export async function POST(req: NextRequest) {
@@ -132,7 +139,7 @@ export async function POST(req: NextRequest) {
     const tags = (Array.isArray(o.hashtags) ? o.hashtags : [])
       .map((t) => String(t).trim().replace(/^#*/, "#").replace(/\s+/g, "").toLowerCase())
       .filter((t) => t.length > 1 && t.length <= 40)
-      .slice(0, 8);
+      .slice(0, 15);
     return { text, hashtags: Array.from(new Set(tags)) };
   };
   const captions: Record<string, Caption> = {};
