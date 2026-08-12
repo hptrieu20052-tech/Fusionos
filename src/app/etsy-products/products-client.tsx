@@ -11,7 +11,7 @@ const ETSY_ORANGE = "#F1641E";
 type Row = {
   id: string; storeId: string; title: string; price: string | null; quantity: number | null;
   tags: string | null; sku: string | null; status: string; importedAt: string | null;
-  storeName: string | null; mainImageUrl: string | null; variationsSummary: string;
+  storeName: string | null; mainImageUrl: string | null; imageUrls?: string[]; variationsSummary: string;
   sellerId: string | null; sellerName: string | null; pushed?: boolean; staged?: boolean;
   shopifyListing?: { id: string; title: string } | null; // v183: chỉ có khi người xem có quyền trên store Shopify đích
   persCount?: number; // v142 · số ô Custom options của listing
@@ -583,7 +583,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)", background: sel.has(r.id) ? "#F8FAFF" : "#fff" }}>
                 <td style={{ padding: "10px 14px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: "8px 6px" }}>
-                  <ThumbZoom src={r.mainImageUrl} alt={r.title} size={46} radius={10} />
+                  <ThumbZoom src={r.mainImageUrl} images={r.imageUrls} alt={r.title} size={46} radius={10} />
                 </td>
                 <td style={{ padding: "10px 6px", maxWidth: 420 }}>
                   {/* v118: LUÔN hiện title gốc từ CSV Etsy. Bỏ nhánh hiện shopify_title + badge AI —

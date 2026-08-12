@@ -107,6 +107,8 @@ export async function GET(req: NextRequest) {
     // v183: bản ghi tương ứng bên Manage Products · Shopify — null nếu chưa stage/push hoặc người xem không có quyền
     shopifyListing: shopByEid.get(r.id) ?? (r.shopifyProductId ? shopByGid.get(String(r.shopifyProductId)) ?? null : null) ?? null,
     mainImageUrl: Array.isArray(r.images) && r.images.length ? String((r.images as string[])[0]) : null,
+    // v234 · tất cả URL ảnh để lightbox trượt qua lại cả listing.
+    imageUrls: Array.isArray(r.images) ? (r.images as string[]).map(String).filter(Boolean).slice(0, 20) : [],
     variationsSummary: Array.isArray(r.variations)
       ? (r.variations as { name?: string; values?: string[] }[]).map((v) => `${v.name}: ${(v.values ?? []).length}`).join(" · ")
       : "",

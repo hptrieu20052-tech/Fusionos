@@ -103,6 +103,8 @@ export async function GET(req: NextRequest) {
       collectionTitles: (Array.isArray(r.p.collections) ? r.p.collections as { title: string }[] : []).map((c) => c.title).filter(Boolean),
       variantCount: vs.length, minPrice: prices.length ? Math.min(...prices) : null, maxPrice: prices.length ? Math.max(...prices) : null,
       mainImage: imgs[0]?.src ?? null, imageCount: imgs.length,
+      // v234 · tất cả URL ảnh (theo position) để lightbox trượt qua lại cả listing.
+      imageUrls: [...imgs].sort((a, b) => (a.position ?? 99) - (b.position ?? 99)).map((i) => i.src).filter(Boolean),
       // v224 · video đã gắn: thumbnail để nhận biết listing nào có video (cột Video cạnh Image).
       videoCode: r.videoCode ?? null, videoThumbUrl: r.videoThumbUrl ?? null, videoPushed: !!r.p.videoPushedAt,
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,

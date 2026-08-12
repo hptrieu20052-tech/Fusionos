@@ -11,7 +11,7 @@ type Row = {
   id: string; storeId: string; storeName: string | null; sellerName: string | null;
   title: string; handle: string | null; status: string; dirty: boolean;
   variantCount: number; minPrice: number | null; maxPrice: number | null;
-  mainImage: string | null; imageCount: number; onlineStoreUrl: string | null;
+  mainImage: string | null; imageCount: number; imageUrls?: string[]; onlineStoreUrl: string | null;
   videoCode: number | null; videoThumbUrl: string | null; videoPushed: boolean;
   totalInventory: number | null; optionsSummary: string;
   productType: string; categoryName: string; collectionTitles: string[];
@@ -1386,7 +1386,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
-                <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} alt={r.title} size={42} radius={8} border /></td>
+                <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} images={r.imageUrls} alt={r.title} size={42} radius={8} border /></td>
                 <td style={{ padding: "8px 6px" }}>
                   {r.videoThumbUrl ? (
                     <div title={`Video #${r.videoCode}${r.videoPushed ? " · đã lên Shopify" : " · chưa đẩy lên media"}`} style={{ position: "relative", width: 42, height: 42 }}>
