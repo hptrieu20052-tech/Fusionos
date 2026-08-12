@@ -110,6 +110,12 @@ export const orders = pgTable("orders", {
   // Mức vận chuyển KHÁCH CHỌN lúc checkout (vd "Express", "Standard") — từ shipping_lines của Shopify/Etsy.
   // Để người fulfill biết đơn nào phải ship nhanh. Cần MIGRATION_v229. null = không rõ / free standard.
   shippingMethod: text("shipping_method"),
+  // UTM lấy từ landing_site của Shopify (trang khách vào ĐẦU TIÊN) — để quy đơn về đúng video × kênh.
+  // utm_campaign = "video_<videoCode>", utm_source = kênh phân phối (tiktok/reels/…). CHỈ có với đơn về
+  // SAU khi link phân phối bắt đầu được dùng; đơn cũ để trống. Xem MIGRATION_v236_order_utm.sql.
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
   // Label TikTok Shipping đã lấy về + lưu R2: [{ packageId, trackingNumber, key, url, fetchedAt }]. Gửi link cho supplier.
   tiktokLabels: jsonb("tiktok_labels"),
   // Thời điểm đã Arrange (Create Package) qua API — khoá chống arrange 2 lần (tốn tiền). null = chưa arrange.
@@ -122,6 +128,7 @@ export const orders = pgTable("orders", {
   index("idx_orders_seller_date").on(t.sellerId, t.orderedAt),
   index("idx_orders_seller_at_date").on(t.sellerAtOrder, t.orderedAt),
   index("idx_orders_status").on(t.status),
+  index("idx_orders_utm_campaign").on(t.utmCampaign),
 ]);
 
 export const orderItems = pgTable("order_items", {

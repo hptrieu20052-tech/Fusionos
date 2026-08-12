@@ -34,12 +34,20 @@ type Opt = { id: string; name: string | null };
 type TypeOpt = { productType: string | null; n: number; withVideo: number };
 type Listing = { id: string; title: string; productType: string | null; pushedAt: string | null };
 type Match = { id: string; title: string; productType: string | null; videoId: string | null };
+// Performance quy về từng video qua UTM (utm_campaign = video_<code>), tách theo kênh (utm_source).
+type Perf = { orders: number; revenue: number; channels: Record<string, { orders: number; revenue: number }> };
 
 const LANGS = [{ v: "none", label: "No voice" }, { v: "en", label: "English" }, { v: "vi", label: "Tiếng Việt" }];
 const CHANNELS = [
   { key: "tiktok", label: "TikTok" }, { key: "reels", label: "IG Reels" }, { key: "shorts", label: "YT Shorts" },
   { key: "facebook", label: "Facebook" }, { key: "pinterest", label: "Pinterest" },
 ] as const;
+// Nhãn kênh cho Performance (khớp utm_source do nút UTM sinh ra).
+const CH_LABEL: Record<string, string> = { tiktok: "TikTok", reels: "IG Reel", facebook: "FB Page", pinterest: "Pinterest", shorts: "YT Short", meta_ads: "Meta Ads", gmc: "GMC/PMax", other: "Other" };
+// Nhãn ngắn cho hàng "đã đăng" trên card.
+const POSTED_LABEL: Record<string, string> = { tiktok: "TikTok", reels: "IG", shorts: "YT", facebook: "FB", pinterest: "Pinterest", meta_ads: "Ads", gmc: "GMC" };
+const money = (n: number) => "$" + Math.round(n || 0).toLocaleString();
+const WIN_ORDERS = 10; // đủ số đơn quy về mới gắn cờ 🔥 "winning creative"
 
 const chip = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-block", background: bg, color: fg, borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 800 });
 const pgBtn: React.CSSProperties = { minWidth: 34, height: 34, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13 };
@@ -64,6 +72,8 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
   const [prog, setProg] = useState<{ name: string; pct: number } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
+  // Performance theo videoCode (chỉ admin xem — tránh lộ doanh thu cho creator/seller). Key = String(videoCode).
+  const [perf, setPerf] = useState<Record<string, Perf>>({});
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 6000); };
 
@@ -79,10 +89,18 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
       if (j.ok) {
         setRows(j.rows ?? []); setTotal(j.total ?? 0);
         setSellers(j.filters?.sellers ?? []); setCreators(j.filters?.creators ?? []);
+        // Performance chỉ kéo cho admin (doanh thu Shopify) — tách 1 call để không chặn danh sách.
+        if (isAdmin) {
+          const codes = (j.rows ?? []).map((r: Row) => r.videoCode).filter(Boolean);
+          if (codes.length) {
+            fetch(`/api/videos/performance?codes=${codes.join(",")}`).then((r) => r.json())
+              .then((pj) => { if (pj.ok) setPerf(pj.perf ?? {}); }).catch(() => {});
+          } else setPerf({});
+        }
       } else flash("✗ " + (j.error ?? "load failed"), false);
     } catch { flash("✗ Network error", false); }
     setLoading(false);
-  }, [dr, q, sellerId, creatorId]);
+  }, [dr, q, sellerId, creatorId, isAdmin]);
 
   useEffect(() => { const t = setTimeout(() => { setPage(1); load(1); }, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
   const goPage = (n: number) => {
@@ -296,37 +314,29 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                   )}
                 </div>
               </div>
-              {/* Body đồng bộ với Card Design: mã # + ngày · title pill · Seller/Creator có nhãn · footer kích thước·size + listings */}
-              <div className="dc-body" style={{ flex: 1 }}>
+              {/* Card gọn: #id · tên video · product · seller/creator · đã đăng · performance · thời lượng.
+                  Chi tiết kỹ thuật (WxH·size·UUID) đưa vào modal. */}
+              <div className="dc-body" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                 <div className="dc-top">
                   <span className="dc-id" style={{ cursor: "pointer" }} title="Copy ID"
                     onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(String(r.videoCode)); }}>#{r.videoCode}</span>
-                  <span className="dc-date">{new Date(r.createdAt).toLocaleString()}</span>
+                  <span className="dc-date">{new Date(r.createdAt).toLocaleDateString()}</span>
                 </div>
-                <div className="dc-title">
-                  <span title={r.title} style={{ cursor: "pointer", background: "#EEF4FF", borderRadius: 6, padding: "1px 7px" }}
+                <div className="dc-title" style={{ fontWeight: 700 }}>
+                  <span title={r.title} style={{ cursor: "pointer" }}
                     onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.title); }}>{r.title}</span>
                 </div>
-                <div className="dc-meta"><span>Seller</span><b>{r.sellerName ?? "—"}</b></div>
-                <div className="dc-meta"><span>Creator</span><b>{r.sourceName || r.creatorName || r.uploader || "—"}</b></div>
-                <div className="dc-meta">
-                  <span>Listing</span>
-                  <b style={{ color: r.usedBy > 0 ? "var(--green)" : "var(--muted)" }}>
-                    {r.usedBy > 0 ? `${r.usedBy} listing${r.usedBy > 1 ? "s" : ""}${r.usedPushed ? ` · ${r.usedPushed} on Shopify` : ""}` : "Not on any listing"}
-                  </b>
+                {r.productTitle && (
+                  <div title={r.productTitle} style={{ fontSize: 11.5, color: "#475569", background: "#F1F5F9", borderRadius: 6, padding: "2px 8px", alignSelf: "flex-start", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productTitle}</div>
+                )}
+                <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 1 }}>
+                  <span title="Seller">👤 {r.sellerName ?? "—"}</span>
+                  <span title="Creator">🎬 {r.sourceName || r.creatorName || r.uploader || "—"}</span>
                 </div>
-                {(r.language && r.language !== "none") || r.flags?.voice || r.flags?.text || r.flags?.music || r.captionsAt || r.revision > 1 ? (
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    {r.language && r.language !== "none" && <span style={chip("#F3F4F6", "#374151")}>{r.language.toUpperCase()}</span>}
-                    {r.flags?.voice && <span style={chip("#F3F4F6", "#374151")}>VOICE</span>}
-                    {r.flags?.text && <span style={chip("#FEF6E7", "#B7791F")}>TEXT ON SCREEN</span>}
-                    {r.flags?.music && <span style={chip("#F3F4F6", "#374151")}>MUSIC</span>}
-                    {r.captionsAt && <span style={chip("#EEF2FF", "#4338CA")}>CAPTIONS</span>}
-                    {r.revision > 1 && <span style={chip("#FEF6E7", "#B7791F")}>v{r.revision}</span>}
-                  </div>
-                ) : null}
-                <div className="dc-foot">
-                  <span>{r.width && r.height ? `${r.width}×${r.height}` : (r.aspect ?? "—")}{r.sizeBytes ? ` · ${mb(r.sizeBytes)}` : ""}</span>
+                <PostedTicks postedTo={r.postedTo} />
+                {isAdmin && <PerfLine p={perf[String(r.videoCode)]} />}
+                <div className="dc-foot" style={{ marginTop: "auto" }}>
+                  <span>{r.aspect ?? "—"}</span>
                   <span>{secs(r.durationSec)}</span>
                 </div>
               </div>
@@ -348,6 +358,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
           key={openRow.id} row={openRow} canManage={canManage} isAdmin={isAdmin} busy={busy} setBusy={setBusy}
           close={() => setOpen(null)} reload={() => load(page)} flash={flash} patch={patch}
           sellers={sellers} creators={creators} confirm={confirm} onReplace={doReplace}
+          perf={perf[String(openRow.videoCode)]}
         />
       )}
     </div>
@@ -374,12 +385,13 @@ function Pager({ page, total, show, setPage, label }: { page: number; total: num
 }
 
 /** Chi tiết. Gán listing theo Product type là đường chính — 1 thao tác cho cả lô. */
-function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace }: {
+function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf }: {
   row: Row; canManage: boolean; isAdmin: boolean; busy: boolean; setBusy: (b: boolean) => void;
   close: () => void; reload: () => Promise<void> | void; flash: (m: string, ok?: boolean) => void;
   patch: (b: Record<string, unknown>, ok?: string) => Promise<void>;
   sellers: Opt[]; creators: Opt[]; confirm: ReturnType<typeof useConfirm>;
   onReplace: (row: Row, file: File) => Promise<void>;
+  perf?: Perf;
 }) {
   const [types, setTypes] = useState<TypeOpt[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -582,9 +594,37 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   )}
                 </div>
 
-                {/* Captions */}
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button disabled={busy || !row.productId} className="btn" onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}>✨ {row.captionsAt ? "Rewrite captions" : "Write captions"}</button>
+                {/* CONTENT — caption AI theo từng kênh (sinh 1 lượt cho cả 5 kênh) */}
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>CONTENT</div>
+                    <button disabled={busy || !row.productId} className="btn" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 11.5 }}
+                      onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}>✨ {row.captionsAt ? "Regenerate" : "Generate"}</button>
+                  </div>
+                  {row.captions ? (
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {CHANNELS.map((ch) => {
+                        const c = row.captions?.[ch.key];
+                        if (!c) return null;
+                        const full = [c.text, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
+                        return (
+                          <div key={ch.key} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 9 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                              <span style={chip("#F3F4F6", "#374151")}>{ch.label}</span>
+                              <span style={{ flex: 1 }} />
+                              <button onClick={() => copy(full)} className="btn" style={{ padding: "3px 9px", fontSize: 11 }}>Copy</button>
+                            </div>
+                            <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{c.text}</div>
+                            {!!(c.hashtags ?? []).length && <div style={{ fontSize: 11.5, color: "#4338CA", marginTop: 4 }}>{c.hashtags.join(" ")}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12.5, color: "var(--muted)", background: "#F7F8FA", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px" }}>
+                      {row.productId ? "No captions yet — click Generate." : "Attach to a listing first, then generate captions."}
+                    </div>
+                  )}
                 </div>
 
                 {/* ── DISTRIBUTION HUB (compact) · 1 dòng / điểm đến ── */}
@@ -626,6 +666,48 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                     })}
                   </div>
                 </div>
+
+                {/* PERFORMANCE — quy đơn về video qua UTM. Orders/Revenue là số THẬT (Shopify);
+                    Views/Clicks chờ Phase 2 (cần API TikTok/Meta). */}
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 6 }}>PERFORMANCE</div>
+                  {(() => {
+                    const orders = perf?.orders ?? 0;
+                    const revenue = perf?.revenue ?? 0;
+                    const chans = perf?.channels ?? {};
+                    const chanKeys = Object.keys(chans).sort((a, b) => chans[b].revenue - chans[a].revenue);
+                    return (
+                      <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", textAlign: "center" }}>
+                          {([["Views", "—"], ["Clicks", "—"], ["Orders", String(orders)], ["Revenue", money(revenue)]] as [string, string][]).map(([k, v], i) => (
+                            <div key={k} style={{ padding: "10px 6px", borderLeft: i ? "1px solid var(--line)" : "none" }}>
+                              <div style={{ fontSize: 17, fontWeight: 800, color: k === "Revenue" && revenue ? "var(--green)" : "var(--ink)" }}>{v}</div>
+                              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>{k}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {chanKeys.length > 0 && (
+                          <div style={{ borderTop: "1px solid var(--line)" }}>
+                            {chanKeys.map((k) => (
+                              <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderTop: "1px solid #F1F3F7", fontSize: 12.5 }}>
+                                <span style={{ flex: 1 }}>{CH_LABEL[k] ?? k}</span>
+                                <span style={{ color: "var(--muted)" }}>{chans[k].orders} orders</span>
+                                <b style={{ color: "var(--green)", minWidth: 64, textAlign: "right" }}>{money(chans[k].revenue)}</b>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ borderTop: "1px solid var(--line)", padding: "7px 12px", fontSize: 11, color: "var(--muted)", background: "#FAFBFC" }}>
+                          {orders >= WIN_ORDERS
+                            ? <span style={{ color: "#B45309", fontWeight: 700 }}>🔥 Winning creative</span>
+                            : orders > 0
+                              ? "Tracking sales via the UTM links above."
+                              : "No tracked sales yet — orders attribute here once the UTM links above are used in posts/ads."}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
               </>
             )}
 
@@ -652,32 +734,36 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
               </div>
             )}
 
-            {isAdmin && row.captions && (
-              <details>
-                <summary style={{ cursor: "pointer", fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>View full captions</summary>
-                <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-                {CHANNELS.map((ch) => {
-                  const c = row.captions?.[ch.key];
-                  if (!c) return null;
-                  const full = [c.text, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
-                  return (
-                    <div key={ch.key} style={{ border: "1px solid var(--line)", borderRadius: 11, padding: 10 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
-                        <span style={chip("#F3F4F6", "#374151")}>{ch.label}</span>
-                        <span style={{ flex: 1 }} />
-                        <button onClick={() => copy(full)} className="btn" style={{ padding: "4px 9px", fontSize: 11.5 }}>Copy</button>
-                      </div>
-                      <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{c.text}</div>
-                      {!!(c.hashtags ?? []).length && <div style={{ fontSize: 11.5, color: "#4338CA", marginTop: 5 }}>{c.hashtags.join(" ")}</div>}
-                    </div>
-                  );
-                })}
-                </div>
-              </details>
-            )}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Hàng "đã đăng" trên card — kênh nào có link bài thì gắn ✓. */
+function PostedTicks({ postedTo }: { postedTo: Row["postedTo"] }) {
+  const done = postedTo && typeof postedTo === "object"
+    ? Object.keys(postedTo).filter((k) => postedTo[k]?.url) : [];
+  if (!done.length) return <div style={{ fontSize: 11.5, color: "var(--muted)" }}>Not posted yet</div>;
+  return (
+    <div style={{ fontSize: 11.5, color: "#1F6F45", fontWeight: 600 }}>
+      {done.map((k) => `${POSTED_LABEL[k] ?? k} ✓`).join(" · ")}
+    </div>
+  );
+}
+
+/** Dòng performance trên card — Views chờ Phase 2, Orders/Revenue quy về qua UTM. */
+function PerfLine({ p }: { p?: Perf }) {
+  const orders = p?.orders ?? 0;
+  return (
+    <div style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      <span style={{ color: "var(--muted)" }}>— views</span>
+      <span style={{ color: "var(--line)" }}>·</span>
+      <span style={{ color: orders ? "var(--ink)" : "var(--muted)", fontWeight: orders ? 700 : 400 }}>{orders} orders</span>
+      <span style={{ color: "var(--line)" }}>·</span>
+      <span style={{ color: orders ? "var(--green)" : "var(--muted)", fontWeight: 700 }}>{money(p?.revenue ?? 0)}</span>
+      {orders >= WIN_ORDERS && <span title="Winning creative">🔥</span>}
     </div>
   );
 }

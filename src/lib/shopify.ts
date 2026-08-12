@@ -133,6 +133,17 @@ function splitProperties(props: unknown): { personalization: string; files: { na
   return { personalization: parts.join("\n"), files };
 }
 
+// Tách utm_source/medium/campaign từ URL landing_site (có thể là URL đầy đủ hoặc chỉ "/path?query").
+function parseUtm(landing: string): { source?: string; medium?: string; campaign?: string } {
+  if (!landing || !landing.includes("?")) return {};
+  try {
+    const qs = landing.slice(landing.indexOf("?") + 1);
+    const p = new URLSearchParams(qs);
+    const g = (k: string) => { const v = (p.get(k) ?? "").trim().slice(0, 120); return v || undefined; };
+    return { source: g("utm_source"), medium: g("utm_medium"), campaign: g("utm_campaign") };
+  } catch { return {}; }
+}
+
 // Chuẩn hoá đơn Shopify (Admin API / webhook orders/create) → InOrder cho insertEtsyOrders.
 export function normalizeShopifyOrder(o: Record<string, unknown>): InOrder {
   const ship = (o.shipping_address ?? o.customer ?? {}) as Record<string, unknown>;
@@ -155,9 +166,14 @@ export function normalizeShopifyOrder(o: Record<string, unknown>): InOrder {
   // Mức ship khách chọn (Express/Standard…) — lấy title của shipping_lines đầu tiên.
   const shipLines = (Array.isArray(o.shipping_lines) ? o.shipping_lines : []) as Record<string, unknown>[];
   const shippingMethod = strv(shipLines[0]?.title) || strv(shipLines[0]?.code) || undefined;
+  // UTM để quy đơn về video × kênh — đọc từ landing_site (URL trang khách vào đầu tiên) hoặc referring_site.
+  const utm = parseUtm(strv(o.landing_site) || strv(o.landing_site_ref) || strv(o.referring_site) || "");
   return {
     externalId: strv(o.id) || strv(o.name) || strv(o.order_number), // id SỐ để round-trip API (fulfillment) chắc chắn
     shippingMethod,
+    utmSource: utm.source,
+    utmMedium: utm.medium,
+    utmCampaign: utm.campaign,
     buyerFirst: strv(ship.first_name) || sp.slice(0, -1).join(" ") || sp[0] || undefined,
     buyerLast: strv(ship.last_name) || (sp.length > 1 ? sp[sp.length - 1] : undefined),
     addr1: strv(ship.address1) || undefined,
