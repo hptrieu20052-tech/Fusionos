@@ -639,34 +639,49 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
               </div>
             )}
 
-            {/* ── PHÂN PHỐI · đăng bài lên kênh + link UTM để đo video nào ra đơn ── */}
+            {/* ── DISTRIBUTION HUB · mỗi điểm đến: caption + UTM + mở trang đăng + đánh dấu đã đăng ── */}
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>ĐĂNG BÀI · UTM TRACKING</div>
-                {canManage && <button disabled={busy} className="btn" style={{ marginLeft: "auto", padding: "5px 11px", fontSize: 12 }} onClick={savePosted}>Lưu</button>}
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>PHÂN PHỐI · caption · UTM · mở trang đăng</div>
+                {canManage && <button disabled={busy} className="btn" style={{ marginLeft: "auto", padding: "5px 11px", fontSize: 12 }} onClick={savePosted}>Lưu trạng thái</button>}
               </div>
               {!row.productUrl && (
                 <div style={{ fontSize: 11.5, color: "#B7791F", background: "#FEF6E7", border: "1px solid #F0D897", borderRadius: 9, padding: "7px 11px", marginBottom: 8 }}>
                   Video chưa có listing chính (hoặc listing chưa sync URL) → chưa tạo được link UTM. Gán video vào listing + Sync/Push trước.
                 </div>
               )}
-              <div style={{ display: "grid", gap: 7 }}>
-                {CHANNELS.map((ch) => {
-                  const link = utmLink(ch.key);
-                  const done = !!posted[ch.key]?.url;
+              <div style={{ display: "grid", gap: 8 }}>
+                {([
+                  { key: "tiktok", label: "TikTok", opens: [["Mở TikTok Studio", "https://www.tiktok.com/tiktokstudio/upload"]], note: "Creator tự đăng trên kênh của mình." },
+                  { key: "reels", label: "IG Reel", opens: [["Mở IG Reels composer", "https://business.facebook.com/latest/reels_composer"]] },
+                  { key: "facebook", label: "Facebook", opens: [["Mở FB composer", "https://business.facebook.com/latest/composer"]] },
+                  { key: "pinterest", label: "Pinterest", opens: [["Mở Pin builder", "https://www.pinterest.com/pin-builder/"]] },
+                  { key: "shorts", label: "YouTube Short", opens: [["Mở YouTube upload", "https://www.youtube.com/upload"]] },
+                  { key: "meta_ads", label: "Meta Ads (creative)", opens: [["Mở Ads Manager", "https://adsmanager.facebook.com/adsmanager"]], note: "Tải video (nút Download bên trái) → upload làm creative MỚI trong Ads Manager (dark post), test nhiều creative. Link đích của ad = link UTM ở đây." },
+                  { key: "gmc", label: "GMC / Performance Max", opens: [["Up YouTube", "https://www.youtube.com/upload"], ["Google Ads", "https://ads.google.com/"]], note: "Google không nhận MP4 trong feed — up YouTube rồi dùng link đó cho Performance Max / Demand Gen." },
+                ] as { key: string; label: string; opens: string[][]; note?: string }[]).map((d) => {
+                  const link = utmLink(d.key);
+                  const cap = row.captions?.[d.key];
+                  const capFull = cap ? [cap.text, (cap.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n") : "";
+                  const done = !!posted[d.key]?.url;
                   return (
-                    <div key={ch.key} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <span style={{ ...chip(done ? "#E9F7EF" : "#F3F4F6", done ? "#1F6F45" : "#374151"), minWidth: 78, textAlign: "center" }}>
-                        {done ? "✓ " : ""}{ch.label}
-                      </span>
-                      <button disabled={!link} className="btn" style={{ padding: "5px 10px", fontSize: 11.5, opacity: link ? 1 : .5 }}
-                        title={link || "Chưa có link UTM"} onClick={() => link && copy(link)}>Copy link UTM</button>
-                      <input value={posted[ch.key]?.url ?? ""} disabled={!canManage}
-                        placeholder="Dán link bài đã đăng…"
-                        onChange={(e) => setPostedUrl(ch.key, e.target.value)}
-                        onBlur={savePosted}
-                        style={{ flex: 1, minWidth: 160, padding: "6px 9px", fontSize: 12, borderRadius: 8, border: "1px solid var(--line)" }} />
-                      {done && <a href={posted[ch.key].url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: "var(--blue)", textDecoration: "none", flexShrink: 0 }}>mở ↗</a>}
+                    <div key={d.key} style={{ border: "1px solid var(--line)", borderRadius: 11, padding: "9px 11px", background: done ? "#F6FBF8" : "#fff" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                        <span style={{ ...chip(done ? "#E9F7EF" : "#EEF2FF", done ? "#1F6F45" : "#4338CA"), minWidth: 116, textAlign: "center" }}>{done ? "✓ " : ""}{d.label}</span>
+                        {d.opens.map(([lbl, url]) => (
+                          <a key={url} href={url} target="_blank" rel="noreferrer" className="btn" style={{ padding: "5px 10px", fontSize: 11.5, textDecoration: "none" }}>{lbl} ↗</a>
+                        ))}
+                        {capFull && <button className="btn" style={{ padding: "5px 10px", fontSize: 11.5 }} onClick={() => copy(capFull)}>Copy caption</button>}
+                        <button disabled={!link} className="btn" style={{ padding: "5px 10px", fontSize: 11.5, opacity: link ? 1 : .5 }}
+                          title={link || "Chưa có link UTM"} onClick={() => link && copy(link)}>Copy UTM</button>
+                      </div>
+                      {d.note && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 5, lineHeight: 1.5 }}>{d.note}</div>}
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+                        <input value={posted[d.key]?.url ?? ""} disabled={!canManage} placeholder="Dán link bài đã đăng / ad để đánh dấu…"
+                          onChange={(e) => setPostedUrl(d.key, e.target.value)} onBlur={savePosted}
+                          style={{ flex: 1, minWidth: 150, padding: "6px 9px", fontSize: 12, borderRadius: 8, border: "1px solid var(--line)" }} />
+                        {done && <a href={posted[d.key].url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: "var(--blue)", textDecoration: "none", flexShrink: 0 }}>mở ↗</a>}
+                      </div>
                     </div>
                   );
                 })}
