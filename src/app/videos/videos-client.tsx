@@ -59,6 +59,7 @@ const IcDownload = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} vie
 const IcLock = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>;
 const IcRefresh = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M20 11a8 8 0 1 0-2 5.3M20 5v6h-6" /></svg>;
 const IcEye = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="2.4" /></svg>;
+const IcTrash = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></svg>;
 
 const chip = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-block", background: bg, color: fg, borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 800 });
 const pgBtn: React.CSSProperties = { minWidth: 34, height: 34, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13 };
@@ -426,6 +427,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
   const repRef = useRef<HTMLInputElement>(null);
   const [f, setF] = useState({
     title: row.title, note: row.note ?? "", language: row.language ?? "", points: row.points ?? 0,
+    sellerId: row.sellerId ?? "", creatorId: row.creatorId ?? "",
     sourceName: row.sourceName ?? "", shotAt: row.shotAt ?? "",
     voice: !!row.flags?.voice, text: !!row.flags?.text, music: !!row.flags?.music,
   });
@@ -450,16 +452,15 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
     return () => clearTimeout(t);
   }, [lq, row.id]);
 
-  const dirty = f.title.trim() !== row.title || f.note !== (row.note ?? "")
-    || f.language !== (row.language ?? "") || f.points !== (row.points ?? 0)
-    || f.sourceName !== (row.sourceName ?? "") || f.shotAt !== (row.shotAt ?? "")
-    || f.voice !== !!row.flags?.voice || f.text !== !!row.flags?.text || f.music !== !!row.flags?.music;
-
+  // 1 nút Save chung cho cả card: details + seller/creator + posted link (postedTo). `posted` khai báo bên dưới,
+  // save() chỉ chạy khi bấm nút nên đọc được giá trị mới nhất.
   const save = () => patch({
     id: row.id, title: f.title.trim(), note: f.note, language: f.language || null, points: f.points,
+    sellerId: f.sellerId || null, creatorId: f.creatorId || null,
     sourceName: f.sourceName || null, shotAt: f.shotAt || null,
     flags: { voice: f.voice, text: f.text, music: f.music },
-  }, "Updated");
+    postedTo: posted,
+  }, "Saved");
 
   const assign = async (body: Record<string, unknown>, okText: string) => {
     setBusy(true);
@@ -552,12 +553,24 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
               {row.width}×{row.height} · {row.aspect ?? "—"} · {secs(row.durationSec)} · {mb(row.sizeBytes)}<br />
               Uploaded by {row.uploader ?? "—"} · {new Date(row.createdAt).toLocaleDateString()}
             </div>
-            {row.publicUrl && (
-              <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+            {/* Thao tác riêng cho FILE video: Download · Copy link · Replace — đặt ngay dưới video. */}
+            <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+              {row.publicUrl && (
                 <a href={row.publicUrl} download className="btn" style={{ padding: "6px 11px", fontSize: 12, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}><IcDownload /> Download</a>
+              )}
+              {row.publicUrl && (
                 <button onClick={() => copy(row.publicUrl!)} className="btn" style={{ padding: "6px 11px", fontSize: 12 }}>Copy link</button>
-              </div>
-            )}
+              )}
+              {canManage && <>
+                <input ref={repRef} type="file" accept="video/*" hidden
+                  onChange={(e) => { const fl = e.target.files?.[0]; if (fl) onReplace(row, fl); if (repRef.current) repRef.current.value = ""; }} />
+                <button disabled={busy} className="btn" onClick={() => repRef.current?.click()}
+                  title="Replace the file after re-editing — keeps #ID, listings and captions"
+                  style={{ padding: "6px 11px", fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <IcRefresh /> Replace{row.revision > 1 ? ` (v${row.revision})` : ""}
+                </button>
+              </>}
+            </div>
           </div>
 
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
@@ -580,26 +593,19 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                 </div>
                 <div className="field">
                   <label>Seller</label>
-                  <select value={row.sellerId ?? ""} disabled={!canManage}
-                    onChange={(e) => patch({ id: row.id, sellerId: e.target.value || null }, "Seller updated")}>
+                  <select value={f.sellerId} disabled={!canManage} onChange={(e) => setF({ ...f, sellerId: e.target.value })}>
                     <option value="">—</option>
                     {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
                 <div className="field">
                   <label>Creator</label>
-                  <select value={row.creatorId ?? ""} disabled={!canManage}
-                    onChange={(e) => patch({ id: row.id, creatorId: e.target.value || null }, "Creator updated")}>
+                  <select value={f.creatorId} disabled={!canManage} onChange={(e) => setF({ ...f, creatorId: e.target.value })}>
                     <option value="">—</option>
                     {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
               </div>
-              {canManage && (
-                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
-                  <button disabled={busy || !dirty} className="btn btn-primary" onClick={save} style={{ opacity: dirty ? 1 : .5 }}>Update</button>
-                </div>
-              )}
             </div>
 
             {/* ─── ADMIN-ONLY: Shopify listing + distribution ─── */}
@@ -669,7 +675,6 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>DISTRIBUTION</div>
-                    <button disabled={busy} className="btn" style={{ marginLeft: "auto", padding: "4px 10px", fontSize: 11.5 }} onClick={savePosted}>Save</button>
                   </div>
                   <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
                     {([
@@ -695,7 +700,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                             {capFull && <button className="btn" style={mini} onClick={() => copy(capFull)}>caption</button>}
                             <button disabled={!link} className="btn" style={{ ...mini, opacity: link ? 1 : .4 }} onClick={() => link && copy(link)}>UTM</button>
                             <input value={posted[d.key]?.url ?? ""} placeholder="posted link…"
-                              onChange={(e) => setPostedUrl(d.key, e.target.value)} onBlur={savePosted}
+                              onChange={(e) => setPostedUrl(d.key, e.target.value)}
                               style={{ flex: 1, minWidth: 110, padding: "4px 8px", fontSize: 11.5, borderRadius: 7, border: "1px solid var(--line)" }} />
                             {done && <a href={posted[d.key].url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--blue)", textDecoration: "none", flexShrink: 0 }}>↗</a>}
                           </div>
@@ -749,26 +754,21 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
               </>
             )}
 
-            {/* Download + Replace + Delete. Video đã gắn listing (usedBy>0) thì KHÓA Delete — tránh xoá
-                video đang hiển thị trên trang sản phẩm; gỡ khỏi listing (Manage Products) trước rồi mới xoá. */}
+            {/* 1 nút Save chung cho cả card (details + seller/creator + posted link) + Delete — giống Card Design.
+                Delete bị KHÓA khi video đã gắn listing (usedBy>0): gỡ ở Manage Products trước rồi mới xoá. */}
             {canManage && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                {row.publicUrl && (
-                  <a href={row.publicUrl} download className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}><IcDownload /> Download</a>
-                )}
-                <input ref={repRef} type="file" accept="video/*" hidden
-                  onChange={(e) => { const fl = e.target.files?.[0]; if (fl) onReplace(row, fl); if (repRef.current) repRef.current.value = ""; }} />
-                <button disabled={busy} className="btn" onClick={() => repRef.current?.click()}
-                  title="Replace the file after re-editing — keeps #ID, listings and captions"
-                  style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                  <IcRefresh /> Replace file{row.revision > 1 ? ` (v${row.revision})` : ""}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 2 }}>
+                <button disabled={busy} className="btn btn-primary" onClick={save}
+                  style={{ width: "100%", background: "#1F9D57", borderColor: "#1F9D57", fontWeight: 800, padding: "10px 0" }}>
+                  {busy ? "Saving…" : "Save"}
                 </button>
-                <div style={{ flex: 1 }} />
                 <button disabled={busy || row.usedBy > 0} className="btn"
-                  style={{ color: row.usedBy > 0 ? "var(--muted)" : "#B42318", opacity: row.usedBy > 0 ? .5 : 1, cursor: row.usedBy > 0 ? "not-allowed" : "pointer" }}
+                  onClick={doDelete}
                   title={row.usedBy > 0 ? "Attached to a listing — remove it in Manage Products before deleting" : "Delete video from the library"}
-                  onClick={doDelete}>
-                  {row.usedBy > 0 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><IcLock /> Delete</span> : "Delete"}
+                  style={{ width: "100%", padding: "10px 0", fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                    color: "#fff", background: row.usedBy > 0 ? "#E7A6A0" : "#E5484D", borderColor: row.usedBy > 0 ? "#E7A6A0" : "#E5484D",
+                    cursor: row.usedBy > 0 ? "not-allowed" : "pointer" }}>
+                  {row.usedBy > 0 ? <><IcLock /> Delete</> : <><IcTrash /> Delete</>}
                 </button>
               </div>
             )}

@@ -278,20 +278,16 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const [addSideOpen, setAddSideOpen] = useState(false);
   const [sideGroupIdx, setSideGroupIdx] = useState(0); // cột trái = Product name, cột phải = print areas
   const addTileRef = useRef<HTMLDivElement>(null);
-  const [sideMenuPos, setSideMenuPos] = useState<{ left: number; top: number; maxH: number } | null>(null);
+  const [sideMenuPos, setSideMenuPos] = useState<{ left: number; top: number; maxH: number; W: number } | null>(null);
   const openSideMenu = () => {
-    const el = addTileRef.current;
-    if (!el) { setAddSideOpen((v) => !v); return; }
     if (addSideOpen) { setAddSideOpen(false); return; }
-    const r = el.getBoundingClientRect();
-    const W = 470, GAP = 8, M = 10;
-    let left = r.right + GAP;
-    if (left + W > window.innerWidth - M) left = Math.max(M, r.left - W - GAP); // hết chỗ bên phải → lật sang trái
-    const spaceBelow = window.innerHeight - r.top - M;
-    const maxH = Math.min(380, Math.max(200, spaceBelow));
-    let top = r.top;
-    if (top + maxH > window.innerHeight - M) top = Math.max(M, window.innerHeight - M - maxH); // kẹp trong màn hình
-    setSideMenuPos({ left, top, maxH });
+    // Panel TO + đặt GIỮA màn hình để không bị khuất/cắt đáy (trước đây neo cạnh nút nhỏ nên hay bị che).
+    const M = 16;
+    const W = Math.min(720, window.innerWidth - 2 * M);
+    const maxH = Math.min(640, window.innerHeight - 2 * M);
+    const left = Math.max(M, (window.innerWidth - W) / 2);
+    const top = Math.max(M, (window.innerHeight - maxH) / 2);
+    setSideMenuPos({ left, top, maxH, W });
     setAddSideOpen(true);
   };
   const [busy, setBusy] = useState(false);
@@ -327,7 +323,12 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const pendingKind = useRef("mockup");
   const pendingReplace = useRef<string | null>(null);
   const [uploads, setUploads] = useState<{ id: string; kind: string; name: string }[]>([]);
-  const pickAndUpload = (kind: string) => { pendingKind.current = kind; pendingReplace.current = null; fileRef.current?.click(); };
+  const pickAndUpload = (kind: string) => {
+    pendingKind.current = kind; pendingReplace.current = null;
+    // 3 ô dàn ngang cùng hiện → set accept theo đúng kind ngay lúc bấm (không còn phụ thuộc tab đang mở).
+    if (fileRef.current) fileRef.current.accept = kind === "video" ? "video/*" : `image/*,${EMB_ACCEPT}`;
+    fileRef.current?.click();
+  };
   // Thay file cho mặt đã có design (upload file mới cùng loại → xoá file cũ)
   const replaceFile = (fileId: string, kind: string) => { pendingKind.current = kind; pendingReplace.current = fileId; fileRef.current?.click(); };
   // Không khoá — up SONG SONG, mỗi file 1 card t("dz.loadingLow") riêng, up file khác được ngay
@@ -435,6 +436,91 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     <button className="icon-btn" title={tip} onClick={() => copy(v)}><IconCopy width={12} height={12} /></button>
   );
 
+  // ── Render 1 file & 1 ô đang tải — tách ra để dùng lại trong 3 ô Designs/Mockups/Videos ──
+  type FileRow = (typeof detail.files)[number];
+  const uploadsFor = (kind: string) => uploads.filter((u) => kind === "mockup" ? u.kind === "mockup" : kind === "video" ? u.kind === "video" : (u.kind !== "mockup" && u.kind !== "video"));
+  const renderFileItem = (x: FileRow) => (
+    <div key={x.id} className="file-item">
+      <div className="file-cell checker">
+        <span className="file-kind">{sideLabel(t)[x.kind] || t(KIND_KEY[x.kind]) || x.kind}</span>
+        {isEmbFile(x.filename) || isEmbFile(x.originalUrl)
+          ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 15, fontWeight: 800, letterSpacing: ".5px", color: "var(--muted)" }}>
+              {(x.filename ?? "").split(".").pop()?.toUpperCase() || "DST"}
+            </div>
+          : x.thumbUrl || x.originalUrl
+          ? <img src={x.thumbUrl ?? x.originalUrl!} alt="" loading="lazy" />
+          : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</div>}
+        <span className="file-badge">{x.width && x.height ? `${x.width}×${x.height} · ` : ""}{(x.sizeBytes / 1048576).toFixed(1)}MB</span>
+      </div>
+      <div className="file-cap">
+        {x.filename && <div className="fn" title={x.filename}>{x.filename}</div>}
+        <div className="kw">{sideLabel(t)[x.kind] || t(KIND_KEY[x.kind]) || x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
+        <div className="file-actions">
+          {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
+          {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
+          {canEdit && <button className="fa-btn" title={t("dz.replaceFile")} onClick={() => replaceFile(x.id, x.kind)}><IconUpload width={14} height={14} /></button>}
+          {x.processingStatus === "failed" && <button className="fa-btn" title={t("d.retryThumb")} style={{ color: "var(--amber)" }} onClick={() => retryFile(x.id)}><IconRefresh width={14} height={14} /></button>}
+          {canEdit && <button className="fa-btn danger" title={t("c.delete")} onClick={() => delFile(x.id)}><IconTrash width={14} height={14} /></button>}
+        </div>
+      </div>
+    </div>
+  );
+  const renderUploadItem = (u: { id: string; kind: string; name: string }) => (
+    <div key={u.id} className="file-item">
+      <div className="file-cell checker" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ textAlign: "center" }}>
+          <div className="mini-spinner" style={{ margin: "0 auto" }} />
+          <div style={{ fontSize: 11, marginTop: 8, color: "var(--muted)", fontWeight: 600 }}>{t("o.loadingShort")}</div>
+        </div>
+      </div>
+      <div className="file-cap">
+        <div className="fn" title={u.name}>{u.name}</div>
+        <div className="kw">{sideLabel(t)[u.kind] || u.kind}</div>
+      </div>
+    </div>
+  );
+  const designPicker = (
+    <div style={{ position: "relative" }} ref={addTileRef}>
+      <AddTile label={t("dz.addFace")} onClick={openSideMenu} />
+      {addSideOpen && sideMenuPos && (() => {
+        const groups = sideGroups(t)
+          .map((g) => ({ ...g, avail: g.sides.filter((x) => !detail.files.some((f) => f.kind === x)) }))
+          .filter((g) => g.avail.length);
+        if (!groups.length) return null;
+        const gi = Math.min(sideGroupIdx, groups.length - 1);
+        const cur = groups[gi];
+        return (<>
+          <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(15,20,30,.38)" }} />
+          <div style={{ position: "fixed", left: sideMenuPos.left, top: sideMenuPos.top, zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "0 18px 48px rgba(20,30,50,.28)", width: sideMenuPos.W, maxHeight: sideMenuPos.maxH, display: "flex", overflow: "hidden" }}>
+            <div style={{ width: 210, flex: "0 0 210px", borderRight: "1px solid var(--line)", background: "#F7F9FC", overflowY: "auto", padding: 8 }}>
+              <div style={{ padding: "2px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.productName")}</div>
+              {groups.map((g, i) => (
+                <button key={g.group} onClick={() => setSideGroupIdx(i)}
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 8px", marginBottom: 4, borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, lineHeight: 1.25,
+                    background: i === gi ? "var(--accent)" : "#fff", color: i === gi ? "#fff" : "var(--ink)",
+                    border: `1px solid ${i === gi ? "transparent" : "var(--line)"}` }}>
+                  {g.group}
+                  <span style={{ display: "block", fontSize: 10, fontWeight: 600, opacity: .7 }}>{g.avail.length}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
+              <div style={{ padding: "2px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.printAreas")}</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+                {cur.avail.map((x) => (
+                  <button key={x} onClick={() => { setAddSideOpen(false); pickAndUpload(x); }}
+                    style={{ padding: "11px 8px", background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 10, cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "var(--ink)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {sideLabel(t)[x] || x}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>);
+      })()}
+    </div>
+  );
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(24,30,42,.5)", zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={close}>
       <div className="modal-card" style={{ background: "#fff", borderRadius: 18, width: 1180, maxWidth: "97vw", maxHeight: "94vh", display: "flex", flexDirection: "column", overflow: "hidden" }} onClick={(e) => e.stopPropagation()}>
@@ -468,115 +554,42 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               </label>
             </div>
 
-            {/* Tabs files */}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, marginBottom: 10 }}>
-              <div className="ftabs">
-                {([["mockup", t("d.mockups")], ["design", t("d.designFiles")], ["video", t("d.videos")]] as const).map(([k, label]) => (
-                  <button key={k} onClick={() => setTab(k)} className={`ftab${tab === k ? " on" : ""}`}>{label} ({filesOf(k).length})</button>
-                ))}
-              </div>
-              {filesOf(tab).length > 1 && (
-                <button onClick={() => downloadAll(filesOf(tab))} style={{ ...btnGhostBlue, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <IconDownload width={14} height={14} /> {t("d.downloadAll")}
-                </button>
-              )}
+            {/* 3 ô dàn ngang: Designs · Mockups · Videos — mỗi ô có file + nút upload riêng. Giữ nguyên style upload. */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 12, alignItems: "start" }}>
+              {([
+                { kind: "design", label: t("d.designFiles") },
+                { kind: "mockup", label: t("d.mockups") },
+                { kind: "video", label: t("d.videos") },
+              ] as const).map(({ kind, label }) => {
+                const files = filesOf(kind);
+                const ups = uploadsFor(kind);
+                return (
+                  <div key={kind} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 10, background: "#FCFDFE", minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                      <b style={{ fontSize: 12.5 }}>{label}</b>
+                      <span style={{ fontSize: 11.5, color: "var(--muted)" }}>({files.length})</span>
+                      <span style={{ flex: 1 }} />
+                      {files.length > 1 && (
+                        <button onClick={() => downloadAll(files)} title={t("d.downloadAll")} style={{ ...btnGhostBlue, padding: "3px 7px", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <IconDownload width={13} height={13} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="file-grid">
+                      {files.map(renderFileItem)}
+                      {ups.map(renderUploadItem)}
+                      {canEdit && kind === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
+                      {canEdit && kind === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
+                      {canEdit && kind === "design" && designPicker}
+                      {canEdit && kind === "design" && <AddTile label="Upload files" onClick={() => folderRef.current?.click()} />}
+                    </div>
+                    {files.length === 0 && ups.length === 0 && !canEdit && (
+                      <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 2px" }}>{t("d.noFiles")}</div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-
-            <div className="file-grid">
-              {filesOf(tab).map((x) => (
-                <div key={x.id} className="file-item">
-                  <div className="file-cell checker">
-                    <span className="file-kind">{sideLabel(t)[x.kind] || t(KIND_KEY[x.kind]) || x.kind}</span>
-                    {/* File máy thêu không có ảnh xem trước → hiện đuôi file thay vì ô trống. */}
-                    {isEmbFile(x.filename) || isEmbFile(x.originalUrl)
-                      ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 15, fontWeight: 800, letterSpacing: ".5px", color: "var(--muted)" }}>
-                          {(x.filename ?? "").split(".").pop()?.toUpperCase() || "DST"}
-                        </div>
-                      : x.thumbUrl || x.originalUrl
-                      ? <img src={x.thumbUrl ?? x.originalUrl!} alt="" loading="lazy" />
-                      : <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", fontSize: 11, color: "var(--muted)" }}>{x.kind === "video" ? "video" : "…"}</div>}
-                    <span className="file-badge">{x.width && x.height ? `${x.width}×${x.height} · ` : ""}{(x.sizeBytes / 1048576).toFixed(1)}MB</span>
-                  </div>
-                  <div className="file-cap">
-                    {x.filename && <div className="fn" title={x.filename}>{x.filename}</div>}
-                    <div className="kw">{sideLabel(t)[x.kind] || t(KIND_KEY[x.kind]) || x.kind}{x.uploaderName ? ` · ${x.uploaderName}` : ""}</div>
-                    <div className="file-actions">
-                      {x.originalUrl && <button className="fa-btn" title={t("d.downloadOriginal")} onClick={() => forceDownload(x.originalUrl!, x.filename || `${d.title}-${x.kind}`)}><IconDownload width={14} height={14} /></button>}
-                      {x.originalUrl && <a href={x.originalUrl} target="_blank" rel="noreferrer" className="fa-btn" title={t("d.viewOriginal")}><IconEyeOpen width={14} height={14} /></a>}
-                      {canEdit && <button className="fa-btn" title={t("dz.replaceFile")} onClick={() => replaceFile(x.id, x.kind)}><IconUpload width={14} height={14} /></button>}
-                      {x.processingStatus === "failed" && <button className="fa-btn" title={t("d.retryThumb")} style={{ color: "var(--amber)" }} onClick={() => retryFile(x.id)}><IconRefresh width={14} height={14} /></button>}
-                      {canEdit && <button className="fa-btn danger" title={t("c.delete")} onClick={() => delFile(x.id)}><IconTrash width={14} height={14} /></button>}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {/* Card ĐANG TẢI (up song song, không khoá) */}
-              {uploads.filter((u) => tab === "mockup" ? u.kind === "mockup" : tab === "video" ? u.kind === "video" : (u.kind !== "mockup" && u.kind !== "video")).map((u) => (
-                <div key={u.id} className="file-item">
-                  <div className="file-cell checker" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <div style={{ textAlign: "center" }}>
-                      <div className="mini-spinner" style={{ margin: "0 auto" }} />
-                      <div style={{ fontSize: 11, marginTop: 8, color: "var(--muted)", fontWeight: 600 }}>{t("o.loadingShort")}</div>
-                    </div>
-                  </div>
-                  <div className="file-cap">
-                    <div className="fn" title={u.name}>{u.name}</div>
-                    <div className="kw">{sideLabel(t)[u.kind] || u.kind}</div>
-                  </div>
-                </div>
-              ))}
-              {/* Ô ＋ upload theo tab (không bị khoá khi đang tải) */}
-              {canEdit && tab === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
-              {canEdit && tab === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
-              {canEdit && tab === "design" && (
-                <div style={{ position: "relative" }} ref={addTileRef}>
-                  <AddTile label={t("dz.addFace")} onClick={openSideMenu} />
-                  {addSideOpen && sideMenuPos && (() => {
-                    // Chỉ hiện product còn mặt in chưa dùng; chọn product ở cột trái → print areas ở cột phải
-                    const groups = sideGroups(t)
-                      .map((g) => ({ ...g, avail: g.sides.filter((x) => !detail.files.some((f) => f.kind === x)) }))
-                      .filter((g) => g.avail.length);
-                    if (!groups.length) return null;
-                    const gi = Math.min(sideGroupIdx, groups.length - 1);
-                    const cur = groups[gi];
-                    return (<>
-                    <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60 }} />
-                    <div style={{ position: "fixed", left: sideMenuPos.left, top: sideMenuPos.top, zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 10px 28px rgba(20,30,50,.16)", width: 470, maxHeight: sideMenuPos.maxH, display: "flex", overflow: "hidden" }}>
-                      {/* CỘT TRÁI — Product name */}
-                      <div style={{ width: 168, flex: "0 0 168px", borderRight: "1px solid var(--line)", background: "#F7F9FC", overflowY: "auto", padding: 8 }}>
-                        <div style={{ padding: "2px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.productName")}</div>
-                        {groups.map((g, i) => (
-                          <button key={g.group} onClick={() => setSideGroupIdx(i)}
-                            style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 8px", marginBottom: 4, borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, lineHeight: 1.25,
-                              background: i === gi ? "var(--accent)" : "#fff", color: i === gi ? "#fff" : "var(--ink)",
-                              border: `1px solid ${i === gi ? "transparent" : "var(--line)"}` }}>
-                            {g.group}
-                            <span style={{ display: "block", fontSize: 10, fontWeight: 600, opacity: .7 }}>{g.avail.length}</span>
-                          </button>
-                        ))}
-                      </div>
-                      {/* CỘT PHẢI — Print areas của product đang chọn */}
-                      <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
-                        <div style={{ padding: "2px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.printAreas")}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                          {cur.avail.map((x) => (
-                            <button key={x} onClick={() => { setAddSideOpen(false); pickAndUpload(x); }}
-                              style={{ padding: "8px 6px", background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 9, cursor: "pointer", fontSize: 12, fontWeight: 700, color: "var(--ink)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {sideLabel(t)[x] || x}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                                    </>);
-                  })()}
-                </div>
-              )}
-              {canEdit && tab === "design" && <AddTile label="Upload files" onClick={() => folderRef.current?.click()} />}
-            </div>
-            {filesOf(tab).length === 0 && !canEdit && (
-              <div style={{ fontSize: 12.5, color: "var(--muted)", padding: "6px 0 2px" }}>{t("d.noFiles")}</div>
-            )}
             <input ref={fileRef} type="file"
               accept={tab === "video" ? "video/*" : `image/*,${EMB_ACCEPT}`}
               onChange={(e) => { const file = e.target.files?.[0]; if (file) onPicked(file); }}
@@ -597,12 +610,12 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               <br />{t("d.score")}: <b style={{ color: "var(--ink)" }}>{detail.avgScore ? detail.avgScore.toFixed(1) : "—"}</b> ({detail.reviewCount} {t("d.reviews")})
             </div>
 
-            {canEdit && <button onClick={save} disabled={busy} style={{ ...btnGreen, width: "100%", marginTop: 10 }}>{busy ? t("c.saving") : t("c.save")}</button>}
-            {canEdit && <button onClick={del} style={{ ...btnRed, width: "100%", marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}><IconTrash width={14} height={14} /> {t("d.deleteDesign")}</button>}
           </div>
         </div>
-        <div style={{ borderTop: "1px solid var(--line)", padding: "12px 24px", display: "flex", justifyContent: "flex-end" }}>
-          <button onClick={close} style={btnBlue}>{t("c.close")}</button>
+        {/* Save + Delete gom xuống footer. Bỏ nút Close (đã có nút X ở góc trên). */}
+        <div style={{ borderTop: "1px solid var(--line)", padding: "12px 24px", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          {canEdit && <button onClick={del} style={{ ...btnRed, display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px" }}><IconTrash width={14} height={14} /> Delete Card</button>}
+          {canEdit && <button onClick={save} disabled={busy} style={{ ...btnGreen, padding: "10px 24px" }}>{busy ? t("c.saving") : t("c.save")}</button>}
         </div>
       </div>
     </div>
