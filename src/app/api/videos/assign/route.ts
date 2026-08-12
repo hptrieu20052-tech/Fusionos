@@ -56,13 +56,21 @@ export async function POST(req: NextRequest) {
   else if (productType) conds.push(sql`lower(trim(${schema.shopifyProducts.productType})) = ${productType.toLowerCase()}`);
   else return NextResponse.json({ ok: false, error: "pass productIds or productType" }, { status: 400 });
 
-  const target = await db.select({ id: schema.shopifyProducts.id })
+  const target = await db.select({ id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId })
     .from(schema.shopifyProducts).where(and(...conds));
   if (!target.length) return NextResponse.json({ ok: true, changed: 0, note: "no matching listing" });
 
   await db.update(schema.shopifyProducts)
     .set({ videoId, videoMediaId: null, videoPushedAt: null, updatedAt: new Date() })
     .where(inArray(schema.shopifyProducts.id, target.map((t) => t.id)));
+
+  // Gán → set luôn LISTING CHÍNH của video (productId/storeId) = listing đầu tiên. Cần cho link UTM +
+  // caption ("listing chính"). Trước đây chỉ set chiều listing→video nên video thiếu productId, UTM rỗng.
+  if (videoId) {
+    await db.update(schema.productVideos)
+      .set({ productId: target[0].id, storeId: target[0].storeId, updatedAt: new Date() })
+      .where(eq(schema.productVideos.id, videoId));
+  }
 
   return NextResponse.json({ ok: true, changed: target.length });
 }
@@ -103,9 +111,24 @@ export async function GET(req: NextRequest) {
         .limit(500)
     : [];
 
+  // TÌM listing theo tên — để gõ đúng cái cần gán, khỏi đi dò trên Shopify (1 video 1 listing).
+  // Trả kèm videoId của listing để cảnh báo listing đã có video khác.
+  const qRaw = (req.nextUrl.searchParams.get("q") ?? "").trim().replace(/[%_]/g, " ").slice(0, 80);
+  const matches = qRaw.length >= 2
+    ? await db.select({
+        id: schema.shopifyProducts.id, title: schema.shopifyProducts.title,
+        productType: schema.shopifyProducts.productType,
+        videoId: schema.shopifyProducts.videoId,
+      }).from(schema.shopifyProducts)
+        .where(and(...conds, sql`${schema.shopifyProducts.title} ilike ${"%" + qRaw + "%"}`))
+        .orderBy(schema.shopifyProducts.title)
+        .limit(20)
+    : [];
+
   return NextResponse.json({
     ok: true,
     types: types.filter((t) => (t.productType ?? "").trim()).sort((a, b) => b.n - a.n),
     listings,
+    matches,
   });
 }

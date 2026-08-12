@@ -33,6 +33,7 @@ type Row = {
 type Opt = { id: string; name: string | null };
 type TypeOpt = { productType: string | null; n: number; withVideo: number };
 type Listing = { id: string; title: string; productType: string | null; pushedAt: string | null };
+type Match = { id: string; title: string; productType: string | null; videoId: string | null };
 
 const LANGS = [{ v: "none", label: "No voice" }, { v: "en", label: "English" }, { v: "vi", label: "Tiếng Việt" }];
 const CHANNELS = [
@@ -376,6 +377,9 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
   const [types, setTypes] = useState<TypeOpt[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
   const [pickType, setPickType] = useState("");
+  // Tìm listing theo tên để gán nhanh (1 video 1 listing) — khỏi đi dò trên Shopify.
+  const [lq, setLq] = useState("");
+  const [matches, setMatches] = useState<Match[]>([]);
   const repRef = useRef<HTMLInputElement>(null);
   const [f, setF] = useState({
     title: row.title, note: row.note ?? "", language: row.language ?? "",
@@ -390,6 +394,18 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
     } catch { /* không chặn */ }
   }, [row.id]);
   useEffect(() => { loadAssign(); }, [loadAssign]);
+  // Gõ tên → tìm listing (debounce 300ms).
+  useEffect(() => {
+    const q = lq.trim();
+    if (q.length < 2) { setMatches([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const j = await fetch(`/api/videos/assign?videoId=${row.id}&q=${encodeURIComponent(q)}`).then((r) => r.json());
+        if (j.ok) setMatches(j.matches ?? []);
+      } catch { /* im */ }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [lq, row.id]);
 
   const dirty = f.title.trim() !== row.title || f.note !== (row.note ?? "")
     || f.language !== (row.language ?? "")
@@ -546,23 +562,49 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
                 SHOWING ON {listings.length} LISTING{listings.length === 1 ? "" : "S"}
               </div>
               {canManage && (
-                <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-                  <select value={pickType} onChange={(e) => setPickType(e.target.value)}
-                    style={{ padding: "7px 9px", fontSize: 12.5, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", maxWidth: 280 }}>
-                    <option value="">Choose a Product type…</option>
-                    {types.map((t) => <option key={t.productType!} value={t.productType!}>{t.productType} ({t.n})</option>)}
-                  </select>
-                  <button disabled={busy || !pickType} className="btn btn-primary" style={{ padding: "7px 12px", fontSize: 12.5, opacity: pickType ? 1 : .5 }}
-                    onClick={() => assign({ videoId: row.id, productType: pickType }, "Assigned")}>
-                    Assign to all
-                  </button>
-                  {!!listings.length && (
-                    <button disabled={busy} className="btn" style={{ padding: "7px 12px", fontSize: 12.5, color: "#B42318" }}
-                      onClick={() => assign({ videoId: null, productIds: listings.map((l) => l.id) }, "Removed")}>
-                      Remove from all
+                <>
+                  {/* Cách chính (1 video 1 listing): gõ tên listing → chọn → gán. Khỏi đi dò trên Shopify. */}
+                  <div style={{ position: "relative", marginBottom: 8 }}>
+                    <input value={lq} onChange={(e) => setLq(e.target.value)}
+                      placeholder="🔎 Tìm listing theo tên rồi chọn để gán video…"
+                      style={{ width: "100%", padding: "8px 11px", fontSize: 13, borderRadius: 9, border: "1px solid var(--line)" }} />
+                    {!!matches.length && (
+                      <div style={{ position: "absolute", zIndex: 5, top: "100%", left: 0, right: 0, marginTop: 4, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 6px 20px rgba(16,24,40,.12)", maxHeight: 240, overflowY: "auto" }}>
+                        {matches.map((m) => {
+                          const taken = !!m.videoId && m.videoId !== row.id;
+                          const here = m.videoId === row.id;
+                          return (
+                            <button key={m.id} disabled={busy || here} onClick={() => { assign({ videoId: row.id, productIds: [m.id] }, "Đã gán vào listing"); setLq(""); setMatches([]); }}
+                              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "8px 11px", background: here ? "#F3FBF6" : "#fff", border: "none", borderBottom: "1px solid var(--line)", cursor: here ? "default" : "pointer", fontSize: 12.5 }}>
+                              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</span>
+                              {here ? <span style={chip("#E9F7EF", "#1F6F45")}>ĐÃ GÁN</span>
+                                : taken ? <span style={chip("#FEF6E7", "#B7791F")} title="Listing này đã có video khác — chọn sẽ thay">có video</span>
+                                : <span style={{ color: "var(--blue)", fontWeight: 700, flexShrink: 0 }}>Gán →</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  {/* Cách phụ: gán cả một Product type (vd nhiều listing dùng chung 1 clip). */}
+                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
+                    <select value={pickType} onChange={(e) => setPickType(e.target.value)}
+                      style={{ padding: "7px 9px", fontSize: 12.5, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", maxWidth: 280 }}>
+                      <option value="">…hoặc gán cả một Product type</option>
+                      {types.map((t) => <option key={t.productType!} value={t.productType!}>{t.productType} ({t.n})</option>)}
+                    </select>
+                    <button disabled={busy || !pickType} className="btn" style={{ padding: "7px 12px", fontSize: 12.5, opacity: pickType ? 1 : .5 }}
+                      onClick={() => assign({ videoId: row.id, productType: pickType }, "Assigned")}>
+                      Assign to all
                     </button>
-                  )}
-                </div>
+                    {!!listings.length && (
+                      <button disabled={busy} className="btn" style={{ padding: "7px 12px", fontSize: 12.5, color: "#B42318" }}
+                        onClick={() => assign({ videoId: null, productIds: listings.map((l) => l.id) }, "Removed")}>
+                        Remove from all
+                      </button>
+                    )}
+                  </div>
+                </>
               )}
               {!!listings.length && (
                 <div style={{ maxHeight: 160, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 10 }}>
