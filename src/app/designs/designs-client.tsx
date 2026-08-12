@@ -544,28 +544,17 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
             <input value={f.title} maxLength={140} onChange={(e) => setF({ ...f, title: e.target.value })} disabled={!canEdit} style={{ ...inp, width: "100%" }} />
             <div style={{ fontSize: 11, color: f.title.length >= 140 ? "var(--red)" : "var(--muted)", textAlign: "right", marginTop: 3 }}>{f.title.length}/140</div>
 
-            <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 12 }}>
-              <label style={rLbl}>ID
-                <input value={d.skuCode} readOnly style={{ ...inp, width: "100%", marginTop: 4, background: "#EDEFF4", color: "var(--muted)" }} />
-              </label>
-              <label style={rLbl}>{t("d.points")}
-                <input type="number" min={0} max={10} value={f.points} disabled={!canEdit}
-                  onChange={(e) => setF({ ...f, points: Number(e.target.value) })} style={{ ...inp, width: "100%", marginTop: 4 }} />
-              </label>
-            </div>
-
             {/* 3 mục XẾP DỌC từ trên xuống (Mockups → Designs → Videos), mỗi mục full-width, ảnh wrap ngang
                 — giống mục "Photos" của listing Etsy. Giữ nguyên style upload. */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
               {([
-                { kind: "mockup", label: t("d.mockups") },
                 { kind: "design", label: t("d.designFiles") },
-                { kind: "video", label: t("d.videos") },
-              ] as const).map(({ kind, label }) => {
+                { kind: "mockup", label: t("d.mockups") },
+              ] as const).map(({ kind, label }, i) => {
                 const files = filesOf(kind);
                 const ups = uploadsFor(kind);
                 return (
-                  <div key={kind} style={{ borderTop: kind === "mockup" ? "none" : "1px solid var(--line)", paddingTop: kind === "mockup" ? 0 : 14 }}>
+                  <div key={kind} style={{ borderTop: i === 0 ? "none" : "1px solid var(--line)", paddingTop: i === 0 ? 0 : 14 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                       <b style={{ fontSize: 13 }}>{label}</b>
                       <span style={{ fontSize: 12, color: "var(--muted)" }}>({files.length})</span>
@@ -580,7 +569,6 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                       {files.map(renderFileItem)}
                       {ups.map(renderUploadItem)}
                       {canEdit && kind === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
-                      {canEdit && kind === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
                       {canEdit && kind === "design" && designPicker}
                       {canEdit && kind === "design" && <AddTile label="Upload files" onClick={() => folderRef.current?.click()} />}
                     </div>
@@ -602,7 +590,17 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
 
           {/* CỘT PHẢI */}
           <div style={{ paddingBottom: 8 }}>
-            <div style={{ marginTop: 2 }}>{Sel("sellerId", t("c.seller"), detail.sellers)}</div>
+            {/* ID + Points chuyển sang đây để cột trái dành hết bề ngang cho Designs. */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <label style={rLbl}>ID
+                <input value={d.skuCode} readOnly style={{ ...inp, width: "100%", marginTop: 4, background: "#EDEFF4", color: "var(--muted)" }} />
+              </label>
+              <label style={rLbl}>{t("d.points")}
+                <input type="number" min={0} max={10} value={f.points} disabled={!canEdit}
+                  onChange={(e) => setF({ ...f, points: Number(e.target.value) })} style={{ ...inp, width: "100%", marginTop: 4 }} />
+              </label>
+            </div>
+            <div style={{ marginTop: 12 }}>{Sel("sellerId", t("c.seller"), detail.sellers)}</div>
             <div style={{ marginTop: 9 }}>{Sel("designerId", t("c.designer"), detail.designers)}</div>
             <div style={{ marginTop: 9 }}>{Sel("creatorId", t("d.creator"), detail.creators)}</div>
 
