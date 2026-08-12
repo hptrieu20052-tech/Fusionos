@@ -32,10 +32,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, product: { ...r.p, storeName: r.storeName, videoCode: r.videoCode, videoTitle: r.videoTitle, videoThumbUrl: r.videoThumbUrl } });
   }
 
-  const rows = await db.select({ p: schema.shopifyProducts, storeName: schema.stores.name, sellerName: schema.users.fullName, storeSeller: schema.stores.sellerId })
+  const rows = await db.select({
+    p: schema.shopifyProducts, storeName: schema.stores.name, sellerName: schema.users.fullName, storeSeller: schema.stores.sellerId,
+    videoCode: schema.productVideos.videoCode, videoThumbUrl: schema.productVideos.thumbUrl,
+  })
     .from(schema.shopifyProducts)
     .leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .leftJoin(schema.users, eq(schema.users.id, schema.stores.sellerId))
+    .leftJoin(schema.productVideos, eq(schema.productVideos.id, schema.shopifyProducts.videoId))
     .orderBy(desc(schema.shopifyProducts.updatedAt));
 
   const scoped = scopeIds ? rows.filter((r) => r.storeSeller && scopeIds.includes(r.storeSeller)) : rows;
@@ -99,6 +103,8 @@ export async function GET(req: NextRequest) {
       collectionTitles: (Array.isArray(r.p.collections) ? r.p.collections as { title: string }[] : []).map((c) => c.title).filter(Boolean),
       variantCount: vs.length, minPrice: prices.length ? Math.min(...prices) : null, maxPrice: prices.length ? Math.max(...prices) : null,
       mainImage: imgs[0]?.src ?? null, imageCount: imgs.length,
+      // v224 · video đã gắn: thumbnail để nhận biết listing nào có video (cột Video cạnh Image).
+      videoCode: r.videoCode ?? null, videoThumbUrl: r.videoThumbUrl ?? null, videoPushed: !!r.p.videoPushedAt,
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,
       templateId: tpl?.id ?? null, templateName: tpl?.name ?? "", templatePinned: !!pinned, templateHasFacts: tplHasFacts,
       syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt, aiAt: r.p.aiAt,

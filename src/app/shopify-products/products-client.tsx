@@ -12,6 +12,7 @@ type Row = {
   title: string; handle: string | null; status: string; dirty: boolean;
   variantCount: number; minPrice: number | null; maxPrice: number | null;
   mainImage: string | null; imageCount: number; onlineStoreUrl: string | null;
+  videoCode: number | null; videoThumbUrl: string | null; videoPushed: boolean;
   totalInventory: number | null; optionsSummary: string;
   productType: string; categoryName: string; collectionTitles: string[];
   templateId: string | null; templateName: string; templatePinned: boolean; templateHasFacts: boolean;
@@ -371,7 +372,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       const j = await postJSON("/api/shopify-products/set-video", { id: edit.id, videoCode: clear ? "" : vidCode });
       if (j.ok) {
         if (j.cleared) { setEdit({ ...edit, videoCode: null, videoTitle: null, videoThumbUrl: null }); flash("✓ Đã gỡ video khỏi listing"); }
-        else { setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl }); flash(`✓ Đã gắn video #${j.video.code}`); }
+        else {
+          setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl });
+          if (j.push?.ok) flash(`✓ Đã gắn + đẩy video #${j.video.code} lên Shopify — đang xử lý, vài phút hiện trên trang.`);
+          else if (j.push && !j.push.ok) flash(`✓ Gắn video #${j.video.code} — nhưng đẩy Shopify lỗi: ${j.push.error}`, false);
+          else flash(`✓ Đã gắn video #${j.video.code}`);
+        }
         setVidCode(""); load();
       } else flash("✗ " + (j.error ?? "failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
@@ -1362,6 +1368,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   nhỏ để không chèn ép Title như v182 (title từng bị bóp mỗi từ một dòng). */}
               <th style={{ padding: "10px 12px", textAlign: "left", width: 34 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
               <th style={{ padding: "10px 6px", textAlign: "left", width: 54 }}>Image</th>
+              <th style={{ padding: "10px 6px", textAlign: "left", width: 50 }} title="Listing đã gắn video chưa">Video</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Title</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "11%" }}>Store / Seller</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Type / Category</th>
@@ -1374,12 +1381,25 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={11} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={11} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
+            {loading && <tr><td colSpan={12} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={12} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} alt={r.title} size={42} radius={8} border /></td>
+                <td style={{ padding: "8px 6px" }}>
+                  {r.videoThumbUrl ? (
+                    <div title={`Video #${r.videoCode}${r.videoPushed ? " · đã lên Shopify" : " · chưa đẩy lên media"}`} style={{ position: "relative", width: 42, height: 42 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={r.videoThumbUrl} alt="" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 8, border: r.videoPushed ? "1px solid var(--line)" : "2px solid #E0A93B", display: "block", background: "#0B1220" }} />
+                      <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                        <span style={{ width: 18, height: 18, borderRadius: 999, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
+                        </span>
+                      </span>
+                    </div>
+                  ) : <span style={{ color: "var(--faint)", fontSize: 15 }}>–</span>}
+                </td>
                 <td style={{ padding: "8px" }}>
                   {/* v203 · click thẳng title để mở Edit (giống Shopify admin), bỏ nút Edit riêng */}
                   <div onClick={() => canEdit && openEdit(r.id)} title={canEdit ? "Click to edit" : undefined}
@@ -1666,7 +1686,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <input value={vidCode} onChange={(e) => setVidCode(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Dán #Video ID (vd 12)" style={{ ...ctl, width: 160, padding: "8px 11px" }} />
                           <button disabled={busy || !vidCode} onClick={() => setVideo(false)} style={{ ...pill("#2952B3", "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || !vidCode) ? .6 : 1 }}>Gắn video</button>
-                          <span style={{ fontSize: 11, color: "var(--muted)" }}>Lấy #ID trong Video Library. Gắn xong, admin bấm <b>Push video to Shopify</b> ở Video Library để đẩy lên media.</span>
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>Lấy #ID trong Video Library. Gắn xong <b>tự đẩy lên Shopify media</b> (vài phút hiện trên trang).</span>
                         </div>
                       )}
                     </div>

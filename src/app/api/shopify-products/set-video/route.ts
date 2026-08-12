@@ -4,8 +4,11 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
+import { shopHost, type ShopifyCred } from "@/lib/shopify";
+import { pushVideoToShopify } from "@/lib/shopify-video";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 /**
  * POST /api/shopify-products/set-video { id, videoCode }
@@ -27,7 +30,10 @@ export async function POST(req: NextRequest) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
   // Listing phải thuộc store trong phạm vi của seller.
-  const [prod] = await db.select({ id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, seller: schema.stores.sellerId })
+  const [prod] = await db.select({
+    id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, seller: schema.stores.sellerId,
+    gid: schema.shopifyProducts.shopifyProductId, title: schema.shopifyProducts.title, cred: schema.stores.apiCredentials,
+  })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
   if (!prod) return NextResponse.json({ ok: false, error: "listing not found" }, { status: 404 });
@@ -48,7 +54,11 @@ export async function POST(req: NextRequest) {
   }
 
   // Tìm video theo #videoCode.
-  const [vid] = await db.select({ id: schema.productVideos.id, code: schema.productVideos.videoCode, title: schema.productVideos.title, thumbUrl: schema.productVideos.thumbUrl })
+  const [vid] = await db.select({
+    id: schema.productVideos.id, code: schema.productVideos.videoCode, title: schema.productVideos.title,
+    thumbUrl: schema.productVideos.thumbUrl, publicUrl: schema.productVideos.publicUrl,
+    storageKey: schema.productVideos.storageKey, contentType: schema.productVideos.contentType,
+  })
     .from(schema.productVideos).where(eq(schema.productVideos.videoCode, code)).limit(1);
   if (!vid) return NextResponse.json({ ok: false, error: `Không tìm thấy video #${code} trong Video Library` }, { status: 404 });
 
@@ -61,7 +71,29 @@ export async function POST(req: NextRequest) {
     .set({ productId: prod.id, storeId: prod.storeId, updatedAt: new Date() })
     .where(eq(schema.productVideos.id, vid.id));
 
-  return NextResponse.json({ ok: true, video: { code: vid.code, title: vid.title, thumbUrl: vid.thumbUrl } });
+  // ── ĐẨY LUÔN video lên Shopify media ── video có SAU khi listing đã live, nên đây là chỗ đẩy (không
+  // gộp vào Push nội dung listing). Listing đã có GID + store cấu hình API thì đẩy ngay; lỗi/chưa cấu
+  // hình thì vẫn gắn xong, báo để đẩy lại sau (nút trong modal).
+  let push: { ok: boolean; note?: string; error?: string } | undefined;
+  const cred = (prod.cred ?? {}) as ShopifyCred;
+  if (prod.gid && shopHost(cred) && (cred.adminToken || (cred.clientId && cred.clientSecret)) && vid.publicUrl) {
+    try {
+      const r = await pushVideoToShopify(cred, {
+        productGid: String(prod.gid), videoUrl: String(vid.publicUrl),
+        filename: (vid.storageKey ?? "").split("/").pop() ?? "video.mp4",
+        mimeType: vid.contentType ?? "video/mp4", alt: vid.title || prod.title || undefined,
+      });
+      if (r.ok) {
+        await db.update(schema.shopifyProducts).set({ videoMediaId: r.mediaId ?? null, videoPushedAt: new Date() }).where(eq(schema.shopifyProducts.id, id));
+        await db.update(schema.productVideos).set({ shopifyPushedAt: new Date(), updatedAt: new Date() }).where(eq(schema.productVideos.id, vid.id));
+        push = { ok: true, note: "Shopify đang xử lý — video hiện trên trang sản phẩm sau vài phút." };
+      } else push = { ok: false, error: r.error ?? "push failed" };
+    } catch (e) { push = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+  } else if (!prod.gid) {
+    push = { ok: false, error: "Listing chưa có trên Shopify — Push listing trước rồi gắn lại video." };
+  }
+
+  return NextResponse.json({ ok: true, video: { code: vid.code, title: vid.title, thumbUrl: vid.thumbUrl }, push });
 }
 
 // Dùng để hiện video đang gắn khi mở nhiều listing (không bắt buộc, giữ cho tương lai).
