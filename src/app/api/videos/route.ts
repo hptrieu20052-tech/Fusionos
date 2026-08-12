@@ -177,7 +177,10 @@ export async function POST(req: NextRequest) {
     durationSec: b?.durationSec != null && isFinite(Number(b.durationSec)) ? String(Number(b.durationSec).toFixed(2)) : null,
     width: w, height: h, aspect,
     sellerId: String(b.sellerId),
-    creatorId: uuidOk(b?.creatorId) ? String(b.creatorId) : session.sub,
+    // Creator = ĐÚNG người gửi lên (modal tự set theo role: creator upload → chính mình; seller upload →
+    // chọn creator trong team, không chọn thì để trống). KHÔNG mặc định về uploader nữa — trước đây seller
+    // không chọn creator thì bị gán chính seller làm creator (sai vai).
+    creatorId: uuidOk(b?.creatorId) ? String(b.creatorId) : null,
     language: typeof b?.language === "string" && b.language ? String(b.language).slice(0, 10) : null,
     uploadedBy: session.sub,
   }).returning();

@@ -44,7 +44,7 @@ const mb = (n: number | null) => n == null ? "—" : n >= 1048576 ? `${(n / 1048
 const secs = (s: string | null) => { const n = Number(s); return isFinite(n) && n > 0 ? `${Math.floor(n / 60)}:${String(Math.round(n % 60)).padStart(2, "0")}` : "—"; };
 const LIMIT = 24;
 
-export default function VideosClient({ isAdmin, canManage, me }: { isAdmin: boolean; canManage: boolean; me: { id: string; name: string } }) {
+export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdmin: boolean; myRole: string; canManage: boolean; me: { id: string; name: string } }) {
   const confirm = useConfirm();
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
@@ -327,7 +327,7 @@ export default function VideosClient({ isAdmin, canManage, me }: { isAdmin: bool
 
       {showUpload && (
         <UploadModal
-          sellers={sellers} creators={creators} isAdmin={isAdmin} me={me} busy={busy}
+          sellers={sellers} creators={creators} isAdmin={isAdmin} myRole={myRole} me={me} busy={busy}
           close={() => setShowUpload(false)}
           go={async (files, who) => { setShowUpload(false); await onPick(files, who); }}
         />
@@ -601,13 +601,17 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
 
 /** Bulk upload — BẮT BUỘC chọn seller trước, giống Design Studio.
  *  Creator = chính người đang upload, không hỏi lại. */
-function UploadModal({ sellers, creators, isAdmin, me, busy, close, go }: {
-  sellers: Opt[]; creators: Opt[]; isAdmin: boolean; me: { id: string; name: string }; busy: boolean;
+function UploadModal({ sellers, creators, isAdmin, myRole, me, busy, close, go }: {
+  sellers: Opt[]; creators: Opt[]; isAdmin: boolean; myRole: string; me: { id: string; name: string }; busy: boolean;
   close: () => void; go: (files: File[], who: { sellerId: string; creatorId: string }) => Promise<void>;
 }) {
-  // Admin: chọn cả seller + creator (danh sách đầy đủ). Seller: seller là CHÍNH MÌNH, chỉ chọn Creator trong team.
-  const [sellerId, setSellerId] = useState(isAdmin ? "" : me.id);
-  const [creatorId, setCreatorId] = useState("");
+  // 3 vai upload:
+  //  · Admin   → chọn cả Seller + Creator (danh sách đầy đủ).
+  //  · Creator → CHÍNH MÌNH là creator (cố định), phải chọn Seller trong team (video làm cho seller nào).
+  //  · Seller  → CHÍNH MÌNH là seller (cố định), chọn Creator trong team (không có "Me", seller ≠ creator).
+  const iAmCreator = !isAdmin && myRole === "content";
+  const [sellerId, setSellerId] = useState(isAdmin || iAmCreator ? "" : me.id);
+  const [creatorId, setCreatorId] = useState(iAmCreator ? me.id : "");
   const [files, setFiles] = useState<File[]>([]);
   const inRef = useRef<HTMLInputElement>(null);
   const ready = !!sellerId && files.length > 0;
@@ -623,23 +627,29 @@ function UploadModal({ sellers, creators, isAdmin, me, busy, close, go }: {
         <div className="filters" style={{ gridTemplateColumns: "1fr 1fr" }}>
           <div className="field">
             <label>Seller <span style={{ color: "#B42318" }}>*</span></label>
-            {isAdmin ? (
+            {(isAdmin || iAmCreator) ? (
+              // Admin + Creator: chọn seller (creator bắt buộc chọn video làm cho seller nào).
               <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}
                 style={{ borderColor: sellerId ? undefined : "#F0B4AE" }}>
                 <option value="">— select a seller —</option>
                 {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             ) : (
-              // Seller: cố định chính mình, không cho đổi.
+              // Seller upload: seller là CHÍNH MÌNH, cố định.
               <input value={me.name} disabled style={{ background: "#F1F3F7", color: "var(--muted)" }} />
             )}
           </div>
           <div className="field">
             <label>Creator</label>
-            <select value={creatorId} onChange={(e) => setCreatorId(e.target.value)}>
-              <option value="">{isAdmin ? "— none —" : "Me"}</option>
-              {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            {iAmCreator ? (
+              // Creator upload: creator là CHÍNH MÌNH, cố định.
+              <input value={me.name} disabled style={{ background: "#F1F3F7", color: "var(--muted)" }} />
+            ) : (
+              <select value={creatorId} onChange={(e) => setCreatorId(e.target.value)}>
+                <option value="">— none —</option>
+                {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            )}
           </div>
         </div>
 
