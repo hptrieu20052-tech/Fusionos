@@ -37,6 +37,22 @@ const MEDIA_STATUS = `query fusionMediaStatus($id: ID!) {
   }
 }`;
 
+// v230 · Đưa media video lên VỊ TRÍ 2 (ngay sau ảnh chính). newPosition là index 0-based dạng chuỗi,
+// nên "1" = ô thứ hai. productCreateMedia luôn append cuối; reorder xong video nổi ngay đầu gallery.
+const MEDIA_REORDER = `mutation fusionReorderMedia($id: ID!, $moves: [MoveInput!]!) {
+  productReorderMedia(id: $id, moves: $moves) {
+    job { id }
+    userErrors { field message }
+  }
+}`;
+
+/** Đưa 1 media về vị trí thứ 2 (index "1"). Lỗi không chặn — video vẫn nằm cuối nếu reorder trượt. */
+async function moveMediaToSecond(cred: ShopifyCred, productGid: string, mediaId: string): Promise<void> {
+  try {
+    await shopifyGraphQL(cred, MEDIA_REORDER, { id: productGid, moves: [{ id: mediaId, newPosition: "1" }] });
+  } catch { /* reorder trượt (media đang xử lý…) — bỏ qua, không làm hỏng lần push */ }
+}
+
 type StagedTarget = { url: string; resourceUrl: string; parameters: { name: string; value: string }[] };
 
 const errText = (errs: unknown): string => {
@@ -112,7 +128,9 @@ export async function pushVideoToShopify(
   // Đường tắt: YouTube/Vimeo thì Shopify tự nhúng.
   if (externalVideoHost(o.videoUrl)) {
     const r = await attachMedia(cred, gid, o.videoUrl, "EXTERNAL_VIDEO", o.alt);
-    return r.error ? { ok: false, error: r.error } : { ok: true, mediaId: r.mediaId };
+    if (r.error) return { ok: false, error: r.error };
+    if (r.mediaId) await moveMediaToSecond(cred, gid, r.mediaId);
+    return { ok: true, mediaId: r.mediaId };
   }
 
   // Tải bytes từ R2 về hàm rồi đẩy sang chỗ staged của Shopify.
@@ -134,7 +152,9 @@ export async function pushVideoToShopify(
   if (upErr) return { ok: false, error: upErr };
 
   const r = await attachMedia(cred, gid, st.target.resourceUrl, "VIDEO", o.alt);
-  return r.error ? { ok: false, error: r.error } : { ok: true, mediaId: r.mediaId };
+  if (r.error) return { ok: false, error: r.error };
+  if (r.mediaId) await moveMediaToSecond(cred, gid, r.mediaId);
+  return { ok: true, mediaId: r.mediaId };
 }
 
 /** Đọc trạng thái xử lý của media (UPLOADED → PROCESSING → READY / FAILED). */
