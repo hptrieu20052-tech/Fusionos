@@ -216,14 +216,16 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
     load(page);
   };
 
-  const patch = async (body: Record<string, unknown>, okText?: string) => {
+  const patch = async (body: Record<string, unknown>, okText?: string): Promise<boolean> => {
     setBusy(true);
+    let ok = false;
     try {
       const j = await fetch("/api/videos", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
-      if (j.ok) { if (okText) flash("✓ " + okText); await load(page); }
+      if (j.ok) { ok = true; if (okText) flash("✓ " + okText); await load(page); }
       else flash("✗ " + (j.error ?? "failed"), false);
     } catch { flash("✗ Network error", false); }
     setBusy(false);
+    return ok;
   };
 
   /** Thay file cho video ĐÃ CÓ — giữ nguyên #ID, listing đã gán và caption. */
@@ -301,7 +303,8 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
       )}
 
       {msg && (
-        <div className="card" style={{ padding: "11px 14px", marginBottom: 12, fontSize: 13, fontWeight: 600, background: msg.ok ? "#E9F7EF" : "#FEE4E2", color: msg.ok ? "#1F6F45" : "#B42318", border: "none" }}>
+        // Toast NỔI trên cùng (z cao hơn modal 3000) — trước đây nằm trong luồng trang nên bị modal che.
+        <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 5000, padding: "11px 18px", borderRadius: 10, fontSize: 13, fontWeight: 700, boxShadow: "0 10px 30px rgba(17,24,39,.22)", background: msg.ok ? "#E9F7EF" : "#FEE4E2", color: msg.ok ? "#1F6F45" : "#B42318", maxWidth: "90vw" }}>
           {msg.text}
         </div>
       )}
@@ -412,7 +415,7 @@ function Pager({ page, total, show, setPage, label }: { page: number; total: num
 function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf, aiModels, aiModel, onChooseModel }: {
   row: Row; canManage: boolean; isAdmin: boolean; busy: boolean; setBusy: (b: boolean) => void;
   close: () => void; reload: () => Promise<void> | void; flash: (m: string, ok?: boolean) => void;
-  patch: (b: Record<string, unknown>, ok?: string) => Promise<void>;
+  patch: (b: Record<string, unknown>, ok?: string) => Promise<boolean>;
   sellers: Opt[]; creators: Opt[]; confirm: ReturnType<typeof useConfirm>;
   onReplace: (row: Row, file: File) => Promise<void>;
   perf?: Perf;
@@ -772,7 +775,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                     cursor: row.usedBy > 0 ? "not-allowed" : "pointer" }}>
                   {row.usedBy > 0 ? <IcLock /> : <IcTrash />} Delete Card
                 </button>
-                <button disabled={busy} className="btn btn-primary" onClick={save}
+                <button disabled={busy} className="btn btn-primary" onClick={async () => { if (await save()) close(); }}
                   style={{ padding: "10px 24px", background: "#1F9D57", borderColor: "#1F9D57", fontWeight: 800 }}>
                   {busy ? "Saving…" : "Save"}
                 </button>
