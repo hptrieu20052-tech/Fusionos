@@ -754,21 +754,19 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
               </>
             )}
 
-            {/* 1 nút Save chung cho cả card (details + seller/creator + posted link) + Delete — giống Card Design.
-                Delete bị KHÓA khi video đã gắn listing (usedBy>0): gỡ ở Manage Products trước rồi mới xoá. */}
+            {/* Delete Card + Save xếp NGANG (giống Card Design). Delete khóa khi video đã gắn listing (usedBy>0). */}
             {canManage && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 2 }}>
-                <button disabled={busy} className="btn btn-primary" onClick={save}
-                  style={{ width: "100%", background: "#1F9D57", borderColor: "#1F9D57", fontWeight: 800, padding: "10px 0" }}>
-                  {busy ? "Saving…" : "Save"}
-                </button>
-                <button disabled={busy || row.usedBy > 0} className="btn"
-                  onClick={doDelete}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
+                <button disabled={busy || row.usedBy > 0} className="btn" onClick={doDelete}
                   title={row.usedBy > 0 ? "Attached to a listing — remove it in Manage Products before deleting" : "Delete video from the library"}
-                  style={{ width: "100%", padding: "10px 0", fontWeight: 800, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  style={{ padding: "10px 18px", fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 7,
                     color: "#fff", background: row.usedBy > 0 ? "#E7A6A0" : "#E5484D", borderColor: row.usedBy > 0 ? "#E7A6A0" : "#E5484D",
                     cursor: row.usedBy > 0 ? "not-allowed" : "pointer" }}>
-                  {row.usedBy > 0 ? <><IcLock /> Delete</> : <><IcTrash /> Delete</>}
+                  {row.usedBy > 0 ? <IcLock /> : <IcTrash />} Delete Card
+                </button>
+                <button disabled={busy} className="btn btn-primary" onClick={save}
+                  style={{ padding: "10px 24px", background: "#1F9D57", borderColor: "#1F9D57", fontWeight: 800 }}>
+                  {busy ? "Saving…" : "Save"}
                 </button>
               </div>
             )}

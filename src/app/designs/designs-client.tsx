@@ -564,7 +564,7 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                 const files = filesOf(kind);
                 const ups = uploadsFor(kind);
                 return (
-                  <div key={kind} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 10, background: "#FCFDFE", minWidth: 0 }}>
+                  <div key={kind} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 10, background: "#FCFDFE", minWidth: 0, display: "flex", flexDirection: "column" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                       <b style={{ fontSize: 12.5 }}>{label}</b>
                       <span style={{ fontSize: 11.5, color: "var(--muted)" }}>({files.length})</span>
@@ -575,17 +575,20 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
                         </button>
                       )}
                     </div>
-                    <div className="file-grid">
-                      {files.map(renderFileItem)}
-                      {ups.map(renderUploadItem)}
-                      {canEdit && kind === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
-                      {canEdit && kind === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
-                      {canEdit && kind === "design" && designPicker}
-                      {canEdit && kind === "design" && <AddTile label="Upload files" onClick={() => folderRef.current?.click()} />}
+                    {/* CUỘN RIÊNG trong ô — nhiều file (25 trang) không tràn ra ngoài, 3 ô cao bằng nhau. */}
+                    <div style={{ maxHeight: 430, overflowY: "auto", overflowX: "hidden", paddingRight: 2 }}>
+                      <div className="file-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))" }}>
+                        {files.map(renderFileItem)}
+                        {ups.map(renderUploadItem)}
+                        {canEdit && kind === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
+                        {canEdit && kind === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
+                        {canEdit && kind === "design" && designPicker}
+                        {canEdit && kind === "design" && <AddTile label="Upload files" onClick={() => folderRef.current?.click()} />}
+                      </div>
+                      {files.length === 0 && ups.length === 0 && !canEdit && (
+                        <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 2px" }}>{t("d.noFiles")}</div>
+                      )}
                     </div>
-                    {files.length === 0 && ups.length === 0 && !canEdit && (
-                      <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 2px" }}>{t("d.noFiles")}</div>
-                    )}
                   </div>
                 );
               })}
