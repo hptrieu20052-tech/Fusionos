@@ -55,9 +55,9 @@ export default function TeamReport({ range, from, to, title }: RangeProps) {
           {buckets.map((b, bi) => {
             const t = colTotal[bi];
             return (
-              <div key={bi} style={{ flex: "1 0 auto", minWidth: buckets.length > 20 ? 22 : 34, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}
+              <div key={bi} style={{ flex: "1 1 0", minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}
                 onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY, bi })} onMouseLeave={() => setTip(null)}>
-                <div style={{ fontSize: 11, fontWeight: 700, marginBottom: 3, whiteSpace: "nowrap" }}>{t ? (metric === "r" ? money(t) : t) : ""}</div>
+                <div style={{ fontSize: 10.5, fontWeight: 700, marginBottom: 3, whiteSpace: "nowrap", overflow: "visible" }}>{t ? (metric === "r" ? money(t) : t) : ""}</div>
                 <div style={{ width: "100%", maxWidth: 44, height: Math.max((t / max) * H, t ? 3 : 0), display: "flex", flexDirection: "column-reverse", borderRadius: 6, overflow: "hidden" }}>
                   {teams.map((s, si) => {
                     const v = s.daily[bi][metric];
