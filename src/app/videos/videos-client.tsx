@@ -284,9 +284,16 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
                   </span>
                 </div>
-                <div style={{ position: "absolute", bottom: 8, left: 8, display: "flex", gap: 5, alignItems: "center" }}>
+                <div style={{ position: "absolute", bottom: 8, left: 8, right: 8, display: "flex", gap: 5, alignItems: "center" }}>
                   <span style={chip("rgba(0,0,0,.62)", "#fff")}>{secs(r.durationSec)}</span>
                   {r.aspect && <span style={chip("rgba(0,0,0,.62)", "#fff")}>{r.aspect}</span>}
+                  <span style={{ flex: 1 }} />
+                  {r.publicUrl && (
+                    <a href={r.publicUrl} download onClick={(e) => e.stopPropagation()} title="Download video"
+                      style={{ width: 26, height: 26, borderRadius: 999, background: "rgba(0,0,0,.62)", display: "flex", alignItems: "center", justifyContent: "center", textDecoration: "none", flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></svg>
+                    </a>
+                  )}
                 </div>
               </div>
               {/* Body đồng bộ với Card Design: mã # + ngày · title pill · Seller/Creator có nhãn · footer kích thước·size + listings */}
