@@ -554,41 +554,39 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
               </label>
             </div>
 
-            {/* 3 ô dàn ngang: Designs · Mockups · Videos — mỗi ô có file + nút upload riêng. Giữ nguyên style upload. */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 12, alignItems: "start" }}>
+            {/* 3 mục XẾP DỌC từ trên xuống (Mockups → Designs → Videos), mỗi mục full-width, ảnh wrap ngang
+                — giống mục "Photos" của listing Etsy. Giữ nguyên style upload. */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
               {([
-                { kind: "design", label: t("d.designFiles") },
                 { kind: "mockup", label: t("d.mockups") },
+                { kind: "design", label: t("d.designFiles") },
                 { kind: "video", label: t("d.videos") },
               ] as const).map(({ kind, label }) => {
                 const files = filesOf(kind);
                 const ups = uploadsFor(kind);
                 return (
-                  <div key={kind} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 10, background: "#FCFDFE", minWidth: 0, display: "flex", flexDirection: "column" }}>
+                  <div key={kind} style={{ borderTop: kind === "mockup" ? "none" : "1px solid var(--line)", paddingTop: kind === "mockup" ? 0 : 14 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                      <b style={{ fontSize: 12.5 }}>{label}</b>
-                      <span style={{ fontSize: 11.5, color: "var(--muted)" }}>({files.length})</span>
+                      <b style={{ fontSize: 13 }}>{label}</b>
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>({files.length})</span>
                       <span style={{ flex: 1 }} />
                       {files.length > 1 && (
-                        <button onClick={() => downloadAll(files)} title={t("d.downloadAll")} style={{ ...btnGhostBlue, padding: "3px 7px", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                          <IconDownload width={13} height={13} />
+                        <button onClick={() => downloadAll(files)} style={{ ...btnGhostBlue, padding: "4px 9px", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <IconDownload width={13} height={13} /> {t("d.downloadAll")}
                         </button>
                       )}
                     </div>
-                    {/* CUỘN RIÊNG trong ô — nhiều file (25 trang) không tràn ra ngoài, 3 ô cao bằng nhau. */}
-                    <div style={{ maxHeight: 430, overflowY: "auto", overflowX: "hidden", paddingRight: 2 }}>
-                      <div className="file-grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(92px, 1fr))" }}>
-                        {files.map(renderFileItem)}
-                        {ups.map(renderUploadItem)}
-                        {canEdit && kind === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
-                        {canEdit && kind === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
-                        {canEdit && kind === "design" && designPicker}
-                        {canEdit && kind === "design" && <AddTile label="Upload files" onClick={() => folderRef.current?.click()} />}
-                      </div>
-                      {files.length === 0 && ups.length === 0 && !canEdit && (
-                        <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 2px" }}>{t("d.noFiles")}</div>
-                      )}
+                    <div className="file-grid">
+                      {files.map(renderFileItem)}
+                      {ups.map(renderUploadItem)}
+                      {canEdit && kind === "mockup" && <AddTile label="Mockup" onClick={() => pickAndUpload("mockup")} />}
+                      {canEdit && kind === "video" && <AddTile label="Video" onClick={() => pickAndUpload("video")} />}
+                      {canEdit && kind === "design" && designPicker}
+                      {canEdit && kind === "design" && <AddTile label="Upload files" onClick={() => folderRef.current?.click()} />}
                     </div>
+                    {files.length === 0 && ups.length === 0 && !canEdit && (
+                      <div style={{ fontSize: 12, color: "var(--muted)", padding: "4px 2px" }}>{t("d.noFiles")}</div>
+                    )}
                   </div>
                 );
               })}
