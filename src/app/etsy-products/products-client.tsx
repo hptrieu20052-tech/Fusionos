@@ -419,6 +419,20 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     // Bỏ tick ⇒ xoá hẳn giá riêng, mọi giá trị quay về giá gốc của listing.
     if (!on) setEdit((e) => { if (!e) return e; const vp = { ...e.variantPrices }; for (const v of e.variations[i].values ?? []) delete vp[v]; return { ...e, variantPrices: vp }; });
   };
+  // Chuyển 1 variation → ô Custom (Personalization) dropdown: bê nguyên label + options xuống, khỏi gõ lại,
+  // rồi bỏ variation đó khỏi Variants. Dùng cho Girl/Boy, kiểu nhân vật… (giá không đổi, không nên là variant).
+  const moveVarToCustom = (i: number) => {
+    if (!edit) return;
+    const v = edit.variations[i];
+    const opts = (v.values ?? []).map((x) => String(x).trim()).filter(Boolean);
+    if (!opts.length) return flash("✗ Variation này chưa có option nào để chuyển", false);
+    if (edit.personalization.length >= 5) return flash("✗ Đã đủ 5 ô Custom — xoá bớt trước khi chuyển", false);
+    const pq: PQ = { type: "dropdown", label: String(v.name ?? "").trim() || "Choose", instructions: "", required: true, maxChars: 0, options: opts, maxFiles: 0 };
+    setVary((s) => s.filter((_, k) => k !== i));
+    setEdit((e) => e ? { ...e, variations: e.variations.filter((_, k) => k !== i), personalization: [...e.personalization, pq] } : e);
+    flash(`✓ Đã chuyển "${pq.label}" xuống Custom`);
+  };
+
   // Cảnh báo trần Shopify: tối đa 3 option/sản phẩm và 100 variant — trước đây code cắt âm thầm.
   const evVars = edit ? edit.variations.filter((v) => String(v.name ?? "").trim() && (v.values ?? []).filter(Boolean).length) : [];
   const evCombos = evVars.reduce((a, v) => a * (v.values ?? []).filter(Boolean).length, 1);
@@ -472,7 +486,11 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         {notesOpen && (
           <ul style={{ margin: "8px 0 0", paddingLeft: 18, display: "grid", gap: 5, fontSize: 12.8, color: "#5C4A2A", lineHeight: 1.5 }}>
             <li><b>Kiểm tra bản quyền (Trademark)</b></li>
-            <li><b>Đổi giá → Variants. Khách chọn/nhập mà giá KHÔNG đổi (tên, lời nhắn, Girl/Boy, kiểu nhân vật Girl 1…) → Custom (Personalization), đừng cho vào Variants.</b></li>
+            <li>
+              <b>Variants</b> = thứ <b>ĐỔI GIÁ</b> (Size, bìa Hardcover/Softcover, giấy Matte/Glossy). &nbsp;
+              <b>Girl/Boy, kiểu nhân vật (Girl 1, Boy 3…), tên, lời nhắn</b> = <b>Custom (Personalization)</b> — KHÔNG để ở Variants.
+              <span style={{ color: "#8A5A00" }}> Lỡ để nhầm ở Variants thì mở Edit listing, bấm nút <b>“↓ Move to Custom”</b> trên variation đó để chuyển nhanh (khỏi gõ lại).</span>
+            </li>
             <li><b>Thêm Custom cho listing cần cá nhân hoá</b></li>
             <li><b>Một sản phẩm list ở 2 shop Etsy → tự lọc trùng, giữ 1 listing, xóa bớt cái còn lại.</b></li>
             <li><b>Listing đã Push sẽ bị khóa không xóa được (chỉ admin xóa được).</b></li>
@@ -1049,6 +1067,11 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                             Prices vary for each {String(v.name ?? "").trim() || "option"}
                           </label>
                           <div style={{ flex: 1 }} />
+                          <button title="Chuyển xuống Custom (Personalization) — dùng cho Girl/Boy, kiểu nhân vật… không đổi giá"
+                            onClick={() => moveVarToCustom(i)}
+                            style={{ border: "1px solid #F0D0B6", background: "#FFF6EE", color: ETSY_ORANGE, fontWeight: 700, fontSize: 12, borderRadius: 8, padding: "5px 10px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                            ↓ Move to Custom
+                          </button>
                           <button title="Remove variation" onClick={() => removeVar(i)} style={{ ...linkBtn("var(--red)"), fontSize: 17 }}>×</button>
                         </div>
                         <div style={{ padding: "10px 12px" }}>
