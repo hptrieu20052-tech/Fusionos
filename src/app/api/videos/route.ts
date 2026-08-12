@@ -27,7 +27,7 @@ const isAdmin = (s: Sess) => s.role === "admin";
 const uuidOk = (x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x));
 
 // Posted tracker — 5 kênh xã hội, mỗi kênh 1 link bài đã đăng + mốc thời gian.
-const POST_CHANNELS = ["tiktok", "reels", "shorts", "facebook", "pinterest", "meta_ads", "gmc"] as const;
+const POST_CHANNELS = ["tiktok", "meta", "reels", "shorts", "facebook", "pinterest", "meta_ads", "gmc"] as const;
 function cleanPostedTo(v: unknown): Record<string, { url: string; at: string }> {
   const out: Record<string, { url: string; at: string }> = {};
   if (!v || typeof v !== "object") return out;

@@ -43,9 +43,9 @@ const CHANNELS = [
   { key: "facebook", label: "Facebook" }, { key: "pinterest", label: "Pinterest" },
 ] as const;
 // Nhãn kênh cho Performance (khớp utm_source do nút UTM sinh ra).
-const CH_LABEL: Record<string, string> = { tiktok: "TikTok", reels: "IG Reel", facebook: "FB Page", pinterest: "Pinterest", shorts: "YT Short", meta_ads: "Meta Ads", gmc: "GMC/PMax", other: "Other" };
+const CH_LABEL: Record<string, string> = { tiktok: "TikTok", meta: "Meta (FB+IG)", reels: "IG Reel", facebook: "FB Page", pinterest: "Pinterest", shorts: "YT Short", meta_ads: "Meta Ads", gmc: "GMC/PMax", other: "Other" };
 // Nhãn ngắn cho hàng "đã đăng" trên card.
-const POSTED_LABEL: Record<string, string> = { tiktok: "TikTok", reels: "IG", shorts: "YT", facebook: "FB", pinterest: "Pinterest", meta_ads: "Ads", gmc: "GMC" };
+const POSTED_LABEL: Record<string, string> = { tiktok: "TikTok", meta: "Meta", reels: "IG", shorts: "YT", facebook: "FB", pinterest: "Pinterest", meta_ads: "Ads", gmc: "GMC" };
 const money = (n: number) => "$" + Math.round(n || 0).toLocaleString();
 const WIN_ORDERS = 10; // đủ số đơn quy về mới gắn cờ 🔥 "winning creative"
 
@@ -663,15 +663,16 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
                     {([
                       { key: "tiktok", label: "TikTok", owner: "creator", opens: [["TikTok Studio", "https://www.tiktok.com/tiktokstudio/upload"]] },
-                      { key: "reels", label: "IG Reel", owner: "brand", opens: [["IG Reels", "https://business.facebook.com/latest/reels_composer"]] },
-                      { key: "facebook", label: "FB Page", owner: "brand", opens: [["FB composer", "https://business.facebook.com/latest/composer"]] },
+                      // Meta Reel = đăng 1 lần ra CẢ FB Page + Instagram (composer Meta mặc định tick cả 2).
+                      // 1 link/bài nên gộp thành 1 kênh utm_source=meta; caption dùng bản IG Reel.
+                      { key: "meta", label: "Meta Reel (FB+IG)", owner: "brand", capKey: "reels", opens: [["Reels composer", "https://business.facebook.com/latest/reels_composer"]] },
                       { key: "pinterest", label: "Pinterest", owner: "brand", opens: [["Pin builder", "https://www.pinterest.com/pin-builder/"]] },
                       { key: "shorts", label: "YT Short", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"]] },
                       { key: "meta_ads", label: "Meta Ads", owner: "brand", opens: [["Ads Manager", "https://adsmanager.facebook.com/adsmanager"]] },
                       { key: "gmc", label: "GMC/PMax", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"], ["Google Ads", "https://ads.google.com/"]] },
-                    ] as { key: string; label: string; owner: "creator" | "brand"; opens: string[][] }[]).map((d, i) => {
+                    ] as { key: string; label: string; owner: "creator" | "brand"; capKey?: string; opens: string[][] }[]).map((d, i) => {
                       const link = utmLink(d.key);
-                      const cap = row.captions?.[d.key];
+                      const cap = row.captions?.[d.capKey ?? d.key];
                       const capFull = cap ? [cap.text, (cap.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n") : "";
                       const done = !!posted[d.key]?.url;
                       const cr = d.owner === "creator";
