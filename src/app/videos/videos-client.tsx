@@ -38,9 +38,9 @@ type Match = { id: string; title: string; productType: string | null; videoId: s
 type Perf = { orders: number; revenue: number; channels: Record<string, { orders: number; revenue: number }> };
 
 const LANGS = [{ v: "none", label: "No voice" }, { v: "en", label: "English" }, { v: "vi", label: "Tiếng Việt" }];
+// Khớp ĐÚNG 3 kênh trong DISTRIBUTION — caption gen ra đúng bấy nhiêu, không dư.
 const CHANNELS = [
-  { key: "tiktok", label: "TikTok" }, { key: "reels", label: "IG Reels" }, { key: "shorts", label: "YT Shorts" },
-  { key: "facebook", label: "Facebook" }, { key: "pinterest", label: "Pinterest" },
+  { key: "meta", label: "Meta Reel (FB+IG)" }, { key: "shorts", label: "YT Short" }, { key: "meta_ads", label: "Meta Ads" },
 ] as const;
 // Nhãn kênh cho Performance (khớp utm_source do nút UTM sinh ra).
 const CH_LABEL: Record<string, string> = { tiktok: "TikTok", meta: "Meta (FB+IG)", reels: "IG Reel", facebook: "FB Page", pinterest: "Pinterest", shorts: "YT Short", meta_ads: "Meta Ads", gmc: "GMC/PMax", other: "Other" };
@@ -672,7 +672,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                     {([
                       // Meta Reel = đăng 1 lần ra CẢ FB Page + Instagram (composer Meta mặc định tick cả 2).
                       // 1 link/bài nên gộp thành 1 kênh utm_source=meta; caption dùng bản IG Reel.
-                      { key: "meta", label: "Meta Reel (FB+IG)", owner: "brand", capKey: "reels", opens: [["Reels composer", "https://business.facebook.com/latest/reels_composer"]] },
+                      { key: "meta", label: "Meta Reel (FB+IG)", owner: "brand", opens: [["Reels composer", "https://business.facebook.com/latest/reels_composer"]] },
                       { key: "shorts", label: "YT Short", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"]] },
                       { key: "meta_ads", label: "Meta Ads", owner: "brand", opens: [["Ads Manager", "https://adsmanager.facebook.com/adsmanager"]] },
                       // Đã bỏ TikTok (creator tự cầm + đơn qua TikTok Shop, UTM không đo được), Pinterest và GMC/PMax

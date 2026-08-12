@@ -21,18 +21,17 @@ export const maxDuration = 120;
  *   · KHÔNG bịa review, số sao, "best seller", "hàng nghìn khách".
  */
 type Caption = { text: string; hashtags: string[] };
-type Out = { tiktok: Caption; reels: Caption; shorts: Caption; facebook: Caption; pinterest: Caption };
+type Out = { meta: Caption; shorts: Caption; meta_ads: Caption };
 
-const CHANNELS = ["tiktok", "reels", "shorts", "facebook", "pinterest"] as const;
+// Khớp ĐÚNG 3 kênh trong khu DISTRIBUTION: meta (Reel FB+IG) · shorts (YT Short) · meta_ads (Meta Ads).
+const CHANNELS = ["meta", "shorts", "meta_ads"] as const;
 
-const SYSTEM = `You write short-form social captions for Talewix, a store selling personalized children's books and personalized wooden name puzzles, each made to order.
+const SYSTEM = `You write short-form marketing copy for Talewix, a store selling personalized children's books and personalized wooden name puzzles, each made to order.
 
-Write ONE caption per channel, tuned to how that channel actually reads:
-- tiktok: 100-150 chars, hook in the first line, casual and spoken, 3-5 hashtags.
-- reels: 100-150 chars, warm and gift-focused, 3-5 hashtags.
-- shorts: under 100 chars, punchy, searchable phrasing, 3-5 hashtags.
-- facebook: 200-320 chars, full sentences, aimed at parents and grandparents, 0-2 hashtags.
-- pinterest: 100-200 chars, descriptive and keyword-rich (people search Pinterest like a search engine), 3-5 hashtags.
+Write copy for THREE destinations, each tuned to how it is used:
+- meta: ONE Reel caption used for BOTH Facebook and Instagram. 120-180 chars, warm and gift-focused, hook in the first line, natural spoken tone, 3-5 hashtags.
+- shorts: a YouTube Shorts caption. Under 100 chars, punchy and searchable (people search YouTube), 3-5 hashtags.
+- meta_ads: PAID ad primary text (Facebook/Instagram ads). 90-125 chars, benefit-led and clear, speaks to a parent or grandparent buying a gift, no clickbait, 0-2 hashtags.
 
 ABSOLUTE RULES — breaking any of these makes the output unusable:
 1. NEVER invent a discount, coupon code, sale, percentage off, or any "limited time" or "expires soon" urgency. The store runs no automatic discounts.
@@ -44,7 +43,7 @@ ABSOLUTE RULES — breaking any of these makes the output unusable:
 7. If a product image and/or a still frame from the video are provided, use them to keep the description concrete and accurate (what the product actually is, its style, who it suits). But NEVER name or imply any real brand or copyrighted character even if you think you recognize one in the image (see rule 3).
 
 Return STRICT JSON only, no markdown fence:
-{"tiktok":{"text":"...","hashtags":["#a","#b"]},"reels":{...},"shorts":{...},"facebook":{...},"pinterest":{...}}
+{"meta":{"text":"...","hashtags":["#a","#b"]},"shorts":{...},"meta_ads":{...}}
 Every hashtag must start with "#", be lowercase, contain no spaces, and be relevant to personalized gifts for kids.`;
 
 export async function POST(req: NextRequest) {
