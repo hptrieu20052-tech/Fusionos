@@ -47,7 +47,18 @@ const CH_LABEL: Record<string, string> = { tiktok: "TikTok", meta: "Meta (FB+IG)
 // Nhãn ngắn cho hàng "đã đăng" trên card.
 const POSTED_LABEL: Record<string, string> = { tiktok: "TikTok", meta: "Meta", reels: "IG", shorts: "YT", facebook: "FB", pinterest: "Pinterest", meta_ads: "Ads", gmc: "GMC" };
 const money = (n: number) => "$" + Math.round(n || 0).toLocaleString();
-const WIN_ORDERS = 10; // đủ số đơn quy về mới gắn cờ 🔥 "winning creative"
+const WIN_ORDERS = 10; // đủ số đơn quy về mới gắn cờ "winning creative"
+
+// ── Icon line (stroke = currentColor để ăn theo màu chữ). KHÔNG dùng emoji. ──
+const svgIc = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+const IcUser = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><circle cx="12" cy="8" r="3.5" /><path d="M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5" /></svg>;
+const IcClap = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><rect x="3" y="8.5" width="18" height="11.5" rx="1.5" /><path d="M3 8.5l2-4 3.6 1.2-2 4M8.6 5.7l4 1.2-2 4M14.6 6.9l4 1.2-2 4" /></svg>;
+const IcFlame = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M12 3c1 3-2 4.2-2 7a2 2 0 1 0 4 0c2 1 3 3 3 5a5 5 0 1 1-10 0c0-4 4-5 5-12z" /></svg>;
+const IcSparkle = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M12 3l1.7 4.8L18.5 9.5l-4.8 1.7L12 16l-1.7-4.8L5.5 9.5l4.8-1.7L12 3z" /></svg>;
+const IcDownload = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M12 3v12M7 11l5 4 5-4M5 21h14" /></svg>;
+const IcLock = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>;
+const IcRefresh = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M20 11a8 8 0 1 0-2 5.3M20 5v6h-6" /></svg>;
+const IcEye = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="2.4" /></svg>;
 
 const chip = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-block", background: bg, color: fg, borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 800 });
 const pgBtn: React.CSSProperties = { minWidth: 34, height: 34, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13 };
@@ -77,18 +88,13 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
   // Model AI cho nút Generate caption — chọn TRƯỚC khi generate. Dùng chung danh sách với các trang AI khác.
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
   const [aiModel, setAiModel] = useState("");
-  const [visionIds, setVisionIds] = useState<Set<string>>(new Set()); // model đọc được ảnh → mới gửi ảnh kèm caption
   useEffect(() => {
     try { const s = window.localStorage.getItem("videosAiModel"); if (s) setAiModel(s); } catch { /* ignore */ }
-    if (isAdmin) {
-      fetch("/api/books/models?type=text").then((r) => r.json())
-        .then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
-      fetch("/api/books/models?type=vision").then((r) => r.json())
-        .then((j) => { if (Array.isArray(j?.models)) setVisionIds(new Set((j.models as { id: string }[]).map((m) => m.id))); }).catch(() => {});
-    }
+    // Caption GỬI KÈM ẢNH (ảnh listing + frame video) nên chỉ liệt kê model ĐỌC ĐƯỢC ẢNH (vision).
+    // Model text-thuần / gen-ảnh không hiện ở đây — tránh chọn nhầm model không xem được ảnh.
+    if (isAdmin) fetch("/api/books/models?type=vision").then((r) => r.json())
+      .then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
   }, [isAdmin]);
-  // Model mặc định (aiModel trống) coi như đọc được ảnh (bản ship là Claude 3.5 Sonnet — có vision).
-  const aiModelIsVision = !aiModel || visionIds.has(aiModel);
   const chooseModel = (m: string) => { setAiModel(m); try { window.localStorage.setItem("videosAiModel", m); } catch { /* ignore */ } };
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 6000); };
@@ -345,9 +351,9 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                 {r.productTitle && (
                   <div title={r.productTitle} style={{ fontSize: 11.5, color: "#475569", background: "#F1F5F9", borderRadius: 6, padding: "2px 8px", alignSelf: "flex-start", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productTitle}</div>
                 )}
-                <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 1 }}>
-                  <span title="Seller">👤 {r.sellerName ?? "—"}</span>
-                  <span title="Creator">🎬 {r.sourceName || r.creatorName || r.uploader || "—"}</span>
+                <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 2 }}>
+                  <span title="Seller" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><IcUser /> {r.sellerName ?? "—"}</span>
+                  <span title="Creator" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><IcClap /> {r.sourceName || r.creatorName || r.uploader || "—"}</span>
                 </div>
                 <PostedTicks postedTo={r.postedTo} />
                 {isAdmin && <PerfLine p={perf[String(r.videoCode)]} />}
@@ -375,7 +381,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
           close={() => setOpen(null)} reload={() => load(page)} flash={flash} patch={patch}
           sellers={sellers} creators={creators} confirm={confirm} onReplace={doReplace}
           perf={perf[String(openRow.videoCode)]}
-          aiModels={aiModels} aiModel={aiModel} onChooseModel={chooseModel} aiModelIsVision={aiModelIsVision}
+          aiModels={aiModels} aiModel={aiModel} onChooseModel={chooseModel}
         />
       )}
     </div>
@@ -402,14 +408,14 @@ function Pager({ page, total, show, setPage, label }: { page: number; total: num
 }
 
 /** Chi tiết. Gán listing theo Product type là đường chính — 1 thao tác cho cả lô. */
-function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf, aiModels, aiModel, onChooseModel, aiModelIsVision }: {
+function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf, aiModels, aiModel, onChooseModel }: {
   row: Row; canManage: boolean; isAdmin: boolean; busy: boolean; setBusy: (b: boolean) => void;
   close: () => void; reload: () => Promise<void> | void; flash: (m: string, ok?: boolean) => void;
   patch: (b: Record<string, unknown>, ok?: string) => Promise<void>;
   sellers: Opt[]; creators: Opt[]; confirm: ReturnType<typeof useConfirm>;
   onReplace: (row: Row, file: File) => Promise<void>;
   perf?: Perf;
-  aiModels: { id: string; name: string }[]; aiModel: string; onChooseModel: (m: string) => void; aiModelIsVision: boolean;
+  aiModels: { id: string; name: string }[]; aiModel: string; onChooseModel: (m: string) => void;
 }) {
   const [types, setTypes] = useState<TypeOpt[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -480,7 +486,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
   const doCaptions = async () => {
     setBusy(true);
     try {
-      const j = await fetch("/api/videos/captions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: row.id, model: aiModel || undefined, withImages: aiModelIsVision }) }).then((r) => r.json());
+      const j = await fetch("/api/videos/captions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: row.id, model: aiModel || undefined, withImages: true }) }).then((r) => r.json());
       if (j.ok) { flash("✓ Captions written"); await reload(); } else flash("✗ " + (j.error ?? "failed"), false);
     } catch { flash("✗ Network error", false); }
     setBusy(false);
@@ -549,7 +555,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
             </div>
             {row.publicUrl && (
               <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
-                <a href={row.publicUrl} download className="btn" style={{ padding: "6px 11px", fontSize: 12, textDecoration: "none" }}>⬇ Download</a>
+                <a href={row.publicUrl} download className="btn" style={{ padding: "6px 11px", fontSize: 12, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}><IcDownload /> Download</a>
                 <button onClick={() => copy(row.publicUrl!)} className="btn" style={{ padding: "6px 11px", fontSize: 12 }}>Copy link</button>
               </div>
             )}
@@ -617,15 +623,17 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>CONTENT</div>
                     <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                      {/* Chọn model AI TRƯỚC khi Generate — trống = model mặc định của server. */}
+                      {/* Chọn model AI TRƯỚC khi Generate. Danh sách CHỈ gồm model đọc được ảnh (vision) vì caption
+                          gửi kèm ảnh — icon con mắt nhắc điều đó. Trống = model mặc định (cũng vision). */}
+                      <span title="Only image-reading (vision) models are listed — captions are generated with the product image" style={{ color: "var(--muted)", display: "inline-flex" }}><IcEye /></span>
                       <select value={aiModel} onChange={(e) => onChooseModel(e.target.value)} disabled={busy}
-                        title="AI model for caption generation. Blank = server default. Avoid ':free' models — they get rate-limited."
-                        style={{ maxWidth: 170, padding: "5px 8px", fontSize: 11.5, borderRadius: 8, border: "1px solid var(--line)", background: "#fff" }}>
+                        title="Vision AI model for caption generation. Blank = server default. Avoid ':free' models — they get rate-limited."
+                        style={{ maxWidth: 168, padding: "5px 8px", fontSize: 11.5, borderRadius: 8, border: "1px solid var(--line)", background: "#fff" }}>
                         <option value="">Model: Default</option>
                         {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
-                      <button disabled={busy || !row.productId} className="btn" style={{ padding: "4px 10px", fontSize: 11.5 }}
-                        onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}>✨ {row.captionsAt ? "Regenerate" : "Generate"}</button>
+                      <button disabled={busy || !row.productId} className="btn" style={{ padding: "4px 10px", fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}
+                        onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}><IcSparkle /> {row.captionsAt ? "Regenerate" : "Generate"}</button>
                     </div>
                   </div>
                   {row.captions ? (
@@ -726,7 +734,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                         )}
                         <div style={{ borderTop: "1px solid var(--line)", padding: "7px 12px", fontSize: 11, color: "var(--muted)", background: "#FAFBFC" }}>
                           {orders >= WIN_ORDERS
-                            ? <span style={{ color: "#B45309", fontWeight: 700 }}>🔥 Winning creative</span>
+                            ? <span style={{ color: "#B45309", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}><IcFlame /> Winning creative</span>
                             : orders > 0
                               ? "Tracking sales via the UTM links above."
                               : "No tracked sales yet — orders attribute here once the UTM links above are used in posts/ads."}
@@ -743,20 +751,21 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
             {canManage && (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 {row.publicUrl && (
-                  <a href={row.publicUrl} download className="btn" style={{ textDecoration: "none" }}>⬇ Download</a>
+                  <a href={row.publicUrl} download className="btn" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}><IcDownload /> Download</a>
                 )}
                 <input ref={repRef} type="file" accept="video/*" hidden
                   onChange={(e) => { const fl = e.target.files?.[0]; if (fl) onReplace(row, fl); if (repRef.current) repRef.current.value = ""; }} />
                 <button disabled={busy} className="btn" onClick={() => repRef.current?.click()}
-                  title="Replace the file after re-editing — keeps #ID, listings and captions">
-                  ⟳ Replace file{row.revision > 1 ? ` (v${row.revision})` : ""}
+                  title="Replace the file after re-editing — keeps #ID, listings and captions"
+                  style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <IcRefresh /> Replace file{row.revision > 1 ? ` (v${row.revision})` : ""}
                 </button>
                 <div style={{ flex: 1 }} />
                 <button disabled={busy || row.usedBy > 0} className="btn"
                   style={{ color: row.usedBy > 0 ? "var(--muted)" : "#B42318", opacity: row.usedBy > 0 ? .5 : 1, cursor: row.usedBy > 0 ? "not-allowed" : "pointer" }}
                   title={row.usedBy > 0 ? "Attached to a listing — remove it in Manage Products before deleting" : "Delete video from the library"}
                   onClick={doDelete}>
-                  {row.usedBy > 0 ? "🔒 Delete" : "Delete"}
+                  {row.usedBy > 0 ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><IcLock /> Delete</span> : "Delete"}
                 </button>
               </div>
             )}
@@ -790,7 +799,7 @@ function PerfLine({ p }: { p?: Perf }) {
       <span style={{ color: orders ? "var(--ink)" : "var(--muted)", fontWeight: orders ? 700 : 400 }}>{orders} orders</span>
       <span style={{ color: "var(--line)" }}>·</span>
       <span style={{ color: orders ? "var(--green)" : "var(--muted)", fontWeight: 700 }}>{money(p?.revenue ?? 0)}</span>
-      {orders >= WIN_ORDERS && <span title="Winning creative">🔥</span>}
+      {orders >= WIN_ORDERS && <span title="Winning creative" style={{ display: "inline-flex", color: "#B45309" }}><IcFlame /></span>}
     </div>
   );
 }

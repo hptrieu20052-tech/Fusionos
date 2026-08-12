@@ -1255,7 +1255,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                 {/* Mức ship khách chọn — Express/Priority tô đỏ nổi để người fulfill ship nhanh, không ship thường. */}
                 {o.shipping_method && (
                   /express|priority|expedite|next.?day|overnight|fast|2.?day/i.test(o.shipping_method)
-                    ? <span className="o2-chip" style={{ background: "#FDECEA", color: "#C0392B", fontWeight: 800, border: "1px solid #F2C0B8" }} title="Buyer paid for faster shipping — fulfill with express service">🚀 {o.shipping_method}</span>
+                    ? <span className="o2-chip" style={{ background: "#FDECEA", color: "#C0392B", fontWeight: 800, border: "1px solid #F2C0B8", display: "inline-flex", alignItems: "center", gap: 4 }} title="Buyer paid for faster shipping — fulfill with express service"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M13 3L5 13h6l-1 8 8-10h-6l1-8z" /></svg>{o.shipping_method}</span>
                     : <span className="o2-chip" style={{ background: "#EEF2FF", color: "#4338CA", fontWeight: 700 }} title="Shipping method the buyer selected">{o.shipping_method}</span>
                 )}
                 {o.platform === "tiktok" && o.shipping_type && (
