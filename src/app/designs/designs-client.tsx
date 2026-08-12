@@ -278,18 +278,8 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
   const [addSideOpen, setAddSideOpen] = useState(false);
   const [sideGroupIdx, setSideGroupIdx] = useState(0); // cột trái = Product name, cột phải = print areas
   const addTileRef = useRef<HTMLDivElement>(null);
-  const [sideMenuPos, setSideMenuPos] = useState<{ left: number; top: number; maxH: number; W: number } | null>(null);
-  const openSideMenu = () => {
-    if (addSideOpen) { setAddSideOpen(false); return; }
-    // Panel TO + đặt GIỮA màn hình để không bị khuất/cắt đáy (trước đây neo cạnh nút nhỏ nên hay bị che).
-    const M = 16;
-    const W = Math.min(720, window.innerWidth - 2 * M);
-    const maxH = Math.min(640, window.innerHeight - 2 * M);
-    const left = Math.max(M, (window.innerWidth - W) / 2);
-    const top = Math.max(M, (window.innerHeight - maxH) / 2);
-    setSideMenuPos({ left, top, maxH, W });
-    setAddSideOpen(true);
-  };
+  // Panel canh giữa bằng flex overlay (xem designPicker) — không cần tính toạ độ nữa.
+  const openSideMenu = () => setAddSideOpen((v) => !v);
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -480,43 +470,49 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     </div>
   );
   const designPicker = (
-    <div style={{ position: "relative" }} ref={addTileRef}>
+    <div ref={addTileRef}>
       <AddTile label={t("dz.addFace")} onClick={openSideMenu} />
-      {addSideOpen && sideMenuPos && (() => {
+      {addSideOpen && (() => {
         const groups = sideGroups(t)
           .map((g) => ({ ...g, avail: g.sides.filter((x) => !detail.files.some((f) => f.kind === x)) }))
           .filter((g) => g.avail.length);
         if (!groups.length) return null;
         const gi = Math.min(sideGroupIdx, groups.length - 1);
         const cur = groups[gi];
-        return (<>
-          <div onClick={() => setAddSideOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 60, background: "rgba(15,20,30,.38)" }} />
-          <div style={{ position: "fixed", left: sideMenuPos.left, top: sideMenuPos.top, zIndex: 61, background: "#fff", border: "1px solid var(--line)", borderRadius: 14, boxShadow: "0 18px 48px rgba(20,30,50,.28)", width: sideMenuPos.W, maxHeight: sideMenuPos.maxH, display: "flex", overflow: "hidden" }}>
-            <div style={{ width: 210, flex: "0 0 210px", borderRight: "1px solid var(--line)", background: "#F7F9FC", overflowY: "auto", padding: 8 }}>
-              <div style={{ padding: "2px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.productName")}</div>
-              {groups.map((g, i) => (
-                <button key={g.group} onClick={() => setSideGroupIdx(i)}
-                  style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 8px", marginBottom: 4, borderRadius: 8, cursor: "pointer", fontSize: 12, fontWeight: 700, lineHeight: 1.25,
-                    background: i === gi ? "var(--accent)" : "#fff", color: i === gi ? "#fff" : "var(--ink)",
-                    border: `1px solid ${i === gi ? "transparent" : "var(--line)"}` }}>
-                  {g.group}
-                  <span style={{ display: "block", fontSize: 10, fontWeight: 600, opacity: .7 }}>{g.avail.length}</span>
-                </button>
-              ))}
-            </div>
-            <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
-              <div style={{ padding: "2px 4px 6px", fontSize: 10.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.printAreas")}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-                {cur.avail.map((x) => (
-                  <button key={x} onClick={() => { setAddSideOpen(false); pickAndUpload(x); }}
-                    style={{ padding: "11px 8px", background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 10, cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "var(--ink)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {sideLabel(t)[x] || x}
+        // Overlay flex canh GIỮA tuyệt đối — panel luôn cân giữa màn hình dù ít/nhiều print area.
+        return (
+          <div onClick={() => setAddSideOpen(false)}
+            style={{ position: "fixed", inset: 0, zIndex: 120, background: "rgba(15,20,30,.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <div onClick={(e) => e.stopPropagation()}
+              style={{ width: "min(820px, 94vw)", height: "min(70vh, 560px)", background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 64px rgba(20,30,50,.34)", display: "flex", overflow: "hidden" }}>
+              {/* CỘT TRÁI — Product name */}
+              <div style={{ width: 240, flex: "0 0 240px", borderRight: "1px solid var(--line)", background: "#F7F9FC", overflowY: "auto", padding: 12 }}>
+                <div style={{ padding: "2px 4px 8px", fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.productName")}</div>
+                {groups.map((g, i) => (
+                  <button key={g.group} onClick={() => setSideGroupIdx(i)}
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "10px 10px", marginBottom: 6, borderRadius: 9, cursor: "pointer", fontSize: 12.5, fontWeight: 700, lineHeight: 1.3,
+                      background: i === gi ? "var(--accent)" : "#fff", color: i === gi ? "#fff" : "var(--ink)",
+                      border: `1px solid ${i === gi ? "transparent" : "var(--line)"}` }}>
+                    {g.group}
+                    <span style={{ display: "block", fontSize: 10.5, fontWeight: 600, opacity: .7 }}>{g.avail.length}</span>
                   </button>
                 ))}
               </div>
+              {/* CỘT PHẢI — Print areas */}
+              <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+                <div style={{ padding: "2px 4px 10px", fontSize: 11, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".3px" }}>{t("dz.printAreas")}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 10 }}>
+                  {cur.avail.map((x) => (
+                    <button key={x} onClick={() => { setAddSideOpen(false); pickAndUpload(x); }}
+                      style={{ padding: "16px 10px", background: "#F7F9FC", border: "1px solid var(--line)", borderRadius: 11, cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--ink)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {sideLabel(t)[x] || x}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-        </>);
+        );
       })()}
     </div>
   );
