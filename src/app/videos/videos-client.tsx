@@ -21,6 +21,8 @@ type Row = {
   language: string | null; flags: Flags | null; revision: number;
   sourceName: string | null; shotAt: string | null;
   productId: string | null; productTitle: string | null;
+  productUrl: string | null; productHandle: string | null;
+  postedTo: Record<string, { url: string; at: string }> | null;
   storeId: string | null; storeName: string | null;
   sellerId: string | null; sellerName: string | null;
   creatorId: string | null; creatorName: string | null; uploader: string | null;
@@ -443,6 +445,29 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
     try { await navigator.clipboard.writeText(text); flash("✓ Copied"); }
     catch { flash("✗ Clipboard blocked", false); }
   };
+
+  // ── UTM link cho từng kênh: link listing chính + tham số để Shopify/GA quy đơn về đúng video × kênh ──
+  const utmLink = (ch: string): string => {
+    if (!row.productUrl) return "";
+    try {
+      const u = new URL(row.productUrl);
+      u.searchParams.set("utm_source", ch);
+      u.searchParams.set("utm_medium", "video");
+      u.searchParams.set("utm_campaign", `video_${row.videoCode}`);
+      return u.toString();
+    } catch { return ""; }
+  };
+  // ── Posted tracker: đã đăng bài lên kênh nào + link bài, lưu vào postedTo ──
+  const [posted, setPosted] = useState<Record<string, { url: string; at: string }>>(
+    () => (row.postedTo && typeof row.postedTo === "object" ? { ...row.postedTo } : {}),
+  );
+  const setPostedUrl = (ch: string, url: string) => setPosted((p) => {
+    const n = { ...p };
+    if (url.trim()) n[ch] = { url: url.trim(), at: p[ch]?.at ?? new Date().toISOString() };
+    else delete n[ch];
+    return n;
+  });
+  const savePosted = () => patch({ id: row.id, postedTo: posted }, "Đã lưu trạng thái đăng");
   const cbx = (k: "voice" | "text" | "music", label: string) => (
     <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600 }}>
       <input type="checkbox" checked={f[k]} disabled={!canManage} onChange={(e) => setF({ ...f, [k]: e.target.checked })} /> {label}
@@ -571,6 +596,40 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
                 <button disabled={busy} className="btn" style={{ color: "#B42318" }} onClick={doDelete}>Delete</button>
               </div>
             )}
+
+            {/* ── PHÂN PHỐI · đăng bài lên kênh + link UTM để đo video nào ra đơn ── */}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>ĐĂNG BÀI · UTM TRACKING</div>
+                {canManage && <button disabled={busy} className="btn" style={{ marginLeft: "auto", padding: "5px 11px", fontSize: 12 }} onClick={savePosted}>Lưu</button>}
+              </div>
+              {!row.productUrl && (
+                <div style={{ fontSize: 11.5, color: "#B7791F", background: "#FEF6E7", border: "1px solid #F0D897", borderRadius: 9, padding: "7px 11px", marginBottom: 8 }}>
+                  Video chưa có listing chính (hoặc listing chưa sync URL) → chưa tạo được link UTM. Gán video vào listing + Sync/Push trước.
+                </div>
+              )}
+              <div style={{ display: "grid", gap: 7 }}>
+                {CHANNELS.map((ch) => {
+                  const link = utmLink(ch.key);
+                  const done = !!posted[ch.key]?.url;
+                  return (
+                    <div key={ch.key} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ ...chip(done ? "#E9F7EF" : "#F3F4F6", done ? "#1F6F45" : "#374151"), minWidth: 78, textAlign: "center" }}>
+                        {done ? "✓ " : ""}{ch.label}
+                      </span>
+                      <button disabled={!link} className="btn" style={{ padding: "5px 10px", fontSize: 11.5, opacity: link ? 1 : .5 }}
+                        title={link || "Chưa có link UTM"} onClick={() => link && copy(link)}>Copy link UTM</button>
+                      <input value={posted[ch.key]?.url ?? ""} disabled={!canManage}
+                        placeholder="Dán link bài đã đăng…"
+                        onChange={(e) => setPostedUrl(ch.key, e.target.value)}
+                        onBlur={savePosted}
+                        style={{ flex: 1, minWidth: 160, padding: "6px 9px", fontSize: 12, borderRadius: 8, border: "1px solid var(--line)" }} />
+                      {done && <a href={posted[ch.key].url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: "var(--blue)", textDecoration: "none", flexShrink: 0 }}>mở ↗</a>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
 
             {row.captions && (
               <div style={{ display: "grid", gap: 8 }}>

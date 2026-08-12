@@ -26,6 +26,23 @@ const isAdmin = (s: Sess) => s.role === "admin";
 
 const uuidOk = (x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x));
 
+// Posted tracker — 5 kênh xã hội, mỗi kênh 1 link bài đã đăng + mốc thời gian.
+const POST_CHANNELS = ["tiktok", "reels", "shorts", "facebook", "pinterest"] as const;
+function cleanPostedTo(v: unknown): Record<string, { url: string; at: string }> {
+  const out: Record<string, { url: string; at: string }> = {};
+  if (!v || typeof v !== "object") return out;
+  const src = v as Record<string, unknown>;
+  for (const ch of POST_CHANNELS) {
+    const e = src[ch];
+    if (!e || typeof e !== "object") continue;
+    const url = String((e as Record<string, unknown>).url ?? "").trim().slice(0, 500);
+    if (!/^https?:\/\//i.test(url)) continue;                       // rỗng/không phải link → coi như chưa đăng
+    const at = String((e as Record<string, unknown>).at ?? "").slice(0, 40) || new Date().toISOString();
+    out[ch] = { url, at };
+  }
+  return out;
+}
+
 export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -77,6 +94,8 @@ export async function GET(req: NextRequest) {
   const rows = await db.select({
     v: schema.productVideos,
     productTitle: schema.shopifyProducts.title,
+    productUrl: schema.shopifyProducts.onlineStoreUrl,
+    productHandle: schema.shopifyProducts.handle,
     storeName: schema.stores.name,
     uploader: schema.users.fullName,
     sellerName: uSeller.fullName,
@@ -124,6 +143,8 @@ export async function GET(req: NextRequest) {
     rows: rows.map((r) => ({
       ...r.v,
       productTitle: r.productTitle ?? null,
+      productUrl: r.productUrl ?? null,
+      productHandle: r.productHandle ?? null,
       storeName: r.storeName ?? null,
       uploader: r.uploader ?? null,
       sellerName: r.sellerName ?? null,
@@ -213,6 +234,8 @@ export async function PATCH(req: NextRequest) {
 
   if ("sellerId" in b) patch.sellerId = uuidOk(b.sellerId) ? String(b.sellerId) : null;
   if ("creatorId" in b) patch.creatorId = uuidOk(b.creatorId) ? String(b.creatorId) : null;
+  // Posted tracker: đánh dấu đã đăng lên kênh nào + link bài đăng. Chỉ giữ 5 kênh + URL http hợp lệ.
+  if ("postedTo" in b) patch.postedTo = cleanPostedTo(b.postedTo);
   // THAY FILE — creator sửa clip rồi update đè. Giữ nguyên #ID, gán listing và caption;
   // chỉ đổi file + poster, và xoá dấu media Shopify cũ để lần Push sau đẩy bản mới.
   if (typeof b.storageKey === "string" && typeof b.publicUrl === "string" && b.storageKey && b.publicUrl) {
