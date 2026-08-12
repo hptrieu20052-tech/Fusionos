@@ -650,16 +650,19 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
                   Video chưa có listing chính (hoặc listing chưa sync URL) → chưa tạo được link UTM. Gán video vào listing + Sync/Push trước.
                 </div>
               )}
+              <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 8, lineHeight: 1.5 }}>
+                <b style={{ color: "#4338CA" }}>Creator</b> tự đăng kênh riêng · <b style={{ color: "#1F6F45" }}>Brand</b> do seller/marketing đăng kênh Talewix.
+              </div>
               <div style={{ display: "grid", gap: 8 }}>
                 {([
-                  { key: "tiktok", label: "TikTok", opens: [["Mở TikTok Studio", "https://www.tiktok.com/tiktokstudio/upload"]], note: "Creator tự đăng trên kênh của mình." },
-                  { key: "reels", label: "IG Reel", opens: [["Mở IG Reels composer", "https://business.facebook.com/latest/reels_composer"]] },
-                  { key: "facebook", label: "Facebook", opens: [["Mở FB composer", "https://business.facebook.com/latest/composer"]] },
-                  { key: "pinterest", label: "Pinterest", opens: [["Mở Pin builder", "https://www.pinterest.com/pin-builder/"]] },
-                  { key: "shorts", label: "YouTube Short", opens: [["Mở YouTube upload", "https://www.youtube.com/upload"]] },
-                  { key: "meta_ads", label: "Meta Ads (creative)", opens: [["Mở Ads Manager", "https://adsmanager.facebook.com/adsmanager"]], note: "Tải video (nút Download bên trái) → upload làm creative MỚI trong Ads Manager (dark post), test nhiều creative. Link đích của ad = link UTM ở đây." },
-                  { key: "gmc", label: "GMC / Performance Max", opens: [["Up YouTube", "https://www.youtube.com/upload"], ["Google Ads", "https://ads.google.com/"]], note: "Google không nhận MP4 trong feed — up YouTube rồi dùng link đó cho Performance Max / Demand Gen." },
-                ] as { key: string; label: string; opens: string[][]; note?: string }[]).map((d) => {
+                  { key: "tiktok", label: "TikTok", owner: "creator", opens: [["Mở TikTok Studio", "https://www.tiktok.com/tiktokstudio/upload"]], note: "Creator tự đăng trên kênh TikTok của mình." },
+                  { key: "reels", label: "IG Reel", owner: "brand", opens: [["Mở IG Reels composer", "https://business.facebook.com/latest/reels_composer"]] },
+                  { key: "facebook", label: "Facebook Page", owner: "brand", opens: [["Mở FB composer", "https://business.facebook.com/latest/composer"]] },
+                  { key: "pinterest", label: "Pinterest", owner: "brand", opens: [["Mở Pin builder", "https://www.pinterest.com/pin-builder/"]] },
+                  { key: "shorts", label: "YouTube Short", owner: "brand", opens: [["Mở YouTube upload", "https://www.youtube.com/upload"]] },
+                  { key: "meta_ads", label: "Meta Ads (creative)", owner: "brand", opens: [["Mở Ads Manager", "https://adsmanager.facebook.com/adsmanager"]], note: "Tải video (nút Download bên trái) → upload làm creative MỚI trong Ads Manager (dark post), test nhiều creative. Link đích của ad = link UTM ở đây." },
+                  { key: "gmc", label: "GMC / Performance Max", owner: "brand", opens: [["Up YouTube", "https://www.youtube.com/upload"], ["Google Ads", "https://ads.google.com/"]], note: "Google không nhận MP4 trong feed — up YouTube rồi dùng link đó cho Performance Max / Demand Gen." },
+                ] as { key: string; label: string; owner: "creator" | "brand"; opens: string[][]; note?: string }[]).map((d) => {
                   const link = utmLink(d.key);
                   const cap = row.captions?.[d.key];
                   const capFull = cap ? [cap.text, (cap.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n") : "";
@@ -668,6 +671,7 @@ function VideoDetail({ row, canManage, busy, setBusy, close, reload, flash, patc
                     <div key={d.key} style={{ border: "1px solid var(--line)", borderRadius: 11, padding: "9px 11px", background: done ? "#F6FBF8" : "#fff" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
                         <span style={{ ...chip(done ? "#E9F7EF" : "#EEF2FF", done ? "#1F6F45" : "#4338CA"), minWidth: 116, textAlign: "center" }}>{done ? "✓ " : ""}{d.label}</span>
+                        <span style={chip(d.owner === "creator" ? "#EDE9FE" : "#E8F3EC", d.owner === "creator" ? "#6D28D9" : "#1F6F45")}>{d.owner === "creator" ? "Creator" : "Brand"}</span>
                         {d.opens.map(([lbl, url]) => (
                           <a key={url} href={url} target="_blank" rel="noreferrer" className="btn" style={{ padding: "5px 10px", fontSize: 11.5, textDecoration: "none" }}>{lbl} ↗</a>
                         ))}
