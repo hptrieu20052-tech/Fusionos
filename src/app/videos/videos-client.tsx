@@ -566,62 +566,25 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
             {/* ─── ADMIN-ONLY: Shopify listing + distribution ─── */}
             {isAdmin && (
               <>
-                {/* Gắn listing */}
+                {/* Listing — gắn + đẩy video làm ở Manage Products · Shopify. Ở đây chỉ dẫn link tới listing. */}
                 <div>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", marginBottom: 6 }}>
-                    SHOWING ON {listings.length} LISTING{listings.length === 1 ? "" : "S"}
-                  </div>
-                  <div style={{ position: "relative", marginBottom: 8 }}>
-                    <input value={lq} onChange={(e) => setLq(e.target.value)}
-                      placeholder="🔎 Search a listing by name to attach…"
-                      style={{ width: "100%", padding: "8px 11px", fontSize: 13, borderRadius: 9, border: "1px solid var(--line)" }} />
-                    {!!matches.length && (
-                      <div style={{ position: "absolute", zIndex: 5, top: "100%", left: 0, right: 0, marginTop: 4, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 6px 20px rgba(16,24,40,.12)", maxHeight: 240, overflowY: "auto" }}>
-                        {matches.map((m) => {
-                          const taken = !!m.videoId && m.videoId !== row.id;
-                          const here = m.videoId === row.id;
-                          return (
-                            <button key={m.id} disabled={busy || here} onClick={() => { assign({ videoId: row.id, productIds: [m.id] }, "Attached to listing"); setLq(""); setMatches([]); }}
-                              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "8px 11px", background: here ? "#F3FBF6" : "#fff", border: "none", borderBottom: "1px solid var(--line)", cursor: here ? "default" : "pointer", fontSize: 12.5 }}>
-                              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</span>
-                              {here ? <span style={chip("#E9F7EF", "#1F6F45")}>ATTACHED</span>
-                                : taken ? <span style={chip("#FEF6E7", "#B7791F")} title="This listing already has a video — selecting replaces it">has video</span>
-                                : <span style={{ color: "var(--blue)", fontWeight: 700, flexShrink: 0 }}>Attach →</span>}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
-                    <select value={pickType} onChange={(e) => setPickType(e.target.value)}
-                      style={{ padding: "7px 9px", fontSize: 12.5, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", maxWidth: 280 }}>
-                      <option value="">…or attach a whole Product type</option>
-                      {types.map((t) => <option key={t.productType!} value={t.productType!}>{t.productType} ({t.n})</option>)}
-                    </select>
-                    <button disabled={busy || !pickType} className="btn" style={{ padding: "7px 12px", fontSize: 12.5, opacity: pickType ? 1 : .5 }}
-                      onClick={() => assign({ videoId: row.id, productType: pickType }, "Assigned")}>Assign to all</button>
-                    {!!listings.length && (
-                      <button disabled={busy} className="btn" style={{ padding: "7px 12px", fontSize: 12.5, color: "#B42318" }}
-                        onClick={() => assign({ videoId: null, productIds: listings.map((l) => l.id) }, "Removed")}>Remove from all</button>
-                    )}
-                  </div>
-                  {!!listings.length && (
-                    <div style={{ maxHeight: 120, overflowY: "auto", border: "1px solid var(--line)", borderRadius: 10 }}>
-                      {listings.map((l) => (
-                        <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", fontSize: 12, borderBottom: "1px solid var(--line)" }}>
-                          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.title}</span>
-                          {l.pushedAt ? <span style={chip("#E9F7EF", "#1F6F45")}>ON SHOPIFY</span> : <span style={chip("#F3F4F6", "#6B7280")}>NOT PUSHED</span>}
-                        </div>
-                      ))}
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", marginBottom: 6 }}>LISTING</div>
+                  {row.productId && row.productTitle ? (
+                    <a href={`/shopify-products?q=${encodeURIComponent(row.productTitle)}`} target="_blank" rel="noreferrer"
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", border: "1px solid var(--line)", borderRadius: 10, textDecoration: "none", color: "var(--ink)", fontSize: 13, background: "#F7FBFF" }}>
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.productTitle}</span>
+                      <span style={{ color: "var(--blue)", fontWeight: 700, flexShrink: 0 }}>Open in Manage Products →</span>
+                    </a>
+                  ) : (
+                    <div style={{ fontSize: 12.5, color: "var(--muted)", background: "#F7F8FA", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px" }}>
+                      Not attached. In <b>Manage Products · Shopify</b>, open a listing and paste this video ID <b>#{row.videoCode}</b>.
                     </div>
                   )}
                 </div>
 
-                {/* Push + captions */}
+                {/* Captions */}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button disabled={busy || !listings.length} className="btn btn-primary" onClick={doPush} style={{ opacity: listings.length ? 1 : .5 }}>→ Push video to Shopify</button>
-                  <button disabled={busy || !row.productId} className="btn" onClick={doCaptions} title={row.productId ? "" : "Set a primary listing first"}>✨ {row.captionsAt ? "Rewrite captions" : "Write captions"}</button>
+                  <button disabled={busy || !row.productId} className="btn" onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}>✨ {row.captionsAt ? "Rewrite captions" : "Write captions"}</button>
                 </div>
 
                 {/* ── DISTRIBUTION HUB (compact) · 1 dòng / điểm đến ── */}

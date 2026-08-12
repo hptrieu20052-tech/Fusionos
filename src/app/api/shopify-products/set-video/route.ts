@@ -67,8 +67,11 @@ export async function POST(req: NextRequest) {
     .where(eq(schema.shopifyProducts.id, id));
 
   // Set listing chính của video (để UTM + caption biết trỏ về đâu). 1 listing 1 video.
+  // Đồng thời LẤY LUÔN Title của listing làm title video — 1 video 1 listing nên tên listing dễ nhận
+  // hơn tên file thô (copy_UUID). Listing không có title thì giữ tên cũ.
+  const newTitle = (prod.title ?? "").trim() || vid.title;
   await db.update(schema.productVideos)
-    .set({ productId: prod.id, storeId: prod.storeId, updatedAt: new Date() })
+    .set({ productId: prod.id, storeId: prod.storeId, title: newTitle, updatedAt: new Date() })
     .where(eq(schema.productVideos.id, vid.id));
 
   // ── ĐẨY LUÔN video lên Shopify media ── video có SAU khi listing đã live, nên đây là chỗ đẩy (không
@@ -93,7 +96,7 @@ export async function POST(req: NextRequest) {
     push = { ok: false, error: "Listing is not on Shopify yet — push the listing first, then attach the video." };
   }
 
-  return NextResponse.json({ ok: true, video: { code: vid.code, title: vid.title, thumbUrl: vid.thumbUrl }, push });
+  return NextResponse.json({ ok: true, video: { code: vid.code, title: newTitle, thumbUrl: vid.thumbUrl }, push });
 }
 
 // Dùng để hiện video đang gắn khi mở nhiều listing (không bắt buộc, giữ cho tương lai).
