@@ -1113,17 +1113,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   //    price/compare/SKU của tổ hợp đã có (khớp theo chữ ký selectedOptions), tổ hợp mới để giá 0.
   //  Push tạo mới đọc thẳng p.options + p.variants.selectedOptions nên Push một phát là đủ.
   const sigOf = (so: SelOpt[]) => (so ?? []).map((x) => `${x.name}=${x.value}`).join("|");
-  const setOptName = (i: number, name: string) => { if (!edit) return; const os = (edit.options ?? []).slice(); os[i] = { ...os[i], name }; setEdit({ ...edit, options: os }); };
-  const setOptValues = (i: number, csv: string) => { if (!edit) return; const os = (edit.options ?? []).slice(); os[i] = { ...os[i], values: csv.split(",").map((v) => v.trim()).filter(Boolean) }; setEdit({ ...edit, options: os }); };
-  const addOption = () => { if (!edit) return; const os = (edit.options ?? []).slice(); if (os.length >= 3) return; os.push({ name: os.length === 0 ? "Size" : "", position: os.length + 1, values: [] }); setEdit({ ...edit, options: os }); };
-  const delOption = (i: number) => { if (!edit) return; const os = (edit.options ?? []).filter((_, k) => k !== i).map((o, k) => ({ ...o, position: k + 1 })); setEdit({ ...edit, options: os }); };
-  const rebuildVariants = () => {
+  // v264b · gõ option/giá trị là TỰ xổ lại variants (bỏ nút Rebuild). options giữ nguyên đúng thứ
+  // người dùng đang gõ (kể cả dòng trống); variants tính từ tích Descartes của option đã đủ tên+giá trị,
+  // giữ nguyên price/compare/SKU của tổ hợp đã có.
+  const recompute = (raw: { name: string; position: number; values: string[] }[]) => {
     if (!edit) return;
-    const opts = (edit.options ?? []).map((o, i) => ({ name: (o.name || "").trim(), position: i + 1, values: (o.values ?? []).map((v) => v.trim()).filter(Boolean) })).filter((o) => o.name && o.values.length);
+    const options = raw.map((o, i) => ({ ...o, position: i + 1 }));
+    const opts = options.map((o) => ({ name: (o.name || "").trim(), values: (o.values ?? []).map((v) => v.trim()).filter(Boolean) })).filter((o) => o.name && o.values.length);
     const prev = new Map(edit.variants.map((v) => [sigOf(v.selectedOptions ?? []), v] as const));
     if (!opts.length) {
       const keep = edit.variants[0];
-      setEdit({ ...edit, options: [], variants: [{ id: keep?.id ?? "", title: "Default Title", selectedOptions: [], price: keep?.price ?? "0", compareAtPrice: keep?.compareAtPrice ?? null, sku: keep?.sku ?? "", inventoryQty: keep?.inventoryQty ?? null, barcode: keep?.barcode ?? "" }] });
+      setEdit({ ...edit, options, variants: [{ id: keep?.id ?? "", title: "Default Title", selectedOptions: [], price: keep?.price ?? "0", compareAtPrice: keep?.compareAtPrice ?? null, sku: keep?.sku ?? "", inventoryQty: keep?.inventoryQty ?? null, barcode: keep?.barcode ?? "" }] });
       return;
     }
     let combos: SelOpt[][] = [[]];
@@ -1133,8 +1133,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       return ex ? { ...ex, selectedOptions: so, title: so.map((x) => x.value).join(" / ") }
         : { id: "", title: so.map((x) => x.value).join(" / "), selectedOptions: so, price: "0", compareAtPrice: null, sku: "", inventoryQty: null, barcode: "" };
     });
-    setEdit({ ...edit, options: opts, variants });
+    setEdit({ ...edit, options, variants });
   };
+  const setOptName = (i: number, name: string) => { if (!edit) return; recompute((edit.options ?? []).map((o, k) => k === i ? { ...o, name } : o)); };
+  const setOptValues = (i: number, csv: string) => { if (!edit) return; recompute((edit.options ?? []).map((o, k) => k === i ? { ...o, values: csv.split(",").map((v) => v.trim()).filter(Boolean) } : o)); };
+  const addOption = () => { if (!edit) return; const os = (edit.options ?? []); if (os.length >= 3) return; recompute([...os, { name: os.length === 0 ? "Size" : "", position: os.length + 1, values: [] }]); };
+  const delOption = (i: number) => { if (!edit) return; recompute((edit.options ?? []).filter((_, k) => k !== i)); };
   const setAllPrices = (val: string) => { if (!edit || !val) return; setEdit({ ...edit, variants: edit.variants.map((v) => ({ ...v, price: val })) }); };
   const delImg = (i: number) => { if (!edit) return; setEdit({ ...edit, images: edit.images.filter((_, k) => k !== i) }); };
   const moveImg = (i: number, dir: -1 | 1) => { if (!edit) return; const j = i + dir; if (j < 0 || j >= edit.images.length) return; const a = edit.images.slice(); [a[i], a[j]] = [a[j], a[i]]; setEdit({ ...edit, images: a }); };
@@ -1608,7 +1612,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   <b style={{ fontSize: 16 }}>Edit Shopify product {edit.dirty && <span style={{ fontSize: 11, color: "#B7791F" }}>· unsaved edits</span>}</b>
                   <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 20 }} className="m-stack-sm">
+                <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 20 }} className="m-stack-sm">
                   {/* LEFT: images + status */}
                   <div>
                     <label style={lab}>Status</label>
@@ -1659,19 +1663,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         </div>
                       )}
                     </div>
-                  </div>
-                  {/* RIGHT: fields + variants */}
-                  <div>
-                    <label style={lab}>Title</label>
-                    <input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 12 }} />
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-                      <div><label style={lab}>Vendor</label><input value={edit.vendor ?? ""} onChange={(e) => setEdit({ ...edit, vendor: e.target.value })} style={{ ...ctl, width: "100%" }} /></div>
-                      <div><label style={lab}>Type</label><input value={edit.productType ?? ""} onChange={(e) => setEdit({ ...edit, productType: e.target.value })} style={{ ...ctl, width: "100%" }} /></div>
-                    </div>
-                    <label style={lab}>Tags (comma-separated)</label>
-                    <input value={edit.tags ?? ""} onChange={(e) => setEdit({ ...edit, tags: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 12 }} />
-                    <label style={lab}>Description (HTML)</label>
-                    <textarea value={edit.bodyHtml ?? ""} onChange={(e) => setEdit({ ...edit, bodyHtml: e.target.value })} rows={4} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 14 }} />
                     {/* SEO — đây chính là dòng Google hiển thị. Bỏ trống thì Shopify tự lấy title + đoạn đầu mô tả,
                         thường bị cụt và không có từ khoá. Có preview thật để thấy trước khi Save. */}
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#FAFBFD" }}>
@@ -1711,6 +1702,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         <span style={{ fontSize: 11, color: "var(--muted)" }}>Merchant Center only — never sent to Shopify, and not included in Save below.</span>
                       </div>
                     </div>
+                  </div>
+                  {/* RIGHT: fields + variants */}
+                  <div>
+                    <label style={lab}>Title</label>
+                    <input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 12 }} />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                      <div><label style={lab}>Vendor</label><input value={edit.vendor ?? ""} onChange={(e) => setEdit({ ...edit, vendor: e.target.value })} style={{ ...ctl, width: "100%" }} /></div>
+                      <div><label style={lab}>Type</label><input value={edit.productType ?? ""} onChange={(e) => setEdit({ ...edit, productType: e.target.value })} style={{ ...ctl, width: "100%" }} /></div>
+                    </div>
+                    <label style={lab}>Tags (comma-separated)</label>
+                    <input value={edit.tags ?? ""} onChange={(e) => setEdit({ ...edit, tags: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 12 }} />
+                    <label style={lab}>Description (HTML)</label>
+                    <textarea value={edit.bodyHtml ?? ""} onChange={(e) => setEdit({ ...edit, bodyHtml: e.target.value })} rows={4} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 14 }} />
                     {/* v142 · Custom options ngay trong listing — trước đây chỉ sửa được qua action hàng loạt.
                         Nút riêng như Save feed copy: ô cá nhân hoá nằm ở metafield, không đi cùng Save chính. */}
                     <div style={{ border: `1px solid ${SHOP_GREEN}44`, borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#F7FAF5" }}>
@@ -1727,25 +1731,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         <span style={{ fontSize: 11, color: "var(--muted)" }}>Goes straight to the Shopify metafield — not included in Save below.</span>
                       </div>
                     </div>
-                    {/* v264 · OPTIONS builder — thêm option + giá trị bằng tay, rồi Rebuild dựng variants.
-                        Dùng cho nháp lỡ quên variant: set xong Push một phát là đủ, khỏi Update Template. */}
-                    <label style={lab}>Options — thêm bằng tay (Size, Color…) · để trống nếu chỉ 1 variant</label>
+                    {/* v264 · OPTIONS builder — gõ option/giá trị là TỰ xổ lại variants. */}
+                    <label style={lab}>Options</label>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                      {(edit.options ?? []).length === 0 && (
-                        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Chưa có option — sản phẩm 1 variant. Bấm “+ Add option” nếu cần Size/Color.</div>
-                      )}
                       {(edit.options ?? []).map((o, i) => (
-                        <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-                          <input value={o.name} onChange={(e) => setOptName(i, e.target.value)} placeholder="Option name (vd Size)" style={{ ...ctl, width: 150, padding: "6px 8px" }} />
-                          <input defaultValue={(o.values ?? []).join(", ")} key={`vals-${i}-${(o.values ?? []).length}`} onBlur={(e) => setOptValues(i, e.target.value)} placeholder="Giá trị, phân tách bằng dấu phẩy: 12x4, 16x12" style={{ ...ctl, flex: 1, minWidth: 220, padding: "6px 8px" }} />
-                          <button onClick={() => delOption(i)} title="Xoá option" style={{ ...ghost, padding: "6px 10px", fontSize: 12 }}>✕</button>
+                        <div key={`opt-${i}`} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                          <input value={o.name} onChange={(e) => setOptName(i, e.target.value)} placeholder="Size" style={{ ...ctl, width: 120, padding: "6px 8px" }} />
+                          <input defaultValue={(o.values ?? []).join(", ")} key={`vals-${i}`} onChange={(e) => setOptValues(i, e.target.value)} placeholder="12x4, 16x12" style={{ ...ctl, flex: 1, minWidth: 150, padding: "6px 8px" }} />
+                          <button onClick={() => delOption(i)} style={{ ...ghost, padding: "6px 10px", fontSize: 12 }}>✕</button>
                         </div>
                       ))}
-                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
-                        {(edit.options ?? []).length < 3 && <button onClick={addOption} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5 }}>+ Add option</button>}
-                        <button onClick={rebuildVariants} style={{ ...pill(SHOP_GREEN, "#fff"), padding: "6px 12px", fontSize: 12.5 }}>↻ Rebuild variants</button>
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Sau khi sửa option/giá trị, bấm Rebuild để dựng lại bảng variant (giữ giá/SKU cũ).</span>
-                      </div>
+                      {(edit.options ?? []).length < 3 && <button onClick={addOption} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5 }}>+ Add option</button>}
                     </div>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                       <label style={lab}>Variants ({edit.variants.length}) — price / compare-at / SKU</label>
