@@ -199,6 +199,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [feedFilter, setFeedFilter] = useState<"" | "todo" | "done">("");
   const [prepFilter, setPrepFilter] = useState<"" | "sku" | "alt" | "done">(""); // v127
   const [riskFilter, setRiskFilter] = useState<"" | "high" | "medium" | "clean" | "unchecked">(""); // v177
+  const [videoFilter, setVideoFilter] = useState<"" | "has" | "no">(""); // listing có / không có video
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
@@ -287,19 +288,20 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     (!feedFilter || (feedFilter === "done" ? feedOk(r) : !feedOk(r))) &&
     (!prepFilter || (prepFilter === "sku" ? r.skuDone < r.skuTotal : prepFilter === "alt" ? r.altDone < r.altTotal : r.skuDone >= r.skuTotal && r.altDone >= r.altTotal)) &&
     (!riskFilter || (riskFilter === "unchecked" ? !r.policyRisk : r.policyRisk === riskFilter)) &&
+    (!videoFilter || (videoFilter === "has" ? r.videoCode != null : r.videoCode == null)) &&
     (!pidFilter || r.id === pidFilter) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, pidFilter, stores]);
+  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, pidFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
   // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
   const selDirty = useMemo(() => rows.filter((r) => sel.has(r.id) && r.dirty).length, [rows, sel]);
-  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter || riskFilter || pidFilter);
-  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); setPrepFilter(""); setRiskFilter(""); setPidFilter(""); };
+  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter || riskFilter || videoFilter || pidFilter);
+  const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); setPrepFilter(""); setRiskFilter(""); setVideoFilter(""); setPidFilter(""); };
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
@@ -1152,9 +1154,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
 
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
       <div style={{ ...card, padding: "12px 14px", marginBottom: 12 }}>
-        {/* v182: MỘT hàng CỐ ĐỊNH — bỏ hẳn cuộn ngang; mỗi ô flex co giãn nên 10 filter luôn chia đều vừa khít bề ngang. */}
-        <div style={{ display: "flex", gap: 5, flexWrap: "nowrap", alignItems: "center" }}>
-          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, flex: "2 1 110px", maxWidth: "none", minWidth: 80 }} />
+        {/* Hàng 1: ô tìm kiếm full-width. Hàng 2: các bộ lọc tự xuống dòng. */}
+        <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, width: "100%", maxWidth: "none", marginBottom: 8 }} />
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
               <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -1204,6 +1206,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <option value="medium">⚠ Medium</option>
             <option value="clean">✓ Clean</option>
             <option value="unchecked">Not scanned yet</option>
+          </select>
+          {/* Lọc listing có / không có video */}
+          <select value={videoFilter} onChange={(e) => setVideoFilter(e.target.value as "" | "has" | "no")} title="Video attached to the listing" style={fsel(!!videoFilter, "#4338CA", "#C7CFF5", "#F1F3FF")}>
+            <option value="">Video: all</option>
+            <option value="has">Has video</option>
+            <option value="no">No video</option>
           </select>
         </div>
 
