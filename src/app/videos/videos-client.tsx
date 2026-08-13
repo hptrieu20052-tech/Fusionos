@@ -59,7 +59,7 @@ const IcDownload = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} vie
 const IcLock = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>;
 const IcRefresh = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M20 11a8 8 0 1 0-2 5.3M20 5v6h-6" /></svg>;
 const IcEye = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="2.4" /></svg>;
-const IcTrash = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" /></svg>;
+const IcTrash = ({ s = 14 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M3 6h18" /><path d="M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6" /><path d="M6 6l.9 13.1A2 2 0 0 0 8.9 21h6.2a2 2 0 0 0 2-1.9L18 6" /><path d="M10 10.5v6M14 10.5v6" /></svg>;
 
 const chip = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-block", background: bg, color: fg, borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 800 });
 const pgBtn: React.CSSProperties = { minWidth: 34, height: 34, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13 };
