@@ -59,6 +59,15 @@ export default function ThumbZoom({ src, alt = "", size = 42, radius = 8, border
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = prev; };
   }, [open, go]);
 
+  // Preload TOÀN BỘ ảnh (bản full-res) khi mở lightbox → bấm next/prev đổi ảnh TỨC THÌ,
+  // không phải chờ tải lại từng ảnh nặng. Trước đây idx nhảy ngay (số 3/8 đổi) nhưng ảnh
+  // còn đang tải nên trễ vài giây.
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    for (const u of list) { if (u) { const im = new window.Image(); im.src = upscale(u); } }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   // Đóng preview khi cuộn trang — nếu không nó đứng lơ lửng sai chỗ.
   useEffect(() => {
     if (!pos) return;
