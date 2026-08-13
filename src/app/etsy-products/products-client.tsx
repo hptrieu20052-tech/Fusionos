@@ -95,6 +95,12 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [impFile, setImpFile] = useState<File | null>(null);
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Import Folder — mỗi subfolder = 1 listing (title = tên subfolder, ảnh = ảnh trong subfolder).
+  const [fdOpen, setFdOpen] = useState(false);
+  const [fdStore, setFdStore] = useState(stores[0]?.id ?? "");
+  const [fdGroups, setFdGroups] = useState<{ name: string; files: File[] }[]>([]);
+  const [fdProg, setFdProg] = useState<{ done: number; total: number; cur: string } | null>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
   const impStores = useMemo(() => impSeller ? stores.filter((s) => s.sellerId === impSeller) : stores, [stores, impSeller]);
   // Create Manual — dòng listing tự gõ, không cần CSV Etsy (ý tưởng mới chưa có trên Etsy).
   // Vẫn nằm chung bảng etsy_products nên Push Shopify / AI Optimize dùng được ngay như listing import.
@@ -325,6 +331,54 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     setBusy(false);
   };
 
+  // ---- Import Folder: chọn 1 folder chứa nhiều subfolder → gom theo subfolder ----
+  const onFolderPick = (fl: FileList | null) => {
+    const files = Array.from(fl ?? []).filter((f) => f.type.startsWith("image/"));
+    const map = new Map<string, File[]>();
+    for (const f of files) {
+      const rel = (f as unknown as { webkitRelativePath?: string }).webkitRelativePath || f.name;
+      const parts = rel.split("/");
+      if (parts.length < 3) continue;            // phải là root/subfolder/file
+      const sub = parts[parts.length - 2];       // tên folder con trực tiếp chứa ảnh
+      if (!map.has(sub)) map.set(sub, []);
+      map.get(sub)!.push(f);
+    }
+    const natur = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    const groups = Array.from(map.entries())
+      .map(([name, fs]) => ({ name, files: fs.sort((a, b) => natur(a.name, b.name)) }))
+      .sort((a, b) => natur(a.name, b.name));
+    setFdGroups(groups);
+    if (!groups.length) flash("✗ No subfolders with images found", false);
+  };
+  const runFolderImport = async () => {
+    if (!fdStore) return flash("✗ Select a store first", false);
+    if (!fdGroups.length) return flash("✗ Choose a folder first", false);
+    setBusy(true);
+    let created = 0, failed = 0, dup = 0;
+    for (let gi = 0; gi < fdGroups.length; gi++) {
+      const g = fdGroups[gi];
+      setFdProg({ done: gi, total: fdGroups.length, cur: g.name });
+      try {
+        const urls: string[] = [];
+        for (const file of g.files.slice(0, 20)) {
+          const fd = new FormData(); fd.append("file", file);
+          const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+          if (j.ok && j.url) urls.push(j.url);
+        }
+        const r = await fetch("/api/etsy-products", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "create", storeId: fdStore, title: g.name, images: urls }),
+        }).then((x) => x.json()).catch(() => ({ ok: false }));
+        if (r.ok) created++;
+        else if (r.status === 409 || /already exists/i.test(String(r.error))) dup++;
+        else failed++;
+      } catch { failed++; }
+    }
+    setFdProg(null); setBusy(false);
+    flash(`✓ Imported ${created}/${fdGroups.length} listing${created !== 1 ? "s" : ""}${dup ? ` · ${dup} duplicate` : ""}${failed ? ` · ${failed} failed` : ""}`, failed === 0);
+    setFdOpen(false); setFdGroups([]); load();
+  };
+
   const openEdit = async (id: string) => {
     setEditId(id); setEdit(null); setEditLoading(true);
     try {
@@ -462,6 +516,10 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
               <button style={{ ...ghost, borderColor: "#FBE3D2" }} onClick={openCreate}
                 onMouseDown={(e) => (e.currentTarget.style.transform = "scale(.97)")} onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}>
                 <IcPlus /> Create Manual
+              </button>
+              <button style={{ ...ghost, borderColor: "#FBE3D2" }} onClick={() => { setFdGroups([]); setFdStore(stores[0]?.id ?? ""); setFdOpen(true); }}
+                onMouseDown={(e) => (e.currentTarget.style.transform = "scale(.97)")} onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}>
+                <IcFolder /> Import Folder
               </button>
               <button style={pill("#F1641E", "#fff")} onClick={() => setImpOpen(true)}
                 onMouseDown={(e) => (e.currentTarget.style.transform = "scale(.97)")} onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}>
@@ -964,6 +1022,64 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
         </div>
       )}
 
+      {/* IMPORT FOLDER MODAL — mỗi subfolder = 1 listing (title = tên subfolder, ảnh = ảnh trong đó) */}
+      {fdOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setFdOpen(false)}>
+          <div className="card" style={{ width: 560, maxWidth: "96vw", maxHeight: "90vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>Import Folder</div>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setFdOpen(false)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
+            </div>
+
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12, lineHeight: 1.6 }}>
+              Chọn 1 folder chứa nhiều folder con. Mỗi <b>folder con = 1 listing</b>: title = tên folder con, ảnh = các ảnh trong folder đó (tối đa 20).
+            </div>
+
+            <label style={{ fontSize: 12.5, fontWeight: 700, display: "block", marginBottom: 4 }}>Store <span style={{ color: "#B42318" }}>*</span></label>
+            <select value={fdStore} onChange={(e) => setFdStore(e.target.value)} disabled={busy}
+              style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px", fontSize: 13, background: "#fff", marginBottom: 14 }}>
+              <option value="">— select a store —</option>
+              {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+
+            <input ref={folderRef} type="file" hidden multiple onChange={(e) => onFolderPick(e.target.files)} />
+            <button type="button" disabled={busy} onClick={() => { const el = folderRef.current; if (el) { el.setAttribute("webkitdirectory", ""); el.setAttribute("directory", ""); el.value = ""; el.click(); } }}
+              style={{ width: "100%", padding: "18px 14px", borderRadius: 12, cursor: "pointer", border: "1.5px dashed var(--line)", background: "#FAFBFC", fontWeight: 700, fontSize: 13.5, color: "var(--ink)", font: "inherit" }}>
+              {fdGroups.length ? `${fdGroups.length} subfolder(s) — click to choose another` : "Choose a folder…"}
+            </button>
+
+            {fdGroups.length > 0 && (
+              <div style={{ marginTop: 12, border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden", maxHeight: 240, overflowY: "auto" }}>
+                {fdGroups.map((g, i) => (
+                  <div key={g.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 11px", borderTop: i ? "1px solid #F1F3F7" : "none", fontSize: 12.5 }}>
+                    <span style={{ flex: 1, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</span>
+                    <span style={{ color: "var(--muted)" }}>{g.files.length} image{g.files.length > 1 ? "s" : ""}{g.files.length > 20 ? " (first 20)" : ""}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {fdProg && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Importing “{fdProg.cur}” … {fdProg.done + 1}/{fdProg.total}</div>
+                <div style={{ height: 6, background: "#EEF1F5", borderRadius: 999, overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${((fdProg.done) / fdProg.total) * 100}%`, background: "#F1641E", transition: "width .3s" }} />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, marginTop: 16, justifyContent: "flex-end" }}>
+              <button style={ghost} disabled={busy} onClick={() => setFdOpen(false)}>Cancel</button>
+              <button style={{ ...pill("#F1641E", "#fff"), opacity: fdGroups.length && fdStore && !busy ? 1 : .5 }}
+                disabled={busy || !fdGroups.length || !fdStore} onClick={runFolderImport}>
+                {busy ? "Importing…" : `Import ${fdGroups.length || ""} listing${fdGroups.length !== 1 ? "s" : ""}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* EDIT MODAL (centered, full detail) */}
       {editId && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setEditId(null)}>
@@ -1125,6 +1241,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 /* ---- inline icons (stroke) ---- */
 const IcUpload = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>;
 const IcPlus = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>;
+const IcFolder = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" /></svg>;
 const IcTrash = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>;
 // v204 · icon copy (simple line) cho nút Duplicate
 const IcCopy = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>;
