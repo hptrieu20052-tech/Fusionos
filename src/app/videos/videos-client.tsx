@@ -346,22 +346,19 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                 <div className="dc-top">
                   <span className="dc-id" style={{ cursor: "pointer" }} title="Copy ID"
                     onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(String(r.videoCode)); }}>#{r.videoCode}</span>
-                  <span className="dc-date">{new Date(r.createdAt).toLocaleDateString()}</span>
+                  <span className="dc-date">{new Date(r.createdAt).toLocaleString()}</span>
                 </div>
+                {/* Tiêu đề card = TÊN PRODUCT (nếu đã gắn listing); chưa gắn thì fallback tên video. */}
                 <div className="dc-title" style={{ fontWeight: 700 }}>
-                  <span title={r.title} style={{ cursor: "pointer" }}
-                    onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.title); }}>{r.title}</span>
+                  <span title={r.productTitle || r.title} style={{ cursor: "pointer" }}
+                    onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.productTitle || r.title); }}>{r.productTitle || r.title}</span>
                 </div>
-                {r.productTitle && (
-                  <div title={r.productTitle} style={{ fontSize: 11.5, color: "#475569", background: "#F1F5F9", borderRadius: 6, padding: "2px 8px", alignSelf: "flex-start", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productTitle}</div>
-                )}
                 <div className="dc-meta"><span>Seller</span><b>{r.sellerName ?? "—"}</b></div>
                 <div className="dc-meta"><span>Creator</span><b>{r.sourceName || r.creatorName || r.uploader || "—"}</b></div>
-                <PostedTicks postedTo={r.postedTo} />
-                {isAdmin && <PerfLine p={perf[String(r.videoCode)]} />}
+                {/* Đáy: độ phân giải + dung lượng MB (tỉ lệ + thời lượng đã có badge trên video). */}
                 <div className="dc-foot" style={{ marginTop: "auto" }}>
-                  <span>{r.aspect ?? "—"}</span>
-                  <span>{secs(r.durationSec)}</span>
+                  <span>{r.width && r.height ? `${r.width}×${r.height}` : (r.aspect ?? "—")}</span>
+                  <span>{mb(r.sizeBytes)}</span>
                 </div>
               </div>
             </div>
