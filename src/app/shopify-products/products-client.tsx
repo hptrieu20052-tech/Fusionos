@@ -338,7 +338,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     try {
       const p = await fetch("/api/shopify-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
         id: edit.id, title: edit.title, bodyHtml: edit.bodyHtml, tags: edit.tags, status: edit.status,
-        vendor: edit.vendor, productType: edit.productType, variants: edit.variants, images: edit.images,
+        vendor: edit.vendor, productType: edit.productType, options: edit.options, variants: edit.variants, images: edit.images,
         seoTitle: edit.seoTitle, seoDescription: edit.seoDescription,
       }) }).then((r) => r.json());
       if (!p.ok) { flash("✗ " + (p.error ?? "Save failed"), false); setBusy(false); return; }
@@ -1106,6 +1106,36 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
 
   // ---- edit modal helpers ----
   const setV = (i: number, k: keyof Variant, val: string) => { if (!edit) return; const vs = edit.variants.slice(); (vs[i] as Record<string, unknown>)[k] = val; setEdit({ ...edit, variants: vs }); };
+
+  // v264 · THÊM OPTION / VARIANT BẰNG TAY ngay trong nháp — khỏi vòng Push→Update Template→Push.
+  //  · Sửa tên option + danh sách giá trị (phân tách bằng dấu phẩy).
+  //  · "Rebuild variants" dựng lại đúng tổ hợp (tích Descartes) các giá trị option, GIỮ NGUYÊN
+  //    price/compare/SKU của tổ hợp đã có (khớp theo chữ ký selectedOptions), tổ hợp mới để giá 0.
+  //  Push tạo mới đọc thẳng p.options + p.variants.selectedOptions nên Push một phát là đủ.
+  const sigOf = (so: SelOpt[]) => (so ?? []).map((x) => `${x.name}=${x.value}`).join("|");
+  const setOptName = (i: number, name: string) => { if (!edit) return; const os = (edit.options ?? []).slice(); os[i] = { ...os[i], name }; setEdit({ ...edit, options: os }); };
+  const setOptValues = (i: number, csv: string) => { if (!edit) return; const os = (edit.options ?? []).slice(); os[i] = { ...os[i], values: csv.split(",").map((v) => v.trim()).filter(Boolean) }; setEdit({ ...edit, options: os }); };
+  const addOption = () => { if (!edit) return; const os = (edit.options ?? []).slice(); if (os.length >= 3) return; os.push({ name: os.length === 0 ? "Size" : "", position: os.length + 1, values: [] }); setEdit({ ...edit, options: os }); };
+  const delOption = (i: number) => { if (!edit) return; const os = (edit.options ?? []).filter((_, k) => k !== i).map((o, k) => ({ ...o, position: k + 1 })); setEdit({ ...edit, options: os }); };
+  const rebuildVariants = () => {
+    if (!edit) return;
+    const opts = (edit.options ?? []).map((o, i) => ({ name: (o.name || "").trim(), position: i + 1, values: (o.values ?? []).map((v) => v.trim()).filter(Boolean) })).filter((o) => o.name && o.values.length);
+    const prev = new Map(edit.variants.map((v) => [sigOf(v.selectedOptions ?? []), v] as const));
+    if (!opts.length) {
+      const keep = edit.variants[0];
+      setEdit({ ...edit, options: [], variants: [{ id: keep?.id ?? "", title: "Default Title", selectedOptions: [], price: keep?.price ?? "0", compareAtPrice: keep?.compareAtPrice ?? null, sku: keep?.sku ?? "", inventoryQty: keep?.inventoryQty ?? null, barcode: keep?.barcode ?? "" }] });
+      return;
+    }
+    let combos: SelOpt[][] = [[]];
+    for (const o of opts) { const next: SelOpt[][] = []; for (const c of combos) for (const val of o.values) next.push([...c, { name: o.name, value: val }]); combos = next; }
+    const variants: Variant[] = combos.slice(0, 100).map((so) => {
+      const ex = prev.get(sigOf(so));
+      return ex ? { ...ex, selectedOptions: so, title: so.map((x) => x.value).join(" / ") }
+        : { id: "", title: so.map((x) => x.value).join(" / "), selectedOptions: so, price: "0", compareAtPrice: null, sku: "", inventoryQty: null, barcode: "" };
+    });
+    setEdit({ ...edit, options: opts, variants });
+  };
+  const setAllPrices = (val: string) => { if (!edit || !val) return; setEdit({ ...edit, variants: edit.variants.map((v) => ({ ...v, price: val })) }); };
   const delImg = (i: number) => { if (!edit) return; setEdit({ ...edit, images: edit.images.filter((_, k) => k !== i) }); };
   const moveImg = (i: number, dir: -1 | 1) => { if (!edit) return; const j = i + dir; if (j < 0 || j >= edit.images.length) return; const a = edit.images.slice(); [a[i], a[j]] = [a[j], a[i]]; setEdit({ ...edit, images: a }); };
   // v200 · kéo-thả đổi thứ tự ảnh (đồng bộ UI với Edit listing bên Etsy) — thả ảnh A vào vị trí B.
@@ -1697,7 +1727,33 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         <span style={{ fontSize: 11, color: "var(--muted)" }}>Goes straight to the Shopify metafield — not included in Save below.</span>
                       </div>
                     </div>
-                    <label style={lab}>Variants ({edit.variants.length}) — price / compare-at / SKU</label>
+                    {/* v264 · OPTIONS builder — thêm option + giá trị bằng tay, rồi Rebuild dựng variants.
+                        Dùng cho nháp lỡ quên variant: set xong Push một phát là đủ, khỏi Update Template. */}
+                    <label style={lab}>Options — thêm bằng tay (Size, Color…) · để trống nếu chỉ 1 variant</label>
+                    <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+                      {(edit.options ?? []).length === 0 && (
+                        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>Chưa có option — sản phẩm 1 variant. Bấm “+ Add option” nếu cần Size/Color.</div>
+                      )}
+                      {(edit.options ?? []).map((o, i) => (
+                        <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                          <input value={o.name} onChange={(e) => setOptName(i, e.target.value)} placeholder="Option name (vd Size)" style={{ ...ctl, width: 150, padding: "6px 8px" }} />
+                          <input defaultValue={(o.values ?? []).join(", ")} key={`vals-${i}-${(o.values ?? []).length}`} onBlur={(e) => setOptValues(i, e.target.value)} placeholder="Giá trị, phân tách bằng dấu phẩy: 12x4, 16x12" style={{ ...ctl, flex: 1, minWidth: 220, padding: "6px 8px" }} />
+                          <button onClick={() => delOption(i)} title="Xoá option" style={{ ...ghost, padding: "6px 10px", fontSize: 12 }}>✕</button>
+                        </div>
+                      ))}
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 4 }}>
+                        {(edit.options ?? []).length < 3 && <button onClick={addOption} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5 }}>+ Add option</button>}
+                        <button onClick={rebuildVariants} style={{ ...pill(SHOP_GREEN, "#fff"), padding: "6px 12px", fontSize: 12.5 }}>↻ Rebuild variants</button>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Sau khi sửa option/giá trị, bấm Rebuild để dựng lại bảng variant (giữ giá/SKU cũ).</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+                      <label style={lab}>Variants ({edit.variants.length}) — price / compare-at / SKU</label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Đặt giá cho tất cả:</span>
+                        <input type="number" step="0.01" min="0" placeholder="0.00" onBlur={(e) => setAllPrices(e.target.value)} style={{ ...ctl, width: 90, padding: "5px 8px", textAlign: "right" }} />
+                      </div>
+                    </div>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                         <thead><tr style={{ background: "#FAFBFC", color: "var(--muted)", fontSize: 11 }}>

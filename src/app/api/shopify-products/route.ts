@@ -146,7 +146,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ ok: true, rows: list });
 }
 
-// PATCH /api/shopify-products { id, title?, bodyHtml?, tags?, status?, vendor?, productType?, variants?, images? }
+// PATCH /api/shopify-products { id, title?, bodyHtml?, tags?, status?, vendor?, productType?, options?, variants?, images? }
 // Sửa LOCAL + đánh dấu dirty (chưa Push). Không đụng Shopify tới khi bấm Push.
 export async function PATCH(req: NextRequest) {
   const session = await getSession();
@@ -171,6 +171,7 @@ export async function PATCH(req: NextRequest) {
   if ("vendor" in b) patch.vendor = String(b.vendor ?? "");
   if ("productType" in b) patch.productType = String(b.productType ?? "");
   if (typeof b.status === "string" && ["ACTIVE", "DRAFT", "ARCHIVED"].includes(b.status.toUpperCase())) patch.status = b.status.toUpperCase();
+  if (Array.isArray(b.options)) patch.options = b.options;   // v264 · thêm option/variant tay ở nháp
   if (Array.isArray(b.variants)) patch.variants = b.variants;
   if (Array.isArray(b.images)) patch.images = b.images;
 
