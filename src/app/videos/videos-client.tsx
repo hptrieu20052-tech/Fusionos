@@ -355,10 +355,8 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                 {r.productTitle && (
                   <div title={r.productTitle} style={{ fontSize: 11.5, color: "#475569", background: "#F1F5F9", borderRadius: 6, padding: "2px 8px", alignSelf: "flex-start", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productTitle}</div>
                 )}
-                <div style={{ fontSize: 12, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 2 }}>
-                  <span title="Seller" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><IcUser /> {r.sellerName ?? "—"}</span>
-                  <span title="Creator" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><IcClap /> {r.sourceName || r.creatorName || r.uploader || "—"}</span>
-                </div>
+                <div className="dc-meta"><span>Seller</span><b>{r.sellerName ?? "—"}</b></div>
+                <div className="dc-meta"><span>Creator</span><b>{r.sourceName || r.creatorName || r.uploader || "—"}</b></div>
                 <PostedTicks postedTo={r.postedTo} />
                 {isAdmin && <PerfLine p={perf[String(r.videoCode)]} />}
                 <div className="dc-foot" style={{ marginTop: "auto" }}>
@@ -611,10 +609,8 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
               </div>
             </div>
 
-            {/* ─── ADMIN-ONLY: Shopify listing + distribution ─── */}
+            {/* LISTING — chỉ admin (dẫn link Manage Products) */}
             {isAdmin && (
-              <>
-                {/* Listing — gắn + đẩy video làm ở Manage Products · Shopify. Ở đây chỉ dẫn link tới listing. */}
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", marginBottom: 6 }}>LISTING</div>
                   {row.productId && row.productTitle ? (
@@ -629,14 +625,15 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                     </div>
                   )}
                 </div>
+            )}
 
-                {/* CONTENT — caption AI theo từng kênh (sinh 1 lượt cho cả 5 kênh) */}
+            {/* CONTENT — MỌI role xem + copy caption; ô chọn model AI + Regenerate CHỈ admin. */}
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>CONTENT</div>
+                    {isAdmin && (
                     <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                      {/* Chọn model AI TRƯỚC khi Generate. Danh sách CHỈ gồm model đọc được ảnh (vision) vì caption
-                          gửi kèm ảnh — icon con mắt nhắc điều đó. Trống = model mặc định (cũng vision). */}
+                      {/* Chọn model AI TRƯỚC khi Generate. Chỉ liệt kê model đọc được ảnh (vision). */}
                       <span title="Only image-reading (vision) models are listed — captions are generated with the product image" style={{ color: "var(--muted)", display: "inline-flex" }}><IcEye /></span>
                       <select value={aiModel} onChange={(e) => onChooseModel(e.target.value)} disabled={busy}
                         title="Vision AI model for caption generation. Blank = server default. Avoid ':free' models — they get rate-limited."
@@ -647,6 +644,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                       <button disabled={busy || !row.productId} className="btn" style={{ padding: "4px 10px", fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}
                         onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}><IcSparkle /> {row.captionsAt ? "Regenerate" : "Generate"}</button>
                     </div>
+                    )}
                   </div>
                   {row.captions ? (
                     <div style={{ display: "grid", gap: 8 }}>
@@ -683,11 +681,13 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                     </div>
                   ) : (
                     <div style={{ fontSize: 12.5, color: "var(--muted)", background: "#F7F8FA", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px" }}>
-                      {row.productId ? "No captions yet — click Generate." : "Attach to a listing first, then generate captions."}
+                      {isAdmin ? (row.productId ? "No captions yet — click Generate." : "Attach to a listing first, then generate captions.") : "No captions yet."}
                     </div>
                   )}
                 </div>
 
+                {/* DISTRIBUTION + PERFORMANCE — chỉ admin */}
+                {isAdmin && (<>
                 {/* ── DISTRIBUTION HUB (compact) · 1 dòng / điểm đến ── */}
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
