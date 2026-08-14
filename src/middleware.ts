@@ -10,8 +10,26 @@ import { jwtVerify } from "jose";
 // (thiếu/sai khoá là 404), nên mở public ở tầng middleware là an toàn.
 const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/api/ping", "/api/cron", "/journey/", "/api/tiktokshops/auth", "/api/tiktok/oauth/callback", "/api/feed/"];
 
+// Domain chính thức của app. Đặt env CANONICAL_HOST để đổi mà không sửa code.
+const CANONICAL_HOST = process.env.CANONICAL_HOST || "os.fusiondn.com";
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // v266 · TẮT link Vercel cho người dùng: bản PRODUCTION mở qua *.vercel.app → ép về domain chính.
+  // Seller lỡ vào link vercel sẽ bị bật về os.fusiondn.com → upload R2 (CORS theo origin) hết lỗi.
+  //  · Chỉ chặn khi VERCEL_ENV === "production" ⇒ preview deploy (test tay) KHÔNG bị đụng.
+  //  · Bỏ qua /api/ ⇒ webhook / cron / OAuth callback nếu đang trỏ vào domain vercel vẫn chạy.
+  if (process.env.VERCEL_ENV === "production" && !pathname.startsWith("/api/")) {
+    const host = req.headers.get("host") || "";
+    if (host.endsWith(".vercel.app")) {
+      const url = req.nextUrl.clone();
+      url.protocol = "https:";
+      url.host = CANONICAL_HOST;
+      url.port = "";
+      return NextResponse.redirect(url, 307);
+    }
+  }
 
   // Đã đăng nhập mà vào /login → đưa về Dashboard (tránh trang login khoác app chrome gây hiểu nhầm bảo mật)
   if (pathname === "/login") {
