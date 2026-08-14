@@ -138,8 +138,10 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
   const [pushOpen, setPushOpen] = useState(false);
   const [pushStore, setPushStore] = useState(shopifyStores[0]?.id ?? "");
   const [pushTemplate, setPushTemplate] = useState("");
-  const [templates, setTemplates] = useState<{ id: string; name: string }[]>([]);
+  const [tplOpen, setTplOpen] = useState(false);   // v267 · dropdown template có thumbnail
+  const [templates, setTemplates] = useState<{ id: string; name: string; thumbUrl?: string | null; productType?: string | null }[]>([]);
   useEffect(() => {
+    setTplOpen(false);
     if (!pushStore) { setTemplates([]); return; }
     fetch(`/api/shopify-templates?storeId=${pushStore}`).then((r) => r.json())
       .then((j) => { const t = j.ok ? j.templates : []; setTemplates(t); setPushTemplate((cur) => t.some((x: { id: string }) => x.id === cur) ? cur : ""); })
@@ -760,10 +762,46 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             </select>
 
             <label style={lab}>② Template</label>
-            <select value={pushTemplate} onChange={(e) => setPushTemplate(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: templates.length ? 18 : 8 }}>
-              <option value="" disabled>— Select a template —</option>
-              {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-            </select>
+            {/* v267 · dropdown tự vẽ có THUMBNAIL — <select> gốc không nhét ảnh vào <option> được,
+                seller hay nhầm template nên hiện ảnh + tên (+ product type) cho chắc. */}
+            {(() => {
+              const sel = templates.find((t) => t.id === pushTemplate) || null;
+              const TplThumb = ({ url, size = 30 }: { url?: string | null; size?: number }) => (
+                url
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={url} alt="" style={{ width: size, height: size, objectFit: "cover", borderRadius: 6, border: "1px solid var(--line)", flex: "0 0 auto" }} />
+                  : <div style={{ width: size, height: size, borderRadius: 6, background: "#F1F1F4", border: "1px solid var(--line)", flex: "0 0 auto" }} />
+              );
+              return (
+                <div style={{ position: "relative", marginBottom: templates.length ? 18 : 8 }}>
+                  <button type="button" disabled={!templates.length} onClick={() => setTplOpen((v) => !v)}
+                    style={{ ...ctl, width: "100%", display: "flex", alignItems: "center", gap: 10, textAlign: "left", cursor: templates.length ? "pointer" : "default", minHeight: 44 }}>
+                    {sel ? <><TplThumb url={sel.thumbUrl} /><span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sel.name}</span></>
+                         : <span style={{ flex: 1, color: "var(--muted)" }}>— Select a template —</span>}
+                    <span style={{ color: "var(--muted)", flex: "0 0 auto" }}>▾</span>
+                  </button>
+                  {tplOpen && templates.length > 0 && (
+                    <>
+                      <div onClick={() => setTplOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                      <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 12px 32px rgba(16,24,40,.16)", maxHeight: 320, overflowY: "auto", padding: 4 }}>
+                        {templates.map((t) => (
+                          <div key={t.id} onClick={() => { setPushTemplate(t.id); setTplOpen(false); }}
+                            style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 8px", borderRadius: 8, cursor: "pointer", background: t.id === pushTemplate ? "#EEF4E3" : "transparent" }}
+                            onMouseEnter={(e) => { if (t.id !== pushTemplate) e.currentTarget.style.background = "#F5F7FA"; }}
+                            onMouseLeave={(e) => { if (t.id !== pushTemplate) e.currentTarget.style.background = "transparent"; }}>
+                            <TplThumb url={t.thumbUrl} size={34} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</div>
+                              {t.productType && <div style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.productType}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
             {pushStore && templates.length === 0 && (
               <div style={{ fontSize: 12, color: "#B42318", marginBottom: 16, padding: "10px 12px", background: "#FEF3F2", borderRadius: 10, border: "1px solid #FDA29B" }}>
                 This store has no template yet. Create one in <b>Templates</b> first.
