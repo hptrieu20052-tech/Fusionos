@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useConfirm } from "@/components/confirm-provider";
 import DateRangePicker, { rangeToDates, type RangeValue } from "@/components/date-range";
@@ -83,6 +83,9 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
   const [busy, setBusy] = useState(false);
   const [prog, setProg] = useState<{ name: string; pct: number } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  // v271 · Gom card theo SẢN PHẨM: 1 product nhiều creative → 1 card + badge số video; bấm vào
+  // card mở modal có dải chuyển giữa các video. Video chưa gắn product vẫn là card lẻ như cũ.
+  const [grouped, setGrouped] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   // Performance theo videoCode (chỉ admin xem — tránh lộ doanh thu cho creator/seller). Key = String(videoCode).
   const [perf, setPerf] = useState<Record<string, Perf>>({});
@@ -175,7 +178,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
     return { key: String(j.key), publicUrl: String(j.publicUrl) };
   };
 
-  const onPick = async (files: FileList | File[] | null, who: { sellerId: string; creatorId: string }) => {
+  const onPick = async (files: FileList | File[] | null, who: { sellerId: string; creatorId: string; sameCode?: string }) => {
     const list = Array.from(files ?? []);
     if (!list.length) return;
     setBusy(true);
@@ -205,6 +208,8 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
             durationSec: meta.duration || null, width: meta.width || null, height: meta.height || null,
             sellerId: who.sellerId,
             ...(who.creatorId ? { creatorId: who.creatorId } : {}),
+            // v271 · điền "# video mẫu" lúc upload → video mới copy product của mẫu, tự vào đúng card nhóm.
+            ...(who.sameCode?.trim() ? { sameAsCode: Number(who.sameCode.replace(/[^0-9]/g, "")) } : {}),
           }),
         }).then((r) => r.json());
         if (!j?.ok) throw new Error(j?.error ?? "save failed");
@@ -261,11 +266,35 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
 
   const openRow = rows.find((r) => r.id === open) ?? null;
 
+  // v271 · Nhóm theo productId (trong trang hiện tại). Giữ thứ tự xuất hiện; video lẻ = nhóm 1 phần tử.
+  const groups = useMemo<Row[][]>(() => {
+    if (!grouped) return rows.map((r) => [r]);
+    const byPid = new Map<string, Row[]>();
+    const out: Row[][] = [];
+    for (const r of rows) {
+      if (r.productId) {
+        const g = byPid.get(r.productId);
+        if (g) { g.push(r); continue; }
+        const arr = [r]; byPid.set(r.productId, arr); out.push(arr);
+      } else out.push([r]);
+    }
+    return out;
+  }, [rows, grouped]);
+  // Anh em cùng product của video đang mở — cho dải chuyển video trong modal.
+  const siblings = useMemo<Row[]>(() => {
+    if (!openRow?.productId) return openRow ? [openRow] : [];
+    return rows.filter((r) => r.productId === openRow.productId);
+  }, [rows, openRow]);
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <h2 style={{ fontWeight: 800, fontSize: 19, margin: 0 }}>Video Library</h2>
         <div style={{ flex: 1 }} />
+        <button onClick={() => setGrouped((v) => !v)} className="btn" title="Group creatives of the same product into one card"
+          style={{ padding: "7px 12px", fontSize: 12.5, fontWeight: 700, ...(grouped ? { background: "#EEF2FF", borderColor: "#C7D2FE", color: "#4338CA" } : {}) }}>
+          {grouped ? "✓ " : ""}Group by product
+        </button>
         <DateRangePicker value={dr} onChange={setDr} align="right" />
         {canManage && <button disabled={busy} onClick={() => setShowUpload(true)} className="btn btn-primary">Bulk upload +</button>}
       </div>
@@ -317,7 +346,12 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
         <div className="panel empty" style={{ marginTop: 14 }}>No videos</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(248px,1fr))", gap: 18, marginTop: 14 }}>
-          {rows.map((r) => (
+          {groups.map((g) => {
+            const r = g[0];
+            const many = g.length > 1;
+            // Creator hiện trên card nhóm: gộp tên (không trùng) — mỗi video vẫn giữ creator riêng trong modal.
+            const creatorNames = Array.from(new Set(g.map((x) => x.sourceName || x.creatorName || x.uploader || "").filter(Boolean)));
+            return (
             <div key={r.id} className="card" onClick={() => setOpen(r.id)} style={{ overflow: "hidden", cursor: "pointer", display: "flex", flexDirection: "column" }}>
               <div style={{ position: "relative", aspectRatio: "4/5", background: "#0B1220", overflow: "hidden" }}>
                 {r.thumbUrl
@@ -328,6 +362,13 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
                   </span>
                 </div>
+                {/* v271 · badge số creative của sản phẩm này */}
+                {many && (
+                  <span style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 999, background: "rgba(0,0,0,.66)", color: "#fff", fontSize: 11.5, fontWeight: 800 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="14" height="12" rx="2" /><path d="M22 9l-6 3 6 3z" /></svg>
+                    {g.length}
+                  </span>
+                )}
                 <div style={{ position: "absolute", bottom: 8, left: 8, right: 8, display: "flex", gap: 5, alignItems: "center" }}>
                   <span style={chip("rgba(0,0,0,.62)", "#fff")}>{secs(r.durationSec)}</span>
                   {r.aspect && <span style={chip("rgba(0,0,0,.62)", "#fff")}>{r.aspect}</span>}
@@ -340,12 +381,13 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                   )}
                 </div>
               </div>
-              {/* Card gọn: #id · tên video · product · seller/creator · đã đăng · performance · thời lượng.
-                  Chi tiết kỹ thuật (WxH·size·UUID) đưa vào modal. */}
+              {/* Card gọn: #id (nhóm: liệt kê các #) · tên product · seller/creator · độ phân giải + MB. */}
               <div className="dc-body" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                 <div className="dc-top">
                   <span className="dc-id" style={{ cursor: "pointer" }} title="Copy ID"
-                    onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(String(r.videoCode)); }}>#{r.videoCode}</span>
+                    onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(g.map((x) => x.videoCode).join(", ")); }}>
+                    {many ? g.map((x) => `#${x.videoCode}`).join(" ") : `#${r.videoCode}`}
+                  </span>
                   <span className="dc-date">{new Date(r.createdAt).toLocaleString()}</span>
                 </div>
                 {/* Tiêu đề card = TÊN PRODUCT (nếu đã gắn listing); chưa gắn thì fallback tên video. */}
@@ -354,15 +396,15 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                     onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.productTitle || r.title); }}>{r.productTitle || r.title}</span>
                 </div>
                 <div className="dc-meta"><span>Seller</span><b>{r.sellerName ?? "—"}</b></div>
-                <div className="dc-meta"><span>Creator</span><b>{r.sourceName || r.creatorName || r.uploader || "—"}</b></div>
-                {/* Đáy: độ phân giải + dung lượng MB (tỉ lệ + thời lượng đã có badge trên video). */}
+                <div className="dc-meta"><span>Creator</span><b>{creatorNames.length ? creatorNames.join(", ") : "—"}</b></div>
                 <div className="dc-foot" style={{ marginTop: "auto" }}>
-                  <span>{r.width && r.height ? `${r.width}×${r.height}` : (r.aspect ?? "—")}</span>
-                  <span>{mb(r.sizeBytes)}</span>
+                  <span>{many ? `${g.length} videos` : (r.width && r.height ? `${r.width}×${r.height}` : (r.aspect ?? "—"))}</span>
+                  <span>{many ? mb(g.reduce((a, x) => a + (x.sizeBytes ?? 0), 0)) : mb(r.sizeBytes)}</span>
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -381,6 +423,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
           sellers={sellers} creators={creators} confirm={confirm} onReplace={doReplace}
           perf={perf[String(openRow.videoCode)]}
           aiModels={aiModels} aiModel={aiModel} onChooseModel={chooseModel}
+          siblings={siblings} onSwitch={(id) => setOpen(id)}
         />
       )}
     </div>
@@ -407,7 +450,7 @@ function Pager({ page, total, show, setPage, label }: { page: number; total: num
 }
 
 /** Chi tiết. Gán listing theo Product type là đường chính — 1 thao tác cho cả lô. */
-function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf, aiModels, aiModel, onChooseModel }: {
+function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf, aiModels, aiModel, onChooseModel, siblings = [], onSwitch }: {
   row: Row; canManage: boolean; isAdmin: boolean; busy: boolean; setBusy: (b: boolean) => void;
   close: () => void; reload: () => Promise<void> | void; flash: (m: string, ok?: boolean) => void;
   patch: (b: Record<string, unknown>, ok?: string) => Promise<boolean>;
@@ -415,6 +458,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
   onReplace: (row: Row, file: File) => Promise<void>;
   perf?: Perf;
   aiModels: { id: string; name: string }[]; aiModel: string; onChooseModel: (m: string) => void;
+  siblings?: Row[]; onSwitch?: (id: string) => void;
 }) {
   const [types, setTypes] = useState<TypeOpt[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -459,6 +503,17 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
     flags: { voice: f.voice, text: f.text, music: f.music },
     postedTo: posted,
   }, "Saved");
+
+  // v271 · Gắn NGUỒN sản phẩm cho video (nhóm card + AI captions) — không đụng video hero của listing.
+  const attachSource = async (productId: string, title: string) => {
+    setBusy(true);
+    try {
+      const j = await fetch("/api/videos/assign", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId: row.id, sourceProductId: productId }) }).then((r) => r.json());
+      if (j.ok) { flash(`✓ Attached to "${title.slice(0, 60)}"`); setLq(""); setMatches([]); await reload(); }
+      else flash("✗ " + (j.error ?? "failed"), false);
+    } catch { flash("✗ Network error", false); }
+    setBusy(false);
+  };
 
   const assign = async (body: Record<string, unknown>, okText: string) => {
     setBusy(true);
@@ -541,6 +596,28 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
           <button onClick={close} className="btn" style={{ padding: "6px 11px" }}>✕</button>
         </div>
 
+        {/* v271 · Dải chuyển giữa các creative của CÙNG sản phẩm — mỗi video giữ nguyên ID/creator/
+            points/captions/performance riêng; bấm thumbnail để chuyển. */}
+        {siblings.length > 1 && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }}>
+            {siblings.map((s) => {
+              const active = s.id === row.id;
+              return (
+                <div key={s.id} onClick={() => !active && onSwitch?.(s.id)} title={s.title}
+                  style={{ flex: "0 0 auto", width: 72, cursor: active ? "default" : "pointer", textAlign: "center" }}>
+                  <div style={{ position: "relative", width: 72, height: 96, borderRadius: 10, overflow: "hidden", background: "#0B1220", border: active ? "2.5px solid #4338CA" : "2.5px solid transparent", boxSizing: "border-box" }}>
+                    {s.thumbUrl
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={s.thumbUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: active ? 1 : .82 }} />
+                      : <div style={{ width: "100%", height: "100%" }} />}
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 800, marginTop: 3, color: active ? "#4338CA" : "var(--muted)" }}>#{s.videoCode}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div style={{ display: "grid", gridTemplateColumns: "minmax(0,280px) minmax(0,1fr)", gap: 20 }}>
           <div>
             {row.publicUrl && (
@@ -606,7 +683,8 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
               </div>
             </div>
 
-            {/* LISTING — chỉ admin (dẫn link Manage Products) */}
+            {/* LISTING — chỉ admin. v271: gắn/đổi sản phẩm NGAY TẠI ĐÂY bằng ô search (chỉ set nguồn
+                productId để nhóm card + AI captions — KHÔNG đổi video hero đang hiện trên Shopify). */}
             {isAdmin && (
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "var(--muted)", marginBottom: 6 }}>LISTING</div>
@@ -616,11 +694,27 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.productTitle}</span>
                       <span style={{ color: "var(--blue)", fontWeight: 700, flexShrink: 0 }}>Open in Manage Products →</span>
                     </a>
-                  ) : (
-                    <div style={{ fontSize: 12.5, color: "var(--muted)", background: "#F7F8FA", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 12px" }}>
-                      Not attached. In <b>Manage Products · Shopify</b>, open a listing and paste this video ID <b>#{row.videoCode}</b>.
-                    </div>
-                  )}
+                  ) : null}
+                  <div style={{ position: "relative", marginTop: row.productId ? 8 : 0 }}>
+                    <input value={lq} onChange={(e) => setLq(e.target.value)} disabled={busy}
+                      placeholder={row.productId ? "Change product — type a listing name…" : "Attach product — type a listing name…"}
+                      style={{ width: "100%", padding: "9px 12px", fontSize: 13, borderRadius: 10, border: "1px solid var(--line)" }} />
+                    {lq.trim().length >= 2 && matches.length > 0 && (
+                      <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 50, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 12px 32px rgba(16,24,40,.16)", maxHeight: 240, overflowY: "auto", padding: 4 }}>
+                        {matches.map((m) => (
+                          <div key={m.id} onClick={() => attachSource(m.id, m.title)}
+                            style={{ padding: "8px 10px", borderRadius: 8, cursor: "pointer", fontSize: 13 }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = "#F5F7FA"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}>
+                            <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.title}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5 }}>
+                    Groups this video under the product + gives the AI its images. The video shown on the Shopify product page is not changed.
+                  </div>
                 </div>
             )}
 
@@ -823,7 +917,7 @@ function PerfLine({ p }: { p?: Perf }) {
  *  Creator = chính người đang upload, không hỏi lại. */
 function UploadModal({ sellers, creators, isAdmin, myRole, me, busy, close, go }: {
   sellers: Opt[]; creators: Opt[]; isAdmin: boolean; myRole: string; me: { id: string; name: string }; busy: boolean;
-  close: () => void; go: (files: File[], who: { sellerId: string; creatorId: string }) => Promise<void>;
+  close: () => void; go: (files: File[], who: { sellerId: string; creatorId: string; sameCode?: string }) => Promise<void>;
 }) {
   // 3 vai upload:
   //  · Admin   → chọn cả Seller + Creator (danh sách đầy đủ).
@@ -833,6 +927,8 @@ function UploadModal({ sellers, creators, isAdmin, myRole, me, busy, close, go }
   const [sellerId, setSellerId] = useState(isAdmin || iAmCreator ? "" : me.id);
   const [creatorId, setCreatorId] = useState(iAmCreator ? me.id : "");
   const [files, setFiles] = useState<File[]>([]);
+  // v271 · # video mẫu (tuỳ chọn): quay video MỚI cho đúng sản phẩm cũ → điền # là video tự vào đúng card.
+  const [sameCode, setSameCode] = useState("");
   const inRef = useRef<HTMLInputElement>(null);
   const ready = !!sellerId && files.length > 0;
 
@@ -871,6 +967,11 @@ function UploadModal({ sellers, creators, isAdmin, myRole, me, busy, close, go }
               </select>
             )}
           </div>
+          <div className="field" style={{ gridColumn: "span 2" }}>
+            <label>Same product as video # <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional — new creative for an existing product)</span></label>
+            <input value={sameCode} onChange={(e) => setSameCode(e.target.value.replace(/[^0-9]/g, ""))}
+              placeholder="e.g. 2 — the new videos join that product's card" inputMode="numeric" />
+          </div>
         </div>
 
         <input ref={inRef} type="file" accept="video/*" multiple hidden
@@ -899,7 +1000,7 @@ function UploadModal({ sellers, creators, isAdmin, myRole, me, busy, close, go }
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "flex-end" }}>
           <button onClick={close} className="btn">Cancel</button>
           <button disabled={!ready || busy} className="btn btn-primary" style={{ opacity: ready && !busy ? 1 : .5 }}
-            onClick={() => go(files, { sellerId, creatorId })}>
+            onClick={() => go(files, { sellerId, creatorId, sameCode })}>
             Upload {files.length || ""}
           </button>
         </div>

@@ -185,9 +185,21 @@ export async function POST(req: NextRequest) {
     return "other";
   })();
 
+  // v271 · "Same product as video #N" — creator quay video MỚI cho đúng mẫu cũ: điền # video mẫu lúc
+  // upload, video mới copy productId/storeId của mẫu → tự vào đúng card nhóm, AI captions có sẵn ảnh.
+  // KHÔNG đụng shopify_products.video_id (video hero trên trang sản phẩm giữ nguyên).
+  let sameProductId: string | null = null, sameStoreId: string | null = null;
+  const sameAsCode = Number(b?.sameAsCode);
+  if (isFinite(sameAsCode) && sameAsCode > 0) {
+    const [src] = await db.select({ productId: schema.productVideos.productId, storeId: schema.productVideos.storeId })
+      .from(schema.productVideos).where(eq(schema.productVideos.videoCode, Math.floor(sameAsCode))).limit(1);
+    if (!src) return NextResponse.json({ ok: false, error: `video #${Math.floor(sameAsCode)} not found` }, { status: 404 });
+    sameProductId = src.productId; sameStoreId = src.storeId;
+  }
+
   const [row] = await db.insert(schema.productVideos).values({
-    storeId: uuidOk(b?.storeId) ? String(b.storeId) : null,
-    productId: uuidOk(b?.productId) ? String(b.productId) : null,
+    storeId: uuidOk(b?.storeId) ? String(b.storeId) : sameStoreId,
+    productId: uuidOk(b?.productId) ? String(b.productId) : sameProductId,
     title,
     note: b?.note ? String(b.note).slice(0, 1000) : null,
     storageKey, publicUrl,

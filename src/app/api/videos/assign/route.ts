@@ -41,6 +41,28 @@ export async function POST(req: NextRequest) {
     if (!v) return NextResponse.json({ ok: false, error: "video not found" }, { status: 404 });
   }
 
+  // v271 · GẮN NGUỒN (source product) — chỉ set productVideos.productId/storeId để: (1) card nhóm
+  // theo sản phẩm ở Video Library, (2) AI captions đọc được ảnh + tên sản phẩm. KHÔNG đụng
+  // shopify_products.video_id — video hero đang hiện trên trang Shopify giữ nguyên. Nhận cả DRAFT.
+  if (videoId && uuidOk(b?.sourceProductId)) {
+    const srcConds = [eq(schema.shopifyProducts.id, String(b.sourceProductId))];
+    const scope0 = await storeOwnerScopeIds(session);
+    if (scope0) {
+      const mine0 = await db.select({ id: schema.stores.id }).from(schema.stores)
+        .where(and(eq(schema.stores.marketplace, "shopify"), inArray(schema.stores.sellerId, scope0)));
+      const ids0 = mine0.map((s) => s.id);
+      if (!ids0.length) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+      srcConds.push(inArray(schema.shopifyProducts.storeId, ids0));
+    }
+    const [p] = await db.select({ id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId })
+      .from(schema.shopifyProducts).where(and(...srcConds)).limit(1);
+    if (!p) return NextResponse.json({ ok: false, error: "listing not found" }, { status: 404 });
+    await db.update(schema.productVideos)
+      .set({ productId: p.id, storeId: p.storeId, updatedAt: new Date() })
+      .where(eq(schema.productVideos.id, videoId));
+    return NextResponse.json({ ok: true, changed: 1, source: true });
+  }
+
   // Phạm vi listing được phép đụng vào — seller chỉ sửa store của mình.
   const conds = [isNotNull(schema.shopifyProducts.shopifyProductId), ne(schema.shopifyProducts.shopifyProductId, "")];
   const scopeIds = await storeOwnerScopeIds(session);
