@@ -940,34 +940,29 @@ function UploadModal({ sellers, creators, isAdmin, myRole, me, busy, close, go }
           <button onClick={close} className="btn" style={{ padding: "6px 11px" }}>✕</button>
         </div>
 
-        <div className="filters" style={{ gridTemplateColumns: "1fr 1fr" }}>
-          <div className="field">
-            <label>Seller <span style={{ color: "#B42318" }}>*</span></label>
-            {(isAdmin || iAmCreator) ? (
-              // Admin + Creator: chọn seller (creator bắt buộc chọn video làm cho seller nào).
+        {/* v271b · Chỉ hiện ô CẦN CHỌN: người upload là ai thì hệ thống tự biết (creator upload → creator
+            = chính mình, seller upload → seller = chính mình) — ô disabled chỉ gây rối, bỏ. Admin thấy cả 2. */}
+        <div className="filters" style={{ gridTemplateColumns: isAdmin ? "1fr 1fr" : "1fr" }}>
+          {(isAdmin || iAmCreator) && (
+            <div className="field">
+              <label>Seller <span style={{ color: "#B42318" }}>*</span></label>
               <select value={sellerId} onChange={(e) => setSellerId(e.target.value)}
                 style={{ borderColor: sellerId ? undefined : "#F0B4AE" }}>
                 <option value="">— select a seller —</option>
                 {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
-            ) : (
-              // Seller upload: seller là CHÍNH MÌNH, cố định.
-              <input value={me.name} disabled style={{ background: "#F1F3F7", color: "var(--muted)" }} />
-            )}
-          </div>
-          <div className="field">
-            <label>Creator</label>
-            {iAmCreator ? (
-              // Creator upload: creator là CHÍNH MÌNH, cố định.
-              <input value={me.name} disabled style={{ background: "#F1F3F7", color: "var(--muted)" }} />
-            ) : (
+            </div>
+          )}
+          {!iAmCreator && (
+            <div className="field">
+              <label>Creator</label>
               <select value={creatorId} onChange={(e) => setCreatorId(e.target.value)}>
                 <option value="">— none —</option>
                 {creators.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-            )}
-          </div>
-          <div className="field" style={{ gridColumn: "span 2" }}>
+            </div>
+          )}
+          <div className="field" style={{ gridColumn: "1 / -1" }}>
             <label>Same product as video # <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional — new creative for an existing product)</span></label>
             <input value={sameCode} onChange={(e) => setSameCode(e.target.value.replace(/[^0-9]/g, ""))}
               placeholder="e.g. 2 — the new videos join that product's card" inputMode="numeric" />
