@@ -90,6 +90,8 @@ export default function CustomOptions({
 
   const set = (i: number, patch: Partial<PQ>) => onChange(fields.map((q, k) => (k === i ? { ...q, ...patch } : q)));
   const del = (i: number) => { onChange(fields.filter((_, k) => k !== i)); setEdit(null); };
+  // v269 · sắp xếp lại thứ tự field bằng nút ▲▼ (trước đây không kéo/di chuyển được).
+  const move = (i: number, dir: -1 | 1) => { const j = i + dir; if (j < 0 || j >= fields.length) return; const a = fields.slice(); [a[i], a[j]] = [a[j], a[i]]; onChange(a); };
 
   return (
     <div style={{ opacity: disabled ? .55 : 1, pointerEvents: disabled ? "none" : "auto" }}>
@@ -167,6 +169,13 @@ export default function CustomOptions({
           </div>
         ) : (
           <div key={i} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "11px 14px", display: "flex", alignItems: "center", gap: 12 }}>
+            {/* v269 · ▲▼ đổi thứ tự field */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 2, flex: "0 0 auto" }}>
+              <button onClick={() => move(i, -1)} disabled={i === 0} title="Move up"
+                style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 6, width: 22, height: 18, lineHeight: "16px", fontSize: 11, cursor: i === 0 ? "default" : "pointer", color: "var(--muted)", opacity: i === 0 ? .35 : 1, padding: 0 }}>▲</button>
+              <button onClick={() => move(i, 1)} disabled={i === fields.length - 1} title="Move down"
+                style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 6, width: 22, height: 18, lineHeight: "16px", fontSize: 11, cursor: i === fields.length - 1 ? "default" : "pointer", color: "var(--muted)", opacity: i === fields.length - 1 ? .35 : 1, padding: 0 }}>▼</button>
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {q.label || <span style={{ color: "#D14343" }}>(no title)</span>}
