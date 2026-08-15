@@ -750,7 +750,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
       {pushOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setPushOpen(false)}>
-          <div style={{ background: "#fff", width: 440, maxWidth: "94vw", maxHeight: "90vh", borderRadius: 18, padding: 24, overflowY: "auto", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
+          <div style={{ background: "#fff", width: 540, maxWidth: "94vw", maxHeight: "90vh", borderRadius: 18, padding: 24, overflowY: "auto", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
               <div style={{ fontWeight: 800, fontSize: 18 }}>Push {sel.size} listing{sel.size === 1 ? "" : "s"} to Shopify</div>
               <button onClick={() => setPushOpen(false)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
@@ -787,7 +787,8 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                     return (
                     <>
                       <div onClick={() => setTplOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
-                      <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 12px 32px rgba(16,24,40,.16)", maxHeight: 360, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                      {/* v270 · IN-FLOW (không absolute) → card modal tự cao lên + cuộn, dropdown không bị cắt */}
+                      <div style={{ position: "relative", zIndex: 41, marginTop: 4, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 12px 32px rgba(16,24,40,.16)", maxHeight: 300, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                         {/* v268 · ô search lọc template — gõ tên/loại để nhảy nhanh khi danh sách dài */}
                         <div style={{ padding: 8, borderBottom: "1px solid var(--line)", position: "sticky", top: 0, background: "#fff" }}>
                           <input autoFocus value={tplQuery} onChange={(e) => setTplQuery(e.target.value)} placeholder="Tìm template…"
