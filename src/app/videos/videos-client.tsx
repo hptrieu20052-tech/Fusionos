@@ -441,7 +441,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
 
       {openRow && (
         <VideoDetail
-          key={openRow.id} row={openRow} canManage={canManage} isAdmin={isAdmin} busy={busy} setBusy={setBusy}
+          key={openRow.id} row={openRow} canManage={canManage} isAdmin={isAdmin} myRole={myRole} busy={busy} setBusy={setBusy}
           close={() => setOpen(null)} reload={() => load(page)} flash={flash} patch={patch}
           sellers={sellers} creators={creators} confirm={confirm} onReplace={doReplace}
           aiModels={aiModels} aiModel={aiModel} onChooseModel={chooseModel}
@@ -473,8 +473,8 @@ function Pager({ page, total, show, setPage, label }: { page: number; total: num
 
 /** Chi tiết CARD: thông tin card (mã, seller/creator, listing, captions dùng chung) + dải video con.
  *  Mở từ video nào thì video đó đang chọn; bấm thumbnail để chuyển; ✕ trên thumbnail = tách khỏi card. */
-function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, aiModels, aiModel, onChooseModel, siblings = [], onSwitch }: {
-  row: Row; canManage: boolean; isAdmin: boolean; busy: boolean; setBusy: (b: boolean) => void;
+function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, aiModels, aiModel, onChooseModel, siblings = [], onSwitch }: {
+  row: Row; canManage: boolean; isAdmin: boolean; myRole: string; busy: boolean; setBusy: (b: boolean) => void;
   close: () => void; reload: () => Promise<void> | void; flash: (m: string, ok?: boolean) => void;
   patch: (b: Record<string, unknown>, ok?: string) => Promise<boolean>;
   sellers: Opt[]; creators: Opt[]; confirm: ReturnType<typeof useConfirm>;
@@ -741,7 +741,9 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                 </div>
             )}
 
-            {/* CONTENT — MỌI role xem + copy caption; ô chọn model AI + Regenerate CHỈ admin. */}
+            {/* CONTENT — ẨN với role Creator (v272b: creator chỉ quay clip, không cần thấy caption/
+                listing data); admin + seller xem & copy; ô chọn model AI + Regenerate CHỈ admin. */}
+            {(isAdmin || myRole !== "content") && (
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>CONTENT</div>
@@ -799,6 +801,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                     </div>
                   )}
                 </div>
+            )}
 
                 {/* v272 · DISTRIBUTION + PERFORMANCE + Points tạm ẨN theo yêu cầu — data (postedTo,
                     points, API /api/videos/performance) vẫn giữ nguyên, cần lại thì bật UI lên. */}
