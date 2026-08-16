@@ -160,13 +160,8 @@ export async function POST(req: NextRequest) {
     .set({ captions, captionsAt: new Date(), updatedAt: new Date() })
     .where(eq(schema.productVideos.id, id));
 
-  // v272 · Caption là CỦA CARD (dùng chung cho cả sản phẩm): video thuộc card thì đồng bộ
-  // caption sang mọi video con — generate 1 lần, mở video nào trong card cũng thấy cùng bộ.
-  if (row.v.cardId) {
-    await db.update(schema.productVideos)
-      .set({ captions, captionsAt: new Date(), updatedAt: new Date() })
-      .where(eq(schema.productVideos.cardId, row.v.cardId));
-  }
+  // v272c · Caption là CỦA TỪNG VIDEO (user đổi lại từ "dùng chung cả card") — mỗi creative
+  // một góc quay khác nhau nên caption riêng; Generate ở video nào lưu đúng video đó.
 
   return NextResponse.json({ ok: true, captions });
 }

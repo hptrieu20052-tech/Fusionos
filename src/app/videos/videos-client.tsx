@@ -489,6 +489,8 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
   const [lq, setLq] = useState("");
   const [matches, setMatches] = useState<Match[]>([]);
   const repRef = useRef<HTMLInputElement>(null);
+  // v272c · loading khi AI đang viết caption — giống thanh chạy bên Manage Products · Shopify.
+  const [genBusy, setGenBusy] = useState(false);
   const [f, setF] = useState({
     title: row.title, note: row.note ?? "", language: row.language ?? "", points: row.points ?? 0,
     sellerId: row.sellerId ?? "", creatorId: row.creatorId ?? "",
@@ -558,12 +560,12 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
   };
 
   const doCaptions = async () => {
-    setBusy(true);
+    setBusy(true); setGenBusy(true);
     try {
       const j = await fetch("/api/videos/captions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: row.id, model: aiModel || undefined, withImages: true }) }).then((r) => r.json());
       if (j.ok) { flash("✓ Captions written"); await reload(); } else flash("✗ " + (j.error ?? "failed"), false);
     } catch { flash("✗ Network error", false); }
-    setBusy(false);
+    setBusy(false); setGenBusy(false);
   };
 
   const doDelete = async () => {
@@ -610,7 +612,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onClick={close}>
-      <div className="card" style={{ width: 940, maxWidth: "97vw", maxHeight: "92vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ width: siblings.length > 1 ? 1150 : 940, maxWidth: "97vw", maxHeight: "92vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
           {/* Mã CARD trước (QT-TH-01), mã con của video đang chọn sau (.2). Video lẻ chỉ có #id. */}
           <span style={chip("#EEF2FF", "#4338CA")}>{row.cardCode ?? `#${row.videoCode}`}</span>
@@ -619,33 +621,40 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
           <button onClick={close} className="btn" style={{ padding: "6px 11px" }}>✕</button>
         </div>
 
-        {/* v272 · Dải VIDEO CON của card — mỗi video giữ #id/file riêng; bấm thumbnail để chuyển;
-            ✕ để tách khỏi card (video vẫn nằm trong thư viện). */}
-        {siblings.length > 1 && (
-          <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }}>
-            {siblings.map((s) => {
-              const active = s.id === row.id;
-              return (
-                <div key={s.id} onClick={() => !active && onSwitch?.(s.id)} title={s.title}
-                  style={{ flex: "0 0 auto", width: 72, cursor: active ? "default" : "pointer", textAlign: "center" }}>
-                  <div style={{ position: "relative", width: 72, height: 96, borderRadius: 10, overflow: "hidden", background: "#0B1220", border: active ? "2.5px solid #4338CA" : "2.5px solid transparent", boxSizing: "border-box" }}>
-                    {s.thumbUrl
-                      // eslint-disable-next-line @next/next/no-img-element
-                      ? <img src={s.thumbUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: active ? 1 : .82 }} />
-                      : <div style={{ width: "100%", height: "100%" }} />}
+        {/* v272c · Layout 2 cột theo user: TRÁI = danh sách video con của card (bấm để chuyển),
+            PHẢI = chi tiết + CONTENT RIÊNG của video đang chọn (caption đã trả về per-video). */}
+        <div style={{ display: "grid", gridTemplateColumns: siblings.length > 1 ? "216px minmax(0,264px) minmax(0,1fr)" : "minmax(0,280px) minmax(0,1fr)", gap: 20 }}>
+          {siblings.length > 1 && (
+            <div style={{ borderRight: "1px solid var(--line)", paddingRight: 16, display: "flex", flexDirection: "column", gap: 8, alignContent: "start", alignSelf: "start" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>VIDEOS IN THIS CARD · {siblings.length}</div>
+              {siblings.map((s) => {
+                const active = s.id === row.id;
+                return (
+                  <div key={s.id} onClick={() => !active && onSwitch?.(s.id)} title={s.title}
+                    style={{ display: "flex", gap: 9, alignItems: "center", padding: "7px 8px", borderRadius: 11, cursor: active ? "default" : "pointer",
+                      background: active ? "#EEF2FF" : "transparent", border: active ? "1.5px solid #C7D2FE" : "1.5px solid var(--line)" }}>
+                    <div style={{ width: 46, height: 60, borderRadius: 8, overflow: "hidden", background: "#0B1220", flexShrink: 0 }}>
+                      {s.thumbUrl
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={s.thumbUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        : null}
+                    </div>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 800, color: active ? "#4338CA" : "var(--ink)" }}>{s.cardCode ? `.${s.cardSeq ?? "?"}` : `#${s.videoCode}`}</div>
+                      <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 1 }}>#{s.videoCode} · {secs(s.durationSec)}</div>
+                      {/* mỗi video content RIÊNG → đánh dấu video nào đã có caption */}
+                      <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 1, color: s.captionsAt ? "#1F6F45" : "var(--muted)" }}>{s.captionsAt ? "content ✓" : "no content"}</div>
+                    </div>
                     {canManage && (
                       <button onClick={(e) => { e.stopPropagation(); doDetach(s); }} title="Remove from card"
-                        style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: 999, border: "none", cursor: "pointer", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 10, lineHeight: "18px", padding: 0 }}>✕</button>
+                        style={{ width: 20, height: 20, borderRadius: 999, border: "none", cursor: "pointer", background: "#F1F3F7", color: "var(--muted)", fontSize: 10, lineHeight: "20px", padding: 0, flexShrink: 0 }}>✕</button>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 800, marginTop: 3, color: active ? "#4338CA" : "var(--muted)" }}>{s.cardCode ? `.${s.cardSeq ?? "?"}` : `#${s.videoCode}`}</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,280px) minmax(0,1fr)", gap: 20 }}>
+                );
+              })}
+              <div style={{ fontSize: 10.5, color: "var(--muted)", lineHeight: 1.5 }}>Each video has its own content — select one to view or generate its captions.</div>
+            </div>
+          )}
           <div>
             {row.publicUrl && (
               <video src={row.publicUrl} poster={row.thumbUrl ?? undefined} controls playsInline
@@ -746,7 +755,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
             {(isAdmin || myRole !== "content") && (
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>CONTENT</div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>CONTENT · {subId(row)}</div>
                     {isAdmin && (
                     <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
                       {/* Chọn model AI TRƯỚC khi Generate. Chỉ liệt kê model đọc được ảnh (vision). */}
@@ -757,12 +766,24 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                         <option value="">Model: Default</option>
                         {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                       </select>
-                      <button disabled={busy || !row.productId} className="btn" style={{ padding: "4px 10px", fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}
-                        onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}><IcSparkle /> {row.captionsAt ? "Regenerate" : "Generate"}</button>
+                      <button disabled={busy || genBusy || !row.productId} className="btn" style={{ padding: "4px 10px", fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5 }}
+                        onClick={doCaptions} title={row.productId ? "" : "Attach to a listing first"}>
+                        {genBusy
+                          ? <span style={{ display: "inline-block", width: 11, height: 11, border: "2px solid #C9B8F5", borderTopColor: "#7C5CFF", borderRadius: "50%", animation: "fusionSpin .7s linear infinite" }} />
+                          : <IcSparkle />} {genBusy ? "Writing…" : row.captionsAt ? "Regenerate" : "Generate"}</button>
                     </div>
                     )}
                   </div>
-                  {row.captions ? (
+                  {genBusy ? (
+                    <div style={{ border: "1px solid #D7CCF5", background: "#F8F6FF", borderRadius: 10, padding: "14px 14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 700, color: "#5B3FBF" }}>
+                        <span style={{ display: "inline-block", width: 13, height: 13, border: "2px solid #C9B8F5", borderTopColor: "#7C5CFF", borderRadius: "50%", animation: "fusionSpin .7s linear infinite" }} />
+                        <span>AI is writing captions for {subId(row)}…</span>
+                      </div>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 7 }}>Reading the listing images + video frame — usually 15–60 seconds. Keep this open.</div>
+                      <style>{"@keyframes fusionSpin{to{transform:rotate(360deg)}}"}</style>
+                    </div>
+                  ) : row.captions ? (
                     <div style={{ display: "grid", gap: 8 }}>
                       {CHANNELS.map((ch) => {
                         const c = row.captions?.[ch.key];
