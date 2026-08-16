@@ -652,7 +652,6 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                   </div>
                 );
               })}
-              <div style={{ fontSize: 10.5, color: "var(--muted)", lineHeight: 1.5 }}>Each video has its own content — select one to view or generate its captions.</div>
             </div>
           )}
           <div>
@@ -688,13 +687,13 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
             {/* 1 · Thông tin cơ bản — chỉ giữ field thật sự dùng ở Phase 1 */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 8 }}>DETAILS</div>
-              <div className="filters" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                <div className="field" style={{ gridColumn: "span 2" }}>
+              <div className="filters" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+                <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <label>Title</label>
                   <input value={f.title} disabled={!canManage} onChange={(e) => setF({ ...f, title: e.target.value })} />
                 </div>
-                {/* v272 · Points tạm ẨN (data giữ nguyên trong DB). ID hiện mã card + mã con. */}
-                <div className="field" style={{ gridColumn: "span 2" }}>
+                {/* v272d · ID + Seller + Creator gọn 1 hàng 3 cột (đỡ chiếm diện tích). Points vẫn ẩn. */}
+                <div className="field">
                   <label>ID</label>
                   <input value={row.cardCode ? `${subId(row)} (#${row.videoCode})` : `#${row.videoCode}`} readOnly style={{ background: "#EDEFF4", color: "var(--muted)" }} />
                 </div>
@@ -743,9 +742,6 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                         ))}
                       </div>
                     )}
-                  </div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5 }}>
-                    One listing per card — attaching here applies to every video in this card + gives the AI its images. The video shown on the Shopify product page is not changed.
                   </div>
                 </div>
             )}
