@@ -5,10 +5,12 @@ import { useConfirm } from "@/components/confirm-provider";
 import DateRangePicker, { rangeToDates, type RangeValue } from "@/components/date-range";
 
 /**
- * v209b · Video Library — cùng khuôn Design Studio.
- * KHÔNG có bước duyệt: seller và creator tự làm việc với nhau, sửa clip rồi update lại.
+ * v272 · Video Library — mô hình CARD cha · video con (kiểu SKU cha/variant con).
+ * 1 card = 1 seller + 1 creator + 1 product listing; mã card QT-TH-01, video con .1/.2/.3.
+ * Gom nhóm bằng KÉO-THẢ: kéo video lẻ thả vào card (hoặc video lẻ khác) là gộp; hoặc điền
+ * "# video mẫu" lúc upload. Listing + captions là CỦA CARD (dùng chung); Points/Distribution/
+ * Performance tạm ẨN (data vẫn giữ trong DB, cần thì bật lại).
  * File bay thẳng browser → R2 (presigned) nên clip 50–100MB vẫn upload được.
- * Mỗi listing gắn ĐÚNG 1 video; một video dùng lại cho nhiều listing (gán theo Product type).
  */
 
 type Caption = { text: string; hashtags: string[]; title?: string };
@@ -22,6 +24,7 @@ type Row = {
   sourceName: string | null; shotAt: string | null;
   productId: string | null; productTitle: string | null;
   productUrl: string | null; productHandle: string | null;
+  cardId: string | null; cardCode: string | null; cardSeq: number | null;
   postedTo: Record<string, { url: string; at: string }> | null;
   storeId: string | null; storeName: string | null;
   sellerId: string | null; sellerName: string | null;
@@ -34,20 +37,15 @@ type Opt = { id: string; name: string | null };
 type TypeOpt = { productType: string | null; n: number; withVideo: number };
 type Listing = { id: string; title: string; productType: string | null; pushedAt: string | null };
 type Match = { id: string; title: string; productType: string | null; videoId: string | null };
-// Performance quy về từng video qua UTM (utm_campaign = video_<code>), tách theo kênh (utm_source).
-type Perf = { orders: number; revenue: number; channels: Record<string, { orders: number; revenue: number }> };
 
 const LANGS = [{ v: "none", label: "No voice" }, { v: "en", label: "English" }, { v: "vi", label: "Tiếng Việt" }];
 // Facebook & Instagram TÁCH RIÊNG ở CONTENT vì hashtag + link khác nhau (FB ít tag + link; IG nhiều tag + link bio).
 const CHANNELS = [
   { key: "facebook", label: "Facebook Reel" }, { key: "instagram", label: "Instagram Reel" }, { key: "shorts", label: "YT Short" }, { key: "meta_ads", label: "Meta Ads" },
 ] as const;
-// Nhãn kênh cho Performance (khớp utm_source do nút UTM sinh ra).
-const CH_LABEL: Record<string, string> = { tiktok: "TikTok", meta: "Meta (FB+IG)", reels: "IG Reel", facebook: "FB Page", pinterest: "Pinterest", shorts: "YT Short", meta_ads: "Meta Ads", gmc: "GMC/PMax", other: "Other" };
-// Nhãn ngắn cho hàng "đã đăng" trên card.
-const POSTED_LABEL: Record<string, string> = { tiktok: "TikTok", meta: "Meta", reels: "IG", shorts: "YT", facebook: "FB", pinterest: "Pinterest", meta_ads: "Ads", gmc: "GMC" };
-const money = (n: number) => "$" + Math.round(n || 0).toLocaleString();
-const WIN_ORDERS = 10; // đủ số đơn quy về mới gắn cờ "winning creative"
+// v272 · nhãn video con trong card: "QT-TH-01.2"; video lẻ thì "#8" như cũ.
+const subId = (r: { cardCode: string | null; cardSeq: number | null; videoCode: number }) =>
+  r.cardCode ? `${r.cardCode}.${r.cardSeq ?? "?"}` : `#${r.videoCode}`;
 
 // ── Icon line (stroke = currentColor để ăn theo màu chữ). KHÔNG dùng emoji. ──
 const svgIc = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -83,12 +81,12 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
   const [busy, setBusy] = useState(false);
   const [prog, setProg] = useState<{ name: string; pct: number } | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  // v271 · Gom card theo SẢN PHẨM: 1 product nhiều creative → 1 card + badge số video; bấm vào
-  // card mở modal có dải chuyển giữa các video. Video chưa gắn product vẫn là card lẻ như cũ.
+  // v272 · Gom theo CARD (card cha — video con). Video chưa vào card vẫn là ô lẻ như cũ.
   const [grouped, setGrouped] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
-  // Performance theo videoCode (chỉ admin xem — tránh lộ doanh thu cho creator/seller). Key = String(videoCode).
-  const [perf, setPerf] = useState<Record<string, Perf>>({});
+  // v272 · kéo-thả gom card: id video lẻ đang kéo + id nhóm đang rê qua (để highlight).
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   // Model AI cho nút Generate caption — chọn TRƯỚC khi generate. Dùng chung danh sách với các trang AI khác.
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
   const [aiModel, setAiModel] = useState("");
@@ -115,18 +113,11 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
       if (j.ok) {
         setRows(j.rows ?? []); setTotal(j.total ?? 0);
         setSellers(j.filters?.sellers ?? []); setCreators(j.filters?.creators ?? []);
-        // Performance chỉ kéo cho admin (doanh thu Shopify) — tách 1 call để không chặn danh sách.
-        if (isAdmin) {
-          const codes = (j.rows ?? []).map((r: Row) => r.videoCode).filter(Boolean);
-          if (codes.length) {
-            fetch(`/api/videos/performance?codes=${codes.join(",")}`).then((r) => r.json())
-              .then((pj) => { if (pj.ok) setPerf(pj.perf ?? {}); }).catch(() => {});
-          } else setPerf({});
-        }
+        // v272 · Performance tạm ẨN theo yêu cầu — data + API /api/videos/performance vẫn còn, cần thì nối lại.
       } else flash("✗ " + (j.error ?? "load failed"), false);
     } catch { flash("✗ Network error", false); }
     setLoading(false);
-  }, [dr, q, sellerId, creatorId, isAdmin]);
+  }, [dr, q, sellerId, creatorId]);
 
   useEffect(() => { const t = setTimeout(() => { setPage(1); load(1); }, q ? 350 : 0); return () => clearTimeout(t); }, [load, q]);
   const goPage = (n: number) => {
@@ -266,34 +257,51 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
 
   const openRow = rows.find((r) => r.id === open) ?? null;
 
-  // v271 · Nhóm theo productId (trong trang hiện tại). Giữ thứ tự xuất hiện; video lẻ = nhóm 1 phần tử.
+  // v272 · Nhóm theo CARD (trong trang hiện tại). Video lẻ = nhóm 1 phần tử. Trong card xếp theo số con.
   const groups = useMemo<Row[][]>(() => {
     if (!grouped) return rows.map((r) => [r]);
-    const byPid = new Map<string, Row[]>();
+    const byCard = new Map<string, Row[]>();
     const out: Row[][] = [];
     for (const r of rows) {
-      if (r.productId) {
-        const g = byPid.get(r.productId);
+      if (r.cardId) {
+        const g = byCard.get(r.cardId);
         if (g) { g.push(r); continue; }
-        const arr = [r]; byPid.set(r.productId, arr); out.push(arr);
+        const arr = [r]; byCard.set(r.cardId, arr); out.push(arr);
       } else out.push([r]);
     }
+    for (const g of out) if (g.length > 1) g.sort((a, b) => (a.cardSeq ?? 0) - (b.cardSeq ?? 0));
     return out;
   }, [rows, grouped]);
-  // Anh em cùng product của video đang mở — cho dải chuyển video trong modal.
+  // Video con cùng card của video đang mở — cho dải chuyển video trong modal.
   const siblings = useMemo<Row[]>(() => {
-    if (!openRow?.productId) return openRow ? [openRow] : [];
-    return rows.filter((r) => r.productId === openRow.productId);
+    if (!openRow?.cardId) return openRow ? [openRow] : [];
+    return rows.filter((r) => r.cardId === openRow.cardId).sort((a, b) => (a.cardSeq ?? 0) - (b.cardSeq ?? 0));
   }, [rows, openRow]);
+
+  // v272 · Kéo-thả gom card: kéo video LẺ thả vào 1 nhóm. Nhóm đích là card → join card đó;
+  // nhóm đích là video lẻ → tạo card mới (video đích là con số 1 = anchor/thumbnail).
+  const mergeInto = async (draggedId: string, target: Row) => {
+    if (draggedId === target.id) return;
+    setBusy(true);
+    try {
+      const body = target.cardId
+        ? { videoId: draggedId, cardId: target.cardId }
+        : { videoIds: [target.id, draggedId] };
+      const j = await fetch("/api/videos/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+      if (j.ok) { flash(`✓ Grouped into card ${j.code ?? target.cardCode ?? ""}`.trim()); await load(page); }
+      else flash("✗ " + (j.error ?? "group failed"), false);
+    } catch { flash("✗ Network error", false); }
+    setBusy(false);
+  };
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <h2 style={{ fontWeight: 800, fontSize: 19, margin: 0 }}>Video Library</h2>
         <div style={{ flex: 1 }} />
-        <button onClick={() => setGrouped((v) => !v)} className="btn" title="Group creatives of the same product into one card"
+        <button onClick={() => setGrouped((v) => !v)} className="btn" title="Group videos of the same card together (drag a video onto another to group)"
           style={{ padding: "7px 12px", fontSize: 12.5, fontWeight: 700, ...(grouped ? { background: "#EEF2FF", borderColor: "#C7D2FE", color: "#4338CA" } : {}) }}>
-          {grouped ? "✓ " : ""}Group by product
+          {grouped ? "✓ " : ""}Group by card
         </button>
         <DateRangePicker value={dr} onChange={setDr} align="right" />
         {canManage && <button disabled={busy} onClick={() => setShowUpload(true)} className="btn btn-primary">Bulk upload +</button>}
@@ -351,8 +359,23 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
             const many = g.length > 1;
             // Creator hiện trên card nhóm: gộp tên (không trùng) — mỗi video vẫn giữ creator riêng trong modal.
             const creatorNames = Array.from(new Set(g.map((x) => x.sourceName || x.creatorName || x.uploader || "").filter(Boolean)));
+            // v272 · kéo-thả: chỉ video LẺ kéo được (video trong card thì tách bằng nút ✕ trong modal);
+            // MỌI ô đều nhận thả — thả vào card = join, thả vào video lẻ = tạo card mới.
+            const draggable = canManage && !r.cardId && g.length === 1;
+            const isDropping = dropTarget === r.id && dragId && dragId !== r.id;
             return (
-            <div key={r.id} className="card" onClick={() => setOpen(r.id)} style={{ overflow: "hidden", cursor: "pointer", display: "flex", flexDirection: "column" }}>
+            <div key={r.id} className="card" onClick={() => setOpen(r.id)}
+              draggable={draggable}
+              onDragStart={(e) => { if (!draggable) return; setDragId(r.id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", r.id); }}
+              onDragEnd={() => { setDragId(null); setDropTarget(null); }}
+              onDragOver={(e) => { if (dragId && dragId !== r.id) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDropTarget(r.id); } }}
+              onDragLeave={() => { if (dropTarget === r.id) setDropTarget(null); }}
+              onDrop={(e) => { e.preventDefault(); const src = dragId ?? e.dataTransfer.getData("text/plain"); setDragId(null); setDropTarget(null); if (src && src !== r.id) mergeInto(src, r); }}
+              title={draggable ? "Drag onto another video/card to group them" : undefined}
+              style={{ overflow: "hidden", cursor: "pointer", display: "flex", flexDirection: "column",
+                opacity: dragId === r.id ? .45 : 1,
+                outline: isDropping ? "2.5px dashed #4338CA" : "none", outlineOffset: -2,
+                transition: "opacity .15s" }}>
               <div style={{ position: "relative", aspectRatio: "4/5", background: "#0B1220", overflow: "hidden" }}>
                 {r.thumbUrl
                   ? <img src={r.thumbUrl} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -381,12 +404,12 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                   )}
                 </div>
               </div>
-              {/* Card gọn: #id (nhóm: liệt kê các #) · tên product · seller/creator · độ phân giải + MB. */}
+              {/* Card gọn: mã card (QT-TH-01) hoặc #id video lẻ · tên product · seller/creator · size. */}
               <div className="dc-body" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                 <div className="dc-top">
                   <span className="dc-id" style={{ cursor: "pointer" }} title="Copy ID"
-                    onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(g.map((x) => x.videoCode).join(", ")); }}>
-                    {many ? g.map((x) => `#${x.videoCode}`).join(" ") : `#${r.videoCode}`}
+                    onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.cardCode ?? String(r.videoCode)); }}>
+                    {r.cardCode ?? `#${r.videoCode}`}
                   </span>
                   <span className="dc-date">{new Date(r.createdAt).toLocaleString()}</span>
                 </div>
@@ -421,7 +444,6 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
           key={openRow.id} row={openRow} canManage={canManage} isAdmin={isAdmin} busy={busy} setBusy={setBusy}
           close={() => setOpen(null)} reload={() => load(page)} flash={flash} patch={patch}
           sellers={sellers} creators={creators} confirm={confirm} onReplace={doReplace}
-          perf={perf[String(openRow.videoCode)]}
           aiModels={aiModels} aiModel={aiModel} onChooseModel={chooseModel}
           siblings={siblings} onSwitch={(id) => setOpen(id)}
         />
@@ -449,14 +471,14 @@ function Pager({ page, total, show, setPage, label }: { page: number; total: num
   );
 }
 
-/** Chi tiết. Gán listing theo Product type là đường chính — 1 thao tác cho cả lô. */
-function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, perf, aiModels, aiModel, onChooseModel, siblings = [], onSwitch }: {
+/** Chi tiết CARD: thông tin card (mã, seller/creator, listing, captions dùng chung) + dải video con.
+ *  Mở từ video nào thì video đó đang chọn; bấm thumbnail để chuyển; ✕ trên thumbnail = tách khỏi card. */
+function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, aiModels, aiModel, onChooseModel, siblings = [], onSwitch }: {
   row: Row; canManage: boolean; isAdmin: boolean; busy: boolean; setBusy: (b: boolean) => void;
   close: () => void; reload: () => Promise<void> | void; flash: (m: string, ok?: boolean) => void;
   patch: (b: Record<string, unknown>, ok?: string) => Promise<boolean>;
   sellers: Opt[]; creators: Opt[]; confirm: ReturnType<typeof useConfirm>;
   onReplace: (row: Row, file: File) => Promise<void>;
-  perf?: Perf;
   aiModels: { id: string; name: string }[]; aiModel: string; onChooseModel: (m: string) => void;
   siblings?: Row[]; onSwitch?: (id: string) => void;
 }) {
@@ -494,17 +516,15 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
     return () => clearTimeout(t);
   }, [lq, row.id]);
 
-  // 1 nút Save chung cho cả card: details + seller/creator + posted link (postedTo). `posted` khai báo bên dưới,
-  // save() chỉ chạy khi bấm nút nên đọc được giá trị mới nhất.
+  // 1 nút Save chung: details + seller/creator. (Points/postedTo tạm ẩn UI — không gửi để khỏi ghi đè data cũ.)
   const save = () => patch({
-    id: row.id, title: f.title.trim(), note: f.note, language: f.language || null, points: f.points,
+    id: row.id, title: f.title.trim(), note: f.note, language: f.language || null,
     sellerId: f.sellerId || null, creatorId: f.creatorId || null,
     sourceName: f.sourceName || null, shotAt: f.shotAt || null,
     flags: { voice: f.voice, text: f.text, music: f.music },
-    postedTo: posted,
   }, "Saved");
 
-  // v271 · Gắn NGUỒN sản phẩm cho video (nhóm card + AI captions) — không đụng video hero của listing.
+  // v272 · Gắn listing cho CẢ CARD (server đồng bộ productId xuống mọi video con + AI captions).
   const attachSource = async (productId: string, title: string) => {
     setBusy(true);
     try {
@@ -554,6 +574,18 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
     setBusy(false);
   };
 
+  // v272 · Tách 1 video con khỏi card (card rỗng thì server tự xoá card).
+  const doDetach = async (v: Row) => {
+    if (!(await confirm({ title: "Remove from card", message: `Take ${subId(v)} out of this card? The video stays in the library as a standalone video.`, confirmText: "Remove" }))) return;
+    setBusy(true);
+    try {
+      const j = await fetch("/api/videos/cards", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ videoId: v.id, detach: true }) }).then((r) => r.json());
+      if (j.ok) { flash("✓ Removed from card"); if (v.id === row.id) close(); await reload(); }
+      else flash("✗ " + (j.error ?? "failed"), false);
+    } catch { flash("✗ Network error", false); }
+    setBusy(false);
+  };
+
   const copy = async (text: string) => {
     try { await navigator.clipboard.writeText(text); flash("✓ Copied"); }
     catch { flash("✗ Clipboard blocked", false); }
@@ -570,17 +602,6 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
       return u.toString();
     } catch { return ""; }
   };
-  // ── Posted tracker: đã đăng bài lên kênh nào + link bài, lưu vào postedTo ──
-  const [posted, setPosted] = useState<Record<string, { url: string; at: string }>>(
-    () => (row.postedTo && typeof row.postedTo === "object" ? { ...row.postedTo } : {}),
-  );
-  const setPostedUrl = (ch: string, url: string) => setPosted((p) => {
-    const n = { ...p };
-    if (url.trim()) n[ch] = { url: url.trim(), at: p[ch]?.at ?? new Date().toISOString() };
-    else delete n[ch];
-    return n;
-  });
-  const savePosted = () => patch({ id: row.id, postedTo: posted }, "Saved");
   const cbx = (k: "voice" | "text" | "music", label: string) => (
     <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600 }}>
       <input type="checkbox" checked={f[k]} disabled={!canManage} onChange={(e) => setF({ ...f, [k]: e.target.checked })} /> {label}
@@ -591,13 +612,15 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onClick={close}>
       <div className="card" style={{ width: 940, maxWidth: "97vw", maxHeight: "92vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-          <span style={chip("#EEF2FF", "#4338CA")}>#{row.videoCode}</span>
-          <div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>{row.title}</div>
+          {/* Mã CARD trước (QT-TH-01), mã con của video đang chọn sau (.2). Video lẻ chỉ có #id. */}
+          <span style={chip("#EEF2FF", "#4338CA")}>{row.cardCode ?? `#${row.videoCode}`}</span>
+          {row.cardCode && <span style={chip("#F3F4F6", "#374151")}>{subId(row)} · #{row.videoCode}</span>}
+          <div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>{row.productTitle || row.title}</div>
           <button onClick={close} className="btn" style={{ padding: "6px 11px" }}>✕</button>
         </div>
 
-        {/* v271 · Dải chuyển giữa các creative của CÙNG sản phẩm — mỗi video giữ nguyên ID/creator/
-            points/captions/performance riêng; bấm thumbnail để chuyển. */}
+        {/* v272 · Dải VIDEO CON của card — mỗi video giữ #id/file riêng; bấm thumbnail để chuyển;
+            ✕ để tách khỏi card (video vẫn nằm trong thư viện). */}
         {siblings.length > 1 && (
           <div style={{ display: "flex", gap: 8, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }}>
             {siblings.map((s) => {
@@ -610,8 +633,12 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                       // eslint-disable-next-line @next/next/no-img-element
                       ? <img src={s.thumbUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", opacity: active ? 1 : .82 }} />
                       : <div style={{ width: "100%", height: "100%" }} />}
+                    {canManage && (
+                      <button onClick={(e) => { e.stopPropagation(); doDetach(s); }} title="Remove from card"
+                        style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: 999, border: "none", cursor: "pointer", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 10, lineHeight: "18px", padding: 0 }}>✕</button>
+                    )}
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 800, marginTop: 3, color: active ? "#4338CA" : "var(--muted)" }}>#{s.videoCode}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, marginTop: 3, color: active ? "#4338CA" : "var(--muted)" }}>{s.cardCode ? `.${s.cardSeq ?? "?"}` : `#${s.videoCode}`}</div>
                 </div>
               );
             })}
@@ -657,14 +684,10 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   <label>Title</label>
                   <input value={f.title} disabled={!canManage} onChange={(e) => setF({ ...f, title: e.target.value })} />
                 </div>
-                <div className="field">
+                {/* v272 · Points tạm ẨN (data giữ nguyên trong DB). ID hiện mã card + mã con. */}
+                <div className="field" style={{ gridColumn: "span 2" }}>
                   <label>ID</label>
-                  <input value={`#${row.videoCode}`} readOnly style={{ background: "#EDEFF4", color: "var(--muted)" }} />
-                </div>
-                <div className="field">
-                  <label>Points</label>
-                  <input type="number" min={0} max={10} value={f.points} disabled={!canManage}
-                    onChange={(e) => setF({ ...f, points: Math.max(0, Math.min(10, Number(e.target.value) || 0)) })} />
+                  <input value={row.cardCode ? `${subId(row)} (#${row.videoCode})` : `#${row.videoCode}`} readOnly style={{ background: "#EDEFF4", color: "var(--muted)" }} />
                 </div>
                 <div className="field">
                   <label>Seller</label>
@@ -713,7 +736,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                     )}
                   </div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5 }}>
-                    Groups this video under the product + gives the AI its images. The video shown on the Shopify product page is not changed.
+                    One listing per card — attaching here applies to every video in this card + gives the AI its images. The video shown on the Shopify product page is not changed.
                   </div>
                 </div>
             )}
@@ -777,92 +800,10 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   )}
                 </div>
 
-                {/* DISTRIBUTION + PERFORMANCE — chỉ admin */}
-                {isAdmin && (<>
-                {/* ── DISTRIBUTION HUB (compact) · 1 dòng / điểm đến ── */}
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px" }}>DISTRIBUTION</div>
-                  </div>
-                  <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-                    {([
-                      // Meta Reel = đăng 1 lần ra CẢ FB Page + Instagram (composer Meta mặc định tick cả 2).
-                      // 1 link/bài nên gộp thành 1 kênh utm_source=meta; caption dùng bản IG Reel.
-                      { key: "meta", label: "Meta Reel (FB+IG)", owner: "brand", capKey: "instagram", opens: [["Reels composer", "https://business.facebook.com/latest/reels_composer"]] },
-                      { key: "shorts", label: "YT Short", owner: "brand", opens: [["YouTube", "https://www.youtube.com/upload"]] },
-                      { key: "meta_ads", label: "Meta Ads", owner: "brand", opens: [["Ads Manager", "https://adsmanager.facebook.com/adsmanager"]] },
-                      // Đã bỏ TikTok (creator tự cầm + đơn qua TikTok Shop, UTM không đo được), Pinterest và GMC/PMax
-                      // — khi cần thêm lại: chèn 1 dòng { key, label, owner:"brand", opens:[[label,url]] } vào mảng này.
-                    ] as { key: string; label: string; owner: "creator" | "brand"; capKey?: string; opens: string[][] }[]).map((d, i) => {
-                      const link = utmLink(d.key);
-                      const cap = row.captions?.[d.capKey ?? d.key];
-                      const capFull = cap ? [cap.text, (cap.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n") : "";
-                      const done = !!posted[d.key]?.url;
-                      const cr = d.owner === "creator";
-                      const mini: React.CSSProperties = { padding: "3px 8px", fontSize: 11, textDecoration: "none" };
-                      return (
-                        <div key={d.key} style={{ padding: "7px 9px", borderTop: i ? "1px solid var(--line)" : "none", background: done ? "#F6FBF8" : "#fff" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                            <span style={{ ...chip(cr ? "#EDE9FE" : "#E8F3EC", cr ? "#6D28D9" : "#1F6F45"), minWidth: 84, textAlign: "center" }}>{done ? "✓ " : ""}{d.label}</span>
-                            {d.opens.map(([lbl, url]) => <a key={url} href={url} target="_blank" rel="noreferrer" className="btn" style={mini}>{lbl} ↗</a>)}
-                            {capFull && <button className="btn" style={mini} onClick={() => copy(capFull)}>caption</button>}
-                            <button disabled={!link} className="btn" style={{ ...mini, opacity: link ? 1 : .4 }} onClick={() => link && copy(link)}>UTM</button>
-                            <input value={posted[d.key]?.url ?? ""} placeholder="posted link…"
-                              onChange={(e) => setPostedUrl(d.key, e.target.value)}
-                              style={{ flex: 1, minWidth: 110, padding: "4px 8px", fontSize: 11.5, borderRadius: 7, border: "1px solid var(--line)" }} />
-                            {done && <a href={posted[d.key].url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: "var(--blue)", textDecoration: "none", flexShrink: 0 }}>↗</a>}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                {/* v272 · DISTRIBUTION + PERFORMANCE + Points tạm ẨN theo yêu cầu — data (postedTo,
+                    points, API /api/videos/performance) vẫn giữ nguyên, cần lại thì bật UI lên. */}
 
-                {/* PERFORMANCE — quy đơn về video qua UTM. Orders/Revenue là số THẬT (Shopify);
-                    Views/Clicks chờ Phase 2 (cần API TikTok/Meta). */}
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 6 }}>PERFORMANCE</div>
-                  {(() => {
-                    const orders = perf?.orders ?? 0;
-                    const revenue = perf?.revenue ?? 0;
-                    const chans = perf?.channels ?? {};
-                    const chanKeys = Object.keys(chans).sort((a, b) => chans[b].revenue - chans[a].revenue);
-                    return (
-                      <div style={{ border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", textAlign: "center" }}>
-                          {([["Views", "—"], ["Clicks", "—"], ["Orders", String(orders)], ["Revenue", money(revenue)]] as [string, string][]).map(([k, v], i) => (
-                            <div key={k} style={{ padding: "10px 6px", borderLeft: i ? "1px solid var(--line)" : "none" }}>
-                              <div style={{ fontSize: 17, fontWeight: 800, color: k === "Revenue" && revenue ? "var(--green)" : "var(--ink)" }}>{v}</div>
-                              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>{k}</div>
-                            </div>
-                          ))}
-                        </div>
-                        {chanKeys.length > 0 && (
-                          <div style={{ borderTop: "1px solid var(--line)" }}>
-                            {chanKeys.map((k) => (
-                              <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderTop: "1px solid #F1F3F7", fontSize: 12.5 }}>
-                                <span style={{ flex: 1 }}>{CH_LABEL[k] ?? k}</span>
-                                <span style={{ color: "var(--muted)" }}>{chans[k].orders} orders</span>
-                                <b style={{ color: "var(--green)", minWidth: 64, textAlign: "right" }}>{money(chans[k].revenue)}</b>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div style={{ borderTop: "1px solid var(--line)", padding: "7px 12px", fontSize: 11, color: "var(--muted)", background: "#FAFBFC" }}>
-                          {orders >= WIN_ORDERS
-                            ? <span style={{ color: "#B45309", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 5 }}><IcFlame /> Winning creative</span>
-                            : orders > 0
-                              ? "Tracking sales via the UTM links above."
-                              : "No tracked sales yet — orders attribute here once the UTM links above are used in posts/ads."}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              </>
-            )}
-
-            {/* Delete Card + Save xếp NGANG (giống Card Design). Delete khóa khi video đã gắn listing (usedBy>0). */}
+            {/* Delete video + Save xếp NGANG (giống Card Design). Delete khóa khi video đã gắn listing (usedBy>0). */}
             {canManage && (
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4, paddingTop: 12, borderTop: "1px solid var(--line)" }}>
                 <button disabled={busy || row.usedBy > 0} className="btn" onClick={doDelete}
@@ -870,7 +811,7 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
                   style={{ padding: "10px 18px", fontWeight: 800, display: "inline-flex", alignItems: "center", gap: 7,
                     color: "#fff", background: row.usedBy > 0 ? "#E7A6A0" : "#E5484D", borderColor: row.usedBy > 0 ? "#E7A6A0" : "#E5484D",
                     cursor: row.usedBy > 0 ? "not-allowed" : "pointer" }}>
-                  {row.usedBy > 0 ? <IcLock /> : <IcTrash />} Delete Card
+                  {row.usedBy > 0 ? <IcLock /> : <IcTrash />} Delete video
                 </button>
                 <button disabled={busy} className="btn btn-primary" onClick={async () => { if (await save()) close(); }}
                   style={{ padding: "10px 24px", background: "#1F9D57", borderColor: "#1F9D57", fontWeight: 800 }}>
@@ -882,33 +823,6 @@ function VideoDetail({ row, canManage, isAdmin, busy, setBusy, close, reload, fl
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** Hàng "đã đăng" trên card — kênh nào có link bài thì gắn ✓. */
-function PostedTicks({ postedTo }: { postedTo: Row["postedTo"] }) {
-  const done = postedTo && typeof postedTo === "object"
-    ? Object.keys(postedTo).filter((k) => postedTo[k]?.url) : [];
-  if (!done.length) return <div style={{ fontSize: 11.5, color: "var(--muted)" }}>Not posted yet</div>;
-  return (
-    <div style={{ fontSize: 11.5, color: "#1F6F45", fontWeight: 600 }}>
-      {done.map((k) => `${POSTED_LABEL[k] ?? k} ✓`).join(" · ")}
-    </div>
-  );
-}
-
-/** Dòng performance trên card — Views chờ Phase 2, Orders/Revenue quy về qua UTM. */
-function PerfLine({ p }: { p?: Perf }) {
-  const orders = p?.orders ?? 0;
-  return (
-    <div style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      <span style={{ color: "var(--muted)" }}>— views</span>
-      <span style={{ color: "var(--line)" }}>·</span>
-      <span style={{ color: orders ? "var(--ink)" : "var(--muted)", fontWeight: orders ? 700 : 400 }}>{orders} orders</span>
-      <span style={{ color: "var(--line)" }}>·</span>
-      <span style={{ color: orders ? "var(--green)" : "var(--muted)", fontWeight: 700 }}>{money(p?.revenue ?? 0)}</span>
-      {orders >= WIN_ORDERS && <span title="Winning creative" style={{ display: "inline-flex", color: "#B45309" }}><IcFlame /></span>}
     </div>
   );
 }
@@ -963,9 +877,9 @@ function UploadModal({ sellers, creators, isAdmin, myRole, me, busy, close, go }
             </div>
           )}
           <div className="field" style={{ gridColumn: "1 / -1" }}>
-            <label>Same product as video # <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional — new creative for an existing product)</span></label>
+            <label>Add to card of video # <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional — new creative joins that video's card)</span></label>
             <input value={sameCode} onChange={(e) => setSameCode(e.target.value.replace(/[^0-9]/g, ""))}
-              placeholder="e.g. 2 — the new videos join that product's card" inputMode="numeric" />
+              placeholder="e.g. 2 — the new videos join that card as .2, .3…" inputMode="numeric" />
           </div>
         </div>
 

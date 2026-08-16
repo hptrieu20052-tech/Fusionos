@@ -4,6 +4,7 @@ import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
+import { createCard } from "@/lib/video-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +42,10 @@ export async function POST(req: NextRequest) {
     if (!v) return NextResponse.json({ ok: false, error: "video not found" }, { status: 404 });
   }
 
-  // v271 · GẮN NGUỒN (source product) — chỉ set productVideos.productId/storeId để: (1) card nhóm
-  // theo sản phẩm ở Video Library, (2) AI captions đọc được ảnh + tên sản phẩm. KHÔNG đụng
-  // shopify_products.video_id — video hero đang hiện trên trang Shopify giữ nguyên. Nhận cả DRAFT.
+  // v272 · GẮN NGUỒN (source product) — giờ gắn ở CẤP CARD: video thuộc card thì listing set lên
+  // card + đồng bộ xuống MỌI video con (bất biến: card.productId == mọi con.productId → captions/
+  // UTM/push per-video chạy y cũ). Video còn lẻ thì tự tạo card 1 thành viên rồi gắn (mô hình mới:
+  // đã có listing là có card). KHÔNG đụng shopify_products.video_id — hero trên Shopify giữ nguyên.
   if (videoId && uuidOk(b?.sourceProductId)) {
     const srcConds = [eq(schema.shopifyProducts.id, String(b.sourceProductId))];
     const scope0 = await storeOwnerScopeIds(session);
@@ -57,9 +59,27 @@ export async function POST(req: NextRequest) {
     const [p] = await db.select({ id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId })
       .from(schema.shopifyProducts).where(and(...srcConds)).limit(1);
     if (!p) return NextResponse.json({ ok: false, error: "listing not found" }, { status: 404 });
+
+    const [vRow] = await db.select({
+      cardId: schema.productVideos.cardId,
+      sellerId: schema.productVideos.sellerId, creatorId: schema.productVideos.creatorId,
+    }).from(schema.productVideos).where(eq(schema.productVideos.id, videoId)).limit(1);
+    if (!vRow) return NextResponse.json({ ok: false, error: "video not found" }, { status: 404 });
+
+    let cardId = vRow.cardId;
+    if (!cardId) {
+      const card = await createCard({ sellerId: vRow.sellerId, creatorId: vRow.creatorId, storeId: p.storeId, productId: p.id });
+      cardId = card.id;
+      await db.update(schema.productVideos).set({ cardId, cardSeq: 1 })
+        .where(eq(schema.productVideos.id, videoId));
+    }
+    await db.update(schema.videoCards)
+      .set({ productId: p.id, storeId: p.storeId, updatedAt: new Date() })
+      .where(eq(schema.videoCards.id, cardId));
+    // Đồng bộ listing xuống TẤT CẢ video con của card (không chỉ video đang mở).
     await db.update(schema.productVideos)
       .set({ productId: p.id, storeId: p.storeId, updatedAt: new Date() })
-      .where(eq(schema.productVideos.id, videoId));
+      .where(eq(schema.productVideos.cardId, cardId));
     return NextResponse.json({ ok: true, changed: 1, source: true });
   }
 
@@ -87,11 +107,12 @@ export async function POST(req: NextRequest) {
     .where(inArray(schema.shopifyProducts.id, target.map((t) => t.id)));
 
   // Gán → set luôn LISTING CHÍNH của video (productId/storeId) = listing đầu tiên. Cần cho link UTM +
-  // caption ("listing chính"). Trước đây chỉ set chiều listing→video nên video thiếu productId, UTM rỗng.
+  // caption ("listing chính"). v272: video ĐÃ thuộc card thì KHÔNG ghi đè productId ở đây — listing
+  // của video do card quản (đồng bộ cả card), gán hero hàng loạt không được phá bất biến đó.
   if (videoId) {
     await db.update(schema.productVideos)
       .set({ productId: target[0].id, storeId: target[0].storeId, updatedAt: new Date() })
-      .where(eq(schema.productVideos.id, videoId));
+      .where(and(eq(schema.productVideos.id, videoId), sql`${schema.productVideos.cardId} IS NULL`));
   }
 
   return NextResponse.json({ ok: true, changed: target.length });

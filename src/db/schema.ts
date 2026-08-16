@@ -659,6 +659,24 @@ export const teams = pgTable("teams", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// ---------- v272 · VIDEO CARDS (card cha — video con, kiểu SKU cha/variant con) ----------
+// 1 card = 1 seller + 1 creator + 1 product listing. Mã card đọc được: <Seller>-<Creator>-<NN>
+// (vd QT-TH-01), video con đánh số QT-TH-01.1/.2/… (cardSeq). videoCode global GIỮ NGUYÊN —
+// là khoá UTM video_<code> đã đăng. productId của card luôn ĐỒNG BỘ xuống video con
+// (route assign/captions lo việc này) nên các flow cũ (push, UTM, captions) chạy y nguyên.
+// Cần MIGRATION_v272_video_cards.sql
+export const videoCards = pgTable("video_cards", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: text("code").notNull().unique(),                  // "QT-TH-01" — sinh từ tên seller/creator (bỏ dấu)
+  seq: integer("seq").notNull(),                          // số NN, đếm riêng theo cặp (sellerId, creatorId)
+  sellerId: uuid("seller_id").references(() => users.id),
+  creatorId: uuid("creator_id").references(() => users.id),
+  storeId: uuid("store_id"),
+  productId: uuid("product_id"),                          // 1 card đúng 1 listing (shopify_products.id)
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => [index("idx_vcards_pair").on(t.sellerId, t.creatorId), index("idx_vcards_product").on(t.productId)]);
+
 // ---------- v207 · VIDEO LIBRARY (creator upload → duyệt → Shopify + caption cho social) ----------
 // File KHÔNG đi qua Vercel: browser PUT thẳng lên R2 bằng presigned URL (src/lib/storage.ts),
 // bảng này chỉ giữ metadata + trạng thái duyệt + caption AI cho từng kênh.
@@ -676,6 +694,9 @@ export const productVideos = pgTable("product_videos", {
   // Điểm cho video (giống points bên Design) — dùng chấm công/thưởng creator. 0–10. Xem MIGRATION_v244.
   points: integer("points").notNull().default(0),
   productId: uuid("product_id"),                          // shopify_products.id (bản ghi local) — có thể để trống
+  // v272 · card cha + số thứ tự con trong card (QT-TH-01.<cardSeq>). Xoá card → video về "lẻ" (set null).
+  cardId: uuid("card_id").references(() => videoCards.id, { onDelete: "set null" }),
+  cardSeq: integer("card_seq"),
   title: text("title").notNull(),
   note: text("note"),
   storageKey: text("storage_key").notNull(),              // key trên R2
@@ -716,6 +737,7 @@ export const productVideos = pgTable("product_videos", {
 }, (t) => [
   index("idx_pvideos_store").on(t.storeId, t.createdAt),
   index("idx_pvideos_product").on(t.productId),
+  index("idx_pvideos_card").on(t.cardId, t.cardSeq),
   index("idx_pvideos_status").on(t.status, t.createdAt),
   index("idx_pvideos_uploader").on(t.uploadedBy, t.createdAt),
 ]);

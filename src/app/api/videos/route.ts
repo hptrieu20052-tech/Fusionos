@@ -5,6 +5,7 @@ import { alias } from "drizzle-orm/pg-core";
 import { getSession, type Session } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
+import { addVideoToCard, cleanupCardIfEmpty, createCard } from "@/lib/video-cards";
 
 export const dynamic = "force-dynamic";
 
@@ -100,12 +101,14 @@ export async function GET(req: NextRequest) {
     uploader: schema.users.fullName,
     sellerName: uSeller.fullName,
     creatorName: uCreator.fullName,
+    cardCode: schema.videoCards.code,                      // v272 · mã card QT-TH-01 (null = video lẻ)
   }).from(schema.productVideos)
     .leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.productVideos.productId))
     .leftJoin(schema.stores, eq(schema.stores.id, schema.productVideos.storeId))
     .leftJoin(schema.users, eq(schema.users.id, schema.productVideos.uploadedBy))
     .leftJoin(uSeller, eq(uSeller.id, schema.productVideos.sellerId))
     .leftJoin(uCreator, eq(uCreator.id, schema.productVideos.creatorId))
+    .leftJoin(schema.videoCards, eq(schema.videoCards.id, schema.productVideos.cardId))
     .where(where)
     .orderBy(desc(schema.productVideos.createdAt))
     .limit(LIMIT).offset((page - 1) * LIMIT);
@@ -142,6 +145,7 @@ export async function GET(req: NextRequest) {
     filters: { sellers: sellerRows, creators: creatorRows },
     rows: rows.map((r) => ({
       ...r.v,
+      cardCode: r.cardCode ?? null,
       productTitle: r.productTitle ?? null,
       productUrl: r.productUrl ?? null,
       productHandle: r.productHandle ?? null,
@@ -185,16 +189,20 @@ export async function POST(req: NextRequest) {
     return "other";
   })();
 
-  // v271 · "Same product as video #N" — creator quay video MỚI cho đúng mẫu cũ: điền # video mẫu lúc
-  // upload, video mới copy productId/storeId của mẫu → tự vào đúng card nhóm, AI captions có sẵn ảnh.
-  // KHÔNG đụng shopify_products.video_id (video hero trên trang sản phẩm giữ nguyên).
+  // v272 · "Same product as video #N" — video mới VÀO CHUNG CARD với video mẫu (mô hình card cha
+  // — video con). Mẫu chưa có card thì tạo card mới, mẫu là con số 1, video mới là số 2.
+  // Vẫn copy productId/storeId của mẫu (AI captions có sẵn ảnh). KHÔNG đụng shopify_products.video_id.
   let sameProductId: string | null = null, sameStoreId: string | null = null;
+  let srcVideo: { id: string; cardId: string | null; sellerId: string | null; creatorId: string | null; productId: string | null; storeId: string | null } | null = null;
   const sameAsCode = Number(b?.sameAsCode);
   if (isFinite(sameAsCode) && sameAsCode > 0) {
-    const [src] = await db.select({ productId: schema.productVideos.productId, storeId: schema.productVideos.storeId })
-      .from(schema.productVideos).where(eq(schema.productVideos.videoCode, Math.floor(sameAsCode))).limit(1);
+    const [src] = await db.select({
+      id: schema.productVideos.id, cardId: schema.productVideos.cardId,
+      sellerId: schema.productVideos.sellerId, creatorId: schema.productVideos.creatorId,
+      productId: schema.productVideos.productId, storeId: schema.productVideos.storeId,
+    }).from(schema.productVideos).where(eq(schema.productVideos.videoCode, Math.floor(sameAsCode))).limit(1);
     if (!src) return NextResponse.json({ ok: false, error: `video #${Math.floor(sameAsCode)} not found` }, { status: 404 });
-    sameProductId = src.productId; sameStoreId = src.storeId;
+    sameProductId = src.productId; sameStoreId = src.storeId; srcVideo = src;
   }
 
   const [row] = await db.insert(schema.productVideos).values({
@@ -217,6 +225,21 @@ export async function POST(req: NextRequest) {
     language: typeof b?.language === "string" && b.language ? String(b.language).slice(0, 10) : null,
     uploadedBy: session.sub,
   }).returning();
+
+  // v272 · nhập video mới vào card của video mẫu (tạo card nếu mẫu còn lẻ).
+  if (srcVideo) {
+    let cardId = srcVideo.cardId;
+    if (!cardId) {
+      const card = await createCard({
+        sellerId: srcVideo.sellerId, creatorId: srcVideo.creatorId,
+        storeId: srcVideo.storeId, productId: srcVideo.productId,
+      });
+      cardId = card.id;
+      await db.update(schema.productVideos).set({ cardId, cardSeq: 1, updatedAt: new Date() })
+        .where(eq(schema.productVideos.id, srcVideo.id));
+    }
+    await addVideoToCard(row.id, cardId);
+  }
 
   return NextResponse.json({ ok: true, id: row.id, status: row.status });
 }
@@ -322,5 +345,7 @@ export async function DELETE(req: NextRequest) {
 
   // Chỉ xoá bản ghi. File trên R2 giữ lại — rẻ, và lỡ xoá nhầm còn dò lại được bằng storage_key.
   await db.delete(schema.productVideos).where(eq(schema.productVideos.id, String(id)));
+  // v272 · video con cuối cùng bị xoá thì dọn luôn card rỗng. KHÔNG dồn số con còn lại (giữ nhãn ổn định).
+  await cleanupCardIfEmpty(cur.cardId);
   return NextResponse.json({ ok: true });
 }
