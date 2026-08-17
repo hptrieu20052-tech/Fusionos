@@ -491,6 +491,8 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
   const repRef = useRef<HTMLInputElement>(null);
   // v272c · loading khi AI đang viết caption — giống thanh chạy bên Manage Products · Shopify.
   const [genBusy, setGenBusy] = useState(false);
+  // v273 · trạng thái đang đăng Meta (IG + FB) — đăng mất 1–4 phút (Meta tải video từ R2 rồi xử lý).
+  const [posting, setPosting] = useState(false);
   const [f, setF] = useState({
     title: row.title, note: row.note ?? "", language: row.language ?? "", points: row.points ?? 0,
     sellerId: row.sellerId ?? "", creatorId: row.creatorId ?? "",
@@ -566,6 +568,23 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
       if (j.ok) { flash("✓ Captions written"); await reload(); } else flash("✗ " + (j.error ?? "failed"), false);
     } catch { flash("✗ Network error", false); }
     setBusy(false); setGenBusy(false);
+  };
+
+  // v273 · 1 nút đăng CẢ Instagram Reel + Facebook Page Reel. Cần captions trước (IG/FB dùng
+  // đúng caption per-video). Server trả link bài từng kênh; lỗi kênh nào báo kênh đó.
+  const doPostMeta = async () => {
+    if (!row.captions) return flash("✗ Generate captions first — the post uses this video's captions", false);
+    if (!(await confirm({ message: `Post ${subId(row)} to Instagram Reel + Facebook Page Reel now?`, confirmText: "Post", tone: "green" }))) return;
+    setBusy(true); setPosting(true);
+    try {
+      const j = await fetch("/api/videos/post-meta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: row.id }) }).then((r) => r.json());
+      if (j.ok) {
+        const parts = [j.ig ? "IG ✓" : null, j.fb ? "FB ✓" : null, ...(j.errors ?? [])].filter(Boolean);
+        flash("✓ Posted — " + parts.join(" · "));
+        await reload();
+      } else flash("✗ " + (j.error ?? "post failed"), false);
+    } catch { flash("✗ Network error", false); }
+    setBusy(false); setPosting(false);
   };
 
   const doDelete = async () => {
@@ -681,6 +700,20 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                 </button>
               </>}
             </div>
+            {/* v273 · Post to Meta — CHỈ admin. 1 nút đăng cả IG Reel + FB Page Reel. */}
+            {isAdmin && (
+              <button disabled={busy || posting} onClick={doPostMeta}
+                title={row.captions ? "Publish this video to Instagram Reels + Facebook Page Reels" : "Generate captions first"}
+                style={{ width: "100%", marginTop: 9, padding: "10px 12px", borderRadius: 10, border: "1px solid #1877F2",
+                  background: posting ? "#EAF2FE" : "#1877F2", color: posting ? "#1877F2" : "#fff",
+                  fontWeight: 800, fontSize: 12.5, cursor: busy || posting ? "not-allowed" : "pointer",
+                  display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                {posting
+                  ? <><span style={{ display: "inline-block", width: 12, height: 12, border: "2px solid #A8C7F5", borderTopColor: "#1877F2", borderRadius: "50%", animation: "fusionSpin .7s linear infinite" }} />Posting to IG + FB… (1–4 min)</>
+                  : <>Post to Meta (FB+IG)</>}
+              </button>
+            )}
+            {posting && <style>{"@keyframes fusionSpin{to{transform:rotate(360deg)}}"}</style>}
           </div>
 
           <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
@@ -690,12 +723,17 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
               <div className="filters" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
                 <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <label>Title</label>
-                  <input value={f.title} disabled={!canManage} onChange={(e) => setF({ ...f, title: e.target.value })} />
+                  {/* v272e · click = copy luôn (vẫn gõ sửa bình thường) */}
+                  <input value={f.title} disabled={!canManage} title="Click to copy"
+                    onClick={() => f.title && copy(f.title)}
+                    onChange={(e) => setF({ ...f, title: e.target.value })} />
                 </div>
                 {/* v272d · ID + Seller + Creator gọn 1 hàng 3 cột (đỡ chiếm diện tích). Points vẫn ẩn. */}
                 <div className="field">
                   <label>ID</label>
-                  <input value={row.cardCode ? `${subId(row)} (#${row.videoCode})` : `#${row.videoCode}`} readOnly style={{ background: "#EDEFF4", color: "var(--muted)" }} />
+                  <input value={row.cardCode ? `${subId(row)} (#${row.videoCode})` : `#${row.videoCode}`} readOnly title="Click to copy"
+                    onClick={() => copy(row.cardCode ? subId(row) : `#${row.videoCode}`)}
+                    style={{ background: "#EDEFF4", color: "var(--muted)", cursor: "pointer" }} />
                 </div>
                 <div className="field">
                   <label>Seller</label>
