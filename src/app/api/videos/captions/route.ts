@@ -20,8 +20,8 @@ export const maxDuration = 120;
  *   · KHÔNG nhắc tên thương hiệu / nhân vật có bản quyền (PAW Patrol, Disney…) — rủi ro IP.
  *   · KHÔNG bịa review, số sao, "best seller", "hàng nghìn khách".
  */
-// title chỉ dùng cho YouTube Short (YT tách Title ngắn ≤100 ký tự khỏi Description).
-type Caption = { text: string; hashtags: string[]; title?: string };
+// title = YouTube Short title HOẶC Meta Ads headline; description = Meta Ads mô tả ngắn (v275).
+type Caption = { text: string; hashtags: string[]; title?: string; description?: string };
 type Out = { facebook: Caption; instagram: Caption; shorts: Caption; meta_ads: Caption };
 
 // Facebook & Instagram TÁCH RIÊNG (FB ít hashtag + có link; IG nhiều hashtag + link ở bio).
@@ -33,7 +33,7 @@ Write copy for FOUR destinations, each tuned to how it is used (Facebook and Ins
 - facebook: a Facebook Reel caption. 120-180 chars, warm and gift-focused, hook in the first line, natural spoken tone. Only 2-3 hashtags (Facebook barely uses them). The user will paste a clickable product link after this text, so end the text cleanly.
 - instagram: an Instagram Reel caption. 120-180 chars, same warm hook style. Then 10-14 hashtags (Instagram relies heavily on them for discovery). The link goes in the bio, not the caption, so do NOT put a URL here.
 - shorts: for a YouTube Short, YouTube separates Title from Description, so give BOTH: a "title" = a punchy, keyword-rich YouTube title UNDER 90 characters (NO hashtags, NO url inside the title); and "text" = a 1-2 line description. Plus 3-5 hashtags (they go in the description).
-- meta_ads: PAID ad primary text (Facebook/Instagram ads). 90-125 chars, benefit-led and clear, speaks to a parent or grandparent buying a gift, no clickbait, 0-2 hashtags.
+- meta_ads: a PAID Facebook/Instagram ad — return THREE fields so it maps to the ad form: "text" = primary text, 90-125 chars, benefit-led, speaks to a parent or grandparent buying a gift, no clickbait, NO hashtags and NO url; "title" = a punchy HEADLINE under 40 characters (the bold line under the video); "description" = a short supporting line under 30 characters (a tagline, e.g. "Made to order · Free US shipping").
 
 HASHTAG STRATEGY (for the instagram hashtags): give a MIX so the post can rank in both big and niche feeds:
 - 3-4 BROAD high-reach tags (e.g. #personalizedgifts, #kidsbooks, #giftsforkids, #customgifts).
@@ -51,7 +51,7 @@ ABSOLUTE RULES — breaking any of these makes the output unusable:
 7. If a product image and/or a still frame from the video are provided, use them to keep the description concrete and accurate (what the product actually is, its style, who it suits). But NEVER name or imply any real brand or copyrighted character even if you think you recognize one in the image (see rule 3).
 
 Return STRICT JSON only, no markdown fence:
-{"facebook":{"text":"...","hashtags":["#a","#b"]},"instagram":{...},"shorts":{"title":"...","text":"...","hashtags":["#a"]},"meta_ads":{...}}
+{"facebook":{"text":"...","hashtags":["#a","#b"]},"instagram":{...},"shorts":{"title":"...","text":"...","hashtags":["#a"]},"meta_ads":{"text":"...","title":"...","description":"..."}}
 Every hashtag must start with "#", be lowercase, contain no spaces, and be relevant to personalized gifts for kids.`;
 
 export async function POST(req: NextRequest) {
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
 
   // Dọn output: cắt độ dài, chuẩn hoá hashtag, bỏ kênh nào AI trả thiếu.
   const clean = (c: unknown): Caption | null => {
-    const o = (c ?? {}) as { text?: unknown; hashtags?: unknown; title?: unknown };
+    const o = (c ?? {}) as { text?: unknown; hashtags?: unknown; title?: unknown; description?: unknown };
     const text = String(o.text ?? "").replace(/\s+/g, " ").trim().slice(0, 900);
     if (!text) return null;
     const tags = (Array.isArray(o.hashtags) ? o.hashtags : [])
@@ -142,9 +142,11 @@ export async function POST(req: NextRequest) {
       .filter((t) => t.length > 1 && t.length <= 40)
       .slice(0, 15);
     const out: Caption = { text, hashtags: Array.from(new Set(tags)) };
-    // Title riêng cho YouTube Short (nếu model trả về) — cắt ≤100 để đúng giới hạn YouTube.
+    // Title = YT Short title / Meta Ads headline (≤100). Description = Meta Ads mô tả ngắn (≤60).
     const title = String(o.title ?? "").replace(/\s+/g, " ").trim().slice(0, 100);
     if (title) out.title = title;
+    const description = String(o.description ?? "").replace(/\s+/g, " ").trim().slice(0, 60);
+    if (description) out.description = description;
     return out;
   };
   const captions: Record<string, Caption> = {};

@@ -13,7 +13,7 @@ import DateRangePicker, { rangeToDates, type RangeValue } from "@/components/dat
  * File bay thẳng browser → R2 (presigned) nên clip 50–100MB vẫn upload được.
  */
 
-type Caption = { text: string; hashtags: string[]; title?: string };
+type Caption = { text: string; hashtags: string[]; title?: string; description?: string };
 type Flags = { voice?: boolean; text?: boolean; music?: boolean };
 type Row = {
   id: string; videoCode: number; title: string; note: string | null;
@@ -784,38 +784,6 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                 </div>
             )}
 
-            {/* v274 · AD LINK — link UTM cho chạy QUẢNG CÁO (utm_source=meta_ads), tách khỏi caption
-                organic (utm_source=meta). Dán vào ad Meta: URL sạch vào "Website URL", params vào
-                ô "URL parameters". Chỉ admin, cần đã gắn listing. */}
-            {isAdmin && row.productUrl && (
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 6 }}>AD LINK · META ADS (video_{row.videoCode})</div>
-                <div style={{ display: "grid", gap: 6 }}>
-                  {(() => {
-                    const params = `utm_source=meta_ads&utm_medium=video&utm_campaign=video_${row.videoCode}`;
-                    const cleanUrl = (() => { try { return new URL(row.productUrl!).origin + new URL(row.productUrl!).pathname; } catch { return row.productUrl!; } })();
-                    const full = `${cleanUrl}?${params}`;
-                    const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 9, padding: "7px 9px", background: "#F7FBFF" };
-                    return <>
-                      <div style={rowStyle}>
-                        <span style={chip("#E4EAF1", "#475569")}>URL</span>
-                        <span style={{ flex: 1, fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--ink)" }}>{cleanUrl}</span>
-                        <button onClick={() => copy(cleanUrl)} className="btn" style={{ padding: "3px 9px", fontSize: 11, flexShrink: 0 }}>Copy</button>
-                      </div>
-                      <div style={rowStyle}>
-                        <span style={chip("#E4EAF1", "#475569")}>PARAMS</span>
-                        <span style={{ flex: 1, fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--ink)" }}>{params}</span>
-                        <button onClick={() => copy(params)} className="btn" style={{ padding: "3px 9px", fontSize: 11, flexShrink: 0 }}>Copy</button>
-                      </div>
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                        <button onClick={() => copy(full)} className="btn" style={{ padding: "3px 9px", fontSize: 11 }}>Copy full link</button>
-                      </div>
-                    </>;
-                  })()}
-                </div>
-              </div>
-            )}
-
             {/* CONTENT — ẨN với role Creator (v272b: creator chỉ quay clip, không cần thấy caption/
                 listing data); admin + seller xem & copy; ô chọn model AI + Regenerate CHỈ admin. */}
             {(isAdmin || myRole !== "content") && (
@@ -854,6 +822,38 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                       {CHANNELS.map((ch) => {
                         const c = row.captions?.[ch.key];
                         if (!c) return null;
+                        // v275 · META ADS = khối riêng, map đúng 3 ô ở Meta Ads Manager: Primary text /
+                        // Headline / Description, mỗi ô 1 nút Copy. Kèm link UTM ads (URL sạch + params).
+                        if (ch.key === "meta_ads") {
+                          const adParams = `utm_source=meta_ads&utm_medium=video&utm_campaign=video_${row.videoCode}`;
+                          const adUrl = (() => { try { return new URL(row.productUrl!).origin + new URL(row.productUrl!).pathname; } catch { return row.productUrl ?? ""; } })();
+                          const fieldRow = (label: string, val: string, multiline = false) => (
+                            <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", background: "#fff" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: multiline ? 4 : 0 }}>
+                                <span style={chip("#E4EAF1", "#475569")}>{label}</span>
+                                {!multiline && <span style={{ flex: 1, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{val}</span>}
+                                <span style={{ flex: multiline ? 1 : 0 }} />
+                                <button onClick={() => copy(val)} className="btn" style={{ padding: "2px 8px", fontSize: 11, flexShrink: 0 }}>Copy</button>
+                              </div>
+                              {multiline && <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{val}</div>}
+                            </div>
+                          );
+                          return (
+                            <div key={ch.key} style={{ border: "1px solid #C7D2FE", borderRadius: 10, padding: 9, background: "#F7F9FF" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                                <span style={chip("#4338CA", "#fff")}>{ch.label}</span>
+                                <span style={{ fontSize: 10.5, color: "var(--muted)" }}>dán từng ô vào Ads Manager</span>
+                              </div>
+                              <div style={{ display: "grid", gap: 6 }}>
+                                {fieldRow("PRIMARY", c.text, true)}
+                                {c.title && fieldRow("HEADLINE", c.title)}
+                                {c.description && fieldRow("DESC", c.description)}
+                                {row.productUrl && fieldRow("URL", adUrl)}
+                                {row.productUrl && fieldRow("PARAMS", adParams)}
+                              </div>
+                            </div>
+                          );
+                        }
                         // Thêm theo kênh khi copy: FB + YT chèn LINK UTM (bấm được); IG chèn câu CTA (link ở bio / Shop).
                         const extra = ch.key === "facebook" ? utmLink("meta")
                           : ch.key === "shorts" ? utmLink("shorts")
