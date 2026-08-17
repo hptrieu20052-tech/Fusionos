@@ -784,6 +784,38 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                 </div>
             )}
 
+            {/* v274 · AD LINK — link UTM cho chạy QUẢNG CÁO (utm_source=meta_ads), tách khỏi caption
+                organic (utm_source=meta). Dán vào ad Meta: URL sạch vào "Website URL", params vào
+                ô "URL parameters". Chỉ admin, cần đã gắn listing. */}
+            {isAdmin && row.productUrl && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 6 }}>AD LINK · META ADS (video_{row.videoCode})</div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {(() => {
+                    const params = `utm_source=meta_ads&utm_medium=video&utm_campaign=video_${row.videoCode}`;
+                    const cleanUrl = (() => { try { return new URL(row.productUrl!).origin + new URL(row.productUrl!).pathname; } catch { return row.productUrl!; } })();
+                    const full = `${cleanUrl}?${params}`;
+                    const rowStyle: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, border: "1px solid var(--line)", borderRadius: 9, padding: "7px 9px", background: "#F7FBFF" };
+                    return <>
+                      <div style={rowStyle}>
+                        <span style={chip("#E4EAF1", "#475569")}>URL</span>
+                        <span style={{ flex: 1, fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--ink)" }}>{cleanUrl}</span>
+                        <button onClick={() => copy(cleanUrl)} className="btn" style={{ padding: "3px 9px", fontSize: 11, flexShrink: 0 }}>Copy</button>
+                      </div>
+                      <div style={rowStyle}>
+                        <span style={chip("#E4EAF1", "#475569")}>PARAMS</span>
+                        <span style={{ flex: 1, fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--ink)" }}>{params}</span>
+                        <button onClick={() => copy(params)} className="btn" style={{ padding: "3px 9px", fontSize: 11, flexShrink: 0 }}>Copy</button>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <button onClick={() => copy(full)} className="btn" style={{ padding: "3px 9px", fontSize: 11 }}>Copy full link</button>
+                      </div>
+                    </>;
+                  })()}
+                </div>
+              </div>
+            )}
+
             {/* CONTENT — ẨN với role Creator (v272b: creator chỉ quay clip, không cần thấy caption/
                 listing data); admin + seller xem & copy; ô chọn model AI + Regenerate CHỈ admin. */}
             {(isAdmin || myRole !== "content") && (
