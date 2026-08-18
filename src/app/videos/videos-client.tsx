@@ -55,6 +55,11 @@ const POST_TARGETS = [
 const subId = (r: { cardCode: string | null; cardSeq: number | null; videoCode: number }) =>
   r.cardCode ? `${r.cardCode}.${r.cardSeq ?? "?"}` : `#${r.videoCode}`;
 
+// v282 · Title rác khi upload/nhân bản: "copy_<UUID>" hoặc chuỗi UUID trần → khi đã gắn listing thì
+// lấy TÊN PRODUCT làm title mặc định (khỏi hiện mã rác).
+const isJunkTitle = (t: string | null | undefined) => !t || /^copy[_-]/i.test(t.trim()) || /^[0-9a-f-]{16,}$/i.test(t.trim());
+const bestTitle = (r: { title: string; productTitle?: string | null }) => (isJunkTitle(r.title) && r.productTitle) ? r.productTitle : r.title;
+
 // ── Icon line (stroke = currentColor để ăn theo màu chữ). KHÔNG dùng emoji. ──
 const svgIc = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
 const IcUser = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><circle cx="12" cy="8" r="3.5" /><path d="M5 20c0-3.5 3-5.5 7-5.5s7 2 7 5.5" /></svg>;
@@ -522,11 +527,13 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
   // v273 · trạng thái đang đăng Meta (IG + FB) — đăng mất 1–4 phút (Meta tải video từ R2 rồi xử lý).
   const [posting, setPosting] = useState(false);
   const [f, setF] = useState({
-    title: row.title, note: row.note ?? "", language: row.language ?? "", points: row.points ?? 0,
+    title: bestTitle(row), note: row.note ?? "", language: row.language ?? "", points: row.points ?? 0,
     sellerId: row.sellerId ?? "", creatorId: row.creatorId ?? "",
     sourceName: row.sourceName ?? "", shotAt: row.shotAt ?? "",
     voice: !!row.flags?.voice, text: !!row.flags?.text, music: !!row.flags?.music,
   });
+  // v282 · đổi video con / vừa gắn listing → cập nhật lại Title mặc định (lấy tên product nếu title còn rác).
+  useEffect(() => { setF((prev) => ({ ...prev, title: bestTitle(row) })); }, [row.id, row.productTitle, row.title]);
 
   const loadAssign = useCallback(async () => {
     try {
