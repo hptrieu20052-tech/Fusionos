@@ -662,6 +662,12 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                       : <span title="Đã tạo thật trên Shopify — push lại sẽ CẬP NHẬT, không tạo trùng" style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px" }}>↑ SHOPIFY</span>)}
                     {r.staged && !r.pushed && <span title="Đã tạo bản nháp trong Manage Products · Shopify — hoàn thiện rồi bấm Push bên đó để tạo trên Shopify" style={{ fontSize: 10, fontWeight: 800, color: "#8A5A00", background: "#FCEFCB", border: "1px solid #F0D897", borderRadius: 6, padding: "1px 7px" }}>◷ STAGED</span>}
                   </div>
+                  {/* v276 · Product ID để dán nhanh (attach video, tra cứu). Click = copy.
+                      LƯU Ý: attach video ở Video Library dùng ID của bản SHOPIFY — nếu đã ↑SHOPIFY thì copy ID ở đó. */}
+                  <div onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.id); }} title="Click to copy product ID"
+                    style={{ fontSize: 10.5, color: "var(--muted)", cursor: "pointer", fontFamily: "ui-monospace,monospace", marginTop: 3, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ opacity: .55 }}>ID</span> {r.id}
+                  </div>
                 </td>
                 <td style={{ padding: "10px 6px", whiteSpace: "nowrap" }}>
                   <div style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>

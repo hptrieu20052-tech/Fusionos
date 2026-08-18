@@ -1447,6 +1447,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   <div onClick={() => canEdit && openEdit(r.id)} title={canEdit ? "Click to edit" : undefined}
                     style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0, cursor: canEdit ? "pointer" : "default", color: canEdit ? "var(--blue)" : "inherit" }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.variantCount} variants · {r.imageCount} images{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}{r.optionsSummary ? ` · ${r.optionsSummary}` : ""}</div>
+                  {/* v276 · Product ID để dán nhanh vào Video Library (attach listing bằng ID, khỏi search tên). Click = copy. */}
+                  <div onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.id); }} title="Click to copy product ID"
+                    style={{ fontSize: 10.5, color: "var(--muted)", cursor: "pointer", fontFamily: "monospace", marginTop: 2, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ opacity: .55 }}>ID</span> {r.id}
+                  </div>
                 </td>
                 <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.sellerName ?? "—"}</div>
                   {/* v203 · chip Etsy giờ là LINK — click mở listing gốc bên Manage Products · Etsy (thay nút Etsy ở Actions) */}

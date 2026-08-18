@@ -510,7 +510,8 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
   // Gõ tên → tìm listing (debounce 300ms).
   useEffect(() => {
     const q = lq.trim();
-    if (q.length < 2) { setMatches([]); return; }
+    // v276 · dán UUID → attach thẳng, khỏi search tên.
+    if (q.length < 2 || /^[0-9a-f-]{36}$/i.test(q)) { setMatches([]); return; }
     const t = setTimeout(async () => {
       try {
         const j = await fetch(`/api/videos/assign?videoId=${row.id}&q=${encodeURIComponent(q)}`).then((r) => r.json());
@@ -765,10 +766,19 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                     </a>
                   ) : null}
                   <div style={{ position: "relative", marginTop: row.productId ? 8 : 0 }}>
+                    {/* v276 · dán product ID để attach thẳng (khỏi search tên). Nhận UUID: gõ/dán rồi Enter. */}
                     <input value={lq} onChange={(e) => setLq(e.target.value)} disabled={busy}
-                      placeholder={row.productId ? "Change product — type a listing name…" : "Attach product — type a listing name…"}
+                      onKeyDown={(e) => { if (e.key === "Enter" && /^[0-9a-f-]{36}$/i.test(lq.trim())) { e.preventDefault(); attachSource(lq.trim(), lq.trim()); } }}
+                      placeholder={row.productId ? "Change — paste product ID or type a name…" : "Paste product ID (fast) or type a listing name…"}
                       style={{ width: "100%", padding: "9px 12px", fontSize: 13, borderRadius: 10, border: "1px solid var(--line)" }} />
-                    {lq.trim().length >= 2 && matches.length > 0 && (
+                    {/* Dán đúng 1 product ID (UUID) → hiện nút attach thẳng, khỏi chờ search. */}
+                    {/^[0-9a-f-]{36}$/i.test(lq.trim()) && (
+                      <div onClick={() => attachSource(lq.trim(), lq.trim())}
+                        style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 50, background: "#EEF2FF", border: "1px solid #C7D2FE", borderRadius: 10, padding: "9px 12px", cursor: "pointer", fontSize: 13, fontWeight: 700, color: "#4338CA", display: "flex", alignItems: "center", gap: 8 }}>
+                        <IcSparkle /> Attach this product ID <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)", fontWeight: 500 }}>press Enter</span>
+                      </div>
+                    )}
+                    {!/^[0-9a-f-]{36}$/i.test(lq.trim()) && lq.trim().length >= 2 && matches.length > 0 && (
                       <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, zIndex: 50, background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 12px 32px rgba(16,24,40,.16)", maxHeight: 240, overflowY: "auto", padding: 4 }}>
                         {matches.map((m) => (
                           <div key={m.id} onClick={() => attachSource(m.id, m.title)}
