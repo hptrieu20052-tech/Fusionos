@@ -1,6 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
-import { listPrintwayOrders, normalizePwOrder } from "@/lib/printway-api";
+import { listPrintwayOrders, normalizePwOrder, getPrintwayOrderDetail, extractPwTracking } from "@/lib/printway-api";
 import { syncPrintwayCost } from "@/lib/printway-cost";
 import { rebalanceOrderCost } from "@/lib/order-status";
 import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
@@ -40,6 +40,7 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
     ));
     const byName = new Map(open.filter((x) => x.externalFfId && !x.externalFfId.startsWith("SIM-")).map((x) => [x.externalFfId as string, x]));
     if (!byName.size) continue;
+    const gotTracking = new Set<string>(); // ffo.id đã set tracking từ list → khỏi gọi detail lại
 
     try {
       // Kéo tối đa 4 trang x 50 đơn (đủ cho 30 ngày vận hành thường)
@@ -63,6 +64,7 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
           await db.update(schema.fulfillmentOrders).set(patch).where(eq(schema.fulfillmentOrders.id, hit.id));
           if (n.ffStatus) await syncOrderFromFf(hit.orderId, n.ffStatus);
           if (patch.trackingNumber) {
+            gotTracking.add(hit.id);
             await markShippedOnTracking(hit.orderId);
             await autoPushEtsyTracking(hit.orderId);
             await autoPushTiktokTracking(hit.orderId); await autoPushShopifyTracking(hit.orderId);
@@ -73,6 +75,38 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
       }
     } catch (e) {
       errors.push(`${ff.name}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
+    }
+
+    // TRACKING qua /order/detail (backup của backup): /transaction/order-list có thể KHÔNG kèm
+    // trackings[]. Printway (schema 2026) gán tracking ngay khi IN, nằm trong trackings[] của
+    // /order/detail. Với đơn còn mở mà FUSION chưa có tracking → gọi detail rồi bóc. Cap 25/lần.
+    const noTrack = open
+      .filter((x) => !x.tracking && !gotTracking.has(x.id) && x.externalFfId && !x.externalFfId.startsWith("SIM-"))
+      .slice(0, 25);
+    for (const x of noTrack) {
+      try {
+        const ffId = x.externalFfId as string;
+        const pwId = /^PW/i.test(ffId) ? ffId : undefined;
+        const detail = await getPrintwayOrderDetail(
+          { accessToken: token, endpoint: ff.apiEndpoint },
+          { pwOrderId: pwId, orderName: pwId ? undefined : ffId },
+        );
+        const tk = extractPwTracking(detail);
+        if (tk.tracking && tk.tracking !== x.tracking) {
+          await db.update(schema.fulfillmentOrders).set({
+            trackingNumber: tk.tracking,
+            trackingCarrier: tk.carrier || null,
+            trackingUrl: tk.trackingUrl || null,
+            trackingSyncedAt: new Date(),
+          }).where(eq(schema.fulfillmentOrders.id, x.id));
+          await markShippedOnTracking(x.orderId);
+          await autoPushEtsyTracking(x.orderId);
+          await autoPushTiktokTracking(x.orderId); await autoPushShopifyTracking(x.orderId);
+          updated++;
+        }
+      } catch (e) {
+        errors.push(`${ff.name} track ${x.externalFfId}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
+      }
     }
 
     // GIÁ THẬT: webhook/list của Printway không mang tiền → gọi /order/detail cho các đơn còn $0.

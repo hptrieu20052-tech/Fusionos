@@ -5,7 +5,7 @@ import { syncOrderFromFf, markShippedOnTracking } from "@/lib/order-status";
 import { autoPushEtsyTracking } from "@/lib/etsy-tracking";
 import { autoPushTiktokTracking } from "@/lib/tiktok-tracking";
 import { autoPushShopifyTracking } from "@/lib/shopify";
-import { mapPwStatus } from "@/lib/printway-api";
+import { mapPwStatus, extractPwTracking } from "@/lib/printway-api";
 import { syncPrintwayCost, pwCredOf } from "@/lib/printway-cost";
 
 export const dynamic = "force-dynamic";
@@ -51,12 +51,16 @@ export async function POST(req: NextRequest) {
   const pick = (o: Record<string, unknown>, ...keys: string[]) => { for (const k of keys) { const v = S(o[k]); if (v) return v; } return ""; };
 
   let statusRaw = pick(root, "order_status", "status", "state");
-  let tracking = pick(root, "tracking_number", "trackingNumber", "tracking_code", "tracking", "tracking_id");
-  let carrier = pick(root, "carrier_name", "carrier", "carrier_code", "shipping_carrier", "logistics");
-  let trackingUrl = pick(root, "tracking_url", "trackingUrl", "tracking_link");
+  // Schema mới Printway: tracking nằm trong trackings[] / orderitems[].tracking → dùng extractPwTracking
+  // (đọc cả root lẫn items), rồi mới fallback field phẳng cũ.
+  const tkRoot = extractPwTracking(root);
+  let tracking = tkRoot.tracking || pick(root, "tracking_number", "trackingNumber", "tracking_code", "tracking", "tracking_id");
+  let carrier = tkRoot.carrier || pick(root, "carrier_name", "carrier", "carrier_code", "shipping_carrier", "logistics");
+  let trackingUrl = tkRoot.trackingUrl || pick(root, "tracking_url", "trackingUrl", "tracking_link");
   let errMsg = pick(root, "message_error", "error_message", "message");
   for (const it of items) {
     if (!statusRaw) statusRaw = pick(it, "order_status", "status", "state");
+    if (!tracking) { const t2 = extractPwTracking(it); if (t2.tracking) { tracking = t2.tracking; carrier = carrier || t2.carrier; trackingUrl = trackingUrl || t2.trackingUrl; } }
     if (!tracking) tracking = pick(it, "tracking_number", "trackingNumber", "tracking_code", "tracking", "tracking_id");
     if (!carrier) carrier = pick(it, "carrier_name", "carrier", "carrier_code", "shipping_carrier", "logistics");
     if (!trackingUrl) trackingUrl = pick(it, "tracking_url", "trackingUrl", "tracking_link");

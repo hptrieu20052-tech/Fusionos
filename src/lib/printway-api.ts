@@ -267,6 +267,42 @@ export async function deletePrintwayOrder(c: Cred, p: { pwOrderId?: string; orde
   return { ok: r.ok && j.success !== false, message: (j.message as string) || (j.error as string) || `HTTP ${r.status}` };
 }
 
+// Bóc TRACKING từ 1 object đơn Printway. Printway (schema 2026) gán tracking NGAY KHI IN và để ở
+// cấu trúc LỒNG, KHÔNG còn field phẳng tracking_number ở cấp đơn:
+//   - mảng trackings[]: { trackingNumber, trackingUrl, carrierName, carrierCode }
+//   - orderitems[].tracking: { trackingNumber, ... }
+//   - (cũ) field phẳng tracking_number / tracking ở top-level hoặc trong item
+// Nhận cả wrapper { data: [ {...} ] } của /order/detail.
+export function extractPwTracking(obj: Record<string, unknown>): { tracking: string; carrier: string; trackingUrl: string } {
+  const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
+  const d0: unknown = obj && obj.data !== undefined ? obj.data : obj;
+  const d = (Array.isArray(d0) ? (d0[0] ?? {}) : (d0 ?? {})) as Record<string, unknown>;
+  const fromNode = (n: unknown): { tracking: string; carrier: string; trackingUrl: string } | null => {
+    if (!n || typeof n !== "object") return null;
+    const o = n as Record<string, unknown>;
+    const t = S(o.trackingNumber) || S(o.tracking_number) || S(o.tracking_code) || S(o.tracking) || S(o.tracking_id);
+    if (!t) return null;
+    return {
+      tracking: t,
+      carrier: S(o.carrierName) || S(o.carrier_name) || S(o.carrier) || S(o.carrierCode) || S(o.carrier_code) || S(o.shipping_carrier) || S(o.logistics),
+      trackingUrl: S(o.trackingUrl) || S(o.tracking_url) || S(o.tracking_link),
+    };
+  };
+  // 1) mảng trackings[] (schema mới) — nguồn chính hiện tại
+  const arr = Array.isArray(d.trackings) ? (d.trackings as unknown[]) : Array.isArray(d.tracking) ? (d.tracking as unknown[]) : [];
+  for (const t of arr) { const r = fromNode(t); if (r) return r; }
+  // 2) field phẳng ở cấp đơn (schema cũ)
+  const flat = fromNode(d);
+  if (flat) return flat;
+  // 3) orderitems[].tracking (object lồng) hoặc field phẳng trong từng item
+  const items = (Array.isArray(d.orderitems) ? d.orderitems : Array.isArray(d.order_items) ? d.order_items : Array.isArray(d.items) ? d.items : []) as Record<string, unknown>[];
+  for (const it of items) {
+    const nested = fromNode(it.tracking); if (nested) return nested;
+    const flatItem = fromNode(it); if (flatItem) return flatItem;
+  }
+  return { tracking: "", carrier: "", trackingUrl: "" };
+}
+
 // Chuẩn hoá 1 đơn Printway → { orderName, status, tracking, carrier, trackingUrl } (dò field phòng thủ)
 export function normalizePwOrder(it: Record<string, unknown>) {
   const S = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
@@ -274,9 +310,10 @@ export function normalizePwOrder(it: Record<string, unknown>) {
   const orderName = pick("order_name", "order_id", "orderName", "external_id", "name");
   const pwId = pick("pw_order_id", "pwOrderId", "id", "code");
   const statusRaw = pick("status", "order_status", "fulfillment_status", "state").toLowerCase();
-  const tracking = pick("tracking_number", "trackingNumber", "tracking_code", "tracking", "tracking_id");
-  const carrier = pick("carrier", "shipping_carrier", "carrier_name", "logistics");
-  const trackingUrl = pick("tracking_url", "trackingUrl", "tracking_link");
+  const tk = extractPwTracking(it);
+  const tracking = tk.tracking;
+  const carrier = tk.carrier || pick("carrier", "shipping_carrier", "carrier_name", "logistics");
+  const trackingUrl = tk.trackingUrl || pick("tracking_url", "trackingUrl", "tracking_link");
   return { orderName, pwId, statusRaw, ffStatus: mapPwStatus(statusRaw, !!tracking), tracking, carrier, trackingUrl };
 }
 
