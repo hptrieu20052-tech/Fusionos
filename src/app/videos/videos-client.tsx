@@ -43,6 +43,14 @@ const LANGS = [{ v: "none", label: "No voice" }, { v: "en", label: "English" }, 
 const CHANNELS = [
   { key: "facebook", label: "Facebook Reel" }, { key: "instagram", label: "Instagram Reel" }, { key: "shorts", label: "YT Short" }, { key: "meta_ads", label: "Meta Ads" },
 ] as const;
+// v281 · Đánh dấu ĐÃ ĐĂNG thủ công (không API) theo nền tảng. key khớp backend markPosted/unmarkPosted.
+const POST_TARGETS = [
+  { key: "facebook", label: "Facebook", color: "#1877F2" },
+  { key: "reels", label: "Instagram", color: "#E1306C" },
+  { key: "shorts", label: "YT Short", color: "#FF0000" },
+  { key: "tiktok", label: "TikTok", color: "#111827" },
+  { key: "pinterest", label: "Pinterest", color: "#E60023" },
+] as const;
 // v272 · nhãn video con trong card: "QT-TH-01.2"; video lẻ thì "#8" như cũ.
 const subId = (r: { cardCode: string | null; cardSeq: number | null; videoCode: number }) =>
   r.cardCode ? `${r.cardCode}.${r.cardSeq ?? "?"}` : `#${r.videoCode}`;
@@ -371,6 +379,10 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
             // MỌI ô đều nhận thả — thả vào card = join, thả vào video lẻ = tạo card mới.
             const draggable = canManage && !r.cardId && g.length === 1;
             const isDropping = dropTarget === r.id && dragId && dragId !== r.id;
+            // v281 · chấm màu "đã đăng" — gộp mọi nền tảng đã tick của các video trong card.
+            const postedKeys = new Set<string>();
+            for (const v of g) { const pt = v.postedTo as Record<string, unknown> | null; if (pt) Object.keys(pt).forEach((k) => postedKeys.add(k)); }
+            const postedDots = POST_TARGETS.filter((t) => postedKeys.has(t.key));
             return (
             <div key={r.id} className="card" onClick={() => setOpen(r.id)}
               draggable={draggable}
@@ -393,6 +405,14 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                     <svg width="17" height="17" viewBox="0 0 24 24" fill="#fff"><path d="M8 5v14l11-7z" /></svg>
                   </span>
                 </div>
+                {/* v281 · chấm "đã đăng" ở góc trên-trái — nhìn phát biết video đã lên nền tảng nào */}
+                {postedDots.length > 0 && (
+                  <div style={{ position: "absolute", top: 8, left: 8, display: "flex", gap: 4 }} title={`Đã đăng: ${postedDots.map((d) => d.label).join(", ")}`}>
+                    {postedDots.map((d) => (
+                      <span key={d.key} style={{ width: 14, height: 14, borderRadius: 999, background: d.color, border: "1.5px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,.35)" }} />
+                    ))}
+                  </div>
+                )}
                 {/* v271 · badge số creative của sản phẩm này */}
                 {many && (
                   <span style={{ position: "absolute", top: 8, right: 8, display: "inline-flex", alignItems: "center", gap: 5, padding: "3px 9px", borderRadius: 999, background: "rgba(0,0,0,.66)", color: "#fff", fontSize: 11.5, fontWeight: 800 }}>
@@ -536,6 +556,12 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
     sourceName: f.sourceName || null, shotAt: f.shotAt || null,
     flags: { voice: f.voice, text: f.text, music: f.music },
   }, "Saved");
+
+  // v281 · Đánh dấu ĐÃ ĐĂNG thủ công theo nền tảng (không có API → user tự tick). Toggle qua PATCH.
+  const togglePosted = async (key: string) => {
+    const done = !!row.postedTo?.[key];
+    await patch({ id: row.id, [done ? "unmarkPosted" : "markPosted"]: key }, done ? "Bỏ đánh dấu đã đăng" : "Đã đánh dấu đã đăng");
+  };
 
   // v272 · Gắn listing cho CẢ CARD (server đồng bộ productId xuống mọi video con + AI captions).
   const attachSource = async (productId: string, title: string) => {
@@ -760,6 +786,30 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                 </div>
               </div>
             </div>
+
+            {/* v281 · ĐÃ ĐĂNG — tick tay theo nền tảng (không có API để tự nhận). Ẩn với role Creator. */}
+            {(isAdmin || myRole !== "content") && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 8 }}>ĐÃ ĐĂNG · tick khi đăng xong</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {POST_TARGETS.map((t) => {
+                    const raw = row.postedTo?.[t.key] as unknown;
+                    const done = !!raw;
+                    const when = typeof raw === "string" ? raw : (raw as { at?: string } | null)?.at;
+                    return (
+                      <button key={t.key} disabled={busy} onClick={() => togglePosted(t.key)}
+                        title={done && when ? `Đã đăng ${new Date(when).toLocaleDateString()} — bấm để bỏ đánh dấu` : "Bấm để đánh dấu đã đăng"}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, cursor: busy ? "default" : "pointer",
+                          border: done ? `1.5px solid ${t.color}` : "1.5px solid var(--line)",
+                          background: done ? t.color : "#fff", color: done ? "#fff" : "var(--muted)", fontSize: 12, fontWeight: 700 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 999, background: done ? "#fff" : t.color, opacity: done ? 1 : .45, flexShrink: 0 }} />
+                        {t.label}{done ? " ✓" : ""}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* LISTING — chỉ admin. v271: gắn/đổi sản phẩm NGAY TẠI ĐÂY bằng ô search (chỉ set nguồn
                 productId để nhóm card + AI captions — KHÔNG đổi video hero đang hiện trên Shopify). */}
