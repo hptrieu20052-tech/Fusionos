@@ -59,6 +59,14 @@ const IcRefresh = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} view
 const IcEye = ({ s = 13 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M2 12s3.8-6.5 10-6.5S22 12 22 12s-3.8 6.5-10 6.5S2 12 2 12z" /><circle cx="12" cy="12" r="2.4" /></svg>;
 const IcTrash = ({ s = 14 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" {...svgIc} style={{ flexShrink: 0 }}><path d="M3 6h18" /><path d="M8 6V4.5A1.5 1.5 0 0 1 9.5 3h5A1.5 1.5 0 0 1 16 4.5V6" /><path d="M6 6l.9 13.1A2 2 0 0 0 8.9 21h6.2a2 2 0 0 0 2-1.9L18 6" /><path d="M10 10.5v6M14 10.5v6" /></svg>;
 
+// Brand marks (favicon-style) cho từng kênh content — nhận diện nhanh FB / IG / YT / Meta.
+const IcBrandFacebook = ({ s = 16 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" style={{ flexShrink: 0, display: "block" }}><path fill="#1877F2" d="M24 12a12 12 0 1 0-13.9 11.9v-8.4H7.1V12h3V9.4c0-3 1.8-4.6 4.5-4.6 1.3 0 2.7.2 2.7.2v2.9h-1.5c-1.5 0-1.9.9-1.9 1.8V12h3.3l-.5 3.5h-2.8v8.4A12 12 0 0 0 24 12Z" /></svg>;
+const IcBrandInstagram = ({ s = 16 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" style={{ flexShrink: 0, display: "block" }}><defs><radialGradient id="fuseIg" cx="0.3" cy="1" r="1.1"><stop offset="0" stopColor="#FED576" /><stop offset="0.35" stopColor="#F47133" /><stop offset="0.65" stopColor="#BC3081" /><stop offset="1" stopColor="#4C63D2" /></radialGradient></defs><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="url(#fuseIg)" /><circle cx="12" cy="12" r="4.6" fill="none" stroke="#fff" strokeWidth="2" /><circle cx="17.4" cy="6.6" r="1.3" fill="#fff" /></svg>;
+const IcBrandYouTube = ({ s = 16 }: { s?: number }) => <svg width={s} height={s} viewBox="0 0 24 24" style={{ flexShrink: 0, display: "block" }}><rect x="1" y="5" width="22" height="14" rx="4.5" fill="#FF0000" /><path d="M10 8.5v7l6-3.5z" fill="#fff" /></svg>;
+const IcBrandMeta = ({ s = 16 }: { s?: number }) => <svg width={s * 1.5} height={s} viewBox="0 0 36 24" style={{ flexShrink: 0, display: "block" }} fill="none" stroke="#0081FB" strokeWidth="3.4" strokeLinecap="round"><path d="M18 15.5C15 10 12.7 6.5 8.7 6.5 5.5 6.5 3.5 9.4 3.5 12s2 5.5 4.7 5.5c3.4 0 5.4-4 9.8-11" /><path d="M18 15.5C21 10 23.3 6.5 27.3 6.5c3.2 0 5.2 2.9 5.2 5.5s-2 5.5-4.7 5.5c-3.4 0-5.4-4-9.8-11" /></svg>;
+const PlatIcon = ({ k, s = 16 }: { k: string; s?: number }) =>
+  k === "facebook" ? <IcBrandFacebook s={s} /> : k === "instagram" ? <IcBrandInstagram s={s} /> : k === "shorts" ? <IcBrandYouTube s={s} /> : k === "meta_ads" ? <IcBrandMeta s={s} /> : null;
+
 const chip = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-block", background: bg, color: fg, borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 800 });
 const pgBtn: React.CSSProperties = { minWidth: 34, height: 34, borderRadius: 9, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", fontSize: 13 };
 const mb = (n: number | null) => n == null ? "—" : n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`;
@@ -674,7 +682,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
               })}
             </div>
           )}
-          <div>
+          <div style={{ minWidth: 0 }}>
             {row.publicUrl && (
               <video src={row.publicUrl} poster={row.thumbUrl ?? undefined} controls playsInline
                 style={{ width: "100%", borderRadius: 12, background: "#0B1220", maxHeight: 400 }} />
@@ -717,11 +725,11 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
             {posting && <style>{"@keyframes fusionSpin{to{transform:rotate(360deg)}}"}</style>}
           </div>
 
-          <div style={{ display: "grid", gap: 16, alignContent: "start" }}>
+          <div style={{ display: "grid", gap: 16, alignContent: "start", minWidth: 0 }}>
             {/* 1 · Thông tin cơ bản — chỉ giữ field thật sự dùng ở Phase 1 */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 8 }}>DETAILS</div>
-              <div className="filters" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+              <div className="filters" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)" }}>
                 <div className="field" style={{ gridColumn: "1 / -1" }}>
                   <label>Title</label>
                   {/* v272e · click = copy luôn (vẫn gõ sửa bình thường) */}
@@ -828,7 +836,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                       <style>{"@keyframes fusionSpin{to{transform:rotate(360deg)}}"}</style>
                     </div>
                   ) : row.captions ? (
-                    <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{ display: "grid", gap: 10 }}>
                       {CHANNELS.map((ch) => {
                         const c = row.captions?.[ch.key];
                         if (!c) return null;
@@ -838,7 +846,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                           const adParams = `utm_source=meta_ads&utm_medium=video&utm_campaign=video_${row.videoCode}`;
                           const adUrl = (() => { try { return new URL(row.productUrl!).origin + new URL(row.productUrl!).pathname; } catch { return row.productUrl ?? ""; } })();
                           const fieldRow = (label: string, val: string, multiline = false) => (
-                            <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", background: "#fff" }}>
+                            <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "7px 9px", background: "#fff" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: multiline ? 4 : 0 }}>
                                 <span style={chip("#E4EAF1", "#475569")}>{label}</span>
                                 {!multiline && <span style={{ flex: 1, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{val}</span>}
@@ -849,12 +857,13 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                             </div>
                           );
                           return (
-                            <div key={ch.key} style={{ border: "1px solid #C7D2FE", borderRadius: 10, padding: 9, background: "#F7F9FF" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                                <span style={chip("#4338CA", "#fff")}>{ch.label}</span>
+                            <div key={ch.key} style={{ border: "1px solid #C7D2FE", borderRadius: 12, padding: 12, background: "#F7F9FF" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                <PlatIcon k={ch.key} />
+                                <span style={{ fontSize: 12.5, fontWeight: 800, color: "#4338CA" }}>{ch.label}</span>
                                 <span style={{ fontSize: 10.5, color: "var(--muted)" }}>dán từng ô vào Ads Manager</span>
                               </div>
-                              <div style={{ display: "grid", gap: 6 }}>
+                              <div style={{ display: "grid", gap: 7 }}>
                                 {fieldRow("PRIMARY", c.text, true)}
                                 {c.title && fieldRow("HEADLINE", c.title)}
                                 {c.description && fieldRow("DESC", c.description)}
@@ -872,22 +881,35 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                         // YT Short: Title tách riêng (copy riêng) khỏi Description; kênh khác: 1 ô caption.
                         const full = [c.text, extra, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
                         return (
-                          <div key={ch.key} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 9 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                              <span style={chip("#F3F4F6", "#374151")}>{ch.label}</span>
+                          <div key={ch.key} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: "#fff" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                              <PlatIcon k={ch.key} />
+                              <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink)" }}>{ch.label}</span>
                               <span style={{ flex: 1 }} />
-                              <button onClick={() => copy(full)} className="btn" style={{ padding: "3px 9px", fontSize: 11 }}>{c.title ? "Copy desc" : "Copy"}</button>
+                              <button onClick={() => copy(full)} className="btn" style={{ padding: "3px 10px", fontSize: 11 }}>{c.title ? "Copy desc" : "Copy"}</button>
                             </div>
                             {c.title && (
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, background: "#F7FBFF", border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, background: "#F7FBFF", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 9px" }}>
                                 <span style={chip("#E4EAF1", "#475569")}>TITLE</span>
-                                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600 }}>{c.title}</span>
+                                <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600, minWidth: 0 }}>{c.title}</span>
                                 <button onClick={() => copy(c.title!)} className="btn" style={{ padding: "2px 8px", fontSize: 11, flexShrink: 0 }}>Copy</button>
                               </div>
                             )}
-                            <div style={{ fontSize: 12.5, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>{c.text}</div>
-                            {extra && <div style={{ fontSize: 11.5, marginTop: 4, wordBreak: "break-all", color: isLink ? "var(--blue)" : "#1F6F45", fontWeight: isLink ? 400 : 700 }}>{extra}</div>}
-                            {!!(c.hashtags ?? []).length && <div style={{ fontSize: 11.5, color: "#4338CA", marginTop: 4 }}>{c.hashtags.join(" ")}</div>}
+                            <div style={{ fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.6, color: "var(--ink)" }}>{c.text}</div>
+                            {extra && (isLink
+                              ? <a href={extra} target="_blank" rel="noreferrer" title={extra}
+                                  style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, padding: "6px 9px", background: "#F7FBFF", border: "1px solid var(--line)", borderRadius: 8, fontSize: 11.5, color: "var(--blue)", textDecoration: "none" }}>
+                                  <span style={{ flexShrink: 0 }}>🔗</span>
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>{extra}</span>
+                                </a>
+                              : <div style={{ fontSize: 12, marginTop: 8, color: "#1F6F45", fontWeight: 700 }}>{extra}</div>)}
+                            {!!(c.hashtags ?? []).length && (
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 8 }}>
+                                {c.hashtags.map((h, i) => (
+                                  <span key={i} style={{ fontSize: 11, color: "#5B5FC7", background: "#EEF0FF", borderRadius: 6, padding: "2px 7px" }}>{h}</span>
+                                ))}
+                              </div>
+                            )}
                           </div>
                         );
                       })}
