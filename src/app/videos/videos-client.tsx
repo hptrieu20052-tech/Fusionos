@@ -38,7 +38,7 @@ type TypeOpt = { productType: string | null; n: number; withVideo: number };
 type Listing = { id: string; title: string; productType: string | null; pushedAt: string | null };
 type Match = { id: string; title: string; productType: string | null; videoId: string | null };
 
-const LANGS = [{ v: "none", label: "No voice" }, { v: "en", label: "English" }, { v: "vi", label: "Tiếng Việt" }];
+const LANGS = [{ v: "none", label: "No voice" }, { v: "en", label: "English" }, { v: "vi", label: "Vietnamese" }];
 // Facebook & Instagram TÁCH RIÊNG ở CONTENT vì hashtag + link khác nhau (FB ít tag + link; IG nhiều tag + link bio).
 const CHANNELS = [
   { key: "facebook", label: "Facebook Reel" }, { key: "instagram", label: "Instagram Reel" }, { key: "shorts", label: "YT Short" }, { key: "meta_ads", label: "Meta Ads" },
@@ -412,7 +412,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                 </div>
                 {/* v281 · chấm "đã đăng" ở góc trên-trái — nhìn phát biết video đã lên nền tảng nào */}
                 {postedDots.length > 0 && (
-                  <div style={{ position: "absolute", top: 8, left: 8, display: "flex", gap: 4 }} title={`Đã đăng: ${postedDots.map((d) => d.label).join(", ")}`}>
+                  <div style={{ position: "absolute", top: 8, left: 8, display: "flex", gap: 4 }} title={`Posted: ${postedDots.map((d) => d.label).join(", ")}`}>
                     {postedDots.map((d) => (
                       <span key={d.key} style={{ width: 14, height: 14, borderRadius: 999, background: d.color, border: "1.5px solid #fff", boxShadow: "0 1px 3px rgba(0,0,0,.35)" }} />
                     ))}
@@ -567,7 +567,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
   // v281 · Đánh dấu ĐÃ ĐĂNG thủ công theo nền tảng (không có API → user tự tick). Toggle qua PATCH.
   const togglePosted = async (key: string) => {
     const done = !!row.postedTo?.[key];
-    await patch({ id: row.id, [done ? "unmarkPosted" : "markPosted"]: key }, done ? "Bỏ đánh dấu đã đăng" : "Đã đánh dấu đã đăng");
+    await patch({ id: row.id, [done ? "unmarkPosted" : "markPosted"]: key }, done ? "Unmarked" : "Marked as posted");
   };
 
   // v272 · Gắn listing cho CẢ CARD (server đồng bộ productId xuống mọi video con + AI captions).
@@ -797,7 +797,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
             {/* v281 · ĐÃ ĐĂNG — tick tay theo nền tảng (không có API để tự nhận). Ẩn với role Creator. */}
             {(isAdmin || myRole !== "content") && (
               <div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 8 }}>ĐÃ ĐĂNG · tick khi đăng xong</div>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 8 }}>POSTED · tick when done</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                   {POST_TARGETS.map((t) => {
                     const raw = row.postedTo?.[t.key] as unknown;
@@ -805,7 +805,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                     const when = typeof raw === "string" ? raw : (raw as { at?: string } | null)?.at;
                     return (
                       <button key={t.key} disabled={busy} onClick={() => togglePosted(t.key)}
-                        title={done && when ? `Đã đăng ${new Date(when).toLocaleDateString()} — bấm để bỏ đánh dấu` : "Bấm để đánh dấu đã đăng"}
+                        title={done && when ? `Posted ${new Date(when).toLocaleDateString()} — click to unmark` : "Click to mark as posted"}
                         style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 999, cursor: busy ? "default" : "pointer",
                           border: done ? `1.5px solid ${t.color}` : "1.5px solid var(--line)",
                           background: done ? t.color : "#fff", color: done ? "#fff" : "var(--muted)", fontSize: 12, fontWeight: 700 }}>
@@ -918,7 +918,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                 <PlatIcon k={ch.key} />
                                 <span style={{ fontSize: 12.5, fontWeight: 800, color: "#4338CA" }}>{ch.label}</span>
-                                <span style={{ fontSize: 10.5, color: "var(--muted)" }}>dán từng ô vào Ads Manager</span>
+                                <span style={{ fontSize: 10.5, color: "var(--muted)" }}>paste each field into Ads Manager</span>
                               </div>
                               <div style={{ display: "flex", flexDirection: "column", gap: 7, minWidth: 0 }}>
                                 {fieldRow("PRIMARY", c.text, true)}
