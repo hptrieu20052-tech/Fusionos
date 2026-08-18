@@ -640,7 +640,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 18 }} onClick={close}>
-      <div className="card" style={{ width: siblings.length > 1 ? 1150 : 940, maxWidth: "97vw", maxHeight: "92vh", overflowY: "auto", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+      <div className="card" style={{ width: siblings.length > 1 ? 1150 : 940, maxWidth: "97vw", maxHeight: "92vh", overflowY: "auto", overflowX: "hidden", padding: 22 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
           {/* Mã CARD trước (QT-TH-01), mã con của video đang chọn sau (.2). Video lẻ chỉ có #id. */}
           <span style={chip("#EEF2FF", "#4338CA")}>{row.cardCode ?? `#${row.videoCode}`}</span>
@@ -725,7 +725,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
             {posting && <style>{"@keyframes fusionSpin{to{transform:rotate(360deg)}}"}</style>}
           </div>
 
-          <div style={{ display: "grid", gap: 16, alignContent: "start", minWidth: 0 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, minWidth: 0 }}>
             {/* 1 · Thông tin cơ bản — chỉ giữ field thật sự dùng ở Phase 1 */}
             <div>
               <div style={{ fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: ".4px", marginBottom: 8 }}>DETAILS</div>
@@ -836,7 +836,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                       <style>{"@keyframes fusionSpin{to{transform:rotate(360deg)}}"}</style>
                     </div>
                   ) : row.captions ? (
-                    <div style={{ display: "grid", gap: 10 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                       {CHANNELS.map((ch) => {
                         const c = row.captions?.[ch.key];
                         if (!c) return null;
@@ -849,7 +849,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                             <div style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "7px 9px", background: "#fff" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: multiline ? 4 : 0 }}>
                                 <span style={chip("#E4EAF1", "#475569")}>{label}</span>
-                                {!multiline && <span style={{ flex: 1, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{val}</span>}
+                                {!multiline && <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{val}</span>}
                                 <span style={{ flex: multiline ? 1 : 0 }} />
                                 <button onClick={() => copy(val)} className="btn" style={{ padding: "2px 8px", fontSize: 11, flexShrink: 0 }}>Copy</button>
                               </div>
@@ -857,13 +857,13 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                             </div>
                           );
                           return (
-                            <div key={ch.key} style={{ border: "1px solid #C7D2FE", borderRadius: 12, padding: 12, background: "#F7F9FF" }}>
+                            <div key={ch.key} style={{ border: "1px solid #C7D2FE", borderRadius: 12, padding: 12, background: "#F7F9FF", minWidth: 0 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                                 <PlatIcon k={ch.key} />
                                 <span style={{ fontSize: 12.5, fontWeight: 800, color: "#4338CA" }}>{ch.label}</span>
                                 <span style={{ fontSize: 10.5, color: "var(--muted)" }}>dán từng ô vào Ads Manager</span>
                               </div>
-                              <div style={{ display: "grid", gap: 7 }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 7, minWidth: 0 }}>
                                 {fieldRow("PRIMARY", c.text, true)}
                                 {c.title && fieldRow("HEADLINE", c.title)}
                                 {c.description && fieldRow("DESC", c.description)}
@@ -881,7 +881,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                         // YT Short: Title tách riêng (copy riêng) khỏi Description; kênh khác: 1 ô caption.
                         const full = [c.text, extra, (c.hashtags ?? []).join(" ")].filter(Boolean).join("\n\n");
                         return (
-                          <div key={ch.key} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: "#fff" }}>
+                          <div key={ch.key} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 12, background: "#fff", minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                               <PlatIcon k={ch.key} />
                               <span style={{ fontSize: 12.5, fontWeight: 800, color: "var(--ink)" }}>{ch.label}</span>
