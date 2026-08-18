@@ -290,7 +290,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     (!riskFilter || (riskFilter === "unchecked" ? !r.policyRisk : r.policyRisk === riskFilter)) &&
     (!videoFilter || (videoFilter === "has" ? r.videoCode != null : r.videoCode == null)) &&
     (!pidFilter || r.id === pidFilter) &&
-    (!kw.trim() || (r.title + " " + (r.handle ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
+    (!kw.trim() || (r.title + " " + (r.handle ?? "") + " " + (r.id ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
   ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, pidFilter, stores]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, pageSize]);
@@ -1189,7 +1189,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
       <div style={{ ...card, padding: "12px 14px", marginBottom: 12 }}>
         {/* Hàng 1: ô tìm kiếm full-width. Hàng 2: các bộ lọc tự xuống dòng. */}
-        <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle" style={{ ...fctl, width: "100%", maxWidth: "none", marginBottom: 8 }} />
+        <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle / ID" style={{ ...fctl, width: "100%", maxWidth: "none", marginBottom: 8 }} />
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>

@@ -174,7 +174,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     (pushFilter === "" || (pushFilter === "pushed" ? r.pushed : !r.pushed)) &&
     (persFilter === "" || (persFilter === "has" ? (r.persCount ?? 0) > 0 : (r.persCount ?? 0) === 0)) &&
     (!pidFilter || r.id === pidFilter) &&
-    (!kw.trim() || (r.title + " " + (r.sku ?? "") + " " + (r.tags ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
+    (!kw.trim() || (r.title + " " + (r.sku ?? "") + " " + (r.tags ?? "") + " " + (r.id ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
   ), [rows, kw, sellerFilter, storeFilter, pushFilter, persFilter, pidFilter]);
   const pushedCount = useMemo(() => rows.filter((r) => r.pushed).length, [rows]);
   const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
@@ -560,7 +560,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
         <div style={{ position: "relative", flex: 1, minWidth: 240, maxWidth: 440 }}>
           <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }}><IcSearch /></span>
-          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / SKU / tag" style={{ ...ctl, width: "100%", paddingLeft: 34 }} />
+          <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / SKU / tag / ID" style={{ ...ctl, width: "100%", paddingLeft: 34 }} />
         </div>
         {showSellerFilter && (
           <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} style={ctl}>
