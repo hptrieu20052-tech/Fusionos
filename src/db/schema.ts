@@ -315,14 +315,6 @@ export const shopifyProducts = pgTable("shopify_products", {
   feedTitle: text("feed_title"),                  // ≤150 ký tự, KHÔNG dính đuôi variant 8"x8" / Matte
   feedDescription: text("feed_description"),      // 800-1200 ký tự — chỗ chứa từ khoá thật để match query
   feedAt: timestamp("feed_at", { withTimezone: true }), // lần cuối AI viết 2 field trên
-  // ---- v285 · Amazon listing layer — CHỈ trong FUSION, không push lên Shopify ----
-  // Title Shopify (55-70 ký tự, chuẩn Google) QUÁ NGẮN cho Amazon (chuẩn 150-200 ký tự,
-  // Brand + loại + custom + dịp tặng + size). Bộ field riêng để export flat file Amazon.
-  // Cần MIGRATION_v285_amazon_listing.sql
-  amazonTitle: text("amazon_title"),              // 150-200 ký tự, bắt đầu bằng "Personalized ..."
-  amazonBullets: jsonb("amazon_bullets"),         // string[5] — 5 bullet points "About this item"
-  amazonDesc: text("amazon_desc"),                // plain text 1000-1800 ký tự (Amazon không render HTML)
-  amazonAt: timestamp("amazon_at", { withTimezone: true }), // lần cuối AI viết bộ Amazon
   dirty: boolean("dirty").notNull().default(false), // có chỉnh sửa local chưa Push
   // Lần cuối AI Optimize viết lại listing này. null = CHƯA chạy AI bao giờ.
   // Dùng cho cột "AI" + filter "Not optimized yet" — khỏi chạy lại (và trả tiền lại) con đã xong.
@@ -334,6 +326,48 @@ export const shopifyProducts = pgTable("shopify_products", {
 }, (t) => ({
   idxShopifyProductsStore: index("idx_shopify_products_store").on(t.storeId),
   idxShopifyProductsGid: index("idx_shopify_products_gid").on(t.shopifyProductId),
+}));
+
+// ---------- AMAZON TEMPLATES (v286 · mỗi LOẠI sản phẩm 1 template customization Amazon) ----------
+// config = cấu trúc file "Add product customizations in bulk" của Amazon, parse từ master .xlsx:
+//   { headerRows: string[3][66]  — 3 dòng header GIỮ NGUYÊN (dòng 1 chứa ID template Amazon của account),
+//     defaults:   string[66]     — bộ giá trị mẫu cho 1 SKU (label/instructions/required... của 6 field),
+//     skuCol: 0, previewImageCol: 3, skuSuffixes: ["8X8-AMZ","11X-AMZ"], sheetName: "Template" }
+// Export: mỗi child SKU 1 dòng = defaults, thay cột skuCol = SKU, previewImageCol = ảnh bìa sách.
+// Khớp sản phẩm: gán tay (shopify_products.amazon_template_id) → khớp Product type → template duy nhất.
+export const amazonTemplates = pgTable("amazon_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  // Khớp theo Product type của shopify_products (case-insensitive). null = không tự khớp, chỉ gán tay.
+  productType: text("product_type"),
+  config: jsonb("config").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+// ---------- AMAZON PRODUCTS (v286 · Manage Products Amazon — bản STAGE riêng, như flow Etsy → Shopify) ----------
+// "Push to Amazon" ở Manage Products Shopify tạo 1 bản ghi ở đây (badge AMZ bên Shopify = đã đẩy).
+// Nội dung Amazon (title 150-200 + 5 bullets + description) sống Ở ĐÂY, AI gen Ở ĐÂY —
+// listing mỗi sàn một nhà, không rối nhau. Nguồn (ảnh, mô tả gốc, SKU, giá) đọc JOIN từ
+// shopify_products qua shopifyProductId lúc cần, không snapshot để khỏi lệch dữ liệu.
+export const amazonProducts = pgTable("amazon_products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),                    // store nguồn — để scope seller như mọi bảng khác
+  shopifyProductId: uuid("shopify_product_id"),           // shopify_products.id (bản ghi local) — nguồn chính
+  etsyProductId: uuid("etsy_product_id"),                 // etsy_products.id nếu đẩy thẳng từ Etsy (sau này)
+  title: text("title"),                                   // Amazon title 150-200 ký tự (AI/gõ tay)
+  bullets: jsonb("bullets"),                              // string[5] — About this item
+  description: text("description"),                       // plain text 900-1500 ký tự
+  aiAt: timestamp("ai_at", { withTimezone: true }),       // lần cuối AI viết bộ copy
+  amazonTemplateId: uuid("amazon_template_id"),           // gán tay template customization (null = khớp Product type)
+  status: text("status").notNull().default("DRAFT"),      // DRAFT → EXPORTED → LIVE
+  asin: text("asin"),                                     // điền khi listing đã lên Amazon
+  exportedAt: timestamp("exported_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  idxAmazonProductsStore: index("idx_amazon_products_store").on(t.storeId),
+  idxAmazonProductsShopify: index("idx_amazon_products_shopify").on(t.shopifyProductId),
 }));
 
 // ---------- SHOPIFY VARIANT TEMPLATES (preset: options + giá theo tổ hợp + collection/tags/status/kênh) ----------

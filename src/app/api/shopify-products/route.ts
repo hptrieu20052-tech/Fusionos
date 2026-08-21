@@ -88,6 +88,10 @@ export async function GET(req: NextRequest) {
     return null;
   };
 
+  // v286 · Đã đẩy sang Manage Products Amazon chưa (badge AMZ) — chỉ chở tập id nguồn, rất nhẹ.
+  const amzRows = await db.select({ sid: schema.amazonProducts.shopifyProductId }).from(schema.amazonProducts).catch(() => [] as { sid: string | null }[]);
+  const amzSet = new Set(amzRows.map((x) => x.sid).filter(Boolean) as string[]);
+
   const list = scoped.map((r) => {
     const vs = (Array.isArray(r.p.variants) ? r.p.variants as Variant[] : []);
     const prices = vs.map((v) => Number(v.price)).filter((n) => !isNaN(n) && n > 0);
@@ -141,6 +145,8 @@ export async function GET(req: NextRequest) {
       skuTotal: vs.length, skuDone: vs.filter((v) => String(v?.sku ?? "").trim()).length,
       altTotal: imgs.length, altDone: imgs.filter((i) => String(i?.altText ?? "").trim()).length,
       optionsSummary: (Array.isArray(r.p.options) ? r.p.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${o.values.length}`).join(" · "),
+      // v286 · badge AMZ: đã có bản ghi bên Manage Products Amazon.
+      amz: amzSet.has(r.p.id),
     };
   });
   return NextResponse.json({ ok: true, rows: list });

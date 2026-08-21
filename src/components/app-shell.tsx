@@ -63,7 +63,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
   useEffect(() => {
     setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false);
-    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/amazon-export", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
+    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
     setMobileHub(hubPaths.some((p) => path.startsWith(p)));
   }, [path]);
   useEffect(() => {
@@ -121,7 +121,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // đứng liền ngay sau Design Studio thay vì bị đẩy xuống sau các dropdown.
   const hubAnchor = links.some((l) => !l.more && l.href === "/videos") ? "/videos" : "/designs";
   const hasAnchor = links.some((l) => !l.more && l.href === hubAnchor);
-  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/amazon-export", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
+  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image", "/ai-video"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
@@ -178,9 +178,13 @@ export default function AppShell({ user, links, children, canProducts = false, c
             <span className="topnav-ic"><MarketplaceLogo mk="shopify" size={16} /></span>
             Manage Templates Shopify
           </Link>}
-          {canProducts && <Link href="/amazon-export" prefetch className={`topnav-more-item${isActive("/amazon-export") ? " active" : ""}`}>
+          {canProducts && <Link href="/amazon-products" prefetch className={`topnav-more-item${isActive("/amazon-products") ? " active" : ""}`}>
             <span className="topnav-ic"><IconBox width={16} height={16} /></span>
-            Amazon Custom Export
+            Manage Products Amazon
+          </Link>}
+          {canProducts && <Link href="/amazon-templates" prefetch className={`topnav-more-item${isActive("/amazon-templates") ? " active" : ""}`}>
+            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            Manage Templates Amazon
           </Link>}
           {canProducts && <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
             <span className="topnav-ic"><MarketplaceLogo mk="tiktok" size={16} /></span>
@@ -308,7 +312,8 @@ export default function AppShell({ user, links, children, canProducts = false, c
               if (l.href === hubAnchor && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
                 const hubItems = [
                   ...(canProducts ? [
-                    { href: "/amazon-export", icon: <IconBox width={18} height={18} />, label: "Amazon Custom Export" },
+                    { href: "/amazon-products", icon: <IconBox width={18} height={18} />, label: "Manage Products Amazon" },
+                    { href: "/amazon-templates", icon: <IconBox width={18} height={18} />, label: "Manage Templates Amazon" },
                     { href: "/tiktok-products", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Products Tiktok" },
                     { href: "/tiktok-templates", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Templates Tiktok" },
                   ] : []),

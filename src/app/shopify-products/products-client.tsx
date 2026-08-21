@@ -27,6 +27,8 @@ type Row = {
   policyHits?: { term: string; field: string; severity: string; fix?: string }[]; // v191: click chip → khung xem đầy đủ
   // v181: listing Etsy gốc — nút "Etsy" nhảy sang Manage Products · Etsy để đối chiếu.
   etsyListing: { id: string; title: string; store: string; seller: string } | null;
+  // v286: đã đẩy sang Manage Products Amazon chưa (badge AMZ).
+  amz: boolean;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -36,8 +38,6 @@ type Detail = {
   title: string; bodyHtml: string | null; vendor: string | null; productType: string | null; tags: string | null;
   seoTitle: string | null; seoDescription: string | null;
   feedTitle: string | null; feedDescription: string | null; feedAt: string | null;
-  // v285 · Bộ copy Amazon (title 150-200 + 5 bullets + description) — chỉ trong FUSION, export flat file.
-  amazonTitle: string | null; amazonBullets: string[] | null; amazonDesc: string | null; amazonAt: string | null;
   status: string; options: { name: string; position: number; values: string[] }[];
   variants: Variant[]; images: Img[]; onlineStoreUrl: string | null; totalInventory: number | null; dirty: boolean;
   // v142: bộ Custom options RIÊNG của listing. null = chưa đặt riêng ⇒ đang ăn theo template.
@@ -368,28 +368,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
-  // v285 · Copy Amazon lưu ĐƯỜNG RIÊNG như feed: không set dirty, không bao giờ lên Shopify.
-  const saveAmazon = async () => {
-    if (!edit) return;
+  // v286 · Đẩy listing sang Manage Products AMAZON (stage — như flow Etsy → Shopify).
+  // Chỉ tạo bản ghi amazon_products, KHÔNG đụng gì Shopify. Badge "AMZ" trên bảng = đã đẩy.
+  const pushToAmazon = async (ids: string[]) => {
+    if (!ids.length) return;
     setBusy(true);
     try {
-      const j = await postJSON("/api/amazon-export/save", { id: edit.id, amazonTitle: edit.amazonTitle ?? "", amazonBullets: (edit.amazonBullets ?? []).filter(Boolean), amazonDesc: edit.amazonDesc ?? "" });
-      if (j.ok) flash("✓ Amazon copy saved" + (j.warn ? " — " + j.warn : ""));
-      else flash("✗ " + (j.error ?? "Save failed"), false);
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
-    setBusy(false);
-  };
-  // v285 · AI viết bộ Amazon cho listing đang mở (route tự lưu DB, trả về nội dung để hiện ngay).
-  const aiAmazon = async () => {
-    if (!edit) return;
-    setBusy(true);
-    try {
-      const j = await postJSON("/api/amazon-export/ai", { ids: [edit.id], model: aiModel || undefined });
-      const r = j?.results?.[0];
-      if (j.ok && r?.ok) {
-        setEdit((prev) => prev ? { ...prev, amazonTitle: r.amazonTitle ?? prev.amazonTitle, amazonBullets: r.amazonBullets ?? prev.amazonBullets, amazonDesc: r.amazonDesc ?? prev.amazonDesc, amazonAt: new Date().toISOString() } : prev);
-        flash("✓ Amazon copy generated & saved");
-      } else flash("✗ " + (r?.error ?? j.error ?? "AI failed"), false);
+      const j = await postJSON("/api/amazon-products", { ids });
+      if (j.ok) { flash(`✓ Pushed ${j.created} to Amazon${j.skipped ? ` · ${j.skipped} already there` : ""}`); load(); }
+      else flash("✗ " + (j.error ?? "Push failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
@@ -1329,6 +1316,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               style={{ ...pill(PIN_RED, "#fff"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}><PinLogo /> Export Pinterest{sel.size ? ` (${sel.size})` : ""}</button>
           </span>
 
+          {/* v286 · Đẩy sang Manage Products Amazon (stage như Etsy → Shopify). Không đụng Shopify. */}
+          {canEdit && (
+            <span style={grp}>
+              <button disabled={busy || !sel.size} title="Stage the selected listings into Manage Products Amazon (like Etsy → Shopify). Already-pushed listings are skipped. Nothing is written to Shopify." onClick={() => pushToAmazon(Array.from(sel))}
+                style={{ ...pill("#FF9900", "#111"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}>🅰 Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
+            </span>
+          )}
+
           {canEdit && (
             <span style={grp}>
               <div style={{ position: "relative" }}>
@@ -1529,6 +1524,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <span title={`Feed copy is too short to export — title ${r.feedTitleLen} chars, description ${r.feedDescLen} chars, needs 600+`} style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#FEF6E7", color: "#B7791F" }}>feed {r.feedDescLen}</span>
                     ) : (
                       <span title="No feed copy — Export supplemental feed skips this listing" style={{ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: "#F1F1F4", color: "#8794A5" }}>no feed</span>
+                    )}
+                    {/* v286: đã đẩy sang Manage Products Amazon. */}
+                    {r.amz && (
+                      <span title="Pushed to Manage Products Amazon — finish the Amazon copy there" style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FFF0DB", color: "#B5661A", marginLeft: 4 }}>AMZ</span>
                     )}
                     {/* v179c: chip policy audit — hiện CẢ 3 trạng thái để nhìn phát biết đã check hay chưa.
                         Không có chip nào = CHƯA audit. */}
@@ -1732,30 +1731,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
                         <button disabled={busy} onClick={saveFeed} style={{ ...pill("#5B3FBF", "#fff"), padding: "7px 14px", fontSize: 12.5 }}>Save feed copy</button>
                         <span style={{ fontSize: 11, color: "var(--muted)" }}>Merchant Center only — never sent to Shopify, and not included in Save below.</span>
-                      </div>
-                    </div>
-                    {/* v285 · Bộ copy AMAZON — title 150-200 + 5 bullets + description, chuẩn SEO & policy Amazon.
-                        Đường riêng như feed: không set dirty, không Push Shopify, chỉ đi ra qua Export flat file. */}
-                    <div style={{ border: "1px solid #F0C48A", borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#FFFBF4" }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 800, color: "#B5661A" }}>Amazon listing copy</div>
-                        <div style={{ fontSize: 11, color: "var(--muted)" }}>{edit.amazonAt ? `written ${ago(edit.amazonAt)}` : "never generated"}</div>
-                      </div>
-                      <label style={lab}>Amazon title <span style={{ fontWeight: 700, color: (edit.amazonTitle ?? "").length > 0 && ((edit.amazonTitle ?? "").length < 140 || (edit.amazonTitle ?? "").length > 200) ? "var(--red)" : "var(--muted)" }}>({(edit.amazonTitle ?? "").length}/200 · target 150-200)</span></label>
-                      <textarea value={edit.amazonTitle ?? ""} onChange={(e) => setEdit({ ...edit, amazonTitle: e.target.value })} maxLength={250} rows={2} placeholder="Personalized <what>, Custom Name <type>, <occasion keywords>, Keepsake Gift — no size, no emojis" style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 10, borderColor: (edit.amazonTitle ?? "").length > 200 ? "#F3C9C9" : "var(--line)" }} />
-                      <label style={lab}>Bullet points (5 · About this item)</label>
-                      {Array.from({ length: 5 }, (_, i) => (
-                        <textarea key={i} value={(edit.amazonBullets ?? [])[i] ?? ""}
-                          onChange={(e) => { const b = [...(edit.amazonBullets ?? ["", "", "", "", ""])]; while (b.length < 5) b.push(""); b[i] = e.target.value; setEdit({ ...edit, amazonBullets: b }); }}
-                          maxLength={300} rows={2} placeholder={`Bullet ${i + 1} — ALL-CAPS HOOK — then the benefit (150-230 chars)`}
-                          style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 6, fontSize: 12.5 }} />
-                      ))}
-                      <label style={{ ...lab, marginTop: 6 }}>Amazon description <span style={{ fontWeight: 700, color: (edit.amazonDesc ?? "").length > 0 && ((edit.amazonDesc ?? "").length < 900 || (edit.amazonDesc ?? "").length > 1500) ? "var(--red)" : "var(--muted)" }}>({(edit.amazonDesc ?? "").length} chars · target 900-1500)</span></label>
-                      <textarea value={edit.amazonDesc ?? ""} onChange={(e) => setEdit({ ...edit, amazonDesc: e.target.value })} rows={6} placeholder="Plain text, 3-4 paragraphs separated by a blank line — Amazon does not render HTML" style={{ ...ctl, width: "100%", resize: "vertical" }} />
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-                        <button disabled={busy} onClick={aiAmazon} style={{ ...pill("#B5661A", "#fff"), padding: "7px 14px", fontSize: 12.5 }}>{busy ? "Working…" : "AI Amazon copy"}</button>
-                        <button disabled={busy} onClick={saveAmazon} style={{ ...pill("#8a5013", "#fff"), padding: "7px 14px", fontSize: 12.5 }}>Save Amazon copy</button>
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Amazon only — never sent to Shopify, and not included in Save below.</span>
                       </div>
                     </div>
                   </div>

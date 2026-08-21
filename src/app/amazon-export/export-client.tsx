@@ -11,6 +11,7 @@ export type Pattern = {
   productTypes: Record<string, number>;
 };
 
+
 // Bộ 6 field chuẩn (template dùng chung) — dùng để đánh dấu pattern nào KHỚP chuẩn.
 // So khớp mềm theo (type + số lượng từng loại) để không phụ thuộc chính tả nhãn.
 const STANDARD = { text: 4, upload: 1, dropdown: 1 };
