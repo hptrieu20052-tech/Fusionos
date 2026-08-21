@@ -288,12 +288,12 @@ export default function ShopifyTemplatesClient({ stores }: { stores: Store[] }) 
                 {t.thumbUrl ? <img src={t.thumbUrl} alt="" width={52} height={52} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0, background: "#F5F6F8" }} />
                   : <div style={{ width: 52, height: 52, borderRadius: 10, border: "1px dashed var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--muted)", flexShrink: 0, background: "#FAFBFC" }}>🖼️</div>}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>{t.name}</div>
+                  {/* v293 · click title = mở Edit (đồng bộ cách thao tác với Manage Products) */}
+                  <div onClick={() => editTpl(t)} title="Edit template" style={{ fontWeight: 700, fontSize: 14.5, color: "#1D4ED8", cursor: "pointer", display: "inline-block" }}>{t.name}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
                     {storeName(t.storeId)} · {t.options.map((o) => `${o.name} (${o.values.length})`).join(" × ") || "no options"} · {t.variants.length} variants · {normPQ(t.personalization).length} personalization · {t.collectionIds.length} collections · {t.publicationIds.length} channels · {t.status}
                   </div>
                 </div>
-                <button onClick={() => editTpl(t)} style={ghost}>Edit</button>
                 <button onClick={() => del(t)} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }}>Delete</button>
               </div>
             ))}

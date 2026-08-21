@@ -332,7 +332,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   {r.asin && <div style={{ fontSize: 10.5, fontFamily: "monospace", marginTop: 2 }}>{r.asin}</div>}
                 </td>
                 <td style={{ padding: 10, whiteSpace: "nowrap" }}>
-                  <button onClick={() => setEdit({ ...r, bullets: r.bullets ? [...r.bullets] : null })} style={{ ...pill("#EEF1F5", "#333"), padding: "6px 12px", fontSize: 12 }}>Edit</button>{" "}
+                  {/* v293 · Edit = click vào title; Actions chỉ còn gỡ khỏi Amazon */}
                   {canEdit && <button disabled={busy} onClick={() => remove(r.id)} title="Remove from Manage Products Amazon (Shopify is untouched)" style={{ ...pill("#fff", "#B42318"), border: "1px solid #F3C9C9", padding: "6px 10px", fontSize: 12 }}>✕</button>}
                 </td>
               </tr>

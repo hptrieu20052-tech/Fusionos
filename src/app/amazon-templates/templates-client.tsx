@@ -202,7 +202,8 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
             ? <img src={t.thumbUrl} alt="" style={{ width: 64, height: 64, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0 }} />
             : <span style={{ width: 64, height: 64, borderRadius: 10, border: "1px solid var(--line)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><AmazonLogo size={34} /></span>}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16.5, fontWeight: 800 }}>{t.name}</div>
+            {/* v293 · click title = mở Edit (đồng bộ với Shopify Templates) */}
+            <div onClick={() => openEdit(t)} title="Edit template" style={{ fontSize: 16.5, fontWeight: 800, color: "#1D4ED8", cursor: "pointer", display: "inline-block" }}>{t.name}</div>
             <div style={{ fontSize: 13, color: "var(--muted)", marginTop: 3 }}>
               {t.productType ?? "manual assign"} · {t.variations.length} variation{t.variations.length !== 1 ? "s" : ""} ({t.variations.map((v) => v.label || v.suffix).join(", ")}) · {t.fields} custom fields
               {t.variations.some((v) => v.price) && <> · ${t.variations.map((v) => v.price).filter(Boolean).join(" / $")}</>}
@@ -210,7 +211,6 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <button disabled={busy} onClick={() => openEdit(t)} style={ghostGray}>Edit</button>
             {canEdit && <button disabled={busy} onClick={() => remove(t)} style={ghostRed}>Delete</button>}
           </div>
         </div>
