@@ -40,12 +40,12 @@ function groupCols(cols: Col[], skuCol: number): FieldGroup[] {
   }
   return groups.filter((g) => g.cols.length);
 }
-const TYPE_META: Record<FieldGroup["type"], { icon: string; label: string; color: string; bg: string }> = {
-  surface: { icon: "🖼", label: "Surface", color: "#0E7490", bg: "#F0FAFB" },
-  dropdown: { icon: "▾", label: "Dropdown", color: "#7C3AED", bg: "#F7F4FF" },
-  text: { icon: "✏️", label: "Text box", color: "#2563EB", bg: "#F4F8FF" },
-  image: { icon: "📷", label: "Photo upload", color: "#059669", bg: "#F2FBF7" },
-  other: { icon: "•", label: "Other", color: "#6B7280", bg: "#F8F9FA" },
+const TYPE_META: Record<FieldGroup["type"], { label: string; color: string; bg: string }> = {
+  surface: { label: "Surface", color: "#0E7490", bg: "#F0FAFB" },
+  dropdown: { label: "Dropdown", color: "#7C3AED", bg: "#F7F4FF" },
+  text: { label: "Text box", color: "#2563EB", bg: "#F4F8FF" },
+  image: { label: "Photo upload", color: "#059669", bg: "#F2FBF7" },
+  other: { label: "Other", color: "#6B7280", bg: "#F8F9FA" },
 };
 // Tên field hiển thị = giá trị ô "label" đầu tiên trong nhóm (vd "Book Cover", "Paper Finish").
 const groupTitle = (g: FieldGroup) => g.cols.find((c) => c.key === "label")?.value || g.name;
@@ -302,7 +302,7 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
                 Muốn đổi cấu trúc: sửa trên Amazon → Generate template → download → Update file ở đây. */}
             <div style={{ border: "1px solid #F0C48A", borderRadius: 12, padding: "14px 16px", background: "#FFFBF4", marginBottom: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-                <b style={{ fontSize: 13.5, color: AMZ }}>🖊 Customization · from Seller Central template</b>
+                <b style={{ fontSize: 13.5, color: AMZ }}>Customization · from Seller Central template</b>
                 <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{groups.length} fields · read-only — edit on Amazon, then update the file below</span>
               </div>
               {groups.map((g, gi) => {
@@ -312,7 +312,7 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
                 const instr = g.cols.find((c) => c.key === "instructions")?.value ?? "";
                 return (
                   <div key={gi} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 14px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: meta.bg, color: meta.color, flexShrink: 0 }}>{meta.icon} {meta.label}</span>
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: meta.bg, color: meta.color, flexShrink: 0 }}>{meta.label}</span>
                     <b style={{ fontSize: 13 }}>{groupTitle(g)}</b>
                     {req && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999, background: /^true$/i.test(req.value) ? "#FEF0F0" : "#F1F1F4", color: /^true$/i.test(req.value) ? "#B42318" : "#8794A5" }}>{/^true$/i.test(req.value) ? "required" : "optional"}</span>}
                     {opts.length > 0 && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>· {opts.join(" / ")}</span>}

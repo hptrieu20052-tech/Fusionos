@@ -1,4 +1,5 @@
 "use client";
+import { AmazonLogo } from "@/components/amazon-logo";
 import { useEffect, useMemo, useState } from "react";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
@@ -1437,7 +1438,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), padding: "8px 11px", opacity: busy || !selDirty ? .45 : 1 }}>⬆ Push to Shopify{selDirty ? ` (${selDirty})` : ""}</button>
               {/* v286 · Stage sang Manage Products Amazon (như Etsy → Shopify). */}
               <button disabled={busy || !sel.size} title="Stage the selected listings into Manage Products Amazon (like Etsy → Shopify). Already-pushed listings are skipped. Nothing is written to Shopify." onClick={() => pushToAmazon(Array.from(sel))}
-                style={{ ...pill("#FF9900", "#111"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}>🅰 Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
+                style={{ ...pill("#FF9900", "#111"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}><AmazonLogo size={15} color="#111" /> Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
               {/* v287 · Run pipeline: AI → Push → Google prep → Feed → Active → Amazon, một nút.
                   v289 · Update Template / Export Pinterest dọn vào More actions. */}
               <button disabled={busy || !sel.size} title="Run the whole finishing chain on the selection: AI Optimize → Push to Shopify → Google prep (SKU + fields + alt) → Feed copy → Set Active → Push to Amazon + AI Amazon copy. Steps are configurable; already-done items are skipped." onClick={() => setPipeOpen(true)}
@@ -2088,14 +2089,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       {amzPushOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setAmzPushOpen(false)}>
           <div style={{ ...card, width: "min(460px, 100%)", padding: 22 }} onClick={(e) => e.stopPropagation()}>
-            <b style={{ fontSize: 16 }}>🅰 Push to Amazon ({sel.size} selected)</b>
+            <b style={{ fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}><AmazonLogo size={20} /> Push to Amazon ({sel.size} selected)</b>
             <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "6px 0 14px" }}>
               Pick the Amazon template for these listings — it decides variations, prices and the customization set. It is pinned on each staged product (changeable later in its detail).
             </div>
             <label style={lab}>Amazon template</label>
             <select value={amzTplPick} onChange={(e) => setAmzTplPick(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: 16 }}>
               <option value="">Auto — match by Product type</option>
-              {amzTpls.map((t) => <option key={t.id} value={t.id}>📌 {t.name}{t.productType ? ` — ${t.productType}` : ""}</option>)}
+              {amzTpls.map((t) => <option key={t.id} value={t.id}>Pinned: {t.name}{t.productType ? ` — ${t.productType}` : ""}</option>)}
             </select>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button disabled={busy} onClick={() => setAmzPushOpen(false)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Cancel</button>

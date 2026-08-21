@@ -8,7 +8,7 @@
  * 5 bullets + description) rồi Export file customization. Không đụng gì Shopify.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AmazonLogo } from "@/components/amazon-logo";
 
 type Row = {
@@ -65,10 +65,30 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [zoom, setZoom] = useState(""); // v291 · lightbox ảnh thumbnail
   const [confirmDel, setConfirmDel] = useState(""); // v294 · id đang chờ xác nhận xóa
   const [dragImg, setDragImg] = useState<number | null>(null); // v297 · kéo-thả xếp ảnh trong modal
+  const [upBusy, setUpBusy] = useState(false);                  // v298 · đang upload ảnh local
+  const imgFileRef = useRef<HTMLInputElement>(null);
 
   // v297 · bộ ảnh hiệu lực trong modal: override nếu có, không thì ảnh Shopify nguồn.
   const effImages = (r: Row): string[] => r.images ?? r.sourceImages;
   const setImgs = (arr: string[]) => setEdit((p) => p ? { ...p, images: arr } : p);
+
+  // v298 · Upload ảnh từ máy: presign → PUT thẳng lên R2 → thêm publicUrl vào bộ ảnh Amazon.
+  const uploadImages = async (files: File[]) => {
+    if (!edit) return;
+    setUpBusy(true);
+    const added: string[] = [];
+    for (const f of files.slice(0, 10)) {
+      try {
+        const j = await postJSON("/api/amazon-products/image-url", { filename: f.name, contentType: f.type || "image/jpeg" });
+        if (!j.ok || !j.url) { flash("✗ " + (j.error ?? "Upload URL failed")); continue; }
+        const put = await fetch(j.url, { method: j.method ?? "PUT", headers: { "Content-Type": f.type || "image/jpeg" }, body: f });
+        if (!put.ok) { flash(`✗ Upload failed (${put.status})`); continue; }
+        if (j.publicUrl) added.push(j.publicUrl);
+      } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    }
+    if (added.length) setImgs([...effImages(edit), ...added]);
+    setUpBusy(false);
+  };
 
   // Template khớp cho 1 sản phẩm: gán tay → khớp Product type → template duy nhất.
   const tplFor = (r: Row): Tpl | null => {
@@ -272,8 +292,8 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
               {tpls.length === 0 && <option value="">No template — create one first</option>}
               {tpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <button disabled={busy || !sel.size} onClick={doExportListing} title="STEP 1 — Generate the listing flat file (parent + child rows with title, bullets, images, prices from the template). Upload at Catalog → Add Products via Upload. Products missing copy/images/prices are skipped." style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>⬇ 1 · Listing file{sel.size ? ` (${sel.size})` : ""}</button>
-            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="STEP 2 — Generate the customization .xlsx. Upload at Custom Products → Upload Customizations. Listings must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>⬇ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size} onClick={doExportListing} title="STEP 1 — Generate the listing flat file (parent + child rows with title, bullets, images, prices from the template). Upload at Catalog → Add Products via Upload. Products missing copy/images/prices are skipped." style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>↓ 1 · Listing file{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="STEP 2 — Generate the customization .xlsx. Upload at Custom Products → Upload Customizations. Listings must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>↓ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
           </span>
         </div>
       </div>
@@ -338,7 +358,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                 <td style={{ padding: 10, fontSize: 12 }}>
                   {(() => { const t = tplFor(r); const pinned = !!r.amazonTemplateId; return t
                     ? <span title={pinned ? "Pinned manually — export always uses this template" : "Auto-matched by Product type — pin a different one in the edit modal (click title)"}
-                        style={chip(pinned ? "#FFF0DB" : "#F1F1F4", pinned ? "#B5661A" : "#6B7280")}>{pinned ? "📌 " : "auto · "}{t.name.length > 16 ? t.name.slice(0, 16) + "…" : t.name}</span>
+                        style={chip(pinned ? "#FFF0DB" : "#F1F1F4", pinned ? "#B5661A" : "#6B7280")}>{pinned ? "pinned · " : "auto · "}{t.name.length > 16 ? t.name.slice(0, 16) + "…" : t.name}</span>
                     : <span title="No template matches this Product type — pin one in the edit modal or set Match Product type in Manage Templates Amazon" style={{ color: "#B42318", fontSize: 11.5, fontWeight: 700 }}>none</span>; })()}
                 </td>
                 <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(tplFor(r))}</td>
@@ -373,87 +393,110 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
         </div>
       )}
 
-      {/* Edit modal */}
+      {/* Edit modal — v298: bố cục kiểu ETSY (Photos full-width trên cùng → Listing details → footer Save) */}
       {edit && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflow: "auto" }} onClick={() => !busy && setEdit(null)}>
-          <div style={{ ...card, width: "min(860px, 100%)", padding: 20 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-              <b style={{ fontSize: 18, display: "flex", alignItems: "center", gap: 10 }}><AmazonLogo size={24} /> Amazon listing copy</b>
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>{edit.aiAt ? `AI written ${ago(edit.aiAt)}` : "never generated"}</div>
-            </div>
-            {/* Ngữ cảnh listing nguồn: ảnh + title + SKU — nhìn phát biết đang viết cho cuốn nào */}
-            <div style={{ display: "flex", gap: 12, alignItems: "center", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 14, background: "#FAFBFC" }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {edit.image && <img src={edit.image + (edit.image.includes("?") ? "&" : "?") + "width=120"} alt="" style={{ width: 54, height: 54, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{edit.sourceTitle}</div>
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}><code>{edit.skuRoot || "no SKU"}</code> · {edit.productType || "—"} · {edit.status}</div>
-              </div>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "3vh 16px", overflow: "auto" }} onClick={() => !busy && setEdit(null)}>
+          <div style={{ width: "min(1100px, 100%)", background: "#F3F4F6", borderRadius: 18, overflow: "hidden", boxShadow: "0 24px 70px rgba(0,0,0,.28)" }} onClick={(e) => e.stopPropagation()}>
+
+            {/* Header bar */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 24px", background: "#fff", borderBottom: "1px solid var(--line)" }}>
+              <AmazonLogo size={30} />
+              <b style={{ fontSize: 19 }}>Edit listing</b>
+              <span style={{ fontSize: 13, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· Amazon info · source: {edit.sourceTitle.slice(0, 60)}{edit.sourceTitle.length > 60 ? "…" : ""}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap" }}>{edit.aiAt ? `AI written ${ago(edit.aiAt)}` : "never generated"}</span>
+              <button onClick={() => setEdit(null)} style={{ width: 34, height: 34, borderRadius: 10, border: "none", background: "#EEF1F5", fontSize: 15, cursor: "pointer", color: "#333" }}>✕</button>
             </div>
 
-            <label style={lab}>Amazon title <span style={{ fontWeight: 700, color: (edit.title ?? "").length > 0 && !titleOk(edit.title) ? "var(--red)" : "var(--muted)" }}>({(edit.title ?? "").length}/200 · target 150-200)</span></label>
-            <textarea value={edit.title ?? ""} onChange={(e) => setEdit({ ...edit, title: e.target.value })} maxLength={250} rows={2} placeholder="Personalized <what>, Custom Name <type>, <occasion keywords>, Keepsake Gift — no size, no emojis" style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 10 }} />
+            <div style={{ padding: "18px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
 
-            <label style={lab}>Bullet points (5 · About this item)</label>
-            {Array.from({ length: 5 }, (_, i) => (
-              <textarea key={i} value={(edit.bullets ?? [])[i] ?? ""}
-                onChange={(e) => { const b = [...(edit.bullets ?? ["", "", "", "", ""])]; while (b.length < 5) b.push(""); b[i] = e.target.value; setEdit({ ...edit, bullets: b }); }}
-                maxLength={300} rows={2} placeholder={`Bullet ${i + 1} — ALL-CAPS HOOK — then the benefit (150-230 chars)`}
-                style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 6, fontSize: 12.5 }} />
-            ))}
-
-            <label style={{ ...lab, marginTop: 6 }}>Amazon description <span style={{ fontWeight: 700, color: (edit.description ?? "").length > 0 && ((edit.description ?? "").length < 900 || (edit.description ?? "").length > 1500) ? "var(--red)" : "var(--muted)" }}>({(edit.description ?? "").length} chars · target 900-1500)</span></label>
-            <textarea value={edit.description ?? ""} onChange={(e) => setEdit({ ...edit, description: e.target.value })} rows={7} placeholder="Plain text, 3-4 paragraphs separated by a blank line — Amazon does not render HTML" style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 10 }} />
-
-            {/* v297 · Bộ ảnh RIÊNG cho Amazon — kéo thả xếp lại, ảnh đầu = MAIN, + Add by URL.
-                Chưa sửa gì = dùng nguyên ảnh Shopify; sửa 1 lần = lưu bộ riêng (không đụng Shopify). */}
-            <label style={lab}>
-              Amazon images ({effImages(edit).length}) · drag to reorder · the first photo is the main image
-              {edit.images && <button onClick={() => setEdit({ ...edit, images: null })} title="Discard the Amazon-only set and go back to the Shopify images" style={{ ...pill("#EEF1F5", "#333"), padding: "3px 10px", fontSize: 11, marginLeft: 8 }}>↺ Reset to Shopify</button>}
-            </label>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-              {effImages(edit).map((u, i) => (
-                <div key={u + i} draggable
-                  onDragStart={() => setDragImg(i)}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => { e.preventDefault(); if (dragImg === null || dragImg === i) return; const a = [...effImages(edit)]; const [m] = a.splice(dragImg, 1); a.splice(i, 0, m); setDragImg(null); setImgs(a); }}
-                  onDragEnd={() => setDragImg(null)}
-                  style={{ position: "relative", width: 86, height: 86, borderRadius: 10, overflow: "hidden", border: i === 0 ? "2px solid #B5661A" : "1px solid var(--line)", cursor: "grab", opacity: dragImg === i ? .5 : 1, flexShrink: 0 }}>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={u + (u.includes("?") ? "&" : "?") + "width=180"} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                  {i === 0 && <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(181,102,26,.9)", color: "#fff", fontSize: 9.5, fontWeight: 800, textAlign: "center", padding: "1px 0" }}>MAIN</span>}
-                  <button onClick={() => { const a = effImages(edit).filter((_, x) => x !== i); setImgs(a); }} title="Remove"
-                    style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: 999, border: "none", cursor: "pointer", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 10, lineHeight: "18px", padding: 0 }}>✕</button>
+              {/* ── Photos ── */}
+              <div style={{ ...card, padding: "18px 20px" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 12 }}>
+                  Photos <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 13 }}>({effImages(edit).length}/9) · drag to reorder · the first photo is the main image</span>
                 </div>
-              ))}
-              <button onClick={() => { const u = window.prompt("Image URL (https://…) — e.g. white-background main image:"); if (u && /^https:\/\//i.test(u.trim())) setImgs([...effImages(edit), u.trim()]); }}
-                style={{ width: 86, height: 86, borderRadius: 10, border: "1.5px dashed var(--line)", background: "#FAFBFC", cursor: "pointer", fontSize: 11.5, fontWeight: 700, color: "#1F6F45" }}>+ Add by URL</button>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 12 }}>
-              {edit.images ? "Amazon-only image set — exports use these, Shopify stays untouched." : "Currently using the Shopify images — any change here creates an Amazon-only set."}
-              {" "}Amazon requires the MAIN image on pure white background.
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  {effImages(edit).map((u, i) => (
+                    <div key={u + i} draggable
+                      onDragStart={() => setDragImg(i)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.preventDefault(); if (dragImg === null || dragImg === i) return; const a = [...effImages(edit)]; const [m] = a.splice(dragImg, 1); a.splice(i, 0, m); setDragImg(null); setImgs(a); }}
+                      onDragEnd={() => setDragImg(null)}
+                      style={{ position: "relative", width: 118, height: 118, borderRadius: 12, overflow: "hidden", border: i === 0 ? "2px solid #B5661A" : "1px solid var(--line)", cursor: "grab", opacity: dragImg === i ? .5 : 1, flexShrink: 0 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={u + (u.includes("?") ? "&" : "?") + "width=240"} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      {i === 0 && <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,.62)", color: "#fff", fontSize: 11, fontWeight: 800, textAlign: "center", padding: "2px 0" }}>Main</span>}
+                      <button onClick={() => { const a = effImages(edit).filter((_, x) => x !== i); setImgs(a); }} title="Remove"
+                        style={{ position: "absolute", top: 5, right: 5, width: 22, height: 22, borderRadius: 999, border: "none", cursor: "pointer", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 11, lineHeight: "22px", padding: 0 }}>✕</button>
+                    </div>
+                  ))}
+                  {/* Upload local: presign → PUT thẳng R2 */}
+                  <button onClick={() => imgFileRef.current?.click()} disabled={upBusy}
+                    style={{ width: 118, height: 118, borderRadius: 12, border: "1.5px dashed #E5A868", background: "#FFFBF4", cursor: "pointer", fontSize: 13, fontWeight: 700, color: AMZ }}>
+                    {upBusy ? "Uploading…" : <>+<br />Add photos</>}
+                  </button>
+                  <input ref={imgFileRef} type="file" accept="image/*" multiple style={{ display: "none" }}
+                    onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) uploadImages(fs); e.target.value = ""; }} />
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
+                  <button onClick={() => { const u = window.prompt("Image URL (https://…):"); if (u && /^https:\/\//i.test(u.trim())) setImgs([...effImages(edit), u.trim()]); }}
+                    style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>+ Add by URL</button>
+                  {edit.images && (
+                    <button onClick={() => setEdit({ ...edit, images: null })} title="Discard the Amazon-only set and go back to the Shopify images"
+                      style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, color: "#B42318", padding: 0 }}>Reset to Shopify images</button>
+                  )}
+                  <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
+                    {edit.images ? "Amazon-only set — exports use these, Shopify stays untouched." : "Using the Shopify images — any change creates an Amazon-only set."} Main image must be on pure white background.
+                  </span>
+                </div>
+              </div>
+
+              {/* ── Listing details ── */}
+              <div style={{ ...card, padding: "18px 20px" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 12 }}>
+                  Listing details <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 13 }}>· Amazon copy · never sent to Shopify</span>
+                </div>
+
+                <label style={lab}>Title <span style={{ fontWeight: 700, color: (edit.title ?? "").length > 0 && !titleOk(edit.title) ? "var(--red)" : "var(--muted)" }}>({(edit.title ?? "").length}/200 · target 150-200)</span></label>
+                <textarea value={edit.title ?? ""} onChange={(e) => setEdit({ ...edit, title: e.target.value })} maxLength={250} rows={2} placeholder="Personalized <what>, Custom Name <type>, <occasion keywords>, Keepsake Gift — no size, no emojis" style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 12 }} />
+
+                <label style={lab}>Bullet points (5 · About this item)</label>
+                {Array.from({ length: 5 }, (_, i) => (
+                  <textarea key={i} value={(edit.bullets ?? [])[i] ?? ""}
+                    onChange={(e) => { const b = [...(edit.bullets ?? ["", "", "", "", ""])]; while (b.length < 5) b.push(""); b[i] = e.target.value; setEdit({ ...edit, bullets: b }); }}
+                    maxLength={300} rows={2} placeholder={`Bullet ${i + 1} — ALL-CAPS HOOK — then the benefit (150-230 chars)`}
+                    style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 6, fontSize: 12.5 }} />
+                ))}
+
+                <label style={{ ...lab, marginTop: 8 }}>Description <span style={{ fontWeight: 700, color: (edit.description ?? "").length > 0 && ((edit.description ?? "").length < 900 || (edit.description ?? "").length > 1500) ? "var(--red)" : "var(--muted)" }}>({(edit.description ?? "").length} chars · target 900-1500)</span></label>
+                <textarea value={edit.description ?? ""} onChange={(e) => setEdit({ ...edit, description: e.target.value })} rows={8} placeholder="Plain text, 3-4 paragraphs separated by a blank line — Amazon does not render HTML" style={{ ...ctl, width: "100%", resize: "vertical" }} />
+              </div>
+
+              {/* ── Settings ── */}
+              <div style={{ ...card, padding: "18px 20px" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 12 }}>Settings</div>
+                <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                  <div style={{ flex: "1 1 260px" }}>
+                    <label style={lab}>Amazon template</label>
+                    <select value={edit.amazonTemplateId ?? ""} onChange={(e) => setEdit({ ...edit, amazonTemplateId: e.target.value || null })} style={{ ...ctl, width: "100%" }}>
+                      <option value="">Auto — match by Product type</option>
+                      {tpls.map((t) => <option key={t.id} value={t.id}>Pinned: {t.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: "0 1 220px" }}>
+                    <label style={lab}>ASIN (once live on Amazon)</label>
+                    <input value={edit.asin ?? ""} onChange={(e) => setEdit({ ...edit, asin: e.target.value })} placeholder="B0XXXXXXXX" style={{ ...ctl, width: "100%", fontFamily: "monospace" }} />
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
-              <div>
-                <label style={lab}>ASIN (once live on Amazon)</label>
-                <input value={edit.asin ?? ""} onChange={(e) => setEdit({ ...edit, asin: e.target.value })} placeholder="B0XXXXXXXX" style={{ ...ctl, width: 200, fontFamily: "monospace" }} />
-              </div>
-              {/* v297 · Gán template riêng cho sản phẩm này. Mặc định Auto = khớp theo Product type. */}
-              <div>
-                <label style={lab}>Amazon template</label>
-                <select value={edit.amazonTemplateId ?? ""} onChange={(e) => setEdit({ ...edit, amazonTemplateId: e.target.value || null })} style={{ ...ctl, width: 260 }}>
-                  <option value="">Auto — match by Product type</option>
-                  {tpls.map((t) => <option key={t.id} value={t.id}>📌 {t.name}</option>)}
-                </select>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* Footer bar */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 24px", background: "#fff", borderTop: "1px solid var(--line)" }}>
               {canEdit && <button disabled={busy} onClick={aiOne} style={pill("#5B3FBF", "#fff")}>{busy ? "Working…" : "✦ AI Amazon copy"}</button>}
-              {canEdit && <button disabled={busy} onClick={saveEdit} style={pill(AMZ, "#fff")}>Save</button>}
-              <button disabled={busy} onClick={() => setEdit(null)} style={pill("#EEF1F5", "#333")}>Close</button>
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>Amazon only — nothing here is ever sent to Shopify.</span>
+              <span style={{ flex: 1 }} />
+              <button disabled={busy} onClick={() => setEdit(null)} style={{ ...pill("#fff", "#333"), border: "1px solid var(--line)", padding: "9px 20px" }}>Cancel</button>
+              {canEdit && <button disabled={busy} onClick={saveEdit} style={{ ...pill(AMZ, "#fff"), padding: "9px 24px" }}>Save</button>}
             </div>
           </div>
         </div>
