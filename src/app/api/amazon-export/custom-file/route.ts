@@ -23,7 +23,11 @@ export const maxDuration = 60;
  */
 const MAX_IDS = 400;
 
-type Cfg = { headerRows: string[][]; defaults: string[]; skuCol: number; previewImageCol: number; skuSuffixes: string[]; sheetName: string };
+type Cfg = {
+  headerRows: string[][]; defaults: string[]; skuCol: number; previewImageCol: number;
+  skuSuffixes: string[]; sheetName: string;
+  variations?: { suffix: string; label: string; price: string }[];
+};
 
 function rootSku(variants: unknown): string {
   const arr = (Array.isArray(variants) ? variants : []) as { sku?: string | null }[];
@@ -70,8 +74,9 @@ export async function POST(req: NextRequest) {
   const scopeIds = await storeOwnerScopeIds(session);
   if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
-  const suffixes = (cfg.skuSuffixes ?? []).filter(Boolean);
-  if (!suffixes.length) return NextResponse.json({ ok: false, error: "template chưa có skuSuffixes" }, { status: 400 });
+  // v288: variations là nguồn chính; skuSuffixes giữ để tương thích bản cũ.
+  const suffixes = (cfg.variations?.map((v) => v.suffix) ?? cfg.skuSuffixes ?? []).filter(Boolean);
+  if (!suffixes.length) return NextResponse.json({ ok: false, error: "template chưa có variations/skuSuffixes" }, { status: 400 });
 
   const skipped: string[] = [];
   const dataRows: string[][] = [];
