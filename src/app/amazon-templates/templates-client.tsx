@@ -222,7 +222,7 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
 
       {/* ══ IMPORT MODAL ══ */}
       {importOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setImportOpen(false)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setImportOpen(false)}>
           <div style={{ ...card, width: "min(520px, 100%)", padding: 24 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
               <b style={{ fontSize: 18 }}>Import master template</b>
@@ -247,7 +247,7 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
 
       {/* ══ EDIT MODAL — bố cục như Edit template Shopify ══ */}
       {edit && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.5)", zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "3vh 16px", overflow: "auto" }} onClick={() => !busy && setEdit(null)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.5)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "3vh 16px", overflow: "auto" }} onClick={() => !busy && setEdit(null)}>
           <div style={{ ...card, width: "min(940px, 100%)", padding: 26 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
               <b style={{ fontSize: 20, display: "flex", alignItems: "center", gap: 10 }}><AmazonLogo size={26} /> Edit template</b>

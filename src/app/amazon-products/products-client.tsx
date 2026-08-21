@@ -237,28 +237,37 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       {note && <div style={{ ...card, padding: "10px 16px", marginBottom: 12, fontSize: 13, fontWeight: 600, color: note.startsWith("✓") ? "#1F6F45" : "#B42318" }}>{note}</div>}
       {prog && <div style={{ ...card, padding: "10px 16px", marginBottom: 12, fontSize: 13, fontWeight: 600, color: AMZ }}>{prog}</div>}
 
-      {/* Toolbar */}
-      <div style={{ ...card, padding: "12px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU / type" style={{ ...ctl, flex: "1 1 220px" }} />
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: sel.size ? "#1F6F45" : "var(--muted)" }}>{sel.size} selected</span>
-        <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>{sel.size === filtered.length && filtered.length ? "Clear" : `Select all ${filtered.length}`}</button>
-        {/* v291 · model chuyển từ header xuống cạnh nút AI — giống thanh action bên Shopify */}
-        <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} title="AI model for Amazon copy" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 170 }}>
-          <option value="">Model: Default</option>
-          {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-        {canEdit && (
-          <button disabled={busy || !sel.size} onClick={() => runAI(Array.from(sel))} style={{ ...pill("#5B3FBF", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>✦ AI Amazon copy{sel.size ? ` (${sel.size})` : ""}</button>
-        )}
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 210 }}>
-            {tpls.length === 0 && <option value="">No template — create one first</option>}
-            {tpls.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.skuSuffixes.join("/") || "no suffixes"}</option>)}
-          </select>
-          {/* v292 · FILE 1 trước (tạo listing), FILE 2 sau (gắn customization khi listing đã LIVE). */}
-          <button disabled={busy || !sel.size} onClick={doExportListing} title="STEP 1 — Generate the listing flat file (parent + child rows with title, bullets, images, prices from the template). Upload at Catalog → Add Products via Upload. Products missing copy/images/prices are skipped." style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>⬇ 1 · Listing file{sel.size ? ` (${sel.size})` : ""}</button>
-          <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="STEP 2 — Generate the customization .xlsx. Upload at Custom Products → Upload Customizations. Listings must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>⬇ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
-        </span>
+      {/* Toolbar — 2 hàng: (1) tìm & chọn · (2) hành động theo nhóm AI | EXPORT */}
+      <div style={{ ...card, padding: "12px 16px", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU / type" style={{ ...ctl, flex: "1 1 260px" }} />
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: sel.size ? "#1F6F45" : "var(--muted)", whiteSpace: "nowrap" }}>{sel.size} selected</span>
+          <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>{sel.size === filtered.length && filtered.length ? "Clear" : `Select all ${filtered.length}`}</button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+          {/* Nhóm AI */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>AI</span>
+            <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} title="AI model for Amazon copy" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 170 }}>
+              <option value="">Model: Default</option>
+              {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            </select>
+            {canEdit && (
+              <button disabled={busy || !sel.size} onClick={() => runAI(Array.from(sel))} style={{ ...pill("#5B3FBF", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>✦ AI Amazon copy{sel.size ? ` (${sel.size})` : ""}</button>
+            )}
+          </span>
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
+          {/* Nhóm Export — File 1 trước (tạo listing), File 2 sau (khi listing LIVE) */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>EXPORT</span>
+            <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 200 }}>
+              {tpls.length === 0 && <option value="">No template — create one first</option>}
+              {tpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            <button disabled={busy || !sel.size} onClick={doExportListing} title="STEP 1 — Generate the listing flat file (parent + child rows with title, bullets, images, prices from the template). Upload at Catalog → Add Products via Upload. Products missing copy/images/prices are skipped." style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>⬇ 1 · Listing file{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="STEP 2 — Generate the customization .xlsx. Upload at Custom Products → Upload Customizations. Listings must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>⬇ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
+          </span>
+        </div>
       </div>
 
       {/* Table */}
@@ -334,7 +343,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
 
       {/* v291 · Lightbox ảnh */}
       {zoom && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.75)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }} onClick={() => setZoom("")}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.75)", zIndex: 3100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }} onClick={() => setZoom("")}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={zoom + (zoom.includes("?") ? "&" : "?") + "width=1200"} alt="" style={{ maxWidth: "92vw", maxHeight: "92vh", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,.4)" }} />
         </div>
@@ -342,7 +351,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
 
       {/* Edit modal */}
       {edit && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflow: "auto" }} onClick={() => !busy && setEdit(null)}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflow: "auto" }} onClick={() => !busy && setEdit(null)}>
           <div style={{ ...card, width: "min(860px, 100%)", padding: 20 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
               <b style={{ fontSize: 18, display: "flex", alignItems: "center", gap: 10 }}><AmazonLogo size={24} /> Amazon listing copy</b>
