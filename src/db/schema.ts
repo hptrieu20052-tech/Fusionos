@@ -315,6 +315,14 @@ export const shopifyProducts = pgTable("shopify_products", {
   feedTitle: text("feed_title"),                  // ≤150 ký tự, KHÔNG dính đuôi variant 8"x8" / Matte
   feedDescription: text("feed_description"),      // 800-1200 ký tự — chỗ chứa từ khoá thật để match query
   feedAt: timestamp("feed_at", { withTimezone: true }), // lần cuối AI viết 2 field trên
+  // ---- v285 · Amazon listing layer — CHỈ trong FUSION, không push lên Shopify ----
+  // Title Shopify (55-70 ký tự, chuẩn Google) QUÁ NGẮN cho Amazon (chuẩn 150-200 ký tự,
+  // Brand + loại + custom + dịp tặng + size). Bộ field riêng để export flat file Amazon.
+  // Cần MIGRATION_v285_amazon_listing.sql
+  amazonTitle: text("amazon_title"),              // 150-200 ký tự, bắt đầu bằng "Personalized ..."
+  amazonBullets: jsonb("amazon_bullets"),         // string[5] — 5 bullet points "About this item"
+  amazonDesc: text("amazon_desc"),                // plain text 1000-1800 ký tự (Amazon không render HTML)
+  amazonAt: timestamp("amazon_at", { withTimezone: true }), // lần cuối AI viết bộ Amazon
   dirty: boolean("dirty").notNull().default(false), // có chỉnh sửa local chưa Push
   // Lần cuối AI Optimize viết lại listing này. null = CHƯA chạy AI bao giờ.
   // Dùng cho cột "AI" + filter "Not optimized yet" — khỏi chạy lại (và trả tiền lại) con đã xong.
