@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { AmazonLogo } from "@/components/amazon-logo";
 
 type Row = {
   id: string; shopifyProductId: string | null;
@@ -180,13 +181,13 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     <div style={{ maxWidth: 1240, margin: "0 auto", padding: "18px 16px" }}>
       {/* Header */}
       <div style={{ ...card, padding: "16px 20px", marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <div style={{ fontSize: 20, fontWeight: 800, display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ width: 34, height: 34, borderRadius: 9, background: "#FF9900", color: "#111", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>a</span>
-            Manage Products · Amazon
-          </div>
-          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>
-            {stats.total} staged · {stats.ready} copy-ready · {stats.exported} exported — push listings here from Manage Products Shopify (🅰 Push to Amazon)
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <AmazonLogo size={46} />
+          <div>
+            <div style={{ fontSize: 21, fontWeight: 800 }}>Manage Products · Amazon</div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>
+              {stats.total} staged · {stats.ready} copy-ready · {stats.exported} exported · Push from Shopify → AI copy → Export customization
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

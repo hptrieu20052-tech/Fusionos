@@ -862,6 +862,113 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     setBusy(false);
   };
 
+  // ══ v287 · RUN PIPELINE — gom cả chuỗi hoàn thiện listing thành MỘT nút ═══════════════
+  // Chuỗi chuẩn sau khi push Etsy → Shopify: AI Optimize → Push to Shopify → Google prep
+  // (SKU + fields + alt) → Feed copy (AI) → Set Active → Push to Amazon + AI Amazon copy.
+  // Mỗi bước tick chọn được; "Skip done" (mặc định BẬT) tự bỏ qua con đã xong ở từng bước
+  // (đã có AI, không dirty, đủ SKU/alt, đã có feed, đã ACTIVE, đã có bản Amazon + copy).
+  const [pipeOpen, setPipeOpen] = useState(false);
+  const [pipeSteps, setPipeSteps] = useState<Record<string, boolean>>({ ai: true, push: true, gprep: true, feed: true, active: true, amazon: true });
+  const [pipeSkipDone, setPipeSkipDone] = useState(true);
+  const fetchRowsFresh = async (): Promise<Row[]> => {
+    try { const j = await fetch("/api/shopify-products").then((r) => r.json()); return Array.isArray(j?.rows) ? j.rows as Row[] : rows; }
+    catch { return rows; }
+  };
+  const runPipeline = async () => {
+    const ids = Array.from(sel);
+    if (!ids.length) return flash("✗ Select products first", false);
+    setPipeOpen(false); setBusy(true); setMsg(null); setFails([]);
+    const summary: string[] = [];
+    const idSet = new Set(ids);
+    let fresh = rows.filter((r) => idSet.has(r.id));
+
+    // 1 · AI Optimize (bỏ qua con đã có aiAt khi Skip done)
+    if (pipeSteps.ai) {
+      const t = (pipeSkipDone ? fresh.filter((r) => !r.aiAt) : fresh).map((r) => r.id);
+      if (t.length) {
+        setProg({ label: `Pipeline 1/6 · AI Optimize (${t.length})`, done: 0, total: t.length, fail: 0 });
+        const r1 = await runAiPass(t, `Pipeline 1/6 · AI Optimize`, 0, t.length);
+        let fails = r1.failed;
+        if (fails.length) { await new Promise((s) => setTimeout(s, 2500)); const r2 = await runAiPass(fails.map((f) => f.id), "Pipeline 1/6 · retry", t.length - fails.length, t.length); fails = r2.failed; }
+        summary.push(`AI ${t.length - fails.length}/${t.length}`);
+      } else summary.push("AI skipped (done)");
+      fresh = (await fetchRowsFresh()).filter((r) => idSet.has(r.id));
+    }
+
+    // 2 · Push to Shopify (chỉ con dirty)
+    if (pipeSteps.push) {
+      const t = fresh.filter((r) => r.dirty).map((r) => r.id);
+      if (t.length) {
+        const res = await doPush(t, true);
+        setBusy(true); // doPush tự tắt busy — bật lại cho các bước sau
+        summary.push(`Push ${res?.ok ?? 0}/${t.length}`);
+        fresh = (await fetchRowsFresh()).filter((r) => idSet.has(r.id));
+      } else summary.push("Push skipped (clean)");
+    }
+
+    // 3 · Google prep: SKU + Google fields + image alt (3 pass, chung 1 thanh)
+    if (pipeSteps.gprep) {
+      const needSku = pipeSkipDone ? fresh.filter((r) => r.skuDone < r.skuTotal).map((r) => r.id) : ids;
+      const needAlt = pipeSkipDone ? fresh.filter((r) => r.altDone < r.altTotal).map((r) => r.id) : ids;
+      const grand = needSku.length + ids.length + needAlt.length;
+      let off = 0; let failBase = 0;
+      if (needSku.length) { const r = await passSku(needSku, { offset: off, grand, failBase }); off += needSku.length; failBase += r.failed.length; }
+      { const r = await passGoogleFields(ids, { offset: off, grand, failBase }); off += ids.length; failBase += r.failed.length; }
+      if (needAlt.length) { const useVision = !!aiModel && visionIds.has(aiModel); await passImageAlt(needAlt, useVision ? aiModel : undefined, { offset: off, grand, failBase }); }
+      summary.push(`Google prep ✓ (sku ${needSku.length} · alt ${needAlt.length})`);
+      fresh = (await fetchRowsFresh()).filter((r) => idSet.has(r.id));
+    }
+
+    // 4 · Feed copy (AI) — chỉ con chưa đạt chuẩn feed
+    if (pipeSteps.feed) {
+      const t = (pipeSkipDone ? fresh.filter((r) => !feedOk(r)) : fresh).map((r) => r.id);
+      if (t.length) {
+        const { failed } = await runBatch({ url: "/api/shopify-products/feed-copy", ids: t, label: `Pipeline 4/6 · Feed copy (${t.length})`, chunk: CHUNK_FEED, counters: ["written"], body: { model: aiModel || undefined } });
+        summary.push(`Feed ${t.length - failed.length}/${t.length}`);
+      } else summary.push("Feed skipped (done)");
+    }
+
+    // 5 · Set as Active — chỉ con chưa ACTIVE
+    if (pipeSteps.active) {
+      const t = (pipeSkipDone ? fresh.filter((r) => r.status !== "ACTIVE") : fresh).map((r) => r.id);
+      if (t.length) {
+        setProg({ label: `Pipeline 5/6 · Set Active (${t.length})`, done: 0, total: t.length, fail: 0 });
+        try {
+          const j = await postJSON("/api/shopify-products/bulk-action", { ids: t, action: "active" });
+          summary.push(`Active ${j.done ?? 0}/${t.length}`);
+        } catch { summary.push("Active FAILED"); }
+        setProg({ label: `Pipeline 5/6 · Set Active`, done: t.length, total: t.length, fail: 0 });
+      } else summary.push("Active skipped");
+    }
+
+    // 6 · Push to Amazon (stage) + AI Amazon copy
+    if (pipeSteps.amazon) {
+      setProg({ label: "Pipeline 6/6 · Push to Amazon", done: 0, total: ids.length, fail: 0 });
+      try {
+        const jp = await postJSON("/api/amazon-products", { ids });
+        // Lấy bản ghi Amazon của đúng các con này để chạy AI copy
+        const ja = await fetch("/api/amazon-products").then((r) => r.json());
+        const mine = (Array.isArray(ja?.rows) ? ja.rows : []) as { id: string; shopifyProductId: string | null; aiAt: string | null }[];
+        const targets = mine.filter((a) => a.shopifyProductId && idSet.has(a.shopifyProductId) && (!pipeSkipDone || !a.aiAt)).map((a) => a.id);
+        let done = 0; let fail = 0;
+        for (let i = 0; i < targets.length; i += 6) {
+          const chunk = targets.slice(i, i + 6);
+          setProg({ label: `Pipeline 6/6 · AI Amazon copy (${done}/${targets.length})`, done, total: targets.length, fail });
+          try {
+            const j = await postJSON("/api/amazon-products/ai", { ids: chunk, model: aiModel || undefined });
+            for (const res of j?.results ?? []) { if (res.ok) done++; else fail++; }
+          } catch { fail += chunk.length; }
+        }
+        summary.push(`Amazon staged +${jp.created ?? 0} · AI copy ${done}/${targets.length}${fail ? ` (${fail} failed)` : ""}`);
+      } catch (e) { summary.push("Amazon FAILED: " + String((e as Error)?.message ?? e).slice(0, 80)); }
+    }
+
+    setProg(null);
+    await load();
+    setBusy(false);
+    flash(`✓ Pipeline done — ${summary.join(" · ")}`);
+  };
+
   // v179 · AI policy audit theo LÔ 6 — soi TOÀN BỘ listing (artwork + text + SEO + feed),
   // mỗi phát hiện kèm CÁCH SỬA. Danh sách dưới thanh tiến độ liệt kê từng vấn đề → fix.
   const CHUNK_POLAI = 6;
@@ -1321,6 +1428,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <span style={grp}>
               <button disabled={busy || !sel.size} title="Stage the selected listings into Manage Products Amazon (like Etsy → Shopify). Already-pushed listings are skipped. Nothing is written to Shopify." onClick={() => pushToAmazon(Array.from(sel))}
                 style={{ ...pill("#FF9900", "#111"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}>🅰 Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
+              {/* v287 · Run pipeline: AI → Push → Google prep → Feed → Active → Amazon, một nút. */}
+              <button disabled={busy || !sel.size} title="Run the whole finishing chain on the selection: AI Optimize → Push to Shopify → Google prep (SKU + fields + alt) → Feed copy → Set Active → Push to Amazon + AI Amazon copy. Steps are configurable; already-done items are skipped." onClick={() => setPipeOpen(true)}
+                style={{ ...pill("linear-gradient(135deg,#1F6F45,#0E4429)", "#fff"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}>⚡ Run pipeline{sel.size ? ` (${sel.size})` : ""}</button>
             </span>
           )}
 
@@ -1963,6 +2073,39 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       )}
 
       {/* EXPORT PINTEREST — chỉ tạo file CSV, không chạm Shopify. */}
+      {/* v287 · Run pipeline — tick bước → Start. Skip done tự bỏ qua con đã xong ở từng bước. */}
+      {pipeOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setPipeOpen(false)}>
+          <div style={{ ...card, width: "min(560px, 100%)", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <b style={{ fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}>⚡ Run pipeline ({sel.size} selected)</b>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "6px 0 14px" }}>
+              Runs the finishing chain in order, one progress bar per step. Model: {aiModel || "server default"}.
+            </div>
+            {([
+              ["ai", "1 · AI Optimize", "Writes title/SEO/description — skips listings already optimized"],
+              ["push", "2 · Push to Shopify", "Pushes edited (dirty) listings only"],
+              ["gprep", "3 · Google prep", "SKU + Google fields + image alt — skips what's already filled"],
+              ["feed", "4 · Feed copy (AI)", "Merchant Center title + long description — skips listings with feed"],
+              ["active", "5 · Set as Active", "Publishes listings still in Draft"],
+              ["amazon", "6 · Amazon", "Push to Manage Products Amazon + AI Amazon copy"],
+            ] as [string, string, string][]).map(([k, t, d]) => (
+              <label key={k} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 10px", borderRadius: 10, cursor: "pointer", background: pipeSteps[k] ? "#F3FBF6" : "transparent", marginBottom: 4 }}>
+                <input type="checkbox" checked={!!pipeSteps[k]} onChange={() => setPipeSteps((p) => ({ ...p, [k]: !p[k] }))} style={{ marginTop: 3 }} />
+                <span><b style={{ fontSize: 13 }}>{t}</b><br /><span style={{ fontSize: 11.5, color: "var(--muted)" }}>{d}</span></span>
+              </label>
+            ))}
+            <label style={{ display: "flex", gap: 8, alignItems: "center", margin: "10px 0 16px", fontSize: 12.5, cursor: "pointer" }}>
+              <input type="checkbox" checked={pipeSkipDone} onChange={() => setPipeSkipDone((v) => !v)} />
+              Skip items already done at each step (recommended)
+            </label>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button disabled={busy} onClick={() => setPipeOpen(false)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Cancel</button>
+              <button disabled={busy || !Object.values(pipeSteps).some(Boolean)} onClick={runPipeline} style={{ ...pill("linear-gradient(135deg,#1F6F45,#0E4429)", "#fff"), padding: "8px 16px" }}>Start pipeline</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pinOpen && (() => {
         const picked = rows.filter((r) => sel.has(r.id));
         const pins = picked.reduce((n, r) => n + Math.min(r.imageCount || 0, pinPerProduct), 0);

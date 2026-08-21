@@ -7,6 +7,7 @@ import {
   IconWallet, IconStore, IconSettings, IconProducts, IconEye, IconGrid, IconBox, IconSupport, IconMarketing, IconBell, IconSparkle, IconBook,
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
+import { AmazonLogo } from "@/components/amazon-logo";
 
 // Logo sàn cho nav (đen, đã tách nền) — dùng đúng icon người dùng gửi.
 const MK_SRC: Record<string, string> = { etsy: "/marketplaces/nav-etsy.png", shopify: "/marketplaces/nav-shopify.png", tiktok: "/marketplaces/nav-tiktok.png" };
@@ -179,11 +180,11 @@ export default function AppShell({ user, links, children, canProducts = false, c
             Manage Templates Shopify
           </Link>}
           {canProducts && <Link href="/amazon-products" prefetch className={`topnav-more-item${isActive("/amazon-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            <span className="topnav-ic"><AmazonLogo size={16} /></span>
             Manage Products Amazon
           </Link>}
           {canProducts && <Link href="/amazon-templates" prefetch className={`topnav-more-item${isActive("/amazon-templates") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconBox width={16} height={16} /></span>
+            <span className="topnav-ic"><AmazonLogo size={16} /></span>
             Manage Templates Amazon
           </Link>}
           {canProducts && <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
@@ -312,8 +313,8 @@ export default function AppShell({ user, links, children, canProducts = false, c
               if (l.href === hubAnchor && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
                 const hubItems = [
                   ...(canProducts ? [
-                    { href: "/amazon-products", icon: <IconBox width={18} height={18} />, label: "Manage Products Amazon" },
-                    { href: "/amazon-templates", icon: <IconBox width={18} height={18} />, label: "Manage Templates Amazon" },
+                    { href: "/amazon-products", icon: <AmazonLogo size={18} />, label: "Manage Products Amazon" },
+                    { href: "/amazon-templates", icon: <AmazonLogo size={18} />, label: "Manage Templates Amazon" },
                     { href: "/tiktok-products", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Products Tiktok" },
                     { href: "/tiktok-templates", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Templates Tiktok" },
                   ] : []),

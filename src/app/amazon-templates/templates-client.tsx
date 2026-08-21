@@ -11,6 +11,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { AmazonLogo } from "@/components/amazon-logo";
 
 type Tpl = { id: string; name: string; productType: string | null; fields: number; cols: number; skuSuffixes: string[]; updatedAt: string | null };
 
@@ -83,13 +84,13 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "18px 16px" }}>
-      <div style={{ ...card, padding: "16px 20px", marginBottom: 14 }}>
-        <div style={{ fontSize: 20, fontWeight: 800, display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ width: 34, height: 34, borderRadius: 9, background: "#FF9900", color: "#111", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 900 }}>a</span>
-          Manage Templates · Amazon
-        </div>
-        <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>
-          One customization template per product family. Create it once in Seller Central (build customizations on one ASIN → Generate template → download the .xlsx), then import it here — Export in Manage Products Amazon clones its rows per SKU.
+      <div style={{ ...card, padding: "16px 20px", marginBottom: 14, display: "flex", alignItems: "center", gap: 14 }}>
+        <AmazonLogo size={46} />
+        <div>
+          <div style={{ fontSize: 21, fontWeight: 800 }}>Manage Templates · Amazon</div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>
+            One customization template per product family. Create it once in Seller Central (build customizations on one ASIN → Generate template → download the .xlsx), then import it here — Export in Manage Products Amazon clones its rows per SKU.
+          </div>
         </div>
       </div>
 
