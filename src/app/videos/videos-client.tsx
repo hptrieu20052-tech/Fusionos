@@ -437,6 +437,27 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                   )}
                 </div>
               </div>
+              {/* v295 · Dải video con dưới preview — như dải Mockup của card Design Studio.
+                  Click 1 thumb = mở modal đúng video đó (không phải video đại diện). */}
+              {many && (
+                <div onClick={(e) => e.stopPropagation()}
+                  style={{ display: "flex", gap: 8, padding: "8px 10px", overflowX: "auto", background: "#F7F8FA", borderTop: "1px solid var(--line)" }}>
+                  {g.map((v) => (
+                    <div key={v.id} onClick={() => setOpen(v.id)} title={v.title}
+                      style={{ flexShrink: 0, width: 60, cursor: "pointer", textAlign: "center" }}>
+                      <div style={{ width: 60, height: 80, borderRadius: 8, overflow: "hidden", background: "#0B1220", border: "1.5px solid var(--line)" }}>
+                        {v.thumbUrl
+                          // eslint-disable-next-line @next/next/no-img-element
+                          ? <img src={v.thumbUrl} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#475569", fontSize: 9, fontWeight: 700 }}>—</div>}
+                      </div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        .{v.cardSeq ?? "?"} · {secs(v.durationSec)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
               {/* Card gọn: mã card (QT-TH-01) hoặc #id video lẻ · tên product · seller/creator · size. */}
               <div className="dc-body" style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
                 <div className="dc-top">
