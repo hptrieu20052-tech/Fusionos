@@ -66,6 +66,10 @@ const CONSTANT_FIELDS: { key: string; label: string; hint: string }[] = [
   { key: "color", label: "Color", hint: "Multicolor" },
   { key: "colorMap", label: "Color Map", hint: "Multicolor" },
   { key: "numberOfItems", label: "Number of Items", hint: "1" },
+  // v292 · dùng cho flat file listing (File 1)
+  { key: "quantity", label: "Inventory Quantity", hint: "100" },
+  { key: "leadTimeDays", label: "Handling Time (days)", hint: "5" },
+  { key: "countryOfOrigin", label: "Country of Origin (optional)", hint: "e.g. Vietnam / United States" },
 ];
 
 export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean }) {

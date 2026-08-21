@@ -147,6 +147,30 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     setBusy(false);
   };
 
+  // v292 · FILE 1 — flat file listing (Add Products via Upload). Tạo Parent + Child theo template.
+  const doExportListing = async () => {
+    const ids = Array.from(sel);
+    if (!ids.length) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/amazon-export/listing-file", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) { const j = await res.json().catch(() => null); throw new Error(j?.error ?? `HTTP ${res.status}`); }
+      const n = res.headers.get("X-Rows") ?? "?";
+      const sk = Number(res.headers.get("X-Skipped") ?? 0);
+      const skFirst = decodeURIComponent(res.headers.get("X-Skipped-First") ?? "");
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `amazon-listings-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click(); URL.revokeObjectURL(a.href);
+      flash(`✓ Listing file: ${n} rows (parent+child) — upload at Catalog → Add Products via Upload${sk ? ` · ${sk} skipped: ${skFirst}` : ""}`);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    setBusy(false);
+  };
+
   const remove = async (id: string) => {
     setBusy(true);
     try {
@@ -231,7 +255,9 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
             {tpls.length === 0 && <option value="">No template — create one first</option>}
             {tpls.map((t) => <option key={t.id} value={t.id}>{t.name} · {t.skuSuffixes.join("/") || "no suffixes"}</option>)}
           </select>
-          <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="Generate the Amazon 'Add product customizations in bulk' .xlsx for the selected products. Upload it at Custom Products → Upload Customizations. Listings must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>⬇ Export customization{sel.size ? ` (${sel.size})` : ""}</button>
+          {/* v292 · FILE 1 trước (tạo listing), FILE 2 sau (gắn customization khi listing đã LIVE). */}
+          <button disabled={busy || !sel.size} onClick={doExportListing} title="STEP 1 — Generate the listing flat file (parent + child rows with title, bullets, images, prices from the template). Upload at Catalog → Add Products via Upload. Products missing copy/images/prices are skipped." style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>⬇ 1 · Listing file{sel.size ? ` (${sel.size})` : ""}</button>
+          <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="STEP 2 — Generate the customization .xlsx. Upload at Custom Products → Upload Customizations. Listings must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>⬇ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
         </span>
       </div>
 
