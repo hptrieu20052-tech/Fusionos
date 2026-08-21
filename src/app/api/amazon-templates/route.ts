@@ -167,14 +167,27 @@ export async function PATCH(req: NextRequest) {
     }
     cfg = { ...cfg, constants: cst }; cfgTouched = true;
   }
-  // v288 · Sửa nội dung customization (label/instructions/required...) — nhận cả mảng defaults
-  // đủ độ dài. KHÔNG cho đổi số cột (Amazon cấm thêm/bớt cột).
-  if (Array.isArray(b?.defaults)) {
-    const width = (cfg.headerRows?.[0] ?? []).length;
-    if (b.defaults.length === width) {
-      cfg = { ...cfg, defaults: b.defaults.map((x: unknown) => String(x ?? "")) }; cfgTouched = true;
-    } else {
-      return NextResponse.json({ ok: false, error: `defaults phải đúng ${width} cột (nhận ${b.defaults.length})` }, { status: 400 });
+  // v291 · Update master file: re-upload .xlsx generate lại từ Seller Central → thay toàn bộ
+  // phần customization (headerRows + defaults + vị trí cột), GIỮ variations/constants/tên.
+  if (typeof b?.xlsxBase64 === "string" && b.xlsxBase64) {
+    try {
+      const wb = XLSX.read(Buffer.from(b.xlsxBase64, "base64"), { type: "buffer" });
+      const sheetName = wb.SheetNames.includes("Template") ? "Template" : wb.SheetNames[0];
+      const aoa = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[sheetName], { header: 1, raw: false, defval: "" }) as string[][];
+      if (aoa.length < 4) throw new Error("file phải có 3 dòng header + 1 dòng giá trị mẫu");
+      const width = Math.max(...aoa.slice(0, 4).map((r2) => r2.length));
+      const pad = (r2: string[]) => { const o = r2.map((v) => String(v ?? "")); while (o.length < width) o.push(""); return o.slice(0, width); };
+      const headerRows = [pad(aoa[0]), pad(aoa[1]), pad(aoa[2])];
+      const defaults = pad(aoa[3]);
+      cfg = {
+        ...cfg, headerRows, defaults,
+        skuCol: Math.max(0, headerRows[1].indexOf("Seller Sku")),
+        previewImageCol: headerRows[1].indexOf("baseImage.imageUrl"),
+        sheetName: "Template",
+      };
+      cfgTouched = true;
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: "Parse .xlsx thất bại: " + String((e as Error)?.message ?? e) }, { status: 400 });
     }
   }
   if (cfgTouched) set.config = cfg;

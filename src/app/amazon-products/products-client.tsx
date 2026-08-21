@@ -19,7 +19,7 @@ type Row = {
   sourceTitle: string; productType: string; sourceStatus: string;
   image: string; skuRoot: string; storeName: string | null;
 };
-type Tpl = { id: string; name: string; productType: string | null; fields: number; skuSuffixes: string[] };
+type Tpl = { id: string; name: string; productType: string | null; fields: number; skuSuffixes: string[]; variations?: { suffix: string; label: string; price: string }[] };
 
 const AMZ = "#B5661A";
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -60,6 +60,21 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [aiModel, setAiModel] = useState("");
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
   const [tplPick, setTplPick] = useState("");
+  const [zoom, setZoom] = useState(""); // v291 · lightbox ảnh thumbnail
+
+  // Template khớp cho 1 sản phẩm: gán tay → khớp Product type → template duy nhất.
+  const tplFor = (r: Row): Tpl | null => {
+    if (r.amazonTemplateId) { const t = tpls.find((x) => x.id === r.amazonTemplateId); if (t) return t; }
+    const pt = r.productType.trim().toLowerCase();
+    if (pt) { const t = tpls.find((x) => (x.productType ?? "").trim().toLowerCase() === pt); if (t) return t; }
+    return tpls.length === 1 ? tpls[0] : null;
+  };
+  const priceOf = (t: Tpl | null): string => {
+    const ps = (t?.variations ?? []).map((v) => Number(v.price)).filter((n) => !isNaN(n) && n > 0);
+    if (!ps.length) return "—";
+    const lo = Math.min(...ps), hi = Math.max(...ps);
+    return lo === hi ? `$${lo.toFixed(2)}` : `$${lo.toFixed(2)}–$${hi.toFixed(2)}`;
+  };
 
   const load = async () => {
     setLoading(true);
@@ -191,10 +206,6 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 190 }}>
-            <option value="">Model: Default</option>
-            {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
           <button disabled={busy} onClick={load} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>↻ Reload</button>
         </div>
       </div>
@@ -207,6 +218,11 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU / type" style={{ ...ctl, flex: "1 1 220px" }} />
         <span style={{ fontSize: 12.5, fontWeight: 700, color: sel.size ? "#1F6F45" : "var(--muted)" }}>{sel.size} selected</span>
         <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>{sel.size === filtered.length && filtered.length ? "Clear" : `Select all ${filtered.length}`}</button>
+        {/* v291 · model chuyển từ header xuống cạnh nút AI — giống thanh action bên Shopify */}
+        <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} title="AI model for Amazon copy" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 170 }}>
+          <option value="">Model: Default</option>
+          {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+        </select>
         {canEdit && (
           <button disabled={busy || !sel.size} onClick={() => runAI(Array.from(sel))} style={{ ...pill("#5B3FBF", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>✦ AI Amazon copy{sel.size ? ` (${sel.size})` : ""}</button>
         )}
@@ -226,31 +242,38 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
             <tr style={{ borderBottom: "1px solid var(--line)", textAlign: "left", color: "var(--muted)", fontSize: 11.5 }}>
               <th style={{ padding: 10 }}><input type="checkbox" checked={!!filtered.length && sel.size === filtered.length} onChange={toggleAll} /></th>
               <th style={{ padding: 10 }}>IMAGE</th>
-              <th style={{ padding: 10 }}>SOURCE LISTING (SHOPIFY)</th>
+              <th style={{ padding: 10 }}>TITLE</th>
               <th style={{ padding: 10 }}>AMAZON COPY</th>
               <th style={{ padding: 10 }}>SKU ROOT</th>
               <th style={{ padding: 10 }}>TYPE</th>
+              <th style={{ padding: 10 }}>TEMPLATE</th>
+              <th style={{ padding: 10 }}>PRICE</th>
               <th style={{ padding: 10 }}>STATUS</th>
               <th style={{ padding: 10 }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} style={{ padding: 28, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>
+              <tr><td colSpan={10} style={{ padding: 28, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={8} style={{ padding: 28, textAlign: "center", color: "var(--muted)" }}>
+              <tr><td colSpan={10} style={{ padding: 28, textAlign: "center", color: "var(--muted)" }}>
                 Nothing staged yet — open <b>Manage Products Shopify</b>, select listings and hit <b>🅰 Push to Amazon</b>.
               </td></tr>
             ) : filtered.map((r) => (
               <tr key={r.id} style={{ borderBottom: "1px solid var(--line)" }}>
                 <td style={{ padding: 10 }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: 10 }}>
+                  {/* v291 · click ảnh → phóng to (lightbox) */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {r.image ? <img src={r.image + (r.image.includes("?") ? "&" : "?") + "width=96"} alt="" style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} /> : <span style={{ color: "var(--muted)" }}>—</span>}
+                  {r.image ? <img src={r.image + (r.image.includes("?") ? "&" : "?") + "width=96"} alt="" onClick={() => setZoom(r.image)} style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)", cursor: "zoom-in" }} /> : <span style={{ color: "var(--muted)" }}>—</span>}
                 </td>
                 <td style={{ padding: 10, maxWidth: 320 }}>
-                  <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>{r.sourceTitle}</div>
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{r.storeName ?? ""}{r.sourceStatus ? ` · ${r.sourceStatus}` : ""}</div>
+                  {/* v291 · click title → mở detail (modal edit) */}
+                  <div onClick={() => setEdit({ ...r, bullets: r.bullets ? [...r.bullets] : null })} title="Open Amazon listing detail"
+                    style={{ fontWeight: 700, color: "#1D4ED8", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                    {r.title || r.sourceTitle}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{r.storeName ?? ""}{r.sourceStatus ? ` · ${r.sourceStatus}` : ""}{r.title ? " · source: " + r.sourceTitle.slice(0, 40) + (r.sourceTitle.length > 40 ? "…" : "") : ""}</div>
                 </td>
                 <td style={{ padding: 10 }}>
                   <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -262,6 +285,13 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                 </td>
                 <td style={{ padding: 10, fontFamily: "monospace", fontSize: 12 }}>{r.skuRoot || <span style={{ color: "#B42318" }}>no SKU</span>}</td>
                 <td style={{ padding: 10, fontSize: 12 }}>{r.productType || "—"}</td>
+                {/* v291 · template khớp + giá lấy từ variations của template */}
+                <td style={{ padding: 10, fontSize: 12 }}>
+                  {(() => { const t = tplFor(r); return t
+                    ? <span title={`${(t.variations ?? []).length} variations`} style={chip("#FFF0DB", "#B5661A")}>📌 {t.name.length > 18 ? t.name.slice(0, 18) + "…" : t.name}</span>
+                    : <span title="No template matches this Product type — assign one in Manage Templates Amazon" style={{ color: "#B42318", fontSize: 11.5, fontWeight: 700 }}>none</span>; })()}
+                </td>
+                <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(tplFor(r))}</td>
                 <td style={{ padding: 10 }}>
                   <span style={chip(r.status === "LIVE" ? "#E9F7EF" : r.status === "EXPORTED" ? "#FFF0DB" : "#F1F1F4", r.status === "LIVE" ? "#1F6F45" : r.status === "EXPORTED" ? "#B5661A" : "#8794A5")}>{r.status}</span>
                   {r.asin && <div style={{ fontSize: 10.5, fontFamily: "monospace", marginTop: 2 }}>{r.asin}</div>}
@@ -275,6 +305,14 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </tbody>
         </table>
       </div>
+
+      {/* v291 · Lightbox ảnh */}
+      {zoom && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.75)", zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }} onClick={() => setZoom("")}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoom + (zoom.includes("?") ? "&" : "?") + "width=1200"} alt="" style={{ maxWidth: "92vw", maxHeight: "92vh", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,.4)" }} />
+        </div>
+      )}
 
       {/* Edit modal */}
       {edit && (

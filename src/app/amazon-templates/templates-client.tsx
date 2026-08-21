@@ -122,16 +122,37 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
     if (!edit) return;
     setBusy(true);
     try {
-      const maxI = Math.max(...edit.cols.map((c) => c.i), edit.skuCol, edit.previewImageCol);
-      const byI = new Map(edit.cols.map((c) => [c.i, c.value]));
-      const defaults = Array.from({ length: maxI + 1 }, (_, i) => byI.get(i) ?? "");
-      // giữ nguyên các ô không hiển thị (không có label): lấy lại từ cols gốc đã map toàn bộ
       const j = await fetch("/api/amazon-templates", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: edit.id, name: edit.name, productType: edit.productType ?? "", variations: edit.variations, constants: edit.constants, defaults }),
+        body: JSON.stringify({ id: edit.id, name: edit.name, productType: edit.productType ?? "", variations: edit.variations, constants: edit.constants }),
       }).then((r) => r.json());
       if (j.ok) { flash("✓ Template saved"); setEdit(null); load(); }
       else flash("✗ " + (j.error ?? "Save failed"));
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    setBusy(false);
+  };
+
+  // v291 · Update master file — upload .xlsx generate lại từ Seller Central, thay phần customization.
+  const masterRef = useRef<HTMLInputElement>(null);
+  const updateMaster = async () => {
+    const f = masterRef.current?.files?.[0];
+    if (!edit || !f) return flash("✗ Choose the new .xlsx first");
+    setBusy(true);
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)) as number[]);
+      const j = await fetch("/api/amazon-templates", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: edit.id, xlsxBase64: btoa(bin) }),
+      }).then((r) => r.json());
+      if (j.ok) {
+        flash("✓ Master file updated");
+        // nạp lại chi tiết để hiện bộ field mới
+        const d = await fetch(`/api/amazon-templates?id=${edit.id}`).then((r) => r.json());
+        if (d.ok) setEdit(d.template);
+        if (masterRef.current) masterRef.current.value = "";
+        load();
+      } else flash("✗ " + (j.error ?? "Update failed"));
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
     setBusy(false);
   };
@@ -273,32 +294,33 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
               ))}
             </div>
 
-            {/* Customization — gom theo FIELD, kiểu khối Personalization của Shopify */}
+            {/* Customization — CHỈ ĐỌC (nguồn chuẩn là template trên Seller Central).
+                Muốn đổi cấu trúc: sửa trên Amazon → Generate template → download → Update file ở đây. */}
             <div style={{ border: "1px solid #F0C48A", borderRadius: 12, padding: "14px 16px", background: "#FFFBF4", marginBottom: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <b style={{ fontSize: 13.5, color: AMZ }}>🖊 Customization · buyer inputs</b>
-                <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{groups.length} fields · columns fixed by Amazon (labels & options editable)</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                <b style={{ fontSize: 13.5, color: AMZ }}>🖊 Customization · from Seller Central template</b>
+                <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{groups.length} fields · read-only — edit on Amazon, then update the file below</span>
               </div>
               {groups.map((g, gi) => {
                 const meta = TYPE_META[g.type];
+                const req = g.cols.find((c) => /required/i.test(c.key));
+                const opts = g.type === "dropdown" ? g.cols.filter((c) => c.key === "label").slice(1).map((c) => c.value).filter(Boolean) : [];
+                const instr = g.cols.find((c) => c.key === "instructions")?.value ?? "";
                 return (
-                  <div key={gi} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: "10px 14px", marginBottom: 8 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: meta.bg, color: meta.color }}>{meta.icon} {meta.label}</span>
-                      <b style={{ fontSize: 13.5 }}>{groupTitle(g)}</b>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "170px 1fr", gap: "6px 10px", alignItems: "center" }}>
-                      {g.cols.map((c) => (
-                        <FieldCell key={c.i} col={c} onChange={(val) => {
-                          const cols = edit.cols.map((x) => x.i === c.i ? { ...x, value: val } : x);
-                          setEdit({ ...edit, cols });
-                        }} />
-                      ))}
-                    </div>
+                  <div key={gi} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 14px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: meta.bg, color: meta.color, flexShrink: 0 }}>{meta.icon} {meta.label}</span>
+                    <b style={{ fontSize: 13 }}>{groupTitle(g)}</b>
+                    {req && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999, background: /^true$/i.test(req.value) ? "#FEF0F0" : "#F1F1F4", color: /^true$/i.test(req.value) ? "#B42318" : "#8794A5" }}>{/^true$/i.test(req.value) ? "required" : "optional"}</span>}
+                    {opts.length > 0 && <span style={{ fontSize: 11.5, color: "var(--muted)" }}>· {opts.join(" / ")}</span>}
+                    {instr && <span style={{ fontSize: 11.5, color: "var(--muted)", flexBasis: "100%", paddingLeft: 2 }}>{instr.slice(0, 110)}{instr.length > 110 ? "…" : ""}</span>}
                   </div>
                 );
               })}
-              <div style={{ fontSize: 11, color: "var(--muted)" }}>Seller SKU & preview image are filled automatically per product at export.</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                <input ref={masterRef} type="file" accept=".xlsx" style={{ fontSize: 12.5 }} />
+                <button disabled={busy} onClick={updateMaster} style={{ ...pill(AMZ, "#fff"), padding: "7px 14px", fontSize: 12.5 }}>Update master file</button>
+                <span style={{ fontSize: 11, color: "var(--muted)" }}>Re-upload the .xlsx after regenerating the template on Seller Central.</span>
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -309,26 +331,5 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
         </div>
       )}
     </div>
-  );
-}
-
-// 1 dòng thuộc tính trong khối field: nhãn (row3) + control phù hợp (true/false → select).
-function FieldCell({ col, onChange }: { col: Col; onChange: (v: string) => void }) {
-  const isBool = /^(true|false)$/i.test(col.value) || /required|allow/i.test(col.key);
-  const clean = col.label.replace(/\*/g, "").trim();
-  return (
-    <>
-      <span style={{ fontSize: 12, color: "var(--muted)" }} title={`${col.key} · column #${col.i}`}>{clean}</span>
-      {isBool ? (
-        <select value={/^true$/i.test(col.value) ? "true" : "false"} onChange={(e) => onChange(e.target.value)}
-          style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "7px 10px", fontSize: 12.5, font: "inherit", background: "#fff", width: 110 }}>
-          <option value="true">Yes</option>
-          <option value="false">No</option>
-        </select>
-      ) : (
-        <input value={col.value} onChange={(e) => onChange(e.target.value)}
-          style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "7px 10px", fontSize: 12.5, font: "inherit", background: "#fff", width: "100%" }} />
-      )}
-    </>
   );
 }
