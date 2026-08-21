@@ -281,10 +281,18 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
         <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 60, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflow: "auto" }} onClick={() => !busy && setEdit(null)}>
           <div style={{ ...card, width: "min(860px, 100%)", padding: 20 }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-              <b style={{ fontSize: 16, color: AMZ }}>Amazon listing copy</b>
+              <b style={{ fontSize: 18, display: "flex", alignItems: "center", gap: 10 }}><AmazonLogo size={24} /> Amazon listing copy</b>
               <div style={{ fontSize: 11, color: "var(--muted)" }}>{edit.aiAt ? `AI written ${ago(edit.aiAt)}` : "never generated"}</div>
             </div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 12 }}>{edit.sourceTitle}</div>
+            {/* Ngữ cảnh listing nguồn: ảnh + title + SKU — nhìn phát biết đang viết cho cuốn nào */}
+            <div style={{ display: "flex", gap: 12, alignItems: "center", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 12px", marginBottom: 14, background: "#FAFBFC" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {edit.image && <img src={edit.image + (edit.image.includes("?") ? "&" : "?") + "width=120"} alt="" style={{ width: 54, height: 54, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{edit.sourceTitle}</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}><code>{edit.skuRoot || "no SKU"}</code> · {edit.productType || "—"} · {edit.status}</div>
+              </div>
+            </div>
 
             <label style={lab}>Amazon title <span style={{ fontWeight: 700, color: (edit.title ?? "").length > 0 && !titleOk(edit.title) ? "var(--red)" : "var(--muted)" }}>({(edit.title ?? "").length}/200 · target 150-200)</span></label>
             <textarea value={edit.title ?? ""} onChange={(e) => setEdit({ ...edit, title: e.target.value })} maxLength={250} rows={2} placeholder="Personalized <what>, Custom Name <type>, <occasion keywords>, Keepsake Gift — no size, no emojis" style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 10 }} />

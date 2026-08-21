@@ -59,14 +59,17 @@ export async function GET(req: NextRequest) {
     const [r] = await db.select().from(schema.amazonTemplates).where(eq(schema.amazonTemplates.id, id)).limit(1);
     if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     const cfg = r.config as Cfg;
+    // h1 = dòng header 1 (tên component: "Surface 1:", "Option Dropdown 2:", "Data (Text...) 1:",
+    // "Image 1:", "option:", "TextInputComponent:"...) — client dùng để GOM CỘT THEO FIELD.
     const cols = (cfg.headerRows?.[2] ?? []).map((label3, i) => ({
-      i, key: cfg.headerRows?.[1]?.[i] ?? "", label: label3, value: cfg.defaults?.[i] ?? "",
+      i, key: cfg.headerRows?.[1]?.[i] ?? "", label: label3,
+      h1: cfg.headerRows?.[0]?.[i] ?? "", value: cfg.defaults?.[i] ?? "",
     }));
     return NextResponse.json({
       ok: true,
       template: {
         id: r.id, name: r.name, productType: r.productType,
-        variations: cfg.variations ?? cfg.skuSuffixes?.map((s) => ({ suffix: s, label: s, price: "" })) ?? [],
+        variations: cfg.variations ?? DEFAULT_VARIATIONS,
         constants: cfg.constants ?? DEFAULT_CONSTANTS,
         cols, skuCol: cfg.skuCol ?? 0, previewImageCol: cfg.previewImageCol ?? -1,
       },
@@ -78,10 +81,12 @@ export async function GET(req: NextRequest) {
     ok: true,
     templates: rows.map((r) => {
       const cfg = r.config as Cfg;
+      const thumb = String(cfg.defaults?.[cfg.previewImageCol ?? -1] ?? "");
       return {
         id: r.id, name: r.name, productType: r.productType, ...summarize(cfg),
         variations: cfg.variations ?? DEFAULT_VARIATIONS,
         constants: cfg.constants ?? DEFAULT_CONSTANTS,
+        thumbUrl: /^https:\/\//i.test(thumb) ? thumb : null,
         updatedAt: r.updatedAt,
       };
     }),
