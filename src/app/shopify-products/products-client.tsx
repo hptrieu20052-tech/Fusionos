@@ -108,7 +108,8 @@ type ActKey =
   | "set_template" | "push_template" | "find_replace" | "personalization"
   | "google_prep" | "feed_copy" | "feed_export"
   | "policy_ai" | "ai_collection" | "tags" | "collection" | "channels"
-  | "active" | "draft" | "archive" | "delete";
+  | "active" | "draft" | "archive" | "delete"
+  | "pinterest" | "push_amazon";
 type ActionItem = { key: ActKey; label: string; danger?: boolean };
 type ActionGroup = { title: string; items: ActionItem[] };
 const ACTION_GROUPS: ActionGroup[] = [
@@ -134,6 +135,13 @@ const ACTION_GROUPS: ActionGroup[] = [
       { key: "google_prep", label: "Prepare for Google feed (SKU + fields + alt)…" },
       { key: "feed_copy", label: "Generate feed title + long description (AI)" },
       { key: "feed_export", label: "Export supplemental feed (.txt)" },
+    ],
+  },
+  {
+    // v289 · Kênh ngoài Shopify — dọn từ thanh nút chính vào đây cho gọn.
+    title: "Channels",
+    items: [
+      { key: "pinterest", label: "Export Pinterest CSV…" },
     ],
   },
   {
@@ -1093,6 +1101,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const runAction = async (key: ActKey) => {
     setActionsOpen(false);
     if (!sel.size) return flash("✗ Select products first", false);
+    // v289 · Kênh ngoài — chuyển từ nút riêng vào More actions.
+    if (key === "pinterest") { setPinOpen(true); return; }
+    if (key === "push_amazon") { pushToAmazon(Array.from(sel)); return; }
     // Feed phụ — không đụng Shopify, không cần chọn gì thêm.
     if (key === "feed_copy") return doFeedCopy(Array.from(sel));
     if (key === "feed_export") return doFeedExport(Array.from(sel));
@@ -1412,23 +1423,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 if (!ids.length) return flash("✗ No edited (unpushed) products in selection", false);
                 doPush(ids);
               }} style={{ ...pill("linear-gradient(135deg,#B7791F,#96610F)", "#fff"), padding: "8px 11px", opacity: busy || !selDirty ? .45 : 1 }}>⬆ Push to Shopify{selDirty ? ` (${selDirty})` : ""}</button>
-              {/* Template đổi gì → đẩy hết xuống listing. Chạy được cả trên con đã sạch (không cần dirty). */}
-              <button disabled={busy || !sel.size} title="Re-apply each product's Template to its Shopify listing: product type, vendor, theme template, category, options + variants + prices, delivery times, sales channels and personalization fields. Collections, title, AI description, images, SEO, tags and Active/Draft status are left untouched." onClick={() => runAction("push_template")} style={{ ...ghost, padding: "8px 12px", fontSize: 12.5, opacity: busy || !sel.size ? .45 : 1 }}>🔄 Update Template{sel.size ? ` (${sel.size})` : ""}</button>
-            </span>
-          )}
-
-          {/* Chỉ xuất file — không ghi gì lên Shopify, nên seller đọc-only cũng bấm được. */}
-          <span style={grp}>
-            <button disabled={busy || !sel.size} title="Export a Pinterest bulk-import CSV from the selected products (image, title, description, link, board = collection). Upload it in Pinterest → Settings → Import content. Nothing is written to Shopify." onClick={() => setPinOpen(true)}
-              style={{ ...pill(PIN_RED, "#fff"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}><PinLogo /> Export Pinterest{sel.size ? ` (${sel.size})` : ""}</button>
-          </span>
-
-          {/* v286 · Đẩy sang Manage Products Amazon (stage như Etsy → Shopify). Không đụng Shopify. */}
-          {canEdit && (
-            <span style={grp}>
+              {/* v286 · Stage sang Manage Products Amazon (như Etsy → Shopify). */}
               <button disabled={busy || !sel.size} title="Stage the selected listings into Manage Products Amazon (like Etsy → Shopify). Already-pushed listings are skipped. Nothing is written to Shopify." onClick={() => pushToAmazon(Array.from(sel))}
                 style={{ ...pill("#FF9900", "#111"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}>🅰 Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
-              {/* v287 · Run pipeline: AI → Push → Google prep → Feed → Active → Amazon, một nút. */}
+              {/* v287 · Run pipeline: AI → Push → Google prep → Feed → Active → Amazon, một nút.
+                  v289 · Update Template / Export Pinterest dọn vào More actions. */}
               <button disabled={busy || !sel.size} title="Run the whole finishing chain on the selection: AI Optimize → Push to Shopify → Google prep (SKU + fields + alt) → Feed copy → Set Active → Push to Amazon + AI Amazon copy. Steps are configurable; already-done items are skipped." onClick={() => setPipeOpen(true)}
                 style={{ ...pill("linear-gradient(135deg,#1F6F45,#0E4429)", "#fff"), padding: "8px 11px", opacity: busy || !sel.size ? .45 : 1 }}>⚡ Run pipeline{sel.size ? ` (${sel.size})` : ""}</button>
             </span>
