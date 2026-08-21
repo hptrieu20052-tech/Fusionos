@@ -17,7 +17,7 @@ type Row = {
   aiAt: string | null; status: string; asin: string | null; exportedAt: string | null;
   amazonTemplateId: string | null;
   sourceTitle: string; productType: string; sourceStatus: string;
-  image: string; skuRoot: string; storeName: string | null;
+  image: string; imageCount: number; srcVariantCount: number; skuRoot: string; storeName: string | null;
 };
 type Tpl = { id: string; name: string; productType: string | null; fields: number; skuSuffixes: string[]; variations?: { suffix: string; label: string; price: string }[] };
 
@@ -61,6 +61,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
   const [tplPick, setTplPick] = useState("");
   const [zoom, setZoom] = useState(""); // v291 · lightbox ảnh thumbnail
+  const [confirmDel, setConfirmDel] = useState(""); // v294 · id đang chờ xác nhận xóa
 
   // Template khớp cho 1 sản phẩm: gán tay → khớp Product type → template duy nhất.
   const tplFor = (r: Row): Tpl | null => {
@@ -302,12 +303,18 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   {r.image ? <img src={r.image + (r.image.includes("?") ? "&" : "?") + "width=96"} alt="" onClick={() => setZoom(r.image)} style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)", cursor: "zoom-in" }} /> : <span style={{ color: "var(--muted)" }}>—</span>}
                 </td>
-                <td style={{ padding: 10, maxWidth: 320 }}>
+                <td style={{ padding: 10, maxWidth: 340 }}>
                   {/* v291 · click title → mở detail (modal edit) */}
                   <div onClick={() => setEdit({ ...r, bullets: r.bullets ? [...r.bullets] : null })} title="Open Amazon listing detail"
                     style={{ fontWeight: 700, color: "#1D4ED8", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                     {r.title || r.sourceTitle}
                   </div>
+                  {/* v294 · dòng info như bên Shopify: variants nguồn · ảnh · variations Amazon */}
+                  {(() => { const t = tplFor(r); const vs = t?.variations ?? []; return (
+                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
+                      {r.srcVariantCount} variants · {r.imageCount} images{vs.length ? <> · Amazon: {vs.length} sizes ({vs.map((v) => v.label || v.suffix).join(", ")})</> : null}
+                    </div>
+                  ); })()}
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{r.storeName ?? ""}{r.sourceStatus ? ` · ${r.sourceStatus}` : ""}{r.title ? " · source: " + r.sourceTitle.slice(0, 40) + (r.sourceTitle.length > 40 ? "…" : "") : ""}</div>
                 </td>
                 <td style={{ padding: 10 }}>
@@ -332,8 +339,17 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   {r.asin && <div style={{ fontSize: 10.5, fontFamily: "monospace", marginTop: 2 }}>{r.asin}</div>}
                 </td>
                 <td style={{ padding: 10, whiteSpace: "nowrap" }}>
-                  {/* v293 · Edit = click vào title; Actions chỉ còn gỡ khỏi Amazon */}
-                  {canEdit && <button disabled={busy} onClick={() => remove(r.id)} title="Remove from Manage Products Amazon (Shopify is untouched)" style={{ ...pill("#fff", "#B42318"), border: "1px solid #F3C9C9", padding: "6px 10px", fontSize: 12 }}>✕</button>}
+                  {/* v294 · Edit = click title. Delete = icon thùng rác + BƯỚC XÁC NHẬN inline. */}
+                  {canEdit && (confirmDel === r.id ? (
+                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                      <button disabled={busy} onClick={() => { setConfirmDel(""); remove(r.id); }} style={{ ...pill("#B42318", "#fff"), padding: "6px 12px", fontSize: 12 }}>Delete?</button>
+                      <button disabled={busy} onClick={() => setConfirmDel("")} style={{ ...pill("#EEF1F5", "#333"), padding: "6px 10px", fontSize: 12 }}>Cancel</button>
+                    </span>
+                  ) : (
+                    <button disabled={busy} onClick={() => setConfirmDel(r.id)} title="Remove from Manage Products Amazon (Shopify is untouched)" style={{ ...pill("#fff", "#B42318"), border: "1px solid #F3C9C9", padding: "6px 10px", fontSize: 13 }}>
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><line x1="10" y1="11" x2="10" y2="17" /><line x1="14" y1="11" x2="14" y2="17" /></svg>
+                    </button>
+                  ))}
                 </td>
               </tr>
             ))}

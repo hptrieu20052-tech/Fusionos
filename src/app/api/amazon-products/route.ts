@@ -34,6 +34,13 @@ function coverUrl(images: unknown): string {
   const f = arr.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).find((i) => /^https:\/\//i.test(String(i?.src ?? "")));
   return f ? String(f.src) : "";
 }
+function imgCount(images: unknown): number {
+  const arr = (Array.isArray(images) ? images : []) as Img[];
+  return arr.filter((i) => /^https:\/\//i.test(String(i?.src ?? ""))).length;
+}
+function variantCount(variants: unknown): number {
+  return Array.isArray(variants) ? variants.length : 0;
+}
 
 export async function GET() {
   const session = await getSession();
@@ -68,6 +75,8 @@ export async function GET() {
       productType: (r.srcType ?? "").trim(),
       sourceStatus: r.srcStatus ?? "",
       image: coverUrl(r.srcImages),
+      imageCount: imgCount(r.srcImages),
+      srcVariantCount: variantCount(r.srcVariants),
       skuRoot: rootSku(r.srcVariants),
       storeName: r.storeName,
     })),
