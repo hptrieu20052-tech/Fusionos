@@ -192,7 +192,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       const blob = await res.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `amazon-listings-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = `amazon-listings-${new Date().toISOString().slice(0, 10)}.txt`;
       a.click(); URL.revokeObjectURL(a.href);
       flash(`✓ Listing file: ${n} rows (parent+child) — upload at Catalog → Add Products via Upload${sk ? ` · ${sk} skipped: ${skFirst}` : ""}`);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }

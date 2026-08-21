@@ -4,7 +4,6 @@ import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
-import * as XLSX from "xlsx";
 import { DA_HEADER, DA_COL, DA_WIDTH } from "@/lib/amazon-flatfile-display-album";
 
 export const dynamic = "force-dynamic";
@@ -158,16 +157,18 @@ export async function POST(req: NextRequest) {
 
   if (!dataRows.length) return NextResponse.json({ ok: false, error: "Không sinh được dòng nào — " + (skipped[0] ?? "sản phẩm chưa đủ dữ liệu") }, { status: 400 });
 
-  const aoa = [...DA_HEADER, ...dataRows];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Template");
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  // v299 · Xuất TAB-DELIMITED .txt thay vì .xlsx — Amazon báo 90503 FATAL "format could not be read"
+  // với .xlsx sinh từ thư viện (không phải Excel thật). Chính Instructions của Amazon khuyên
+  // "save the file as a tab-delimited text file (*.txt)" — định dạng chuẩn của Inventory File.
+  // Ô không được chứa tab/newline → thay bằng space. UTF-8 BOM để Amazon tự nhận encoding.
+  const cellTxt = (c: string) => String(c ?? "").replace(/[\t\r\n]+/g, " ").trim();
+  const lines = [...DA_HEADER, ...dataRows].map((row) => row.map(cellTxt).join("\t"));
+  const txt = "﻿" + lines.join("\r\n") + "\r\n";
 
-  const fname = `amazon-listings-${new Date().toISOString().slice(0, 10)}.xlsx`;
-  return new NextResponse(new Uint8Array(buf), {
+  const fname = `amazon-listings-${new Date().toISOString().slice(0, 10)}.txt`;
+  return new NextResponse(txt, {
     headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Type": "text/tab-separated-values; charset=utf-8",
       "Content-Disposition": `attachment; filename="${fname}"`,
       "X-Rows": String(dataRows.length),
       "X-Skipped": String(skipped.length),
