@@ -38,6 +38,18 @@ function imgCount(images: unknown): number {
   const arr = (Array.isArray(images) ? images : []) as Img[];
   return arr.filter((i) => /^https:\/\//i.test(String(i?.src ?? ""))).length;
 }
+// v297 · toàn bộ URL ảnh nguồn (sorted theo position) — modal Images dùng làm bộ khởi điểm.
+function srcUrls(images: unknown): string[] {
+  const arr = (Array.isArray(images) ? images : []) as Img[];
+  return arr.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99))
+    .map((i) => String(i?.src ?? "").trim()).filter((s) => /^https:\/\//i.test(s));
+}
+// Bộ ảnh override của bản ghi Amazon (string[]) — hợp lệ khi là mảng URL https.
+function ovrUrls(v: unknown): string[] | null {
+  if (!Array.isArray(v)) return null;
+  const arr = v.map((x) => String(x ?? "").trim()).filter((s) => /^https:\/\//i.test(s));
+  return arr.length ? arr : null;
+}
 function variantCount(variants: unknown): number {
   return Array.isArray(variants) ? variants.length : 0;
 }
@@ -74,8 +86,11 @@ export async function GET() {
       sourceTitle: r.srcTitle ?? "(source listing missing)",
       productType: (r.srcType ?? "").trim(),
       sourceStatus: r.srcStatus ?? "",
-      image: coverUrl(r.srcImages),
-      imageCount: imgCount(r.srcImages),
+      // v297 · override ảnh riêng Amazon: cover + count ưu tiên bộ override
+      image: (ovrUrls(r.a.images)?.[0]) ?? coverUrl(r.srcImages),
+      imageCount: ovrUrls(r.a.images)?.length ?? imgCount(r.srcImages),
+      images: ovrUrls(r.a.images),
+      sourceImages: srcUrls(r.srcImages),
       srcVariantCount: variantCount(r.srcVariants),
       skuRoot: rootSku(r.srcVariants),
       storeName: r.storeName,
@@ -89,6 +104,8 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 500);
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
+  // v297 · template chọn lúc Push (gán cứng cho các bản ghi mới). Rỗng = Auto theo Product type.
+  const templateId = typeof b?.templateId === "string" && /^[0-9a-f-]{36}$/i.test(b.templateId) ? b.templateId : null;
 
   const src = await db.select({
     id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, seller: schema.stores.sellerId,
@@ -103,7 +120,7 @@ export async function POST(req: NextRequest) {
 
   const fresh = src.filter((r) => !have.has(r.id));
   if (fresh.length) {
-    await db.insert(schema.amazonProducts).values(fresh.map((r) => ({ storeId: r.storeId, shopifyProductId: r.id })));
+    await db.insert(schema.amazonProducts).values(fresh.map((r) => ({ storeId: r.storeId, shopifyProductId: r.id, amazonTemplateId: templateId })));
   }
   return NextResponse.json({ ok: true, created: fresh.length, skipped: src.length - fresh.length });
 }
@@ -130,6 +147,11 @@ export async function PATCH(req: NextRequest) {
     set.bullets = arr.length ? arr : null;
   }
   if (typeof b?.amazonTemplateId === "string") set.amazonTemplateId = /^[0-9a-f-]{36}$/i.test(b.amazonTemplateId) ? b.amazonTemplateId : null;
+  // v297 · bộ ảnh riêng Amazon: mảng URL https (≤12). Mảng rỗng = xoá override, quay về ảnh Shopify.
+  if (Array.isArray(b?.images)) {
+    const arr = b.images.map((x: unknown) => String(x ?? "").trim()).filter((s: string) => /^https:\/\//i.test(s)).slice(0, 12);
+    set.images = arr.length ? arr : null;
+  }
   if (typeof b?.status === "string" && ["DRAFT", "EXPORTED", "LIVE"].includes(b.status)) set.status = b.status;
   if (typeof b?.asin === "string") set.asin = b.asin.trim().slice(0, 20) || null;
 

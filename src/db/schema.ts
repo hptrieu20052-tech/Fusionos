@@ -360,6 +360,9 @@ export const amazonProducts = pgTable("amazon_products", {
   description: text("description"),                       // plain text 900-1500 ký tự
   aiAt: timestamp("ai_at", { withTimezone: true }),       // lần cuối AI viết bộ copy
   amazonTemplateId: uuid("amazon_template_id"),           // gán tay template customization (null = khớp Product type)
+  // v297 · Bộ ảnh RIÊNG cho Amazon (string[] URL). null = dùng ảnh Shopify nguồn.
+  // Đây là chỗ thay ảnh main nền trắng cho Amazon mà không đụng listing Shopify.
+  images: jsonb("images"),
   status: text("status").notNull().default("DRAFT"),      // DRAFT → EXPORTED → LIVE
   asin: text("asin"),                                     // điền khi listing đã lên Amazon
   exportedAt: timestamp("exported_at", { withTimezone: true }),

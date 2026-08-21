@@ -89,7 +89,11 @@ export async function POST(req: NextRequest) {
     const title = (r.a.title ?? "").trim();
     const bullets = ((r.a.bullets as string[] | null) ?? []).filter(Boolean);
     const desc = plain(r.a.description);
-    const imgs = imgList(r.srcImages);
+    // v297 · ưu tiên bộ ảnh override riêng Amazon (nếu có) — chỗ thay ảnh main nền trắng.
+    const ovr = Array.isArray(r.a.images)
+      ? (r.a.images as unknown[]).map((x) => String(x ?? "").trim()).filter((s) => /^https:\/\//i.test(s)).slice(0, 9)
+      : [];
+    const imgs = ovr.length ? ovr : imgList(r.srcImages);
 
     const missing: string[] = [];
     if (!root) missing.push("SKU");

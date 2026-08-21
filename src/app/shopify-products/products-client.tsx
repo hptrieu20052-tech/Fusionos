@@ -377,12 +377,24 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     setBusy(false);
   };
   // v286 · Đẩy listing sang Manage Products AMAZON (stage — như flow Etsy → Shopify).
-  // Chỉ tạo bản ghi amazon_products, KHÔNG đụng gì Shopify. Badge "AMZ" trên bảng = đã đẩy.
+  // v297 · PHẢI CHỌN TEMPLATE trước khi push — mở modal chọn, template gán cứng vào bản ghi mới.
+  const [amzPushOpen, setAmzPushOpen] = useState(false);
+  const [amzTpls, setAmzTpls] = useState<{ id: string; name: string; productType: string | null }[]>([]);
+  const [amzTplPick, setAmzTplPick] = useState("");
   const pushToAmazon = async (ids: string[]) => {
     if (!ids.length) return;
-    setBusy(true);
     try {
-      const j = await postJSON("/api/amazon-products", { ids });
+      const j = await fetch("/api/amazon-templates").then((r) => r.json());
+      if (j.ok) { setAmzTpls(j.templates); if (!amzTplPick && j.templates[0]) setAmzTplPick(j.templates[0].id); }
+    } catch { /* offline */ }
+    setAmzPushOpen(true);
+  };
+  const doPushAmazon = async () => {
+    const ids = Array.from(sel);
+    if (!ids.length) return;
+    setAmzPushOpen(false); setBusy(true);
+    try {
+      const j = await postJSON("/api/amazon-products", { ids, templateId: amzTplPick || undefined });
       if (j.ok) { flash(`✓ Pushed ${j.created} to Amazon${j.skipped ? ` · ${j.skipped} already there` : ""}`); load(); }
       else flash("✗ " + (j.error ?? "Push failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
@@ -2072,6 +2084,27 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       )}
 
       {/* EXPORT PINTEREST — chỉ tạo file CSV, không chạm Shopify. */}
+      {/* v297 · Push to Amazon — chọn TEMPLATE trước rồi mới stage. */}
+      {amzPushOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setAmzPushOpen(false)}>
+          <div style={{ ...card, width: "min(460px, 100%)", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <b style={{ fontSize: 16 }}>🅰 Push to Amazon ({sel.size} selected)</b>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "6px 0 14px" }}>
+              Pick the Amazon template for these listings — it decides variations, prices and the customization set. It is pinned on each staged product (changeable later in its detail).
+            </div>
+            <label style={lab}>Amazon template</label>
+            <select value={amzTplPick} onChange={(e) => setAmzTplPick(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: 16 }}>
+              <option value="">Auto — match by Product type</option>
+              {amzTpls.map((t) => <option key={t.id} value={t.id}>📌 {t.name}{t.productType ? ` — ${t.productType}` : ""}</option>)}
+            </select>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button disabled={busy} onClick={() => setAmzPushOpen(false)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Cancel</button>
+              <button disabled={busy} onClick={doPushAmazon} style={{ ...pill("#FF9900", "#111"), padding: "8px 16px" }}>Push</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* v287 · Run pipeline — tick bước → Start. Skip done tự bỏ qua con đã xong ở từng bước. */}
       {pipeOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setPipeOpen(false)}>

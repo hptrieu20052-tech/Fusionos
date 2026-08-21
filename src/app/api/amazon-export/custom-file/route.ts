@@ -66,6 +66,7 @@ export async function POST(req: NextRequest) {
   const rows = await db.select({
     id: schema.amazonProducts.id, title: schema.shopifyProducts.title,
     variants: schema.shopifyProducts.variants, images: schema.shopifyProducts.images,
+    ovrImages: schema.amazonProducts.images,
     seller: schema.stores.sellerId,
   }).from(schema.amazonProducts)
     .leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.amazonProducts.shopifyProductId))
@@ -86,7 +87,9 @@ export async function POST(req: NextRequest) {
     const root = rootSku(r.variants);
     if (!root) { skipped.push(r.title ?? r.id); continue; }
     okIds.push(r.id);
-    const img = coverUrl(r.images);
+    // v297 · preview image ưu tiên ảnh override riêng Amazon
+    const ovr = Array.isArray(r.ovrImages) ? (r.ovrImages as unknown[]).map((x) => String(x ?? "").trim()).find((s) => /^https:\/\//i.test(s)) : undefined;
+    const img = ovr || coverUrl(r.images);
     for (const sfx of suffixes) {
       const sku = `${root}-${sfx}`;
       if (seen.has(sku)) continue;

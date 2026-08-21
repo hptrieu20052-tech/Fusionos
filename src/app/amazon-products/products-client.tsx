@@ -18,6 +18,8 @@ type Row = {
   amazonTemplateId: string | null;
   sourceTitle: string; productType: string; sourceStatus: string;
   image: string; imageCount: number; srcVariantCount: number; skuRoot: string; storeName: string | null;
+  // v297 · bộ ảnh riêng Amazon (null = dùng ảnh Shopify) + toàn bộ ảnh nguồn để khởi điểm
+  images: string[] | null; sourceImages: string[];
 };
 type Tpl = { id: string; name: string; productType: string | null; fields: number; skuSuffixes: string[]; variations?: { suffix: string; label: string; price: string }[] };
 
@@ -62,6 +64,11 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [tplPick, setTplPick] = useState("");
   const [zoom, setZoom] = useState(""); // v291 · lightbox ảnh thumbnail
   const [confirmDel, setConfirmDel] = useState(""); // v294 · id đang chờ xác nhận xóa
+  const [dragImg, setDragImg] = useState<number | null>(null); // v297 · kéo-thả xếp ảnh trong modal
+
+  // v297 · bộ ảnh hiệu lực trong modal: override nếu có, không thì ảnh Shopify nguồn.
+  const effImages = (r: Row): string[] => r.images ?? r.sourceImages;
+  const setImgs = (arr: string[]) => setEdit((p) => p ? { ...p, images: arr } : p);
 
   // Template khớp cho 1 sản phẩm: gán tay → khớp Product type → template duy nhất.
   const tplFor = (r: Row): Tpl | null => {
@@ -188,7 +195,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     try {
       const r = await fetch("/api/amazon-products", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: edit.id, title: edit.title ?? "", bullets: (edit.bullets ?? []).filter(Boolean), description: edit.description ?? "", asin: edit.asin ?? "" }),
+        body: JSON.stringify({ id: edit.id, title: edit.title ?? "", bullets: (edit.bullets ?? []).filter(Boolean), description: edit.description ?? "", asin: edit.asin ?? "", amazonTemplateId: edit.amazonTemplateId ?? "", ...(edit.images ? { images: edit.images } : {}) }),
       }).then((x) => x.json());
       if (r.ok) { flash("✓ Saved"); setEdit(null); load(); }
       else flash("✗ " + (r.error ?? "Save failed"));
@@ -327,11 +334,12 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                 </td>
                 <td style={{ padding: 10, fontFamily: "monospace", fontSize: 12 }}>{r.skuRoot || <span style={{ color: "#B42318" }}>no SKU</span>}</td>
                 <td style={{ padding: 10, fontSize: 12 }}>{r.productType || "—"}</td>
-                {/* v291 · template khớp + giá lấy từ variations của template */}
+                {/* v297 · phân biệt AUTO (khớp theo Product type, không ghi gì) vs 📌 PINNED (gán tay trong modal) */}
                 <td style={{ padding: 10, fontSize: 12 }}>
-                  {(() => { const t = tplFor(r); return t
-                    ? <span title={`${(t.variations ?? []).length} variations`} style={chip("#FFF0DB", "#B5661A")}>📌 {t.name.length > 18 ? t.name.slice(0, 18) + "…" : t.name}</span>
-                    : <span title="No template matches this Product type — assign one in Manage Templates Amazon" style={{ color: "#B42318", fontSize: 11.5, fontWeight: 700 }}>none</span>; })()}
+                  {(() => { const t = tplFor(r); const pinned = !!r.amazonTemplateId; return t
+                    ? <span title={pinned ? "Pinned manually — export always uses this template" : "Auto-matched by Product type — pin a different one in the edit modal (click title)"}
+                        style={chip(pinned ? "#FFF0DB" : "#F1F1F4", pinned ? "#B5661A" : "#6B7280")}>{pinned ? "📌 " : "auto · "}{t.name.length > 16 ? t.name.slice(0, 16) + "…" : t.name}</span>
+                    : <span title="No template matches this Product type — pin one in the edit modal or set Match Product type in Manage Templates Amazon" style={{ color: "#B42318", fontSize: 11.5, fontWeight: 700 }}>none</span>; })()}
                 </td>
                 <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(tplFor(r))}</td>
                 <td style={{ padding: 10 }}>
@@ -397,8 +405,49 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
             <label style={{ ...lab, marginTop: 6 }}>Amazon description <span style={{ fontWeight: 700, color: (edit.description ?? "").length > 0 && ((edit.description ?? "").length < 900 || (edit.description ?? "").length > 1500) ? "var(--red)" : "var(--muted)" }}>({(edit.description ?? "").length} chars · target 900-1500)</span></label>
             <textarea value={edit.description ?? ""} onChange={(e) => setEdit({ ...edit, description: e.target.value })} rows={7} placeholder="Plain text, 3-4 paragraphs separated by a blank line — Amazon does not render HTML" style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 10 }} />
 
-            <label style={lab}>ASIN (once live on Amazon)</label>
-            <input value={edit.asin ?? ""} onChange={(e) => setEdit({ ...edit, asin: e.target.value })} placeholder="B0XXXXXXXX" style={{ ...ctl, width: 220, marginBottom: 14, fontFamily: "monospace" }} />
+            {/* v297 · Bộ ảnh RIÊNG cho Amazon — kéo thả xếp lại, ảnh đầu = MAIN, + Add by URL.
+                Chưa sửa gì = dùng nguyên ảnh Shopify; sửa 1 lần = lưu bộ riêng (không đụng Shopify). */}
+            <label style={lab}>
+              Amazon images ({effImages(edit).length}) · drag to reorder · the first photo is the main image
+              {edit.images && <button onClick={() => setEdit({ ...edit, images: null })} title="Discard the Amazon-only set and go back to the Shopify images" style={{ ...pill("#EEF1F5", "#333"), padding: "3px 10px", fontSize: 11, marginLeft: 8 }}>↺ Reset to Shopify</button>}
+            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+              {effImages(edit).map((u, i) => (
+                <div key={u + i} draggable
+                  onDragStart={() => setDragImg(i)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => { e.preventDefault(); if (dragImg === null || dragImg === i) return; const a = [...effImages(edit)]; const [m] = a.splice(dragImg, 1); a.splice(i, 0, m); setDragImg(null); setImgs(a); }}
+                  onDragEnd={() => setDragImg(null)}
+                  style={{ position: "relative", width: 86, height: 86, borderRadius: 10, overflow: "hidden", border: i === 0 ? "2px solid #B5661A" : "1px solid var(--line)", cursor: "grab", opacity: dragImg === i ? .5 : 1, flexShrink: 0 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u + (u.includes("?") ? "&" : "?") + "width=180"} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  {i === 0 && <span style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(181,102,26,.9)", color: "#fff", fontSize: 9.5, fontWeight: 800, textAlign: "center", padding: "1px 0" }}>MAIN</span>}
+                  <button onClick={() => { const a = effImages(edit).filter((_, x) => x !== i); setImgs(a); }} title="Remove"
+                    style={{ position: "absolute", top: 3, right: 3, width: 18, height: 18, borderRadius: 999, border: "none", cursor: "pointer", background: "rgba(0,0,0,.55)", color: "#fff", fontSize: 10, lineHeight: "18px", padding: 0 }}>✕</button>
+                </div>
+              ))}
+              <button onClick={() => { const u = window.prompt("Image URL (https://…) — e.g. white-background main image:"); if (u && /^https:\/\//i.test(u.trim())) setImgs([...effImages(edit), u.trim()]); }}
+                style={{ width: 86, height: 86, borderRadius: 10, border: "1.5px dashed var(--line)", background: "#FAFBFC", cursor: "pointer", fontSize: 11.5, fontWeight: 700, color: "#1F6F45" }}>+ Add by URL</button>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 12 }}>
+              {edit.images ? "Amazon-only image set — exports use these, Shopify stays untouched." : "Currently using the Shopify images — any change here creates an Amazon-only set."}
+              {" "}Amazon requires the MAIN image on pure white background.
+            </div>
+
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 14 }}>
+              <div>
+                <label style={lab}>ASIN (once live on Amazon)</label>
+                <input value={edit.asin ?? ""} onChange={(e) => setEdit({ ...edit, asin: e.target.value })} placeholder="B0XXXXXXXX" style={{ ...ctl, width: 200, fontFamily: "monospace" }} />
+              </div>
+              {/* v297 · Gán template riêng cho sản phẩm này. Mặc định Auto = khớp theo Product type. */}
+              <div>
+                <label style={lab}>Amazon template</label>
+                <select value={edit.amazonTemplateId ?? ""} onChange={(e) => setEdit({ ...edit, amazonTemplateId: e.target.value || null })} style={{ ...ctl, width: 260 }}>
+                  <option value="">Auto — match by Product type</option>
+                  {tpls.map((t) => <option key={t.id} value={t.id}>📌 {t.name}</option>)}
+                </select>
+              </div>
+            </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               {canEdit && <button disabled={busy} onClick={aiOne} style={pill("#5B3FBF", "#fff")}>{busy ? "Working…" : "✦ AI Amazon copy"}</button>}
