@@ -64,6 +64,8 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [tplPick, setTplPick] = useState("");
   const [zoom, setZoom] = useState(""); // v291 · lightbox ảnh thumbnail
   const [confirmDel, setConfirmDel] = useState(""); // v294 · id đang chờ xác nhận xóa
+  const [asinOpen, setAsinOpen] = useState(false);  // v304 · modal import ASIN từ report
+  const [asinText, setAsinText] = useState("");
   const [dragImg, setDragImg] = useState<number | null>(null); // v297 · kéo-thả xếp ảnh trong modal
   const [upBusy, setUpBusy] = useState(false);                  // v298 · đang upload ảnh local
   const imgFileRef = useRef<HTMLInputElement>(null);
@@ -119,7 +121,21 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
   useEffect(() => {
     fetch("/api/books/models?type=text").then((r) => r.json()).then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
+    // v303 · nhớ model đã chọn qua localStorage (app thật, không phải artifact)
+    try { const m = localStorage.getItem("amzAiModel"); if (m) setAiModel(m); } catch { /* ignore */ }
   }, []);
+  // Ghi lại mỗi khi đổi model
+  useEffect(() => { try { localStorage.setItem("amzAiModel", aiModel); } catch { /* ignore */ } }, [aiModel]);
+
+  // v303 · Bộ SKU Amazon THẬT của 1 listing: parent + child theo variations của template.
+  const amzSkus = (r: Row): { parent: string; children: { sku: string; label: string }[] } => {
+    const t = tplFor(r);
+    const vars = t?.variations ?? [];
+    return {
+      parent: r.skuRoot ? `${r.skuRoot}-PARENT-AMZ` : "",
+      children: r.skuRoot ? vars.filter((v) => v.suffix).map((v) => ({ sku: `${r.skuRoot}-${v.suffix}`, label: v.label || v.suffix })) : [],
+    };
+  };
 
   const flash = (m: string) => { setNote(m); setTimeout(() => setNote(""), 6000); };
 
@@ -167,7 +183,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       const blob = await res.blob();
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `amazon-customizations-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = `amazon-customizations-${new Date().toISOString().slice(0, 10)}.txt`;
       a.click(); URL.revokeObjectURL(a.href);
       flash(`✓ Exported ${n} SKU rows — upload it at Amazon → Custom Products → Upload Customizations (listings must be LIVE first)`);
       load();
@@ -195,6 +211,18 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       a.download = `amazon-listings-${new Date().toISOString().slice(0, 10)}.txt`;
       a.click(); URL.revokeObjectURL(a.href);
       flash(`✓ Listing file: ${n} rows (parent+child) — upload at Catalog → Add Products via Upload${sk ? ` · ${sk} skipped: ${skFirst}` : ""}`);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    setBusy(false);
+  };
+
+  // v304 · Import ASIN từ Amazon Listings Report (TSV/CSV) → khớp SKU root → điền ASIN + LIVE.
+  const importAsins = async () => {
+    if (!asinText.trim()) return;
+    setBusy(true);
+    try {
+      const j = await postJSON("/api/amazon-products/import-asins", { text: asinText });
+      if (j.ok) { flash(`✓ Matched ${j.updated} listing(s) with ASINs`); setAsinOpen(false); setAsinText(""); load(); }
+      else flash("✗ " + (j.error ?? "Import failed"));
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
     setBusy(false);
   };
@@ -258,6 +286,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button disabled={busy} onClick={() => setAsinOpen(true)} title="Import ASINs from an Amazon All Listings Report (Reports → Inventory)" style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>⇩ Import ASINs</button>
           <button disabled={busy} onClick={load} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>↻ Reload</button>
         </div>
       </div>
@@ -307,7 +336,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
               <th style={{ padding: 10 }}>IMAGE</th>
               <th style={{ padding: 10 }}>TITLE</th>
               <th style={{ padding: 10 }}>AMAZON COPY</th>
-              <th style={{ padding: 10 }}>SKU ROOT</th>
+              <th style={{ padding: 10 }}>AMAZON SKUs</th>
               <th style={{ padding: 10 }}>TYPE</th>
               <th style={{ padding: 10 }}>TEMPLATE</th>
               <th style={{ padding: 10 }}>PRICE</th>
@@ -352,7 +381,21 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   </div>
                   {r.aiAt && <div style={{ fontSize: 10.5, color: "#5B3FBF", fontWeight: 700, marginTop: 3 }}>✦ {ago(r.aiAt)}</div>}
                 </td>
-                <td style={{ padding: 10, fontFamily: "monospace", fontSize: 12 }}>{r.skuRoot || <span style={{ color: "#B42318" }}>no SKU</span>}</td>
+                <td style={{ padding: 10, fontSize: 11.5 }}>
+                  {(() => {
+                    if (!r.skuRoot) return <span style={{ color: "#B42318" }}>no SKU</span>;
+                    const s = amzSkus(r);
+                    const copyAll = [s.parent, ...s.children.map((c) => c.sku)].join("\n");
+                    return (
+                      <div title="Click to copy all Amazon SKUs" onClick={() => navigator.clipboard?.writeText(copyAll)} style={{ cursor: "pointer", fontFamily: "monospace", lineHeight: 1.5 }}>
+                        <div style={{ color: "#8794A5" }}>{s.parent}</div>
+                        {s.children.map((c) => (
+                          <div key={c.sku}><b style={{ color: "#1F2733" }}>{c.sku}</b> <span style={{ color: "#9ca3af", fontFamily: "inherit" }}>{c.label}</span></div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td style={{ padding: 10, fontSize: 12 }}>{r.productType || "—"}</td>
                 {/* v297 · phân biệt AUTO (khớp theo Product type, không ghi gì) vs 📌 PINNED (gán tay trong modal) */}
                 <td style={{ padding: 10, fontSize: 12 }}>
@@ -364,7 +407,12 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                 <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(tplFor(r))}</td>
                 <td style={{ padding: 10 }}>
                   <span style={chip(r.status === "LIVE" ? "#E9F7EF" : r.status === "EXPORTED" ? "#FFF0DB" : "#F1F1F4", r.status === "LIVE" ? "#1F6F45" : r.status === "EXPORTED" ? "#B5661A" : "#8794A5")}>{r.status}</span>
-                  {r.asin && <div style={{ fontSize: 10.5, fontFamily: "monospace", marginTop: 2 }}>{r.asin}</div>}
+                  {r.asin && (
+                    <a href={`https://www.amazon.com/dp/${r.asin}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                      title="Open on Amazon" style={{ display: "block", fontSize: 10.5, fontFamily: "monospace", marginTop: 2, color: "#1D4ED8", textDecoration: "none" }}>
+                      {r.asin} ↗
+                    </a>
+                  )}
                 </td>
                 <td style={{ padding: 10, whiteSpace: "nowrap" }}>
                   {/* v294 · Edit = click title. Delete = icon thùng rác + BƯỚC XÁC NHẬN inline. */}
@@ -384,6 +432,24 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </tbody>
         </table>
       </div>
+
+      {/* v304 · Import ASINs từ Amazon Listings Report */}
+      {asinOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setAsinOpen(false)}>
+          <div style={{ ...card, width: "min(620px, 100%)", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <b style={{ fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}><AmazonLogo size={20} /> Import ASINs</b>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "8px 0 14px", lineHeight: 1.6 }}>
+              Seller Central → <b>Reports → Inventory Reports → All Listings Report</b> → Download. Open the file, copy everything (Ctrl+A, Ctrl+C) and paste below, or choose the file. FusionOS matches by SKU root, fills the ASIN and sets the listing LIVE.
+            </div>
+            <input type="file" accept=".txt,.csv,.tsv" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setAsinText(await f.text()); e.target.value = ""; }} style={{ fontSize: 12.5, marginBottom: 10 }} />
+            <textarea value={asinText} onChange={(e) => setAsinText(e.target.value)} rows={7} placeholder="…or paste the report content here (must include a seller-sku column and an asin column)" style={{ ...ctl, width: "100%", resize: "vertical", fontFamily: "monospace", fontSize: 11.5, marginBottom: 14 }} />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button disabled={busy} onClick={() => setAsinOpen(false)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Cancel</button>
+              <button disabled={busy || !asinText.trim()} onClick={importAsins} style={{ ...pill(AMZ, "#fff"), padding: "8px 18px", opacity: busy || !asinText.trim() ? .5 : 1 }}>{busy ? "Matching…" : "Import"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* v291 · Lightbox ảnh */}
       {zoom && (
