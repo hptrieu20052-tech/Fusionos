@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       const live = (c?.c7 ?? 0) > 0;
       const cred = (r.s.apiCredentials ?? {}) as Record<string, string>;
       const SHOPIFY_KEYS = ["shopDomain", "clientId", "clientSecret", "adminToken", "webhookSecret"];
-      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k));
+      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k) && k !== "spapi");
       return {
         ...r.s,
         apiCredentials: undefined,
@@ -84,6 +84,20 @@ export async function GET(req: NextRequest) {
           hasApp: !!cred.shopDomain && !!(cred.adminToken || (cred.clientId && cred.clientSecret)),
           clientId: cred.clientId || "",
         },
+        // Amazon SP-API (LWA) — cấu hình lưu ở cred.spapi. Chỉ trả field không bí mật + cờ đã-đặt.
+        amazon: (() => {
+          const sp = ((cred as Record<string, unknown>).spapi ?? {}) as Record<string, string>;
+          return {
+            region: sp.region || "na",
+            marketplaceId: sp.marketplaceId || "ATVPDKIKX0DER",
+            sellerId: sp.sellerId || "",
+            lwaClientId: sp.lwaClientId || "",
+            hasSecret: !!sp.lwaClientSecret,
+            hasRefresh: !!sp.refreshToken,
+            configured: !!(sp.lwaClientId && sp.lwaClientSecret && sp.refreshToken && sp.sellerId),
+            lastSyncAt: sp.lastSyncAt || null,
+          };
+        })(),
         sellerName: r.sellerName,
         // Số liệu shop public do extension đọc hộ (sales / rating / reviews / tuổi shop / còn sống)
         shop: (() => {

@@ -345,6 +345,11 @@ export const amazonTemplates = pgTable("amazon_templates", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
+// ---------- AMAZON SP-API CONFIG (v306) ----------
+// KHÔNG còn bảng singleton amazon_api_config. Khóa SP-API (LWA client id/secret/refresh_token,
+// seller id, region, marketplaceId) nằm trong stores.api_credentials.spapi của store Amazon
+// (marketplace='amazon') — mỗi tài khoản Amazon 1 store, sẵn sàng đa-tài-khoản. Xem src/lib/amazon-sp-api.ts.
+
 // ---------- AMAZON PRODUCTS (v286 · Manage Products Amazon — bản STAGE riêng, như flow Etsy → Shopify) ----------
 // "Push to Amazon" ở Manage Products Shopify tạo 1 bản ghi ở đây (badge AMZ bên Shopify = đã đẩy).
 // Nội dung Amazon (title 150-200 + 5 bullets + description) sống Ở ĐÂY, AI gen Ở ĐÂY —

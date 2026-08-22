@@ -17,6 +17,7 @@ type Store = {
   etsy?: { hasKeystring: boolean; keystring: string; connected: boolean; shopId: string };
   tiktok?: { hasApp: boolean; appKey: string; authLink: string; connected: boolean; shopId: string; shopName: string };
   shopify?: { shopDomain: string; hasApp: boolean; clientId: string };
+  amazon?: { region: string; marketplaceId: string; sellerId: string; lwaClientId: string; hasSecret: boolean; hasRefresh: boolean; configured: boolean; lastSyncAt: string | null };
 };
 type Opt = { id: string; name: string };
 
@@ -351,6 +352,33 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     else { setShCheck({ ok: false, text: r0?.error ?? j.error ?? "Error" }); flash("✗ " + (r0?.error ?? j.error ?? "Error")); }
   };
 
+  // ===== Amazon SP-API (LWA — không cần AWS IAM/SigV4). Config lưu ở store.api_credentials.spapi =====
+  const [azRegion, setAzRegion] = useState(store.amazon?.region ?? "na");
+  const [azMkId, setAzMkId] = useState(store.amazon?.marketplaceId ?? "ATVPDKIKX0DER");
+  const [azSeller, setAzSeller] = useState(store.amazon?.sellerId ?? "");
+  const [azClientId, setAzClientId] = useState(store.amazon?.lwaClientId ?? "");
+  const [azSecret, setAzSecret] = useState("");
+  const [azRefresh, setAzRefresh] = useState("");
+  const [azBusy, setAzBusy] = useState(false);
+  const [azSaved, setAzSaved] = useState(store.amazon?.configured ?? false);
+  const [azCheck, setAzCheck] = useState<{ ok: boolean; text: string } | null>(null);
+  const azBody = () => ({
+    storeId: store.id, region: azRegion, marketplaceId: azMkId.trim(), sellerId: azSeller.trim(),
+    lwaClientId: azClientId.trim(), lwaClientSecret: azSecret.trim(), refreshToken: azRefresh.trim(),
+  });
+  const saveAmazon = async (test: boolean) => {
+    setAzBusy(true); setAzCheck(null);
+    const j = await fetch("/api/amazon-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...azBody(), test }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setAzBusy(false);
+    if (!j.ok) { flash("✗ " + (j.error ?? "Error")); return; }
+    setAzSaved(true); setAzSecret(""); setAzRefresh("");
+    if (test) {
+      if (j.test === "ok") { setAzCheck({ ok: true, text: "Connected to Amazon SP-API" }); flash("✓ SP-API connected"); }
+      else { setAzCheck({ ok: false, text: j.error ?? "Connection failed" }); flash("✗ " + (j.error ?? "Connection failed")); }
+    } else flash("✓ SP-API saved");
+    reload();
+  };
+
   const fields = CRED_FIELDS[store.marketplace] ?? CRED_FIELDS.other;
 
   const save = async () => {
@@ -541,6 +569,43 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         </div>
       )}
 
+      {/* Amazon SP-API (LWA — refresh_token → access_token, không cần AWS IAM/SigV4). Tự lấy ASIN/đơn. */}
+      {store.marketplace === "amazon" && (
+        <div style={{ border: "1px solid #FFE2B8", background: "#FFF9F0", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
+          <b style={{ fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 6 }}><IconKey width={15} height={15} /> Amazon SP-API (Selling Partner API)</b>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px", lineHeight: 1.5 }}>
+            In Seller Central → <b>Develop Apps</b>, create a private app (self-authorize) to get <b>LWA Client ID + Client Secret + Refresh Token</b>. Seller ID is your <b>Merchant token</b> (Settings → Account Info). No AWS IAM key needed since 2024.
+          </div>
+          <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <L label="Region"><select value={azRegion} onChange={(e) => setAzRegion(e.target.value)} style={inp}><option value="na">North America</option><option value="eu">Europe</option><option value="fe">Far East</option></select></L>
+            <L label="Marketplace ID"><input value={azMkId} onChange={(e) => setAzMkId(e.target.value)} placeholder="ATVPDKIKX0DER (US)" style={{ ...inp, fontFamily: "monospace", fontSize: 12 }} autoComplete="off" data-lpignore="true" data-1p-ignore /></L>
+          </div>
+          <L label="Seller ID (Merchant token)"><input value={azSeller} onChange={(e) => setAzSeller(e.target.value)} placeholder="e.g. A1B2C3D4E5F6G7" style={{ ...inp, fontFamily: "monospace", fontSize: 12 }} autoComplete="off" data-lpignore="true" data-1p-ignore /></L>
+          <L label="LWA Client ID"><input value={azClientId} onChange={(e) => setAzClientId(e.target.value)} placeholder="amzn1.application-oa2-client…" style={{ ...inp, fontFamily: "monospace", fontSize: 11.5 }} autoComplete="off" data-lpignore="true" data-1p-ignore /></L>
+          <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <L label="LWA Client Secret"><input type="password" value={azSecret} onChange={(e) => setAzSecret(e.target.value)} placeholder={store.amazon?.hasSecret ? "••• (saved, blank = keep)" : "amzn1.oa2-cs…"} style={{ ...inp, fontFamily: "monospace", fontSize: 11.5 }} autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
+            <L label="Refresh Token"><input type="password" value={azRefresh} onChange={(e) => setAzRefresh(e.target.value)} placeholder={store.amazon?.hasRefresh ? "••• (saved, blank = keep)" : "Atzr|…"} style={{ ...inp, fontFamily: "monospace", fontSize: 11.5 }} autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
+          </div>
+          {azCheck && (
+            <div style={{ fontSize: 12, padding: "7px 11px", borderRadius: 9, margin: "2px 0 8px", background: azCheck.ok ? "var(--green-soft)" : "var(--red-soft)", color: azCheck.ok ? "#2E7D46" : "var(--red)", fontWeight: 600 }}>
+              {azCheck.ok ? "✓ " : "✗ "}{azCheck.text}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <button onClick={() => saveAmazon(false)} disabled={azBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save</button>
+            <button onClick={() => saveAmazon(true)} disabled={azBusy} style={{ background: "#FF9900", color: "#111", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: "pointer" }}>Save &amp; test connection</button>
+            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
+              {(store.amazon?.configured || azSaved)
+                ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> Configured{store.amazon?.lastSyncAt ? " · synced " + new Date(store.amazon.lastSyncAt).toLocaleDateString() : ""}</span>
+                : <span style={{ color: "var(--muted)" }}>Not configured</span>}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
+            Once connected, <b>Manage Products Amazon → ⟳ Sync from Amazon</b> pulls ASIN + live status automatically. Secrets are stored server-side and never shown again — leave a field blank to keep the saved value.
+          </div>
+        </div>
+      )}
+
       {/* Extension: Kéo đơn Etsy về FUSION (chỉ store Etsy) */}
       {store.marketplace === "etsy" && (
         <div style={{ border: "1px solid #CDE3FA", background: "#F3F9FF", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
@@ -563,8 +628,8 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         </div>
       )}
 
-      {/* Setup API (generic) — Etsy/TikTok/Shopify có khu riêng nên ẩn */}
-      {store.marketplace !== "etsy" && store.marketplace !== "tiktok" && store.marketplace !== "shopify" && (
+      {/* Setup API (generic) — Etsy/TikTok/Shopify/Amazon có khu riêng nên ẩn */}
+      {store.marketplace !== "etsy" && store.marketplace !== "tiktok" && store.marketplace !== "shopify" && store.marketplace !== "amazon" && (
         <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
             <b style={{ fontSize: 13.5 }}>{t("st.apiConfig")}</b>
