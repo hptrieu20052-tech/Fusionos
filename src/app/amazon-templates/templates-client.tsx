@@ -142,6 +142,8 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
 
   // v291 · Update master file — upload .xlsx generate lại từ Seller Central, thay phần customization.
   const masterRef = useRef<HTMLInputElement>(null);
+  const [showCust, setShowCust] = useState(false); // v302 · mở rộng chi tiết field customization
+  const [custFileName, setCustFileName] = useState(""); // tên file đã chọn để update
   const updateMaster = async () => {
     const f = masterRef.current?.files?.[0];
     if (!edit || !f) return flash("✗ Choose the new .xlsx first");
@@ -302,20 +304,36 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
               ))}
             </div>
 
-            {/* Customization — CHỈ ĐỌC (nguồn chuẩn là template trên Seller Central).
-                Muốn đổi cấu trúc: sửa trên Amazon → Generate template → download → Update file ở đây. */}
-            <div style={{ border: "1px solid #F0C48A", borderRadius: 12, padding: "14px 16px", background: "#FFFBF4", marginBottom: 18 }}>
+            {/* v302 · Customization — GỌN: 1 dòng tóm tắt + chip tên field, bấm để bung chi tiết.
+                Nguồn chuẩn là template Seller Central → chỉ đọc, đổi bằng "Update file". */}
+            <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "14px 16px", marginBottom: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-                <b style={{ fontSize: 13.5, color: AMZ }}>Customization · from Seller Central template</b>
-                <span style={{ fontSize: 11.5, color: "var(--muted)" }}>{groups.length} fields · read-only — edit on Amazon, then update the file below</span>
+                <b style={{ fontSize: 13.5 }}>Customization <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 12 }}>· {groups.length} fields from Seller Central · read-only</span></b>
+                <button onClick={() => setShowCust((v) => !v)} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>{showCust ? "Hide details" : "Show details"}</button>
               </div>
-              {groups.map((g, gi) => {
+
+              {/* Chip tóm tắt các field */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: showCust ? 12 : 4 }}>
+                {groups.map((g, gi) => {
+                  const meta = TYPE_META[g.type];
+                  const req = g.cols.find((c) => /required/i.test(c.key));
+                  const isReq = req && /^true$/i.test(req.value);
+                  return (
+                    <span key={gi} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 999, background: meta.bg, color: meta.color }}>
+                      {groupTitle(g)}{isReq ? <span style={{ color: "#B42318", fontSize: 10, fontWeight: 800 }}>*</span> : null}
+                    </span>
+                  );
+                })}
+              </div>
+
+              {/* Chi tiết đầy đủ — chỉ hiện khi bung */}
+              {showCust && groups.map((g, gi) => {
                 const meta = TYPE_META[g.type];
                 const req = g.cols.find((c) => /required/i.test(c.key));
                 const opts = g.type === "dropdown" ? g.cols.filter((c) => c.key === "label").slice(1).map((c) => c.value).filter(Boolean) : [];
                 const instr = g.cols.find((c) => c.key === "instructions")?.value ?? "";
                 return (
-                  <div key={gi} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 14px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div key={gi} style={{ background: "#FAFBFC", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 14px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: meta.bg, color: meta.color, flexShrink: 0 }}>{meta.label}</span>
                     <b style={{ fontSize: 13 }}>{groupTitle(g)}</b>
                     {req && <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 8px", borderRadius: 999, background: /^true$/i.test(req.value) ? "#FEF0F0" : "#F1F1F4", color: /^true$/i.test(req.value) ? "#B42318" : "#8794A5" }}>{/^true$/i.test(req.value) ? "required" : "optional"}</span>}
@@ -324,10 +342,23 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
                   </div>
                 );
               })}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-                <input ref={masterRef} type="file" accept=".xlsx" style={{ fontSize: 12.5 }} />
-                <button disabled={busy} onClick={updateMaster} style={{ ...pill(AMZ, "#fff"), padding: "7px 14px", fontSize: 12.5 }}>Update master file</button>
-                <span style={{ fontSize: 11, color: "var(--muted)" }}>Re-upload the .xlsx after regenerating the template on Seller Central.</span>
+
+              {/* Update file — dropzone hiện đại */}
+              <div
+                onDragOver={(e) => { e.preventDefault(); }}
+                onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f && masterRef.current) { const dt = new DataTransfer(); dt.items.add(f); masterRef.current.files = dt.files; setCustFileName(f.name); } }}
+                onClick={() => masterRef.current?.click()}
+                style={{ marginTop: 10, border: "1.5px dashed var(--line)", borderRadius: 12, padding: "14px 16px", background: "#FAFBFC", cursor: "pointer", display: "flex", alignItems: "center", gap: 12 }}>
+                <span style={{ width: 38, height: 38, borderRadius: 10, background: "#FFF0DB", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={AMZ} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12" /><path d="M7 8l5-5 5 5" /><path d="M5 21h14" /></svg>
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{custFileName || "Update customization file"}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{custFileName ? "Ready — click Update to apply" : "Drop or click to choose the .xlsx regenerated on Seller Central"}</div>
+                </div>
+                <input ref={masterRef} type="file" accept=".xlsx" style={{ display: "none" }} onChange={(e) => setCustFileName(e.target.files?.[0]?.name ?? "")} />
+                <button disabled={busy || !custFileName} onClick={(e) => { e.stopPropagation(); updateMaster().then(() => setCustFileName("")); }}
+                  style={{ ...pill(AMZ, "#fff"), padding: "8px 16px", opacity: busy || !custFileName ? .45 : 1, flexShrink: 0 }}>Update</button>
               </div>
             </div>
 
