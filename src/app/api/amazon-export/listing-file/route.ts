@@ -106,6 +106,8 @@ export async function POST(req: NextRequest) {
     if (missing.length) { skipped.push(`${r.srcTitle ?? r.a.id}: thiếu ${missing.join(", ")}`); continue; }
 
     const brand = cst.brand || "Talewix";
+    // model = SKU root (mã sản phẩm) · model_name = tên rút gọn
+    const modelName = (r.srcType || "Personalized Storybook").slice(0, 60);
     const common = (row: string[]) => {
       set(row, "feed_product_type", "displayalbum");
       set(row, "brand_name", brand);
@@ -118,7 +120,15 @@ export async function POST(req: NextRequest) {
       set(row, "generic_keywords", plain(r.srcTags).replace(/,/g, " ").replace(/\s+/g, " ").slice(0, 240));
       set(row, "color_name", cst.color || "Multicolor");
       set(row, "color_map", cst.colorMap || "Multicolor");
-      set(row, "country_of_origin", cst.countryOfOrigin || "");
+      // v301 · 7 field DISPLAY_ALBUM bắt buộc (lỗi 99001 khiến child không tạo được)
+      set(row, "model", root);
+      set(row, "model_name", modelName);
+      set(row, "unit_count", "1");
+      set(row, "unit_count_type", "Count");
+      set(row, "number_of_boxes", cst.numberOfBoxes || "1");
+      set(row, "included_components1", cst.includedComponents || "1 personalized hardcover book");
+      set(row, "cpsia_cautionary_statement", cst.cpsiaWarning || "NoWarningApplicable");
+      set(row, "country_of_origin", cst.countryOfOrigin || "United States");
     };
 
     // PARENT — không giá, không quantity

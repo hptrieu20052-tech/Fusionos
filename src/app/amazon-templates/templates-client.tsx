@@ -69,7 +69,11 @@ const CONSTANT_FIELDS: { key: string; label: string; hint: string }[] = [
   // v292 · dùng cho flat file listing (File 1)
   { key: "quantity", label: "Inventory Quantity", hint: "100" },
   { key: "leadTimeDays", label: "Handling Time (days)", hint: "5" },
-  { key: "countryOfOrigin", label: "Country of Origin (optional)", hint: "e.g. Vietnam / United States" },
+  { key: "countryOfOrigin", label: "Country of Origin", hint: "United States" },
+  // v301 · field bắt buộc DISPLAY_ALBUM
+  { key: "includedComponents", label: "Included Components", hint: "1 personalized hardcover book" },
+  { key: "numberOfBoxes", label: "Number of Boxes", hint: "1" },
+  { key: "cpsiaWarning", label: "CPSIA Warning", hint: "NoWarningApplicable" },
 ];
 
 export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean }) {
