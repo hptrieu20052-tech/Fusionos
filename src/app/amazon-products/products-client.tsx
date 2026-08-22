@@ -66,8 +66,13 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [confirmDel, setConfirmDel] = useState(""); // v294 · id đang chờ xác nhận xóa
   const [asinOpen, setAsinOpen] = useState(false);  // v304 · modal import ASIN từ report
   const [asinText, setAsinText] = useState("");
+  // v305 · SP-API config
+  const [cfgOpen, setCfgOpen] = useState(false);
+  const [cfg, setCfg] = useState<{ region: string; marketplaceId: string; sellerId: string; lwaClientId: string; lwaClientSecret: string; refreshToken: string; hasSecret: boolean; hasRefresh: boolean; configured: boolean }>({ region: "na", marketplaceId: "ATVPDKIKX0DER", sellerId: "", lwaClientId: "", lwaClientSecret: "", refreshToken: "", hasSecret: false, hasRefresh: false, configured: false });
+  const [cfgTest, setCfgTest] = useState("");
   const [dragImg, setDragImg] = useState<number | null>(null); // v297 · kéo-thả xếp ảnh trong modal
   const [upBusy, setUpBusy] = useState(false);                  // v298 · đang upload ảnh local
+  const [whiteBusy, setWhiteBusy] = useState(false);            // v307 · đang tạo ảnh main nền trắng
   const imgFileRef = useRef<HTMLInputElement>(null);
 
   // v297 · bộ ảnh hiệu lực trong modal: override nếu có, không thì ảnh Shopify nguồn.
@@ -90,6 +95,25 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     }
     if (added.length) setImgs([...effImages(edit), ...added]);
     setUpBusy(false);
+  };
+
+  // v307 · Tạo ảnh MAIN nền trắng chuẩn Amazon từ ảnh main hiện tại (mockup Book Studio):
+  // làm sạch nền → trắng tuyệt đối, vuông 1600, JPEG nhẹ. Ảnh gốc lùi xuống làm ảnh phụ.
+  const makeWhiteMain = async () => {
+    if (!edit) return;
+    const imgs = effImages(edit);
+    const src = imgs[0];
+    if (!src) { flash("Chưa có ảnh nào — thêm ảnh trước"); return; }
+    setWhiteBusy(true);
+    try {
+      const j = await postJSON("/api/amazon-products/purify-image", { url: src });
+      if (j.ok && j.url) {
+        const rest = src.includes("/amazon-mockup/") ? imgs.slice(1) : imgs; // đã là mockup → thay; chưa → giữ gốc làm ảnh phụ
+        setImgs([j.url, ...rest].slice(0, 9));
+        flash("✓ Ảnh main nền trắng đã tạo");
+      } else flash("✗ " + (j.error ?? "lỗi xử lý ảnh"));
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    setWhiteBusy(false);
   };
 
   // Template khớp cho 1 sản phẩm: gán tay → khớp Product type → template duy nhất.
@@ -215,6 +239,32 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     setBusy(false);
   };
 
+  // v305 · SP-API — mở settings, lưu, test, sync
+  const openCfg = async () => {
+    try { const j = await fetch("/api/amazon-config").then((r) => r.json()); if (j.ok) setCfg((p) => ({ ...p, ...j.config, lwaClientSecret: "", refreshToken: "" })); } catch { /* offline */ }
+    setCfgTest(""); setCfgOpen(true);
+  };
+  const saveCfg = async (test: boolean) => {
+    setBusy(true); setCfgTest("");
+    try {
+      const j = await postJSON("/api/amazon-config", { ...cfg, test });
+      if (j.ok) {
+        if (test) setCfgTest(j.test === "ok" ? "✓ Connected to Amazon SP-API" : "✗ " + (j.error ?? "Connection failed"));
+        else { flash("✓ SP-API settings saved"); setCfgOpen(false); }
+      } else flash("✗ " + (j.error ?? "Save failed"));
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    setBusy(false);
+  };
+  const syncAsins = async (ids?: string[]) => {
+    setBusy(true); setProg("Syncing ASINs from Amazon…");
+    try {
+      const j = await postJSON("/api/amazon-products/sync-asins", ids ? { ids } : {});
+      if (j.ok) flash(`✓ Synced ${j.updated} ASIN(s)${j.notFound ? ` · ${j.notFound} not on Amazon yet` : ""}${j.errors?.length ? ` · ${j.errors[0]}` : ""}`);
+      else flash("✗ " + (j.error ?? "Sync failed"));
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    setProg(""); setBusy(false); load();
+  };
+
   // v304 · Import ASIN từ Amazon Listings Report (TSV/CSV) → khớp SKU root → điền ASIN + LIVE.
   const importAsins = async () => {
     if (!asinText.trim()) return;
@@ -286,7 +336,10 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button disabled={busy} onClick={() => setAsinOpen(true)} title="Import ASINs from an Amazon All Listings Report (Reports → Inventory)" style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>⇩ Import ASINs</button>
+          {/* v305 · SP-API: Sync tự động (nếu đã cấu hình) + nút Settings */}
+          <button disabled={busy || !cfg.configured} onClick={() => syncAsins()} title={cfg.configured ? "Pull ASINs & status from Amazon via SP-API" : "Configure SP-API first (Settings)"} style={{ ...pill("#FF9900", "#111"), padding: "8px 12px", opacity: cfg.configured ? 1 : .5 }}>⟳ Sync from Amazon</button>
+          <button disabled={busy} onClick={() => setAsinOpen(true)} title="Or import ASINs from an All Listings Report (no API)" style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>⇩ Import report</button>
+          <button disabled={busy} onClick={openCfg} title="SP-API settings" style={{ ...pill("#EEF1F5", "#333"), padding: "8px 10px" }}>⚙</button>
           <button disabled={busy} onClick={load} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>↻ Reload</button>
         </div>
       </div>
@@ -433,6 +486,40 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
         </table>
       </div>
 
+      {/* v305 · SP-API Settings */}
+      {cfgOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflow: "auto" }} onClick={() => !busy && setCfgOpen(false)}>
+          <div style={{ ...card, width: "min(560px, 100%)", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <b style={{ fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}><AmazonLogo size={20} /> Amazon SP-API</b>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "8px 0 16px", lineHeight: 1.6 }}>
+              Seller Central → Apps &amp; Services → <b>Develop Apps</b> → create a private app → get the LWA Client ID &amp; Secret → <b>Authorize</b> it to get the Refresh Token. Paste them here — they are stored in your database, never shared.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+              <div><label style={lab}>Region</label>
+                <select value={cfg.region} onChange={(e) => setCfg({ ...cfg, region: e.target.value })} style={{ ...ctl, width: "100%" }}>
+                  <option value="na">North America</option><option value="eu">Europe</option><option value="fe">Far East</option>
+                </select></div>
+              <div><label style={lab}>Marketplace ID</label>
+                <input value={cfg.marketplaceId} onChange={(e) => setCfg({ ...cfg, marketplaceId: e.target.value })} style={{ ...ctl, width: "100%", fontFamily: "monospace", fontSize: 12 }} /></div>
+            </div>
+            <label style={lab}>Seller / Merchant ID</label>
+            <input value={cfg.sellerId} onChange={(e) => setCfg({ ...cfg, sellerId: e.target.value })} placeholder="e.g. A1B2C3D4E5F6G7" style={{ ...ctl, width: "100%", marginBottom: 10, fontFamily: "monospace", fontSize: 12 }} />
+            <label style={lab}>LWA Client ID</label>
+            <input value={cfg.lwaClientId} onChange={(e) => setCfg({ ...cfg, lwaClientId: e.target.value })} placeholder="amzn1.application-oa2-client...." style={{ ...ctl, width: "100%", marginBottom: 10, fontFamily: "monospace", fontSize: 11.5 }} />
+            <label style={lab}>LWA Client Secret {cfg.hasSecret && <span style={{ color: "#1F6F45" }}>· saved (leave blank to keep)</span>}</label>
+            <input type="password" value={cfg.lwaClientSecret} onChange={(e) => setCfg({ ...cfg, lwaClientSecret: e.target.value })} placeholder={cfg.hasSecret ? "••••••••" : "amzn1.oa2-cs...."} style={{ ...ctl, width: "100%", marginBottom: 10, fontFamily: "monospace", fontSize: 11.5 }} />
+            <label style={lab}>Refresh Token {cfg.hasRefresh && <span style={{ color: "#1F6F45" }}>· saved (leave blank to keep)</span>}</label>
+            <input type="password" value={cfg.refreshToken} onChange={(e) => setCfg({ ...cfg, refreshToken: e.target.value })} placeholder={cfg.hasRefresh ? "••••••••" : "Atzr|...."} style={{ ...ctl, width: "100%", marginBottom: 12, fontFamily: "monospace", fontSize: 11.5 }} />
+            {cfgTest && <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 12, color: cfgTest.startsWith("✓") ? "#1F6F45" : "#B42318" }}>{cfgTest}</div>}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button disabled={busy} onClick={() => setCfgOpen(false)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Cancel</button>
+              <button disabled={busy} onClick={() => saveCfg(true)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Save &amp; test</button>
+              <button disabled={busy} onClick={() => saveCfg(false)} style={{ ...pill(AMZ, "#fff"), padding: "8px 18px" }}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* v304 · Import ASINs từ Amazon Listings Report */}
       {asinOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setAsinOpen(false)}>
@@ -505,6 +592,9 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                     onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) uploadImages(fs); e.target.value = ""; }} />
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
+                  <button onClick={makeWhiteMain} disabled={whiteBusy || !effImages(edit).length} title="Chuẩn hóa ảnh main hiện tại thành nền trắng tuyệt đối (255,255,255), vuông 1600, JPEG nhẹ — đúng chuẩn Amazon, không lỗi timeout."
+                    style={{ border: "1px solid #E5A868", background: "#FFFBF4", borderRadius: 8, cursor: whiteBusy || !effImages(edit).length ? "default" : "pointer", fontSize: 13, fontWeight: 800, color: AMZ, padding: "6px 12px", opacity: whiteBusy || !effImages(edit).length ? .5 : 1 }}>
+                    {whiteBusy ? "Đang xử lý…" : "⚪ White-bg main"}</button>
                   <button onClick={() => { const u = window.prompt("Image URL (https://…):"); if (u && /^https:\/\//i.test(u.trim())) setImgs([...effImages(edit), u.trim()]); }}
                     style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>+ Add by URL</button>
                   {edit.images && (
