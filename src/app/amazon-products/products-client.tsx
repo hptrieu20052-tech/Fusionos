@@ -331,7 +331,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           <div>
             <div style={{ fontSize: 21, fontWeight: 800 }}>Manage Products · Amazon</div>
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>
-              {stats.total} staged · {stats.ready} copy-ready · {stats.exported} exported · Push from Shopify → AI copy → Export customization
+              {stats.total} staged · {stats.exported} exported · Push from Shopify → AI copy → Export customization
             </div>
           </div>
         </div>
@@ -388,10 +388,10 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
               <th style={{ padding: 10 }}><input type="checkbox" checked={!!filtered.length && sel.size === filtered.length} onChange={toggleAll} /></th>
               <th style={{ padding: 10 }}>IMAGE</th>
               <th style={{ padding: 10 }}>TITLE</th>
-              <th style={{ padding: 10 }}>AMAZON COPY</th>
+              <th style={{ padding: 10 }}>STORE / SELLER</th>
+              <th style={{ padding: 10 }}>TYPE / TEMPLATE</th>
               <th style={{ padding: 10 }}>AMAZON SKUs</th>
-              <th style={{ padding: 10 }}>TYPE</th>
-              <th style={{ padding: 10 }}>TEMPLATE</th>
+              <th style={{ padding: 10 }}>PIPELINE</th>
               <th style={{ padding: 10 }}>PRICE</th>
               <th style={{ padding: 10 }}>STATUS</th>
               <th style={{ padding: 10 }}>ACTIONS</th>
@@ -412,28 +412,37 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   {r.image ? <img src={r.image + (r.image.includes("?") ? "&" : "?") + "width=96"} alt="" onClick={() => setZoom(r.image)} style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)", cursor: "zoom-in" }} /> : <span style={{ color: "var(--muted)" }}>—</span>}
                 </td>
-                <td style={{ padding: 10, maxWidth: 340 }}>
+                <td style={{ padding: 10, maxWidth: 300 }}>
                   {/* v291 · click title → mở detail (modal edit) */}
                   <div onClick={() => setEdit({ ...r, bullets: r.bullets ? [...r.bullets] : null })} title="Open Amazon listing detail"
                     style={{ fontWeight: 700, color: "#1D4ED8", cursor: "pointer", overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
                     {r.title || r.sourceTitle}
                   </div>
-                  {/* v294 · dòng info như bên Shopify: variants nguồn · ảnh · variations Amazon */}
-                  {(() => { const t = tplFor(r); const vs = t?.variations ?? []; return (
-                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
-                      {r.srcVariantCount} variants · {r.imageCount} images{vs.length ? <> · Amazon: {vs.length} sizes ({vs.map((v) => v.label || v.suffix).join(", ")})</> : null}
-                    </div>
-                  ); })()}
-                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{r.storeName ?? ""}{r.sourceStatus ? ` · ${r.sourceStatus}` : ""}{r.title ? " · source: " + r.sourceTitle.slice(0, 40) + (r.sourceTitle.length > 40 ? "…" : "") : ""}</div>
+                  {/* v308 · gọn như Shopify: chỉ variants + ảnh (sizes ở cột SKU, store ở cột Store/Seller) */}
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>{r.srcVariantCount} variants · {r.imageCount} images</div>
                 </td>
-                <td style={{ padding: 10 }}>
-                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                    <span title={r.title ? `${r.title.length} chars` : "No Amazon title yet"} style={chip(titleOk(r.title) ? "#E9F7EF" : "#F1F1F4", titleOk(r.title) ? "#1F6F45" : "#8794A5")}>title {r.title ? r.title.length : "—"}</span>
-                    <span title="5 bullet points" style={chip(bulletsOk(r.bullets) ? "#E9F7EF" : "#F1F1F4", bulletsOk(r.bullets) ? "#1F6F45" : "#8794A5")}>bullets {(r.bullets ?? []).filter(Boolean).length}/5</span>
-                    <span title={r.description ? `${r.description.length} chars` : "No description yet"} style={chip(descOk(r.description) ? "#E9F7EF" : "#F1F1F4", descOk(r.description) ? "#1F6F45" : "#8794A5")}>desc {r.description ? r.description.length : "—"}</span>
+                {/* v308 · STORE / SELLER + badge nguồn Shopify (như chip ↗ Etsy bên Shopify) */}
+                <td style={{ padding: 10, fontSize: 12, maxWidth: 150 }}>
+                  {r.storeName ?? "—"}
+                  {r.shopifyProductId && (
+                    <a href={`/shopify-products?pid=${encodeURIComponent(r.shopifyProductId)}`} target="_blank" rel="noreferrer"
+                      title={`View source in Manage Products · Shopify — ${r.sourceTitle}`}
+                      style={{ marginTop: 3, fontSize: 10.5, fontWeight: 700, color: "#2C6E49", background: "#EAF6EF", border: "1px solid #BFE3CD", borderRadius: 6, padding: "2px 6px", display: "block", wordBreak: "break-word", lineHeight: 1.35, textDecoration: "none" }}>
+                      ↗ Shopify: {r.sourceTitle.length > 22 ? r.sourceTitle.slice(0, 22) + "…" : r.sourceTitle}
+                    </a>
+                  )}
+                </td>
+                {/* v308 · TYPE / TEMPLATE gộp 2 dòng như Type/Category bên Shopify (bỏ cột TYPE trùng) */}
+                <td style={{ padding: 10, fontSize: 12, maxWidth: 160 }}>
+                  <div title={r.productType || ""} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productType || "—"}</div>
+                  <div style={{ marginTop: 3 }}>
+                    {(() => { const t = tplFor(r); const pinned = !!r.amazonTemplateId; return t
+                      ? <span title={pinned ? "Pinned manually — export always uses this template" : "Auto-matched by Product type — pin a different one in the edit modal (click title)"}
+                          style={chip(pinned ? "#FFF0DB" : "#F1F1F4", pinned ? "#B5661A" : "#6B7280")}>{pinned ? "📌 " : "≈ "}{t.name.length > 14 ? t.name.slice(0, 14) + "…" : t.name}</span>
+                      : <span title="No template matches this Product type — pin one in the edit modal or set Match Product type in Manage Templates Amazon" style={{ color: "#B42318", fontSize: 11.5, fontWeight: 700 }}>none</span>; })()}
                   </div>
-                  {r.aiAt && <div style={{ fontSize: 10.5, color: "#5B3FBF", fontWeight: 700, marginTop: 3 }}>✦ {ago(r.aiAt)}</div>}
                 </td>
+                {/* AMAZON SKUs */}
                 <td style={{ padding: 10, fontSize: 11.5 }}>
                   {(() => {
                     if (!r.skuRoot) return <span style={{ color: "#B42318" }}>no SKU</span>;
@@ -449,13 +458,14 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                     );
                   })()}
                 </td>
-                <td style={{ padding: 10, fontSize: 12 }}>{r.productType || "—"}</td>
-                {/* v297 · phân biệt AUTO (khớp theo Product type, không ghi gì) vs 📌 PINNED (gán tay trong modal) */}
-                <td style={{ padding: 10, fontSize: 12 }}>
-                  {(() => { const t = tplFor(r); const pinned = !!r.amazonTemplateId; return t
-                    ? <span title={pinned ? "Pinned manually — export always uses this template" : "Auto-matched by Product type — pin a different one in the edit modal (click title)"}
-                        style={chip(pinned ? "#FFF0DB" : "#F1F1F4", pinned ? "#B5661A" : "#6B7280")}>{pinned ? "pinned · " : "auto · "}{t.name.length > 16 ? t.name.slice(0, 16) + "…" : t.name}</span>
-                    : <span title="No template matches this Product type — pin one in the edit modal or set Match Product type in Manage Templates Amazon" style={{ color: "#B42318", fontSize: 11.5, fontWeight: 700 }}>none</span>; })()}
+                {/* v308 · PIPELINE — độ sẵn sàng copy Amazon (title/bullets/desc) + lần AI gần nhất, như cột Pipeline Shopify */}
+                <td style={{ padding: 10 }}>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    <span title={r.title ? `${r.title.length} chars` : "No Amazon title yet"} style={chip(titleOk(r.title) ? "#E9F7EF" : "#F1F1F4", titleOk(r.title) ? "#1F6F45" : "#8794A5")}>title {r.title ? r.title.length : "—"}</span>
+                    <span title="5 bullet points" style={chip(bulletsOk(r.bullets) ? "#E9F7EF" : "#F1F1F4", bulletsOk(r.bullets) ? "#1F6F45" : "#8794A5")}>bullets {(r.bullets ?? []).filter(Boolean).length}/5</span>
+                    <span title={r.description ? `${r.description.length} chars` : "No description yet"} style={chip(descOk(r.description) ? "#E9F7EF" : "#F1F1F4", descOk(r.description) ? "#1F6F45" : "#8794A5")}>desc {r.description ? r.description.length : "—"}</span>
+                  </div>
+                  {r.aiAt && <div style={{ fontSize: 10.5, color: "#5B3FBF", fontWeight: 700, marginTop: 3 }}>✦ {ago(r.aiAt)}</div>}
                 </td>
                 <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(tplFor(r))}</td>
                 <td style={{ padding: 10 }}>
