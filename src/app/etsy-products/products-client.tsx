@@ -509,9 +509,6 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           </div>
           <div>
             <h1 style={{ fontSize: 19, fontWeight: 800, margin: 0 }}>Manage Products · Etsy</h1>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 2 }}>
-              {rows.length} listings · {pushedCount} pushed to Shopify · exactly as exported from Etsy
-            </div>
           </div>
           <div style={{ flex: 1 }} />
           {canEdit && (

@@ -222,10 +222,6 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
         </div>
       ))}
 
-      <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10, lineHeight: 1.6 }}>
-        <b>Flow:</b> Manage Products Shopify → 🅰 Push to Amazon → Manage Products Amazon (AI copy) → Export customization (uses this template) → Amazon Custom Products → Upload Customizations. Listings must be live with inventory first.
-      </div>
-
       {/* ══ IMPORT MODAL ══ */}
       {importOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setImportOpen(false)}>

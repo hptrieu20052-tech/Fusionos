@@ -29,6 +29,9 @@ const ctl: React.CSSProperties = { border: "1px solid var(--line)", borderRadius
 const pill = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", gap: 7, border: "none", background: bg, color: fg, borderRadius: 12, padding: "9px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" });
 const lab: React.CSSProperties = { display: "block", fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 4 };
 const chip = (bg: string, fg: string): React.CSSProperties => ({ fontSize: 10.5, fontWeight: 700, padding: "1px 7px", borderRadius: 999, background: bg, color: fg });
+// v311 · nhãn trạng thái theo cách Amazon (Draft / Submitted / Live). Enum nội bộ giữ nguyên.
+const STATUS_LABEL: Record<string, string> = { DRAFT: "Draft", EXPORTED: "Submitted", LIVE: "Live", INACTIVE: "Inactive" };
+const statusLabel = (s: string) => STATUS_LABEL[s] ?? s;
 
 const ago = (iso: string | null) => {
   if (!iso) return "";
@@ -69,7 +72,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [aiModel, setAiModel] = useState("");
   const [aiModels, setAiModels] = useState<{ id: string; name: string }[]>([]);
   const [tplPick, setTplPick] = useState("");
-  const [zoom, setZoom] = useState(""); // v291 · lightbox ảnh thumbnail
+  const [zoom, setZoom] = useState<{ imgs: string[]; i: number } | null>(null); // v311 · lightbox có kéo qua/lại
   const [confirmDel, setConfirmDel] = useState(""); // v294 · id đang chờ xác nhận xóa
   const [asinOpen, setAsinOpen] = useState(false);  // v304 · modal import ASIN từ report
   const [asinText, setAsinText] = useState("");
@@ -185,6 +188,18 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
 
   const flash = (m: string) => { setNote(m); setTimeout(() => setNote(""), 6000); };
 
+  // v311 · phím ← → chuyển ảnh, Esc đóng lightbox
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") setZoom((z) => z ? { ...z, i: (z.i - 1 + z.imgs.length) % z.imgs.length } : z);
+      else if (e.key === "ArrowRight") setZoom((z) => z ? { ...z, i: (z.i + 1) % z.imgs.length } : z);
+      else if (e.key === "Escape") setZoom(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom]);
+
   // v308/v310 · các tùy chọn đổ vào bộ lọc
   const storeOpts = useMemo(() => Array.from(new Set(rows.map((r) => r.storeName).filter(Boolean))) as string[], [rows]);
   const typeOpts = useMemo(() => Array.from(new Set(rows.map((r) => r.productType).filter(Boolean))) as string[], [rows]);
@@ -277,6 +292,22 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     setBusy(false);
   };
 
+  // v311 · ⬆ Push to Amazon — đẩy listing thẳng qua SP-API (Feeds). Sửa xong push lại = update (khớp SKU).
+  const pushListing = async (ids: string[], closeAfter = false) => {
+    if (!ids.length) return;
+    if (!cfg.configured) { flash("✗ Chưa cấu hình SP-API — Stores → store Amazon → khu Amazon SP-API"); return; }
+    setBusy(true); setProg("Đang đẩy listing lên Amazon (Feeds API)…");
+    try {
+      const j = await postJSON("/api/amazon-products/push-listing", { ids, storeId: storeSel || undefined });
+      if (j.ok) {
+        flash(`✓ Đã đẩy ${j.rows} dòng lên Amazon${j.skipped?.length ? ` · ${j.skipped.length} bỏ qua: ${j.skipped[0]}` : ""} · ${j.summary}`);
+        if (closeAfter) setEdit(null);
+        load();
+      } else flash("✗ " + (j.error ?? "Push failed"));
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    setProg(""); setBusy(false);
+  };
+
   // v305 · SP-API — mở settings, lưu, test, sync
   const syncAsins = async (ids?: string[]) => {
     setBusy(true); setProg("Syncing ASINs from Amazon…");
@@ -310,18 +341,33 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     setBusy(false);
   };
 
+  // v311 · lưu nội dung edit về FusionOS. persist=false = không đóng modal (để push tiếp).
+  const persistEdit = async (): Promise<boolean> => {
+    if (!edit) return false;
+    const r = await fetch("/api/amazon-products", {
+      method: "PATCH", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: edit.id, title: edit.title ?? "", bullets: (edit.bullets ?? []).filter(Boolean), description: edit.description ?? "", asin: edit.asin ?? "", amazonTemplateId: edit.amazonTemplateId ?? "", ...(edit.images ? { images: edit.images } : {}) }),
+    }).then((x) => x.json()).catch(() => ({ ok: false }));
+    return !!r.ok;
+  };
   const saveEdit = async () => {
     if (!edit) return;
     setBusy(true);
     try {
-      const r = await fetch("/api/amazon-products", {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: edit.id, title: edit.title ?? "", bullets: (edit.bullets ?? []).filter(Boolean), description: edit.description ?? "", asin: edit.asin ?? "", amazonTemplateId: edit.amazonTemplateId ?? "", ...(edit.images ? { images: edit.images } : {}) }),
-      }).then((x) => x.json());
-      if (r.ok) { flash("✓ Saved"); setEdit(null); load(); }
-      else flash("✗ " + (r.error ?? "Save failed"));
+      if (await persistEdit()) { flash("✓ Saved"); setEdit(null); load(); }
+      else flash("✗ Save failed");
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
     setBusy(false);
+  };
+  // v311 · Lưu edit rồi đẩy luôn listing này lên Amazon (update qua SP-API).
+  const saveAndPush = async () => {
+    if (!edit) return;
+    const id = edit.id;
+    setBusy(true);
+    const ok = await persistEdit();
+    setBusy(false);
+    if (!ok) { flash("✗ Save failed"); return; }
+    await pushListing([id], true);
   };
 
   const aiOne = async () => {
@@ -339,11 +385,6 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     setBusy(false);
   };
 
-  const stats = useMemo(() => ({
-    total: rows.length,
-    ready: rows.filter(readyOk).length,
-    exported: rows.filter((r) => r.status === "EXPORTED" || r.status === "LIVE").length,
-  }), [rows]);
 
   return (
     <div style={{ maxWidth: 1240, margin: "0 auto", padding: "18px 16px" }}>
@@ -353,9 +394,6 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           <AmazonLogo size={46} />
           <div>
             <div style={{ fontSize: 21, fontWeight: 800 }}>Manage Products · Amazon</div>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 3 }}>
-              {stats.total} staged · {stats.exported} exported · Push from Shopify → AI copy → Export customization
-            </div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -387,7 +425,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </select>
           <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} title="Filter by Amazon status" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 130 }}>
             <option value="">All status</option>
-            {statusOpts.map((s) => <option key={s} value={s}>{s}</option>)}
+            {statusOpts.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
           <select value={fTpl} onChange={(e) => setFTpl(e.target.value)} title="Filter by template" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 150 }}>
             <option value="">All templates</option>
@@ -401,7 +439,6 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           {anyFilter && <button onClick={clearFilters} title="Clear filters" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>Clear</button>}
           <span style={{ fontSize: 12.5, fontWeight: 700, color: sel.size ? "#1F6F45" : "var(--muted)", whiteSpace: "nowrap", marginLeft: "auto" }}>{sel.size} selected</span>
           <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>{sel.size === filtered.length && filtered.length ? "Clear" : `Select all ${filtered.length}`}</button>
-          <button disabled={busy} onClick={() => setAsinOpen(true)} title="Import ASINs from an All Listings Report (no API)" style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>⇩ Import report</button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
           {/* Nhóm AI */}
@@ -416,15 +453,17 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
             )}
           </span>
           <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
-          {/* Nhóm Export — File 1 trước (tạo listing), File 2 sau (khi listing LIVE) */}
+          {/* v311 · Nhóm Push — đẩy listing THẲNG qua API (thay File 1). File 2 customization vẫn upload tay (Amazon chưa mở API). */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>EXPORT</span>
-            <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 200 }}>
-              {tpls.length === 0 && <option value="">No template — create one first</option>}
+            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>PUSH</span>
+            <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "Đẩy listing (parent+child · title/bullets/desc/ảnh/giá) THẲNG lên Amazon qua SP-API. Sửa xong bấm lại = cập nhật (khớp theo SKU, không tạo trùng)." : "Cấu hình SP-API ở Stores → store Amazon trước"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1 }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size} onClick={doExportListing} title="Tải flat file .txt (dự phòng — nếu muốn upload tay ở Add Products via Upload)" style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1 }}>tải file</button>
+            <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
+            <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 180 }}>
+              {tpls.length === 0 && <option value="">No template</option>}
               {tpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <button disabled={busy || !sel.size} onClick={doExportListing} title="STEP 1 — Generate the listing flat file (parent + child rows with title, bullets, images, prices from the template). Upload at Catalog → Add Products via Upload. Products missing copy/images/prices are skipped." style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>↓ 1 · Listing file{sel.size ? ` (${sel.size})` : ""}</button>
-            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="STEP 2 — Generate the customization .xlsx. Upload at Custom Products → Upload Customizations. Listings must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>↓ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="Customization .xlsx — upload ở Custom Products → Upload Customizations (Amazon chưa mở API cho Custom). Listing phải LIVE + có tồn trước." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>↓ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
           </span>
         </div>
       </div>
@@ -459,7 +498,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                 <td style={{ padding: 10 }}>
                   {/* v291 · click ảnh → phóng to (lightbox) */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {r.image ? <img src={r.image + (r.image.includes("?") ? "&" : "?") + "width=96"} alt="" onClick={() => setZoom(r.image)} style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)", cursor: "zoom-in" }} /> : <span style={{ color: "var(--muted)" }}>—</span>}
+                  {r.image ? <img src={r.image + (r.image.includes("?") ? "&" : "?") + "width=96"} alt="" onClick={() => { const g = effImages(r).filter(Boolean); setZoom({ imgs: g.length ? g : [r.image], i: 0 }); }} style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)", cursor: "zoom-in" }} /> : <span style={{ color: "var(--muted)" }}>—</span>}
                 </td>
                 <td style={{ padding: 10, maxWidth: 300 }}>
                   {/* v291 · click title → mở detail (modal edit) */}
@@ -518,12 +557,15 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                 </td>
                 <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(tplFor(r))}</td>
                 <td style={{ padding: 10 }}>
-                  <span style={chip(r.status === "LIVE" ? "#E9F7EF" : r.status === "EXPORTED" ? "#FFF0DB" : "#F1F1F4", r.status === "LIVE" ? "#1F6F45" : r.status === "EXPORTED" ? "#B5661A" : "#8794A5")}>{r.status}</span>
+                  <span style={chip(r.status === "LIVE" ? "#E9F7EF" : r.status === "EXPORTED" ? "#FFF0DB" : "#F1F1F4", r.status === "LIVE" ? "#1F6F45" : r.status === "EXPORTED" ? "#B5661A" : "#8794A5")}>{statusLabel(r.status)}</span>
                   {r.asin && (
-                    <a href={`https://www.amazon.com/dp/${r.asin}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
-                      title="Open on Amazon" style={{ display: "block", fontSize: 10.5, fontFamily: "monospace", marginTop: 2, color: "#1D4ED8", textDecoration: "none" }}>
-                      {r.asin} ↗
-                    </a>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
+                      {/* click ASIN = copy · icon mắt = xem trên Amazon */}
+                      <span onClick={() => { navigator.clipboard?.writeText(r.asin!); flash("✓ Copied ASIN " + r.asin); }} title="Click để copy ASIN" style={{ fontSize: 10.5, fontFamily: "monospace", color: "#1D4ED8", cursor: "pointer" }}>{r.asin}</span>
+                      <a href={`https://www.amazon.com/dp/${r.asin}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title="Xem trên Amazon" style={{ display: "inline-flex", color: "#66788E" }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                      </a>
+                    </div>
                   )}
                 </td>
                 <td style={{ padding: 10, whiteSpace: "nowrap" }}>
@@ -564,12 +606,23 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       )}
 
       {/* v291 · Lightbox ảnh */}
-      {zoom && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.75)", zIndex: 3100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }} onClick={() => setZoom("")}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={zoom + (zoom.includes("?") ? "&" : "?") + "width=1200"} alt="" style={{ maxWidth: "92vw", maxHeight: "92vh", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,.4)" }} />
-        </div>
-      )}
+      {zoom && (() => {
+        const cur = zoom.imgs[zoom.i] ?? zoom.imgs[0];
+        const many = zoom.imgs.length > 1;
+        const go = (d: number) => setZoom((z) => z ? { ...z, i: (z.i + d + z.imgs.length) % z.imgs.length } : z);
+        const arrow: React.CSSProperties = { position: "absolute", top: "50%", transform: "translateY(-50%)", width: 52, height: 52, borderRadius: 999, border: "none", background: "rgba(255,255,255,.92)", color: "#111", fontSize: 26, fontWeight: 800, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 16px rgba(0,0,0,.3)" };
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.8)", zIndex: 3100, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }} onClick={() => setZoom(null)}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={cur + (cur.includes("?") ? "&" : "?") + "width=1200"} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "88vw", maxHeight: "90vh", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,.4)", cursor: "default" }} />
+            {many && <>
+              <button onClick={(e) => { e.stopPropagation(); go(-1); }} title="Ảnh trước (←)" style={{ ...arrow, left: 24 }}>‹</button>
+              <button onClick={(e) => { e.stopPropagation(); go(1); }} title="Ảnh sau (→)" style={{ ...arrow, right: 24 }}>›</button>
+              <div style={{ position: "absolute", bottom: 26, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 13, fontWeight: 700, padding: "5px 14px", borderRadius: 999 }}>{zoom.i + 1} / {zoom.imgs.length}</div>
+            </>}
+          </div>
+        );
+      })()}
 
       {/* Edit modal — v298: bố cục kiểu ETSY (Photos full-width trên cùng → Listing details → footer Save) */}
       {edit && (
@@ -677,7 +730,8 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
               {canEdit && <button disabled={busy} onClick={aiOne} style={pill("#5B3FBF", "#fff")}>{busy ? "Working…" : "✦ AI Amazon copy"}</button>}
               <span style={{ flex: 1 }} />
               <button disabled={busy} onClick={() => setEdit(null)} style={{ ...pill("#fff", "#333"), border: "1px solid var(--line)", padding: "9px 20px" }}>Cancel</button>
-              {canEdit && <button disabled={busy} onClick={saveEdit} style={{ ...pill(AMZ, "#fff"), padding: "9px 24px" }}>Save</button>}
+              {canEdit && <button disabled={busy} onClick={saveEdit} style={{ ...pill("#fff", AMZ), border: `1px solid ${AMZ}`, padding: "9px 20px" }}>Save</button>}
+              {canEdit && <button disabled={busy || !cfg.configured} onClick={saveAndPush} title={cfg.configured ? "Lưu rồi đẩy listing này lên Amazon qua SP-API (cập nhật nếu đã tồn tại)" : "Cấu hình SP-API ở Stores trước"} style={{ ...pill("#1F6F45", "#fff"), padding: "9px 22px", opacity: busy || !cfg.configured ? .5 : 1 }}>⬆ Save &amp; Push to Amazon</button>}
             </div>
           </div>
         </div>

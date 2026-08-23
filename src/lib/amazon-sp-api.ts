@@ -123,13 +123,15 @@ export async function getAccessToken(c: SpCfg): Promise<string> {
   return token;
 }
 
-async function spFetch(c: SpCfg, path: string, query: Record<string, string> = {}): Promise<{ status: number; json: unknown }> {
+async function spFetch(c: SpCfg, path: string, opts: { query?: Record<string, string>; method?: string; body?: unknown } = {}): Promise<{ status: number; json: unknown }> {
   const token = await getAccessToken(c);
   const host = HOSTS[c.region ?? "na"] ?? HOSTS.na;
-  const qs = new URLSearchParams(query).toString();
+  const qs = new URLSearchParams(opts.query ?? {}).toString();
   const url = `${host}${path}${qs ? "?" + qs : ""}`;
   const res = await fetch(url, {
+    method: opts.method ?? "GET",
     headers: { "x-amz-access-token": token, "Content-Type": "application/json" },
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     signal: AbortSignal.timeout(30_000),
   });
   const json = await res.json().catch(() => null);
@@ -144,8 +146,7 @@ export type ListingInfo = { asin: string | null; status: string; parentAsin?: st
  */
 export async function getListing(c: SpCfg, sku: string): Promise<ListingInfo | null> {
   const { status, json } = await spFetch(c, `/listings/2021-08-01/items/${encodeURIComponent(String(c.sellerId))}/${encodeURIComponent(sku)}`, {
-    marketplaceIds: String(c.marketplaceId),
-    includedData: "summaries",
+    query: { marketplaceIds: String(c.marketplaceId), includedData: "summaries" },
   });
   if (status === 404) return null;
   if (status !== 200) {
@@ -160,3 +161,65 @@ export async function getListing(c: SpCfg, sku: string): Promise<ListingInfo | n
 
 // Rate-limit nhẹ: Listings getItem ~5 req/s. Gọi tuần tự có nghỉ để an toàn.
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// ───────────────────────── FEEDS API (⬆ Push to Amazon) ─────────────────────────
+// Đẩy listing bằng feed POST_FLAT_FILE_LISTINGS_DATA — cùng nội dung .txt đã kiểm chứng chạy live,
+// tự upload + tự chạy, không cần thao tác tay ở Seller Central.
+
+const FEED_CONTENT_TYPE = "text/tab-separated-values; charset=UTF-8";
+
+/** B1: tạo feed document → nhận feedDocumentId + presigned URL để PUT nội dung lên. */
+export async function createFeedDocument(c: SpCfg): Promise<{ feedDocumentId: string; url: string }> {
+  const { status, json } = await spFetch(c, "/feeds/2021-06-30/documents", { method: "POST", body: { contentType: FEED_CONTENT_TYPE } });
+  const j = json as { feedDocumentId?: string; url?: string; errors?: { message?: string }[] } | null;
+  if (status !== 201 && status !== 200) throw new Error(`createFeedDocument ${status}: ${j?.errors?.[0]?.message ?? "unknown"}`);
+  if (!j?.feedDocumentId || !j?.url) throw new Error("createFeedDocument: thiếu feedDocumentId/url");
+  return { feedDocumentId: j.feedDocumentId, url: j.url };
+}
+
+/** B2: PUT nội dung .txt lên presigned URL (Content-Type PHẢI khớp lúc tạo document). */
+export async function uploadFeedContent(url: string, content: string): Promise<void> {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": FEED_CONTENT_TYPE },
+    body: content,
+    signal: AbortSignal.timeout(40_000),
+  });
+  if (!res.ok) throw new Error(`uploadFeedContent ${res.status}`);
+}
+
+/** B3: tạo feed dùng document vừa upload → nhận feedId. */
+export async function createFeed(c: SpCfg, inputFeedDocumentId: string): Promise<{ feedId: string }> {
+  const { status, json } = await spFetch(c, "/feeds/2021-06-30/feeds", {
+    method: "POST",
+    body: { feedType: "POST_FLAT_FILE_LISTINGS_DATA", marketplaceIds: [String(c.marketplaceId)], inputFeedDocumentId },
+  });
+  const j = json as { feedId?: string; errors?: { message?: string }[] } | null;
+  if (status !== 202 && status !== 201 && status !== 200) throw new Error(`createFeed ${status}: ${j?.errors?.[0]?.message ?? "unknown"}`);
+  if (!j?.feedId) throw new Error("createFeed: thiếu feedId");
+  return { feedId: j.feedId };
+}
+
+export type FeedStatus = { processingStatus: string; resultFeedDocumentId?: string | null };
+
+/** Trạng thái feed: IN_QUEUE / IN_PROGRESS / DONE / CANCELLED / FATAL. */
+export async function getFeed(c: SpCfg, feedId: string): Promise<FeedStatus> {
+  const { status, json } = await spFetch(c, `/feeds/2021-06-30/feeds/${encodeURIComponent(feedId)}`);
+  const j = json as { processingStatus?: string; resultFeedDocumentId?: string; errors?: { message?: string }[] } | null;
+  if (status !== 200) throw new Error(`getFeed ${status}: ${j?.errors?.[0]?.message ?? "unknown"}`);
+  return { processingStatus: j?.processingStatus ?? "UNKNOWN", resultFeedDocumentId: j?.resultFeedDocumentId ?? null };
+}
+
+/** Tải processing report của feed (mô tả kết quả xử lý — bao nhiêu dòng OK/lỗi). */
+export async function getFeedResult(c: SpCfg, resultFeedDocumentId: string): Promise<string> {
+  const { status, json } = await spFetch(c, `/feeds/2021-06-30/documents/${encodeURIComponent(resultFeedDocumentId)}`);
+  const j = json as { url?: string; compressionAlgorithm?: string } | null;
+  if (status !== 200 || !j?.url) throw new Error(`getFeedResult ${status}`);
+  const res = await fetch(j.url, { signal: AbortSignal.timeout(30_000) });
+  const buf = Buffer.from(await res.arrayBuffer());
+  if ((j.compressionAlgorithm ?? "").toUpperCase() === "GZIP") {
+    const { gunzipSync } = await import("zlib");
+    return gunzipSync(buf).toString("utf-8");
+  }
+  return buf.toString("utf-8");
+}

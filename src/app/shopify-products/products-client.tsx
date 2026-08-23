@@ -1318,7 +1318,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         <img src="/marketplaces/shopify.png" alt="Shopify" width={42} height={42} style={{ width: 42, height: 42, objectFit: "contain", display: "block", flexShrink: 0 }} />
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 19, fontWeight: 800 }}>Manage Products · Shopify</div>
-          <div style={{ fontSize: 12.5, color: "var(--muted)" }}>{rows.length} products · Sync from Shopify → edit price/variants/images → Push back (two-way, no CSV)</div>
         </div>
         {canEdit && (
           <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
