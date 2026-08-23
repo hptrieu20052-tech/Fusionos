@@ -467,9 +467,11 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
             <option value="ready">Copy ready</option>
             <option value="todo">No copy yet</option>
           </select>
-          {anyFilter && <button onClick={clearFilters} title="Clear filters" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>Clear</button>}
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: sel.size ? "#1F6F45" : "var(--muted)", whiteSpace: "nowrap", marginLeft: "auto" }}>{sel.size} selected</span>
-          <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>{sel.size === filtered.length && filtered.length ? "Clear" : `Select all ${filtered.length}`}</button>
+          {anyFilter && <button onClick={clearFilters} title="Clear all filters" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>Clear filters</button>}
+          <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 10 }}>
+            {sel.size > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1F6F45", whiteSpace: "nowrap" }}>{sel.size} selected</span>}
+            <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px", whiteSpace: "nowrap" }}>{sel.size === filtered.length && filtered.length ? "Deselect all" : `Select all ${filtered.length}`}</button>
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
           {/* Nhóm AI */}

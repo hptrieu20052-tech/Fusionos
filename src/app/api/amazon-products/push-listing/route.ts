@@ -93,6 +93,13 @@ export async function POST(req: NextRequest) {
     const issues: string[] = [];
     const deadline = Date.now() + 52_000;
 
+    // Trả true nếu Amazon KHÔNG báo lỗi (ERROR). Gom message lỗi để hiện cho user.
+    const ok = (rr: { sku: string; status?: string; issues?: { message?: string; code?: string; severity?: string }[] }) => {
+      const errs = (rr.issues ?? []).filter((i) => (i.severity ?? "").toUpperCase() === "ERROR");
+      errs.slice(0, 2).forEach((e) => { if (issues.length < 8) issues.push(`${rr.sku}: ${e.message ?? e.code ?? "invalid"}`); });
+      return errs.length === 0;
+    };
+
     // ── Reference attributes cho việc TẠO MỚI (clone từ listing đã live cùng loại) ──
     let refParent: Attrs | null = null, refChild: Attrs | null = null, refLoaded = false;
     const loadReference = async () => {
@@ -131,9 +138,9 @@ export async function POST(req: NextRequest) {
       if (r.a.asin) {
         // ── UPDATE (PATCH) ──
         try {
-          await patchListingItem(cfg!, `${root}-PARENT-AMZ`, PRODUCT_TYPE, [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch]);
-          updated++;
-        } catch (e) { if (issues.length < 5) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
+          const rr = await patchListingItem(cfg!, `${root}-PARENT-AMZ`, PRODUCT_TYPE, [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch]);
+          if (ok(rr)) updated++;
+        } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
         await sleep(300);
         for (const v of vars) {
           if (Date.now() > deadline) break;
@@ -141,8 +148,8 @@ export async function POST(req: NextRequest) {
           const cp: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk) }, ...commonPatch];
           if (imgs[0]) cp.push({ op: "replace", path: "/attributes/main_product_image_locator", value: imageVal(imgs[0]) });
           if (!isNaN(price) && price > 0) cp.push({ op: "replace", path: "/attributes/purchasable_offer", value: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] });
-          try { await patchListingItem(cfg!, `${root}-${v.suffix}`, PRODUCT_TYPE, cp); updated++; }
-          catch (e) { if (issues.length < 5) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
+          try { const rr = await patchListingItem(cfg!, `${root}-${v.suffix}`, PRODUCT_TYPE, cp); if (ok(rr)) updated++; }
+          catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
           await sleep(300);
         }
       } else {
@@ -162,9 +169,10 @@ export async function POST(req: NextRequest) {
             main_product_image_locator: imageVal(imgs[0]),
             ...otherImgs,
           });
-          await putListingItem(cfg!, parentSku, PRODUCT_TYPE, pa);
+          const rr = await putListingItem(cfg!, parentSku, PRODUCT_TYPE, pa);
+          if (!ok(rr)) { continue; } // parent lỗi → bỏ qua children (đã gom message trong ok())
           created++;
-        } catch (e) { if (issues.length < 5) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); continue; }
+        } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); continue; }
         await sleep(400);
         // CHILDREN
         for (const v of vars) {
@@ -182,8 +190,8 @@ export async function POST(req: NextRequest) {
             ...otherImgs,
             ...(!isNaN(price) && price > 0 ? { purchasable_offer: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] } : {}),
           });
-          try { await putListingItem(cfg!, `${root}-${v.suffix}`, PRODUCT_TYPE, ca); created++; }
-          catch (e) { if (issues.length < 5) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); }
+          try { const rr = await putListingItem(cfg!, `${root}-${v.suffix}`, PRODUCT_TYPE, ca); if (ok(rr)) created++; }
+          catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); }
           await sleep(400);
         }
       }
@@ -196,7 +204,7 @@ export async function POST(req: NextRequest) {
       ok: true,
       updated, created,
       skipped, issues,
-      summary: `Updated ${updated} SKU(s) · created ${created} SKU(s)${skipped.length ? ` · ${skipped.length} skipped` : ""}${issues.length ? ` · error: ${issues[0]}` : ""}. Click ⟳ Sync to fetch ASIN/status.`,
+      summary: `Updated ${updated} SKU(s) · created ${created} SKU(s)${skipped.length ? ` · ${skipped.length} skipped` : ""}${issues.length ? ` · ${issues.length} error(s): ${issues.slice(0, 2).join(" | ")}` : ""}.`,
     });
   } catch (e) {
     console.error("push-listing fatal", e);
