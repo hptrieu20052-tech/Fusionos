@@ -18,7 +18,6 @@ export const maxDuration = 60;
  *     (dùng đúng JSON Amazon đã chấp nhận), chỉ thay title/bullets/desc/ảnh/giá/SKU.
  * LUÔN trả JSON.
  */
-const PRODUCT_TYPE = "DISPLAY_ALBUM";
 const mk = MK_US;
 
 type Variation = { suffix: string; label: string; price: string };
@@ -89,13 +88,22 @@ export async function POST(req: NextRequest) {
     if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
     const tpls = await db.select().from(schema.amazonTemplates);
-    const varsFor = (amazonTemplateId: string | null, productType: string | null, override: unknown): Variation[] => {
+    const tplObjFor = (amazonTemplateId: string | null, typeHint: string | null) => {
+      let t = amazonTemplateId ? tpls.find((x) => x.id === amazonTemplateId) : undefined;
+      if (!t) { const pt = (typeHint ?? "").trim().toLowerCase(); if (pt) t = tpls.find((x) => (x.productType ?? "").trim().toLowerCase() === pt); }
+      if (!t && tpls.length === 1) t = tpls[0];
+      return t;
+    };
+    const varsFor = (amazonTemplateId: string | null, typeHint: string | null, override: unknown): Variation[] => {
       const ov = (Array.isArray(override) ? override : []) as Variation[];
       if (ov.length) return ov.filter((v) => v.suffix);
-      let t = amazonTemplateId ? tpls.find((x) => x.id === amazonTemplateId) : undefined;
-      if (!t) { const pt = (productType ?? "").trim().toLowerCase(); if (pt) t = tpls.find((x) => (x.productType ?? "").trim().toLowerCase() === pt); }
-      if (!t && tpls.length === 1) t = tpls[0];
+      const t = tplObjFor(amazonTemplateId, typeHint);
       return ((t?.config as { variations?: Variation[] } | null)?.variations ?? []).filter((v) => v.suffix);
+    };
+    // v326 · Amazon product type ĐỘNG theo template (constants.amazonProductType) — hỗ trợ nhiều loại (puzzle…)
+    const ptOf = (amazonTemplateId: string | null, typeHint: string | null): string => {
+      const c = (tplObjFor(amazonTemplateId, typeHint)?.config as { constants?: { amazonProductType?: string } } | null)?.constants;
+      return (c?.amazonProductType || "").trim() || "DISPLAY_ALBUM";
     };
 
     let updated = 0, created = 0;
@@ -110,24 +118,25 @@ export async function POST(req: NextRequest) {
       return errs.length === 0;
     };
 
-    // ── Reference attributes cho việc TẠO MỚI (clone từ listing đã live cùng loại) ──
-    let refParent: Attrs | null = null, refChild: Attrs | null = null, refLoaded = false;
-    const loadReference = async () => {
-      if (refLoaded) return; refLoaded = true;
-      const [ref] = await db.select({ a: schema.amazonProducts, v: schema.shopifyProducts.variants })
+    // ── Reference clone cho việc TẠO MỚI: chọn 1 listing đã live CÙNG PRODUCT TYPE làm mẫu, cache theo type ──
+    const refCache = new Map<string, { parent: Attrs | null; child: Attrs | null }>();
+    const getReference = async (pt: string): Promise<{ parent: Attrs | null; child: Attrs | null }> => {
+      if (refCache.has(pt)) return refCache.get(pt)!;
+      const cands = await db.select({ a: schema.amazonProducts, v: schema.shopifyProducts.variants, srcType: schema.shopifyProducts.productType })
         .from(schema.amazonProducts).leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.amazonProducts.shopifyProductId))
-        .where(and(isNotNull(schema.amazonProducts.asin), eq(schema.amazonProducts.storeId, rows[0]?.a.storeId ?? ""))).limit(1);
-      const refAny = ref ?? (await db.select({ a: schema.amazonProducts, v: schema.shopifyProducts.variants })
-        .from(schema.amazonProducts).leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.amazonProducts.shopifyProductId))
-        .where(isNotNull(schema.amazonProducts.asin)).limit(1))[0];
-      if (!refAny) return;
-      const refRoot = rootSku(refAny.v, refAny.a.manualSku);
-      const refVars = varsFor(refAny.a.amazonTemplateId, null, refAny.a.variations);
-      if (!refRoot || !refVars.length) return;
-      const p = await getListingData(cfg!, `${refRoot}-PARENT-AMZ`, "attributes").catch(() => null);
-      const c = await getListingData(cfg!, `${refRoot}-${refVars[0].suffix}`, "attributes").catch(() => null);
-      refParent = p?.attributes ?? null;
-      refChild = c?.attributes ?? null;
+        .where(isNotNull(schema.amazonProducts.asin));
+      let result: { parent: Attrs | null; child: Attrs | null } = { parent: null, child: null };
+      for (const c of cands) {
+        if (ptOf(c.a.amazonTemplateId, c.srcType || c.a.manualType) !== pt) continue;
+        const refRoot = rootSku(c.v, c.a.manualSku);
+        const refVars = varsFor(c.a.amazonTemplateId, c.srcType || c.a.manualType, c.a.variations);
+        if (!refRoot || !refVars.length) continue;
+        const p = await getListingData(cfg!, `${refRoot}-PARENT-AMZ`, "attributes").catch(() => null);
+        const ch = await getListingData(cfg!, `${refRoot}-${refVars[0].suffix}`, "attributes").catch(() => null);
+        if (p?.attributes && ch?.attributes) { result = { parent: p.attributes, child: ch.attributes }; break; }
+      }
+      refCache.set(pt, result);
+      return result;
     };
 
     for (const r of rows) {
@@ -138,6 +147,7 @@ export async function POST(req: NextRequest) {
       const root = rootSku(r.srcVariants, r.a.manualSku);
       const vars = varsFor(r.a.amazonTemplateId, r.srcType || r.a.manualType, r.a.variations);
       const imgs = imgList(r.a.images, r.srcImages);
+      const pt = ptOf(r.a.amazonTemplateId, r.srcType || r.a.manualType); // product type động theo template
 
       if (!root || !title) { skipped.push(`${title || r.a.id}: missing SKU/title`); continue; }
       if (!vars.length) { skipped.push(`${title}: missing variations`); continue; }
@@ -148,7 +158,7 @@ export async function POST(req: NextRequest) {
       if (r.a.asin) {
         // ── UPDATE (PATCH) ──
         try {
-          const rr = await patchListingItem(cfg!, `${root}-PARENT-AMZ`, PRODUCT_TYPE, [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch]);
+          const rr = await patchListingItem(cfg!, `${root}-PARENT-AMZ`, pt, [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch]);
           if (ok(rr)) updated++;
         } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
         await sleep(300);
@@ -164,28 +174,28 @@ export async function POST(req: NextRequest) {
             cp.push({ op: "replace", path: "/attributes/list_price", value: [{ value: price, currency: "USD", marketplace_id: mk }] });
             cp.push({ op: "replace", path: "/attributes/purchasable_offer", value: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] });
           }
-          try { const rr = await patchListingItem(cfg!, `${root}-${v.suffix}`, PRODUCT_TYPE, cp); if (ok(rr)) updated++; }
+          try { const rr = await patchListingItem(cfg!, `${root}-${v.suffix}`, pt, cp); if (ok(rr)) updated++; }
           catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
           await sleep(300);
         }
       } else {
         // ── CREATE (PUT, clone từ reference) ──
-        await loadReference();
-        if (!refParent || !refChild) { skipped.push(`${title}: no live reference listing to clone — create one via "flat file" first, then later listings can be created via Push`); continue; }
+        const ref = await getReference(pt);
+        if (!ref.parent || !ref.child) { skipped.push(`${title}: no live reference of product type "${pt}" to clone — create the first "${pt}" listing via "flat file" first, then later ones create via Push`); continue; }
         if (!imgs.length) { skipped.push(`${title}: missing image (white-background main)`); continue; }
         const parentSku = `${root}-PARENT-AMZ`;
         const otherImgs: Attrs = {};
         imgs.slice(1, 9).forEach((u, i) => { otherImgs[`other_product_image_locator_${i + 1}`] = imageVal(u); });
         // PARENT
         try {
-          const pa = cloneAttrs(refParent, {
+          const pa = cloneAttrs(ref.parent, {
             item_name: vText(title, mk),
             product_description: vText(desc, mk),
             bullet_point: bulletsVal(bullets),
             main_product_image_locator: imageVal(imgs[0]),
             ...otherImgs,
           });
-          const rr = await putListingItem(cfg!, parentSku, PRODUCT_TYPE, pa);
+          const rr = await putListingItem(cfg!, parentSku, pt, pa);
           if (!ok(rr)) { continue; } // parent lỗi → bỏ qua children (đã gom message trong ok())
           created++;
         } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); continue; }
@@ -194,9 +204,9 @@ export async function POST(req: NextRequest) {
         for (const v of vars) {
           if (Date.now() > deadline) break;
           const price = Number(v.price);
-          const rel = JSON.parse(JSON.stringify((refChild as Attrs).child_parent_sku_relationship ?? [{ marketplace_id: mk }]));
+          const rel = JSON.parse(JSON.stringify((ref.child as Attrs).child_parent_sku_relationship ?? [{ marketplace_id: mk }]));
           if (Array.isArray(rel) && rel[0]) { rel[0].parent_sku = parentSku; rel[0].child_relationship_type = rel[0].child_relationship_type ?? "variation"; }
-          const ca = cloneAttrs(refChild as Attrs, {
+          const ca = cloneAttrs(ref.child as Attrs, {
             item_name: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk),
             product_description: vText(desc, mk),
             bullet_point: bulletsVal(bullets),
@@ -212,7 +222,7 @@ export async function POST(req: NextRequest) {
               purchasable_offer: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }],
             } : {}),
           });
-          try { const rr = await putListingItem(cfg!, `${root}-${v.suffix}`, PRODUCT_TYPE, ca); if (ok(rr)) created++; }
+          try { const rr = await putListingItem(cfg!, `${root}-${v.suffix}`, pt, ca); if (ok(rr)) created++; }
           catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); }
           await sleep(400);
         }
