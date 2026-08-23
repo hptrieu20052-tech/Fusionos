@@ -157,7 +157,13 @@ export async function POST(req: NextRequest) {
           const price = Number(v.price);
           const cp: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk) }, ...commonPatch];
           if (imgs[0]) cp.push({ op: "replace", path: "/attributes/main_product_image_locator", value: imageVal(imgs[0]) });
-          if (!isNaN(price) && price > 0) cp.push({ op: "replace", path: "/attributes/purchasable_offer", value: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] });
+          // Đảm bảo offer đầy đủ (condition + tồn kho) để gỡ "Missing offer"
+          cp.push({ op: "replace", path: "/attributes/condition_type", value: [{ value: "new_new", marketplace_id: mk }] });
+          cp.push({ op: "replace", path: "/attributes/fulfillment_availability", value: [{ fulfillment_channel_code: "DEFAULT", quantity: 100 }] });
+          if (!isNaN(price) && price > 0) {
+            cp.push({ op: "replace", path: "/attributes/list_price", value: [{ value: price, currency: "USD", marketplace_id: mk }] });
+            cp.push({ op: "replace", path: "/attributes/purchasable_offer", value: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] });
+          }
           try { const rr = await patchListingItem(cfg!, `${root}-${v.suffix}`, PRODUCT_TYPE, cp); if (ok(rr)) updated++; }
           catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
           await sleep(300);
@@ -197,6 +203,9 @@ export async function POST(req: NextRequest) {
             size_name: [{ value: v.label || v.suffix, marketplace_id: mk }],
             main_product_image_locator: imageVal(imgs[0]),
             child_parent_sku_relationship: rel,
+            // Offer đầy đủ để listing BUYABLE (không còn "Missing offer"): condition + tồn kho + giá
+            condition_type: [{ value: "new_new", marketplace_id: mk }],
+            fulfillment_availability: [{ fulfillment_channel_code: "DEFAULT", quantity: 100 }],
             ...otherImgs,
             ...(!isNaN(price) && price > 0 ? {
               list_price: [{ value: price, currency: "USD", marketplace_id: mk }],
