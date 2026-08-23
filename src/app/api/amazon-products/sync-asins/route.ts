@@ -31,10 +31,11 @@ export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
-  const cfg = await getSpConfig();
-  if (!spConfigured(cfg)) return NextResponse.json({ ok: false, error: "Chưa cấu hình SP-API — nhập Client ID / Secret / Refresh Token / Seller ID ở nút Settings." }, { status: 400 });
-
   const b = await req.json().catch(() => null);
+  const storeId = typeof b?.storeId === "string" && /^[0-9a-f-]{36}$/i.test(b.storeId) ? b.storeId : undefined;
+  const cfg = await getSpConfig(storeId);
+  if (!spConfigured(cfg)) return NextResponse.json({ ok: false, error: "Chưa cấu hình SP-API — mở store Amazon ở mục Stores → khu Amazon SP-API để nhập Client ID / Secret / Refresh Token / Seller ID." }, { status: 400 });
+
   const onlyIds = Array.isArray(b?.ids) ? b.ids.filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))) : null;
 
   const rows = await db.select({

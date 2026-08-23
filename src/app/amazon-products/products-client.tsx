@@ -54,6 +54,13 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
+  const [fStore, setFStore] = useState("");   // v308 · lọc theo store nguồn
+  const [fType, setFType] = useState("");     // v308 · lọc theo product type
+  const [fStatus, setFStatus] = useState(""); // v310 · lọc theo trạng thái Amazon
+  const [fTpl, setFTpl] = useState("");       // v310 · lọc theo template
+  const [fAi, setFAi] = useState("");         // v310 · lọc theo tình trạng AI copy (ready/todo)
+  const [amzStores, setAmzStores] = useState<{ id: string; name: string }[]>([]); // v308 · các store Amazon (SP-API account)
+  const [storeSel, setStoreSel] = useState(""); // v308 · store Amazon đang chọn cho Sync/SP-API
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
@@ -67,9 +74,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [asinOpen, setAsinOpen] = useState(false);  // v304 · modal import ASIN từ report
   const [asinText, setAsinText] = useState("");
   // v305 · SP-API config
-  const [cfgOpen, setCfgOpen] = useState(false);
   const [cfg, setCfg] = useState<{ region: string; marketplaceId: string; sellerId: string; lwaClientId: string; lwaClientSecret: string; refreshToken: string; hasSecret: boolean; hasRefresh: boolean; configured: boolean }>({ region: "na", marketplaceId: "ATVPDKIKX0DER", sellerId: "", lwaClientId: "", lwaClientSecret: "", refreshToken: "", hasSecret: false, hasRefresh: false, configured: false });
-  const [cfgTest, setCfgTest] = useState("");
   const [dragImg, setDragImg] = useState<number | null>(null); // v297 · kéo-thả xếp ảnh trong modal
   const [upBusy, setUpBusy] = useState(false);                  // v298 · đang upload ảnh local
   const [whiteBusy, setWhiteBusy] = useState(false);            // v307 · đang tạo ảnh main nền trắng
@@ -150,6 +155,23 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   }, []);
   // Ghi lại mỗi khi đổi model
   useEffect(() => { try { localStorage.setItem("amzAiModel", aiModel); } catch { /* ignore */ } }, [aiModel]);
+  // v308 · nạp danh sách store Amazon (SP-API account) cho bộ chọn ở header
+  useEffect(() => {
+    fetch("/api/stores?marketplace=amazon").then((r) => r.json()).then((j) => {
+      if (j.ok && Array.isArray(j.stores)) {
+        const list = (j.stores as { id: string; name: string }[]).map((s) => ({ id: s.id, name: s.name }));
+        setAmzStores(list);
+        setStoreSel((prev) => prev || list[0]?.id || "");
+      }
+    }).catch(() => { /* offline */ });
+  }, []);
+  // v308 · nạp trạng thái SP-API của store đang chọn (để nút Sync biết đã cấu hình chưa — không cần mở Settings)
+  useEffect(() => {
+    if (!storeSel) return;
+    fetch(`/api/amazon-config?storeId=${encodeURIComponent(storeSel)}`).then((r) => r.json()).then((j) => {
+      if (j.ok) setCfg((p) => ({ ...p, ...(j.config ?? { configured: false }), lwaClientSecret: "", refreshToken: "" }));
+    }).catch(() => { /* offline */ });
+  }, [storeSel]);
 
   // v303 · Bộ SKU Amazon THẬT của 1 listing: parent + child theo variations của template.
   const amzSkus = (r: Row): { parent: string; children: { sku: string; label: string }[] } => {
@@ -163,11 +185,27 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
 
   const flash = (m: string) => { setNote(m); setTimeout(() => setNote(""), 6000); };
 
+  // v308/v310 · các tùy chọn đổ vào bộ lọc
+  const storeOpts = useMemo(() => Array.from(new Set(rows.map((r) => r.storeName).filter(Boolean))) as string[], [rows]);
+  const typeOpts = useMemo(() => Array.from(new Set(rows.map((r) => r.productType).filter(Boolean))) as string[], [rows]);
+  const statusOpts = useMemo(() => Array.from(new Set(rows.map((r) => r.status).filter(Boolean))) as string[], [rows]);
+  const tplOpts = useMemo(() => Array.from(new Set(rows.map((r) => tplFor(r)?.name).filter(Boolean))) as string[], [rows, tpls]); // eslint-disable-line react-hooks/exhaustive-deps
+  const anyFilter = !!(q || fStore || fType || fStatus || fTpl || fAi);
+  const clearFilters = () => { setQ(""); setFStore(""); setFType(""); setFStatus(""); setFTpl(""); setFAi(""); };
+
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    if (!s) return rows;
-    return rows.filter((r) => (r.sourceTitle + " " + (r.title ?? "") + " " + r.skuRoot + " " + r.productType).toLowerCase().includes(s));
-  }, [rows, q]);
+    return rows.filter((r) => {
+      if (fStore && r.storeName !== fStore) return false;
+      if (fType && r.productType !== fType) return false;
+      if (fStatus && r.status !== fStatus) return false;
+      if (fTpl && tplFor(r)?.name !== fTpl) return false;
+      if (fAi === "ready" && !readyOk(r)) return false;
+      if (fAi === "todo" && readyOk(r)) return false;
+      if (s && !(r.sourceTitle + " " + (r.title ?? "") + " " + r.skuRoot + " " + r.productType).toLowerCase().includes(s)) return false;
+      return true;
+    });
+  }, [rows, q, fStore, fType, fStatus, fTpl, fAi]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleAll = () => setSel((p) => p.size === filtered.length ? new Set() : new Set(filtered.map((r) => r.id)));
   const toggle = (id: string) => setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -240,25 +278,10 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   };
 
   // v305 · SP-API — mở settings, lưu, test, sync
-  const openCfg = async () => {
-    try { const j = await fetch("/api/amazon-config").then((r) => r.json()); if (j.ok) setCfg((p) => ({ ...p, ...j.config, lwaClientSecret: "", refreshToken: "" })); } catch { /* offline */ }
-    setCfgTest(""); setCfgOpen(true);
-  };
-  const saveCfg = async (test: boolean) => {
-    setBusy(true); setCfgTest("");
-    try {
-      const j = await postJSON("/api/amazon-config", { ...cfg, test });
-      if (j.ok) {
-        if (test) setCfgTest(j.test === "ok" ? "✓ Connected to Amazon SP-API" : "✗ " + (j.error ?? "Connection failed"));
-        else { flash("✓ SP-API settings saved"); setCfgOpen(false); }
-      } else flash("✗ " + (j.error ?? "Save failed"));
-    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
-    setBusy(false);
-  };
   const syncAsins = async (ids?: string[]) => {
     setBusy(true); setProg("Syncing ASINs from Amazon…");
     try {
-      const j = await postJSON("/api/amazon-products/sync-asins", ids ? { ids } : {});
+      const j = await postJSON("/api/amazon-products/sync-asins", { ...(ids ? { ids } : {}), storeId: storeSel || undefined });
       if (j.ok) flash(`✓ Synced ${j.updated} ASIN(s)${j.notFound ? ` · ${j.notFound} not on Amazon yet` : ""}${j.errors?.length ? ` · ${j.errors[0]}` : ""}`);
       else flash("✗ " + (j.error ?? "Sync failed"));
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
@@ -336,11 +359,13 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          {/* v305 · SP-API: Sync tự động (nếu đã cấu hình) + nút Settings */}
-          <button disabled={busy || !cfg.configured} onClick={() => syncAsins()} title={cfg.configured ? "Pull ASINs & status from Amazon via SP-API" : "Configure SP-API first (Settings)"} style={{ ...pill("#FF9900", "#111"), padding: "8px 12px", opacity: cfg.configured ? 1 : .5 }}>⟳ Sync from Amazon</button>
-          <button disabled={busy} onClick={() => setAsinOpen(true)} title="Or import ASINs from an All Listings Report (no API)" style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>⇩ Import report</button>
-          <button disabled={busy} onClick={openCfg} title="SP-API settings" style={{ ...pill("#EEF1F5", "#333"), padding: "8px 10px" }}>⚙</button>
-          <button disabled={busy} onClick={load} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>↻ Reload</button>
+          {/* v308 · Bộ chọn store Amazon (SP-API account) — như ô chọn store bên Shopify. Cấu hình SP-API ở Stores. */}
+          {amzStores.length > 0 && (
+            <select value={storeSel} onChange={(e) => setStoreSel(e.target.value)} title="Amazon store (SP-API account) · cấu hình khóa API ở mục Stores" style={{ ...ctl, padding: "9px 12px", fontWeight: 700, minWidth: 150 }}>
+              {amzStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <button disabled={busy || !cfg.configured} onClick={() => syncAsins()} title={cfg.configured ? "Pull ASINs & status from Amazon via SP-API" : "Cấu hình SP-API ở mục Stores (mở store Amazon → khu Amazon SP-API)"} style={{ ...pill("#FF9900", "#111"), padding: "9px 14px", opacity: cfg.configured ? 1 : .5 }}>⟳ Sync from Amazon</button>
         </div>
       </div>
 
@@ -350,9 +375,33 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       {/* Toolbar — 2 hàng: (1) tìm & chọn · (2) hành động theo nhóm AI | EXPORT */}
       <div style={{ ...card, padding: "12px 16px", marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU / type" style={{ ...ctl, flex: "1 1 260px" }} />
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: sel.size ? "#1F6F45" : "var(--muted)", whiteSpace: "nowrap" }}>{sel.size} selected</span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU / type" style={{ ...ctl, flex: "1 1 220px" }} />
+          {/* v308/v310 · bộ lọc đầy đủ như hàng filter Shopify: store · type · status · template · AI copy */}
+          <select value={fStore} onChange={(e) => setFStore(e.target.value)} title="Filter by source store" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 140 }}>
+            <option value="">All stores</option>
+            {storeOpts.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={fType} onChange={(e) => setFType(e.target.value)} title="Filter by product type" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 150 }}>
+            <option value="">All types</option>
+            {typeOpts.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} title="Filter by Amazon status" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 130 }}>
+            <option value="">All status</option>
+            {statusOpts.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <select value={fTpl} onChange={(e) => setFTpl(e.target.value)} title="Filter by template" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 150 }}>
+            <option value="">All templates</option>
+            {tplOpts.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+          <select value={fAi} onChange={(e) => setFAi(e.target.value)} title="Filter by AI copy readiness" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 130 }}>
+            <option value="">AI: all</option>
+            <option value="ready">Copy ready</option>
+            <option value="todo">No copy yet</option>
+          </select>
+          {anyFilter && <button onClick={clearFilters} title="Clear filters" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>Clear</button>}
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: sel.size ? "#1F6F45" : "var(--muted)", whiteSpace: "nowrap", marginLeft: "auto" }}>{sel.size} selected</span>
           <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>{sel.size === filtered.length && filtered.length ? "Clear" : `Select all ${filtered.length}`}</button>
+          <button disabled={busy} onClick={() => setAsinOpen(true)} title="Import ASINs from an All Listings Report (no API)" style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px" }}>⇩ Import report</button>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
           {/* Nhóm AI */}
@@ -495,40 +544,6 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </tbody>
         </table>
       </div>
-
-      {/* v305 · SP-API Settings */}
-      {cfgOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflow: "auto" }} onClick={() => !busy && setCfgOpen(false)}>
-          <div style={{ ...card, width: "min(560px, 100%)", padding: 22 }} onClick={(e) => e.stopPropagation()}>
-            <b style={{ fontSize: 16, display: "flex", alignItems: "center", gap: 8 }}><AmazonLogo size={20} /> Amazon SP-API</b>
-            <div style={{ fontSize: 12.5, color: "var(--muted)", margin: "8px 0 16px", lineHeight: 1.6 }}>
-              Seller Central → Apps &amp; Services → <b>Develop Apps</b> → create a private app → get the LWA Client ID &amp; Secret → <b>Authorize</b> it to get the Refresh Token. Paste them here — they are stored in your database, never shared.
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
-              <div><label style={lab}>Region</label>
-                <select value={cfg.region} onChange={(e) => setCfg({ ...cfg, region: e.target.value })} style={{ ...ctl, width: "100%" }}>
-                  <option value="na">North America</option><option value="eu">Europe</option><option value="fe">Far East</option>
-                </select></div>
-              <div><label style={lab}>Marketplace ID</label>
-                <input value={cfg.marketplaceId} onChange={(e) => setCfg({ ...cfg, marketplaceId: e.target.value })} style={{ ...ctl, width: "100%", fontFamily: "monospace", fontSize: 12 }} /></div>
-            </div>
-            <label style={lab}>Seller / Merchant ID</label>
-            <input value={cfg.sellerId} onChange={(e) => setCfg({ ...cfg, sellerId: e.target.value })} placeholder="e.g. A1B2C3D4E5F6G7" style={{ ...ctl, width: "100%", marginBottom: 10, fontFamily: "monospace", fontSize: 12 }} />
-            <label style={lab}>LWA Client ID</label>
-            <input value={cfg.lwaClientId} onChange={(e) => setCfg({ ...cfg, lwaClientId: e.target.value })} placeholder="amzn1.application-oa2-client...." style={{ ...ctl, width: "100%", marginBottom: 10, fontFamily: "monospace", fontSize: 11.5 }} />
-            <label style={lab}>LWA Client Secret {cfg.hasSecret && <span style={{ color: "#1F6F45" }}>· saved (leave blank to keep)</span>}</label>
-            <input type="password" value={cfg.lwaClientSecret} onChange={(e) => setCfg({ ...cfg, lwaClientSecret: e.target.value })} placeholder={cfg.hasSecret ? "••••••••" : "amzn1.oa2-cs...."} style={{ ...ctl, width: "100%", marginBottom: 10, fontFamily: "monospace", fontSize: 11.5 }} />
-            <label style={lab}>Refresh Token {cfg.hasRefresh && <span style={{ color: "#1F6F45" }}>· saved (leave blank to keep)</span>}</label>
-            <input type="password" value={cfg.refreshToken} onChange={(e) => setCfg({ ...cfg, refreshToken: e.target.value })} placeholder={cfg.hasRefresh ? "••••••••" : "Atzr|...."} style={{ ...ctl, width: "100%", marginBottom: 12, fontFamily: "monospace", fontSize: 11.5 }} />
-            {cfgTest && <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 12, color: cfgTest.startsWith("✓") ? "#1F6F45" : "#B42318" }}>{cfgTest}</div>}
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button disabled={busy} onClick={() => setCfgOpen(false)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Cancel</button>
-              <button disabled={busy} onClick={() => saveCfg(true)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Save &amp; test</button>
-              <button disabled={busy} onClick={() => saveCfg(false)} style={{ ...pill(AMZ, "#fff"), padding: "8px 18px" }}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* v304 · Import ASINs từ Amazon Listings Report */}
       {asinOpen && (
