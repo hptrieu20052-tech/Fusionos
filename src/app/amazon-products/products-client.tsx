@@ -840,7 +840,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
               <span style={{ flex: 1 }} />
               <button disabled={busy} onClick={() => setEdit(null)} style={{ ...pill("#fff", "#333"), border: "1px solid var(--line)", padding: "9px 20px" }}>Cancel</button>
               {canEdit && <button disabled={busy} onClick={saveEdit} style={{ ...pill("#fff", AMZ), border: `1px solid ${AMZ}`, padding: "9px 20px" }}>Save</button>}
-              {canEdit && <button disabled={busy || !cfg.configured} onClick={saveAndPush} title={cfg.configured ? "Lưu rồi đẩy listing này lên Amazon qua SP-API (cập nhật nếu đã tồn tại)" : "Cấu hình SP-API ở Stores trước"} style={{ ...pill("#1F6F45", "#fff"), padding: "9px 22px", opacity: busy || !cfg.configured ? .5 : 1 }}>⬆ Save &amp; Push to Amazon</button>}
+              {canEdit && <button disabled={busy || !cfg.configured} onClick={saveAndPush} title={cfg.configured ? "Save then push this listing to Amazon via SP-API (updates if it already exists)" : "Configure SP-API in Stores first"} style={{ ...pill("#1F6F45", "#fff"), padding: "9px 22px", opacity: busy || !cfg.configured ? .5 : 1 }}>⬆ Save &amp; Push to Amazon</button>}
             </div>
           </div>
         </div>
