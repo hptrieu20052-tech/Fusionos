@@ -89,6 +89,8 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [whiteBusy, setWhiteBusy] = useState(false);            // v307 · đang tạo ảnh main nền trắng
   const [importOpen, setImportOpen] = useState(false);          // v317 · modal Import listing
   const [importSku, setImportSku] = useState("");
+  const [page, setPage] = useState(1);                          // v318 · phân trang
+  const [pageSize, setPageSize] = useState(20);
   const imgFileRef = useRef<HTMLInputElement>(null);
 
   // v297 · bộ ảnh hiệu lực trong modal: override nếu có, không thì ảnh Shopify nguồn.
@@ -230,6 +232,12 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       return true;
     });
   }, [rows, q, fStore, fType, fStatus, fTpl, fAi]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v318 · phân trang (mặc định 20/trang) như Shopify
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const pageC = Math.min(page, totalPages);
+  const paged = filtered.slice((pageC - 1) * pageSize, pageC * pageSize);
+  useEffect(() => { setPage(1); }, [q, fStore, fType, fStatus, fTpl, fAi, pageSize]);
 
   const toggleAll = () => setSel((p) => p.size === filtered.length ? new Set() : new Set(filtered.map((r) => r.id)));
   const toggle = (id: string) => setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -515,7 +523,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
               <tr><td colSpan={10} style={{ padding: 28, textAlign: "center", color: "var(--muted)" }}>
                 Nothing staged yet — open <b>Manage Products Shopify</b>, select listings and hit <b>🅰 Push to Amazon</b>.
               </td></tr>
-            ) : filtered.map((r) => (
+            ) : paged.map((r) => (
               <tr key={r.id} style={{ borderBottom: "1px solid var(--line)" }}>
                 <td style={{ padding: 10 }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: 10 }}>
@@ -610,6 +618,17 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           </tbody>
         </table>
       </div>
+
+      {/* v318 · Pagination */}
+      {filtered.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, fontSize: 13, color: "var(--muted)" }}>
+          <span>Page {pageC}/{totalPages} · {filtered.length} listings</span>
+          <div style={{ flex: 1 }} />
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ ...ctl, padding: "6px 8px" }}>{[20, 50, 100].map((n) => <option key={n} value={n}>{n}/page</option>)}</select>
+          <button disabled={pageC <= 1} onClick={() => setPage(pageC - 1)} style={{ ...pill("#EEF1F5", "#333"), padding: "7px 14px", opacity: pageC <= 1 ? .5 : 1 }}>Prev</button>
+          <button disabled={pageC >= totalPages} onClick={() => setPage(pageC + 1)} style={{ ...pill("#EEF1F5", "#333"), padding: "7px 14px", opacity: pageC >= totalPages ? .5 : 1 }}>Next</button>
+        </div>
+      )}
 
       {/* v304 · Import ASINs từ Amazon Listings Report */}
       {asinOpen && (
