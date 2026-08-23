@@ -11,17 +11,20 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AmazonLogo } from "@/components/amazon-logo";
 
+type Variation = { suffix: string; label: string; price: string };
 type Row = {
   id: string; shopifyProductId: string | null;
   title: string | null; bullets: string[] | null; description: string | null;
   aiAt: string | null; status: string; asin: string | null; exportedAt: string | null;
   amazonTemplateId: string | null;
+  // v313 · override giá/variant riêng listing (null = dùng variations của template)
+  variations: Variation[] | null;
   sourceTitle: string; productType: string; sourceStatus: string;
   image: string; imageCount: number; srcVariantCount: number; skuRoot: string; storeName: string | null;
   // v297 · bộ ảnh riêng Amazon (null = dùng ảnh Shopify) + toàn bộ ảnh nguồn để khởi điểm
   images: string[] | null; sourceImages: string[];
 };
-type Tpl = { id: string; name: string; productType: string | null; fields: number; skuSuffixes: string[]; variations?: { suffix: string; label: string; price: string }[] };
+type Tpl = { id: string; name: string; productType: string | null; fields: number; skuSuffixes: string[]; variations?: Variation[] };
 
 const AMZ = "#B5661A";
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -44,7 +47,9 @@ const ago = (iso: string | null) => {
 
 async function postJSON(url: string, body: unknown) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  return r.json();
+  const text = await r.text();
+  try { return JSON.parse(text); }
+  catch { return { ok: false, error: `HTTP ${r.status} — máy chủ trả về không phải JSON (route timeout hoặc chưa deploy). ${r.status === 504 ? "Feed vẫn có thể đã gửi — bấm ⟳ Sync kiểm tra." : ""}` }; }
 }
 
 const titleOk = (t: string | null) => !!t && t.length >= 140 && t.length <= 200;
@@ -131,8 +136,10 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     if (pt) { const t = tpls.find((x) => (x.productType ?? "").trim().toLowerCase() === pt); if (t) return t; }
     return tpls.length === 1 ? tpls[0] : null;
   };
-  const priceOf = (t: Tpl | null): string => {
-    const ps = (t?.variations ?? []).map((v) => Number(v.price)).filter((n) => !isNaN(n) && n > 0);
+  // v313 · variations HIỆU LỰC: override riêng listing nếu có, không thì lấy của template.
+  const effVars = (r: Row): Variation[] => (r.variations && r.variations.length ? r.variations : (tplFor(r)?.variations ?? []));
+  const priceOf = (vars: Variation[]): string => {
+    const ps = vars.map((v) => Number(v.price)).filter((n) => !isNaN(n) && n > 0);
     if (!ps.length) return "—";
     const lo = Math.min(...ps), hi = Math.max(...ps);
     return lo === hi ? `$${lo.toFixed(2)}` : `$${lo.toFixed(2)}–$${hi.toFixed(2)}`;
@@ -178,8 +185,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
 
   // v303 · Bộ SKU Amazon THẬT của 1 listing: parent + child theo variations của template.
   const amzSkus = (r: Row): { parent: string; children: { sku: string; label: string }[] } => {
-    const t = tplFor(r);
-    const vars = t?.variations ?? [];
+    const vars = effVars(r);
     return {
       parent: r.skuRoot ? `${r.skuRoot}-PARENT-AMZ` : "",
       children: r.skuRoot ? vars.filter((v) => v.suffix).map((v) => ({ sku: `${r.skuRoot}-${v.suffix}`, label: v.label || v.suffix })) : [],
@@ -346,7 +352,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     if (!edit) return false;
     const r = await fetch("/api/amazon-products", {
       method: "PATCH", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: edit.id, title: edit.title ?? "", bullets: (edit.bullets ?? []).filter(Boolean), description: edit.description ?? "", asin: edit.asin ?? "", amazonTemplateId: edit.amazonTemplateId ?? "", ...(edit.images ? { images: edit.images } : {}) }),
+      body: JSON.stringify({ id: edit.id, title: edit.title ?? "", bullets: (edit.bullets ?? []).filter(Boolean), description: edit.description ?? "", asin: edit.asin ?? "", amazonTemplateId: edit.amazonTemplateId ?? "", ...(edit.images ? { images: edit.images } : {}), ...(edit.variations ? { variations: edit.variations } : { variations: [] }) }),
     }).then((x) => x.json()).catch(() => ({ ok: false }));
     return !!r.ok;
   };
@@ -555,7 +561,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   </div>
                   {r.aiAt && <div style={{ fontSize: 10.5, color: "#5B3FBF", fontWeight: 700, marginTop: 3 }}>✦ {ago(r.aiAt)}</div>}
                 </td>
-                <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(tplFor(r))}</td>
+                <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(effVars(r))}{r.variations && r.variations.length ? <span title="Giá/variant tùy chỉnh riêng listing này" style={{ marginLeft: 4, fontSize: 9.5, fontWeight: 800, color: "#B5661A" }}>✎</span> : null}</td>
                 <td style={{ padding: 10 }}>
                   <span style={chip(r.status === "LIVE" ? "#E9F7EF" : r.status === "EXPORTED" ? "#FFF0DB" : "#F1F1F4", r.status === "LIVE" ? "#1F6F45" : r.status === "EXPORTED" ? "#B5661A" : "#8794A5")}>{statusLabel(r.status)}</span>
                   {r.asin && (
@@ -684,6 +690,54 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   </span>
                 </div>
               </div>
+
+              {/* ── v313 · Variations & Price (override riêng listing) ── */}
+              {(() => {
+                const tplVars = tplFor(edit)?.variations ?? [];
+                const custom = !!(edit.variations && edit.variations.length);
+                const setVars = (vs: Variation[]) => setEdit((p) => p ? { ...p, variations: vs } : p);
+                const rowsV = custom ? (edit.variations as Variation[]) : tplVars;
+                return (
+                  <div style={{ ...card, padding: "18px 20px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
+                      <div style={{ fontSize: 16, fontWeight: 800 }}>Variations &amp; Price <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 13 }}>· size + giá child SKU</span></div>
+                      {custom
+                        ? <span style={{ fontSize: 11, fontWeight: 800, color: "#B5661A", background: "#FFF0DB", padding: "2px 8px", borderRadius: 999 }}>Riêng listing này</span>
+                        : <span style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", background: "#F1F1F4", padding: "2px 8px", borderRadius: 999 }}>Theo template</span>}
+                      <div style={{ marginLeft: "auto" }}>
+                        {custom
+                          ? <button onClick={() => setVars([])} title="Bỏ tùy chỉnh — quay lại giá/variant của template" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#B42318", padding: 0 }}>Về lại template</button>
+                          : <button onClick={() => setVars(tplVars.length ? tplVars.map((v) => ({ ...v })) : [{ suffix: "", label: "", price: "" }])} style={{ ...pill("#FFF7ED", AMZ), border: `1px solid #E5A868`, padding: "6px 12px", fontSize: 12.5 }}>Tùy chỉnh riêng listing này</button>}
+                      </div>
+                    </div>
+                    {rowsV.length === 0 ? (
+                      <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Template chưa có variation — thêm ở Manage Templates Amazon, hoặc bấm &ldquo;Tùy chỉnh&rdquo; để tạo riêng.</div>
+                    ) : (
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead><tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 11 }}>
+                          <th style={{ padding: "4px 7px" }}>Suffix (child SKU)</th><th style={{ padding: "4px 7px" }}>Size</th><th style={{ padding: "4px 7px", textAlign: "right" }}>Price $</th>{custom && <th />}
+                        </tr></thead>
+                        <tbody>
+                          {rowsV.map((v, i) => (
+                            <tr key={i}>
+                              <td style={{ padding: 5 }}><input disabled={!custom} value={v.suffix} onChange={(e) => { const a = [...rowsV]; a[i] = { ...a[i], suffix: e.target.value }; setVars(a); }} placeholder="8X8-AMZ" style={{ ...ctl, width: "100%", fontFamily: "monospace", fontSize: 12.5, padding: "7px 9px", opacity: custom ? 1 : .6 }} /></td>
+                              <td style={{ padding: 5 }}><input disabled={!custom} value={v.label} onChange={(e) => { const a = [...rowsV]; a[i] = { ...a[i], label: e.target.value }; setVars(a); }} placeholder={'8"x8"'} style={{ ...ctl, width: "100%", padding: "7px 9px", opacity: custom ? 1 : .6 }} /></td>
+                              <td style={{ padding: 5, width: 110 }}><input disabled={!custom} value={v.price} onChange={(e) => { const a = [...rowsV]; a[i] = { ...a[i], price: e.target.value }; setVars(a); }} placeholder="28.95" style={{ ...ctl, width: "100%", textAlign: "right", padding: "7px 9px", opacity: custom ? 1 : .6 }} /></td>
+                              {custom && <td style={{ textAlign: "center", width: 32 }}><button onClick={() => setVars(rowsV.filter((_, x) => x !== i))} title="Xóa size" style={{ border: 0, background: "none", color: "#E5484D", fontSize: 15, cursor: "pointer" }}>✕</button></td>}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {custom && <button onClick={() => setVars([...rowsV, { suffix: "", label: "", price: "" }])} style={{ ...pill("#EEF1F5", "#333"), padding: "6px 12px", fontSize: 12.5, marginTop: 8 }}>+ Thêm size</button>}
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
+                      {custom
+                        ? <>Giá/size này chỉ áp cho listing này. ⚠ <b>Đừng đổi Suffix của size đã LIVE</b> (Amazon coi là SKU mới, mất lịch sử). Sửa Price/Size thoải mái.</>
+                        : <>Đang dùng giá/variant của template. Bấm &ldquo;Tùy chỉnh riêng listing này&rdquo; để đặt giá/size khác chỉ cho listing này. Đổi xong bấm <b>Save &amp; Push</b> để cập nhật Amazon.</>}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── Listing details ── */}
               <div style={{ ...card, padding: "18px 20px" }}>

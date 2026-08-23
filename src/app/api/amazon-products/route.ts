@@ -83,6 +83,7 @@ export async function GET() {
       title: r.a.title, bullets: (r.a.bullets as string[] | null) ?? null, description: r.a.description,
       aiAt: r.a.aiAt, status: r.a.status, asin: r.a.asin, exportedAt: r.a.exportedAt,
       amazonTemplateId: r.a.amazonTemplateId,
+      variations: (Array.isArray(r.a.variations) ? r.a.variations : null) as { suffix: string; label: string; price: string }[] | null,
       sourceTitle: r.srcTitle ?? "(source listing missing)",
       productType: (r.srcType ?? "").trim(),
       sourceStatus: r.srcStatus ?? "",
@@ -154,6 +155,13 @@ export async function PATCH(req: NextRequest) {
   }
   if (typeof b?.status === "string" && ["DRAFT", "EXPORTED", "LIVE"].includes(b.status)) set.status = b.status;
   if (typeof b?.asin === "string") set.asin = b.asin.trim().slice(0, 20) || null;
+  // v313 · override variations riêng listing ([{suffix,label,price}]). Mảng rỗng = xoá override (dùng template).
+  if (Array.isArray(b?.variations)) {
+    const arr = (b.variations as { suffix?: unknown; label?: unknown; price?: unknown }[])
+      .map((v) => ({ suffix: String(v?.suffix ?? "").trim().slice(0, 40), label: String(v?.label ?? "").trim().slice(0, 60), price: String(v?.price ?? "").trim().slice(0, 12) }))
+      .filter((v) => v.suffix);
+    set.variations = arr.length ? arr : null;
+  }
 
   await db.update(schema.amazonProducts).set(set).where(eq(schema.amazonProducts.id, id));
   return NextResponse.json({ ok: true });

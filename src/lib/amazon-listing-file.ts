@@ -75,7 +75,9 @@ export async function buildListingFlatFile(session: Session, idsRaw: unknown): P
     const root = rootSku(r.srcVariants);
     const tpl = tplFor(r.a.amazonTemplateId, r.srcType);
     const cfg = (tpl?.config ?? {}) as Cfg;
-    const vars = (cfg.variations ?? []).filter((v) => v.suffix);
+    // v313 · override variations riêng listing (nếu có) — ưu tiên hơn variations của template.
+    const ovrVars = (Array.isArray(r.a.variations) ? r.a.variations : []) as Variation[];
+    const vars = (ovrVars.length ? ovrVars : (cfg.variations ?? [])).filter((v) => v.suffix);
     const cst = cfg.constants ?? {};
     const title = (r.a.title ?? "").trim();
     const bullets = ((r.a.bullets as string[] | null) ?? []).filter(Boolean);

@@ -368,6 +368,9 @@ export const amazonProducts = pgTable("amazon_products", {
   // v297 · Bộ ảnh RIÊNG cho Amazon (string[] URL). null = dùng ảnh Shopify nguồn.
   // Đây là chỗ thay ảnh main nền trắng cho Amazon mà không đụng listing Shopify.
   images: jsonb("images"),
+  // v313 · Override giá/variant RIÊNG cho listing này ([{suffix,label,price}]). null = dùng variations của template.
+  // Cho phép 1 listing giá khác / size khác template mà không đụng các listing khác. Cần MIGRATION_v313.
+  variations: jsonb("variations"),
   status: text("status").notNull().default("DRAFT"),      // DRAFT → EXPORTED → LIVE
   asin: text("asin"),                                     // điền khi listing đã lên Amazon
   exportedAt: timestamp("exported_at", { withTimezone: true }),
