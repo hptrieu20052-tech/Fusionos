@@ -12,7 +12,7 @@ export const maxDuration = 60;
  * POST /api/amazon-products/import-listing { sku, storeId? }
  *
  * Import 1 listing đã live trên Amazon (kể cả list TAY, không có nguồn Shopify) VỀ FusionOS.
- * Nhập SKU parent (…-PARENT-AMZ). Kéo title/bullets/description/product type/variations/giá/ảnh/ASIN
+ * Enter the parent SKU (…-PARENT-AMZ). Kéo title/bullets/description/product type/variations/giá/ảnh/ASIN
  * qua Listings Items API, tạo bản ghi amazon_products (manual — không cần Shopify). LUÔN trả JSON.
  */
 function rootOf(parentSku: string): string {
@@ -30,22 +30,22 @@ export async function POST(req: NextRequest) {
 
     const b = await req.json().catch(() => null);
     const parentSku = String(b?.sku ?? "").trim();
-    if (!parentSku) return NextResponse.json({ ok: false, error: "Nhập SKU parent (…-PARENT-AMZ)" }, { status: 200 });
+    if (!parentSku) return NextResponse.json({ ok: false, error: "Enter the parent SKU (…-PARENT-AMZ)" }, { status: 200 });
 
     const storeId = await getAmazonStoreId(typeof b?.storeId === "string" ? b.storeId : undefined);
-    if (!storeId) return NextResponse.json({ ok: false, error: "Chưa có store Amazon ở mục Stores." }, { status: 200 });
+    if (!storeId) return NextResponse.json({ ok: false, error: "No Amazon store in Stores." }, { status: 200 });
     const cfg = await getSpConfig(storeId);
-    if (!spConfigured(cfg)) return NextResponse.json({ ok: false, error: "Chưa cấu hình SP-API — mở store Amazon ở Stores." }, { status: 200 });
+    if (!spConfigured(cfg)) return NextResponse.json({ ok: false, error: "SP-API not configured — open the Amazon store in Stores." }, { status: 200 });
 
     const root = rootOf(parentSku);
 
     // Đã import rồi thì thôi (khớp theo manual_sku)
     const [dup] = await db.select({ id: schema.amazonProducts.id }).from(schema.amazonProducts)
       .where(and(eq(schema.amazonProducts.storeId, storeId), eq(schema.amazonProducts.manualSku, root))).limit(1);
-    if (dup) return NextResponse.json({ ok: false, error: `Đã import rồi (SKU ${root}). Xem trong danh sách.` }, { status: 200 });
+    if (dup) return NextResponse.json({ ok: false, error: `Already imported (SKU ${root}). See the list.` }, { status: 200 });
 
-    const parent = await getListingData(cfg!, parentSku).catch((e) => { throw new Error("Đọc parent lỗi: " + String((e as Error)?.message ?? e)); });
-    if (!parent) return NextResponse.json({ ok: false, error: `Không thấy listing SKU ${parentSku} trên Amazon (kiểm tra đúng SKU parent).` }, { status: 200 });
+    const parent = await getListingData(cfg!, parentSku).catch((e) => { throw new Error("Failed to read parent: " + String((e as Error)?.message ?? e)); });
+    if (!parent) return NextResponse.json({ ok: false, error: `Listing SKU ${parentSku} not found on Amazon (check the parent SKU).` }, { status: 200 });
 
     const a = parent.attributes;
     const title = attrVal(a, "item_name");
@@ -97,10 +97,10 @@ export async function POST(req: NextRequest) {
       title, root, productType,
       variations: variations.length,
       asin: parent.asin,
-      note: `Đã import "${(title || parentSku).slice(0, 40)}" · ${variations.length} size · ASIN ${parent.asin ?? "—"}`,
+      note: `Imported "${(title || parentSku).slice(0, 40)}" · ${variations.length} size(s) · ASIN ${parent.asin ?? "—"}`,
     });
   } catch (e) {
     console.error("import-listing fatal", e);
-    return NextResponse.json({ ok: false, error: "Lỗi import: " + String((e as Error)?.message ?? e).slice(0, 220) }, { status: 200 });
+    return NextResponse.json({ ok: false, error: "Import error: " + String((e as Error)?.message ?? e).slice(0, 220) }, { status: 200 });
   }
 }

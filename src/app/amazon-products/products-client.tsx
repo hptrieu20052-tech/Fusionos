@@ -50,7 +50,7 @@ async function postJSON(url: string, body: unknown) {
   const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const text = await r.text();
   try { return JSON.parse(text); }
-  catch { return { ok: false, error: `HTTP ${r.status} — máy chủ trả về không phải JSON (route timeout hoặc chưa deploy). ${r.status === 504 ? "Feed vẫn có thể đã gửi — bấm ⟳ Sync kiểm tra." : ""}` }; }
+  catch { return { ok: false, error: `HTTP ${r.status} — server returned non-JSON (route timeout or not deployed).` }; }
 }
 
 const titleOk = (t: string | null) => !!t && t.length >= 140 && t.length <= 200;
@@ -87,6 +87,8 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [dragImg, setDragImg] = useState<number | null>(null); // v297 · kéo-thả xếp ảnh trong modal
   const [upBusy, setUpBusy] = useState(false);                  // v298 · đang upload ảnh local
   const [whiteBusy, setWhiteBusy] = useState(false);            // v307 · đang tạo ảnh main nền trắng
+  const [importOpen, setImportOpen] = useState(false);          // v317 · modal Import listing
+  const [importSku, setImportSku] = useState("");
   const imgFileRef = useRef<HTMLInputElement>(null);
 
   // v297 · bộ ảnh hiệu lực trong modal: override nếu có, không thì ảnh Shopify nguồn.
@@ -117,15 +119,15 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     if (!edit) return;
     const imgs = effImages(edit);
     const src = imgs[0];
-    if (!src) { flash("Chưa có ảnh nào — thêm ảnh trước"); return; }
+    if (!src) { flash("No image yet — add one first"); return; }
     setWhiteBusy(true);
     try {
       const j = await postJSON("/api/amazon-products/purify-image", { url: src });
       if (j.ok && j.url) {
         const rest = src.includes("/amazon-mockup/") ? imgs.slice(1) : imgs; // đã là mockup → thay; chưa → giữ gốc làm ảnh phụ
         setImgs([j.url, ...rest].slice(0, 9));
-        flash("✓ Ảnh main nền trắng đã tạo");
-      } else flash("✗ " + (j.error ?? "lỗi xử lý ảnh"));
+        flash("✓ White-background main image created");
+      } else flash("✗ " + (j.error ?? "image processing error"));
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
     setWhiteBusy(false);
   };
@@ -302,12 +304,12 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   // v311 · ⬆ Push to Amazon — đẩy listing thẳng qua SP-API (Feeds). Sửa xong push lại = update (khớp SKU).
   const pushListing = async (ids: string[], closeAfter = false) => {
     if (!ids.length) return;
-    if (!cfg.configured) { flash("✗ Chưa cấu hình SP-API — Stores → store Amazon → khu Amazon SP-API"); return; }
-    setBusy(true); setProg("Đang đẩy listing lên Amazon (Feeds API)…");
+    if (!cfg.configured) { flash("✗ SP-API not configured — Stores → Amazon store → Amazon SP-API section"); return; }
+    setBusy(true); setProg("Pushing to Amazon…");
     try {
       const j = await postJSON("/api/amazon-products/push-listing", { ids, storeId: storeSel || undefined });
       if (j.ok) {
-        flash("✓ " + (j.summary ?? "Đã cập nhật") + (j.skipped?.length ? ` — ${j.skipped[0]}` : ""));
+        flash("✓ " + (j.summary ?? "Updated") + (j.skipped?.length ? ` — ${j.skipped[0]}` : ""));
         if (closeAfter) setEdit(null);
         load();
       } else flash("✗ " + (j.error ?? "Push failed"));
@@ -315,15 +317,14 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     setProg(""); setBusy(false);
   };
 
-  // v315 · Import 1 listing đã live trên Amazon (kể cả list tay) về FusionOS theo SKU parent.
-  const importListing = async () => {
-    if (!cfg.configured) { flash("✗ Chưa cấu hình SP-API — Stores → store Amazon"); return; }
-    const sku = window.prompt("Nhập SKU parent trên Amazon để kéo listing về (vd: TLW-0011-PARENT-AMZ):");
-    if (!sku || !sku.trim()) return;
-    setBusy(true); setProg("Đang kéo listing từ Amazon…");
+  // v315/v317 · Import 1 listing đã live trên Amazon (kể cả list tay) về FusionOS theo SKU parent (modal).
+  const doImportListing = async () => {
+    const sku = importSku.trim();
+    if (!sku) { flash("Enter the parent SKU first"); return; }
+    setBusy(true); setProg("Importing from Amazon…");
     try {
-      const j = await postJSON("/api/amazon-products/import-listing", { sku: sku.trim(), storeId: storeSel || undefined });
-      if (j.ok) { flash("✓ " + (j.note ?? "Đã import")); load(); }
+      const j = await postJSON("/api/amazon-products/import-listing", { sku, storeId: storeSel || undefined });
+      if (j.ok) { flash("✓ " + (j.note ?? "Imported")); setImportOpen(false); setImportSku(""); load(); }
       else flash("✗ " + (j.error ?? "Import failed"));
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
     setProg(""); setBusy(false);
@@ -420,12 +421,12 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {/* v308 · Bộ chọn store Amazon (SP-API account) — như ô chọn store bên Shopify. Cấu hình SP-API ở Stores. */}
           {amzStores.length > 0 && (
-            <select value={storeSel} onChange={(e) => setStoreSel(e.target.value)} title="Amazon store (SP-API account) · cấu hình khóa API ở mục Stores" style={{ ...ctl, padding: "9px 12px", fontWeight: 700, minWidth: 150 }}>
+            <select value={storeSel} onChange={(e) => setStoreSel(e.target.value)} title="Amazon store (SP-API account) · configure API keys in Stores" style={{ ...ctl, padding: "9px 12px", fontWeight: 700, minWidth: 150 }}>
               {amzStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
-          <button disabled={busy || !cfg.configured} onClick={importListing} title={cfg.configured ? "Kéo 1 listing đã live trên Amazon (kể cả list tay) về FusionOS theo SKU parent" : "Cấu hình SP-API ở Stores trước"} style={{ ...pill("#EEF1F5", "#333"), padding: "9px 12px", opacity: cfg.configured ? 1 : .5 }}>⇩ Import listing</button>
-          <button disabled={busy || !cfg.configured} onClick={() => syncAsins()} title={cfg.configured ? "Pull ASINs & status from Amazon via SP-API" : "Cấu hình SP-API ở mục Stores (mở store Amazon → khu Amazon SP-API)"} style={{ ...pill("#FF9900", "#111"), padding: "9px 14px", opacity: cfg.configured ? 1 : .5 }}>⟳ Sync from Amazon</button>
+          <button disabled={busy || !cfg.configured} onClick={() => { setImportSku(""); setImportOpen(true); }} title={cfg.configured ? "Pull a listing that is already live on Amazon (even one listed manually) into FusionOS by its parent SKU" : "Configure SP-API in Stores first"} style={{ ...pill("#EEF1F5", "#333"), padding: "9px 12px", opacity: cfg.configured ? 1 : .5 }}>⇩ Import listing</button>
+          <button disabled={busy || !cfg.configured} onClick={() => syncAsins()} title={cfg.configured ? "Pull ASINs & status from Amazon via SP-API" : "Configure SP-API in Stores (open the Amazon store → Amazon SP-API section)"} style={{ ...pill("#FF9900", "#111"), padding: "9px 14px", opacity: cfg.configured ? 1 : .5 }}>⟳ Sync from Amazon</button>
         </div>
       </div>
 
@@ -478,14 +479,14 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           {/* v311 · Nhóm Push — đẩy listing THẲNG qua API (thay File 1). File 2 customization vẫn upload tay (Amazon chưa mở API). */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>PUSH</span>
-            <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "CẬP NHẬT listing đã live qua SP-API (title/bullets/desc/giá theo SKU). Listing CHƯA có ASIN thì dùng 'tải file' để tạo mới (Amazon chặn feed tạo listing qua API)." : "Cấu hình SP-API ở Stores → store Amazon trước"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1 }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
-            <button disabled={busy || !sel.size} onClick={doExportListing} title="Tải flat file .txt để TẠO listing MỚI (Add Products via Upload). Bắt buộc cho listing chưa có ASIN." style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1 }}>tải file (tạo mới)</button>
+            <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "Push to Amazon via SP-API — updates live listings (title/bullets/description/price) and creates new ones by cloning the JSON of a live listing of the same type." : "Configure SP-API in Stores → Amazon store first"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1 }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size} onClick={doExportListing} title="Download the flat file (.txt) to create a listing manually at Add Products via Upload — fallback if the API create fails." style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1 }}>flat file</button>
             <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
             <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 180 }}>
               {tpls.length === 0 && <option value="">No template</option>}
               {tpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="Customization .xlsx — upload ở Custom Products → Upload Customizations (Amazon chưa mở API cho Custom). Listing phải LIVE + có tồn trước." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>↓ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="Customization .xlsx — upload at Custom Products → Upload Customizations (Amazon has no API for Custom). Listing must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>↓ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
           </span>
         </div>
       </div>
@@ -541,7 +542,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                       ↗ Shopify: {r.sourceTitle.length > 22 ? r.sourceTitle.slice(0, 22) + "…" : r.sourceTitle}
                     </a>
                   )}
-                  {r.manual && <span title="Import thẳng từ Amazon — không có nguồn Shopify" style={{ marginTop: 3, fontSize: 10, fontWeight: 800, color: "#B5661A", background: "#FFF0DB", borderRadius: 6, padding: "2px 6px", display: "inline-block" }}>Amazon · list tay</span>}
+                  {r.manual && <span title="Imported directly from Amazon — no Shopify source" style={{ marginTop: 3, fontSize: 10, fontWeight: 800, color: "#B5661A", background: "#FFF0DB", borderRadius: 6, padding: "2px 6px", display: "inline-block" }}>Amazon · manual</span>}
                 </td>
                 {/* v308 · TYPE / TEMPLATE gộp 2 dòng như Type/Category bên Shopify (bỏ cột TYPE trùng) */}
                 <td style={{ padding: 10, fontSize: 12, maxWidth: 160 }}>
@@ -578,14 +579,14 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   </div>
                   {r.aiAt && <div style={{ fontSize: 10.5, color: "#5B3FBF", fontWeight: 700, marginTop: 3 }}>✦ {ago(r.aiAt)}</div>}
                 </td>
-                <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(effVars(r))}{r.variations && r.variations.length ? <span title="Giá/variant tùy chỉnh riêng listing này" style={{ marginLeft: 4, fontSize: 9.5, fontWeight: 800, color: "#B5661A" }}>✎</span> : null}</td>
+                <td style={{ padding: 10, fontSize: 12.5, fontWeight: 600, whiteSpace: "nowrap" }}>{priceOf(effVars(r))}{r.variations && r.variations.length ? <span title="Custom price/variants for this listing" style={{ marginLeft: 4, fontSize: 9.5, fontWeight: 800, color: "#B5661A" }}>✎</span> : null}</td>
                 <td style={{ padding: 10 }}>
                   <span style={chip(r.status === "LIVE" ? "#E9F7EF" : r.status === "EXPORTED" ? "#FFF0DB" : "#F1F1F4", r.status === "LIVE" ? "#1F6F45" : r.status === "EXPORTED" ? "#B5661A" : "#8794A5")}>{statusLabel(r.status)}</span>
                   {r.asin && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 3 }}>
                       {/* click ASIN = copy · icon mắt = xem trên Amazon */}
-                      <span onClick={() => { navigator.clipboard?.writeText(r.asin!); flash("✓ Copied ASIN " + r.asin); }} title="Click để copy ASIN" style={{ fontSize: 10.5, fontFamily: "monospace", color: "#1D4ED8", cursor: "pointer" }}>{r.asin}</span>
-                      <a href={`https://www.amazon.com/dp/${r.asin}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title="Xem trên Amazon" style={{ display: "inline-flex", color: "#66788E" }}>
+                      <span onClick={() => { navigator.clipboard?.writeText(r.asin!); flash("✓ Copied ASIN " + r.asin); }} title="Click to copy ASIN" style={{ fontSize: 10.5, fontFamily: "monospace", color: "#1D4ED8", cursor: "pointer" }}>{r.asin}</span>
+                      <a href={`https://www.amazon.com/dp/${r.asin}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title="View on Amazon" style={{ display: "inline-flex", color: "#66788E" }}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
                       </a>
                     </div>
@@ -629,6 +630,24 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       )}
 
       {/* v291 · Lightbox ảnh */}
+      {/* v317 · Import listing modal (thay window.prompt) */}
+      {importOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,.5)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "12vh 16px" }} onClick={() => !busy && setImportOpen(false)}>
+          <div style={{ ...card, width: "min(500px, 100%)", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 16, fontWeight: 800, display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}><AmazonLogo size={20} /> Import listing from Amazon</div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, marginBottom: 14 }}>
+              Pull a listing that is already live on Amazon (even one listed manually) into FusionOS — enter the <b>parent SKU</b> (ending in <code style={{ background: "#F1F1F4", padding: "1px 5px", borderRadius: 4 }}>-PARENT-AMZ</code>). It fetches title, bullets, description, variations, price, images and ASIN.
+            </div>
+            <input autoFocus value={importSku} onChange={(e) => setImportSku(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !busy) doImportListing(); }}
+              placeholder="TLW-0011-PARENT-AMZ" style={{ ...ctl, width: "100%", fontFamily: "monospace", fontSize: 13 }} />
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 16 }}>
+              <button disabled={busy} onClick={() => setImportOpen(false)} style={{ ...pill("#fff", "#333"), border: "1px solid var(--line)", padding: "9px 18px" }}>Cancel</button>
+              <button disabled={busy || !importSku.trim()} onClick={doImportListing} style={{ ...pill(AMZ, "#fff"), padding: "9px 22px", opacity: busy || !importSku.trim() ? .5 : 1 }}>{busy ? "Importing…" : "Import"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {zoom && (() => {
         const cur = zoom.imgs[zoom.i] ?? zoom.imgs[0];
         const many = zoom.imgs.length > 1;
@@ -639,8 +658,8 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={cur + (cur.includes("?") ? "&" : "?") + "width=1200"} alt="" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "88vw", maxHeight: "90vh", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,.4)", cursor: "default" }} />
             {many && <>
-              <button onClick={(e) => { e.stopPropagation(); go(-1); }} title="Ảnh trước (←)" style={{ ...arrow, left: 24 }}>‹</button>
-              <button onClick={(e) => { e.stopPropagation(); go(1); }} title="Ảnh sau (→)" style={{ ...arrow, right: 24 }}>›</button>
+              <button onClick={(e) => { e.stopPropagation(); go(-1); }} title="Previous (←)" style={{ ...arrow, left: 24 }}>‹</button>
+              <button onClick={(e) => { e.stopPropagation(); go(1); }} title="Next (→)" style={{ ...arrow, right: 24 }}>›</button>
               <div style={{ position: "absolute", bottom: 26, left: "50%", transform: "translateX(-50%)", background: "rgba(0,0,0,.6)", color: "#fff", fontSize: 13, fontWeight: 700, padding: "5px 14px", borderRadius: 999 }}>{zoom.i + 1} / {zoom.imgs.length}</div>
             </>}
           </div>
@@ -693,9 +712,9 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                     onChange={(e) => { const fs = Array.from(e.target.files ?? []); if (fs.length) uploadImages(fs); e.target.value = ""; }} />
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12 }}>
-                  <button onClick={makeWhiteMain} disabled={whiteBusy || !effImages(edit).length} title="Chuẩn hóa ảnh main hiện tại thành nền trắng tuyệt đối (255,255,255), vuông 1600, JPEG nhẹ — đúng chuẩn Amazon, không lỗi timeout."
+                  <button onClick={makeWhiteMain} disabled={whiteBusy || !effImages(edit).length} title="Normalize the current main image to a pure white background (255,255,255), 1600px square, light JPEG — Amazon-compliant, no timeout."
                     style={{ border: "1px solid #E5A868", background: "#FFFBF4", borderRadius: 8, cursor: whiteBusy || !effImages(edit).length ? "default" : "pointer", fontSize: 13, fontWeight: 800, color: AMZ, padding: "6px 12px", opacity: whiteBusy || !effImages(edit).length ? .5 : 1 }}>
-                    {whiteBusy ? "Đang xử lý…" : "⚪ White-bg main"}</button>
+                    {whiteBusy ? "Processing…" : "⚪ White-bg main"}</button>
                   <button onClick={() => { const u = window.prompt("Image URL (https://…):"); if (u && /^https:\/\//i.test(u.trim())) setImgs([...effImages(edit), u.trim()]); }}
                     style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>+ Add by URL</button>
                   {edit.images && (
@@ -717,18 +736,18 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                 return (
                   <div style={{ ...card, padding: "18px 20px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-                      <div style={{ fontSize: 16, fontWeight: 800 }}>Variations &amp; Price <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 13 }}>· size + giá child SKU</span></div>
+                      <div style={{ fontSize: 16, fontWeight: 800 }}>Variations &amp; Price <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 13 }}>· size + child SKU price</span></div>
                       {custom
-                        ? <span style={{ fontSize: 11, fontWeight: 800, color: "#B5661A", background: "#FFF0DB", padding: "2px 8px", borderRadius: 999 }}>Riêng listing này</span>
-                        : <span style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", background: "#F1F1F4", padding: "2px 8px", borderRadius: 999 }}>Theo template</span>}
+                        ? <span style={{ fontSize: 11, fontWeight: 800, color: "#B5661A", background: "#FFF0DB", padding: "2px 8px", borderRadius: 999 }}>This listing only</span>
+                        : <span style={{ fontSize: 11, fontWeight: 700, color: "#6B7280", background: "#F1F1F4", padding: "2px 8px", borderRadius: 999 }}>From template</span>}
                       <div style={{ marginLeft: "auto" }}>
                         {custom
-                          ? <button onClick={() => setVars([])} title="Bỏ tùy chỉnh — quay lại giá/variant của template" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#B42318", padding: 0 }}>Về lại template</button>
-                          : <button onClick={() => setVars(tplVars.length ? tplVars.map((v) => ({ ...v })) : [{ suffix: "", label: "", price: "" }])} style={{ ...pill("#FFF7ED", AMZ), border: `1px solid #E5A868`, padding: "6px 12px", fontSize: 12.5 }}>Tùy chỉnh riêng listing này</button>}
+                          ? <button onClick={() => setVars([])} title="Discard the override — go back to the template's variants/price" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#B42318", padding: 0 }}>Reset to template</button>
+                          : <button onClick={() => setVars(tplVars.length ? tplVars.map((v) => ({ ...v })) : [{ suffix: "", label: "", price: "" }])} style={{ ...pill("#FFF7ED", AMZ), border: `1px solid #E5A868`, padding: "6px 12px", fontSize: 12.5 }}>Customize for this listing</button>}
                       </div>
                     </div>
                     {rowsV.length === 0 ? (
-                      <div style={{ fontSize: 12.5, color: "var(--muted)" }}>Template chưa có variation — thêm ở Manage Templates Amazon, hoặc bấm &ldquo;Tùy chỉnh&rdquo; để tạo riêng.</div>
+                      <div style={{ fontSize: 12.5, color: "var(--muted)" }}>The template has no variations — add them in Manage Templates Amazon, or click &ldquo;Customize&rdquo; to create per-listing ones.</div>
                     ) : (
                       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                         <thead><tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 11 }}>
@@ -740,17 +759,17 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                               <td style={{ padding: 5 }}><input disabled={!custom} value={v.suffix} onChange={(e) => { const a = [...rowsV]; a[i] = { ...a[i], suffix: e.target.value }; setVars(a); }} placeholder="8X8-AMZ" style={{ ...ctl, width: "100%", fontFamily: "monospace", fontSize: 12.5, padding: "7px 9px", opacity: custom ? 1 : .6 }} /></td>
                               <td style={{ padding: 5 }}><input disabled={!custom} value={v.label} onChange={(e) => { const a = [...rowsV]; a[i] = { ...a[i], label: e.target.value }; setVars(a); }} placeholder={'8"x8"'} style={{ ...ctl, width: "100%", padding: "7px 9px", opacity: custom ? 1 : .6 }} /></td>
                               <td style={{ padding: 5, width: 110 }}><input disabled={!custom} value={v.price} onChange={(e) => { const a = [...rowsV]; a[i] = { ...a[i], price: e.target.value }; setVars(a); }} placeholder="28.95" style={{ ...ctl, width: "100%", textAlign: "right", padding: "7px 9px", opacity: custom ? 1 : .6 }} /></td>
-                              {custom && <td style={{ textAlign: "center", width: 32 }}><button onClick={() => setVars(rowsV.filter((_, x) => x !== i))} title="Xóa size" style={{ border: 0, background: "none", color: "#E5484D", fontSize: 15, cursor: "pointer" }}>✕</button></td>}
+                              {custom && <td style={{ textAlign: "center", width: 32 }}><button onClick={() => setVars(rowsV.filter((_, x) => x !== i))} title="Remove size" style={{ border: 0, background: "none", color: "#E5484D", fontSize: 15, cursor: "pointer" }}>✕</button></td>}
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     )}
-                    {custom && <button onClick={() => setVars([...rowsV, { suffix: "", label: "", price: "" }])} style={{ ...pill("#EEF1F5", "#333"), padding: "6px 12px", fontSize: 12.5, marginTop: 8 }}>+ Thêm size</button>}
+                    {custom && <button onClick={() => setVars([...rowsV, { suffix: "", label: "", price: "" }])} style={{ ...pill("#EEF1F5", "#333"), padding: "6px 12px", fontSize: 12.5, marginTop: 8 }}>+ Add size</button>}
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
                       {custom
-                        ? <>Giá/size này chỉ áp cho listing này. ⚠ <b>Đừng đổi Suffix của size đã LIVE</b> (Amazon coi là SKU mới, mất lịch sử). Sửa Price/Size thoải mái.</>
-                        : <>Đang dùng giá/variant của template. Bấm &ldquo;Tùy chỉnh riêng listing này&rdquo; để đặt giá/size khác chỉ cho listing này. Đổi xong bấm <b>Save &amp; Push</b> để cập nhật Amazon.</>}
+                        ? <>These prices/sizes apply to this listing only. ⚠ <b>Do not change the Suffix of a LIVE size</b> (Amazon treats it as a new SKU and loses history). Editing Price/Size is fine.</>
+                        : <>Using the template&rsquo;s variants/price. Click &ldquo;Customize for this listing&rdquo; to set a different price/size for this listing only. After editing, hit <b>Save &amp; Push</b> to update Amazon.</>}
                     </div>
                   </div>
                 );
