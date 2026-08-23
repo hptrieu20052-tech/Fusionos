@@ -443,60 +443,68 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
 
       {/* Toolbar — 2 hàng: (1) tìm & chọn · (2) hành động theo nhóm AI | EXPORT */}
       <div style={{ ...card, padding: "12px 16px", marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU / type" style={{ ...ctl, flex: "1 1 220px" }} />
-          {/* v308/v310 · bộ lọc đầy đủ như hàng filter Shopify: store · type · status · template · AI copy */}
-          <select value={fStore} onChange={(e) => setFStore(e.target.value)} title="Filter by source store" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 140 }}>
+        {/* Hàng 1 — LỌC */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / SKU / type" style={{ ...ctl, flex: "1 1 240px", minWidth: 180 }} />
+          <select value={fStore} onChange={(e) => setFStore(e.target.value)} title="Filter by source store" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 130 }}>
             <option value="">All stores</option>
             {storeOpts.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
-          <select value={fType} onChange={(e) => setFType(e.target.value)} title="Filter by product type" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 150 }}>
+          <select value={fType} onChange={(e) => setFType(e.target.value)} title="Filter by product type" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 140 }}>
             <option value="">All types</option>
             {typeOpts.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} title="Filter by Amazon status" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 130 }}>
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} title="Filter by Amazon status" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 120 }}>
             <option value="">All status</option>
             {statusOpts.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
           </select>
-          <select value={fTpl} onChange={(e) => setFTpl(e.target.value)} title="Filter by template" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 150 }}>
+          <select value={fTpl} onChange={(e) => setFTpl(e.target.value)} title="Filter by template" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 140 }}>
             <option value="">All templates</option>
             {tplOpts.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
-          <select value={fAi} onChange={(e) => setFAi(e.target.value)} title="Filter by AI copy readiness" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 130 }}>
+          <select value={fAi} onChange={(e) => setFAi(e.target.value)} title="Filter by AI copy readiness" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 120 }}>
             <option value="">AI: all</option>
             <option value="ready">Copy ready</option>
             <option value="todo">No copy yet</option>
           </select>
-          {anyFilter && <button onClick={clearFilters} title="Clear all filters" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#1D4ED8", padding: 0 }}>Clear filters</button>}
-          <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 10 }}>
-            {sel.size > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1F6F45", whiteSpace: "nowrap" }}>{sel.size} selected</span>}
-            <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px", whiteSpace: "nowrap" }}>{sel.size === filtered.length && filtered.length ? "Deselect all" : `Select all ${filtered.length}`}</button>
-          </div>
+          {anyFilter && <button onClick={clearFilters} title="Clear all filters" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#1D4ED8", padding: "0 4px" }}>Clear filters</button>}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
-          {/* Nhóm AI */}
+
+        {/* Hàng 2 — CHỌN + hành động theo nhóm: Select · AI · PUSH · EXPORT */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--line)" }}>
+          {/* Chọn */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <button onClick={toggleAll} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 12px", whiteSpace: "nowrap" }}>{sel.size === filtered.length && filtered.length ? "Deselect all" : `Select all ${filtered.length}`}</button>
+            {sel.size > 0 && <span style={{ fontSize: 12.5, fontWeight: 800, color: "#1F6F45", whiteSpace: "nowrap" }}>{sel.size} selected</span>}
+          </span>
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
+          {/* AI */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>AI</span>
-            <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} title="AI model for Amazon copy" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 170 }}>
+            <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} title="AI model for Amazon copy" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 160 }}>
               <option value="">Model: Default</option>
               {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             {canEdit && (
-              <button disabled={busy || !sel.size} onClick={() => runAI(Array.from(sel))} style={{ ...pill("#5B3FBF", "#fff"), opacity: busy || !sel.size ? .45 : 1 }}>✦ AI Amazon copy{sel.size ? ` (${sel.size})` : ""}</button>
+              <button disabled={busy || !sel.size} onClick={() => runAI(Array.from(sel))} style={{ ...pill("#5B3FBF", "#fff"), opacity: busy || !sel.size ? .45 : 1, whiteSpace: "nowrap" }}>✦ AI copy{sel.size ? ` (${sel.size})` : ""}</button>
             )}
           </span>
           <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
-          {/* v311 · Nhóm Push — đẩy listing THẲNG qua API (thay File 1). File 2 customization vẫn upload tay (Amazon chưa mở API). */}
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {/* PUSH */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>PUSH</span>
-            <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "Push to Amazon via SP-API — updates live listings (title/bullets/description/price) and creates new ones by cloning the JSON of a live listing of the same type." : "Configure SP-API in Stores → Amazon store first"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1 }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
-            <button disabled={busy || !sel.size} onClick={doExportListing} title="Download the flat file (.txt) to create a listing manually at Add Products via Upload — fallback if the API create fails." style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1 }}>flat file</button>
-            <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
-            <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 180 }}>
+            <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "Push to Amazon via SP-API — updates live listings and creates new ones by cloning a live listing of the same type." : "Configure SP-API in Stores → Amazon store first"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1, whiteSpace: "nowrap" }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size} onClick={doExportListing} title="Download the flat file (.txt) to create a listing manually at Add Products via Upload — fallback if the API create fails." style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1, whiteSpace: "nowrap" }}>flat file</button>
+          </span>
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
+          {/* EXPORT customization */}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>EXPORT</span>
+            <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 170 }}>
               {tpls.length === 0 && <option value="">No template</option>}
               {tpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
-            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="Customization .xlsx — upload at Custom Products → Upload Customizations (Amazon has no API for Custom). Listing must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1 }}>↓ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size || !tplPick} onClick={doExport} title="Customization .xlsx — upload at Custom Products → Upload Customizations (Amazon has no API for Custom). Listing must be LIVE with inventory first." style={{ ...pill("#FF9900", "#111"), opacity: busy || !sel.size || !tplPick ? .45 : 1, whiteSpace: "nowrap" }}>↓ 2 · Customization{sel.size ? ` (${sel.size})` : ""}</button>
           </span>
         </div>
       </div>

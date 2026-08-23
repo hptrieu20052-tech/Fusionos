@@ -46,10 +46,18 @@ const plain = (s: unknown) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/
 const bulletsVal = (bl: string[]) => bl.slice(0, 5).map((v) => ({ value: v, marketplace_id: mk, language_tag: "en_US" }));
 const imageVal = (url: string) => [{ media_location: url, marketplace_id: mk }];
 
-/** Clone attributes tham chiếu + strip định danh + gán override. */
+/** Field an toàn BẮT BUỘC cho listing mới (sách: không pin, không hàng nguy hiểm). */
+const safetyAttrs = (): Attrs => ({
+  batteries_required: [{ value: false, marketplace_id: mk }],
+  supplier_declared_dg_hz_regulation: [{ value: "not_applicable", marketplace_id: mk }],
+});
+
+/** Clone attributes tham chiếu + strip định danh + gán override + đảm bảo field an toàn. */
 function cloneAttrs(base: Attrs, overrides: Attrs): Attrs {
   const o: Attrs = JSON.parse(JSON.stringify(base || {}));
-  for (const k of ["externally_assigned_product_identifier", "merchant_suggested_asin", "supplier_declared_dg_hz_regulation"]) delete o[k];
+  for (const k of ["externally_assigned_product_identifier", "merchant_suggested_asin"]) delete o[k];
+  const sa = safetyAttrs();
+  for (const [k, v] of Object.entries(sa)) if (o[k] === undefined) o[k] = v; // chỉ thêm nếu clone chưa có
   for (const [k, v] of Object.entries(overrides)) o[k] = v;
   return o;
 }
