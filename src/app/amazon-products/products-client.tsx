@@ -19,6 +19,7 @@ type Row = {
   amazonTemplateId: string | null;
   // v313 · override giá/variant riêng listing (null = dùng variations của template)
   variations: Variation[] | null;
+  manual?: boolean; // v315 · import thẳng từ Amazon (không có nguồn Shopify)
   sourceTitle: string; productType: string; sourceStatus: string;
   image: string; imageCount: number; srcVariantCount: number; skuRoot: string; storeName: string | null;
   // v297 · bộ ảnh riêng Amazon (null = dùng ảnh Shopify) + toàn bộ ảnh nguồn để khởi điểm
@@ -306,10 +307,24 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     try {
       const j = await postJSON("/api/amazon-products/push-listing", { ids, storeId: storeSel || undefined });
       if (j.ok) {
-        flash(`✓ Đã đẩy ${j.rows} dòng lên Amazon${j.skipped?.length ? ` · ${j.skipped.length} bỏ qua: ${j.skipped[0]}` : ""} · ${j.summary}`);
+        flash("✓ " + (j.summary ?? "Đã cập nhật") + (j.skipped?.length ? ` — ${j.skipped[0]}` : ""));
         if (closeAfter) setEdit(null);
         load();
       } else flash("✗ " + (j.error ?? "Push failed"));
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
+    setProg(""); setBusy(false);
+  };
+
+  // v315 · Import 1 listing đã live trên Amazon (kể cả list tay) về FusionOS theo SKU parent.
+  const importListing = async () => {
+    if (!cfg.configured) { flash("✗ Chưa cấu hình SP-API — Stores → store Amazon"); return; }
+    const sku = window.prompt("Nhập SKU parent trên Amazon để kéo listing về (vd: TLW-0011-PARENT-AMZ):");
+    if (!sku || !sku.trim()) return;
+    setBusy(true); setProg("Đang kéo listing từ Amazon…");
+    try {
+      const j = await postJSON("/api/amazon-products/import-listing", { sku: sku.trim(), storeId: storeSel || undefined });
+      if (j.ok) { flash("✓ " + (j.note ?? "Đã import")); load(); }
+      else flash("✗ " + (j.error ?? "Import failed"));
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
     setProg(""); setBusy(false);
   };
@@ -409,6 +424,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
               {amzStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
+          <button disabled={busy || !cfg.configured} onClick={importListing} title={cfg.configured ? "Kéo 1 listing đã live trên Amazon (kể cả list tay) về FusionOS theo SKU parent" : "Cấu hình SP-API ở Stores trước"} style={{ ...pill("#EEF1F5", "#333"), padding: "9px 12px", opacity: cfg.configured ? 1 : .5 }}>⇩ Import listing</button>
           <button disabled={busy || !cfg.configured} onClick={() => syncAsins()} title={cfg.configured ? "Pull ASINs & status from Amazon via SP-API" : "Cấu hình SP-API ở mục Stores (mở store Amazon → khu Amazon SP-API)"} style={{ ...pill("#FF9900", "#111"), padding: "9px 14px", opacity: cfg.configured ? 1 : .5 }}>⟳ Sync from Amazon</button>
         </div>
       </div>
@@ -462,8 +478,8 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           {/* v311 · Nhóm Push — đẩy listing THẲNG qua API (thay File 1). File 2 customization vẫn upload tay (Amazon chưa mở API). */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>PUSH</span>
-            <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "Đẩy listing (parent+child · title/bullets/desc/ảnh/giá) THẲNG lên Amazon qua SP-API. Sửa xong bấm lại = cập nhật (khớp theo SKU, không tạo trùng)." : "Cấu hình SP-API ở Stores → store Amazon trước"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1 }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
-            <button disabled={busy || !sel.size} onClick={doExportListing} title="Tải flat file .txt (dự phòng — nếu muốn upload tay ở Add Products via Upload)" style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1 }}>tải file</button>
+            <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "CẬP NHẬT listing đã live qua SP-API (title/bullets/desc/giá theo SKU). Listing CHƯA có ASIN thì dùng 'tải file' để tạo mới (Amazon chặn feed tạo listing qua API)." : "Cấu hình SP-API ở Stores → store Amazon trước"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1 }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
+            <button disabled={busy || !sel.size} onClick={doExportListing} title="Tải flat file .txt để TẠO listing MỚI (Add Products via Upload). Bắt buộc cho listing chưa có ASIN." style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1 }}>tải file (tạo mới)</button>
             <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
             <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 180 }}>
               {tpls.length === 0 && <option value="">No template</option>}
@@ -525,6 +541,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                       ↗ Shopify: {r.sourceTitle.length > 22 ? r.sourceTitle.slice(0, 22) + "…" : r.sourceTitle}
                     </a>
                   )}
+                  {r.manual && <span title="Import thẳng từ Amazon — không có nguồn Shopify" style={{ marginTop: 3, fontSize: 10, fontWeight: 800, color: "#B5661A", background: "#FFF0DB", borderRadius: 6, padding: "2px 6px", display: "inline-block" }}>Amazon · list tay</span>}
                 </td>
                 {/* v308 · TYPE / TEMPLATE gộp 2 dòng như Type/Category bên Shopify (bỏ cột TYPE trùng) */}
                 <td style={{ padding: 10, fontSize: 12, maxWidth: 160 }}>

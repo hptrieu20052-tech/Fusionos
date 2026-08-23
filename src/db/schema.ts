@@ -371,6 +371,10 @@ export const amazonProducts = pgTable("amazon_products", {
   // v313 · Override giá/variant RIÊNG cho listing này ([{suffix,label,price}]). null = dùng variations của template.
   // Cho phép 1 listing giá khác / size khác template mà không đụng các listing khác. Cần MIGRATION_v313.
   variations: jsonb("variations"),
+  // v315 · Product IMPORT thẳng từ Amazon (list tay, không có nguồn Shopify): lưu SKU root + product type
+  // ngay trên bản ghi này (thay vì suy ra từ shopify_products). null = product bình thường có nguồn Shopify.
+  manualSku: text("manual_sku"),
+  manualType: text("manual_type"),
   status: text("status").notNull().default("DRAFT"),      // DRAFT → EXPORTED → LIVE
   asin: text("asin"),                                     // điền khi listing đã lên Amazon
   exportedAt: timestamp("exported_at", { withTimezone: true }),

@@ -159,6 +159,91 @@ export async function getListing(c: SpCfg, sku: string): Promise<ListingInfo | n
   return { asin: s.asin ?? null, status: (s.status ?? []).join(",") };
 }
 
+// ───────────── Listings Items API — UPDATE trực tiếp (thay Feeds flat-file bị 403) ─────────────
+export type PatchOp = { op: "replace" | "add" | "delete"; path: string; value?: unknown };
+export type PatchResult = { sku: string; status: string; issues: { code?: string; message?: string; severity?: string }[] };
+
+/** PATCH 1 SKU đã tồn tại trên Amazon (cập nhật title/bullets/desc/giá…). Dùng role Product Listing. */
+export async function patchListingItem(c: SpCfg, sku: string, productType: string, patches: PatchOp[]): Promise<PatchResult> {
+  const { status, json } = await spFetch(c, `/listings/2021-08-01/items/${encodeURIComponent(String(c.sellerId))}/${encodeURIComponent(sku)}`, {
+    method: "PATCH",
+    query: { marketplaceIds: String(c.marketplaceId) },
+    body: { productType, patches },
+  });
+  const j = json as { sku?: string; status?: string; issues?: { code?: string; message?: string; severity?: string }[]; errors?: { message?: string }[] } | null;
+  if (status !== 200) throw new Error(`patch ${sku} lỗi ${status}: ${j?.errors?.[0]?.message ?? j?.issues?.[0]?.message ?? "unknown"}`);
+  return { sku, status: j?.status ?? "UNKNOWN", issues: j?.issues ?? [] };
+}
+
+/** PUT tạo/ghi đè 1 SKU (đầy đủ attributes). Dùng khi tạo listing mới qua API. */
+export async function putListingItem(c: SpCfg, sku: string, productType: string, attributes: Record<string, unknown>): Promise<PatchResult> {
+  const { status, json } = await spFetch(c, `/listings/2021-08-01/items/${encodeURIComponent(String(c.sellerId))}/${encodeURIComponent(sku)}`, {
+    method: "PUT",
+    query: { marketplaceIds: String(c.marketplaceId) },
+    body: { productType, requirements: "LISTING", attributes },
+  });
+  const j = json as { sku?: string; status?: string; issues?: { code?: string; message?: string; severity?: string }[]; errors?: { message?: string }[] } | null;
+  if (status !== 200 && status !== 202) throw new Error(`put ${sku} lỗi ${status}: ${j?.errors?.[0]?.message ?? j?.issues?.[0]?.message ?? "unknown"}`);
+  return { sku, status: j?.status ?? "UNKNOWN", issues: j?.issues ?? [] };
+}
+
+// Helper build value theo chuẩn Listings Items API (mỗi attr = mảng {value, marketplace_id,...}).
+export const MK_US = "ATVPDKIKX0DER";
+export const vText = (value: string, mk: string) => [{ value, marketplace_id: mk, language_tag: "en_US" }];
+export const vPlain = (value: unknown, mk: string) => [{ value, marketplace_id: mk }];
+
+// Dữ liệu đầy đủ 1 listing để IMPORT về (title/bullets/desc/variations/giá/ảnh/type).
+export type ListingData = {
+  asin: string | null;
+  status: string;
+  productType: string;
+  attributes: Record<string, unknown>;
+  offers: unknown[];
+  relationships: unknown[];
+};
+
+/** getListing kèm nhiều includedData để import. */
+export async function getListingData(c: SpCfg, sku: string, included = "summaries,attributes,offers,relationships"): Promise<ListingData | null> {
+  const { status, json } = await spFetch(c, `/listings/2021-08-01/items/${encodeURIComponent(String(c.sellerId))}/${encodeURIComponent(sku)}`, {
+    query: { marketplaceIds: String(c.marketplaceId), includedData: included },
+  });
+  if (status === 404) return null;
+  if (status !== 200) {
+    const j = json as { errors?: { message?: string }[] } | null;
+    throw new Error(`getListingData ${sku} lỗi ${status}: ${j?.errors?.[0]?.message ?? "unknown"}`);
+  }
+  const j = json as {
+    summaries?: { asin?: string; status?: string[]; productType?: string }[];
+    attributes?: Record<string, unknown>;
+    offers?: unknown[];
+    relationships?: { relationships?: unknown[] }[];
+  } | null;
+  const s = j?.summaries?.[0];
+  const rel = (j?.relationships ?? []).flatMap((r) => r?.relationships ?? []);
+  return {
+    asin: s?.asin ?? null,
+    status: (s?.status ?? []).join(","),
+    productType: s?.productType ?? "",
+    attributes: j?.attributes ?? {},
+    offers: j?.offers ?? [],
+    relationships: rel,
+  };
+}
+
+/** Lấy value đầu tiên của 1 attribute (Listings JSON: attr = [{value, marketplace_id}]). */
+export function attrVal(attrs: Record<string, unknown>, key: string): string {
+  const a = attrs?.[key];
+  if (!Array.isArray(a) || !a.length) return "";
+  const first = a[0] as Record<string, unknown>;
+  return String(first?.value ?? first?.media_location ?? "").trim();
+}
+/** Lấy tất cả value của 1 attribute (vd bullet_point). */
+export function attrVals(attrs: Record<string, unknown>, key: string): string[] {
+  const a = attrs?.[key];
+  if (!Array.isArray(a)) return [];
+  return a.map((x) => String((x as Record<string, unknown>)?.value ?? "").trim()).filter(Boolean);
+}
+
 // Rate-limit nhẹ: Listings getItem ~5 req/s. Gọi tuần tự có nghỉ để an toàn.
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

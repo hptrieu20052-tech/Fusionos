@@ -84,16 +84,17 @@ export async function GET() {
       aiAt: r.a.aiAt, status: r.a.status, asin: r.a.asin, exportedAt: r.a.exportedAt,
       amazonTemplateId: r.a.amazonTemplateId,
       variations: (Array.isArray(r.a.variations) ? r.a.variations : null) as { suffix: string; label: string; price: string }[] | null,
-      sourceTitle: r.srcTitle ?? "(source listing missing)",
-      productType: (r.srcType ?? "").trim(),
+      // v315 · product import thẳng từ Amazon (không có nguồn Shopify) → fallback về field manual/title
+      manual: !r.a.shopifyProductId,
+      sourceTitle: r.srcTitle ?? r.a.title ?? "(source listing missing)",
+      productType: (r.srcType ?? r.a.manualType ?? "").trim(),
       sourceStatus: r.srcStatus ?? "",
-      // v297 · override ảnh riêng Amazon: cover + count ưu tiên bộ override
       image: (ovrUrls(r.a.images)?.[0]) ?? coverUrl(r.srcImages),
       imageCount: ovrUrls(r.a.images)?.length ?? imgCount(r.srcImages),
       images: ovrUrls(r.a.images),
       sourceImages: srcUrls(r.srcImages),
-      srcVariantCount: variantCount(r.srcVariants),
-      skuRoot: rootSku(r.srcVariants),
+      srcVariantCount: variantCount(r.srcVariants) || (Array.isArray(r.a.variations) ? (r.a.variations as unknown[]).length : 0),
+      skuRoot: rootSku(r.srcVariants) || (r.a.manualSku ?? ""),
       storeName: r.storeName,
     })),
   });
