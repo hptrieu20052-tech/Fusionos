@@ -480,27 +480,24 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
           {/* AI */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>AI</span>
-            <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} title="AI model for Amazon copy" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 160 }}>
+            <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} title="AI model for Amazon copy" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 150 }}>
               <option value="">Model: Default</option>
               {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select>
             {canEdit && (
-              <button disabled={busy || !sel.size} onClick={() => runAI(Array.from(sel))} style={{ ...pill("#5B3FBF", "#fff"), opacity: busy || !sel.size ? .45 : 1, whiteSpace: "nowrap" }}>✦ AI copy{sel.size ? ` (${sel.size})` : ""}</button>
+              <button disabled={busy || !sel.size} onClick={() => runAI(Array.from(sel))} title="Generate Amazon copy (title/bullets/description) with AI" style={{ ...pill("#5B3FBF", "#fff"), opacity: busy || !sel.size ? .45 : 1, whiteSpace: "nowrap" }}>✦ AI{sel.size ? ` (${sel.size})` : ""}</button>
             )}
           </span>
           <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
           {/* PUSH */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>PUSH</span>
             <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "Push to Amazon via SP-API — updates live listings and creates new ones by cloning a live listing of the same type." : "Configure SP-API in Stores → Amazon store first"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1, whiteSpace: "nowrap" }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
             <button disabled={busy || !sel.size} onClick={doExportListing} title="Download the flat file (.txt) to create a listing manually at Add Products via Upload — fallback if the API create fails." style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1, whiteSpace: "nowrap" }}>flat file</button>
           </span>
           <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
           {/* EXPORT customization */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, color: "var(--muted)" }}>EXPORT</span>
-            <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 170 }}>
+            <select value={tplPick} onChange={(e) => setTplPick(e.target.value)} title="Amazon customization template (Manage Templates Amazon)" style={{ ...ctl, padding: "8px 10px", fontSize: 12.5, maxWidth: 150 }}>
               {tpls.length === 0 && <option value="">No template</option>}
               {tpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
