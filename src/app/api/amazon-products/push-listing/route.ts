@@ -46,10 +46,12 @@ const plain = (s: unknown) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/
 const bulletsVal = (bl: string[]) => bl.slice(0, 5).map((v) => ({ value: v, marketplace_id: mk, language_tag: "en_US" }));
 const imageVal = (url: string) => [{ media_location: url, marketplace_id: mk }];
 
-/** Field an toàn BẮT BUỘC cho listing mới (sách: không pin, không hàng nguy hiểm). */
+/** Field an toàn BẮT BUỘC cho listing mới (sách: không pin, không hàng nguy hiểm, POD miễn GTIN). */
 const safetyAttrs = (): Attrs => ({
   batteries_required: [{ value: false, marketplace_id: mk }],
   supplier_declared_dg_hz_regulation: [{ value: "not_applicable", marketplace_id: mk }],
+  // POD không có mã vạch → khai miễn GTIN (thay cho External Product ID)
+  supplier_declared_has_product_identifier_exemption: [{ value: true, marketplace_id: mk }],
 });
 
 /** Clone attributes tham chiếu + strip định danh + gán override + đảm bảo field an toàn. */
@@ -196,7 +198,10 @@ export async function POST(req: NextRequest) {
             main_product_image_locator: imageVal(imgs[0]),
             child_parent_sku_relationship: rel,
             ...otherImgs,
-            ...(!isNaN(price) && price > 0 ? { purchasable_offer: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] } : {}),
+            ...(!isNaN(price) && price > 0 ? {
+              list_price: [{ value: price, currency: "USD", marketplace_id: mk }],
+              purchasable_offer: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }],
+            } : {}),
           });
           try { const rr = await putListingItem(cfg!, `${root}-${v.suffix}`, PRODUCT_TYPE, ca); if (ok(rr)) created++; }
           catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); }
