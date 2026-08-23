@@ -73,7 +73,11 @@ export async function GET() {
     .leftJoin(schema.stores, eq(schema.stores.id, schema.amazonProducts.storeId));
 
   const scoped = scopeIds ? rows.filter((r) => r.seller && scopeIds.includes(r.seller)) : rows;
-  scoped.sort((a, b) => new Date(b.a.createdAt ?? 0).getTime() - new Date(a.a.createdAt ?? 0).getTime());
+  // Sắp xếp MỚI → CŨ, ổn định: createdAt desc rồi id (tie-break) — KHÔNG dùng updatedAt (đổi mỗi lần
+  // Save/AI Optimize khiến bảng đảo lộn). Nhiều listing tạo cùng lúc trùng createdAt → id giữ thứ tự cố định.
+  scoped.sort((a, b) =>
+    (new Date(b.a.createdAt ?? 0).getTime() - new Date(a.a.createdAt ?? 0).getTime()) ||
+    String(b.a.id).localeCompare(String(a.a.id)));
 
   return NextResponse.json({
     ok: true,
