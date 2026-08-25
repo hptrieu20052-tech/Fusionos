@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { getSpConfig, spConfigured, patchListingItem, putListingItem, deleteListingItem, getListing, getListingData, MK_US, vText, sleep, type PatchOp } from "@/lib/amazon-sp-api";
+import { sanitizeTitle } from "@/lib/amazon-title";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,30 +43,6 @@ function imgList(override: unknown, source: unknown): string[] {
   return arr.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).map((i) => String(i?.src ?? "").trim()).filter((s) => /^https:\/\//i.test(s)).slice(0, 9);
 }
 const plain = (s: unknown) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-
-// Cụm từ Amazon CẤM trong Title (code 100473 INVALID_ATTRIBUTE). AI hay sinh ra → tự lọc trước khi đẩy.
-// Mở rộng list khi gặp thêm phrase bị chặn.
-const BANNED_TITLE_PHRASES = [
-  // gift phrases (Amazon chặn "Gift" quảng cáo trong title — code 100473)
-  "baby shower gift", "shower gift", "best gift", "perfect gift", "great gift", "ideal gift", "amazing gift", "unique gift",
-  // promotional / price
-  "free shipping", "best seller", "bestseller", "best price", "lowest price", "on sale", "flash sale", "hot sale", "for sale",
-  // urgency
-  "limited time", "while supplies last", "today only", "last chance", "buy now",
-  // guarantee / claims
-  "money back", "money-back", "lifetime guarantee", "100% guaranteed", "100% satisfaction", "risk free", "risk-free",
-  "award-winning", "award winning", "fda approved", "doctor approved", "clinically proven",
-  // eco / safety
-  "eco-friendly", "eco friendly", "non-toxic", "non toxic", "chemical free", "100% safe", "child-safe",
-];
-function sanitizeTitle(t: string): string {
-  let s = String(t ?? "");
-  for (const p of BANNED_TITLE_PHRASES) s = s.replace(new RegExp("\\b" + p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi"), "");
-  // dọn dấu phẩy/khoảng trắng thừa sau khi cắt
-  s = s.replace(/\s*,(\s*,)+/g, ",").replace(/\(\s*\)/g, "").replace(/\s{2,}/g, " ")
-       .replace(/\s+,/g, ",").replace(/,\s*,/g, ",").replace(/^[\s,]+|[\s,]+$/g, "").trim();
-  return s;
-}
 const bulletsVal = (bl: string[]) => bl.slice(0, 5).map((v) => ({ value: v, marketplace_id: mk, language_tag: "en_US" }));
 const imageVal = (url: string) => [{ media_location: url, marketplace_id: mk }];
 
@@ -147,6 +124,8 @@ export async function POST(req: NextRequest) {
     const skipped: string[] = [];
     const issues: string[] = [];
     const asinSync: { id: string; asin: string | null }[] = []; // đồng bộ ASIN DB ↔ thực tế Amazon
+    // v339 · Con của family mới được HOÃN: tạo hết parent trước → chờ CHUNG 1 lần → tạo hết con (push nhiều listing 1 lần).
+    const pendingChildren: { root: string; pt: string; parentSku: string; vars: Variation[]; refChild: Attrs; build: (rc: Attrs | null, v: Variation, ps: string) => Attrs | null }[] = [];
     const deadline = Date.now() + 52_000;
 
     // Trả true nếu Amazon KHÔNG báo lỗi (ERROR). Gom message lỗi để hiện cho user.
@@ -294,22 +273,25 @@ export async function POST(req: NextRequest) {
           }
           if (!ok(rr)) { continue; } // parent lỗi → bỏ qua children (đã gom message trong ok())
           created++;
+          // v339 · HOÃN tạo con → gom lại, tạo sau khi TẤT CẢ parent đã tạo + chờ CHUNG 1 lần (đỡ chờ 12s/listing).
+          pendingChildren.push({ root, pt, parentSku, vars, refChild: ref.child as Attrs, build: buildChildAttrs });
         } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); continue; }
-        // v338 · Đợi parent ĐĂNG KÝ xong (có ASIN) trước khi tạo con. Con tạo lúc parent chưa sẵn sàng
-        // sẽ nhận theme méo "SIZE" và KHÔNG gom vào family (race). Poll tới ~12s.
-        for (let i = 0; i < 8 && Date.now() < deadline; i++) {
-          await sleep(1500);
-          const chk = await getListing(cfg!, parentSku).catch(() => null);
-          if (chk && chk.asin) break;
-        }
-        // CHILDREN
-        for (const v of vars) {
+      }
+    }
+
+    // ── Tạo CON cho các family mới: chờ 1 lần cho mọi parent đăng ký rồi PUT toàn bộ con (không race) ──
+    if (pendingChildren.length) {
+      const waitMs = Math.min(12000, Math.max(0, deadline - Date.now() - 8000));
+      if (waitMs > 0) await sleep(waitMs);
+      for (const pc of pendingChildren) {
+        if (Date.now() > deadline) { skipped.push("timed out creating children — Push again to finish the remaining family"); break; }
+        for (const v of pc.vars) {
           if (Date.now() > deadline) break;
-          const ca = buildChildAttrs(ref.child as Attrs, v, parentSku);
+          const ca = pc.build(pc.refChild, v, pc.parentSku);
           if (!ca) continue;
-          try { const rr = await putListingItem(cfg!, `${root}-${v.suffix}`, pt, ca); if (ok(rr)) created++; }
+          try { const rr = await putListingItem(cfg!, `${pc.root}-${v.suffix}`, pc.pt, ca); if (ok(rr)) created++; }
           catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); }
-          await sleep(400);
+          await sleep(350);
         }
       }
     }

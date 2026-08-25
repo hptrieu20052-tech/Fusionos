@@ -10,6 +10,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import type { Session } from "@/lib/auth";
 import { storeOwnerScopeIds } from "@/lib/scope";
+import { sanitizeTitle } from "@/lib/amazon-title";
 import { DA_HEADER, DA_COL, DA_WIDTH } from "@/lib/amazon-flatfile-display-album";
 
 export const MAX_IDS = 200;
@@ -79,7 +80,7 @@ export async function buildListingFlatFile(session: Session, idsRaw: unknown): P
     const ovrVars = (Array.isArray(r.a.variations) ? r.a.variations : []) as Variation[];
     const vars = (ovrVars.length ? ovrVars : (cfg.variations ?? [])).filter((v) => v.suffix);
     const cst = cfg.constants ?? {};
-    const title = (r.a.title ?? "").trim();
+    const title = sanitizeTitle((r.a.title ?? "").trim()); // lọc cụm cấm (code 100473) như bên Push
     const bullets = ((r.a.bullets as string[] | null) ?? []).filter(Boolean);
     const desc = plain(r.a.description);
     const ovr = Array.isArray(r.a.images)

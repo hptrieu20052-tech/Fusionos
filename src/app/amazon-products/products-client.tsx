@@ -492,7 +492,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
           {/* PUSH */}
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
             <button disabled={busy || !sel.size || !cfg.configured} onClick={() => pushListing(Array.from(sel))} title={cfg.configured ? "Push to Amazon via SP-API — updates live listings and creates new ones by cloning a live listing of the same type." : "Configure SP-API in Stores → Amazon store first"} style={{ ...pill("#1F6F45", "#fff"), opacity: busy || !sel.size || !cfg.configured ? .45 : 1, whiteSpace: "nowrap" }}>⬆ Push to Amazon{sel.size ? ` (${sel.size})` : ""}</button>
-            <button disabled={busy || !sel.size} onClick={doExportListing} title="Download the flat file (.txt) to create a listing manually at Add Products via Upload — fallback if the API create fails." style={{ border: "none", background: "none", cursor: busy || !sel.size ? "default" : "pointer", fontSize: 12, fontWeight: 700, color: "#66788E", padding: 0, opacity: busy || !sel.size ? .45 : 1, whiteSpace: "nowrap" }}>flat file</button>
+            <button disabled={busy || !sel.size} onClick={doExportListing} title="Download the flat file (.txt) to create listings at Add Products via Upload — the most reliable way to build variation families." style={{ ...pill("#E6F4F1", "#0F766E"), border: "1px solid #9BD5CB", opacity: busy || !sel.size ? .45 : 1, cursor: busy || !sel.size ? "default" : "pointer", whiteSpace: "nowrap" }}>↓ flat file{sel.size ? ` (${sel.size})` : ""}</button>
           </span>
           <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
           {/* EXPORT customization */}
