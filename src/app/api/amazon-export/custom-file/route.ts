@@ -4,7 +4,7 @@ import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
-import * as XLSX from "xlsx";
+import { amzImageUrl } from "@/lib/amazon-image";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     okIds.push(r.id);
     // v297 · preview image ưu tiên ảnh override riêng Amazon
     const ovr = Array.isArray(r.ovrImages) ? (r.ovrImages as unknown[]).map((x) => String(x ?? "").trim()).find((s) => /^https:\/\//i.test(s)) : undefined;
-    const img = ovr || coverUrl(r.images);
+    const img = amzImageUrl(ovr || coverUrl(r.images)); // đổi img.fusiondn.com → r2.dev cho ảnh preview (tránh timeout)
     for (const sfx of suffixes) {
       const sku = `${root}-${sfx}`;
       if (seen.has(sku)) continue;
@@ -109,16 +109,17 @@ export async function POST(req: NextRequest) {
       .where(inArray(schema.amazonProducts.id, okIds)).catch(() => {});
   }
 
-  const aoa = [...cfg.headerRows, ...dataRows];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, cfg.sheetName || "Template");
-  const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  // v300 · Xuất TAB-DELIMITED .txt (Amazon Custom nhận .xlsx HOẶC .txt) — tránh lỗi 90503
+  // "format could not be read" mà .xlsx sinh từ thư viện dính ở Inventory File. Ô không được
+  // chứa tab/newline → thay bằng space. UTF-8 BOM để Amazon nhận encoding.
+  const cellTxt = (c: string) => String(c ?? "").replace(/[\t\r\n]+/g, " ").trim();
+  const lines = [...cfg.headerRows, ...dataRows].map((row) => row.map(cellTxt).join("\t"));
+  const txt = "﻿" + lines.join("\r\n") + "\r\n";
 
-  const fname = `amazon-customizations-${new Date().toISOString().slice(0, 10)}.xlsx`;
-  return new NextResponse(new Uint8Array(buf), {
+  const fname = `amazon-customizations-${new Date().toISOString().slice(0, 10)}.txt`;
+  return new NextResponse(txt, {
     headers: {
-      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Type": "text/tab-separated-values; charset=utf-8",
       "Content-Disposition": `attachment; filename="${fname}"`,
       "X-Rows": String(dataRows.length),
       "X-Skipped": String(skipped.length),
