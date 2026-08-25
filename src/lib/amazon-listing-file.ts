@@ -148,6 +148,7 @@ export async function buildListingFlatFile(session: Session, idsRaw: unknown): P
       set(c, "fulfillment_availability#1.fulfillment_channel_code", "DEFAULT");
       set(c, "fulfillment_availability#1.quantity", cst.quantity || "100");
       set(c, "fulfillment_availability#1.lead_time_to_ship_max_days", cst.leadTimeDays || "5");
+      if (cst.shippingTemplate) set(c, "merchant_shipping_group_name", cst.shippingTemplate); // v341 · gán shipping template (theo TÊN)
       set(c, "purchasable_offer[marketplace_id=ATVPDKIKX0DER]#1.our_price#1.schedule#1.value_with_tax", v.price);
       set(c, "main_image_url", imgs[0] ?? "");
       imgs.slice(1, 9).forEach((u, i) => set(c, `other_image_url${i + 1}`, u));
