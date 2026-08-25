@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { getSpConfig, spConfigured, patchListingItem, putListingItem, deleteListingItem, getListing, getListingData, MK_US, vText, sleep, type PatchOp } from "@/lib/amazon-sp-api";
 import { sanitizeTitle } from "@/lib/amazon-title";
+import { amzImageUrl } from "@/lib/amazon-image";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -38,9 +39,9 @@ function rootSku(variants: unknown, manual: string | null): string {
 }
 function imgList(override: unknown, source: unknown): string[] {
   const ov = (Array.isArray(override) ? override : []).map((x) => String(x ?? "").trim()).filter((s) => /^https:\/\//i.test(s));
-  if (ov.length) return ov.slice(0, 9);
+  if (ov.length) return ov.slice(0, 9).map(amzImageUrl);
   const arr = (Array.isArray(source) ? source : []) as Img[];
-  return arr.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).map((i) => String(i?.src ?? "").trim()).filter((s) => /^https:\/\//i.test(s)).slice(0, 9);
+  return arr.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).map((i) => String(i?.src ?? "").trim()).filter((s) => /^https:\/\//i.test(s)).slice(0, 9).map(amzImageUrl);
 }
 const plain = (s: unknown) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
 const bulletsVal = (bl: string[]) => bl.slice(0, 5).map((v) => ({ value: v, marketplace_id: mk, language_tag: "en_US" }));

@@ -11,6 +11,7 @@ import { eq, inArray } from "drizzle-orm";
 import type { Session } from "@/lib/auth";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { sanitizeTitle } from "@/lib/amazon-title";
+import { amzImageUrl } from "@/lib/amazon-image";
 import { DA_HEADER, DA_COL, DA_WIDTH } from "@/lib/amazon-flatfile-display-album";
 
 export const MAX_IDS = 200;
@@ -86,7 +87,7 @@ export async function buildListingFlatFile(session: Session, idsRaw: unknown): P
     const ovr = Array.isArray(r.a.images)
       ? (r.a.images as unknown[]).map((x) => String(x ?? "").trim()).filter((s) => /^https:\/\//i.test(s)).slice(0, 9)
       : [];
-    const imgs = ovr.length ? ovr : imgList(r.srcImages);
+    const imgs = (ovr.length ? ovr : imgList(r.srcImages)).map(amzImageUrl); // đổi img.fusiondn.com → r2.dev cho Amazon crawler
 
     const missing: string[] = [];
     if (!root) missing.push("SKU");
