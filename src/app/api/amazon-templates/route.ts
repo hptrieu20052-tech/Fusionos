@@ -30,6 +30,7 @@ type Cfg = {
   headerRows: string[][]; defaults: string[]; skuCol: number; previewImageCol: number;
   skuSuffixes: string[]; sheetName: string;
   variations?: Variation[]; constants?: Record<string, string>;
+  masterXlsxB64?: string;
 };
 
 // Hằng số listing mặc định khi tạo template mới (sửa được trong UI).
@@ -184,6 +185,9 @@ export async function PATCH(req: NextRequest) {
         skuCol: Math.max(0, headerRows[1].indexOf("Seller Sku")),
         previewImageCol: headerRows[1].indexOf("baseImage.imageUrl"),
         sheetName: "Template",
+        // v347 · GIỮ NGUYÊN master 6-sheet (Instructions/HiddenEnumValues/Data Definitions…) để export chèn data
+        // vào đúng khung Amazon — nếu chỉ dựng 1 sheet Amazon validator từ chối.
+        masterXlsxB64: b.xlsxBase64,
       };
       cfgTouched = true;
     } catch (e) {

@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { amzImageUrl } from "@/lib/amazon-image";
+import * as XLSX from "xlsx";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,6 +28,7 @@ type Cfg = {
   headerRows: string[][]; defaults: string[]; skuCol: number; previewImageCol: number;
   skuSuffixes: string[]; sheetName: string;
   variations?: { suffix: string; label: string; price: string }[];
+  masterXlsxB64?: string; // v347 · master 6-sheet Amazon để export chèn data đúng khung
 };
 
 function rootSku(variants: unknown): string {
@@ -109,14 +111,41 @@ export async function POST(req: NextRequest) {
       .where(inArray(schema.amazonProducts.id, okIds)).catch(() => {});
   }
 
-  // v300 · Xuất TAB-DELIMITED .txt (Amazon Custom nhận .xlsx HOẶC .txt) — tránh lỗi 90503
-  // "format could not be read" mà .xlsx sinh từ thư viện dính ở Inventory File. Ô không được
-  // chứa tab/newline → thay bằng space. UTF-8 BOM để Amazon nhận encoding.
+  const dateStr = new Date().toISOString().slice(0, 10);
+
+  // v347 · Có master 6-sheet → chèn data vào ĐÚNG file Amazon (giữ Instructions/HiddenEnumValues/…),
+  // vì file 1-sheet bị Amazon validator từ chối (Upload history trống). Data từ hàng 4 (index 3).
+  if (cfg.masterXlsxB64) {
+    try {
+      const wb = XLSX.read(Buffer.from(cfg.masterXlsxB64, "base64"), { type: "buffer" });
+      const sName = wb.SheetNames.includes("Template") ? "Template" : wb.SheetNames[0];
+      const ws = wb.Sheets[sName];
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+      // xóa mọi dòng data cũ (từ index 3 = hàng 4 trở đi), giữ 3 dòng header
+      for (let R = 3; R <= range.e.r; R++) for (let C = 0; C <= range.e.c; C++) delete ws[XLSX.utils.encode_cell({ r: R, c: C })];
+      // ghi data mới
+      dataRows.forEach((row, i) => row.forEach((v, c) => {
+        const val = String(v ?? "");
+        if (val) ws[XLSX.utils.encode_cell({ r: 3 + i, c })] = { t: "s", v: val };
+      }));
+      ws["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(2, 2 + dataRows.length), c: range.e.c } });
+      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+      return new NextResponse(new Uint8Array(buf), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="amazon-customizations-${dateStr}.xlsx"`,
+          "X-Rows": String(dataRows.length), "X-Skipped": String(skipped.length),
+        },
+      });
+    } catch (e) { console.error("custom-file master inject failed, fallback txt", e); }
+  }
+
+  // Fallback (chưa có master) · TAB-DELIMITED .txt — chỉ dùng khi template cũ chưa nạp master 6-sheet.
   const cellTxt = (c: string) => String(c ?? "").replace(/[\t\r\n]+/g, " ").trim();
   const lines = [...cfg.headerRows, ...dataRows].map((row) => row.map(cellTxt).join("\t"));
   const txt = "﻿" + lines.join("\r\n") + "\r\n";
 
-  const fname = `amazon-customizations-${new Date().toISOString().slice(0, 10)}.txt`;
+  const fname = `amazon-customizations-${dateStr}.txt`;
   return new NextResponse(txt, {
     headers: {
       "Content-Type": "text/tab-separated-values; charset=utf-8",
