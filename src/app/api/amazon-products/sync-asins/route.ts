@@ -41,6 +41,7 @@ export async function POST(req: NextRequest) {
   const rows = await db.select({
     id: schema.amazonProducts.id, variants: schema.shopifyProducts.variants,
     manualSku: schema.amazonProducts.manualSku, asin: schema.amazonProducts.asin,
+    status: schema.amazonProducts.status,
     seller: schema.stores.sellerId,
   }).from(schema.amazonProducts)
     .leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.amazonProducts.shopifyProductId))
@@ -53,7 +54,12 @@ export async function POST(req: NextRequest) {
   const errors: string[] = [];
   const deadline = Date.now() + 110_000;
 
-  for (const r of scoped) {
+  // Chỉ hỏi Amazon những listing ĐÃ TỪNG PUSH (có ASIN hoặc status ≠ DRAFT). Draft-chưa-push
+  // không có trên Amazon → bỏ qua để không phí thời gian (tránh timeout khi có hàng trăm draft), trừ khi user chỉ định ids.
+  const candidates = onlyIds ? scoped : scoped.filter((r) => r.asin || (r.status ?? "DRAFT") !== "DRAFT");
+  const skippedDrafts = scoped.length - candidates.length;
+
+  for (const r of candidates) {
     if (Date.now() > deadline) { errors.push("hết thời gian — chạy lại để tiếp tục"); break; }
     const root = rootSku(r.variants) || (r.manualSku ?? "");
     if (!root) continue;
@@ -81,5 +87,5 @@ export async function POST(req: NextRequest) {
   }
 
   await touchSpSync(cfg!.storeId);
-  return NextResponse.json({ ok: true, updated, notFound, removed, errors });
+  return NextResponse.json({ ok: true, updated, notFound, removed, skippedDrafts, errors });
 }
