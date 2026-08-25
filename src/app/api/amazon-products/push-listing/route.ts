@@ -46,13 +46,21 @@ const plain = (s: unknown) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/
 // Cụm từ Amazon CẤM trong Title (code 100473 INVALID_ATTRIBUTE). AI hay sinh ra → tự lọc trước khi đẩy.
 // Mở rộng list khi gặp thêm phrase bị chặn.
 const BANNED_TITLE_PHRASES = [
-  "baby shower gift", "shower gift", "best gift", "perfect gift", "great gift", "ideal gift",
-  "free shipping", "best seller", "bestseller", "on sale", "hot sale", "100% satisfaction",
-  "money back", "money-back", "eco-friendly", "eco friendly",
+  // gift phrases (Amazon chặn "Gift" quảng cáo trong title — code 100473)
+  "baby shower gift", "shower gift", "best gift", "perfect gift", "great gift", "ideal gift", "amazing gift", "unique gift",
+  // promotional / price
+  "free shipping", "best seller", "bestseller", "best price", "lowest price", "on sale", "flash sale", "hot sale", "for sale",
+  // urgency
+  "limited time", "while supplies last", "today only", "last chance", "buy now",
+  // guarantee / claims
+  "money back", "money-back", "lifetime guarantee", "100% guaranteed", "100% satisfaction", "risk free", "risk-free",
+  "award-winning", "award winning", "fda approved", "doctor approved", "clinically proven",
+  // eco / safety
+  "eco-friendly", "eco friendly", "non-toxic", "non toxic", "chemical free", "100% safe", "child-safe",
 ];
 function sanitizeTitle(t: string): string {
   let s = String(t ?? "");
-  for (const p of BANNED_TITLE_PHRASES) s = s.replace(new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "");
+  for (const p of BANNED_TITLE_PHRASES) s = s.replace(new RegExp("\\b" + p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi"), "");
   // dọn dấu phẩy/khoảng trắng thừa sau khi cắt
   s = s.replace(/\s*,(\s*,)+/g, ",").replace(/\(\s*\)/g, "").replace(/\s{2,}/g, " ")
        .replace(/\s+,/g, ",").replace(/,\s*,/g, ",").replace(/^[\s,]+|[\s,]+$/g, "").trim();
