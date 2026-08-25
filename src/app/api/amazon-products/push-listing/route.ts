@@ -176,7 +176,10 @@ export async function POST(req: NextRequest) {
       let existsOnAmazon = !!r.a.asin; // fallback nếu không kiểm tra được (lỗi mạng)
       try {
         const live = await getListing(cfg!, parentSku0);
-        existsOnAmazon = !!live;
+        // v335 · CHỈ coi là "đã tồn tại để UPDATE" khi có ASIN. Nếu tồn tại nhưng CHƯA có ASIN
+        // (tạo dở → "Missing Information") thì đi nhánh CREATE để PUT lại ĐẦY ĐỦ thuộc tính (GTIN exemption…),
+        // vì PATCH không gửi đủ field bắt buộc nên không vá được listing dở.
+        existsOnAmazon = !!(live && live.asin);
         const realAsin = live?.asin ?? null;
         if (realAsin !== (r.a.asin ?? null)) asinSync.push({ id: r.a.id, asin: realAsin });
       } catch { /* giữ fallback theo ASIN đã lưu */ }

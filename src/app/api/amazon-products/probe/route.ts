@@ -30,11 +30,22 @@ export async function GET(req: NextRequest) {
       listing = info ? { result: "found", asin: info.asin, status: info.status } : { result: "null(404)" };
     } catch (e) { listing = { result: "error", error: String((e as Error)?.message ?? e).slice(0, 200) }; }
 
-    // 2) getListingData (summaries+attributes) — xem status chi tiết
-    let data: { result: "null(404)" | "found" | "error"; asin?: string | null; status?: string; productType?: string; error?: string };
+    // 2) getListingData (summaries+attributes+relationships) — xem status + cấu trúc VARIATION chi tiết
+    let data: {
+      result: "null(404)" | "found" | "error"; asin?: string | null; status?: string; productType?: string; error?: string;
+      variation_theme?: unknown; parentage_level?: unknown; child_parent_sku_relationship?: unknown; relationships?: unknown;
+    };
     try {
-      const d = await getListingData(cfg!, sku, "summaries");
-      data = d ? { result: "found", asin: d.asin, status: d.status || "(empty)", productType: d.productType } : { result: "null(404)" };
+      const d = await getListingData(cfg!, sku, "summaries,attributes,relationships");
+      if (d) {
+        const a = d.attributes || {};
+        data = {
+          result: "found", asin: d.asin, status: d.status || "(empty)", productType: d.productType,
+          variation_theme: a.variation_theme, parentage_level: a.parentage_level,
+          child_parent_sku_relationship: a.child_parent_sku_relationship,
+          relationships: d.relationships,
+        };
+      } else data = { result: "null(404)" };
     } catch (e) { data = { result: "error", error: String((e as Error)?.message ?? e).slice(0, 200) }; }
 
     return NextResponse.json({ ok: true, sku, listing, data });
