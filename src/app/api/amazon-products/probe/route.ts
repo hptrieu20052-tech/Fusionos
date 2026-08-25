@@ -33,17 +33,17 @@ export async function GET(req: NextRequest) {
     // 2) getListingData (summaries+attributes+relationships) — xem status + cấu trúc VARIATION chi tiết
     let data: {
       result: "null(404)" | "found" | "error"; asin?: string | null; status?: string; productType?: string; error?: string;
-      variation_theme?: unknown; parentage_level?: unknown; child_parent_sku_relationship?: unknown; relationships?: unknown;
+      variation_theme?: unknown; parentage_level?: unknown; child_parent_sku_relationship?: unknown; relationships?: unknown; issues?: unknown;
     };
     try {
-      const d = await getListingData(cfg!, sku, "summaries,attributes,relationships");
+      const d = await getListingData(cfg!, sku, "summaries,attributes,relationships,issues");
       if (d) {
         const a = d.attributes || {};
         data = {
           result: "found", asin: d.asin, status: d.status || "(empty)", productType: d.productType,
           variation_theme: a.variation_theme, parentage_level: a.parentage_level,
           child_parent_sku_relationship: a.child_parent_sku_relationship,
-          relationships: d.relationships,
+          relationships: d.relationships, issues: d.issues,
         };
       } else data = { result: "null(404)" };
     } catch (e) { data = { result: "error", error: String((e as Error)?.message ?? e).slice(0, 200) }; }

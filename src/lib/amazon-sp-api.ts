@@ -200,6 +200,7 @@ export type ListingData = {
   attributes: Record<string, unknown>;
   offers: unknown[];
   relationships: unknown[];
+  issues: { code?: string; message?: string; severity?: string; attributeNames?: string[] }[];
 };
 
 /** getListing kèm nhiều includedData để import. */
@@ -217,6 +218,7 @@ export async function getListingData(c: SpCfg, sku: string, included = "summarie
     attributes?: Record<string, unknown>;
     offers?: unknown[];
     relationships?: { relationships?: unknown[] }[];
+    issues?: { code?: string; message?: string; severity?: string; attributeNames?: string[] }[];
   } | null;
   const s = j?.summaries?.[0];
   const rel = (j?.relationships ?? []).flatMap((r) => r?.relationships ?? []);
@@ -227,6 +229,7 @@ export async function getListingData(c: SpCfg, sku: string, included = "summarie
     attributes: j?.attributes ?? {},
     offers: j?.offers ?? [],
     relationships: rel,
+    issues: j?.issues ?? [],
   };
 }
 
