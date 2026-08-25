@@ -4,7 +4,7 @@ import { eq, inArray, isNotNull, and } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
-import { getSpConfig, spConfigured, patchListingItem, putListingItem, getListingData, MK_US, vText, sleep, type PatchOp } from "@/lib/amazon-sp-api";
+import { getSpConfig, spConfigured, patchListingItem, putListingItem, getListing, getListingData, MK_US, vText, sleep, type PatchOp } from "@/lib/amazon-sp-api";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -109,6 +109,7 @@ export async function POST(req: NextRequest) {
     let updated = 0, created = 0;
     const skipped: string[] = [];
     const issues: string[] = [];
+    const asinSync: { id: string; asin: string | null }[] = []; // đồng bộ ASIN DB ↔ thực tế Amazon
     const deadline = Date.now() + 52_000;
 
     // Trả true nếu Amazon KHÔNG báo lỗi (ERROR). Gom message lỗi để hiện cho user.
@@ -155,7 +156,19 @@ export async function POST(req: NextRequest) {
       const commonPatch: PatchOp[] = [{ op: "replace", path: "/attributes/product_description", value: vText(desc, mk) }];
       if (bullets.length) commonPatch.push({ op: "replace", path: "/attributes/bullet_point", value: bulletsVal(bullets) });
 
-      if (r.a.asin) {
+      // v327 · Quyết định UPDATE/CREATE theo TRẠNG THÁI THẬT trên Amazon, KHÔNG dựa vào ASIN đã lưu
+      // (đã xóa bên Seller Central nhưng DB còn ASIN → phải Create; hoặc còn sống mà DB trống ASIN → Update).
+      const parentSku0 = `${root}-PARENT-AMZ`;
+      let existsOnAmazon = !!r.a.asin; // fallback nếu không kiểm tra được (lỗi mạng)
+      try {
+        const live = await getListing(cfg!, parentSku0);
+        existsOnAmazon = !!live;
+        const realAsin = live?.asin ?? null;
+        if (realAsin !== (r.a.asin ?? null)) asinSync.push({ id: r.a.id, asin: realAsin });
+      } catch { /* giữ fallback theo ASIN đã lưu */ }
+      await sleep(200);
+
+      if (existsOnAmazon) {
         // ── UPDATE (PATCH) ──
         try {
           const rr = await patchListingItem(cfg!, `${root}-PARENT-AMZ`, pt, [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch]);
@@ -231,6 +244,10 @@ export async function POST(req: NextRequest) {
 
     const touched = rows.map((r) => r.a.id);
     if (touched.length) await db.update(schema.amazonProducts).set({ status: "EXPORTED", exportedAt: new Date(), updatedAt: new Date() }).where(inArray(schema.amazonProducts.id, touched)).catch(() => {});
+    // Đồng bộ ASIN DB theo thực tế Amazon (đã xóa → null; mới thấy → gán) để lần Push sau quyết định đúng.
+    for (const s of asinSync) {
+      await db.update(schema.amazonProducts).set({ asin: s.asin, updatedAt: new Date() }).where(eq(schema.amazonProducts.id, s.id)).catch(() => {});
+    }
 
     return NextResponse.json({
       ok: true,
