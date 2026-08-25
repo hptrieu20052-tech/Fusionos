@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
     };
     // fulfillment_availability đầy đủ (kèm handling time nếu có).
     const fulfillVal = (handling: number) => [{ fulfillment_channel_code: "DEFAULT", quantity: 100, ...(handling > 0 ? { lead_time_to_ship_max_days: handling } : {}) }];
-    const shipGroupVal = (group: string) => (group ? [{ value: group, marketplace_id: mk }] : null);
+    // Shipping template KHÔNG set qua API: create tự kế thừa từ clone, update giữ nguyên → tránh lẫn TÊN (flat file) ↔ ID (API).
 
     let updated = 0, created = 0;
     const skipped: string[] = [];
@@ -190,7 +190,6 @@ export async function POST(req: NextRequest) {
           child_parent_sku_relationship: rel,
           condition_type: [{ value: "new_new", marketplace_id: mk }],
           fulfillment_availability: fulfillVal(ship.handling),
-          ...(shipGroupVal(ship.group) ? { merchant_shipping_group: shipGroupVal(ship.group) } : {}),
           ...otherImgs,
           ...(!isNaN(price) && price > 0 ? {
             list_price: [{ value: price, currency: "USD", marketplace_id: mk }],
@@ -240,7 +239,6 @@ export async function POST(req: NextRequest) {
           // Đảm bảo offer đầy đủ (condition + tồn kho) để gỡ "Missing offer"
           cp.push({ op: "replace", path: "/attributes/condition_type", value: [{ value: "new_new", marketplace_id: mk }] });
           cp.push({ op: "replace", path: "/attributes/fulfillment_availability", value: fulfillVal(ship.handling) });
-          if (shipGroupVal(ship.group)) cp.push({ op: "replace", path: "/attributes/merchant_shipping_group", value: shipGroupVal(ship.group) });
           if (!isNaN(price) && price > 0) {
             cp.push({ op: "replace", path: "/attributes/list_price", value: [{ value: price, currency: "USD", marketplace_id: mk }] });
             cp.push({ op: "replace", path: "/attributes/purchasable_offer", value: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] });

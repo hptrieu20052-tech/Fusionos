@@ -88,21 +88,6 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
   const [ptype, setPtype] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [edit, setEdit] = useState<Detail | null>(null);
-  // v329 · dropdown Shipping Template đọc ngược từ listing sống trên Amazon (id nội bộ + listing đang dùng)
-  const [shipGroups, setShipGroups] = useState<{ id: string; sku: string; title: string }[]>([]);
-  const [syncing, setSyncing] = useState(false);
-  const syncShipGroups = async () => {
-    setSyncing(true); setNote("");
-    try {
-      const res = await fetch("/api/amazon-products/shipping-groups");
-      const j = await res.json().catch(() => null);
-      if (j?.ok && Array.isArray(j.groups)) {
-        setShipGroups(j.groups);
-        setNote(j.groups.length ? `Synced ${j.groups.length} shipping template(s) from Amazon.` : "No shipping template found on live listings yet — assign one to a listing first.");
-      } else setNote(j?.error ?? "Sync failed.");
-    } catch { setNote("Sync failed — network error."); }
-    finally { setSyncing(false); }
-  };
 
   const load = async () => {
     setLoading(true);
@@ -312,22 +297,8 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
               {CONSTANT_FIELDS.map((f) => (
                 <div key={f.key}>
                   <label style={{ ...lab, fontSize: 11.5, color: "var(--muted)" }}>{f.label}</label>
-                  {f.key === "shippingTemplate" ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <input value={edit.constants[f.key] ?? ""} onChange={(e) => setEdit({ ...edit, constants: { ...edit.constants, [f.key]: e.target.value } })} placeholder={f.hint} style={{ ...ctl, width: "100%", flex: 1 }} />
-                        <button type="button" onClick={syncShipGroups} disabled={syncing} title="Read shipping templates already used on your live Amazon listings" style={{ ...ghostGray, padding: "0 12px", fontSize: 12, whiteSpace: "nowrap" }}>{syncing ? "…" : "↻ Sync"}</button>
-                      </div>
-                      {shipGroups.length > 0 && (
-                        <select value="" onChange={(e) => { if (e.target.value) setEdit({ ...edit, constants: { ...edit.constants, [f.key]: e.target.value } }); }} style={{ ...ctl, width: "100%", fontSize: 12 }}>
-                          <option value="">Pick from Amazon listing…</option>
-                          {shipGroups.map((g) => <option key={g.id} value={g.id}>{g.title} · {g.sku} → {g.id.length > 20 ? g.id.slice(0, 8) + "…" : g.id}</option>)}
-                        </select>
-                      )}
-                    </div>
-                  ) : (
-                    <input value={edit.constants[f.key] ?? ""} onChange={(e) => setEdit({ ...edit, constants: { ...edit.constants, [f.key]: e.target.value } })} placeholder={f.hint} style={{ ...ctl, width: "100%" }} />
-                  )}
+                  <input value={edit.constants[f.key] ?? ""} onChange={(e) => setEdit({ ...edit, constants: { ...edit.constants, [f.key]: e.target.value } })} placeholder={f.hint} style={{ ...ctl, width: "100%" }} />
+                  {f.key === "shippingTemplate" && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3 }}>Exact template NAME from Seller Central (e.g. Talewix Books US) — not an ID.</div>}
                 </div>
               ))}
             </div>
