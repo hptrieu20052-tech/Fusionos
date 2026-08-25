@@ -186,6 +186,32 @@ export async function POST(req: NextRequest) {
       const commonPatch: PatchOp[] = [{ op: "replace", path: "/attributes/product_description", value: vText(desc, mk) }];
       if (bullets.length) commonPatch.push({ op: "replace", path: "/attributes/bullet_point", value: bulletsVal(bullets) });
 
+      const otherImgs: Attrs = {};
+      imgs.slice(1, 9).forEach((u, i) => { otherImgs[`other_product_image_locator_${i + 1}`] = imageVal(u); });
+      // v338 · Build attributes cho 1 CON (dùng chung cả create mới lẫn tạo-lại con thiếu ở update).
+      const buildChildAttrs = (refChild: Attrs | null, v: Variation, parentSku: string): Attrs | null => {
+        if (!refChild) return null;
+        const price = Number(v.price);
+        const rel = JSON.parse(JSON.stringify(refChild.child_parent_sku_relationship ?? [{ marketplace_id: mk }]));
+        if (Array.isArray(rel) && rel[0]) { rel[0].parent_sku = parentSku; rel[0].child_relationship_type = rel[0].child_relationship_type ?? "variation"; }
+        return cloneAttrs(refChild, {
+          item_name: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk),
+          product_description: vText(desc, mk),
+          bullet_point: bulletsVal(bullets),
+          size_name: [{ value: v.label || v.suffix, marketplace_id: mk }],
+          ...(imgs[0] ? { main_product_image_locator: imageVal(imgs[0]) } : {}),
+          child_parent_sku_relationship: rel,
+          condition_type: [{ value: "new_new", marketplace_id: mk }],
+          fulfillment_availability: fulfillVal(ship.handling),
+          ...(shipGroupVal(ship.group) ? { merchant_shipping_group: shipGroupVal(ship.group) } : {}),
+          ...otherImgs,
+          ...(!isNaN(price) && price > 0 ? {
+            list_price: [{ value: price, currency: "USD", marketplace_id: mk }],
+            purchasable_offer: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }],
+          } : {}),
+        });
+      };
+
       // v327 · Quyết định UPDATE/CREATE theo TRẠNG THÁI THẬT trên Amazon, KHÔNG dựa vào ASIN đã lưu
       // (đã xóa bên Seller Central nhưng DB còn ASIN → phải Create; hoặc còn sống mà DB trống ASIN → Update).
       const parentSku0 = `${root}-PARENT-AMZ`;
@@ -210,6 +236,17 @@ export async function POST(req: NextRequest) {
         await sleep(300);
         for (const v of vars) {
           if (Date.now() > deadline) break;
+          const childSku = `${root}-${v.suffix}`;
+          // v338 · Con thiếu (đã xóa để gỡ mồ côi) → PUT-create lại thành child sạch dưới parent đang sống → gom vào family.
+          const childLive = await getListing(cfg!, childSku).catch(() => null);
+          if (!childLive) {
+            const ref2 = await getReference(pt);
+            const ca = buildChildAttrs(ref2.child, v, `${root}-PARENT-AMZ`);
+            if (ca) { try { const rr = await putListingItem(cfg!, childSku, pt, ca); if (ok(rr)) created++; } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); } }
+            else skipped.push(`${childSku}: missing on Amazon, no reference to recreate`);
+            await sleep(400);
+            continue;
+          }
           const price = Number(v.price);
           const cp: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk) }, ...commonPatch];
           if (imgs[0]) cp.push({ op: "replace", path: "/attributes/main_product_image_locator", value: imageVal(imgs[0]) });
@@ -231,8 +268,6 @@ export async function POST(req: NextRequest) {
         if (!ref.parent || !ref.child) { skipped.push(`${title}: no live reference of product type "${pt}" to clone — create the first "${pt}" listing via "flat file" first, then later ones create via Push`); continue; }
         if (!imgs.length) { skipped.push(`${title}: missing image (white-background main)`); continue; }
         const parentSku = `${root}-PARENT-AMZ`;
-        const otherImgs: Attrs = {};
-        imgs.slice(1, 9).forEach((u, i) => { otherImgs[`other_product_image_locator_${i + 1}`] = imageVal(u); });
         // PARENT
         try {
           const pa = cloneAttrs(ref.parent, {
@@ -252,30 +287,18 @@ export async function POST(req: NextRequest) {
           if (!ok(rr)) { continue; } // parent lỗi → bỏ qua children (đã gom message trong ok())
           created++;
         } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); continue; }
-        await sleep(400);
+        // v338 · Đợi parent ĐĂNG KÝ xong (có ASIN) trước khi tạo con. Con tạo lúc parent chưa sẵn sàng
+        // sẽ nhận theme méo "SIZE" và KHÔNG gom vào family (race). Poll tới ~12s.
+        for (let i = 0; i < 8 && Date.now() < deadline; i++) {
+          await sleep(1500);
+          const chk = await getListing(cfg!, parentSku).catch(() => null);
+          if (chk && chk.asin) break;
+        }
         // CHILDREN
         for (const v of vars) {
           if (Date.now() > deadline) break;
-          const price = Number(v.price);
-          const rel = JSON.parse(JSON.stringify((ref.child as Attrs).child_parent_sku_relationship ?? [{ marketplace_id: mk }]));
-          if (Array.isArray(rel) && rel[0]) { rel[0].parent_sku = parentSku; rel[0].child_relationship_type = rel[0].child_relationship_type ?? "variation"; }
-          const ca = cloneAttrs(ref.child as Attrs, {
-            item_name: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk),
-            product_description: vText(desc, mk),
-            bullet_point: bulletsVal(bullets),
-            size_name: [{ value: v.label || v.suffix, marketplace_id: mk }],
-            main_product_image_locator: imageVal(imgs[0]),
-            child_parent_sku_relationship: rel,
-            // Offer đầy đủ để listing BUYABLE (không còn "Missing offer"): condition + tồn kho + giá + shipping
-            condition_type: [{ value: "new_new", marketplace_id: mk }],
-            fulfillment_availability: fulfillVal(ship.handling),
-            ...(shipGroupVal(ship.group) ? { merchant_shipping_group: shipGroupVal(ship.group) } : {}),
-            ...otherImgs,
-            ...(!isNaN(price) && price > 0 ? {
-              list_price: [{ value: price, currency: "USD", marketplace_id: mk }],
-              purchasable_offer: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }],
-            } : {}),
-          });
+          const ca = buildChildAttrs(ref.child as Attrs, v, parentSku);
+          if (!ca) continue;
           try { const rr = await putListingItem(cfg!, `${root}-${v.suffix}`, pt, ca); if (ok(rr)) created++; }
           catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); }
           await sleep(400);
