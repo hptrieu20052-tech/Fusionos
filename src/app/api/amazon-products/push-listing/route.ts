@@ -56,7 +56,11 @@ const safetyAttrs = (): Attrs => ({
 /** Clone attributes tham chiếu + strip định danh + gán override + đảm bảo field an toàn. */
 function cloneAttrs(base: Attrs, overrides: Attrs): Attrs {
   const o: Attrs = JSON.parse(JSON.stringify(base || {}));
-  for (const k of ["externally_assigned_product_identifier", "merchant_suggested_asin"]) delete o[k];
+  // Strip định danh + NGÀY RELEASE (clone từ mẫu kéo theo offering_release_date tương lai → giữ offer chưa mở bán "Missing offer").
+  for (const k of [
+    "externally_assigned_product_identifier", "merchant_suggested_asin",
+    "offering_release_date", "merchant_release_date", "release_date", "product_site_launch_date",
+  ]) delete o[k];
   const sa = safetyAttrs();
   for (const [k, v] of Object.entries(sa)) if (o[k] === undefined) o[k] = v; // chỉ thêm nếu clone chưa có
   for (const [k, v] of Object.entries(overrides)) o[k] = v;
