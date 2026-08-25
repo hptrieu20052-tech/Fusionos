@@ -68,7 +68,9 @@ const CONSTANT_FIELDS: { key: string; label: string; hint: string }[] = [
   { key: "numberOfItems", label: "Number of Items", hint: "1" },
   // v292 · dùng cho flat file listing (File 1)
   { key: "quantity", label: "Inventory Quantity", hint: "100" },
-  { key: "leadTimeDays", label: "Handling Time (days)", hint: "5" },
+  { key: "leadTimeDays", label: "Handling Time (days)", hint: "4" },
+  // v329 · tên Shipping Template trên Seller Central → đẩy merchant_shipping_group khi Push
+  { key: "shippingTemplate", label: "Shipping Template (Seller Central)", hint: "Talewix Books US" },
   { key: "countryOfOrigin", label: "Country of Origin", hint: "United States" },
   // v301 · field bắt buộc DISPLAY_ALBUM
   { key: "includedComponents", label: "Included Components", hint: "1 personalized hardcover book" },
@@ -86,6 +88,21 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
   const [ptype, setPtype] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [edit, setEdit] = useState<Detail | null>(null);
+  // v329 · dropdown Shipping Template đọc ngược từ listing sống trên Amazon
+  const [shipGroups, setShipGroups] = useState<string[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const syncShipGroups = async () => {
+    setSyncing(true); setNote("");
+    try {
+      const res = await fetch("/api/amazon-products/shipping-groups");
+      const j = await res.json().catch(() => null);
+      if (j?.ok && Array.isArray(j.groups)) {
+        setShipGroups(j.groups);
+        setNote(j.groups.length ? `Synced ${j.groups.length} shipping template(s) from Amazon.` : "No shipping template found on live listings yet — assign one to a listing first.");
+      } else setNote(j?.error ?? "Sync failed.");
+    } catch { setNote("Sync failed — network error."); }
+    finally { setSyncing(false); }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -295,7 +312,15 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
               {CONSTANT_FIELDS.map((f) => (
                 <div key={f.key}>
                   <label style={{ ...lab, fontSize: 11.5, color: "var(--muted)" }}>{f.label}</label>
-                  <input value={edit.constants[f.key] ?? ""} onChange={(e) => setEdit({ ...edit, constants: { ...edit.constants, [f.key]: e.target.value } })} placeholder={f.hint} style={{ ...ctl, width: "100%" }} />
+                  {f.key === "shippingTemplate" ? (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input list="ship-groups" value={edit.constants[f.key] ?? ""} onChange={(e) => setEdit({ ...edit, constants: { ...edit.constants, [f.key]: e.target.value } })} placeholder={f.hint} style={{ ...ctl, width: "100%", flex: 1 }} />
+                      <datalist id="ship-groups">{shipGroups.map((g) => <option key={g} value={g} />)}</datalist>
+                      <button type="button" onClick={syncShipGroups} disabled={syncing} title="Read shipping templates already used on your live Amazon listings" style={{ ...ghostGray, padding: "0 12px", fontSize: 12, whiteSpace: "nowrap" }}>{syncing ? "…" : "↻ Sync"}</button>
+                    </div>
+                  ) : (
+                    <input value={edit.constants[f.key] ?? ""} onChange={(e) => setEdit({ ...edit, constants: { ...edit.constants, [f.key]: e.target.value } })} placeholder={f.hint} style={{ ...ctl, width: "100%" }} />
+                  )}
                 </div>
               ))}
             </div>

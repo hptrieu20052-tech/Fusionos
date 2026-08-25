@@ -109,6 +109,15 @@ export async function POST(req: NextRequest) {
       const c = (tplObjFor(amazonTemplateId, typeHint)?.config as { constants?: { amazonProductType?: string } } | null)?.constants;
       return (c?.amazonProductType || "").trim() || "DISPLAY_ALBUM";
     };
+    // v329 · Shipping Template + Handling Time lấy từ template constants → đẩy vào offer.
+    const shipOf = (amazonTemplateId: string | null, typeHint: string | null): { group: string; handling: number } => {
+      const c = (tplObjFor(amazonTemplateId, typeHint)?.config as { constants?: { shippingTemplate?: string; leadTimeDays?: string } } | null)?.constants;
+      const handling = parseInt(String(c?.leadTimeDays ?? "").trim(), 10);
+      return { group: (c?.shippingTemplate || "").trim(), handling: isNaN(handling) || handling < 0 ? 0 : handling };
+    };
+    // fulfillment_availability đầy đủ (kèm handling time nếu có).
+    const fulfillVal = (handling: number) => [{ fulfillment_channel_code: "DEFAULT", quantity: 100, ...(handling > 0 ? { lead_time_to_ship_max_days: handling } : {}) }];
+    const shipGroupVal = (group: string) => (group ? [{ value: group, marketplace_id: mk }] : null);
 
     let updated = 0, created = 0;
     const skipped: string[] = [];
@@ -153,6 +162,7 @@ export async function POST(req: NextRequest) {
       const vars = varsFor(r.a.amazonTemplateId, r.srcType || r.a.manualType, r.a.variations);
       const imgs = imgList(r.a.images, r.srcImages);
       const pt = ptOf(r.a.amazonTemplateId, r.srcType || r.a.manualType); // product type động theo template
+      const ship = shipOf(r.a.amazonTemplateId, r.srcType || r.a.manualType); // shipping template + handling time
 
       if (!root || !title) { skipped.push(`${title || r.a.id}: missing SKU/title`); continue; }
       if (!vars.length) { skipped.push(`${title}: missing variations`); continue; }
@@ -186,7 +196,8 @@ export async function POST(req: NextRequest) {
           if (imgs[0]) cp.push({ op: "replace", path: "/attributes/main_product_image_locator", value: imageVal(imgs[0]) });
           // Đảm bảo offer đầy đủ (condition + tồn kho) để gỡ "Missing offer"
           cp.push({ op: "replace", path: "/attributes/condition_type", value: [{ value: "new_new", marketplace_id: mk }] });
-          cp.push({ op: "replace", path: "/attributes/fulfillment_availability", value: [{ fulfillment_channel_code: "DEFAULT", quantity: 100 }] });
+          cp.push({ op: "replace", path: "/attributes/fulfillment_availability", value: fulfillVal(ship.handling) });
+          if (shipGroupVal(ship.group)) cp.push({ op: "replace", path: "/attributes/merchant_shipping_group", value: shipGroupVal(ship.group) });
           if (!isNaN(price) && price > 0) {
             cp.push({ op: "replace", path: "/attributes/list_price", value: [{ value: price, currency: "USD", marketplace_id: mk }] });
             cp.push({ op: "replace", path: "/attributes/purchasable_offer", value: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] });
@@ -230,9 +241,10 @@ export async function POST(req: NextRequest) {
             size_name: [{ value: v.label || v.suffix, marketplace_id: mk }],
             main_product_image_locator: imageVal(imgs[0]),
             child_parent_sku_relationship: rel,
-            // Offer đầy đủ để listing BUYABLE (không còn "Missing offer"): condition + tồn kho + giá
+            // Offer đầy đủ để listing BUYABLE (không còn "Missing offer"): condition + tồn kho + giá + shipping
             condition_type: [{ value: "new_new", marketplace_id: mk }],
-            fulfillment_availability: [{ fulfillment_channel_code: "DEFAULT", quantity: 100 }],
+            fulfillment_availability: fulfillVal(ship.handling),
+            ...(shipGroupVal(ship.group) ? { merchant_shipping_group: shipGroupVal(ship.group) } : {}),
             ...otherImgs,
             ...(!isNaN(price) && price > 0 ? {
               list_price: [{ value: price, currency: "USD", marketplace_id: mk }],
