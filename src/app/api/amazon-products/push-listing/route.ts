@@ -4,7 +4,7 @@ import { eq, inArray, isNotNull, and } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
-import { getSpConfig, spConfigured, patchListingItem, putListingItem, getListing, getListingData, MK_US, vText, sleep, type PatchOp } from "@/lib/amazon-sp-api";
+import { getSpConfig, spConfigured, patchListingItem, putListingItem, deleteListingItem, getListing, getListingData, MK_US, vText, sleep, type PatchOp } from "@/lib/amazon-sp-api";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,6 +42,22 @@ function imgList(override: unknown, source: unknown): string[] {
   return arr.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).map((i) => String(i?.src ?? "").trim()).filter((s) => /^https:\/\//i.test(s)).slice(0, 9);
 }
 const plain = (s: unknown) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+
+// Cụm từ Amazon CẤM trong Title (code 100473 INVALID_ATTRIBUTE). AI hay sinh ra → tự lọc trước khi đẩy.
+// Mở rộng list khi gặp thêm phrase bị chặn.
+const BANNED_TITLE_PHRASES = [
+  "baby shower gift", "shower gift", "best gift", "perfect gift", "great gift", "ideal gift",
+  "free shipping", "best seller", "bestseller", "on sale", "hot sale", "100% satisfaction",
+  "money back", "money-back", "eco-friendly", "eco friendly",
+];
+function sanitizeTitle(t: string): string {
+  let s = String(t ?? "");
+  for (const p of BANNED_TITLE_PHRASES) s = s.replace(new RegExp(p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "");
+  // dọn dấu phẩy/khoảng trắng thừa sau khi cắt
+  s = s.replace(/\s*,(\s*,)+/g, ",").replace(/\(\s*\)/g, "").replace(/\s{2,}/g, " ")
+       .replace(/\s+,/g, ",").replace(/,\s*,/g, ",").replace(/^[\s,]+|[\s,]+$/g, "").trim();
+  return s;
+}
 const bulletsVal = (bl: string[]) => bl.slice(0, 5).map((v) => ({ value: v, marketplace_id: mk, language_tag: "en_US" }));
 const imageVal = (url: string) => [{ media_location: url, marketplace_id: mk }];
 
@@ -155,7 +171,7 @@ export async function POST(req: NextRequest) {
 
     for (const r of rows) {
       if (Date.now() > deadline) { skipped.push("timed out — run again to continue"); break; }
-      const title = (r.a.title ?? "").trim();
+      const title = sanitizeTitle((r.a.title ?? "").trim()); // lọc cụm cấm (code 100473) trước khi đẩy
       const bullets = ((r.a.bullets as string[] | null) ?? []).filter(Boolean);
       const desc = plain(r.a.description);
       const root = rootSku(r.srcVariants, r.a.manualSku);
@@ -227,6 +243,12 @@ export async function POST(req: NextRequest) {
             ...otherImgs,
           });
           const rr = await putListingItem(cfg!, parentSku, pt, pa);
+          // parent nhiễm parentage_level sai (code 8603) → Amazon bắt XÓA rồi tạo lại. Tự xóa để lần push sau tạo sạch.
+          if ((rr.issues ?? []).some((i) => String(i.code) === "8603")) {
+            await deleteListingItem(cfg!, parentSku).catch(() => {});
+            skipped.push(`${title}: parent SKU had a stuck parentage_level → deleted it. Wait ~5 min then Push again to rebuild the variation family.`);
+            continue;
+          }
           if (!ok(rr)) { continue; } // parent lỗi → bỏ qua children (đã gom message trong ok())
           created++;
         } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); continue; }

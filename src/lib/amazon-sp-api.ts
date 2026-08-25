@@ -187,6 +187,15 @@ export async function putListingItem(c: SpCfg, sku: string, productType: string,
   return { sku, status: j?.status ?? "UNKNOWN", issues: j?.issues ?? [] };
 }
 
+/** DELETE 1 SKU khỏi Amazon (dùng khi parent nhiễm parentage_level sai — Amazon bắt xóa rồi tạo lại). */
+export async function deleteListingItem(c: SpCfg, sku: string): Promise<{ ok: boolean; status: number }> {
+  const { status } = await spFetch(c, `/listings/2021-08-01/items/${encodeURIComponent(String(c.sellerId))}/${encodeURIComponent(sku)}`, {
+    method: "DELETE",
+    query: { marketplaceIds: String(c.marketplaceId) },
+  });
+  return { ok: status === 200, status };
+}
+
 // Helper build value theo chuẩn Listings Items API (mỗi attr = mảng {value, marketplace_id,...}).
 export const MK_US = "ATVPDKIKX0DER";
 export const vText = (value: string, mk: string) => [{ value, marketplace_id: mk, language_tag: "en_US" }];
