@@ -45,31 +45,31 @@ export async function GET(req: NextRequest) {
       .where(isNotNull(schema.amazonProducts.asin))
       .limit(10);
 
-    const groups = new Set<string>();
+    // Amazon lưu merchant_shipping_group là ID (vd 7f539426-…, legacy-template-id), KHÔNG phải tên.
+    // → gom Map: id → listing (sku + title) đang dùng nó, để user nhận diện dù chỉ có ID.
+    const groups = new Map<string, { sku: string; title: string }>();
+    const add = (id: string, sku: string, title: string) => { if (id && !groups.has(id)) groups.set(id, { sku, title }); };
     const deadline = Date.now() + 50_000;
     for (const r of rows) {
       if (Date.now() > deadline || groups.size >= 12) break;
       const root = rootSku(r.v, r.a.manualSku);
       if (!root) continue;
+      const title = (r.a.title ?? root).slice(0, 60);
       // Đọc parent để lấy childSkus (offer/shipping nằm ở child).
       const parent = await getListingData(cfg!, `${root}-PARENT-AMZ`, "attributes,relationships").catch(() => null);
       await sleep(200);
       if (!parent) continue;
-      for (const g of attrVals(parent.attributes, "merchant_shipping_group")) groups.add(g);
-      for (const g of attrVals(parent.attributes, "merchant_shipping_group_name")) groups.add(g);
+      for (const g of attrVals(parent.attributes, "merchant_shipping_group")) add(g, `${root}-PARENT-AMZ`, title);
       const childSkus = (parent.relationships as { childSkus?: string[] }[]).flatMap((x) => x?.childSkus ?? []);
       const cs = childSkus[0];
       if (cs) {
         const child = await getListingData(cfg!, cs, "attributes").catch(() => null);
         await sleep(200);
-        if (child) {
-          for (const g of attrVals(child.attributes, "merchant_shipping_group")) groups.add(g);
-          for (const g of attrVals(child.attributes, "merchant_shipping_group_name")) groups.add(g);
-        }
+        if (child) for (const g of attrVals(child.attributes, "merchant_shipping_group")) add(g, cs, title);
       }
     }
 
-    return NextResponse.json({ ok: true, groups: Array.from(groups).filter(Boolean) });
+    return NextResponse.json({ ok: true, groups: Array.from(groups.entries()).map(([id, v]) => ({ id, sku: v.sku, title: v.title })) });
   } catch (e) {
     console.error("shipping-groups fatal", e);
     return NextResponse.json({ ok: false, error: "Sync error: " + String((e as Error)?.message ?? e).slice(0, 200) }, { status: 200 });

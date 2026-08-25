@@ -39,7 +39,9 @@ export async function POST(req: NextRequest) {
   const onlyIds = Array.isArray(b?.ids) ? b.ids.filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))) : null;
 
   const rows = await db.select({
-    id: schema.amazonProducts.id, variants: schema.shopifyProducts.variants, seller: schema.stores.sellerId,
+    id: schema.amazonProducts.id, variants: schema.shopifyProducts.variants,
+    manualSku: schema.amazonProducts.manualSku, asin: schema.amazonProducts.asin,
+    seller: schema.stores.sellerId,
   }).from(schema.amazonProducts)
     .leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.amazonProducts.shopifyProductId))
     .leftJoin(schema.stores, eq(schema.stores.id, schema.amazonProducts.storeId));
@@ -47,17 +49,26 @@ export async function POST(req: NextRequest) {
   let scoped = scopeIds ? rows.filter((r) => r.seller && scopeIds.includes(r.seller)) : rows;
   if (onlyIds) scoped = scoped.filter((r) => onlyIds.includes(r.id));
 
-  let updated = 0, notFound = 0;
+  let updated = 0, notFound = 0, removed = 0;
   const errors: string[] = [];
   const deadline = Date.now() + 110_000;
 
   for (const r of scoped) {
     if (Date.now() > deadline) { errors.push("hết thời gian — chạy lại để tiếp tục"); break; }
-    const root = rootSku(r.variants);
+    const root = rootSku(r.variants) || (r.manualSku ?? "");
     if (!root) continue;
     try {
       const info = await getListing(cfg!, `${root}-PARENT-AMZ`);
-      if (!info || !info.asin) { notFound++; continue; }
+      if (!info) {
+        // 404 — listing KHÔNG còn trên Amazon (đã xóa). Nếu DB còn Live/ASIN thì gỡ về DRAFT + xóa ASIN.
+        if (r.asin) {
+          await db.update(schema.amazonProducts).set({ asin: null, status: "DRAFT", updatedAt: new Date() }).where(eq(schema.amazonProducts.id, r.id));
+          removed++;
+        } else notFound++;
+        await sleep(250);
+        continue;
+      }
+      if (!info.asin) { notFound++; await sleep(250); continue; } // tồn tại nhưng chưa cấp ASIN (đang xử lý) → giữ nguyên
       const status = /BUYABLE|DISCOVERABLE/i.test(info.status) ? "LIVE" : "EXPORTED";
       await db.update(schema.amazonProducts)
         .set({ asin: info.asin, status, updatedAt: new Date() })
@@ -70,5 +81,5 @@ export async function POST(req: NextRequest) {
   }
 
   await touchSpSync(cfg!.storeId);
-  return NextResponse.json({ ok: true, updated, notFound, errors });
+  return NextResponse.json({ ok: true, updated, notFound, removed, errors });
 }

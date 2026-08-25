@@ -343,7 +343,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     setBusy(true); setProg("Syncing ASINs from Amazon…");
     try {
       const j = await postJSON("/api/amazon-products/sync-asins", { ...(ids ? { ids } : {}), storeId: storeSel || undefined });
-      if (j.ok) flash(`✓ Synced ${j.updated} ASIN(s)${j.notFound ? ` · ${j.notFound} not on Amazon yet` : ""}${j.errors?.length ? ` · ${j.errors[0]}` : ""}`);
+      if (j.ok) flash(`✓ Synced ${j.updated} ASIN(s)${j.removed ? ` · ${j.removed} removed on Amazon → set to Draft` : ""}${j.notFound ? ` · ${j.notFound} not on Amazon yet` : ""}${j.errors?.length ? ` · ${j.errors[0]}` : ""}`);
       else flash("✗ " + (j.error ?? "Sync failed"));
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
     setProg(""); setBusy(false); load();
