@@ -434,7 +434,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
             </select>
           )}
           <button disabled={busy || !cfg.configured} onClick={() => { setImportSku(""); setImportOpen(true); }} title={cfg.configured ? "Pull a listing that is already live on Amazon (even one listed manually) into FusionOS by its parent SKU" : "Configure SP-API in Stores first"} style={{ ...pill("#EEF1F5", "#333"), padding: "9px 12px", opacity: cfg.configured ? 1 : .5 }}>⇩ Import listing</button>
-          <button disabled={busy || !cfg.configured} onClick={() => syncAsins()} title={cfg.configured ? "Pull ASINs & status from Amazon via SP-API" : "Configure SP-API in Stores (open the Amazon store → Amazon SP-API section)"} style={{ ...pill("#FF9900", "#111"), padding: "9px 14px", opacity: cfg.configured ? 1 : .5 }}>⟳ Sync from Amazon</button>
+          <button disabled={busy || !cfg.configured} onClick={() => syncAsins(sel.size ? Array.from(sel) : undefined)} title={cfg.configured ? "Pull ASINs & status from Amazon. Select rows first to sync exactly those (even Drafts); with nothing selected it syncs all submitted listings." : "Configure SP-API in Stores (open the Amazon store → Amazon SP-API section)"} style={{ ...pill("#FF9900", "#111"), padding: "9px 14px", opacity: cfg.configured ? 1 : .5 }}>⟳ Sync from Amazon{sel.size ? ` (${sel.size})` : ""}</button>
         </div>
       </div>
 
