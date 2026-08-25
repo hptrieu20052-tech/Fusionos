@@ -310,18 +310,28 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
     setBusy(false);
   };
 
-  // v311 · ⬆ Push to Amazon — đẩy listing thẳng qua SP-API (Feeds). Sửa xong push lại = update (khớp SKU).
+  // v351 · ⬆ Push to Amazon — TỰ chia nhóm 6/lần đẩy tuần tự để mỗi request gọn trong 52s
+  // → đẩy nhiều listing 1 click, KHÔNG timeout / rớt con. Push 1 listing (từ modal) vẫn 1 call.
+  const PUSH_CHUNK = 6;
   const pushListing = async (ids: string[], closeAfter = false) => {
     if (!ids.length) return;
     if (!cfg.configured) { flash("✗ SP-API not configured — Stores → Amazon store → Amazon SP-API section"); return; }
-    setBusy(true); setProg("Pushing to Amazon…");
+    setBusy(true);
+    let updated = 0, created = 0; const skipped: string[] = []; const issues: string[] = []; let failed = "";
     try {
-      const j = await postJSON("/api/amazon-products/push-listing", { ids, storeId: storeSel || undefined });
-      if (j.ok) {
-        flash("✓ " + (j.summary ?? "Updated") + (j.skipped?.length ? ` — ${j.skipped[0]}` : ""));
+      for (let i = 0; i < ids.length; i += PUSH_CHUNK) {
+        const chunk = ids.slice(i, i + PUSH_CHUNK);
+        setProg(ids.length > PUSH_CHUNK ? `Pushing ${i + 1}–${Math.min(i + PUSH_CHUNK, ids.length)} of ${ids.length}…` : "Pushing to Amazon…");
+        const j = await postJSON("/api/amazon-products/push-listing", { ids: chunk, storeId: storeSel || undefined });
+        if (j.ok) { updated += j.updated ?? 0; created += j.created ?? 0; if (Array.isArray(j.skipped)) skipped.push(...j.skipped); if (Array.isArray(j.issues)) issues.push(...j.issues); }
+        else { failed = j.error ?? "Push failed"; break; }
+      }
+      if (failed) flash("✗ " + failed);
+      else {
+        flash(`✓ Updated ${updated} · created ${created} SKU(s)${skipped.length ? ` · ${skipped.length} skipped` : ""}${issues.length ? ` · ${issues[0]}` : ""}`);
         if (closeAfter) setEdit(null);
-        load();
-      } else flash("✗ " + (j.error ?? "Push failed"));
+      }
+      load();
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e)); }
     setProg(""); setBusy(false);
   };
