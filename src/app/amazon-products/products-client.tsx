@@ -16,6 +16,7 @@ type Row = {
   id: string; shopifyProductId: string | null;
   title: string | null; bullets: string[] | null; description: string | null;
   aiAt: string | null; status: string; asin: string | null; exportedAt: string | null;
+  skuAsins?: Record<string, string> | null; // v349 · map {sku: asin} parent+con để click mở link
   amazonTemplateId: string | null;
   // v313 · override giá/variant riêng listing (null = dùng variations của template)
   variations: Variation[] | null;
@@ -574,12 +575,19 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
                   {(() => {
                     if (!r.skuRoot) return <span style={{ color: "#B42318" }}>no SKU</span>;
                     const s = amzSkus(r);
-                    const copyAll = [s.parent, ...s.children.map((c) => c.sku)].join("\n");
+                    // v349 · asin theo từng SKU (Sync kéo về). Có asin → SKU thành link mở /dp; không có → fallback parent asin.
+                    const asinOf = (sku: string) => r.skuAsins?.[sku] || (sku === s.parent ? r.asin : null) || r.asin;
+                    const skuLink = (sku: string, label: string, bold: boolean) => {
+                      const a = asinOf(sku);
+                      return a
+                        ? <a key={sku} href={`https://www.amazon.com/dp/${a}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} title={`Open ${sku} on Amazon (${a})`} style={{ color: bold ? "#1D4ED8" : "#8794A5", fontWeight: bold ? 700 : 400, textDecoration: "none" }}>{sku}</a>
+                        : <span key={sku} style={{ color: bold ? "#1F2733" : "#8794A5", fontWeight: bold ? 700 : 400 }}>{sku}</span>;
+                    };
                     return (
-                      <div title="Click to copy all Amazon SKUs" onClick={() => navigator.clipboard?.writeText(copyAll)} style={{ cursor: "pointer", fontFamily: "monospace", lineHeight: 1.5 }}>
-                        <div style={{ color: "#8794A5" }}>{s.parent}</div>
+                      <div style={{ fontFamily: "monospace", lineHeight: 1.5 }}>
+                        <div>{skuLink(s.parent, s.parent, false)}</div>
                         {s.children.map((c) => (
-                          <div key={c.sku}><b style={{ color: "#1F2733" }}>{c.sku}</b> <span style={{ color: "#9ca3af", fontFamily: "inherit" }}>{c.label}</span></div>
+                          <div key={c.sku}>{skuLink(c.sku, c.sku, true)} <span style={{ color: "#9ca3af", fontFamily: "inherit" }}>{c.label}</span>{r.skuAsins?.[c.sku] && <span style={{ color: "#c8ccd2", fontSize: 9.5, marginLeft: 4 }}>{r.skuAsins[c.sku]}</span>}</div>
                         ))}
                       </div>
                     );

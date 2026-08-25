@@ -217,7 +217,11 @@ export async function POST(req: NextRequest) {
       if (existsOnAmazon) {
         // ── UPDATE (PATCH) ──
         try {
-          const rr = await patchListingItem(cfg!, `${root}-PARENT-AMZ`, pt, [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch]);
+          // v350 · cập nhật ảnh (main + phụ) trên cả parent
+          const parentPatch: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch];
+          if (imgs[0]) parentPatch.push({ op: "replace", path: "/attributes/main_product_image_locator", value: imageVal(imgs[0]) });
+          imgs.slice(1, 9).forEach((u, i) => parentPatch.push({ op: "replace", path: `/attributes/other_product_image_locator_${i + 1}`, value: imageVal(u) }));
+          const rr = await patchListingItem(cfg!, `${root}-PARENT-AMZ`, pt, parentPatch);
           if (ok(rr)) updated++;
         } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
         await sleep(300);
@@ -237,6 +241,8 @@ export async function POST(req: NextRequest) {
           const price = Number(v.price);
           const cp: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk) }, ...commonPatch];
           if (imgs[0]) cp.push({ op: "replace", path: "/attributes/main_product_image_locator", value: imageVal(imgs[0]) });
+          // v350 · cập nhật CẢ ảnh phụ (gallery) khi push lại, không chỉ main
+          imgs.slice(1, 9).forEach((u, i) => cp.push({ op: "replace", path: `/attributes/other_product_image_locator_${i + 1}`, value: imageVal(u) }));
           // Đảm bảo offer đầy đủ (condition + tồn kho) để gỡ "Missing offer"
           cp.push({ op: "replace", path: "/attributes/condition_type", value: [{ value: "new_new", marketplace_id: mk }] });
           cp.push({ op: "replace", path: "/attributes/fulfillment_availability", value: fulfillVal(ship.handling) });

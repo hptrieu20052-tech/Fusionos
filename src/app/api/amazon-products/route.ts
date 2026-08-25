@@ -86,6 +86,7 @@ export async function GET() {
       shopifyProductId: r.a.shopifyProductId,
       title: r.a.title, bullets: (r.a.bullets as string[] | null) ?? null, description: r.a.description,
       aiAt: r.a.aiAt, status: r.a.status, asin: r.a.asin, exportedAt: r.a.exportedAt,
+      skuAsins: (r.a.skuAsins && typeof r.a.skuAsins === "object" ? r.a.skuAsins : null) as Record<string, string> | null,
       amazonTemplateId: r.a.amazonTemplateId,
       variations: (Array.isArray(r.a.variations) ? r.a.variations : null) as { suffix: string; label: string; price: string }[] | null,
       // v315 · product import thẳng từ Amazon (không có nguồn Shopify) → fallback về field manual/title

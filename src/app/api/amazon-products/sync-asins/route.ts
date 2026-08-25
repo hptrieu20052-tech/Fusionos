@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
-import { getSpConfig, spConfigured, getListing, sleep, touchSpSync } from "@/lib/amazon-sp-api";
+import { getSpConfig, spConfigured, getListing, getListingData, sleep, touchSpSync } from "@/lib/amazon-sp-api";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -80,6 +80,19 @@ export async function POST(req: NextRequest) {
         .set({ asin: info.asin, status, updatedAt: new Date() })
         .where(eq(schema.amazonProducts.id, r.id));
       updated++;
+
+      // v349 · Kéo ASIN TỪNG size con → map {sku: asin} để UI click mở link. Best-effort (nếu chưa chạy migration thì bỏ qua).
+      const skuAsins: Record<string, string> = { [`${root}-PARENT-AMZ`]: info.asin };
+      const pdata = await getListingData(cfg!, `${root}-PARENT-AMZ`, "relationships").catch(() => null);
+      await sleep(200);
+      const childSkus = ((pdata?.relationships as { childSkus?: string[] }[] | undefined) ?? []).flatMap((x) => x?.childSkus ?? []);
+      for (const cs of childSkus.slice(0, 12)) {
+        if (Date.now() > deadline) break;
+        const ci = await getListing(cfg!, cs).catch(() => null);
+        if (ci?.asin) skuAsins[cs] = ci.asin;
+        await sleep(200);
+      }
+      await db.update(schema.amazonProducts).set({ skuAsins }).where(eq(schema.amazonProducts.id, r.id)).catch(() => {}); // bỏ qua nếu cột chưa có
     } catch (e) {
       if (errors.length < 3) errors.push(String((e as Error)?.message ?? e).slice(0, 160));
     }

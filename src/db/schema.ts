@@ -376,7 +376,9 @@ export const amazonProducts = pgTable("amazon_products", {
   manualSku: text("manual_sku"),
   manualType: text("manual_type"),
   status: text("status").notNull().default("DRAFT"),      // DRAFT → EXPORTED → LIVE
-  asin: text("asin"),                                     // điền khi listing đã lên Amazon
+  asin: text("asin"),                                     // ASIN parent — điền khi listing đã lên Amazon
+  // v349 · map {sku: asin} cho parent + TỪNG size con (Sync kéo về) → UI click SKU mở link Amazon. Cần MIGRATION_v349.
+  skuAsins: jsonb("sku_asins"),
   exportedAt: timestamp("exported_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
