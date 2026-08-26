@@ -225,6 +225,10 @@ export async function POST(req: NextRequest) {
           if (ok(rr)) updated++;
         } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); }
         await sleep(300);
+        // v352 · đọc danh sách con ĐANG trong family để phát hiện con MỒ CÔI (tồn tại nhưng không thuộc family).
+        const famData = await getListingData(cfg!, `${root}-PARENT-AMZ`, "relationships").catch(() => null);
+        const familyChildSkus = new Set(((famData?.relationships as { childSkus?: string[] }[] | undefined) ?? []).flatMap((x) => x?.childSkus ?? []));
+        await sleep(200);
         for (const v of vars) {
           if (Date.now() > deadline) break;
           const childSku = `${root}-${v.suffix}`;
@@ -235,6 +239,13 @@ export async function POST(req: NextRequest) {
             const ca = buildChildAttrs(ref2.child, v, `${root}-PARENT-AMZ`);
             if (ca) { try { const rr = await putListingItem(cfg!, childSku, pt, ca); if (ok(rr)) created++; } catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 140)); } }
             else skipped.push(`${childSku}: missing on Amazon, no reference to recreate`);
+            await sleep(400);
+            continue;
+          }
+          // v352 · Con TỒN TẠI nhưng KHÔNG nằm trong family (mồ côi) → xóa để lần Push kế tạo lại vào family.
+          if (familyChildSkus.size && !familyChildSkus.has(childSku)) {
+            await deleteListingItem(cfg!, childSku).catch(() => {});
+            skipped.push(`${childSku}: orphaned (standalone) → deleted. Push again in ~5 min to rebuild it into the family.`);
             await sleep(400);
             continue;
           }
@@ -284,19 +295,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // ── Tạo CON cho các family mới: chờ 1 lần cho mọi parent đăng ký rồi PUT toàn bộ con (không race) ──
+    // ── Tạo CON cho family mới: chờ parent đăng ký, rồi tạo THEO VÒNG size (tất cả size#1 của mọi listing →
+    //    chờ 5s → size#2 …) để 2 con CÙNG listing cách nhau nhiều giây → Amazon kịp dựng family, con thứ 2
+    //    KHÔNG bị mồ côi (race sibling). ──
     if (pendingChildren.length) {
-      const waitMs = Math.min(12000, Math.max(0, deadline - Date.now() - 8000));
+      const waitMs = Math.min(12000, Math.max(0, deadline - Date.now() - 10000));
       if (waitMs > 0) await sleep(waitMs);
-      for (const pc of pendingChildren) {
-        if (Date.now() > deadline) { skipped.push("timed out creating children — Push again to finish the remaining family"); break; }
-        for (const v of pc.vars) {
+      const maxVars = Math.max(1, ...pendingChildren.map((pc) => pc.vars.length));
+      for (let vi = 0; vi < maxVars; vi++) {
+        if (Date.now() > deadline) { skipped.push("timed out creating children — Push again to finish the remaining size"); break; }
+        if (vi > 0) await sleep(5000); // để vòng trước kịp vào family trước khi thêm sibling
+        for (const pc of pendingChildren) {
           if (Date.now() > deadline) break;
+          const v = pc.vars[vi];
+          if (!v) continue;
           const ca = pc.build(pc.refChild, v, pc.parentSku);
           if (!ca) continue;
           try { const rr = await putListingItem(cfg!, `${pc.root}-${v.suffix}`, pc.pt, ca); if (ok(rr)) created++; }
           catch (e) { if (issues.length < 8) issues.push(String((e as Error)?.message ?? e).slice(0, 160)); }
-          await sleep(350);
+          await sleep(300);
         }
       }
     }

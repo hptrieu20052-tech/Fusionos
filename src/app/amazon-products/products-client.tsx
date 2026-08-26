@@ -69,6 +69,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const [fStatus, setFStatus] = useState(""); // v310 · lọc theo trạng thái Amazon
   const [fTpl, setFTpl] = useState("");       // v310 · lọc theo template
   const [fAi, setFAi] = useState("");         // v310 · lọc theo tình trạng AI copy (ready/todo)
+  const [fBad, setFBad] = useState(false);    // v352 · lọc listing family THIẾU con (mồ côi) để repush nhanh
   const [amzStores, setAmzStores] = useState<{ id: string; name: string }[]>([]); // v308 · các store Amazon (SP-API account)
   const [storeSel, setStoreSel] = useState(""); // v308 · store Amazon đang chọn cho Sync/SP-API
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -197,6 +198,14 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       children: r.skuRoot ? vars.filter((v) => v.suffix).map((v) => ({ sku: `${r.skuRoot}-${v.suffix}`, label: v.label || v.suffix })) : [],
     };
   };
+  // v352 · Family THIẾU con: đã có ASIN (đã lên Amazon) + đã Sync (có skuAsins) nhưng số con trong family < số size → mồ côi/chưa đủ.
+  const isIncomplete = (r: Row): boolean => {
+    if (!r.asin || !r.skuAsins) return false; // chưa lên hoặc chưa sync → không kết luận được
+    const expected = amzSkus(r).children.length;
+    if (!expected) return false;
+    const got = Object.keys(r.skuAsins).filter((k) => !/-PARENT-AMZ$/i.test(k)).length;
+    return got < expected;
+  };
 
   const flash = (m: string) => { setNote(m); setTimeout(() => setNote(""), 6000); };
 
@@ -217,8 +226,9 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const typeOpts = useMemo(() => Array.from(new Set(rows.map((r) => r.productType).filter(Boolean))) as string[], [rows]);
   const statusOpts = useMemo(() => Array.from(new Set(rows.map((r) => r.status).filter(Boolean))) as string[], [rows]);
   const tplOpts = useMemo(() => Array.from(new Set(rows.map((r) => tplFor(r)?.name).filter(Boolean))) as string[], [rows, tpls]); // eslint-disable-line react-hooks/exhaustive-deps
-  const anyFilter = !!(q || fStore || fType || fStatus || fTpl || fAi);
-  const clearFilters = () => { setQ(""); setFStore(""); setFType(""); setFStatus(""); setFTpl(""); setFAi(""); };
+  const anyFilter = !!(q || fStore || fType || fStatus || fTpl || fAi || fBad);
+  const clearFilters = () => { setQ(""); setFStore(""); setFType(""); setFStatus(""); setFTpl(""); setFAi(""); setFBad(false); };
+  const badCount = useMemo(() => rows.filter(isIncomplete).length, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -229,16 +239,17 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
       if (fTpl && tplFor(r)?.name !== fTpl) return false;
       if (fAi === "ready" && !readyOk(r)) return false;
       if (fAi === "todo" && readyOk(r)) return false;
+      if (fBad && !isIncomplete(r)) return false;
       if (s && !(r.sourceTitle + " " + (r.title ?? "") + " " + r.skuRoot + " " + r.productType).toLowerCase().includes(s)) return false;
       return true;
     });
-  }, [rows, q, fStore, fType, fStatus, fTpl, fAi]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rows, q, fStore, fType, fStatus, fTpl, fAi, fBad]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // v318 · phân trang (mặc định 20/trang) như Shopify
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageC = Math.min(page, totalPages);
   const paged = filtered.slice((pageC - 1) * pageSize, pageC * pageSize);
-  useEffect(() => { setPage(1); }, [q, fStore, fType, fStatus, fTpl, fAi, pageSize]);
+  useEffect(() => { setPage(1); }, [q, fStore, fType, fStatus, fTpl, fAi, fBad, pageSize]);
 
   const toggleAll = () => setSel((p) => p.size === filtered.length ? new Set() : new Set(filtered.map((r) => r.id)));
   const toggle = (id: string) => setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
@@ -478,6 +489,9 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
             <option value="ready">Copy ready</option>
             <option value="todo">No copy yet</option>
           </select>
+          {badCount > 0 && (
+            <button onClick={() => setFBad((v) => !v)} title="Listings whose Amazon family is missing a size (orphaned) — select and Push to fix. Run Sync first to detect." style={{ ...pill(fBad ? "#B42318" : "#FDECEA", fBad ? "#fff" : "#B42318"), border: "1px solid #F3C9C9", padding: "8px 12px", fontSize: 12.5, whiteSpace: "nowrap" }}>⚠ Needs fix ({badCount})</button>
+          )}
           {anyFilter && <button onClick={clearFilters} title="Clear all filters" style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 700, color: "#1D4ED8", padding: "0 4px" }}>Clear filters</button>}
         </div>
 
