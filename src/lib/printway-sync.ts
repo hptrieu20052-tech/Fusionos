@@ -34,6 +34,7 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
       id: schema.fulfillmentOrders.id, orderId: schema.fulfillmentOrders.orderId,
       externalFfId: schema.fulfillmentOrders.externalFfId, status: schema.fulfillmentOrders.status,
       tracking: schema.fulfillmentOrders.trackingNumber, cost: schema.fulfillmentOrders.cost,
+      pushedAt: schema.fulfillmentOrders.pushedAt,
     }).from(schema.fulfillmentOrders).where(and(
       eq(schema.fulfillmentOrders.fulfillerId, ff.id),
       notInArray(schema.fulfillmentOrders.status, ["delivered", "cancelled", "error"] as never),
@@ -80,10 +81,17 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
     // TRACKING qua /order/detail (backup của backup): /transaction/order-list có thể KHÔNG kèm
     // trackings[]. Printway (schema 2026) gán tracking ngay khi IN, nằm trong trackings[] của
     // /order/detail. Với đơn còn mở mà FUSION chưa có tracking → gọi detail rồi bóc. Cap 25/lần.
+    // v357 · BỎ giới hạn cứng 25 (gây "đói" đơn mới khi tồn nhiều đơn chưa tracking → đơn cũ chiếm 25 chỗ đầu,
+    // đơn mới không bao giờ tới lượt). Quét TẤT CẢ đơn còn mở chưa tracking, ƯU TIÊN MỚI NHẤT (pushedAt desc),
+    // dừng khi gần hết thời gian (route maxDuration 60s) + nghỉ 70ms/call cho an toàn rate limit (50 req/3s).
     const noTrack = open
       .filter((x) => !x.tracking && !gotTracking.has(x.id) && x.externalFfId && !x.externalFfId.startsWith("SIM-"))
-      .slice(0, 25);
-    for (const x of noTrack) {
+      .sort((a, b) => (b.pushedAt?.getTime() ?? 0) - (a.pushedAt?.getTime() ?? 0));
+    const trackDeadline = Date.now() + 30_000; // chừa thời gian cho vòng cost + budget cron (maxDuration 60s)
+    let trackLeft = 0;
+    for (let ti = 0; ti < noTrack.length; ti++) {
+      const x = noTrack[ti];
+      if (Date.now() > trackDeadline) { trackLeft = noTrack.length - ti; break; }
       try {
         const ffId = x.externalFfId as string;
         const pwId = /^PW/i.test(ffId) ? ffId : undefined;
@@ -107,7 +115,9 @@ export async function syncPrintway(opts: { force?: boolean } = {}) {
       } catch (e) {
         errors.push(`${ff.name} track ${x.externalFfId}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
       }
+      await new Promise((r) => setTimeout(r, 70)); // an toàn rate limit Printway (50 req/3s)
     }
+    if (trackLeft > 0) errors.push(`${ff.name}: còn ${trackLeft} đơn chưa quét tracking (hết thời gian) — bấm Sync now lần nữa để tiếp tục`);
 
     // GIÁ THẬT: webhook/list của Printway không mang tiền → gọi /order/detail cho các đơn còn $0.
     // Giá chỉ chốt sau khi đơn được PAID bên Printway, nên phải quét lại (không chỉ lúc đẩy).
