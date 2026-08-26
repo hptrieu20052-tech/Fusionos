@@ -176,17 +176,36 @@ export async function POST(req: NextRequest) {
 
       const otherImgs: Attrs = {};
       imgs.slice(1, 9).forEach((u, i) => { otherImgs[`other_product_image_locator_${i + 1}`] = imageVal(u); });
+      // v354 · size_name DUY NHẤT trong family (chống mã 8801 — Amazon loại child thứ 2 nếu trùng size_name
+      // với child đã gắn parent). Nếu label bị trùng/để trống giống nhau thì tự thêm hậu tố suffix. Y như bên flat file.
+      const sizeNameMap = new Map<string, string>();
+      {
+        const used = new Set<string>();
+        for (const v of vars) {
+          let s = String(v.label || v.suffix || "").trim().slice(0, 50) || String(v.suffix);
+          if (used.has(s.toLowerCase())) {
+            s = `${s} (${v.suffix})`.slice(0, 50);
+            let n = 2;
+            while (used.has(s.toLowerCase())) { s = `${String(v.label || v.suffix)} (${v.suffix}-${n})`.slice(0, 50); n++; }
+          }
+          used.add(s.toLowerCase());
+          sizeNameMap.set(v.suffix, s);
+        }
+      }
+      const sizeNameOf = (v: Variation) => sizeNameMap.get(v.suffix) ?? String(v.label || v.suffix);
+
       // v338 · Build attributes cho 1 CON (dùng chung cả create mới lẫn tạo-lại con thiếu ở update).
       const buildChildAttrs = (refChild: Attrs | null, v: Variation, parentSku: string): Attrs | null => {
         if (!refChild) return null;
         const price = Number(v.price);
+        const sizeName = sizeNameOf(v);
         const rel = JSON.parse(JSON.stringify(refChild.child_parent_sku_relationship ?? [{ marketplace_id: mk }]));
         if (Array.isArray(rel) && rel[0]) { rel[0].parent_sku = parentSku; rel[0].child_relationship_type = rel[0].child_relationship_type ?? "variation"; }
         return cloneAttrs(refChild, {
-          item_name: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk),
+          item_name: vText(`${title} (${sizeName})`.slice(0, 200), mk),
           product_description: vText(desc, mk),
           bullet_point: bulletsVal(bullets),
-          size_name: [{ value: v.label || v.suffix, marketplace_id: mk }],
+          size_name: [{ value: sizeName, marketplace_id: mk }],
           ...(imgs[0] ? { main_product_image_locator: imageVal(imgs[0]) } : {}),
           child_parent_sku_relationship: rel,
           condition_type: [{ value: "new_new", marketplace_id: mk }],
@@ -250,7 +269,10 @@ export async function POST(req: NextRequest) {
             continue;
           }
           const price = Number(v.price);
-          const cp: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(`${title} (${v.label || v.suffix})`.slice(0, 200), mk) }, ...commonPatch];
+          const sizeName = sizeNameOf(v);
+          const cp: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(`${title} (${sizeName})`.slice(0, 200), mk) }, ...commonPatch];
+          // v354 · patch cả size_name về giá trị duy nhất → lần push sau tự sửa child đang bị trùng (mã 8801).
+          cp.push({ op: "replace", path: "/attributes/size_name", value: [{ value: sizeName, marketplace_id: mk }] });
           if (imgs[0]) cp.push({ op: "replace", path: "/attributes/main_product_image_locator", value: imageVal(imgs[0]) });
           // v350 · cập nhật CẢ ảnh phụ (gallery) khi push lại, không chỉ main
           imgs.slice(1, 9).forEach((u, i) => cp.push({ op: "replace", path: `/attributes/other_product_image_locator_${i + 1}`, value: imageVal(u) }));

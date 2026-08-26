@@ -134,16 +134,32 @@ export async function buildListingFlatFile(session: Session, idsRaw: unknown): P
     set(p, "main_image_url", imgs[0] ?? "");
     dataRows.push(p);
 
+    // v354 · Chống trùng size_name (mã 8801): Amazon LOẠI child thứ 2 nếu nó có cùng size_name với
+    // child đã gắn vào parent. Ép mỗi size một size_name DUY NHẤT & không rỗng trong nội bộ family này
+    // — nếu label bị trùng/để trống giống nhau thì tự thêm hậu tố suffix để phân biệt.
+    const usedSizeNames = new Set<string>();
+    const uniqSizeName = (v: Variation) => {
+      let s = String(v.label || v.suffix || "").trim().slice(0, 50) || String(v.suffix);
+      if (usedSizeNames.has(s.toLowerCase())) {
+        s = `${s} (${v.suffix})`.slice(0, 50);
+        let n = 2;
+        while (usedSizeNames.has(s.toLowerCase())) { s = `${String(v.label || v.suffix)} (${v.suffix}-${n})`.slice(0, 50); n++; }
+      }
+      usedSizeNames.add(s.toLowerCase());
+      return s;
+    };
+
     for (const v of vars) {
       const c = mk();
       common(c);
+      const sizeName = uniqSizeName(v);
       set(c, "item_sku", `${root}-${v.suffix}`);
-      set(c, "item_name", `${title} (${v.label || v.suffix})`.slice(0, 200));
+      set(c, "item_name", `${title} (${sizeName})`.slice(0, 200));
       set(c, "parent_child", "Child");
       set(c, "parent_sku", parentSku);
       set(c, "relationship_type", "Variation");
       set(c, "variation_theme", "SizeName");
-      set(c, "size_name", v.label || v.suffix);
+      set(c, "size_name", sizeName);
       set(c, "number_of_items", cst.numberOfItems || "1");
       set(c, "condition_type", "New");
       set(c, "fulfillment_availability#1.fulfillment_channel_code", "DEFAULT");
