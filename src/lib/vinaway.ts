@@ -263,7 +263,7 @@ export async function getVinawayOrder(cred: VinawayCred, id: string): Promise<Re
 
 /** Bóc chi phí + tracking từ detail. Field không có doc → dò MỀM nhiều tên (kể cả object pricing lồng). */
 export function extractVinawayOrder(raw: unknown): {
-  status?: string; trackingNumber?: string; carrier?: string;
+  status?: string; trackingNumber?: string; carrier?: string; trackingUrl?: string;
   base?: number; ship?: number; tax?: number; designFee?: number; surcharge?: number; discount?: number; total?: number;
 } {
   const j = (raw ?? {}) as Record<string, unknown>;
@@ -275,13 +275,15 @@ export function extractVinawayOrder(raw: unknown): {
     ...((root.price_details as Record<string, unknown>) ?? {}),
     ...((root.amounts as Record<string, unknown>) ?? {}),
   };
-  const track = ((o.tracking ?? o.shipment ?? {}) as Record<string, unknown>);
+  // v356 · tracking Vinaway nằm trong object "shipment_order" (tracking_number / tracking_carrier / tracking_link).
+  const track = ((o.tracking ?? o.shipment ?? o.shipment_order ?? {}) as Record<string, unknown>);
   const base = firstNum(o.subtotal, o.sub_total, o.amount_subtotal, o.subtotal_amount, o.items_total);
   const ship = firstNum(o.shipping, o.shipping_fee, o.amount_shipping, o.ship_fee, o.shipping_amount, o.shipping_cost);
-  const tax = firstNum(o.tax, o.tax_amount, o.tax_fee);
-  const designFee = firstNum(o.design_fee, o.designFee, o.amount_design_fee, o.design_cost, o.design_fee_amount);
-  const surcharge = firstNum(o.surcharge, o.surcharge_amount, o.extra_fee);
-  const discount = firstNum(o.discount, o.discount_amount);
+  const tax = firstNum(o.tax, o.tax_amount, o.tax_fee, o.amount_tax);
+  // Vinaway đặt tên phí theo "amount_*": design fee = amount_design (đã dính: portal $1.12 → API 112 cent).
+  const designFee = firstNum(o.design_fee, o.designFee, o.amount_design_fee, o.design_cost, o.design_fee_amount, o.amount_design);
+  const surcharge = firstNum(o.surcharge, o.surcharge_amount, o.extra_fee, o.amount_surcharge);
+  const discount = firstNum(o.discount, o.discount_amount, o.amount_discount);
   const total = firstNum(o.actual_total, o.amount_total, o.total_amount, o.grand_total, o.total, o.estimate_total);
   // BẪY ĐƠN VỊ (đã dính thật): API Vinaway trả tiền theo CENT — portal $15.18 → API 1518 → card từng hiện
   // Base $750 / Total $1518. Nhận diện: MỌI số tiền đều là SỐ NGUYÊN → chia 100; có số lẻ → là dollar, giữ nguyên.

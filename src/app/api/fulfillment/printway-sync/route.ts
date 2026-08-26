@@ -6,7 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
-import { getPrintwayOrderDetail, extractPwCost } from "@/lib/printway-api";
+import { getPrintwayOrderDetail, extractPwCost, extractPwTracking } from "@/lib/printway-api";
 import { pwCredOf } from "@/lib/printway-cost";
 
 export const dynamic = "force-dynamic";
@@ -64,6 +64,7 @@ export async function GET(req: NextRequest) {
     ok: true,
     sentAs: { pw_order_id: pwOrderId ?? null, order_name: orderName ?? null },
     parsed: extractPwCost(detail as Record<string, unknown>),
+    tracking: extractPwTracking(detail as Record<string, unknown>), // v356 · để soi tracking bóc được đúng chưa
     detail,
   });
 }

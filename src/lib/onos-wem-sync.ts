@@ -395,7 +395,7 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             if ((v.surcharge ?? 0) > 0) vFees.surcharge = v.surcharge!;
             if ((v.discount ?? 0) > 0) vFees.discount = -v.discount!; // giảm giá = số ÂM trong fees
             if (await applyUpdate(ffo, {
-              status, trackingNumber: v.trackingNumber, carrier: v.carrier,
+              status, trackingNumber: v.trackingNumber, carrier: v.carrier, trackingUrl: v.trackingUrl,
               cost: (v.total ?? 0) > 0 ? { base: v.base, ship: v.ship, tax: v.tax, fees: Object.keys(vFees).length ? vFees : undefined, total: v.total! } : undefined,
             })) updated++;
           } else if (kind === "lenful") {
