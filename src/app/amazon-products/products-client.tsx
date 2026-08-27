@@ -251,7 +251,10 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
   const paged = filtered.slice((pageC - 1) * pageSize, pageC * pageSize);
   useEffect(() => { setPage(1); }, [q, fStore, fType, fStatus, fTpl, fAi, fBad, pageSize]);
 
-  const toggleAll = () => setSel((p) => p.size === filtered.length ? new Set() : new Set(filtered.map((r) => r.id)));
+  const toggleAll = () => setSel((p) => p.size === filtered.length ? new Set() : new Set(filtered.map((r) => r.id))); // nút chữ: chọn/bỏ TẤT CẢ trang
+  // v358 · checkbox ĐẦU BẢNG chỉ chọn/bỏ các dòng của TRANG hiện tại (như Etsy/Shopify), không phải toàn bộ filtered.
+  const pagedAllSel = paged.length > 0 && paged.every((r) => sel.has(r.id));
+  const togglePage = () => setSel((p) => { const n = new Set(p); if (pagedAllSel) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); return n; });
   const toggle = (id: string) => setSel((p) => { const n = new Set(p); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   // AI theo LÔ 6 — client tự chia, hiện tiến độ, gom con fail.
@@ -536,7 +539,7 @@ export default function AmazonProductsClient({ canEdit }: { canEdit: boolean }) 
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ borderBottom: "1px solid var(--line)", textAlign: "left", color: "var(--muted)", fontSize: 11.5 }}>
-              <th style={{ padding: 10 }}><input type="checkbox" checked={!!filtered.length && sel.size === filtered.length} onChange={toggleAll} /></th>
+              <th style={{ padding: 10 }}><input type="checkbox" title="Chọn/bỏ các dòng của TRANG này" checked={pagedAllSel} onChange={togglePage} /></th>
               <th style={{ padding: 10 }}>IMAGE</th>
               <th style={{ padding: 10 }}>TITLE</th>
               <th style={{ padding: 10 }}>STORE / SELLER</th>
