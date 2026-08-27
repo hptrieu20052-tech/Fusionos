@@ -31,6 +31,7 @@ type Cfg = {
   skuSuffixes: string[]; sheetName: string;
   variations?: Variation[]; constants?: Record<string, string>;
   masterXlsxB64?: string;
+  aiBrief?: string; // v359 · mô tả "sự thật sản phẩm" đưa vào prompt AI làm ngữ cảnh có thẩm quyền
 };
 
 // Hằng số listing mặc định khi tạo template mới (sửa được trong UI).
@@ -73,6 +74,7 @@ export async function GET(req: NextRequest) {
         variations: cfg.variations ?? DEFAULT_VARIATIONS,
         constants: cfg.constants ?? DEFAULT_CONSTANTS,
         cols, skuCol: cfg.skuCol ?? 0, previewImageCol: cfg.previewImageCol ?? -1,
+        aiBrief: cfg.aiBrief ?? "",
       },
     });
   }
@@ -168,6 +170,8 @@ export async function PATCH(req: NextRequest) {
     }
     cfg = { ...cfg, constants: cst }; cfgTouched = true;
   }
+  // v359 · AI product brief — mô tả sản phẩm để AI viết đúng loại (không đoán sai từ tag Shopify).
+  if (typeof b?.aiBrief === "string") { cfg = { ...cfg, aiBrief: b.aiBrief.trim().slice(0, 2000) }; cfgTouched = true; }
   // v291 · Update master file: re-upload .xlsx generate lại từ Seller Central → thay toàn bộ
   // phần customization (headerRows + defaults + vị trí cột), GIỮ variations/constants/tên.
   if (typeof b?.xlsxBase64 === "string" && b.xlsxBase64) {

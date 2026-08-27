@@ -16,7 +16,7 @@ import { AmazonLogo } from "@/components/amazon-logo";
 type Variation = { suffix: string; label: string; price: string };
 type Tpl = { id: string; name: string; productType: string | null; fields: number; cols: number; skuSuffixes: string[]; variations: Variation[]; constants: Record<string, string>; thumbUrl: string | null; updatedAt: string | null };
 type Col = { i: number; key: string; label: string; h1: string; value: string };
-type Detail = { id: string; name: string; productType: string | null; variations: Variation[]; constants: Record<string, string>; cols: Col[]; skuCol: number; previewImageCol: number };
+type Detail = { id: string; name: string; productType: string | null; variations: Variation[]; constants: Record<string, string>; cols: Col[]; skuCol: number; previewImageCol: number; aiBrief: string };
 
 // ── Gom cột theo FIELD (dựa dòng header 1 của file Amazon) ────────────────────
 // "Surface 1:" / "Option Dropdown 2:" / "Data (Text...) 1:" / "Image 1:" = MỞ field mới;
@@ -134,7 +134,7 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
     try {
       const j = await fetch("/api/amazon-templates", {
         method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: edit.id, name: edit.name, productType: edit.productType ?? "", variations: edit.variations, constants: edit.constants }),
+        body: JSON.stringify({ id: edit.id, name: edit.name, productType: edit.productType ?? "", variations: edit.variations, constants: edit.constants, aiBrief: edit.aiBrief ?? "" }),
       }).then((r) => r.json());
       if (j.ok) { flash("✓ Template saved"); setEdit(null); load(); }
       else flash("✗ " + (j.error ?? "Save failed"));
@@ -290,6 +290,13 @@ export default function AmazonTemplatesClient({ canEdit }: { canEdit: boolean })
               </table>
             </div>
             <button onClick={() => setEdit({ ...edit, variations: [...edit.variations, { suffix: "", label: "", price: "" }] })} style={{ ...ghostGray, padding: "7px 14px", fontSize: 12.5, marginBottom: 18 }}>+ Add variation</button>
+
+            {/* v359 · AI product brief — mô tả sản phẩm cho AI viết đúng loại */}
+            <label style={lab}>AI product brief — what this product actually IS (guides the AI so it doesn&apos;t guess from Shopify tags)</label>
+            <textarea value={edit.aiBrief ?? ""} onChange={(e) => setEdit({ ...edit, aiBrief: e.target.value })} rows={6}
+              placeholder={"e.g. A finished PERSONALIZED ILLUSTRATED STORYBOOK to be READ. NOT a blank photo album, NOT a coloring/activity book, NOT a toy. Hardcover, 24+ full-color illustrated pages, premium 100lb paper. Sizes 8x8 and 11x8.5 (never in the title). Emphasize the story, the child as the hero, the name on the cover, keepsake quality."}
+              style={{ ...ctl, width: "100%", resize: "vertical", fontSize: 12.5, lineHeight: 1.5, marginBottom: 4 }} />
+            <div style={{ fontSize: 10.5, color: "var(--muted)", marginBottom: 18 }}>Áp cho MỌI listing dùng template này. AI coi đây là sự thật sản phẩm, ưu tiên hơn tag Shopify — giảm sai loại &amp; bị Amazon đổi sang BLANK_BOOK.</div>
 
             {/* Listing constants */}
             <label style={lab}>Listing constants — filled into the Amazon flat file</label>

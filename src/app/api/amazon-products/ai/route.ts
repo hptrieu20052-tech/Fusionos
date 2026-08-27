@@ -48,6 +48,8 @@ AMAZON POLICY — applies to ALL fields, violations get the listing suppressed: 
 
 DO NOT SOUND LIKE A TOY — CRITICAL, applies to ALL fields (title, bullets, description). Amazon's system AUTO-classifies listings as a "children's toy" from the WORDING and REMOVES them, demanding ASTM F963-23 / CPSIA toy-safety compliance. This product is a printed HARDCOVER BOOK meant to be READ — never a toy to play with. NEVER frame it as a play, developmental, interactive, or sensory object, and never describe a baby physically playing with it. FORBIDDEN wording anywhere: "toy", "play", "playtime", "plaything", "point and explore", "babies point", "interactive", "developmental", "sensory", "educational toy", "learning toy", "first toy", "activity book", "grab / touch / hold / chew", "teether", "for babies to explore". INSTEAD always frame the child as a READER or listener of a story: use "read together", "read aloud", "illustrated storybook", "picture book", "keepsake story", "bedtime story", "story to treasure". You may still say it is for kids/children and name gentle occasions, but every field must read as a STORYBOOK / KEEPSAKE to read — not a plaything. Also avoid leaning on "baby / toddler / nursery / baby shower" as the main framing; prefer "child", "little one", "kids", "children".
 
+DO NOT SOUND LIKE A BLANK / ACTIVITY BOOK — CRITICAL, applies to ALL fields. Amazon's system AUTO-reclassifies listings that read like a blank fill-it-yourself book into the BLANK_BOOK product type, which then demands an ISBN and breaks the listing. This is a FINISHED, ready-made illustrated storybook with a pre-designed story and full-color illustrations — the ONLY thing the customer adds is the child's name (and an optional short dedication). NEVER describe it as, or imply, any of: a "photo book", "photo album", "blank book", "blank pages", "fill-in", "write-your-own", "upload your own photos", "coloring book", "color it in", "activity book", "workbook", "journal", "notebook", "sketchbook", "diary", "scrapbook", "portfolio", or "memorial book". The pages are already illustrated and printed — do not suggest the buyer fills, colors, or writes them. Always frame it as a pre-illustrated personalized storybook / picture book / keepsake to be read. (Unless the PRODUCT BRIEF explicitly says the item genuinely is a coloring or activity book, in which case follow the brief.)
+
 LENGTH RULE: every field must land inside its stated character range, spaces included. Check each before writing it out — add a real detail when short, cut the weakest words when long. Output the JSON object only.`;
 
 const clip = (s: string | null | undefined, n: number) => String(s ?? "").trim().slice(0, n);
@@ -104,6 +106,7 @@ export async function POST(req: NextRequest) {
     srcTitle: schema.shopifyProducts.title, srcTags: schema.shopifyProducts.tags,
     srcBody: schema.shopifyProducts.bodyHtml, srcType: schema.shopifyProducts.productType,
     srcImages: schema.shopifyProducts.images,
+    amazonTemplateId: schema.amazonProducts.amazonTemplateId, manualType: schema.amazonProducts.manualType,
     seller: schema.stores.sellerId,
   }).from(schema.amazonProducts)
     .leftJoin(schema.shopifyProducts, eq(schema.shopifyProducts.id, schema.amazonProducts.shopifyProductId))
@@ -112,11 +115,22 @@ export async function POST(req: NextRequest) {
   const scopeIds = await storeOwnerScopeIds(session);
   if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
+  // v359 · brief sản phẩm theo TEMPLATE (giống tplFor bên listing-file) → đưa vào prompt làm ngữ cảnh có thẩm quyền.
+  const tpls = await db.select().from(schema.amazonTemplates);
+  const briefFor = (amazonTemplateId: string | null, productType: string | null): string => {
+    let t = amazonTemplateId ? tpls.find((x) => x.id === amazonTemplateId) : undefined;
+    if (!t) { const pt = (productType ?? "").trim().toLowerCase(); if (pt) t = tpls.find((x) => (x.productType ?? "").trim().toLowerCase() === pt); }
+    if (!t && tpls.length === 1) t = tpls[0];
+    return String((t?.config as { aiBrief?: string } | undefined)?.aiBrief ?? "").trim();
+  };
+
   const results = await Promise.all(rows.map(async (r, idx): Promise<{ id: string; ok: boolean; title?: string; bullets?: string[]; description?: string; error?: string }> => {
     try {
       if (!r.srcTitle) throw new Error("listing Shopify nguồn không còn — gỡ bản ghi này và push lại");
       await sleep(idx * 400); // lệch pha tránh 429
+      const brief = briefFor(r.amazonTemplateId, r.srcType || r.manualType);
       const user = [
+        brief ? `PRODUCT BRIEF — AUTHORITATIVE. This describes what the product ACTUALLY is; follow it over the source listing wherever they conflict, and never contradict it:\n${clip(brief, 2000)}\n` : "",
         `SOURCE LISTING TITLE: ${clip(r.srcTitle, 300)}`,
         r.srcType ? `PRODUCT TYPE: ${clip(r.srcType, 100)}` : "",
         r.srcTags ? `TAGS: ${clip(r.srcTags, 400)}` : "",
