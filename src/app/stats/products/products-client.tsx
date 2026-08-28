@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ThumbZoom from "@/components/thumb-zoom";
 
 type Row = {
   listingKey: string; title: string; listingId: string | null; productUrl: string | null;
@@ -11,22 +12,18 @@ type StoreOpt = { id: string; name: string; sellerId: string | null; platform: s
 type SellerOpt = { id: string; name: string | null };
 
 const RANGES = [
-  { k: "30", label: "30 days" },
-  { k: "90", label: "90 days" },
-  { k: "365", label: "1 year" },
-  { k: "1096", label: "All time" },
+  { k: "30", label: "30 days" }, { k: "90", label: "90 days" }, { k: "365", label: "1 year" }, { k: "1096", label: "All time" },
 ];
 const SORTS = [
-  { k: "orders", label: "Most orders" },
-  { k: "qty", label: "Most units" },
-  { k: "revenue", label: "Top revenue" },
-  { k: "recent", label: "Recently sold" },
+  { k: "orders", label: "Most orders" }, { k: "qty", label: "Most units" }, { k: "revenue", label: "Top revenue" }, { k: "recent", label: "Recently sold" },
 ];
 const PLAT_COLOR: Record<string, string> = { etsy: "#F1641E", shopify: "#5E8E3E", amazon: "#FF9900", tiktok: "#010101", other: "#66788E" };
 const money = (n: number | null) => (n == null ? "" : "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString() : "—");
 
-const sel: React.CSSProperties = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13, background: "#fff" };
+const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
+const ctl: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "10px 13px", fontSize: 13.5, font: "inherit", background: "#fff", outline: "none" };
+const IcSearch = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="M21 21l-4-4" /></svg>;
 
 const PER_PAGE = 20;
 
@@ -43,10 +40,8 @@ export function ProductSalesClient({ stores = [], sellers = [], canPickSeller = 
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
-  const [zoom, setZoom] = useState<{ src: string; title: string } | null>(null);
   const seq = useRef(0);
 
-  // Store options narrow to the picked seller (like Finance).
   const storeOptions = useMemo(() => (seller ? stores.filter((s) => s.sellerId === seller) : stores), [stores, seller]);
 
   const load = useCallback(async () => {
@@ -69,32 +64,37 @@ export function ProductSalesClient({ stores = [], sellers = [], canPickSeller = 
   }, [q, days, sort, plat, seller, store, page]);
 
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
-  // Đổi bộ lọc → về trang 1.
   useEffect(() => { setPage(0); }, [q, days, sort, plat, seller, store]);
-  useEffect(() => {
-    if (!zoom) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setZoom(null); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [zoom]);
 
-  const thc: React.CSSProperties = { padding: "8px 8px", textAlign: "left" };
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
+  const th: React.CSSProperties = { padding: "12px 10px", textAlign: "left" };
+  const td: React.CSSProperties = { padding: "10px", borderTop: "1px solid var(--line)", verticalAlign: "middle" };
 
   return (
-    <div className="panel" style={{ padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>
-          Product Sales <span style={{ color: "var(--muted)", fontWeight: 500, fontSize: 13 }}>by listing</span>
-        </h2>
-        <span style={{ color: "var(--muted)", fontSize: 12.5 }}>· {total.toLocaleString()} listings with orders</span>
-        <div style={{ flex: 1 }} />
-        <select value={days} onChange={(e) => setDays(e.target.value)} style={sel}>
+    <div style={{ padding: "20px 22px 60px", maxWidth: 1280, margin: "0 auto" }}>
+      {/* HERO HEADER */}
+      <div style={{ ...card, padding: "18px 22px", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div style={{ width: 42, height: 42, borderRadius: 12, background: "#F5F7FB", border: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: "var(--blue)" }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="21" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.25" y="7" width="3.5" height="11" /><rect x="15.5" y="4" width="3.5" height="14" /></svg>
+          </div>
+          <h1 style={{ fontSize: 19, fontWeight: 800, margin: 0 }}>Product Sales · by Listing</h1>
+        </div>
+      </div>
+
+      {/* FILTER BAR */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ position: "relative", flex: 1, minWidth: 240, maxWidth: 440 }}>
+          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }}><IcSearch /></span>
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search listing / listing_id" style={{ ...ctl, width: "100%", paddingLeft: 34 }} />
+        </div>
+        <select value={days} onChange={(e) => setDays(e.target.value)} style={ctl}>
           {RANGES.map((r) => <option key={r.k} value={r.k}>{r.label}</option>)}
         </select>
-        <select value={sort} onChange={(e) => setSort(e.target.value)} style={sel}>
+        <select value={sort} onChange={(e) => setSort(e.target.value)} style={ctl}>
           {SORTS.map((s) => <option key={s.k} value={s.k}>{s.label}</option>)}
         </select>
-        <select value={plat} onChange={(e) => setPlat(e.target.value)} style={sel}>
+        <select value={plat} onChange={(e) => setPlat(e.target.value)} style={ctl}>
           <option value="">All channels</option>
           <option value="etsy">Etsy</option>
           <option value="shopify">Shopify</option>
@@ -102,108 +102,91 @@ export function ProductSalesClient({ stores = [], sellers = [], canPickSeller = 
           <option value="tiktok">TikTok</option>
         </select>
         {canPickSeller && (
-          <select value={seller} onChange={(e) => { setSeller(e.target.value); setStore(""); }} style={sel}>
+          <select value={seller} onChange={(e) => { setSeller(e.target.value); setStore(""); }} style={ctl}>
             <option value="">All sellers</option>
             {sellers.map((s) => <option key={s.id} value={s.id}>{s.name || "—"}</option>)}
           </select>
         )}
         {stores.length > 0 && (
-          <select value={store} onChange={(e) => setStore(e.target.value)} style={sel}>
+          <select value={store} onChange={(e) => setStore(e.target.value)} style={ctl}>
             <option value="">All stores</option>
             {storeOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         )}
+        <div style={{ flex: 1 }} />
+        <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>{total.toLocaleString()} listings</span>
       </div>
 
-      <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 12px" }}>
-        Every order of the same listing grouped together (including customized orders not yet assigned a design) — spot best-sellers to prioritize ads.
-      </p>
+      {err && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, padding: "10px 14px", borderRadius: 12, background: "#FDECEC", color: "#C0392B", border: "1px solid #F5CFCF" }}>✗ {err}</div>}
 
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search listing by name or listing_id…"
-        style={{ width: "100%", ...sel, padding: "9px 12px", marginBottom: 12 }} />
-
-      {err && <div style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 10 }}>✗ {err}</div>}
-
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 720 }}>
-          <thead>
-            <tr style={{ color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase" }}>
-              <th style={{ ...thc, width: 44 }}></th>
-              <th style={thc}>Listing</th>
-              <th style={{ ...thc, textAlign: "right" }}>Orders</th>
-              <th style={{ ...thc, textAlign: "right" }}>Units</th>
-              {showMoney && <th style={{ ...thc, textAlign: "right" }}>Revenue</th>}
-              <th style={thc}>Channel</th>
-              <th style={thc}>Last sale</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.listingKey} style={{ borderTop: "1px solid var(--line)" }}>
-                <td style={{ padding: "6px 4px 6px 8px" }}>
-                  {r.image
-                    ? <img src={r.image} alt="" width={38} height={38} onClick={() => setZoom({ src: r.image!, title: r.title })}
-                        style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 7, display: "block", cursor: "zoom-in" }} />
-                    : <div style={{ width: 38, height: 38, borderRadius: 7, background: "var(--ground, #eee)" }} />}
-                </td>
-                <td style={{ padding: "8px 8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, minWidth: 18 }}>{i + 1}.</span>
-                    {r.productUrl
-                      ? <a href={r.productUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}>{r.title}</a>
-                      : <span style={{ fontWeight: 600 }}>{r.title}</span>}
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginLeft: 24 }}>
-                    {r.baseSku != null && <span>Base #{r.baseSku}</span>}
-                    {r.baseSku != null && r.listingId && <span> · </span>}
-                    {r.listingId && <span>listing {r.listingId}</span>}
-                  </div>
-                </td>
-                <td style={{ padding: "8px 8px", textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{r.orders}</td>
-                <td style={{ padding: "8px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.qty}</td>
-                {showMoney && <td style={{ padding: "8px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(r.revenue)}</td>}
-                <td style={{ padding: "8px 8px" }}>
-                  <span style={{ display: "inline-flex", gap: 4 }}>
-                    {r.platforms.map((p) => (
-                      <span key={p} style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", color: "#fff", background: PLAT_COLOR[p] ?? PLAT_COLOR.other, padding: "2px 6px", borderRadius: 5 }}>{p}</span>
-                    ))}
-                  </span>
-                </td>
-                <td style={{ padding: "8px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtDate(r.lastOrder)}</td>
+      {/* TABLE */}
+      <div style={{ ...card, overflow: "hidden", padding: 0 }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 760 }}>
+            <thead>
+              <tr style={{ color: "var(--muted)", fontSize: 11, textTransform: "uppercase", letterSpacing: .3, background: "#FAFBFD" }}>
+                <th style={{ ...th, width: 40, textAlign: "center" }}>#</th>
+                <th style={{ ...th, width: 60 }}>Image</th>
+                <th style={th}>Listing</th>
+                <th style={{ ...th, textAlign: "right" }}>Orders</th>
+                <th style={{ ...th, textAlign: "right" }}>Units</th>
+                {showMoney && <th style={{ ...th, textAlign: "right" }}>Revenue</th>}
+                <th style={th}>Channel</th>
+                <th style={th}>Last sale</th>
               </tr>
-            ))}
-            {!rows.length && !loading && (
-              <tr><td colSpan={showMoney ? 7 : 6} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No listing matches.</td></tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {loading && <tr><td colSpan={showMoney ? 8 : 7} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+              {!loading && !rows.length && (
+                <tr><td colSpan={showMoney ? 8 : 7} style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>No listing matches your filters.</td></tr>
+              )}
+              {!loading && rows.map((r, i) => (
+                <tr key={r.listingKey} style={{ borderTop: "1px solid var(--line)" }}>
+                  <td style={{ ...td, textAlign: "center", color: "var(--muted)", fontWeight: 700 }}>{page * PER_PAGE + i + 1}</td>
+                  <td style={{ ...td, padding: "8px 10px" }}>
+                    <ThumbZoom src={r.image ?? undefined} alt={r.title} size={46} radius={10} />
+                  </td>
+                  <td style={{ ...td, maxWidth: 460 }}>
+                    {r.productUrl
+                      ? <a href={r.productUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: "var(--blue)", textDecoration: "none", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.title}</a>
+                      : <span style={{ fontWeight: 600, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{r.title}</span>}
+                    <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "ui-monospace,monospace", marginTop: 3 }}>
+                      {r.baseSku != null && <span>Base #{r.baseSku}</span>}
+                      {r.baseSku != null && r.listingId && <span>&nbsp;·&nbsp;</span>}
+                      {r.listingId && <span>listing {r.listingId}</span>}
+                    </div>
+                  </td>
+                  <td style={{ ...td, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{r.orders}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.qty}</td>
+                  {showMoney && <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(r.revenue)}</td>}
+                  <td style={td}>
+                    <span style={{ display: "inline-flex", gap: 4 }}>
+                      {r.platforms.map((p) => (
+                        <span key={p} style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", color: "#fff", background: PLAT_COLOR[p] ?? PLAT_COLOR.other, padding: "2px 7px", borderRadius: 6 }}>{p}</span>
+                      ))}
+                    </span>
+                  </td>
+                  <td style={{ ...td, color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtDate(r.lastOrder)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
+      {/* PAGINATION */}
       {total > 0 && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 14, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
             {(page * PER_PAGE + 1).toLocaleString()}–{Math.min((page + 1) * PER_PAGE, total).toLocaleString()} of {total.toLocaleString()}
           </span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0 || loading}
-              style={{ ...sel, cursor: page === 0 ? "default" : "pointer", opacity: page === 0 ? 0.5 : 1 }}>← Prev</button>
-            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Page {page + 1} / {Math.max(1, Math.ceil(total / PER_PAGE))}</span>
-            <button onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * PER_PAGE >= total || loading}
-              style={{ ...sel, cursor: (page + 1) * PER_PAGE >= total ? "default" : "pointer", opacity: (page + 1) * PER_PAGE >= total ? 0.5 : 1 }}>Next →</button>
+              style={{ ...ctl, cursor: page === 0 ? "default" : "pointer", opacity: page === 0 ? 0.5 : 1 }}>← Prev</button>
+            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Page {page + 1} / {totalPages}</span>
+            <button onClick={() => setPage((p) => p + 1)} disabled={(page + 1) >= totalPages || loading}
+              style={{ ...ctl, cursor: (page + 1) >= totalPages ? "default" : "pointer", opacity: (page + 1) >= totalPages ? 0.5 : 1 }}>Next →</button>
           </div>
-        </div>
-      )}
-      {loading && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, marginTop: 10 }}>Loading…</div>}
-
-      {zoom && (
-        <div onClick={() => setZoom(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(15,17,20,.78)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "min(90vw, 640px)", maxHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-            <img src={zoom.src} alt={zoom.title} style={{ maxWidth: "100%", maxHeight: "82vh", objectFit: "contain", borderRadius: 12, boxShadow: "0 10px 40px rgba(0,0,0,.5)" }} />
-            <div style={{ color: "#fff", fontSize: 13, textAlign: "center", maxWidth: 560, lineHeight: 1.4 }}>{zoom.title}</div>
-          </div>
-          <button onClick={() => setZoom(null)} aria-label="Close"
-            style={{ position: "fixed", top: 18, right: 22, width: 38, height: 38, borderRadius: 999, border: 0, background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 20, cursor: "pointer" }}>✕</button>
         </div>
       )}
     </div>
