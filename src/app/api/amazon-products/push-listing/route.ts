@@ -117,8 +117,46 @@ export async function POST(req: NextRequest) {
       const handling = parseInt(String(c?.leadTimeDays ?? "").trim(), 10);
       return { group: (c?.shippingTemplate || "").trim(), handling: isNaN(handling) || handling < 0 ? 0 : handling };
     };
-    // fulfillment_availability đầy đủ (kèm handling time nếu có).
-    const fulfillVal = (handling: number) => [{ fulfillment_channel_code: "DEFAULT", quantity: 100, ...(handling > 0 ? { lead_time_to_ship_max_days: handling } : {}) }];
+    // v365 · Quantity lấy TỪ TEMPLATE (constants.quantity). POD = làm theo đơn nên không bao giờ hết →
+    // mặc định 999 (KHÔNG để 100/rơi 0). Trước đây hard-code 100 khiến push có lúc để listing về out-of-stock.
+    const qtyOf = (amazonTemplateId: string | null, typeHint: string | null): number => {
+      const c = (tplObjFor(amazonTemplateId, typeHint)?.config as { constants?: { quantity?: string | number } } | null)?.constants;
+      const q = parseInt(String(c?.quantity ?? "").trim(), 10);
+      return isNaN(q) || q <= 0 ? 999 : q;
+    };
+    // fulfillment_availability đầy đủ (kèm handling time nếu có). quantity lấy từ template (mặc định 999).
+    const fulfillVal = (handling: number, quantity: number) => [{ fulfillment_channel_code: "DEFAULT", quantity, ...(handling > 0 ? { lead_time_to_ship_max_days: handling } : {}) }];
+
+    // v366 · Listing constants (brand, manufacturer, item type, color, xuất xứ…) lấy TỪ TEMPLATE cho CẢ push,
+    // giống flat file → đổi template là push cũng đổi theo, không lệ thuộc giá trị cũ của reference clone.
+    const constOf = (amazonTemplateId: string | null, typeHint: string | null): Record<string, string> =>
+      ((tplObjFor(amazonTemplateId, typeHint)?.config as { constants?: Record<string, string> } | null)?.constants) ?? {};
+    // template-key → tên attribute SP-API khả dĩ (chọn cái NÀO CÓ trong reference để không đặt sai tên).
+    const CONST_ATTRS: [string, string[]][] = [
+      ["brand", ["brand", "brand_name"]],
+      ["manufacturer", ["manufacturer"]],
+      ["itemTypeKeyword", ["item_type_keyword", "item_type_name"]],
+      ["color", ["color", "color_name"]],
+      ["colorMap", ["color_map"]],
+      ["countryOfOrigin", ["country_of_origin"]],
+      ["numberOfItems", ["number_of_items"]],
+      ["numberOfBoxes", ["number_of_boxes"]],
+      ["includedComponents", ["included_components", "included_components1"]],
+      ["cpsiaWarning", ["cpsia_cautionary_statement"]],
+    ];
+    // Sinh object ghi đè: chỉ đụng attribute ĐÃ CÓ trong reference (an toàn — tên chắc chắn hợp lệ cho product type đó).
+    const constOverrides = (consts: Record<string, string>, refAttrs: Attrs | null): Attrs => {
+      const out: Attrs = {};
+      if (!refAttrs) return out;
+      for (const [k, cands] of CONST_ATTRS) {
+        const val = String(consts?.[k] ?? "").trim();
+        if (!val) continue;
+        const name = cands.find((n) => n in refAttrs);
+        if (!name) continue;
+        out[name] = [{ value: val, marketplace_id: mk }];
+      }
+      return out;
+    };
     // Shipping template KHÔNG set qua API: create tự kế thừa từ clone, update giữ nguyên → tránh lẫn TÊN (flat file) ↔ ID (API).
 
     let updated = 0, created = 0;
@@ -167,6 +205,8 @@ export async function POST(req: NextRequest) {
       const imgs = imgList(r.a.images, r.srcImages);
       const pt = ptOf(r.a.amazonTemplateId, r.srcType || r.a.manualType); // product type động theo template
       const ship = shipOf(r.a.amazonTemplateId, r.srcType || r.a.manualType); // shipping template + handling time
+      const qty = qtyOf(r.a.amazonTemplateId, r.srcType || r.a.manualType); // v365 · tồn kho từ template (mặc định 999)
+      const consts = constOf(r.a.amazonTemplateId, r.srcType || r.a.manualType); // v366 · constants từ template
 
       if (!root || !title) { skipped.push(`${title || r.a.id}: missing SKU/title`); continue; }
       if (!vars.length) { skipped.push(`${title}: missing variations`); continue; }
@@ -209,7 +249,8 @@ export async function POST(req: NextRequest) {
           ...(imgs[0] ? { main_product_image_locator: imageVal(imgs[0]) } : {}),
           child_parent_sku_relationship: rel,
           condition_type: [{ value: "new_new", marketplace_id: mk }],
-          fulfillment_availability: fulfillVal(ship.handling),
+          fulfillment_availability: fulfillVal(ship.handling, qty),
+          ...constOverrides(consts, refChild), // v366 · brand/manufacturer/item type… từ template
           ...otherImgs,
           ...(!isNaN(price) && price > 0 ? {
             list_price: [{ value: price, currency: "USD", marketplace_id: mk }],
@@ -235,9 +276,13 @@ export async function POST(req: NextRequest) {
 
       if (existsOnAmazon) {
         // ── UPDATE (PATCH) ──
+        // v366 · reference (cùng product type) để biết tên attribute hợp lệ → patch constants từ template.
+        const uref = await getReference(pt);
+        const constPatch = (attrs: Attrs | null): PatchOp[] =>
+          Object.entries(constOverrides(consts, attrs)).map(([name, value]) => ({ op: "replace" as const, path: `/attributes/${name}`, value }));
         try {
           // v350 · cập nhật ảnh (main + phụ) trên cả parent
-          const parentPatch: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch];
+          const parentPatch: PatchOp[] = [{ op: "replace", path: "/attributes/item_name", value: vText(title, mk) }, ...commonPatch, ...constPatch(uref.parent)];
           if (imgs[0]) parentPatch.push({ op: "replace", path: "/attributes/main_product_image_locator", value: imageVal(imgs[0]) });
           imgs.slice(1, 9).forEach((u, i) => parentPatch.push({ op: "replace", path: `/attributes/other_product_image_locator_${i + 1}`, value: imageVal(u) }));
           const rr = await patchListingItem(cfg!, `${root}-PARENT-AMZ`, pt, parentPatch);
@@ -278,7 +323,8 @@ export async function POST(req: NextRequest) {
           imgs.slice(1, 9).forEach((u, i) => cp.push({ op: "replace", path: `/attributes/other_product_image_locator_${i + 1}`, value: imageVal(u) }));
           // Đảm bảo offer đầy đủ (condition + tồn kho) để gỡ "Missing offer"
           cp.push({ op: "replace", path: "/attributes/condition_type", value: [{ value: "new_new", marketplace_id: mk }] });
-          cp.push({ op: "replace", path: "/attributes/fulfillment_availability", value: fulfillVal(ship.handling) });
+          cp.push({ op: "replace", path: "/attributes/fulfillment_availability", value: fulfillVal(ship.handling, qty) });
+          cp.push(...constPatch(uref.child)); // v366 · brand/manufacturer/item type… từ template lên từng child
           if (!isNaN(price) && price > 0) {
             cp.push({ op: "replace", path: "/attributes/list_price", value: [{ value: price, currency: "USD", marketplace_id: mk }] });
             cp.push({ op: "replace", path: "/attributes/purchasable_offer", value: [{ marketplace_id: mk, currency: "USD", our_price: [{ schedule: [{ value_with_tax: price }] }] }] });
@@ -300,6 +346,7 @@ export async function POST(req: NextRequest) {
             product_description: vText(desc, mk),
             bullet_point: bulletsVal(bullets),
             main_product_image_locator: imageVal(imgs[0]),
+            ...constOverrides(consts, ref.parent), // v366 · constants từ template lên parent
             ...otherImgs,
           });
           const rr = await putListingItem(cfg!, parentSku, pt, pa);
