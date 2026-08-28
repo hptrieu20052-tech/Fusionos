@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ThumbZoom from "@/components/thumb-zoom";
+import DateRangePicker, { rangeToDates, type RangeValue } from "@/components/date-range";
 
 type Row = {
   listingKey: string; title: string; listingId: string | null; productUrl: string | null;
@@ -11,9 +12,6 @@ type Row = {
 type StoreOpt = { id: string; name: string; sellerId: string | null; platform: string | null };
 type SellerOpt = { id: string; name: string | null };
 
-const RANGES = [
-  { k: "30", label: "30 days" }, { k: "90", label: "90 days" }, { k: "365", label: "1 year" }, { k: "1096", label: "All time" },
-];
 const SORTS = [
   { k: "orders", label: "Most orders" }, { k: "qty", label: "Most units" }, { k: "revenue", label: "Top revenue" }, { k: "recent", label: "Recently sold" },
 ];
@@ -32,7 +30,7 @@ export function ProductSalesClient({ stores = [], sellers = [], canPickSeller = 
   const [total, setTotal] = useState(0);
   const [showMoney, setShowMoney] = useState(false);
   const [q, setQ] = useState("");
-  const [days, setDays] = useState("365");
+  const [dr, setDr] = useState<RangeValue>({ range: "30d" });
   const [sort, setSort] = useState("orders");
   const [plat, setPlat] = useState("");
   const [seller, setSeller] = useState("");
@@ -48,7 +46,8 @@ export function ProductSalesClient({ stores = [], sellers = [], canPickSeller = 
     const my = ++seq.current;
     setLoading(true); setErr("");
     try {
-      const p = new URLSearchParams({ days, sort, limit: String(PER_PAGE), offset: String(page * PER_PAGE) });
+      const { from, to } = rangeToDates(dr);
+      const p = new URLSearchParams({ from, to, sort, limit: String(PER_PAGE), offset: String(page * PER_PAGE) });
       if (q.trim()) p.set("q", q.trim());
       if (plat) p.set("platform", plat);
       if (seller) p.set("seller", seller);
@@ -61,10 +60,10 @@ export function ProductSalesClient({ stores = [], sellers = [], canPickSeller = 
     } catch (e) {
       if (my === seq.current) setErr(String((e as Error)?.message ?? e));
     } finally { if (my === seq.current) setLoading(false); }
-  }, [q, days, sort, plat, seller, store, page]);
+  }, [q, dr, sort, plat, seller, store, page]);
 
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
-  useEffect(() => { setPage(0); }, [q, days, sort, plat, seller, store]);
+  useEffect(() => { setPage(0); }, [q, dr, sort, plat, seller, store]);
 
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   const th: React.CSSProperties = { padding: "12px 10px", textAlign: "left" };
@@ -88,9 +87,7 @@ export function ProductSalesClient({ stores = [], sellers = [], canPickSeller = 
           <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }}><IcSearch /></span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search listing / listing_id" style={{ ...ctl, width: "100%", paddingLeft: 34 }} />
         </div>
-        <select value={days} onChange={(e) => setDays(e.target.value)} style={ctl}>
-          {RANGES.map((r) => <option key={r.k} value={r.k}>{r.label}</option>)}
-        </select>
+        <DateRangePicker value={dr} onChange={setDr} align="left" />
         <select value={sort} onChange={(e) => setSort(e.target.value)} style={ctl}>
           {SORTS.map((s) => <option key={s.k} value={s.k}>{s.label}</option>)}
         </select>
