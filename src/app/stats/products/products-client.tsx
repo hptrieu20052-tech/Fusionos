@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type Row = {
   listingKey: string; title: string; listingId: string | null; productUrl: string | null;
   image: string | null; orders: number; qty: number; revenue: number | null;
   lastOrder: string | null; platforms: string[]; baseSku: number | null;
 };
+type StoreOpt = { id: string; name: string; sellerId: string | null; platform: string | null };
+type SellerOpt = { id: string; name: string | null };
 
 const RANGES = [
   { k: "30", label: "30 days" },
@@ -26,7 +28,9 @@ const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString() : "�
 
 const sel: React.CSSProperties = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13, background: "#fff" };
 
-export function ProductSalesClient() {
+const PER_PAGE = 20;
+
+export function ProductSalesClient({ stores = [], sellers = [], canPickSeller = false }: { stores?: StoreOpt[]; sellers?: SellerOpt[]; canPickSeller?: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
   const [showMoney, setShowMoney] = useState(false);
@@ -34,18 +38,26 @@ export function ProductSalesClient() {
   const [days, setDays] = useState("365");
   const [sort, setSort] = useState("orders");
   const [plat, setPlat] = useState("");
+  const [seller, setSeller] = useState("");
+  const [store, setStore] = useState("");
+  const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [zoom, setZoom] = useState<{ src: string; title: string } | null>(null);
   const seq = useRef(0);
 
+  // Store options narrow to the picked seller (like Finance).
+  const storeOptions = useMemo(() => (seller ? stores.filter((s) => s.sellerId === seller) : stores), [stores, seller]);
+
   const load = useCallback(async () => {
     const my = ++seq.current;
     setLoading(true); setErr("");
     try {
-      const p = new URLSearchParams({ days, sort, limit: "100" });
+      const p = new URLSearchParams({ days, sort, limit: String(PER_PAGE), offset: String(page * PER_PAGE) });
       if (q.trim()) p.set("q", q.trim());
       if (plat) p.set("platform", plat);
+      if (seller) p.set("seller", seller);
+      if (store) p.set("store", store);
       const res = await fetch(`/api/stats/product-sales?${p}`);
       const j = await res.json();
       if (my !== seq.current) return;
@@ -54,9 +66,11 @@ export function ProductSalesClient() {
     } catch (e) {
       if (my === seq.current) setErr(String((e as Error)?.message ?? e));
     } finally { if (my === seq.current) setLoading(false); }
-  }, [q, days, sort, plat]);
+  }, [q, days, sort, plat, seller, store, page]);
 
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
+  // Đổi bộ lọc → về trang 1.
+  useEffect(() => { setPage(0); }, [q, days, sort, plat, seller, store]);
   useEffect(() => {
     if (!zoom) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setZoom(null); };
@@ -87,6 +101,18 @@ export function ProductSalesClient() {
           <option value="amazon">Amazon</option>
           <option value="tiktok">TikTok</option>
         </select>
+        {canPickSeller && (
+          <select value={seller} onChange={(e) => { setSeller(e.target.value); setStore(""); }} style={sel}>
+            <option value="">All sellers</option>
+            {sellers.map((s) => <option key={s.id} value={s.id}>{s.name || "—"}</option>)}
+          </select>
+        )}
+        {stores.length > 0 && (
+          <select value={store} onChange={(e) => setStore(e.target.value)} style={sel}>
+            <option value="">All stores</option>
+            {storeOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        )}
       </div>
 
       <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 12px" }}>
@@ -152,6 +178,21 @@ export function ProductSalesClient() {
           </tbody>
         </table>
       </div>
+
+      {total > 0 && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
+            {(page * PER_PAGE + 1).toLocaleString()}–{Math.min((page + 1) * PER_PAGE, total).toLocaleString()} of {total.toLocaleString()}
+          </span>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0 || loading}
+              style={{ ...sel, cursor: page === 0 ? "default" : "pointer", opacity: page === 0 ? 0.5 : 1 }}>← Prev</button>
+            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Page {page + 1} / {Math.max(1, Math.ceil(total / PER_PAGE))}</span>
+            <button onClick={() => setPage((p) => p + 1)} disabled={(page + 1) * PER_PAGE >= total || loading}
+              style={{ ...sel, cursor: (page + 1) * PER_PAGE >= total ? "default" : "pointer", opacity: (page + 1) * PER_PAGE >= total ? 0.5 : 1 }}>Next →</button>
+          </div>
+        </div>
+      )}
       {loading && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, marginTop: 10 }}>Loading…</div>}
 
       {zoom && (

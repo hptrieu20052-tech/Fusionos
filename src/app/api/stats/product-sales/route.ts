@@ -37,6 +37,9 @@ export async function GET(req: NextRequest) {
 
   const q = (sp.get("q") ?? "").trim().slice(0, 120);
   const platform = (sp.get("platform") ?? "").trim();
+  const uuidOk = (x: string | null) => (x && /^[0-9a-f-]{36}$/i.test(x) ? x : null);
+  const sellerF = uuidOk(sp.get("seller"));
+  const storeF = uuidOk(sp.get("store"));
   let sort = ["orders", "qty", "revenue", "recent"].includes(sp.get("sort") ?? "") ? sp.get("sort")! : "orders";
   if (!isAdmin && sort === "revenue") sort = "orders";
   const limit = Math.min(Math.max(Number(sp.get("limit") ?? 50), 1), 200);
@@ -55,6 +58,8 @@ export async function GET(req: NextRequest) {
     conds.push(sql`o.seller_at_order IN (${sql.join(ownIds.map((x) => sql`${x}::uuid`), sql`, `)})`);
   }
   if (platform) conds.push(sql`o.platform = ${platform}::marketplace`);
+  if (sellerF) conds.push(sql`o.seller_at_order = ${sellerF}::uuid`); // trong scope đã lọc ở trên → seller khác cho ra rỗng
+  if (storeF) conds.push(sql`o.store_id = ${storeF}::uuid`);
   if (q) {
     const like = "%" + q + "%";
     conds.push(sql`(oi.product_title ILIKE ${like} OR oi.etsy_listing_id = ${q})`);
