@@ -17,11 +17,38 @@ export const BANNED_TITLE_PHRASES = [
   "eco-friendly", "eco friendly", "non-toxic", "non toxic", "chemical free", "100% safe", "child-safe",
 ];
 
-/** Cắt cụm cấm khỏi title + dọn dấu phẩy/khoảng trắng thừa. Trả về title an toàn để đẩy lên Amazon. */
+/**
+ * CHẶN CỨNG mã 100470 ("một từ xuất hiện quá 2 lần trong Title"). Rule mềm trong prompt AI không đủ
+ * (model vẫn nhồi keyword mạnh như "Christmas") → cắt bằng code: mỗi TỪ ≥4 ký tự chỉ giữ tối đa 2 lần,
+ * từ ở lần xuất hiện thứ 3+ bị bỏ (giữ 2 lần đầu). Từ ngắn (for/and/the…) bỏ qua — Amazon không tính.
+ */
+export function capRepeatedWords(t: string, max = 2): string {
+  const seen = new Map<string, number>();
+  const kept: string[] = [];
+  for (const tok of String(t ?? "").split(/\s+/)) {
+    const w = (tok.match(/[A-Za-z][A-Za-z'-]*/) || [""])[0];
+    if (w.length >= 4) {
+      const key = w.toLowerCase();
+      const n = (seen.get(key) ?? 0) + 1;
+      seen.set(key, n);
+      if (n > max) {
+        const comma = /,/.test(tok) ? "," : "";      // bỏ TỪ, chỉ giữ dấu phẩy đi kèm để không dính 2 vế
+        if (comma) kept.push(comma);
+        continue;
+      }
+    }
+    kept.push(tok);
+  }
+  return kept.join(" ")
+    .replace(/\s+,/g, ",").replace(/,(\s*,)+/g, ",").replace(/\s{2,}/g, " ").replace(/^[\s,]+|[\s,]+$/g, "").trim();
+}
+
+/** Cắt cụm cấm + giới hạn từ lặp + dọn dấu phẩy/khoảng trắng thừa. Title an toàn để đẩy lên Amazon. */
 export function sanitizeTitle(t: string): string {
   let s = String(t ?? "");
   for (const p of BANNED_TITLE_PHRASES) s = s.replace(new RegExp("\\b" + p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "gi"), "");
   s = s.replace(/\s*,(\s*,)+/g, ",").replace(/\(\s*\)/g, "").replace(/\s{2,}/g, " ")
        .replace(/\s+,/g, ",").replace(/,\s*,/g, ",").replace(/^[\s,]+|[\s,]+$/g, "").trim();
+  s = capRepeatedWords(s, 2); // v361 · chặn cứng 100470
   return s;
 }

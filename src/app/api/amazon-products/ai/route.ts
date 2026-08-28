@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { sanitizeTitle } from "@/lib/amazon-title";
 
 export const dynamic = "force-dynamic";
 // Vercel PRO: maxDuration tối đa 300s. Hạ về Hobby thì đưa về 60 / 52_000.
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
       ].filter(Boolean).join("\n");
 
       const out = await askAI(user, model, deadline, imgUrls(r.srcImages));
-      const title = clip(out.amazonTitle, 250);
+      const title = clip(sanitizeTitle(out.amazonTitle ?? ""), 250); // v361 · chặn cứng từ lặp/cụm cấm ngay lúc gen
       const bullets = (out.bullets ?? []).map((x) => clip(x, 300)).filter(Boolean).slice(0, 5);
       const description = clip(out.description, 2500);
 
