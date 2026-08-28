@@ -90,6 +90,8 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
   const confirm = useConfirm();
   const [rows, setRows] = useState<Row[]>([]);
   const [total, setTotal] = useState(0);
+  // v360 · Perf theo UTM (đơn + doanh thu quy về từng video qua utm_campaign=video_<code>).
+  const [perf, setPerf] = useState<Record<string, { orders: number; revenue: number; channels?: Record<string, { orders: number; revenue: number }> }>>({});
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [dr, setDr] = useState<RangeValue>({ range: "30d" });
@@ -134,7 +136,12 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
       if (j.ok) {
         setRows(j.rows ?? []); setTotal(j.total ?? 0);
         setSellers(j.filters?.sellers ?? []); setCreators(j.filters?.creators ?? []);
-        // v272 · Performance tạm ẨN theo yêu cầu — data + API /api/videos/performance vẫn còn, cần thì nối lại.
+        // v360 · Bật lại Performance: kéo đơn/doanh thu quy về từng video (utm_campaign=video_<code>).
+        const codes = (j.rows ?? []).map((r: Row) => r.videoCode).filter((n: number) => n > 0);
+        if (codes.length) {
+          fetch(`/api/videos/performance?codes=${codes.join(",")}`).then((r) => r.json())
+            .then((pj) => setPerf(pj?.ok ? (pj.perf ?? {}) : {})).catch(() => setPerf({}));
+        } else setPerf({});
       } else flash("✗ " + (j.error ?? "load failed"), false);
     } catch { flash("✗ Network error", false); }
     setLoading(false);
@@ -147,6 +154,14 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
     setPage(p2); load(p2);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  // v360 · Perf helpers — quy đơn/doanh thu về từng video và cộng tổng theo card.
+  const money = (n: number) => `$${(Number(n) || 0).toFixed(2)}`;
+  const perfOf = (code: number) => perf[String(code)] as { orders: number; revenue: number } | undefined;
+  const sumPerf = (vids: { videoCode: number }[]) => vids.reduce((a, v) => {
+    const p = perf[String(v.videoCode)];
+    return { orders: a.orders + (p?.orders ?? 0), revenue: Math.round((a.revenue + (p?.revenue ?? 0)) * 100) / 100 };
+  }, { orders: 0, revenue: 0 });
 
   /** Đọc thời lượng/kích thước + bắt 1 frame làm poster, ngay ở browser. */
   const probe = (file: File): Promise<{ duration: number; width: number; height: number; poster: Blob | null }> =>
@@ -454,6 +469,13 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                       <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted)", marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                         .{v.cardSeq ?? "?"} · {secs(v.durationSec)}
                       </div>
+                      {/* v360 · perf theo TỪNG video (đơn · doanh thu) */}
+                      {(() => {
+                        const p = perfOf(v.videoCode);
+                        return p && p.orders > 0 ? (
+                          <div style={{ fontSize: 9.5, fontWeight: 800, color: "#166534", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>🛒{p.orders} · {money(p.revenue)}</div>
+                        ) : null;
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -474,7 +496,17 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                 </div>
                 <div className="dc-meta"><span>Seller</span><b>{r.sellerName ?? "—"}</b></div>
                 <div className="dc-meta"><span>Creator</span><b>{creatorNames.length ? creatorNames.join(", ") : "—"}</b></div>
-                <div className="dc-foot" style={{ marginTop: "auto" }}>
+                {/* v360 · TỔNG performance của cả product (cộng đơn/doanh thu mọi video trong card) */}
+                {(() => {
+                  const tp = sumPerf(g);
+                  return tp.orders > 0 ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "auto", fontSize: 12.5, fontWeight: 800, color: "#166534", background: "#ECFDF3", border: "1px solid #BBF7D0", borderRadius: 8, padding: "5px 9px" }}>
+                      <span>🛒 {tp.orders} order{tp.orders > 1 ? "s" : ""}</span>
+                      <span style={{ marginLeft: "auto", color: "#065F46" }}>{money(tp.revenue)}</span>
+                    </div>
+                  ) : null;
+                })()}
+                <div className="dc-foot" style={{ marginTop: sumPerf(g).orders > 0 ? 6 : "auto" }}>
                   <span>{many ? `${g.length} videos` : (r.width && r.height ? `${r.width}×${r.height}` : (r.aspect ?? "—"))}</span>
                   <span>{many ? mb(g.reduce((a, x) => a + (x.sizeBytes ?? 0), 0)) : mb(r.sizeBytes)}</span>
                 </div>
