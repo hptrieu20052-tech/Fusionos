@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { getPrompt } from "@/lib/ai/prompt-store";
 
 export const dynamic = "force-dynamic";
 // Tài khoản đang ở gói Vercel PRO ⇒ maxDuration tối đa 300s (Hobby mới bị chặn ở 60s).
@@ -31,24 +32,7 @@ const MAX_PER_CALL = 6;
 
 type Opt = { title?: string; seoTitle?: string; seoDescription?: string; tags?: string; description?: string; productDetails?: string; shipping?: string };
 
-const SYSTEM_BASE = `You are an e-commerce SEO copywriter optimizing a Shopify product for US shoppers on Google Search & Shopping. Pick ONE primary keyword (what a buyer actually types) and weave it naturally into the title, the SEO fields, and the first sentence of the description. Never keyword-stuff, no emojis, no shop name.
-
-THE PRODUCT PHOTOS ARE ATTACHED — LOOK AT THEM FIRST, then read the SOURCE LISTING block if one is present. Every listing personalizes something different and the generic supplier facts do NOT say which; the photos and the source listing title are the two things that do. Read the images to establish exactly what the buyer gets and what is customized: a child's name printed on the cover or inside, the buyer's own uploaded photos placed on the pages, a dedication page, a portrait of the child drawn as a character, a family name, a date, a map, a message. Then write about the personalization you can actually SEE. Address the shopper as "you" — write "you upload your photos", never "the buyer supplies". If the images show no personalization at all, say nothing about it rather than inventing it, and never claim a feature you cannot see in the photos or read in the facts.
-
-Return STRICT JSON. Keys:
-- "title": product title, 55-70 characters — aim for 60-68 and NEVER go under 55 or over 70. Primary keyword first, Title Case, human and specific (recipient + occasion + product type). Keep short words lowercase unless first: for, and, with, to, of, in, on, a, an, the, or. FORBIDDEN: the pipe character "|", and any padding word bolted on just to reach the length (Keepsake, Gift Idea, Custom Gift, Unique, Perfect, Best, Special) unless that word is genuinely part of the product name. If your title is under 55 characters, do NOT pad with filler — rewrite it with a real extra detail (the recipient, the occasion, what gets personalized, the art style) until it lands in range. No ALL CAPS.
-- "seoTitle": SEO page title, 55-60 characters — aim for 58-60 and NEVER go under 55 or over 60. Primary keyword near the front, then a benefit or occasion. Use the full width; a short title wastes the Google result line.
-- "seoDescription": SEO meta description, 145-155 characters — aim for 150-155 and NEVER go under 145 or over 155. This exact text is ALSO used as the product description in Google Shopping, so it must read as a complete, self-contained sentence: primary keyword + who it is for + the strongest concrete benefit + a soft call-to-action. No ellipsis, no truncation, no trailing dangling phrase. Count the characters before you answer.
-- "tags": 12-15 comma-separated lowercase search terms (recipient, occasion, product type, style, use-case). No underscores or #.
-- "description": clean HTML, 220-330 words: one <p> hook (keyword in first sentence, emotional benefit tied to THIS listing's theme); one <p> on how the personalization works / what makes it special; one <p><strong>Product features</strong></p> then <ul> with 5-7 <li> benefits; one <p> of gift occasions matching THIS listing's theme; one closing <p> call to action. Only <p>, <ul>, <li>, <strong>.
-
-LENGTH RULE: "title", "seoTitle" and "seoDescription" must land inside their stated character ranges, spaces and punctuation included. Check each one before writing it out and fix it in place — add a real detail when short, cut the weakest words when long. One character short is still wrong. Output the JSON object only, with no counts, notes or commentary of any kind.`;
-
-const SYSTEM_TPL_EXTRA = `
-
-SUPPLIER FACTS are provided below — they are ground truth. Adapt wording to THIS listing's theme, but NEVER change or invent numbers, materials, sizes, times or policies. Also return:
-- "productDetails": clean HTML for a "Product Details" tab — <ul> with 6-9 <li>, each "<strong>Label:</strong> value", built from the SUPPLIER FACTS specs and tailored to this listing (mention its theme where natural, e.g. the story/occasion). Keep every factual spec accurate.
-- "shipping": clean HTML for a "Shipping" tab — a series of <p>, each starting "<strong>Label:</strong> ..." (Processing Time, Shipping Time (US), Note, Shipping Cost, Tracking Number, Return & Exchange — include only those present in the facts). v196 INTERNATIONAL TIMES: never cram several countries into one paragraph. When the facts list per-country shipping times, write one <p><strong>Shipping Time (International):</strong></p> followed by a <ul> with ONE <li> PER country/region, each formatted "<strong>Canada:</strong> 10–15 business days" — country name bold, then the time. Allowed tags: <p>, <ul>, <li>, <strong> only. Copy all times, costs and policies EXACTLY from the facts; polish the wording only. Do not write about shipping inside "description".`;
+// Prompt sống ở src/lib/ai/prompt-defs.ts (id "shopify.optimize.base" + "shopify.optimize.tplExtra") — sửa qua Manager Prompts.
 
 type Tpl = typeof schema.shopifyTemplates.$inferSelect;
 // Template cho product: ưu tiên template ĐƯỢC GÁN → khớp Type (case-insensitive) → template ACTIVE duy nhất / duy nhất của store.
@@ -139,6 +123,10 @@ export async function POST(req: NextRequest) {
     : [];
   const srcBy = new Map(srcRows.filter((s) => s.gid).map((s) => [s.gid as string, s]));
 
+  // Prompt (admin có thể ghi đè qua Manager Prompts) — lấy 1 lần cho cả lô.
+  const promptBase = await getPrompt("shopify.optimize.base");
+  const promptExtra = await getPrompt("shopify.optimize.tplExtra");
+
   // Chạy SONG SONG — mỗi sản phẩm tự bắt lỗi, 1 con hỏng không kéo cả lô.
   const results = await Promise.all(rows.map(async (r, idx): Promise<{ id: string; title: string; ok: boolean; withTemplate?: boolean; error?: string }> => {
     try {
@@ -167,7 +155,7 @@ Options/variants: ${opts || "none"}
 Current tags: ${r.tags ?? ""}
 ${srcBlock}${factsBlock}Current description (plain, up to 1000 chars): ${(r.bodyHtml ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 1000)}`;
 
-      const system = hasFacts ? SYSTEM_BASE + SYSTEM_TPL_EXTRA : SYSTEM_BASE;
+      const system = hasFacts ? promptBase + promptExtra : promptBase;
       const o = await askAI(system, user, model, deadline, imgUrls(r.images));
       const t = clip(o?.title, 120);
 

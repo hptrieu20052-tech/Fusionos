@@ -1,5 +1,6 @@
 // Tầng AI qua OPENROUTER (1 key cho mọi model: Claude/GPT/Gemini…). Env: OPENROUTER_API_KEY.
 // Model text mặc định có thể override qua OPENROUTER_TEXT_MODEL. Provider-agnostic: đổi model = đổi slug.
+import { getPrompt } from "@/lib/ai/prompt-store"; // system prompt Book Studio: admin ghi đè qua Manager Prompts
 const OR_CHAT = "https://openrouter.ai/api/v1/chat/completions";
 const KEY = () => (process.env.OPENROUTER_API_KEY ?? "").trim();
 const TEXT_MODEL = () => (process.env.OPENROUTER_TEXT_MODEL ?? "anthropic/claude-3.5-sonnet").trim();
@@ -211,7 +212,7 @@ export async function generateBookIdeas(brief: { occasion?: string; audience?: s
   const pages = brief.pages ?? 12;
   const refs = (brief.refImages ?? []).filter(Boolean);
   const comp = (brief.competitor ?? "").trim();
-  const system = "Bạn là chuyên gia sáng tạo sách thiếu nhi personalized bán trên Etsy/TikTok (keepsake baby books, birthday book, sleep book…). Trả lời DUY NHẤT bằng JSON. TOÀN BỘ nội dung sinh ra (name, hook, angle, usp, outline) BẮT BUỘC bằng TIẾNG ANH — dù người dùng mô tả bằng tiếng Việt (sản phẩm bán cho khách nói tiếng Anh).";
+  const system = await getPrompt("book.ideas");
   const user = `Sinh ${n} ý tưởng đầu sách KHÁC NHAU (mọi trường trả về bằng TIẾNG ANH).
 Dịp/ngách: ${brief.occasion || "tuỳ bạn đề xuất"}
 Đối tượng: ${brief.audience || "trẻ nhỏ / quà tặng cha mẹ"}
@@ -243,7 +244,7 @@ export async function generateBookCover(
   const phRule = keys.length
     ? `Personalization placeholders available: ${keys.map((k) => `{${k}}`).join(", ")}. Wherever a personalized value (child's name…) appears in the title, you MUST write the placeholder (e.g. {${keys[0]}}) — NEVER a real example name, even if the theme/notes mention one.`
     : "Keep the {name} placeholder if the story personalizes a child's name — never write a real example name.";
-  const system = "You are a children's picture-book cover designer. From the theme, write the COVER title (baked on the front) and a wraparound cover SCENE brief. Reply ONLY as JSON, in ENGLISH. " + phRule;
+  const system = (await getPrompt("book.cover")) + phRule;
   const user = `Theme/title: "${concept.name}"
 Occasion: ${concept.occasion || "(infer)"}
 Audience: ${concept.audience || "young child / gift"}
@@ -271,7 +272,7 @@ export async function generateBookScript(concept: { name: string; angle?: string
   const to = Math.min(total, opts?.to ?? total);
   const vars = (opts?.vars && opts.vars.length ? opts.vars : ["name"]);
   const prev = (opts?.prevPages ?? []).slice(-6);
-  const system = "Bạn là tác giả sách tranh thiếu nhi bán chạy (KDP/personalized). Văn phong ấm nhưng CỤ THỂ và giàu hình ảnh — mỗi trang là một khoảnh khắc đáng nhớ, không sáo rỗng. Trả lời DUY NHẤT bằng JSON. Mọi nội dung sinh ra bằng TIẾNG ANH.";
+  const system = await getPrompt("book.script");
   const user = `Book: "${concept.name}". Angle: ${concept.angle || ""}
 ${concept.hook ? `Hook (what makes THIS book special — weave it through every page): ${concept.hook}` : ""}
 ${concept.usp ? `USP: ${concept.usp}` : ""}
@@ -344,7 +345,7 @@ export type BookSetup = { bible: BookBible; vars: { key: string; label: string; 
 // AI TỰ DỰNG Style Bible + bộ biến TỪ CHỦ ĐỀ. Đây là lời giải "1 form cho vô số chủ đề":
 // form chỉ nhận mô tả chủ đề, AI sinh phần riêng (nhân vật/trang phục/màu/cấm + biến hợp chủ đề).
 export async function generateBookSetup(concept: { name: string; occasion?: string; audience?: string; angle?: string; notes?: string }, opts?: { model?: string; keepStyle?: { artStyle?: string; palette?: string; textStyle?: string } }): Promise<BookSetup> {
-  const system = "Bạn là art director sách tranh thiếu nhi personalized (in KDP/Story Book). Từ CHỦ ĐỀ, dựng 'Style Bible' (khối mô tả khoá nhân vật + phong cách để MỌI trang nhất quán) và đề xuất bộ BIẾN cá nhân hoá HỢP CHỦ ĐỀ. Trả lời DUY NHẤT bằng JSON. Mọi trường trong bible viết bằng TIẾNG ANH (để đưa thẳng vào prompt vẽ); label của biến có thể tiếng Việt.";
+  const system = await getPrompt("book.setup");
   const user = `Chủ đề: "${concept.name}".
 Dịp/ngách: ${concept.occasion || "(tự suy luận)"}
 Đối tượng: ${concept.audience || "trẻ nhỏ / quà tặng"}

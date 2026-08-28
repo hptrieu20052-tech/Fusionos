@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { hitsSummary, type PolicyHit } from "@/lib/policy-scan";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { getPrompt } from "@/lib/ai/prompt-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -51,30 +52,10 @@ function imgUrls(v: unknown): string[] {
 
 const FIELDS = ["title", "description", "tags", "seo_title", "seo_description", "feed_title", "feed_description", "image", "other"] as const;
 
-const SYSTEM = `You audit ONE e-commerce product listing for trademark/IP and marketplace-policy risks across EVERY channel this catalog feeds: Shopify, Google Shopping / Google Merchant Center, Meta (Facebook & Instagram Shops and ads), Pinterest shopping, TikTok Shop. A finding on ANY of these platforms counts. THE PRODUCT IMAGES ARE ATTACHED — EXAMINE THEM FIRST, then every text field provided.
-
-Check EVERY part of the listing:
-- image (artwork): recognizable copyrighted characters (Disney/Pixar/Marvel/Nintendo/anime/kids-show characters), brand logos or wordmarks, celebrity or musician likenesses, or artwork clearly imitating one specific franchise's distinctive style. Generic princesses/superheroes/animals and original characters are FINE. Also (GMC & Pinterest image rules): promotional text overlaid on product images ("SALE", "Free shipping"), watermarks, phone numbers or URLs burned into the image.
-- title, tags, description: protected brand/franchise/band/celebrity names — including leetspeak or masked spellings (B4ckstreet, Tr**p); "officially licensed"/"authentic" without a license; replica/dupe/counterfeit language; medical or absolute claims ("cures", "FDA approved", "#1 best seller").
-- title and feed_title (Google Shopping rules): promotional text does NOT belong in titles — "free shipping", "sale", "% off", "best price"; no ALL-CAPS words, no phone numbers, no URLs, no emoji.
-- seo_title, seo_description, feed_description: same brand/claim rules; also flag if they misrepresent what the product actually is (mismatch vs the images), or obvious keyword stuffing.
-- Meta commerce rules (any text field): wording that asserts or implies personal attributes of the buyer or recipient — a medical/mental condition (ADHD, autism, anxiety...), religion, race, sexual orientation, or financial status ("for your autistic son" → suggest a neutral rewrite like "for kids who love..."); before/after transformation claims; sexualized content on any product.
-- Pinterest merchant rules (any text field): clickbait or exaggerated urgency ("you won't believe", "miracle", "act now", "last chance"), contact info or off-platform CTAs in descriptions, price or availability claims in text that contradict the listing.
-
-Do NOT flag: religious or faith-based products themselves — Bible storybooks, baptism gifts and similar are allowed on all these platforms (belief-related content merely limits personalized-ads eligibility on Google; that is a platform status, NOT a violation). Mentioning the product's own religious theme is fine; only flag wording that asserts the BUYER's/recipient's beliefs as a personal attribute.
-
-For EACH problem found, return an object:
-  {"issue":"<short, concrete — name the exact word/element>","where":"<one of: title|description|tags|seo_title|seo_description|feed_title|feed_description|image|other>","severity":"high"|"medium","fix":"<the exact, actionable correction — e.g. the replacement wording, or 'replace the cover artwork: character X is recognizable'>"}
-
-severity high = clearly identifiable protected brand/character/person, or a claim that risks account suspension. severity medium = risky-but-ambiguous (style close to a franchise, promo wording, stuffing).
-
-Be conservative and evidence-based; do not invent findings; empty fields are not problems. If the whole listing is clean, findings = [].
-
-LANGUAGE (v192): write the "issue" and "fix" texts in VIETNAMESE — the review team reads Vietnamese. BUT keep every quoted term, brand/character name, and every exact replacement wording in its original ENGLISH inside quotation marks, because the listing itself stays in English and the team will copy-paste those exact English words. Example fix: Thay cụm "The personalized photo book" bằng "The personalized illustrated storybook". Example issue: Ảnh thứ 2 và 3 có chữ quảng cáo đè lên sản phẩm: "THE PERFECT FAMILY GIFT", "Add your Name".
-
-Return STRICT JSON: {"risk":"clean"|"medium"|"high","findings":[...]}. risk = highest severity present (clean when none).`;
+// Prompt sống ở src/lib/ai/prompt-defs.ts (id "shopify.policy") — admin sửa qua Manager Prompts.
 
 export async function POST(req: NextRequest) {
+  const SYSTEM = await getPrompt("shopify.policy"); // admin ghi đè qua Manager Prompts
   const deadline = Date.now() + 290_000;
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });

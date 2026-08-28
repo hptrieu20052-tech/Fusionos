@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { getPrompt } from "@/lib/ai/prompt-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -27,34 +28,10 @@ type Out = { facebook: Caption; instagram: Caption; shorts: Caption; meta_ads: C
 // Facebook & Instagram TÁCH RIÊNG (FB ít hashtag + có link; IG nhiều hashtag + link ở bio).
 const CHANNELS = ["facebook", "instagram", "shorts", "meta_ads"] as const;
 
-const SYSTEM = `You write short-form marketing copy for Talewix, a store selling personalized children's books and personalized wooden name puzzles, each made to order.
-
-Write copy for FOUR destinations, each tuned to how it is used (Facebook and Instagram are SEPARATE because their hashtag and link behavior differ):
-- facebook: a Facebook Reel caption. 120-180 chars, warm and gift-focused, hook in the first line, natural spoken tone. Only 2-3 hashtags (Facebook barely uses them). The user will paste a clickable product link after this text, so end the text cleanly.
-- instagram: an Instagram Reel caption. 120-180 chars, same warm hook style. Then 10-14 hashtags (Instagram relies heavily on them for discovery). The link goes in the bio, not the caption, so do NOT put a URL here.
-- shorts: for a YouTube Short, YouTube separates Title from Description, so give BOTH: a "title" = a punchy, keyword-rich YouTube title UNDER 90 characters (NO hashtags, NO url inside the title); and "text" = a 1-2 line description. Plus 3-5 hashtags (they go in the description).
-- meta_ads: a PAID Facebook/Instagram ad — return THREE fields so it maps to the ad form: "text" = primary text, 90-125 chars, benefit-led, speaks to a parent or grandparent buying a gift, no clickbait, NO hashtags and NO url; "title" = a punchy HEADLINE under 40 characters (the bold line under the video); "description" = a short supporting line under 30 characters (a tagline, e.g. "Made to order · Free US shipping").
-
-HASHTAG STRATEGY (for the instagram hashtags): give a MIX so the post can rank in both big and niche feeds:
-- 3-4 BROAD high-reach tags (e.g. #personalizedgifts, #kidsbooks, #giftsforkids, #customgifts).
-- 4-5 NICHE/specific tags tied to THIS product and who it suits (e.g. #personalizedmermaidbook, #mermaidgift, #customstorybook, #keepsakebook).
-- 2-3 OCCASION/buyer tags (e.g. #birthdaygiftforgirls, #granddaughtergift, #giftforher).
-Order them broad → niche. Keep every tag genuinely relevant (no filler, no unrelated trending tags). You cannot know live hashtag volume, so favor clearly on-topic tags over guessing what's "trending".
-
-ABSOLUTE RULES — breaking any of these makes the output unusable:
-1. NEVER invent a discount, coupon code, sale, percentage off, or any "limited time" or "expires soon" urgency. The store runs no automatic discounts.
-2. NEVER promise a specific delivery date. Only use the business-day ranges given in the product facts, and only if they are provided.
-3. NEVER mention any copyrighted or trademarked brand or character (Disney, PAW Patrol, Bluey, Marvel, Pokemon, etc.), even if the product data hints at one.
-4. NEVER invent reviews, ratings, star counts, customer numbers, or "best seller" / "#1" claims.
-5. NEVER state a price unless the price is given in the product facts.
-6. Write in natural US English. No emoji spam — at most 2 emoji per caption, and none is fine.
-7. If a product image and/or a still frame from the video are provided, use them to keep the description concrete and accurate (what the product actually is, its style, who it suits). But NEVER name or imply any real brand or copyrighted character even if you think you recognize one in the image (see rule 3).
-
-Return STRICT JSON only, no markdown fence:
-{"facebook":{"text":"...","hashtags":["#a","#b"]},"instagram":{...},"shorts":{"title":"...","text":"...","hashtags":["#a"]},"meta_ads":{"text":"...","title":"...","description":"..."}}
-Every hashtag must start with "#", be lowercase, contain no spaces, and be relevant to personalized gifts for kids.`;
+// Prompt sống ở src/lib/ai/prompt-defs.ts (id "video.captions") — admin sửa qua Manager Prompts.
 
 export async function POST(req: NextRequest) {
+  const SYSTEM = await getPrompt("video.captions"); // admin ghi đè qua Manager Prompts
   const session = await getSession();
   if (!session || (await levelOf(session, "videos")) < 2) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });

@@ -7,6 +7,7 @@ import { storeOwnerScopeIds } from "@/lib/scope";
 import { shopHost, type ShopifyCred } from "@/lib/shopify";
 import { listCustomCollections, collectionAddProducts, addTags } from "@/lib/shopify-bulk";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { getPrompt } from "@/lib/ai/prompt-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -37,22 +38,7 @@ function imgUrls(v: unknown): string[] {
     .map((s) => s + (s.includes("?") ? "&" : "?") + "width=900");
 }
 
-const SYSTEM = `You sort a personalized children's book into the RIGHT store collection(s). You are given the FIXED list of collections that already exist in this store. You may ONLY pick from that list — never invent a new collection name.
-
-LOOK AT THE PRODUCT PHOTOS and read the title. Decide the collection by the book's strongest theme, using this priority when several could fit (higher wins):
-1. Learning & milestone — first day of school, kindergarten/preschool, graduation, alphabet/ABC, counting, learning to read, milestone.
-2. Faith & family — baptism, christening, Bible, prayer, faith, blessing, dad/mom, Father's/Mother's Day, family, grandparent.
-3. Birthday & celebration — birthday, 1st/first birthday, Halloween, Christmas, holiday, celebration.
-4. Baby & bedtime — bedtime, baby, newborn, nursery, baby shower, sleep, lullaby, nursery rhyme.
-5. Adventure & imagination — farm, ocean, space, dinosaur, cowboy, jungle/safari, pirate, animal adventure, imaginative worlds (only when no stronger occasion applies).
-
-Match a book to the collection whose THEME fits, by meaning — the store's collection titles may be worded differently from these five buckets, so map by concept, not by exact words. Pick ONE collection normally; pick a SECOND only if the book genuinely belongs to both (e.g. a birthday book that is also a bedtime book). Never pick more than two. If NONE of the existing collections fit the book, return an empty array — do not force a bad match.
-
-ALSO decide HOLIDAY/OCCASION tags (v199b) — from this FIXED list only:
-christmas, easter, mothers day, fathers day, back to school, valentines day, halloween, thanksgiving, grandparents day, st patricks day, 4th of july, new year, hanukkah
-Pick 0-2 that the product CLEARLY matches by its artwork or title: Santa/tree/stocking/sleigh → christmas; bunny/eggs/spring pastel basket → easter; dad/daddy/father → fathers day; mom/mommy/mother → mothers day; school/classroom/ABC/backpack/routine chart → back to school; hearts/love/valentine → valentines day; pumpkin/ghost/witch → halloween; turkey/autumn harvest/thankful/gratitude → thanksgiving; grandma/grandpa/nana/papa/grandparent → grandparents day; shamrock/leprechaun/lucky → st patricks day; American flag/stars and stripes/fireworks → 4th of july; countdown/new year → new year; menorah/dreidel → hanukkah. A generic product with no clear holiday theme gets NO occasion tags — be conservative; these tags drive the store's holiday collections and a wrong tag puts the product on the wrong shelf.
-
-Return STRICT JSON: {"collections": ["<exact title from the provided list>", ...], "occasions": ["<from the fixed list>", ...]} — collections: 0-2 titles copied EXACTLY from the provided list; occasions: 0-2 from the fixed list.`;
+// Prompt sống ở src/lib/ai/prompt-defs.ts (id "shopify.collections") — admin sửa qua Manager Prompts.
 
 // v199b · danh sách tag dịp lễ hợp lệ — chỉ nhận đúng các slug này từ AI.
 // Thêm lễ mới: thêm slug vào đây + vào danh sách trong SYSTEM prompt, và tạo collection automated
@@ -63,6 +49,7 @@ const OCCASIONS = [
 ];
 
 export async function POST(req: NextRequest) {
+  const SYSTEM = await getPrompt("shopify.collections"); // admin ghi đè qua Manager Prompts
   const deadline = Date.now() + 290_000;
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });

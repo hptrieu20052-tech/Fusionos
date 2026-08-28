@@ -6,6 +6,7 @@ import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { shopHost, shopifyGraphQL, type ShopifyCred } from "@/lib/shopify";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { getPrompt } from "@/lib/ai/prompt-store";
 
 export const dynamic = "force-dynamic";
 // Vercel PRO ⇒ 300s. Hạ về Hobby thì phải đưa maxDuration = 60 và BUDGET_MS = 52_000.
@@ -41,19 +42,7 @@ const M_UPDATE = `mutation fusionImageAlt($productId: ID!, $media: [UpdateMediaI
 
 type Img = { id?: string; src?: string; altText?: string; position?: number; [k: string]: unknown };
 
-const SYSTEM = `You write image alt text for a Shopify product page, for accessibility and Google Images.
-
-You are shown the product's images in order. For EACH image, describe what is ACTUALLY VISIBLE in that image — the object, its material and finish, what is printed or shown on it, who or what appears in the scene, the setting. If an image is a size chart, a spec graphic, a text banner or a step-by-step instruction, say so and state what it shows.
-
-Rules for every alt string:
-- 70-125 characters. Never exceed 125.
-- Plain descriptive sentence fragment. No trailing period needed.
-- Weave the product's primary keyword in ONCE, naturally, only where it fits what is really in the picture. Never repeat the keyword across every image.
-- Never start with "Image of", "Photo of", "Picture of".
-- No shop name, no marketing slogans, no prices, no emojis, no quotes, no keyword lists.
-- Every alt must be DIFFERENT from the others — they describe different pictures.
-
-Return STRICT JSON: {"alts": ["...", "..."]} — exactly one string per image, in the same order as the images given.`;
+// Prompt sống ở src/lib/ai/prompt-defs.ts (id "shopify.imageAlt") — admin sửa qua Manager Prompts.
 
 const clip = (s: unknown, n: number) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -63,6 +52,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const thumb = (src: string) => (src.includes("?") ? `${src}&width=600` : `${src}?width=600`);
 
 export async function POST(req: NextRequest) {
+  const SYSTEM = await getPrompt("shopify.imageAlt"); // admin ghi đè qua Manager Prompts
   const deadline = Date.now() + BUDGET_MS;
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });

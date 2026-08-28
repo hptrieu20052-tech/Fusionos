@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { getPrompt } from "@/lib/ai/prompt-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -18,12 +19,7 @@ export const maxDuration = 60;
  */
 type Opt = { title?: string; tags?: string; description?: string };
 
-const SYSTEM = `You optimize e-commerce product listings for a Shopify store selling personalized print-on-demand gifts to US shoppers, ranked on Google Shopping and Google Search.
-For the given Etsy listing, rewrite:
-- "title": a SHORT, clean product title, MAX 70 characters. Put the strongest buyer keyword first (e.g. "Personalized Dog Story Book"). Natural, not keyword-stuffed. Title Case. No emojis, no "Etsy", no shop name.
-- "tags": 12-15 comma-separated tags a US shopper would search (gift occasion, recipient, product type, style). Lowercase, no underscores, no # symbol.
-- "description": a concise 2-3 sentence product description for Google, plain text, focused on the gift/occasion/who it's for. No emojis.
-Return STRICT JSON: {"title": "...", "tags": "a, b, c", "description": "..."}`;
+// Prompt sống ở src/lib/ai/prompt-defs.ts (id "etsy.optimize") — admin sửa qua Manager Prompts.
 
 export async function POST(req: NextRequest) {
   const session = await getSession();
@@ -33,6 +29,7 @@ export async function POST(req: NextRequest) {
   if (!ids.length) return NextResponse.json({ ok: false, error: "Select up to 20 listings" }, { status: 400 });
   // Model do người dùng chọn (slug OpenRouter); rỗng → dùng model text mặc định (OPENROUTER_TEXT_MODEL).
   const model = typeof b?.model === "string" && b.model.trim() ? b.model.trim() : undefined;
+  const SYSTEM = await getPrompt("etsy.optimize"); // admin ghi đè qua Manager Prompts
 
   const rows = await db.select({
     id: schema.etsyProducts.id, storeId: schema.etsyProducts.storeId,

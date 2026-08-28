@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { getPrompt } from "@/lib/ai/prompt-store";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -21,30 +22,10 @@ type Script = {
   aspect_ratio?: string;
 };
 
-const SYSTEM = `You are a senior video ad director for print-on-demand (POD) products sold on Etsy and TikTok.
-You will receive ONE OR MORE product photos (t-shirt, sweatshirt, mug, poster...).
-
-If ONE photo: write a script for an IMAGE-TO-VIDEO model (Kling / Seedance) — the video starts EXACTLY from this photo, so describe motion that evolves naturally from it.
-If SEVERAL photos: write a MULTI-SCENE script for Seedance reference-to-video. Refer to the photos as @Image1, @Image2, ... in the order given. One scene per image, chronological, with a smooth transition between scenes (match cut, whip pan, or natural movement — never a hard teleport). Still one flowing paragraph.
-
-Rules for the motion prompt:
-- UGC-style ad that sells: a believable human moment, not a static zoom. Think: model smiles and turns slightly, tugs the shirt to show the print, camera slowly pushes in on the design, then pulls back; light handheld feel.
-- 2–3 beats max within the duration (e.g. 0-3s..., 3-6s..., 6-10s...). Write them as one flowing paragraph, chronological.
-- CRITICAL: the printed design, all text and logos must stay EXACTLY as in the photo — sharp, readable, undistorted. Say this explicitly.
-- Keep hands, face and body natural. No new objects, no scene change, no cuts to a different location.
-- English only. 60–120 words.
-
-Also write a negative prompt (comma-separated, English): the specific artifacts to avoid for THIS image (warped/illegible text on the print, deformed logo, extra fingers, morphing face, flicker, watermark, subtitles, heavy camera shake, scene change...).
-
-Return STRICT JSON:
-{"idea": "<1 short sentence: the ad concept>",
- "prompt": "<the motion prompt>",
- "negative_prompt": "<comma-separated>",
- "duration": "5" or "10",
- "aspect_ratio": "9:16" | "1:1" | "16:9"}
-Prefer duration "10" and aspect_ratio "9:16" (TikTok) unless the image clearly suits something else.`;
+// Prompt sống ở src/lib/ai/prompt-defs.ts (id "video.script") — admin sửa qua Manager Prompts.
 
 export async function POST(req: NextRequest) {
+  const SYSTEM = await getPrompt("video.script"); // admin ghi đè qua Manager Prompts
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if (!(await can(session, "genVideo"))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });

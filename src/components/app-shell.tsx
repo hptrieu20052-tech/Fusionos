@@ -124,7 +124,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   const hasAnchor = links.some((l) => !l.more && l.href === hubAnchor);
   const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
-  const aiActive = ["/books", "/ai-image", "/ai-video"].some((h) => path.startsWith(h));
+  const aiActive = ["/books", "/ai-image", "/ai-video", "/prompts"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
   const aiAgentDropdown = (canBookStudio || canGenImage || canGenVideo || isAdminUser) ? (
     <div key="__aiagent" className="topnav-more">
@@ -152,6 +152,14 @@ export default function AppShell({ user, links, children, canProducts = false, c
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="14" height="14" rx="2" /><path d="m22 8-6 4 6 4V8Z" /></svg>
               </span>
               Gen Video
+            </Link>
+          )}
+          {isAdminUser && (
+            <Link href="/prompts" prefetch className={`topnav-more-item${isActive("/prompts") ? " active" : ""}`}>
+              <span className="topnav-ic">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" /><line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" /><line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" /><line x1="1" y1="14" x2="7" y2="14" /><line x1="9" y1="8" x2="15" y2="8" /><line x1="17" y1="16" x2="23" y2="16" /></svg>
+              </span>
+              Manager Prompts
             </Link>
           )}
         </div>

@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import { orChatJSON } from "@/lib/ai/openrouter";
+import { getPrompt } from "@/lib/ai/prompt-store";
 
 export const dynamic = "force-dynamic";
 // Vercel PRO ⇒ 300s. Hạ về Hobby thì phải đưa maxDuration = 60 và BUDGET_MS = 52_000.
@@ -31,15 +32,7 @@ const T_MAX = 150;    // Google cắt title feed ở 150
 const D_MIN = 600;
 const D_MAX = 1400;
 
-const SYSTEM = `You write Google Merchant Center feed copy for a print-on-demand personalized product sold in the United States. This copy is read by Google's matching engine and by shoppers on Google Shopping and Free listings — not by a search-results snippet, so there is room to be complete.
-
-THE PRODUCT PHOTOS ARE ATTACHED — LOOK AT THEM FIRST, then read the SOURCE LISTING block if one is present. Every listing personalizes something different and the generic supplier facts do NOT say which; the photos and the source listing title are the two things that do. Read the images to establish exactly what is customized: a child's name printed on the cover or inside, the buyer's own uploaded photos placed on the pages, a dedication page, a portrait drawn as a character, a family name, a date, a message. Then describe the personalization you can actually SEE. Address the shopper as "you" — write "you upload your photos" and "you choose the dedication", never "the buyer supplies". If the images show no personalization, say nothing about it rather than inventing it, and never claim a feature you cannot see in the photos or read in the facts.
-
-Return STRICT JSON with exactly two keys:
-
-- "feedTitle": 110-150 characters written as ONE natural product name a real store would print on a shelf label — NOT a comma-separated keyword list. Aim for two to three descriptive segments joined by commas at most, each reading as normal English (e.g. "Personalized Raccoon Story Book for Kids with Their Name and Photos, Woodland Watercolor Hardcover Keepsake Gift"). Start with the primary keyword a buyer actually types, then the recipient, the occasion, and the concrete product form (e.g. hardcover photo book). Use Title Case, but keep short words lowercase unless they are the first word: for, and, with, to, of, in, on, a, an, the, or. No variant suffix, no size, no paper finish, no shop name, no ALL CAPS, no emojis, no pipe characters, no filler words padded on to hit the length.
-
-- "feedDescription": 800-1200 characters of PLAIN TEXT — no HTML tags, no bullet characters, no line breaks, no emojis. Write 4-6 flowing sentences that a shopper would actually read, covering, in this order: what the product is and who it is for; how the personalization works in concrete detail — name each thing you can see being customized in the photos (a name, uploaded photos, a dedication, a date), where it appears on the product, and why that makes it a one-of-a-kind keepsake rather than a generic gift; the physical specifics (format, cover, paper, page count, print quality) exactly as given in the facts below; and the gift occasions and recipients it suits. Weave in the natural phrases buyers search — occasion, recipient, product type, style — as part of real sentences. NEVER mention shipping, delivery, production time, turnaround, arrival dates, returns or any policy — the Merchant Center feed carries those separately and stating them here creates a mismatch. Never list keywords, never repeat a phrase, never invent a number, size, material, time or policy that is not in the input.`;
+// Prompt sống ở src/lib/ai/prompt-defs.ts (id "shopify.feedCopy") — admin sửa qua Manager Prompts.
 
 const clip = (s: unknown, n: number) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -70,6 +63,7 @@ function tplFor(tpls: Tpl[], storeId: string, productType: string | null, pinned
 }
 
 export async function POST(req: NextRequest) {
+  const SYSTEM = await getPrompt("shopify.feedCopy"); // admin ghi đè qua Manager Prompts
   const deadline = Date.now() + BUDGET_MS;
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });

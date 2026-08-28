@@ -801,3 +801,14 @@ export const productVideos = pgTable("product_videos", {
   index("idx_pvideos_uploader").on(t.uploadedBy, t.createdAt),
 ]);
 
+
+// ---------- AI PROMPTS OVERRIDE (Manager Prompts — admin) ----------
+// Ghi đè prompt AI theo id (khớp PROMPT_META trong src/lib/ai/prompt-defs.ts). CÓ dòng = dùng bản này,
+// KHÔNG có = rơi về default trong prompt-defs.ts. Chỉ admin sửa (trang /prompts). getPrompt() đọc bảng này,
+// nếu bảng chưa tồn tại (chưa migrate) thì tự bắt lỗi → vẫn chạy bằng default. Reset = xoá dòng.
+export const aiPrompts = pgTable("ai_prompts", {
+  id: text("id").primaryKey(),                            // vd "amazon.listing", "shopify.optimize.base"
+  value: text("value").notNull(),                         // nội dung prompt admin ghi đè
+  updatedBy: uuid("updated_by").references(() => users.id),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
