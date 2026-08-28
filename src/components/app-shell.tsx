@@ -207,7 +207,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
             <span className="topnav-ic">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="21" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.25" y="7" width="3.5" height="11" /><rect x="15.5" y="4" width="3.5" height="14" /></svg>
             </span>
-            Sale theo Listing
+            Product Sales
           </Link>}
           {canSupport && <Link href="/support" prefetch className={`topnav-more-item${isActive("/support") ? " active" : ""}`}>
             <span className="topnav-ic"><IconSupport width={16} height={16} /></span>

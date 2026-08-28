@@ -9,20 +9,22 @@ type Row = {
 };
 
 const RANGES = [
-  { k: "30", label: "30 ngày" },
-  { k: "90", label: "90 ngày" },
-  { k: "365", label: "1 năm" },
-  { k: "1096", label: "Tất cả" },
+  { k: "30", label: "30 days" },
+  { k: "90", label: "90 days" },
+  { k: "365", label: "1 year" },
+  { k: "1096", label: "All time" },
 ];
 const SORTS = [
-  { k: "orders", label: "Nhiều đơn nhất" },
-  { k: "qty", label: "Nhiều sản phẩm nhất" },
-  { k: "revenue", label: "Doanh thu cao nhất" },
-  { k: "recent", label: "Bán gần đây" },
+  { k: "orders", label: "Most orders" },
+  { k: "qty", label: "Most units" },
+  { k: "revenue", label: "Top revenue" },
+  { k: "recent", label: "Recently sold" },
 ];
 const PLAT_COLOR: Record<string, string> = { etsy: "#F1641E", shopify: "#5E8E3E", amazon: "#FF9900", tiktok: "#010101", other: "#66788E" };
 const money = (n: number | null) => (n == null ? "" : "$" + n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const fmtDate = (s: string | null) => (s ? new Date(s).toLocaleDateString() : "—");
+
+const sel: React.CSSProperties = { padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13, background: "#fff" };
 
 export function ProductSalesClient() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -34,6 +36,7 @@ export function ProductSalesClient() {
   const [plat, setPlat] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [zoom, setZoom] = useState<{ src: string; title: string } | null>(null);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -46,40 +49,39 @@ export function ProductSalesClient() {
       const res = await fetch(`/api/stats/product-sales?${p}`);
       const j = await res.json();
       if (my !== seq.current) return;
-      if (!j?.ok) throw new Error(j?.error || "lỗi");
+      if (!j?.ok) throw new Error(j?.error || "error");
       setRows(j.rows); setTotal(j.total); setShowMoney(!!j.showMoney);
     } catch (e) {
       if (my === seq.current) setErr(String((e as Error)?.message ?? e));
     } finally { if (my === seq.current) setLoading(false); }
   }, [q, days, sort, plat]);
 
-  // debounce search; reload khi đổi filter
   useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t); }, [load]);
+  useEffect(() => {
+    if (!zoom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setZoom(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoom]);
 
-  const th: React.CSSProperties = { textAlign: "left", fontSize: 11.5, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--muted,#888)", padding: "8px 10px", fontWeight: 700, whiteSpace: "nowrap" };
-  const td: React.CSSProperties = { padding: "10px", borderTop: "1px solid var(--line,#eee)", fontSize: 14, verticalAlign: "middle" };
+  const thc: React.CSSProperties = { padding: "8px 8px", textAlign: "left" };
 
   return (
-    <div style={{ maxWidth: 1040, margin: "0 auto", padding: "0 4px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", margin: "4px 0 4px" }}>
-        <h1 style={{ margin: 0, fontSize: 22 }}>Sale theo Listing</h1>
-        <span style={{ fontSize: 13, color: "var(--muted,#888)" }}>{total.toLocaleString()} listing có đơn</span>
-      </div>
-      <p style={{ fontSize: 13, color: "var(--muted,#888)", margin: "0 0 14px" }}>
-        Gộp mọi đơn của cùng một listing (kể cả đơn customized chưa gán design) → biết mẫu nào bán chạy để ưu tiên chạy ads.
-      </p>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
-        <input className="field" placeholder="Tìm listing theo tên hoặc listing_id…" value={q} onChange={(e) => setQ(e.target.value)}
-          style={{ flex: "1 1 260px", minWidth: 220, padding: "9px 12px", fontSize: 14 }} />
-        <select className="field" value={days} onChange={(e) => setDays(e.target.value)} style={{ padding: "9px 10px" }}>
+    <div className="panel" style={{ padding: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+        <h2 style={{ margin: 0, fontSize: 18 }}>
+          Product Sales <span style={{ color: "var(--muted)", fontWeight: 500, fontSize: 13 }}>by listing</span>
+        </h2>
+        <span style={{ color: "var(--muted)", fontSize: 12.5 }}>· {total.toLocaleString()} listings with orders</span>
+        <div style={{ flex: 1 }} />
+        <select value={days} onChange={(e) => setDays(e.target.value)} style={sel}>
           {RANGES.map((r) => <option key={r.k} value={r.k}>{r.label}</option>)}
         </select>
-        <select className="field" value={sort} onChange={(e) => setSort(e.target.value)} style={{ padding: "9px 10px" }}>
+        <select value={sort} onChange={(e) => setSort(e.target.value)} style={sel}>
           {SORTS.map((s) => <option key={s.k} value={s.k}>{s.label}</option>)}
         </select>
-        <select className="field" value={plat} onChange={(e) => setPlat(e.target.value)} style={{ padding: "9px 10px" }}>
-          <option value="">Mọi sàn</option>
+        <select value={plat} onChange={(e) => setPlat(e.target.value)} style={sel}>
+          <option value="">All channels</option>
           <option value="etsy">Etsy</option>
           <option value="shopify">Shopify</option>
           <option value="amazon">Amazon</option>
@@ -87,62 +89,82 @@ export function ProductSalesClient() {
         </select>
       </div>
 
-      {err && <div className="panel" style={{ padding: 12, marginBottom: 12, color: "#b4321f" }}>Lỗi: {err}</div>}
+      <p style={{ fontSize: 12.5, color: "var(--muted)", margin: "0 0 12px" }}>
+        Every order of the same listing grouped together (including customized orders not yet assigned a design) — spot best-sellers to prioritize ads.
+      </p>
 
-      <div className="panel" style={{ padding: 0, overflowX: "auto", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search listing by name or listing_id…"
+        style={{ width: "100%", ...sel, padding: "9px 12px", marginBottom: 12 }} />
+
+      {err && <div style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 10 }}>✗ {err}</div>}
+
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 720 }}>
           <thead>
-            <tr>
-              <th style={{ ...th, width: 46 }}></th>
-              <th style={th}>Listing</th>
-              <th style={{ ...th, textAlign: "right" }}>Đơn</th>
-              <th style={{ ...th, textAlign: "right" }}>SL</th>
-              {showMoney && <th style={{ ...th, textAlign: "right" }}>Doanh thu</th>}
-              <th style={th}>Sàn</th>
-              <th style={th}>Bán gần nhất</th>
+            <tr style={{ color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase" }}>
+              <th style={{ ...thc, width: 44 }}></th>
+              <th style={thc}>Listing</th>
+              <th style={{ ...thc, textAlign: "right" }}>Orders</th>
+              <th style={{ ...thc, textAlign: "right" }}>Units</th>
+              {showMoney && <th style={{ ...thc, textAlign: "right" }}>Revenue</th>}
+              <th style={thc}>Channel</th>
+              <th style={thc}>Last sale</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.listingKey}>
-                <td style={{ ...td, padding: "6px 4px 6px 10px" }}>
+              <tr key={r.listingKey} style={{ borderTop: "1px solid var(--line)" }}>
+                <td style={{ padding: "6px 4px 6px 8px" }}>
                   {r.image
-                    ? <img src={r.image} alt="" width={38} height={38} style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 7, display: "block" }} />
-                    : <div style={{ width: 38, height: 38, borderRadius: 7, background: "var(--ground,#eee)" }} />}
+                    ? <img src={r.image} alt="" width={38} height={38} onClick={() => setZoom({ src: r.image!, title: r.title })}
+                        style={{ width: 38, height: 38, objectFit: "cover", borderRadius: 7, display: "block", cursor: "zoom-in" }} />
+                    : <div style={{ width: 38, height: 38, borderRadius: 7, background: "var(--ground, #eee)" }} />}
                 </td>
-                <td style={td}>
+                <td style={{ padding: "8px 8px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 12, color: "var(--muted,#aaa)", fontWeight: 700, minWidth: 20 }}>{i + 1}.</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, minWidth: 18 }}>{i + 1}.</span>
                     {r.productUrl
                       ? <a href={r.productUrl} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: "inherit", textDecoration: "none" }}>{r.title}</a>
                       : <span style={{ fontWeight: 600 }}>{r.title}</span>}
                   </div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted,#999)", marginLeft: 26 }}>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginLeft: 24 }}>
                     {r.baseSku != null && <span>Base #{r.baseSku}</span>}
                     {r.baseSku != null && r.listingId && <span> · </span>}
                     {r.listingId && <span>listing {r.listingId}</span>}
                   </div>
                 </td>
-                <td style={{ ...td, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{r.orders}</td>
-                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.qty}</td>
-                {showMoney && <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(r.revenue)}</td>}
-                <td style={td}>
+                <td style={{ padding: "8px 8px", textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{r.orders}</td>
+                <td style={{ padding: "8px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.qty}</td>
+                {showMoney && <td style={{ padding: "8px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(r.revenue)}</td>}
+                <td style={{ padding: "8px 8px" }}>
                   <span style={{ display: "inline-flex", gap: 4 }}>
                     {r.platforms.map((p) => (
                       <span key={p} style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", color: "#fff", background: PLAT_COLOR[p] ?? PLAT_COLOR.other, padding: "2px 6px", borderRadius: 5 }}>{p}</span>
                     ))}
                   </span>
                 </td>
-                <td style={{ ...td, color: "var(--muted,#888)", fontSize: 13, whiteSpace: "nowrap" }}>{fmtDate(r.lastOrder)}</td>
+                <td style={{ padding: "8px 8px", color: "var(--muted)", whiteSpace: "nowrap" }}>{fmtDate(r.lastOrder)}</td>
               </tr>
             ))}
             {!rows.length && !loading && (
-              <tr><td colSpan={showMoney ? 7 : 6} style={{ ...td, textAlign: "center", color: "var(--muted,#999)", padding: 30 }}>Không có listing nào khớp.</td></tr>
+              <tr><td colSpan={showMoney ? 7 : 6} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No listing matches.</td></tr>
             )}
           </tbody>
         </table>
       </div>
-      {loading && <div style={{ textAlign: "center", color: "var(--muted,#999)", fontSize: 13, marginTop: 10 }}>Đang tải…</div>}
+      {loading && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, marginTop: 10 }}>Loading…</div>}
+
+      {zoom && (
+        <div onClick={() => setZoom(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,17,20,.78)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: "min(90vw, 640px)", maxHeight: "90vh", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <img src={zoom.src} alt={zoom.title} style={{ maxWidth: "100%", maxHeight: "82vh", objectFit: "contain", borderRadius: 12, boxShadow: "0 10px 40px rgba(0,0,0,.5)" }} />
+            <div style={{ color: "#fff", fontSize: 13, textAlign: "center", maxWidth: 560, lineHeight: 1.4 }}>{zoom.title}</div>
+          </div>
+          <button onClick={() => setZoom(null)} aria-label="Close"
+            style={{ position: "fixed", top: 18, right: 22, width: 38, height: 38, borderRadius: 999, border: 0, background: "rgba(255,255,255,.16)", color: "#fff", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+      )}
     </div>
   );
 }
