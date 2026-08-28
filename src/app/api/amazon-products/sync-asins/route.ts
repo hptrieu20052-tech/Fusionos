@@ -59,51 +59,51 @@ export async function POST(req: NextRequest) {
   const candidates = onlyIds ? scoped : scoped.filter((r) => r.asin || (r.status ?? "DRAFT") !== "DRAFT");
   const skippedDrafts = scoped.length - candidates.length;
 
+  // ── PHA 1 (NHANH): status + ASIN parent cho MỌI listing. 1 call/listing → chạy được hàng trăm cái
+  // trong ngân sách thời gian, KHÔNG kẹt vì bước lấy ASIN con (chậm). Có ASIN trên Amazon = LIVE —
+  // KHÔNG dựa vào summaries.status (SP-API hay trả RỖNG cho hàng MoD/custom dù trang đã In stock).
+  const liveList: { id: string; root: string; parentAsin: string }[] = [];
   for (const r of candidates) {
-    if (Date.now() > deadline) { errors.push("hết thời gian — chạy lại để tiếp tục"); break; }
+    if (Date.now() > deadline) { errors.push("hết thời gian ở bước status — chạy lại để tiếp tục"); break; }
     const root = rootSku(r.variants) || (r.manualSku ?? "");
     if (!root) continue;
     try {
       const info = await getListing(cfg!, `${root}-PARENT-AMZ`);
       if (!info) {
-        // 404 — listing KHÔNG còn trên Amazon (đã xóa). Nếu DB còn Live/ASIN thì gỡ về DRAFT + xóa ASIN.
-        if (r.asin) {
-          await db.update(schema.amazonProducts).set({ asin: null, status: "DRAFT", updatedAt: new Date() }).where(eq(schema.amazonProducts.id, r.id));
-          removed++;
-        } else notFound++;
-        await sleep(250);
-        continue;
+        // 404 — listing không còn trên Amazon (đã xóa). DB còn Live/ASIN thì gỡ về DRAFT + xóa ASIN.
+        if (r.asin) { await db.update(schema.amazonProducts).set({ asin: null, status: "DRAFT", updatedAt: new Date() }).where(eq(schema.amazonProducts.id, r.id)); removed++; }
+        else notFound++;
+        await sleep(200); continue;
       }
-      if (!info.asin) { notFound++; await sleep(250); continue; } // tồn tại nhưng chưa cấp ASIN (đang xử lý) → giữ nguyên
-      // v364 · Parent trong variation family thường KHÔNG "BUYABLE" (không mua được) → chỉ xét parent
-      // sẽ mãi kẹt EXPORTED dù child đã live. Vậy: LIVE nếu PARENT hoặc BẤT KỲ child nào BUYABLE/DISCOVERABLE.
-      let live = /BUYABLE|DISCOVERABLE/i.test(info.status);
+      if (!info.asin) { notFound++; await sleep(200); continue; } // tồn tại nhưng chưa cấp ASIN (đang xử lý)
       await db.update(schema.amazonProducts)
-        .set({ asin: info.asin, status: live ? "LIVE" : "EXPORTED", updatedAt: new Date() })
+        .set({ asin: info.asin, status: "LIVE", updatedAt: new Date() })
         .where(eq(schema.amazonProducts.id, r.id));
       updated++;
+      liveList.push({ id: r.id, root, parentAsin: info.asin });
+    } catch (e) {
+      if (errors.length < 3) errors.push(String((e as Error)?.message ?? e).slice(0, 160));
+    }
+    await sleep(200); // ~5 req/s, dưới trần rate limit
+  }
 
-      // v349 · Kéo ASIN TỪNG size con → map {sku: asin} để UI click mở link. Best-effort (nếu chưa chạy migration thì bỏ qua).
-      const skuAsins: Record<string, string> = { [`${root}-PARENT-AMZ`]: info.asin };
-      const pdata = await getListingData(cfg!, `${root}-PARENT-AMZ`, "relationships").catch(() => null);
-      await sleep(200);
+  // ── PHA 2 (BEST-EFFORT): ASIN từng size con → map {sku:asin} cho UI click mở link. Chạy tới khi hết giờ;
+  // listing chưa kịp thì để lần sync sau — status đã đúng ở PHA 1 nên không ảnh hưởng.
+  for (const it of liveList) {
+    if (Date.now() > deadline) break;
+    try {
+      const skuAsins: Record<string, string> = { [`${it.root}-PARENT-AMZ`]: it.parentAsin };
+      const pdata = await getListingData(cfg!, `${it.root}-PARENT-AMZ`, "relationships").catch(() => null);
+      await sleep(150);
       const childSkus = ((pdata?.relationships as { childSkus?: string[] }[] | undefined) ?? []).flatMap((x) => x?.childSkus ?? []);
       for (const cs of childSkus.slice(0, 12)) {
         if (Date.now() > deadline) break;
         const ci = await getListing(cfg!, cs).catch(() => null);
         if (ci?.asin) skuAsins[cs] = ci.asin;
-        if (ci && /BUYABLE|DISCOVERABLE/i.test(ci.status)) live = true; // child buyable ⇒ listing đã live
-        await sleep(200);
+        await sleep(150);
       }
-      // Cập nhật lại status theo tín hiệu child + lưu skuAsins (bỏ qua nếu cột skuAsins chưa migrate).
-      await db.update(schema.amazonProducts)
-        .set({ skuAsins, status: live ? "LIVE" : "EXPORTED", updatedAt: new Date() })
-        .where(eq(schema.amazonProducts.id, r.id))
-        .catch(() => db.update(schema.amazonProducts).set({ status: live ? "LIVE" : "EXPORTED", updatedAt: new Date() }).where(eq(schema.amazonProducts.id, r.id)).catch(() => {}));
-    } catch (e) {
-      if (errors.length < 3) errors.push(String((e as Error)?.message ?? e).slice(0, 160));
-    }
-    await sleep(250); // ~4 req/s, dưới trần rate limit
+      await db.update(schema.amazonProducts).set({ skuAsins }).where(eq(schema.amazonProducts.id, it.id)).catch(() => {}); // bỏ qua nếu cột chưa migrate
+    } catch { /* skuAsins best-effort */ }
   }
 
   await touchSpSync(cfg!.storeId);
