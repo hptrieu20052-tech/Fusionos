@@ -12,98 +12,98 @@ export const PROMPT_META: PromptMeta[] = [
   {
     "id": "amazon.listing",
     "group": "Amazon",
-    "label": "Amazon listing (title · 5 bullets · description)",
-    "desc": "SYSTEM gen bộ copy Amazon. Chứa các luật chống lỗi 100473/100470, chống 'nghe như đồ chơi', chống BLANK/activity book."
+    "label": "Amazon listing (title \u00b7 5 bullets \u00b7 description)",
+    "desc": "Amazon copy SYSTEM. Includes anti-error rules (100473 / 100470), 'do not sound like a toy', anti BLANK/activity book."
   },
   {
     "id": "shopify.optimize.base",
     "group": "Shopify",
-    "label": "Shopify optimize — SYSTEM chính (title/SEO/description)",
-    "desc": "Phần nền của AI Optimize listing Shopify (Google Search & Shopping)."
+    "label": "Shopify optimize \u2014 main SYSTEM (title / SEO / description)",
+    "desc": "Base of the Shopify listing AI Optimize (Google Search & Shopping)."
   },
   {
     "id": "shopify.optimize.tplExtra",
     "group": "Shopify",
-    "label": "Shopify optimize — phần THÊM khi có template facts",
-    "desc": "Nối thêm vào SYSTEM khi listing có 'supplier facts' (Product Details + Shipping tab)."
+    "label": "Shopify optimize \u2014 EXTRA when template facts exist",
+    "desc": "Appended to the SYSTEM when the listing has supplier facts (Product Details + Shipping tab)."
   },
   {
     "id": "shopify.feedCopy",
     "group": "Shopify",
-    "label": "Shopify — Google Merchant feed copy",
-    "desc": "Viết feed title + feed description cho Google Merchant Center."
+    "label": "Shopify \u2014 Google Merchant feed copy",
+    "desc": "Writes feed title + feed description for Google Merchant Center."
   },
   {
     "id": "shopify.collections",
     "group": "Shopify",
-    "label": "Shopify — xếp Collection",
-    "desc": "Chọn collection đúng cho sản phẩm từ danh sách cố định của store."
+    "label": "Shopify \u2014 sort into Collection",
+    "desc": "Picks the right collection(s) for a product from the store's fixed list."
   },
   {
     "id": "shopify.imageAlt",
     "group": "Shopify",
-    "label": "Shopify — Image alt text",
-    "desc": "Sinh alt text cho từng ảnh sản phẩm (đọc ảnh — vision)."
+    "label": "Shopify \u2014 image alt text",
+    "desc": "Generates alt text for each product image (reads the image \u2014 vision)."
   },
   {
     "id": "shopify.policy",
     "group": "Shopify",
-    "label": "Shopify — soi rủi ro Policy/IP/GMC",
-    "desc": "Rà trademark/IP + chính sách sàn (Shopify/Google/Meta/Pinterest/TikTok)."
+    "label": "Shopify \u2014 Policy / IP / GMC risk audit",
+    "desc": "Scans for trademark/IP + marketplace policy issues (Shopify/Google/Meta/Pinterest/TikTok)."
   },
   {
     "id": "etsy.optimize",
     "group": "Etsy",
-    "label": "Etsy — optimize listing",
-    "desc": "Viết lại title/tags/description cho listing Etsy (chuẩn Google Shopping)."
+    "label": "Etsy \u2014 optimize listing",
+    "desc": "Rewrites title / tags / description for an Etsy listing (Google Shopping-ready)."
   },
   {
     "id": "book.ideas",
     "group": "Book Studio",
-    "label": "Book — Ý tưởng đầu sách",
-    "desc": "Sinh nhiều concept đầu sách từ brief."
+    "label": "Book \u2014 story ideas",
+    "desc": "Generates multiple book concepts from a brief."
   },
   {
     "id": "book.cover",
     "group": "Book Studio",
-    "label": "Book — Bìa (title + scene brief)",
-    "desc": "Viết title bìa + brief cảnh wraparound. (Luật placeholder tên bé được nối thêm tự động trong code.)"
+    "label": "Book \u2014 cover (title + scene brief)",
+    "desc": "Writes the cover title + wraparound scene brief. (Child-name placeholder rule is appended in code.)"
   },
   {
     "id": "book.script",
     "group": "Book Studio",
-    "label": "Book — Kịch bản từng trang",
-    "desc": "Viết lời văn + brief minh hoạ cho từng trang."
+    "label": "Book \u2014 per-page script",
+    "desc": "Writes the text + illustration brief for each page."
   },
   {
     "id": "book.setup",
     "group": "Book Studio",
-    "label": "Book — Style Bible + biến",
-    "desc": "Dựng Style Bible (khoá nhân vật/phong cách) + bộ biến cá nhân hoá từ chủ đề."
+    "label": "Book \u2014 Style Bible + variables",
+    "desc": "Builds the Style Bible (locks character/style) + personalization variables from the theme."
   },
   {
     "id": "book.analyzeStyle",
     "group": "Book Studio",
-    "label": "Book — Phân tích phong cách ảnh mẫu",
-    "desc": "Đọc ảnh minh hoạ mẫu, mô tả visual style để tái tạo (vision)."
+    "label": "Book \u2014 analyze reference art style",
+    "desc": "Reads reference illustrations, describes the visual style so it can be reproduced (vision)."
   },
   {
     "id": "book.analyzeCompetitor",
     "group": "Book Studio",
-    "label": "Book — Phân tích listing đối thủ",
-    "desc": "Nhìn ảnh listing đối thủ, mô tả cụ thể những gì thấy (vision)."
+    "label": "Book \u2014 analyze competitor listing",
+    "desc": "Looks at competitor listing images and describes concretely what it sees (vision)."
   },
   {
     "id": "video.script",
     "group": "Video",
-    "label": "Video — Kịch bản/Storyboard quảng cáo",
-    "desc": "Đạo diễn viết kịch bản/storyboard video quảng cáo POD (Etsy/TikTok)."
+    "label": "Video \u2014 ad script / storyboard",
+    "desc": "Directs the script/storyboard for a POD ad video (Etsy/TikTok)."
   },
   {
     "id": "video.captions",
     "group": "Video",
-    "label": "Video — Caption",
-    "desc": "Viết caption ngắn cho video sản phẩm."
+    "label": "Video \u2014 captions",
+    "desc": "Writes short captions for a product video."
   }
 ];
 
