@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { scopeOwnerIds } from "@/lib/scope";
+import { storeOwnerScopeIds } from "@/lib/scope";
 import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
@@ -42,8 +42,9 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Math.max(Number(sp.get("limit") ?? 50), 1), 200);
   const offset = Math.max(Number(sp.get("offset") ?? 0), 0);
 
-  // Scope: seller chỉ thấy đơn thuộc phạm vi mình (group theo chủ shop lúc đơn về).
-  const ownIds = await scopeOwnerIds(session, "orders");
+  // Scope: SELLER chỉ thấy product của mình, ADMIN thấy hết. storeOwnerScopeIds ÉP seller = own store
+  // (kể cả khi chưa seed scope), admin/role khác → all. Khớp theo chủ shop lúc đơn về (seller_at_order).
+  const ownIds = await storeOwnerScopeIds(session);
   const conds = [
     sql`o.status NOT IN ('new','cancel','trash')`,
     sql`o.ordered_at::date >= ${FROM}`,
