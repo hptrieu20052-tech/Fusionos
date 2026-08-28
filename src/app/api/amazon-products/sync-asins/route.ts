@@ -75,9 +75,11 @@ export async function POST(req: NextRequest) {
         continue;
       }
       if (!info.asin) { notFound++; await sleep(250); continue; } // tồn tại nhưng chưa cấp ASIN (đang xử lý) → giữ nguyên
-      const status = /BUYABLE|DISCOVERABLE/i.test(info.status) ? "LIVE" : "EXPORTED";
+      // v364 · Parent trong variation family thường KHÔNG "BUYABLE" (không mua được) → chỉ xét parent
+      // sẽ mãi kẹt EXPORTED dù child đã live. Vậy: LIVE nếu PARENT hoặc BẤT KỲ child nào BUYABLE/DISCOVERABLE.
+      let live = /BUYABLE|DISCOVERABLE/i.test(info.status);
       await db.update(schema.amazonProducts)
-        .set({ asin: info.asin, status, updatedAt: new Date() })
+        .set({ asin: info.asin, status: live ? "LIVE" : "EXPORTED", updatedAt: new Date() })
         .where(eq(schema.amazonProducts.id, r.id));
       updated++;
 
@@ -90,9 +92,14 @@ export async function POST(req: NextRequest) {
         if (Date.now() > deadline) break;
         const ci = await getListing(cfg!, cs).catch(() => null);
         if (ci?.asin) skuAsins[cs] = ci.asin;
+        if (ci && /BUYABLE|DISCOVERABLE/i.test(ci.status)) live = true; // child buyable ⇒ listing đã live
         await sleep(200);
       }
-      await db.update(schema.amazonProducts).set({ skuAsins }).where(eq(schema.amazonProducts.id, r.id)).catch(() => {}); // bỏ qua nếu cột chưa có
+      // Cập nhật lại status theo tín hiệu child + lưu skuAsins (bỏ qua nếu cột skuAsins chưa migrate).
+      await db.update(schema.amazonProducts)
+        .set({ skuAsins, status: live ? "LIVE" : "EXPORTED", updatedAt: new Date() })
+        .where(eq(schema.amazonProducts.id, r.id))
+        .catch(() => db.update(schema.amazonProducts).set({ status: live ? "LIVE" : "EXPORTED", updatedAt: new Date() }).where(eq(schema.amazonProducts.id, r.id)).catch(() => {}));
     } catch (e) {
       if (errors.length < 3) errors.push(String((e as Error)?.message ?? e).slice(0, 160));
     }
