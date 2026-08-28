@@ -104,10 +104,11 @@ export async function POST(req: NextRequest) {
   }
   if (!dataRows.length) return NextResponse.json({ ok: false, error: "không sinh được dòng nào — sản phẩm thiếu SKU variant" }, { status: 400 });
 
-  // Đánh dấu đã export (không chặn nếu update lỗi — file vẫn trả về)
+  // v368 · Ghi mốc đã export customization — nhưng KHÔNG đụng status. Đây là file cho listing ĐÃ LIVE
+  // (upload customization lên Amazon), nên hạ status về EXPORTED/"Submitted" là SAI (làm listing live tụt về submit).
   if (okIds.length) {
     await db.update(schema.amazonProducts)
-      .set({ status: "EXPORTED", exportedAt: new Date(), updatedAt: new Date() })
+      .set({ exportedAt: new Date(), updatedAt: new Date() })
       .where(inArray(schema.amazonProducts.id, okIds)).catch(() => {});
   }
 
