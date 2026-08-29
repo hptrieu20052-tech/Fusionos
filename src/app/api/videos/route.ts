@@ -309,7 +309,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   // Đánh dấu đã đăng tay ở một kênh: { markPosted: "tiktok" } · bỏ đánh dấu: { unmarkPosted: "tiktok" }
-  const CH = new Set(["tiktok", "reels", "shorts", "facebook", "pinterest"]);
+  const CH = new Set(["tiktok", "reels", "shorts", "facebook", "pinterest", "meta_ads"]);
   if (typeof b.markPosted === "string" && CH.has(b.markPosted)) {
     patch.postedTo = { ...(cur.postedTo as Record<string, string> ?? {}), [b.markPosted]: new Date().toISOString() };
   } else if (typeof b.unmarkPosted === "string" && CH.has(b.unmarkPosted)) {

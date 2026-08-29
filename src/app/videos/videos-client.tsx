@@ -50,6 +50,7 @@ const POST_TARGETS = [
   { key: "shorts", label: "YT Short", color: "#FF0000" },
   { key: "tiktok", label: "TikTok", color: "#111827" },
   { key: "pinterest", label: "Pinterest", color: "#E60023" },
+  { key: "meta_ads", label: "Meta Ads", color: "#0081FB" }, // v371 · tick mẫu đã lên camp Meta ads
 ] as const;
 // v272 · nhãn video con trong card: "QT-TH-01.2"; video lẻ thì "#8" như cũ.
 const subId = (r: { cardCode: string | null; cardSeq: number | null; videoCode: number }) =>
