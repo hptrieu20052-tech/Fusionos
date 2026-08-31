@@ -37,8 +37,13 @@ type RawProduct = {
 
 // tags REST có thể là string "a, b" hoặc mảng — chuẩn hoá về "a, b, c".
 const tagsStr = (t: unknown) => Array.isArray(t) ? t.map(strv).filter(Boolean).join(", ") : strv(t);
-// status ShopBase: active/draft/archived → ACTIVE/DRAFT/ARCHIVED (đồng bộ convention Shopify).
-const upStatus = (s: unknown) => { const x = strv(s).toUpperCase(); return x === "ACTIVE" || x === "DRAFT" || x === "ARCHIVED" ? x : "DRAFT"; };
+// Trạng thái: ShopBase products.json KHÔNG trả `status`, chỉ có `published_at` (null = ẩn).
+// Ưu tiên `status` nếu ShopBase có trả; nếu không, suy từ published_at → ACTIVE (đang bán) / DRAFT (ẩn).
+const deriveStatus = (p: RawProduct) => {
+  const x = strv(p.status).toUpperCase();
+  if (x === "ACTIVE" || x === "DRAFT" || x === "ARCHIVED") return x;
+  return strv(p.published_at) ? "ACTIVE" : "DRAFT";
+};
 
 function normalize(p: RawProduct, host: string): SbSyncedProduct {
   const options: SbOption[] = (p.options ?? []).map((o, i) => ({
@@ -65,7 +70,7 @@ function normalize(p: RawProduct, host: string): SbSyncedProduct {
   return {
     shopbaseProductId: strv(p.id), handle, title: strv(p.title),
     bodyHtml: strv(p.body_html), vendor: strv(p.vendor), productType: strv(p.product_type),
-    tags: tagsStr(p.tags), status: upStatus(p.status),
+    tags: tagsStr(p.tags), status: deriveStatus(p),
     seoTitle: strv(p.metafields_global_title_tag), seoDescription: strv(p.metafields_global_description_tag),
     collections: [],   // REST products.json không kèm collections — để trống, bổ sung sau nếu cần.
     options, variants, images,
