@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { ShopbaseLogo } from "@/components/shopbase-logo";
 
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
@@ -13,14 +14,8 @@ type Row = {
 };
 
 const SB_BLUE = "#2F6BFF";
-const SB_BLUE_DK = "#1E52D6";
 const inp: React.CSSProperties = { padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", background: "#fff", fontSize: 13, width: "100%", boxSizing: "border-box" };
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-// Logo ShopBase inline (badge xanh "SB") — không phụ thuộc file ảnh.
-const ShopbaseLogo = ({ s = 30 }: { s?: number }) => (
-  <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: s, height: s, borderRadius: s * 0.28, background: `linear-gradient(135deg, ${SB_BLUE}, ${SB_BLUE_DK})`, color: "#fff", fontWeight: 900, fontSize: s * 0.42, letterSpacing: -0.5, flexShrink: 0 }}>SB</span>
-);
 
 export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { stores: Store[]; sellers: Seller[]; canEdit: boolean; isAdmin: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);

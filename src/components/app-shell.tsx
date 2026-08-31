@@ -8,15 +8,14 @@ import {
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 import { AmazonLogo } from "@/components/amazon-logo";
+import { SHOPBASE_LOGO_SRC } from "@/components/shopbase-logo";
 
-// Logo sàn cho nav (đen, đã tách nền) — dùng đúng icon người dùng gửi.
-const MK_SRC: Record<string, string> = { etsy: "/marketplaces/nav-etsy.png", shopify: "/marketplaces/nav-shopify.png", tiktok: "/marketplaces/nav-tiktok.png" };
+// Logo sàn cho nav — dùng logo MÀU bản gốc (giống trang Stores), không dùng bản đen nav-*.png.
+const MK_SRC: Record<string, string> = { etsy: "/marketplaces/etsy.png", shopify: "/marketplaces/shopify.png", tiktok: "/marketplaces/tiktok.png", shopbase: SHOPBASE_LOGO_SRC };
 const MarketplaceLogo = ({ mk, size = 16 }: { mk: string; size?: number }) => (
-  // ShopBase: badge xanh inline (không có file ảnh nav). Sàn khác: dùng ảnh đã có.
-  mk === "shopbase"
-    ? <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: size, height: size, borderRadius: size * 0.28, background: "linear-gradient(135deg,#2F6BFF,#1E52D6)", color: "#fff", fontWeight: 900, fontSize: size * 0.62, lineHeight: 1, flexShrink: 0 }}>S</span>
-    // eslint-disable-next-line @next/next/no-img-element
-    : <img src={MK_SRC[mk] ?? MK_SRC.shopify} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0 }} />
+  // ShopBase: logo chính thức (data-URI). Sàn khác: dùng ảnh đã có.
+  // eslint-disable-next-line @next/next/no-img-element
+  <img src={MK_SRC[mk] ?? MK_SRC.shopify} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, borderRadius: mk === "shopbase" ? size * 0.22 : 0 }} />
 );
 
 type P = { width?: number; height?: number; style?: React.CSSProperties };
