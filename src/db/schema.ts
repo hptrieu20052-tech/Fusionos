@@ -7,7 +7,7 @@ import { sql } from "drizzle-orm";
 // ---------- ENUMS ----------
 export const roleEnum = pgEnum("user_role", ["admin", "seller", "designer", "support", "content", "hiring"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "pending", "leave", "disabled"]);
-export const marketplaceEnum = pgEnum("marketplace", ["tiktok", "amazon", "etsy", "shopify", "other"]);
+export const marketplaceEnum = pgEnum("marketplace", ["tiktok", "amazon", "etsy", "shopify", "shopbase", "other"]);
 export const connectMethodEnum = pgEnum("connect_method", ["api", "extension", "excel"]);
 export const storeStatusEnum = pgEnum("store_status", ["active", "warning", "suspended", "pending"]);
 export const orderStatusEnum = pgEnum("order_status", [
@@ -328,6 +328,38 @@ export const shopifyProducts = pgTable("shopify_products", {
   idxShopifyProductsGid: index("idx_shopify_products_gid").on(t.shopifyProductId),
 }));
 
+// v374 · ShopBase products (ĐỘC LẬP với Shopify). ShopBase REST clone Shopify nên shape gần y hệt,
+// nhưng id là SỐ (REST) không phải GID, và push/sync đi qua REST (src/lib/shopbase-products.ts),
+// KHÔNG dùng GraphQL. Một bảng riêng để hệ Shopify (GraphQL push, video, Amazon staging) không dính.
+export const shopbaseProducts = pgTable("shopbase_products", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),                     // store ShopBase (marketplace=shopbase)
+  shopbaseProductId: text("shopbase_product_id").notNull(), // id SỐ của ShopBase REST
+  handle: text("handle"),
+  title: text("title").notNull(),
+  bodyHtml: text("body_html"),
+  vendor: text("vendor"),
+  productType: text("product_type"),
+  tags: text("tags"),
+  status: text("status").notNull().default("DRAFT"),      // ACTIVE / DRAFT / ARCHIVED
+  seoTitle: text("seo_title"),
+  seoDescription: text("seo_description"),
+  collections: jsonb("collections").notNull().default([]), // [{ id, title }]
+  options: jsonb("options").notNull().default([]),         // [{ name, position, values[] }]
+  variants: jsonb("variants").notNull().default([]),       // [{ id, title, price, compareAtPrice, sku, barcode, inventoryQty, selectedOptions }]
+  images: jsonb("images").notNull().default([]),           // [{ id, src, altText, position }]
+  onlineStoreUrl: text("online_store_url"),
+  totalInventory: integer("total_inventory"),
+  dirty: boolean("dirty").notNull().default(false),        // có sửa local chưa push
+  syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
+  pushedAt: timestamp("pushed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  idxShopbaseProductsStore: index("idx_shopbase_products_store").on(t.storeId),
+  idxShopbaseProductsPid: index("idx_shopbase_products_pid").on(t.shopbaseProductId),
+}));
+
 // ---------- AMAZON TEMPLATES (v286 · mỗi LOẠI sản phẩm 1 template customization Amazon) ----------
 // config = cấu trúc file "Add product customizations in bulk" của Amazon, parse từ master .xlsx:
 //   { headerRows: string[3][66]  — 3 dòng header GIỮ NGUYÊN (dòng 1 chứa ID template Amazon của account),
@@ -375,6 +407,9 @@ export const amazonProducts = pgTable("amazon_products", {
   // ngay trên bản ghi này (thay vì suy ra từ shopify_products). null = product bình thường có nguồn Shopify.
   manualSku: text("manual_sku"),
   manualType: text("manual_type"),
+  // v370 · Override SKU ROOT cho listing này (đổi cả parent {root}-PARENT-AMZ + child {root}-{suffix}).
+  // Dùng khi SKU cũ bị kẹt "ghost" trên Amazon (mã 8603) → đặt root MỚI để tạo family sạch. null = dùng root suy từ variant Shopify.
+  skuRoot: text("sku_root"),
   status: text("status").notNull().default("DRAFT"),      // DRAFT → EXPORTED → LIVE
   asin: text("asin"),                                     // ASIN parent — điền khi listing đã lên Amazon
   // v349 · map {sku: asin} cho parent + TỪNG size con (Sync kéo về) → UI click SKU mở link Amazon. Cần MIGRATION_v349.

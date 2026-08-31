@@ -40,7 +40,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
   };
   // Ẩn các key etsy_*/tiktok_*/shopify khỏi credentialKeys hiển thị (đã có mục API riêng)
   const SHOPIFY_KEYS = ["shopDomain", "clientId", "clientSecret", "adminToken", "webhookSecret"];
-  const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k));
+  const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k) && k !== "spapi" && k !== "shopbase");
   return NextResponse.json({
     ok: true,
     store: { ...s, apiCredentials: undefined, credentialKeys: shownKeys, hasCredentials: shownKeys.length > 0, etsy, tiktok, shopify },

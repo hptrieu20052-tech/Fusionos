@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
       const live = (c?.c7 ?? 0) > 0;
       const cred = (r.s.apiCredentials ?? {}) as Record<string, string>;
       const SHOPIFY_KEYS = ["shopDomain", "clientId", "clientSecret", "adminToken", "webhookSecret"];
-      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k) && k !== "spapi");
+      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k) && k !== "spapi" && k !== "shopbase");
       return {
         ...r.s,
         apiCredentials: undefined,
@@ -96,6 +96,15 @@ export async function GET(req: NextRequest) {
             hasRefresh: !!sp.refreshToken,
             configured: !!(sp.lwaClientId && sp.lwaClientSecret && sp.refreshToken && sp.sellerId),
             lastSyncAt: sp.lastSyncAt || null,
+          };
+        })(),
+        // ShopBase (private app · Basic auth) — cấu hình lưu ở cred.shopbase. Chỉ trả field không bí mật.
+        shopbase: (() => {
+          const sb = ((cred as Record<string, unknown>).shopbase ?? {}) as Record<string, string>;
+          return {
+            subdomain: sb.subdomain || "",
+            hasApp: !!(sb.subdomain && sb.apiKey && sb.password),
+            lastSyncAt: sb.lastSyncAt || null,
           };
         })(),
         sellerName: r.sellerName,

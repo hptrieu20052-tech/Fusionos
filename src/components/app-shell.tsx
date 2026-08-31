@@ -12,8 +12,11 @@ import { AmazonLogo } from "@/components/amazon-logo";
 // Logo sàn cho nav (đen, đã tách nền) — dùng đúng icon người dùng gửi.
 const MK_SRC: Record<string, string> = { etsy: "/marketplaces/nav-etsy.png", shopify: "/marketplaces/nav-shopify.png", tiktok: "/marketplaces/nav-tiktok.png" };
 const MarketplaceLogo = ({ mk, size = 16 }: { mk: string; size?: number }) => (
-  // eslint-disable-next-line @next/next/no-img-element
-  <img src={MK_SRC[mk] ?? MK_SRC.shopify} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0 }} />
+  // ShopBase: badge xanh inline (không có file ảnh nav). Sàn khác: dùng ảnh đã có.
+  mk === "shopbase"
+    ? <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: size, height: size, borderRadius: size * 0.28, background: "linear-gradient(135deg,#2F6BFF,#1E52D6)", color: "#fff", fontWeight: 900, fontSize: size * 0.62, lineHeight: 1, flexShrink: 0 }}>S</span>
+    // eslint-disable-next-line @next/next/no-img-element
+    : <img src={MK_SRC[mk] ?? MK_SRC.shopify} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0 }} />
 );
 
 type P = { width?: number; height?: number; style?: React.CSSProperties };
@@ -64,7 +67,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
   useEffect(() => {
     setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false);
-    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
+    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
     setMobileHub(hubPaths.some((p) => path.startsWith(p)));
   }, [path]);
   useEffect(() => {
@@ -122,7 +125,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // đứng liền ngay sau Design Studio thay vì bị đẩy xuống sau các dropdown.
   const hubAnchor = links.some((l) => !l.more && l.href === "/videos") ? "/videos" : "/designs";
   const hasAnchor = links.some((l) => !l.more && l.href === hubAnchor);
-  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
+  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image", "/ai-video", "/prompts"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
@@ -186,6 +189,10 @@ export default function AppShell({ user, links, children, canProducts = false, c
           {canProducts && <Link href="/shopify-templates" prefetch className={`topnav-more-item${isActive("/shopify-templates") ? " active" : ""}`}>
             <span className="topnav-ic"><MarketplaceLogo mk="shopify" size={16} /></span>
             Manage Templates Shopify
+          </Link>}
+          {canProducts && <Link href="/shopbase-products" prefetch className={`topnav-more-item${isActive("/shopbase-products") ? " active" : ""}`}>
+            <span className="topnav-ic"><MarketplaceLogo mk="shopbase" size={16} /></span>
+            Manage Products ShopBase
           </Link>}
           {canProducts && <Link href="/amazon-products" prefetch className={`topnav-more-item${isActive("/amazon-products") ? " active" : ""}`}>
             <span className="topnav-ic"><AmazonLogo size={16} /></span>
@@ -327,6 +334,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
               if (l.href === hubAnchor && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
                 const hubItems = [
                   ...(canProducts ? [
+                    { href: "/shopbase-products", icon: <MarketplaceLogo mk="shopbase" size={18} />, label: "Manage Products ShopBase" },
                     { href: "/amazon-products", icon: <AmazonLogo size={18} />, label: "Manage Products Amazon" },
                     { href: "/amazon-templates", icon: <AmazonLogo size={18} />, label: "Manage Templates Amazon" },
                     { href: "/tiktok-products", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Products Tiktok" },

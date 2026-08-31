@@ -17,15 +17,16 @@ type Store = {
   etsy?: { hasKeystring: boolean; keystring: string; connected: boolean; shopId: string };
   tiktok?: { hasApp: boolean; appKey: string; authLink: string; connected: boolean; shopId: string; shopName: string };
   shopify?: { shopDomain: string; hasApp: boolean; clientId: string };
+  shopbase?: { subdomain: string; hasApp: boolean; lastSyncAt: string | null };
   amazon?: { region: string; marketplaceId: string; sellerId: string; lwaClientId: string; hasSecret: boolean; hasRefresh: boolean; configured: boolean; lastSyncAt: string | null };
 };
 type Opt = { id: string; name: string };
 
-const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["shopify", "Shopify"], ["other", "Other"]];
+const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["shopify", "Shopify"], ["shopbase", "ShopBase"], ["other", "Other"]];
 const CONNECT: [string, string][] = [["extension", "Chrome Extension"], ["api", "API"], ["excel", "Excel Import"]];
 const CURRENCIES: [string, string][] = [["USD", "USD ($)"], ["VND", "VND (₫)"], ["EUR", "EUR (€)"], ["GBP", "GBP (£)"], ["AUD", "AUD"], ["CAD", "CAD"], ["JPY", "JPY (¥)"]];
 const FX_DEFAULT: Record<string, number> = { VND: 25400, EUR: 0.92, GBP: 0.79, AUD: 1.5, CAD: 1.36, JPY: 157 };
-const MK_COLOR: Record<string, string> = { tiktok: "#25242A", amazon: "#FF9900", etsy: "#F1641E", shopify: "#5E8E3E", other: "#66788E" };
+const MK_COLOR: Record<string, string> = { tiktok: "#25242A", amazon: "#FF9900", etsy: "#F1641E", shopify: "#5E8E3E", shopbase: "#2F6BFF", other: "#66788E" };
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Field credentials theo từng sàn
 const CRED_FIELDS: Record<string, [string, string][]> = {
@@ -209,7 +210,7 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
     <Modal title={t("st.addStoreNew")} close={close}>
       <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: gymwear.us" style={inp} /></L>
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => { const mk = e.target.value; setF({ ...f, marketplace: mk, connectMethod: mk === "shopify" ? "api" : f.connectMethod }); }} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => { const mk = e.target.value; setF({ ...f, marketplace: mk, connectMethod: (mk === "shopify" || mk === "shopbase") ? "api" : f.connectMethod }); }} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       {!isSeller && <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
@@ -223,6 +224,11 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
       {f.marketplace === "shopify" && (
         <div style={{ fontSize: 12, color: "var(--muted)", background: "#F3FBF6", border: "1px solid #CDEFD8", borderRadius: 10, padding: "8px 12px", margin: "2px 0 4px", lineHeight: 1.55 }}>
           Create the store first, then open its <b>Settings</b> to enter the Shopify app <b>Shop domain</b>, <b>Client ID</b> and <b>Client Secret</b>, check the connection and register webhooks. Orders then flow into FUSION automatically.
+        </div>
+      )}
+      {f.marketplace === "shopbase" && (
+        <div style={{ fontSize: 12, color: "var(--muted)", background: "#EEF3FF", border: "1px solid #CBD9FF", borderRadius: 10, padding: "8px 12px", margin: "2px 0 4px", lineHeight: 1.55 }}>
+          Create the store first, then open its <b>Settings</b> to enter the ShopBase <b>Subdomain</b> ({"{store}"}.onshopbase.com), private-app <b>API key</b> and <b>Password</b>, check the connection, then <b>Sync orders</b>. Orders flow into the same stats as Shopify.
         </div>
       )}
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -350,6 +356,37 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     const r0 = (j.results ?? [])[0] as { ok?: boolean; error?: string; topics?: string[] } | undefined;
     if (j.ok) { setShCheck({ ok: true, text: "Webhooks: " + ((r0?.topics ?? []).join(", ") || "registered") }); flash("✓ Webhooks registered"); }
     else { setShCheck({ ok: false, text: r0?.error ?? j.error ?? "Error" }); flash("✗ " + (r0?.error ?? j.error ?? "Error")); }
+  };
+
+  // ===== ShopBase (private app · Basic auth). Config lưu ở store.api_credentials.shopbase =====
+  const [sbSubdomain, setSbSubdomain] = useState(store.shopbase?.subdomain ?? "");
+  const [sbApiKey, setSbApiKey] = useState("");
+  const [sbPassword, setSbPassword] = useState("");
+  const [sbBusy, setSbBusy] = useState(false);
+  const [sbSaved, setSbSaved] = useState(store.shopbase?.hasApp ?? false);
+  const [sbCheck, setSbCheck] = useState<{ ok: boolean; text: string } | null>(null);
+  const saveShopbase = async () => {
+    if (!sbSubdomain.trim() || (!sbApiKey.trim() && !store.shopbase?.hasApp) || (!sbPassword.trim() && !store.shopbase?.hasApp)) {
+      flash("✗ Enter Subdomain + API key + Password"); return;
+    }
+    setSbBusy(true);
+    const j = await fetch("/api/shopbase/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, subdomain: sbSubdomain.trim(), apiKey: sbApiKey.trim(), password: sbPassword.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setSbBusy(false);
+    if (j.ok) { flash("✓ ShopBase saved — now Check connection"); setSbSaved(true); setSbApiKey(""); setSbPassword(""); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+  const checkShopbase = async () => {
+    setSbBusy(true); setSbCheck(null);
+    const j = await fetch("/api/shopbase/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setSbBusy(false);
+    if (j.ok) { setSbCheck({ ok: true, text: `${j.shopName || "shop"} · ${j.domain || ""}${j.currency ? " · " + j.currency : ""}` }); flash("✓ Connected: " + (j.shopName || j.domain)); }
+    else { setSbCheck({ ok: false, text: j.error ?? "Error" }); flash("✗ " + (j.error ?? "Error")); }
+  };
+  const syncShopbase = async () => {
+    setSbBusy(true);
+    const j = await fetch("/api/shopbase/sync-orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setSbBusy(false);
+    if (j.ok) { setSbCheck({ ok: true, text: `Synced ${j.fetched ?? 0} fetched · ${j.created ?? 0} new · ${j.updated ?? 0} updated` }); flash(`✓ ShopBase orders synced (${j.created ?? 0} new)`); reload(); }
+    else { setSbCheck({ ok: false, text: j.error ?? "Error" }); flash("✗ " + (j.error ?? "Error")); }
   };
 
   // ===== Amazon SP-API (LWA — không cần AWS IAM/SigV4). Config lưu ở store.api_credentials.spapi =====
@@ -565,6 +602,41 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           </div>
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
             Flow: <b>Save app</b> → <b>Check connection</b> (confirms the shop name) → <b>Register webhooks</b>. After that, new Shopify orders arrive automatically and tracking is pushed back to Shopify.
+          </div>
+        </div>
+      )}
+
+      {/* ShopBase (private app · Basic auth). Nhập creds → Check → Sync orders. Độc lập với Shopify. */}
+      {store.marketplace === "shopbase" && (
+        <div style={{ border: "1px solid #CBD9FF", background: "#EEF3FF", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
+          <b style={{ fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 6 }}><IconKey width={15} height={15} /> ShopBase API (private app)</b>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px", lineHeight: 1.5 }}>
+            In ShopBase admin → <b>Apps → Manage private apps → Create private app</b>, grant <b>Admin API</b> read access to Orders, then copy the <b>API key + Password</b> here.
+          </div>
+          <L label="Subdomain ({store}.onshopbase.com — or just the store name)">
+            <input value={sbSubdomain} onChange={(e) => setSbSubdomain(e.target.value)} placeholder="talewix.onshopbase.com" style={inp} autoComplete="off" data-lpignore="true" data-1p-ignore />
+          </L>
+          <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <L label="API key"><input value={sbApiKey} onChange={(e) => setSbApiKey(e.target.value)} placeholder={store.shopbase?.hasApp ? "••• (saved, leave blank to keep)" : "e.g. 3a5f…"} style={inp} autoComplete="off" data-lpignore="true" data-1p-ignore /></L>
+            <L label="Password"><input type="password" value={sbPassword} onChange={(e) => setSbPassword(e.target.value)} placeholder={store.shopbase?.hasApp ? "••• (saved, blank = keep)" : "shppass_…"} style={inp} autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
+          </div>
+          {sbCheck && (
+            <div style={{ fontSize: 12, padding: "7px 11px", borderRadius: 9, margin: "2px 0 8px", background: sbCheck.ok ? "var(--green-soft)" : "var(--red-soft)", color: sbCheck.ok ? "#2E7D46" : "var(--red)", fontWeight: 600 }}>
+              {sbCheck.ok ? "✓ " : "✗ "}{sbCheck.text}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <button onClick={saveShopbase} disabled={sbBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save</button>
+            <button onClick={checkShopbase} disabled={sbBusy || !(store.shopbase?.hasApp || sbSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.shopbase?.hasApp || sbSaved) ? "pointer" : "default", opacity: (store.shopbase?.hasApp || sbSaved) ? 1 : 0.5 }}>Check connection</button>
+            <button onClick={syncShopbase} disabled={sbBusy || !(store.shopbase?.hasApp || sbSaved)} style={{ background: "#2F6BFF", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.shopbase?.hasApp || sbSaved) ? "pointer" : "default", opacity: (store.shopbase?.hasApp || sbSaved) ? 1 : 0.5 }}>Sync orders</button>
+            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
+              {(store.shopbase?.hasApp || sbSaved)
+                ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> Configured{store.shopbase?.lastSyncAt ? " · synced " + new Date(store.shopbase.lastSyncAt).toLocaleDateString() : ""}</span>
+                : <span style={{ color: "var(--muted)" }}>Not configured</span>}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
+            Flow: <b>Save</b> → <b>Check connection</b> → <b>Sync orders</b>. Orders land in the same tables as Shopify, so Product Sales &amp; Video performance include ShopBase automatically. Secrets are stored server-side — leave blank to keep the saved value.
           </div>
         </div>
       )}
