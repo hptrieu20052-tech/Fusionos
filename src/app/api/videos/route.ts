@@ -87,12 +87,25 @@ export async function GET(req: NextRequest) {
   const LIMIT = Math.min(Math.max(Number(q.get("limit") ?? 24) || 24, 1), 60);
   const page = Math.max(Number(q.get("page") ?? 1) || 1, 1);
 
-  const [{ n: total }] = await db.select({ n: sql<number>`count(*)::int` })
+  // v372 · Phân trang theo CARD (nhóm), KHÔNG theo từng video. Trước đây limit/offset chạy trên từng
+  // video theo createdAt → video con cùng card có ngày khác nhau bị rơi sang 2 trang (card tách đôi).
+  // groupKey = cardId (video thuộc card) hoặc id (video lẻ). total = số NHÓM để Pager tính đúng.
+  const groupKeyExpr = sql<string>`coalesce(${schema.productVideos.cardId}::text, ${schema.productVideos.id}::text)`;
+
+  const [{ n: total }] = await db.select({ n: sql<number>`count(distinct ${groupKeyExpr})::int` })
     .from(schema.productVideos).where(where);
+
+  // Lấy đúng LIMIT nhóm cho trang này, xếp nhóm theo video MỚI NHẤT trong nhóm (desc).
+  const groupPage = await db.select({ gk: groupKeyExpr.as("gk") })
+    .from(schema.productVideos).where(where)
+    .groupBy(groupKeyExpr)
+    .orderBy(sql`max(${schema.productVideos.createdAt}) desc`, groupKeyExpr)
+    .limit(LIMIT).offset((page - 1) * LIMIT);
+  const groupKeys = groupPage.map((g) => g.gk);
 
   const uSeller = alias(schema.users, "u_seller");
   const uCreator = alias(schema.users, "u_creator");
-  const rows = await db.select({
+  const rows = groupKeys.length === 0 ? [] : await db.select({
     v: schema.productVideos,
     productTitle: schema.shopifyProducts.title,
     productUrl: schema.shopifyProducts.onlineStoreUrl,
@@ -109,9 +122,10 @@ export async function GET(req: NextRequest) {
     .leftJoin(uSeller, eq(uSeller.id, schema.productVideos.sellerId))
     .leftJoin(uCreator, eq(uCreator.id, schema.productVideos.creatorId))
     .leftJoin(schema.videoCards, eq(schema.videoCards.id, schema.productVideos.cardId))
-    .where(where)
-    .orderBy(desc(schema.productVideos.createdAt))
-    .limit(LIMIT).offset((page - 1) * LIMIT);
+    // chỉ video thuộc các nhóm của trang này → mọi video con của một card luôn ở CÙNG trang.
+    .where(and(where, inArray(groupKeyExpr, groupKeys)))
+    // nhóm đứng liền nhau + xếp theo video mới nhất (khớp thứ tự groupPage); trong nhóm để client sort theo cardSeq.
+    .orderBy(sql`max(${schema.productVideos.createdAt}) over (partition by ${groupKeyExpr}) desc`, groupKeyExpr, desc(schema.productVideos.createdAt));
 
   // Số listing đang dùng từng video — cột "đang chạy ở đâu", tính một lượt cho cả trang.
   const vids = rows.map((r) => r.v.id);
