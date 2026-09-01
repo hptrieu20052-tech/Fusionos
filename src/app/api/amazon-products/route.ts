@@ -61,8 +61,8 @@ export async function GET() {
     srcType: schema.shopifyProducts.productType,
     srcStatus: schema.shopifyProducts.status,
     srcImages: schema.shopifyProducts.images,
-    srcVariantCount: sql<number>`case when jsonb_typeof(${schema.shopifyProducts.variants}) = 'array' then jsonb_array_length(${schema.shopifyProducts.variants}) else 0 end`,
-    srcFirstSku: sql<string | null>`(${schema.shopifyProducts.variants} #>> '{0,sku}')`,
+    srcVariantCount: sql<number>`case when jsonb_typeof(${schema.shopifyProducts.variants}::jsonb) = 'array' then jsonb_array_length(${schema.shopifyProducts.variants}::jsonb) else 0 end`,
+    srcFirstSku: sql<string | null>`(${schema.shopifyProducts.variants}::jsonb #>> '{0,sku}')`,
     storeName: schema.stores.name,
     seller: schema.stores.sellerId,
   }).from(schema.amazonProducts)
