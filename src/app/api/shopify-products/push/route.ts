@@ -318,7 +318,8 @@ export async function POST(req: NextRequest) {
           cred, await profilesFor(cred), fresh?.productType ?? r.p.productType, r.p.shopifyProductId,
           (fresh?.variants ?? []).map((v) => String((v as SyncedVariant).id ?? "")),
         );
-        results.push({ id: r.p.id, title: r.p.title, ok: true, ...(wProf ? { error: "partial: " + wProf } : {}) });
+        const parts = [wProf, res.warn].filter(Boolean);
+        results.push({ id: r.p.id, title: r.p.title, ok: true, ...(parts.length ? { error: "partial: " + parts.join("; ") } : {}) });
       } else if (/does not exist|doesn'?t exist|not found/i.test(res.error ?? "")) {
         // v172 · Sản phẩm đã bị XOÁ tay trên Shopify mà bản ghi vẫn giữ GID cũ → tự gỡ liên kết
         // và TẠO LẠI ngay trong lần Push này (nội dung lấy từ bản local đang có).

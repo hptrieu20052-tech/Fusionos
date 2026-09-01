@@ -134,7 +134,7 @@ const MEDIA_CREATE = `mutation MC($productId: ID!, $media: [CreateMediaInput!]!)
   productCreateMedia(productId: $productId, media: $media) { media { id } mediaUserErrors { field message } }
 }`;
 const MEDIA_REORDER = `mutation MR($id: ID!, $moves: [MoveInput!]!) {
-  productReorderMedia(id: $id, moves: $moves) { userErrors { field message } }
+  productReorderMedia(id: $id, moves: $moves) { job { id } mediaUserErrors { field message } userErrors { field message } }
 }`;
 const MEDIA_LIST = `query M($id: ID!) {
   product(id: $id) { media(first: 50) { nodes { ... on MediaImage { id } } } }
@@ -158,7 +158,7 @@ function ue(arr: unknown): string {
  */
 export async function pushProductToShopify(
   cred: ShopifyCred, local: LocalProduct,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; warn?: string }> {
   const pid = local.shopifyProductId;
   // 1) Field sản phẩm
   const r1 = await shopifyGraphQL<{ productUpdate?: { userErrors?: unknown } }>(cred, PRODUCT_UPDATE, {
@@ -204,11 +204,22 @@ export async function pushProductToShopify(
     });
     const ec = ue(rc.productCreateMedia?.mediaUserErrors); if (ec) return { ok: false, error: "add image: " + ec };
   }
-  // Sắp xếp: chỉ với ảnh đã có id (ảnh mới thêm chưa có id ngay) — di chuyển theo vị trí local
-  const ordered = local.images.filter((im) => im.id);
+  // Sắp xếp: đọc lại media HIỆN CÓ trên Shopify (sau add/delete) để chỉ move GID đang tồn tại —
+  // GID cũ/không còn sẽ làm CẢ lệnh reorder lỗi. newPosition 0-based. KHÔNG nuốt lỗi nữa → trả warn.
+  let warn: string | undefined;
+  let curIds = new Set<string>();
+  try {
+    const rl2 = await shopifyGraphQL<{ product?: { media?: { nodes?: { id?: string }[] } } }>(cred, MEDIA_LIST, { id: pid });
+    curIds = new Set((rl2.product?.media?.nodes ?? []).map((n) => String(n.id ?? "")).filter(Boolean));
+  } catch { /* đọc lỗi → bỏ lọc, dùng id local */ }
+  const ordered = local.images.filter((im) => im.id && (curIds.size === 0 || curIds.has(im.id)));
   if (ordered.length > 1) {
     const moves = ordered.map((im, i) => ({ id: im.id, newPosition: String(i) }));
-    await shopifyGraphQL(cred, MEDIA_REORDER, { id: pid, moves }).catch(() => { /* reorder không chặn push */ });
+    try {
+      const rr = await shopifyGraphQL<{ productReorderMedia?: { mediaUserErrors?: unknown; userErrors?: unknown } }>(cred, MEDIA_REORDER, { id: pid, moves });
+      const er = ue(rr.productReorderMedia?.mediaUserErrors) || ue(rr.productReorderMedia?.userErrors);
+      if (er) warn = "reorder: " + er;
+    } catch (e) { warn = "reorder: " + String((e as Error)?.message ?? e).slice(0, 140); }
   }
-  return { ok: true };
+  return { ok: true, warn };
 }

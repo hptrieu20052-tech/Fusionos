@@ -358,14 +358,27 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         seoTitle: edit.seoTitle, seoDescription: edit.seoDescription,
       }) }).then((r) => r.json());
       if (!p.ok) { flash("✗ " + (p.error ?? "Save failed"), false); setBusy(false); return; }
-      // v172: bản NHÁP stage từ Etsy (chưa có Shopify ID) — Save chỉ lưu local, KHÔNG tự tạo trên
-      // Shopify. Hoàn thiện xong bấm Push to Shopify ngoài action bar mới tạo thật.
-      if (!edit.shopifyProductId) { flash("✓ Draft saved — hit Push to Shopify when it's ready"); setEditId(null); setBusy(false); load(); return; }
+      // v385 · GỘP 2 nút Save riêng vào Save chính: Custom options (push metafield) + Feed copy (Merchant).
+      // Chạy sau bước lưu field sản phẩm; lỗi extras KHÔNG chặn kết quả Save chính.
+      const persProblem = pqProblem(edPers);
+      const persWarn = persProblem ? ` · custom options CHƯA lưu: ${persProblem}` : "";
+      const saveExtras = async (pushMeta: boolean) => {
+        try {
+          if (!persProblem) {
+            await postJSON("/api/shopify-products/personalization", { action: "save", ids: [edit.id], fields: edPers });
+            if (pushMeta) await postJSON("/api/shopify-products/push-personalization", { ids: [edit.id] });
+          }
+          await postJSON("/api/shopify-products/feed-save", { id: edit.id, feedTitle: edit.feedTitle ?? "", feedDescription: edit.feedDescription ?? "" });
+        } catch { /* extras lỗi không chặn Save chính */ }
+      };
+      // v172: bản NHÁP stage từ Etsy (chưa có Shopify ID) — Save chỉ lưu local, KHÔNG tự tạo trên Shopify.
+      if (!edit.shopifyProductId) { await saveExtras(false); flash("✓ Draft saved — hit Push to Shopify when it's ready" + persWarn); setEditId(null); setBusy(false); load(); return; }
       // v206 · HIGH risk: xác nhận trước khi đẩy (admin bỏ qua được). Huỷ ⇒ giữ bản lưu local, không push.
       const ov = await confirmPolicy([edit.id]);
-      if (ov === null) { flash("✓ Saved locally — not pushed (HIGH policy risk not overridden)"); setEditId(null); setBusy(false); load(); return; }
+      if (ov === null) { await saveExtras(false); flash("✓ Saved locally — not pushed (HIGH policy risk not overridden)" + persWarn); setEditId(null); setBusy(false); load(); return; }
       const j = await postJSON("/api/shopify-products/push", { ids: [edit.id], override: ov });
-      if (j.ok || j.pushed) { flash("✓ Saved & updated on Shopify"); setEditId(null); load(); }
+      await saveExtras(true);
+      if (j.ok || j.pushed) { flash("✓ Saved & updated on Shopify (gồm custom options + feed)" + persWarn); setEditId(null); load(); }
       else { const err = (j.results ?? [])[0]?.error ?? j.error ?? "push failed"; flash("✗ Saved locally but Shopify update failed: " + err + (/write_products|scope|access/i.test(String(err)) ? " — add scope write_products + reinstall app" : ""), false); setEditId(null); load(); }
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
@@ -1871,10 +1884,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <input value={edit.feedTitle ?? ""} onChange={(e) => setEdit({ ...edit, feedTitle: e.target.value })} maxLength={150} placeholder="110-150 chars — keyword first, no size or finish suffix" style={{ ...ctl, width: "100%", marginBottom: 10, borderColor: (edit.feedTitle ?? "").length > 150 ? "#F3C9C9" : "var(--line)" }} />
                       <label style={lab}>Feed description <span style={{ fontWeight: 700, color: (edit.feedDescription ?? "").length > 0 && ((edit.feedDescription ?? "").length < 600 || (edit.feedDescription ?? "").length > 1400) ? "var(--red)" : "var(--muted)" }}>({(edit.feedDescription ?? "").length} chars · target 800-1200)</span></label>
                       <textarea value={edit.feedDescription ?? ""} onChange={(e) => setEdit({ ...edit, feedDescription: e.target.value })} rows={7} placeholder="Plain text, no HTML, no line breaks" style={{ ...ctl, width: "100%", resize: "vertical", borderColor: (edit.feedDescription ?? "").length > 0 && ((edit.feedDescription ?? "").length < 600 || (edit.feedDescription ?? "").length > 1400) ? "#F3C9C9" : "var(--line)" }} />
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
-                        <button disabled={busy} onClick={saveFeed} style={{ ...pill("#5B3FBF", "#fff"), padding: "7px 14px", fontSize: 12.5 }}>Save feed copy</button>
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Merchant Center only — never sent to Shopify, and not included in Save below.</span>
-                      </div>
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Merchant Center only (không gửi Shopify) — được lưu chung khi bạn bấm <b>Save</b> ở dưới.</div>
                     </div>
                   </div>
                   {/* RIGHT: fields + variants */}
@@ -1900,9 +1910,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       </div>
                       <CustomOptions fields={edPers} onChange={setEdPers} accent={SHOP_GREEN} onEditingChange={setEdPersEditing} max={10} />
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-                        <button disabled={busy || edPersEditing} onClick={saveEdPers} style={{ ...pill(SHOP_GREEN, "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || edPersEditing) ? .6 : 1 }}>Save &amp; push</button>
                         {edPersOwn && <button disabled={busy} onClick={clearEdPers} style={{ ...ghost, padding: "7px 14px", fontSize: 12.5 }}>Use the template instead</button>}
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Goes straight to the Shopify metafield — not included in Save below.</span>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Được lưu &amp; đẩy lên Shopify chung khi bạn bấm <b>Save</b> ở dưới.</span>
                       </div>
                     </div>
                     {/* v264 · OPTIONS builder — gõ option/giá trị là TỰ xổ lại variants. */}
