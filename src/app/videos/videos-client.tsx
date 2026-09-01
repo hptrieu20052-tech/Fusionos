@@ -474,7 +474,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                       {(() => {
                         const p = perfOf(v.videoCode);
                         return p && p.orders > 0 ? (
-                          <div style={{ fontSize: 9.5, fontWeight: 800, color: "#166534", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>🛒{p.orders} · {money(p.revenue)}</div>
+                          <div style={{ fontSize: 9.5, fontWeight: 800, color: "#166534", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>🛒{p.orders}</div>
                         ) : null;
                       })()}
                     </div>
@@ -503,7 +503,6 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
                   return tp.orders > 0 ? (
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: "auto", fontSize: 12.5, fontWeight: 800, color: "#166534", background: "#ECFDF3", border: "1px solid #BBF7D0", borderRadius: 8, padding: "5px 9px" }}>
                       <span>🛒 {tp.orders} order{tp.orders > 1 ? "s" : ""}</span>
-                      <span style={{ marginLeft: "auto", color: "#065F46" }}>{money(tp.revenue)}</span>
                     </div>
                   ) : null;
                 })()}
@@ -532,7 +531,7 @@ export default function VideosClient({ isAdmin, myRole, canManage, me }: { isAdm
           close={() => setOpen(null)} reload={() => load(page)} flash={flash} patch={patch}
           sellers={sellers} creators={creators} confirm={confirm} onReplace={doReplace}
           aiModels={aiModels} aiModel={aiModel} onChooseModel={chooseModel}
-          siblings={siblings} onSwitch={(id) => setOpen(id)}
+          siblings={siblings} onSwitch={(id) => setOpen(id)} perf={perf}
         />
       )}
     </div>
@@ -560,7 +559,7 @@ function Pager({ page, total, show, setPage, label }: { page: number; total: num
 
 /** Chi tiết CARD: thông tin card (mã, seller/creator, listing, captions dùng chung) + dải video con.
  *  Mở từ video nào thì video đó đang chọn; bấm thumbnail để chuyển; ✕ trên thumbnail = tách khỏi card. */
-function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, aiModels, aiModel, onChooseModel, siblings = [], onSwitch }: {
+function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, reload, flash, patch, sellers, creators, confirm, onReplace, aiModels, aiModel, onChooseModel, siblings = [], onSwitch, perf = {} }: {
   row: Row; canManage: boolean; isAdmin: boolean; myRole: string; busy: boolean; setBusy: (b: boolean) => void;
   close: () => void; reload: () => Promise<void> | void; flash: (m: string, ok?: boolean) => void;
   patch: (b: Record<string, unknown>, ok?: string) => Promise<boolean>;
@@ -568,7 +567,12 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
   onReplace: (row: Row, file: File) => Promise<void>;
   aiModels: { id: string; name: string }[]; aiModel: string; onChooseModel: (m: string) => void;
   siblings?: Row[]; onSwitch?: (id: string) => void;
+  // v387 · số ĐƠN theo video (ẩn doanh thu — chỉ hiện số order trong modal).
+  perf?: Record<string, { orders: number; revenue: number }>;
 }) {
+  // v387 · helper số đơn (KHÔNG hiện tiền). Tổng cả card = cộng đơn mọi video trong card.
+  const ordersOf = (code: number) => perf[String(code)]?.orders ?? 0;
+  const cardOrders = (siblings.length ? siblings : [row]).reduce((a, v) => a + ordersOf(v.videoCode), 0);
   const [types, setTypes] = useState<TypeOpt[]>([]);
   const [listings, setListings] = useState<Listing[]>([]);
   const [pickType, setPickType] = useState("");
@@ -759,6 +763,7 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
                       <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 1 }}>#{s.videoCode} · {secs(s.durationSec)}</div>
                       {/* mỗi video content RIÊNG → đánh dấu video nào đã có caption */}
                       <div style={{ fontSize: 10.5, fontWeight: 700, marginTop: 1, color: s.captionsAt ? "#1F6F45" : "var(--muted)" }}>{s.captionsAt ? "content ✓" : "no content"}</div>
+                      {ordersOf(s.videoCode) > 0 && <div style={{ fontSize: 10.5, fontWeight: 800, marginTop: 1, color: "#166534" }}>🛒 {ordersOf(s.videoCode)} order{ordersOf(s.videoCode) > 1 ? "s" : ""}</div>}
                     </div>
                     {canManage && (
                       <button onClick={(e) => { e.stopPropagation(); doDetach(s); }} title="Remove from card"
@@ -778,6 +783,14 @@ function VideoDetail({ row, canManage, isAdmin, myRole, busy, setBusy, close, re
               {row.width}×{row.height} · {row.aspect ?? "—"} · {secs(row.durationSec)} · {mb(row.sizeBytes)}<br />
               Uploaded by {row.uploader ?? "—"} · {new Date(row.createdAt).toLocaleDateString()}
             </div>
+            {/* v387 · số ĐƠN (ẩn doanh thu): video này + tổng cả card */}
+            {cardOrders > 0 && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginTop: 8, padding: "6px 12px", borderRadius: 999, background: "var(--green-soft)", color: "#166534", fontSize: 12.5, fontWeight: 800 }}>
+                <span>🛒 Video này: {ordersOf(row.videoCode)} đơn</span>
+                {siblings.length > 1 && <span style={{ opacity: .6 }}>|</span>}
+                {siblings.length > 1 && <span>Cả card: {cardOrders} đơn</span>}
+              </div>
+            )}
             {/* Thao tác riêng cho FILE video: Download · Copy link · Replace — đặt ngay dưới video. */}
             <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
               {row.publicUrl && (
