@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -16,18 +16,15 @@ export const dynamic = "force-dynamic";
  * DELETE ?id= → gỡ khỏi Manage Products Amazon (không đụng Shopify)
  */
 
-type Variant = { sku?: string | null; price?: string };
 type Img = { src?: string; position?: number };
 
-function rootSku(variants: unknown): string {
-  const arr = (Array.isArray(variants) ? variants : []) as Variant[];
-  for (const v of arr) {
-    const s = String(v?.sku ?? "").trim();
-    if (!s) continue;
-    const parts = s.split("-").filter(Boolean);
-    return parts.length >= 2 ? parts.slice(0, 2).join("-") : s;
-  }
-  return "";
+// v379 · KHÔNG kéo full variants JSON nữa (261 dòng × mảng variant lớn = OOM 500).
+// Root SKU suy từ SKU của variant đầu (lấy bằng SQL), giữ nguyên logic 2 cụm '-'.
+function rootSkuFromSku(sku: unknown): string {
+  const s = String(sku ?? "").trim();
+  if (!s) return "";
+  const parts = s.split("-").filter(Boolean);
+  return parts.length >= 2 ? parts.slice(0, 2).join("-") : s;
 }
 function coverUrl(images: unknown): string {
   const arr = (Array.isArray(images) ? images : []) as Img[];
@@ -50,22 +47,22 @@ function ovrUrls(v: unknown): string[] | null {
   const arr = v.map((x) => String(x ?? "").trim()).filter((s) => /^https:\/\//i.test(s));
   return arr.length ? arr : null;
 }
-function variantCount(variants: unknown): number {
-  return Array.isArray(variants) ? variants.length : 0;
-}
-
 export async function GET() {
+ try {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const scopeIds = await storeOwnerScopeIds(session);
 
+  // v379 · KHÔNG select full `variants` JSON của Shopify (mảng lớn × 261 dòng = OOM → 500 kể từ khi
+  // sync nhiều sản phẩm lúc dựng ShopBase). Chỉ lấy độ dài mảng + SKU của variant đầu bằng SQL.
   const rows = await db.select({
     a: schema.amazonProducts,
     srcTitle: schema.shopifyProducts.title,
     srcType: schema.shopifyProducts.productType,
     srcStatus: schema.shopifyProducts.status,
     srcImages: schema.shopifyProducts.images,
-    srcVariants: schema.shopifyProducts.variants,
+    srcVariantCount: sql<number>`case when jsonb_typeof(${schema.shopifyProducts.variants}) = 'array' then jsonb_array_length(${schema.shopifyProducts.variants}) else 0 end`,
+    srcFirstSku: sql<string | null>`(${schema.shopifyProducts.variants} #>> '{0,sku}')`,
     storeName: schema.stores.name,
     seller: schema.stores.sellerId,
   }).from(schema.amazonProducts)
@@ -98,11 +95,17 @@ export async function GET() {
       imageCount: ovrUrls(r.a.images)?.length ?? imgCount(r.srcImages),
       images: ovrUrls(r.a.images),
       sourceImages: srcUrls(r.srcImages),
-      srcVariantCount: variantCount(r.srcVariants) || (Array.isArray(r.a.variations) ? (r.a.variations as unknown[]).length : 0),
-      skuRoot: rootSku(r.srcVariants) || (r.a.manualSku ?? ""),
+      srcVariantCount: (Number(r.srcVariantCount) || 0) || (Array.isArray(r.a.variations) ? (r.a.variations as unknown[]).length : 0),
+      // skuRoot = root HIỆU LỰC (override nếu có → dùng preview SKU). skuRootOverride = giá trị override thô (rỗng = đang dùng root suy từ variant) cho ô Edit.
+      skuRoot: String(r.a.skuRoot ?? "").trim() || rootSkuFromSku(r.srcFirstSku) || (r.a.manualSku ?? ""),
+      skuRootOverride: r.a.skuRoot ?? "",
       storeName: r.storeName,
     })),
   });
+ } catch (e) {
+  // Không để 500 trắng — trả JSON lỗi để client hiện thông báo và ta đọc được nguyên nhân.
+  return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
+ }
 }
 
 export async function POST(req: NextRequest) {
@@ -167,6 +170,13 @@ export async function PATCH(req: NextRequest) {
       .map((v) => ({ suffix: String(v?.suffix ?? "").trim().slice(0, 40), label: String(v?.label ?? "").trim().slice(0, 60), price: String(v?.price ?? "").trim().slice(0, 12) }))
       .filter((v) => v.suffix);
     set.variations = arr.length ? arr : null;
+  }
+  // v370 · override SKU root (đổi parent+child SKU khi SKU cũ bị ghost 8603). Rỗng = xoá override (dùng root từ variant).
+  // Chuẩn hoá: hoa, chỉ giữ A-Z 0-9 và dấu '-'; bỏ hậu tố -PARENT-AMZ / -AMZ nếu user lỡ gõ (chỉ cần ROOT).
+  if (typeof b?.skuRoot === "string") {
+    let sr = b.skuRoot.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+    sr = sr.replace(/-PARENT-AMZ$/, "").replace(/-AMZ$/, "").slice(0, 40);
+    set.skuRoot = sr || null;
   }
 
   await db.update(schema.amazonProducts).set(set).where(eq(schema.amazonProducts.id, id));
