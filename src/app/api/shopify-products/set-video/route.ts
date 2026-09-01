@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -42,11 +42,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 
-  const codeRaw = b?.videoCode;
-  const code = Number(String(codeRaw ?? "").replace(/[^0-9]/g, ""));
+  const raw = String(b?.videoCode ?? "").trim();
 
-  // GỠ video.
-  if (!codeRaw || !code) {
+  // GỠ video khi để trống.
+  if (!raw) {
     // Video đang gắn trước khi xoá — để gỡ luôn "listing chính" của video nếu chính là listing này.
     const [before] = await db.select({ vid: schema.shopifyProducts.videoId })
       .from(schema.shopifyProducts).where(eq(schema.shopifyProducts.id, id)).limit(1);
@@ -63,14 +62,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, cleared: true });
   }
 
-  // Tìm video theo #videoCode.
-  const [vid] = await db.select({
+  // Phân giải video: chấp nhận #số (videoCode) HOẶC mã thẻ "QT-XX-01.<seq>" (chỉ "QT-XX-01" → lấy video con đầu).
+  type VRow = { id: string; code: number; title: string; thumbUrl: string | null; publicUrl: string | null; storageKey: string | null; contentType: string | null };
+  const vsel = {
     id: schema.productVideos.id, code: schema.productVideos.videoCode, title: schema.productVideos.title,
     thumbUrl: schema.productVideos.thumbUrl, publicUrl: schema.productVideos.publicUrl,
     storageKey: schema.productVideos.storageKey, contentType: schema.productVideos.contentType,
-  })
-    .from(schema.productVideos).where(eq(schema.productVideos.videoCode, code)).limit(1);
-  if (!vid) return NextResponse.json({ ok: false, error: `Video #${code} not found in Video Library` }, { status: 404 });
+  };
+  let found: VRow[];
+  if (/^\d+$/.test(raw)) {
+    found = await db.select(vsel).from(schema.productVideos)
+      .where(eq(schema.productVideos.videoCode, Number(raw))).limit(1);
+  } else {
+    const up = raw.toUpperCase();
+    const m = up.match(/^(.+?)\.(\d+)$/);
+    const cardCode = (m ? m[1] : up).trim();
+    const seq = m ? Number(m[2]) : null;
+    const conds = seq != null
+      ? and(eq(schema.videoCards.code, cardCode), eq(schema.productVideos.cardSeq, seq))
+      : eq(schema.videoCards.code, cardCode);
+    found = await db.select(vsel).from(schema.productVideos)
+      .leftJoin(schema.videoCards, eq(schema.videoCards.id, schema.productVideos.cardId))
+      .where(conds).orderBy(asc(schema.productVideos.cardSeq)).limit(1);
+  }
+  const vid = found[0];
+  if (!vid) return NextResponse.json({ ok: false, error: `Video "${raw}" không có trong Video Library` }, { status: 404 });
 
   await db.update(schema.shopifyProducts)
     .set({ videoId: vid.id, videoMediaId: null, videoPushedAt: null, updatedAt: new Date() })
@@ -106,7 +122,7 @@ export async function POST(req: NextRequest) {
     push = { ok: false, error: "Listing is not on Shopify yet — push the listing first, then attach the video." };
   }
 
-  return NextResponse.json({ ok: true, video: { code: vid.code, title: newTitle, thumbUrl: vid.thumbUrl }, push });
+  return NextResponse.json({ ok: true, video: { code: vid.code, title: newTitle, thumbUrl: vid.thumbUrl, publicUrl: vid.publicUrl, mime: vid.contentType ?? "video/mp4" }, push });
 }
 
 // Dùng để hiện video đang gắn khi mở nhiều listing (không bắt buộc, giữ cho tương lai).

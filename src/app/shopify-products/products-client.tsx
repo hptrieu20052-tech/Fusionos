@@ -44,7 +44,7 @@ type Detail = {
   // v142: bộ Custom options RIÊNG của listing. null = chưa đặt riêng ⇒ đang ăn theo template.
   personalization: PQ[] | null;
   // v223: video từ Video Library đang gắn vào listing (dán #videoCode). null = chưa gắn.
-  videoCode: number | null; videoTitle: string | null; videoThumbUrl: string | null;
+  videoCode: number | null; videoTitle: string | null; videoThumbUrl: string | null; videoPublicUrl?: string | null;
 };
 
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -408,9 +408,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     try {
       const j = await postJSON("/api/shopify-products/set-video", { id: edit.id, videoCode: clear ? "" : vidCode });
       if (j.ok) {
-        if (j.cleared) { setEdit({ ...edit, videoCode: null, videoTitle: null, videoThumbUrl: null }); flash("✓ Video removed"); }
+        if (j.cleared) { setEdit({ ...edit, videoCode: null, videoTitle: null, videoThumbUrl: null, videoPublicUrl: null }); flash("✓ Video removed"); }
         else {
-          setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl });
+          setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl, videoPublicUrl: j.video.publicUrl ?? null });
           if (j.push?.ok) flash(`✓ Attached + pushed video #${j.video.code} — Shopify is processing, appears in a few minutes.`);
           else if (j.push && !j.push.ok) flash(`✓ Attached video #${j.video.code} — but Shopify push failed: ${j.push.error}`, false);
           else flash(`✓ Attached video #${j.video.code}`);
@@ -419,6 +419,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       } else flash("✗ " + (j.error ?? "failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
+  };
+  // v380 · Chèn video creative vào Description (body_html). Dùng publicUrl trả về khi Attach.
+  // Sau đó user Save + Push để mô tả mới lên Shopify. Chống chèn trùng bằng cách check URL đã có chưa.
+  const addVideoToDesc = () => {
+    if (!edit) return;
+    const url = edit.videoPublicUrl;
+    if (!url) { flash("✗ Chưa có URL video — gắn lại video (Attach) rồi thử.", false); return; }
+    const body = edit.bodyHtml ?? "";
+    if (body.includes(url)) { flash("Video đã có trong mô tả rồi."); return; }
+    const poster = edit.videoThumbUrl ? ` poster="${edit.videoThumbUrl}"` : "";
+    const emb = `\n<div style="margin:16px 0;text-align:center"><video controls playsinline preload="metadata"${poster} style="width:100%;max-width:520px;border-radius:12px;display:inline-block"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video></div>\n`;
+    setEdit({ ...edit, bodyHtml: body + emb });
+    flash("✓ Đã chèn video vào Description — nhớ Save rồi Push để lên Shopify.");
   };
   // v206 · HIGH risk KHÔNG còn chặn cứng — chỉ cảnh báo. Admin xác nhận thì vẫn Push qua (gửi override).
   //   trả null  = có HIGH nhưng người dùng huỷ / không phải admin ⇒ ĐỪNG push
@@ -1806,14 +1819,16 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           {edit.videoThumbUrl && <img src={edit.videoThumbUrl} alt="" width={40} height={40} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
                           <span style={{ fontWeight: 800 }}>#{edit.videoCode}</span>
                           <span style={{ flex: 1, minWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: "var(--muted)" }}>{edit.videoTitle}</span>
+                          <button disabled={busy || !edit.videoPublicUrl} title={edit.videoPublicUrl ? "Chèn video vào ô Description" : "Gắn lại video để lấy URL rồi chèn"} onClick={addVideoToDesc} style={{ ...pill("#2952B3", "#fff"), padding: "6px 12px", fontSize: 12.5, opacity: (busy || !edit.videoPublicUrl) ? .6 : 1 }}>+ Vào mô tả</button>
                           <button disabled={busy} onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Remove</button>
                         </div>
                       ) : (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <input value={vidCode} onChange={(e) => setVidCode(e.target.value.replace(/[^0-9]/g, ""))} placeholder="#Video ID" style={{ ...ctl, width: 110, padding: "8px 11px" }} />
+                          <input value={vidCode} onChange={(e) => setVidCode(e.target.value.toUpperCase().replace(/[^A-Z0-9.\-]/g, ""))} placeholder="#123 hoặc QT-XX-01.1" style={{ ...ctl, width: 160, padding: "8px 11px" }} />
                           <button disabled={busy || !vidCode} onClick={() => setVideo(false)} style={{ ...pill("#2952B3", "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || !vidCode) ? .6 : 1 }}>Attach</button>
                         </div>
                       )}
+                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Dán #ID số hoặc mã thẻ (vd QT-XX-01.1). Attach = đẩy video lên media Shopify. “+ Vào mô tả” = chèn video vào ô Description (rồi Save + Push).</div>
                     </div>
                     {/* SEO — đây chính là dòng Google hiển thị. Bỏ trống thì Shopify tự lấy title + đoạn đầu mô tả,
                         thường bị cụt và không có từ khoá. Có preview thật để thấy trước khi Save. */}
