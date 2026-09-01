@@ -1898,7 +1898,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           {edPersOwn ? "this listing only" : edPersTpl ? `following template “${edPersTpl}”` : "no template match"}
                         </div>
                       </div>
-                      <CustomOptions fields={edPers} onChange={setEdPers} accent={SHOP_GREEN} onEditingChange={setEdPersEditing} />
+                      <CustomOptions fields={edPers} onChange={setEdPers} accent={SHOP_GREEN} onEditingChange={setEdPersEditing} max={10} />
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
                         <button disabled={busy || edPersEditing} onClick={saveEdPers} style={{ ...pill(SHOP_GREEN, "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || edPersEditing) ? .6 : 1 }}>Save &amp; push</button>
                         {edPersOwn && <button disabled={busy} onClick={clearEdPers} style={{ ...ghost, padding: "7px 14px", fontSize: 12.5 }}>Use the template instead</button>}

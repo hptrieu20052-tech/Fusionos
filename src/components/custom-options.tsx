@@ -53,7 +53,7 @@ export function toPQ(v: unknown): PQ[] {
       options: (Array.isArray(q.options) ? q.options : []).map((s) => String(s)),
       maxFiles: type === "upload" ? Math.min(10, Math.max(1, Number(q.maxFiles) || 1)) : 0,
     };
-  }).slice(0, 5);
+  }).slice(0, 10);   // v383 · trần đọc = 10 (đủ cho Shopify/Amazon); UI tự chốt theo prop max per-context.
 }
 
 /** Lỗi chặn lưu — trả chuỗi để cha flash lên, null = hợp lệ. */
@@ -76,13 +76,16 @@ const ghost: React.CSSProperties = { ...pill("#fff", "var(--ink)"), border: "1px
 const linkBtn = (c: string): React.CSSProperties => ({ border: "none", background: "none", padding: 0, cursor: "pointer", color: c, fontWeight: 700, fontSize: 12.5 });
 
 export default function CustomOptions({
-  fields, onChange, accent = "#4A7230", onEditingChange, disabled = false,
+  fields, onChange, accent = "#4A7230", onEditingChange, disabled = false, max = 10,
 }: {
   fields: PQ[];
   onChange: (next: PQ[]) => void;
   accent?: string;
   onEditingChange?: (editing: boolean) => void;
   disabled?: boolean;
+  // v383 · số field tối đa. Mặc định 10 vì seller soạn custom ở trang Etsy rồi đẩy sang Shopify/Amazon
+  // (đích thực tế), không cần khoá 5 kiểu Etsy. Truyền max=5 nếu chỗ nào cần ép chuẩn Etsy thật.
+  max?: number;
 }) {
   // index field đang mở ra sửa; null = chỉ xem danh sách.
   const [edit, setEdit] = useState<number | null>(null);
@@ -192,11 +195,11 @@ export default function CustomOptions({
         ))}
       </div>
 
-      {fields.length < 5 && edit === null && (
+      {fields.length < max && edit === null && (
         <button onClick={() => { onChange([...fields, NEW_PQ("text")]); setEdit(fields.length); }}
           style={{ ...ghost, width: "100%", justifyContent: "center", marginTop: fields.length ? 10 : 0 }}>+ Add field</button>
       )}
-      {fields.length >= 5 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>5 of 5 fields — the maximum for one listing.</div>}
+      {fields.length >= max && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 10 }}>{max} of {max} fields — the maximum for one listing.</div>}
     </div>
   );
 }

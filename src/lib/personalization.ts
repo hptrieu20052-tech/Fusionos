@@ -50,7 +50,7 @@ export function payloadOf(v: unknown): PQ[] {
       options,
       maxFiles: type === "upload" ? (options.length ? options.length : Math.min(Math.max(Math.round(Number(q?.maxFiles) || 1), 1), 10)) : 0,
     });
-    if (out.length >= 5) break;
+    if (out.length >= 10) break;   // v383 · trần 10 field (đích Shopify/Amazon); Etsy thật vốn chỉ nhận ≤5.
   }
   return out;
 }
