@@ -483,7 +483,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
     const v = edit.variations[i];
     const opts = (v.values ?? []).map((x) => String(x).trim()).filter(Boolean);
     if (!opts.length) return flash("✗ Variation này chưa có option nào để chuyển", false);
-    if (edit.personalization.length >= 5) return flash("✗ Đã đủ 5 ô Custom — xoá bớt trước khi chuyển", false);
+    if (edit.personalization.length >= 10) return flash("✗ Đã đủ 10 ô Custom — xoá bớt trước khi chuyển", false);
     const pq: PQ = { type: "dropdown", label: String(v.name ?? "").trim() || "Choose", instructions: "", required: true, maxChars: 0, options: opts, maxFiles: 0 };
     setVary((s) => s.filter((_, k) => k !== i));
     setEdit((e) => e ? { ...e, variations: e.variations.filter((_, k) => k !== i), personalization: [...e.personalization, pq] } : e);
@@ -997,7 +997,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
               {/* 5 · PERSONALIZATION — v142 · ô khách phải điền trước khi Add to cart */}
               <div style={{ ...sec, border: `1px solid ${ETSY_ORANGE}44`, background: "#FFF9F5", marginBottom: 0 }}>
-                <div style={{ ...secTitle, color: ETSY_ORANGE }}>Personalization <span style={secSub}>· {nw.personalization.length}/5 fields</span></div>
+                <div style={{ ...secTitle, color: ETSY_ORANGE }}>Personalization <span style={secSub}>· {nw.personalization.length}/10 fields</span></div>
                 <CustomOptions fields={nw.personalization} onChange={(f) => setNwField("personalization", f)} accent={ETSY_ORANGE} onEditingChange={setNewPersEditing} />
               </div>
             </div>
@@ -1275,7 +1275,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
 
                 {/* 5 · PERSONALIZATION — v142 · ô khách phải điền trước khi Add to cart */}
                 <div style={{ ...sec, border: `1px solid ${ETSY_ORANGE}44`, background: "#FFF9F5", marginBottom: 0 }}>
-                  <div style={{ ...secTitle, color: ETSY_ORANGE }}>Personalization <span style={secSub}>· {edit.personalization.length}/5 fields</span></div>
+                  <div style={{ ...secTitle, color: ETSY_ORANGE }}>Personalization <span style={secSub}>· {edit.personalization.length}/10 fields</span></div>
                   <CustomOptions fields={edit.personalization} onChange={(f) => setEdit({ ...edit, personalization: f })} accent={ETSY_ORANGE} onEditingChange={setPersEditing} />
                 </div>
               </div>

@@ -1848,7 +1848,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           <button disabled={busy || !vidCode} onClick={() => setVideo(false)} style={{ ...pill("#2952B3", "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || !vidCode) ? .6 : 1 }}>Attach</button>
                         </div>
                       )}
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Dán #ID số hoặc mã thẻ (vd QT-XX-01.1). Attach = đẩy video lên media Shopify. “+ Vào mô tả” = chèn video vào ô Description (rồi Save + Push).</div>
                     </div>
                     {/* SEO — đây chính là dòng Google hiển thị. Bỏ trống thì Shopify tự lấy title + đoạn đầu mô tả,
                         thường bị cụt và không có từ khoá. Có preview thật để thấy trước khi Save. */}
@@ -1871,7 +1870,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <input value={edit.seoTitle ?? ""} onChange={(e) => setEdit({ ...edit, seoTitle: e.target.value })} maxLength={70} placeholder="Blue link on Google — keyword first, ≤60 chars" style={{ ...ctl, width: "100%", marginBottom: 10, borderColor: (edit.seoTitle ?? "").length > 60 ? "#F3C9C9" : "var(--line)" }} />
                       <label style={lab}>Meta description <span style={{ fontWeight: 700, color: (edit.seoDescription ?? "").length > 155 ? "var(--red)" : "var(--muted)" }}>({(edit.seoDescription ?? "").length}/155)</span></label>
                       <textarea value={edit.seoDescription ?? ""} onChange={(e) => setEdit({ ...edit, seoDescription: e.target.value })} maxLength={320} rows={3} placeholder="One persuasive sentence under the link — keyword + benefit + call to action" style={{ ...ctl, width: "100%", resize: "vertical", borderColor: (edit.seoDescription ?? "").length > 155 ? "#F3C9C9" : "var(--line)" }} />
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Leave these blank and Shopify falls back to the product title plus a chopped-off slice of the description — worse click-through on Google and Shopping ads.</div>
                     </div>
                     {/* v119: 2 field feed Merchant Center — trước đây viết xong không có chỗ nào xem được.
                         Nút Save feed copy đi route riêng: không set dirty, không Push lên Shopify. */}
@@ -1884,7 +1882,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <input value={edit.feedTitle ?? ""} onChange={(e) => setEdit({ ...edit, feedTitle: e.target.value })} maxLength={150} placeholder="110-150 chars — keyword first, no size or finish suffix" style={{ ...ctl, width: "100%", marginBottom: 10, borderColor: (edit.feedTitle ?? "").length > 150 ? "#F3C9C9" : "var(--line)" }} />
                       <label style={lab}>Feed description <span style={{ fontWeight: 700, color: (edit.feedDescription ?? "").length > 0 && ((edit.feedDescription ?? "").length < 600 || (edit.feedDescription ?? "").length > 1400) ? "var(--red)" : "var(--muted)" }}>({(edit.feedDescription ?? "").length} chars · target 800-1200)</span></label>
                       <textarea value={edit.feedDescription ?? ""} onChange={(e) => setEdit({ ...edit, feedDescription: e.target.value })} rows={7} placeholder="Plain text, no HTML, no line breaks" style={{ ...ctl, width: "100%", resize: "vertical", borderColor: (edit.feedDescription ?? "").length > 0 && ((edit.feedDescription ?? "").length < 600 || (edit.feedDescription ?? "").length > 1400) ? "#F3C9C9" : "var(--line)" }} />
-                      <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Merchant Center only (không gửi Shopify) — được lưu chung khi bạn bấm <b>Save</b> ở dưới.</div>
                     </div>
                   </div>
                   {/* RIGHT: fields + variants */}
@@ -1903,7 +1900,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         Nút riêng như Save feed copy: ô cá nhân hoá nằm ở metafield, không đi cùng Save chính. */}
                     <div style={{ border: `1px solid ${SHOP_GREEN}44`, borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#F7FAF5" }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 800, color: SHOP_GREEN }}>Custom options ({edPers.length}/5)</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 800, color: SHOP_GREEN }}>Custom options ({edPers.length}/10)</div>
                         <div style={{ fontSize: 11, color: "var(--muted)" }}>
                           {edPersOwn ? "this listing only" : edPersTpl ? `following template “${edPersTpl}”` : "no template match"}
                         </div>
@@ -1911,7 +1908,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <CustomOptions fields={edPers} onChange={setEdPers} accent={SHOP_GREEN} onEditingChange={setEdPersEditing} max={10} />
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
                         {edPersOwn && <button disabled={busy} onClick={clearEdPers} style={{ ...ghost, padding: "7px 14px", fontSize: 12.5 }}>Use the template instead</button>}
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Được lưu &amp; đẩy lên Shopify chung khi bạn bấm <b>Save</b> ở dưới.</span>
                       </div>
                     </div>
                     {/* v264 · OPTIONS builder — gõ option/giá trị là TỰ xổ lại variants. */}
