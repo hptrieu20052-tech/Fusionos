@@ -92,6 +92,21 @@ export async function GET(req: NextRequest) {
   const amzRows = await db.select({ sid: schema.amazonProducts.shopifyProductId }).from(schema.amazonProducts).catch(() => [] as { sid: string | null }[]);
   const amzSet = new Set(amzRows.map((x) => x.sid).filter(Boolean) as string[]);
 
+  // v381 · Số ĐƠN theo listing: khớp phần SỐ của shopify_product_id ↔ order_items.etsy_listing_id
+  // (giống cách webhook/Product Sales map). Loại đơn new/cancel/trash. Một query gộp → map theo id số.
+  const orderCountByPid = new Map<string, number>();
+  try {
+    const oc = (await db.execute(sql`
+      SELECT regexp_replace(coalesce(oi.etsy_listing_id, ''), '[^0-9]', '', 'g') AS pid,
+             count(DISTINCT oi.order_id)::int AS n
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status NOT IN ('new','cancel','trash')
+      GROUP BY 1
+    `)).rows as { pid: string; n: number }[];
+    for (const r of oc) if (r.pid) orderCountByPid.set(r.pid, Number(r.n));
+  } catch { /* bảng trống / lỗi → để 0 */ }
+
   const list = scoped.map((r) => {
     const vs = (Array.isArray(r.p.variants) ? r.p.variants as Variant[] : []);
     const prices = vs.map((v) => Number(v.price)).filter((n) => !isNaN(n) && n > 0);
@@ -147,6 +162,8 @@ export async function GET(req: NextRequest) {
       optionsSummary: (Array.isArray(r.p.options) ? r.p.options as { name: string; values: string[] }[] : []).map((o) => `${o.name}: ${o.values.length}`).join(" · "),
       // v286 · badge AMZ: đã có bản ghi bên Manage Products Amazon.
       amz: amzSet.has(r.p.id),
+      // v381 · số đơn đã bán của listing (khớp theo phần số của shopify_product_id).
+      orders: (() => { const d = String(r.p.shopifyProductId ?? "").replace(/\D/g, ""); return d ? (orderCountByPid.get(d) ?? 0) : 0; })(),
     };
   });
   return NextResponse.json({ ok: true, rows: list });

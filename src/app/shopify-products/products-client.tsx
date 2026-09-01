@@ -30,6 +30,8 @@ type Row = {
   etsyListing: { id: string; title: string; store: string; seller: string } | null;
   // v286: đã đẩy sang Manage Products Amazon chưa (badge AMZ).
   amz: boolean;
+  // v381: số đơn đã bán của listing.
+  orders: number;
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -211,6 +213,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [prepFilter, setPrepFilter] = useState<"" | "sku" | "alt" | "done">(""); // v127
   const [riskFilter, setRiskFilter] = useState<"" | "high" | "medium" | "clean" | "unchecked">(""); // v177
   const [videoFilter, setVideoFilter] = useState<"" | "has" | "no">(""); // listing có / không có video
+  const [sortOrders, setSortOrders] = useState(false); // v381 · sắp xếp theo SỐ ĐƠN giảm dần (top seller)
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
@@ -303,10 +306,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     (!pidFilter || r.id === pidFilter) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "") + " " + (r.id ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
   ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, pidFilter, stores]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, pageSize]);
+  // v381 · Sắp xếp theo SỐ ĐƠN giảm dần khi bật (top seller → tối ưu trước). Tắt → giữ thứ tự server.
+  const sorted = useMemo(() => sortOrders ? [...filtered].sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0)) : filtered, [filtered, sortOrders]);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, sortOrders, pageSize]);
   const pageC = Math.min(page, totalPages);
-  const paged = useMemo(() => filtered.slice((pageC - 1) * pageSize, pageC * pageSize), [filtered, pageC, pageSize]);
+  const paged = useMemo(() => sorted.slice((pageC - 1) * pageSize, pageC * pageSize), [sorted, pageC, pageSize]);
   // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
@@ -1573,14 +1578,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               <th style={{ padding: "10px 8px", textAlign: "left", width: "8%" }}>Collections</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Template</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 175 }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
+              <th onClick={() => setSortOrders((v) => !v)} title="Số đơn đã bán · bấm để sắp xếp cao → thấp" style={{ padding: "10px 8px", textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
               <th style={{ padding: "10px 8px", textAlign: "right", width: 84 }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 70 }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right", width: 84 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={12} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={12} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
+            {loading && <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
@@ -1615,7 +1621,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     <a href={`/etsy-products?pid=${encodeURIComponent(r.etsyListing.id)}`} target="_blank" rel="noreferrer"
                       title={`View source in Manage Products · Etsy — ${r.etsyListing.store || "—"} · ${r.etsyListing.title}`}
                       style={{ marginTop: 3, fontSize: 10.5, fontWeight: 700, color: "#B45309", background: "#FEF3E2", border: "1px solid #F5D9A8", borderRadius: 6, padding: "2px 6px", display: "block", wordBreak: "break-word", lineHeight: 1.35, textDecoration: "none", cursor: "pointer" }}>
-                      ↗ Etsy: {r.etsyListing.store || r.etsyListing.seller || "—"}
+                      ↗ Etsy: {r.etsyListing.store || "—"}{r.etsyListing.seller && r.etsyListing.seller !== r.etsyListing.store ? ` · ${r.etsyListing.seller}` : ""}
                     </a>
                   )}
                 </td>
@@ -1689,6 +1695,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...(r.persOwn ? { background: "#E9F7EF", color: "#1F6F45" } : { background: "#F1F1F4", color: "#8794A5" }) }}>opt {r.persCount}</span>
                   </div>
                 </td>
+                <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 13, fontWeight: r.orders > 0 ? 800 : 400, color: r.orders > 0 ? "#14213D" : "var(--faint)" }} title="Số đơn đã bán">{r.orders > 0 ? r.orders : "–"}</td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12 }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
                 {/* v203 · Actions gọn như Shopify admin: 👁 = xem trên storefront · Push (khi có sửa).
