@@ -1,13 +1,13 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { useConfirm } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
+import TiktokEditModal from "./edit-modal";
 
 type Row = {
   id: string; storeId: string; tiktokProductId: string; title: string | null; status: string | null;
   mainImageUrl: string | null; categoryName: string | null; sellerSku: string | null;
-  priceMin: string | null; ttUpdateTime: string | null;
+  priceMin: string | null; ttUpdateTime: string | null; orders?: number;
 };
 type Store = { id: string; name: string; sellerId: string | null };
 type Seller = { id: string; name: string | null };
@@ -23,6 +23,7 @@ const statusColor = (s: string | null) => {
 };
 
 export default function TiktokProductsClient({ stores, sellers = [], initial, isAdmin, canManage = false }: { stores: Store[]; sellers?: Seller[]; initial: Row[]; isAdmin: boolean; canManage?: boolean }) {
+  void isAdmin;
   const [rows, setRows] = useState<Row[]>(initial);
   const [kw, setKw] = useState("");
   const [shop, setShop] = useState("");
@@ -32,26 +33,33 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
   const [msg, setMsg] = useState("");
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState("");
+  const [sortOrders, setSortOrders] = useState(false); // sắp xếp theo số đơn cao → thấp
+  const [modal, setModal] = useState<{ id: string; mode: "edit" | "clone" } | null>(null);
   const confirm = useConfirm();
 
   const storeName = useMemo(() => new Map(stores.map((s) => [s.id, s.name])), [stores]);
   const storeSeller = useMemo(() => new Map(stores.map((s) => [s.id, s.sellerId])), [stores]);
+  const sellerName = useMemo(() => new Map(sellers.map((s) => [s.id, s.name])), [sellers]);
   // Chọn seller → chỉ hiện shop của seller đó trong dropdown Shop.
   const shopOptions = useMemo(() => (seller ? stores.filter((s) => s.sellerId === seller) : stores), [stores, seller]);
 
-  const filtered = useMemo(() => rows.filter((r) => {
-    if (seller && storeSeller.get(r.storeId) !== seller) return false;
-    if (shop && r.storeId !== shop) return false;
-    if (status !== "ALL" && r.status !== status) return false;
-    if (kw) {
-      const q = kw.toLowerCase();
-      if (!(r.title?.toLowerCase().includes(q) || r.tiktokProductId.includes(q) || r.sellerSku?.toLowerCase().includes(q))) return false;
-    }
-    return true;
-  }), [rows, kw, shop, seller, status, storeSeller]);
+  const filtered = useMemo(() => {
+    const list = rows.filter((r) => {
+      if (seller && storeSeller.get(r.storeId) !== seller) return false;
+      if (shop && r.storeId !== shop) return false;
+      if (status !== "ALL" && r.status !== status) return false;
+      if (kw) {
+        const q = kw.toLowerCase();
+        if (!(r.title?.toLowerCase().includes(q) || r.tiktokProductId.includes(q) || r.sellerSku?.toLowerCase().includes(q))) return false;
+      }
+      return true;
+    });
+    if (sortOrders) list.sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0));
+    return list;
+  }, [rows, kw, shop, seller, status, storeSeller, sortOrders]);
 
-  // Phân trang 20/trang; reset về trang 1 khi đổi filter.
-  useEffect(() => { setPage(1); }, [kw, shop, seller, status]);
+  // Phân trang 20/trang; reset về trang 1 khi đổi filter/sort.
+  useEffect(() => { setPage(1); }, [kw, shop, seller, status, sortOrders]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE), [filtered, pageSafe]);
@@ -67,6 +75,14 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paged]);
+
+  // Refetch danh sách (sau khi save/clone/lifecycle) — giữ nguyên filter hiện tại.
+  const reload = async () => {
+    try {
+      const r = await fetch("/api/tiktok/products/list").then((x) => x.json());
+      if (r?.ok) setRows(r.rows);
+    } catch { /* bỏ qua */ }
+  };
 
   const sync = async () => {
     setSyncing(true); setMsg("Syncing products from TikTok…");
@@ -105,6 +121,8 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
     setBusyId("");
   };
 
+  const th: React.CSSProperties = { padding: "10px 8px" };
+
   return (
     <div className="panel" style={{ padding: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
@@ -137,46 +155,59 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase" }}>
-              <th style={{ padding: "8px 6px" }}>Image</th>
-              <th style={{ padding: "8px 6px" }}>Name / ID</th>
-              <th style={{ padding: "8px 6px" }}>Shop</th>
-              <th style={{ padding: "8px 6px" }}>Category</th>
-              <th style={{ padding: "8px 6px" }}>SKU</th>
-              <th style={{ padding: "8px 6px" }}>Price</th>
-              <th style={{ padding: "8px 6px" }}>Status</th>
-              <th style={{ padding: "8px 6px" }}>Updated</th>
-              {canManage && <th style={{ padding: "8px 6px" }}>Actions</th>}
+              <th style={th}>Image</th>
+              <th style={th}>Title</th>
+              <th style={th}>Store / Seller</th>
+              <th style={th}>Category</th>
+              <th onClick={() => setSortOrders((v) => !v)} title="Số đơn đã bán · bấm để sắp xếp cao → thấp" style={{ ...th, textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
+              <th style={{ ...th, textAlign: "right" }}>Price</th>
+              <th style={th}>Status</th>
+              <th style={th}>Updated</th>
+              {canManage && <th style={th}>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {paged.map((r) => {
               const sc = statusColor(r.status);
+              const sName = sellerName.get(storeSeller.get(r.storeId) ?? "") ?? null;
               return (
                 <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
-                  <td style={{ padding: "8px 6px" }}>
-                    <ThumbZoom src={r.mainImageUrl || thumbs[r.id]} alt={r.title || ""} size={42} radius={7} />
+                  <td style={{ padding: "8px 8px" }}>
+                    <ThumbZoom src={r.mainImageUrl || thumbs[r.id]} alt={r.title || ""} size={44} radius={7} />
                   </td>
-                  <td style={{ padding: "8px 6px", maxWidth: 380 }}>
-                    <div style={{ fontWeight: 600, lineHeight: 1.3 }}>{r.title || "(no title)"}</div>
-                    <div style={{ color: "var(--muted)", fontSize: 11.5 }}>ID: {r.tiktokProductId}</div>
+                  <td style={{ padding: "8px 8px", maxWidth: 400 }}>
+                    <div
+                      onClick={() => canManage && setModal({ id: r.id, mode: "edit" })}
+                      title={canManage ? "Click to edit" : undefined}
+                      style={{ fontWeight: 600, lineHeight: 1.3, cursor: canManage ? "pointer" : "default", color: canManage ? "var(--blue)" : "inherit" }}>
+                      {(r.title || "(no title)").slice(0, 90)}
+                    </div>
+                    <div
+                      onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.tiktokProductId); }}
+                      title="Click to copy product ID"
+                      style={{ color: "var(--muted)", fontSize: 11.5, cursor: "copy" }}>
+                      ID: {r.tiktokProductId}{r.sellerSku ? ` · SKU: ${r.sellerSku}` : ""}
+                    </div>
                   </td>
-                  <td style={{ padding: "8px 6px" }}>{storeName.get(r.storeId) ?? "—"}</td>
-                  <td style={{ padding: "8px 6px", color: "var(--muted)" }}>{r.categoryName ?? "—"}</td>
-                  <td style={{ padding: "8px 6px", color: "var(--muted)" }}>{r.sellerSku ?? "—"}</td>
-                  <td style={{ padding: "8px 6px" }}>{r.priceMin ? `$${Number(r.priceMin).toFixed(2)}` : "—"}</td>
-                  <td style={{ padding: "8px 6px" }}>
+                  <td style={{ padding: "8px 8px" }}>
+                    <div>{storeName.get(r.storeId) ?? "—"}</div>
+                    {sName && <div style={{ color: "var(--muted)", fontSize: 11.5 }}>{sName}</div>}
+                  </td>
+                  <td style={{ padding: "8px 8px", color: "var(--muted)" }}>{r.categoryName ?? "—"}</td>
+                  <td style={{ padding: "8px 8px", textAlign: "right", fontWeight: (r.orders ?? 0) > 0 ? 700 : 400, color: (r.orders ?? 0) > 0 ? "var(--ink)" : "var(--muted)" }}>{r.orders ?? 0}</td>
+                  <td style={{ padding: "8px 8px", textAlign: "right" }}>{r.priceMin ? `$${Number(r.priceMin).toFixed(2)}` : "—"}</td>
+                  <td style={{ padding: "8px 8px" }}>
                     <span style={{ background: sc.bg, color: sc.fg, fontWeight: 700, fontSize: 11, borderRadius: 6, padding: "2px 8px" }}>{r.status ?? "—"}</span>
                   </td>
-                  <td style={{ padding: "8px 6px", color: "var(--muted)", fontSize: 12 }}>{r.ttUpdateTime ? new Date(r.ttUpdateTime).toLocaleDateString() : "—"}</td>
+                  <td style={{ padding: "8px 8px", color: "var(--muted)", fontSize: 12 }}>{r.ttUpdateTime ? new Date(r.ttUpdateTime).toLocaleDateString() : "—"}</td>
                   {canManage && (() => {
                     const deactivated = r.status?.includes("DEACTIVATED");
                     const busy = busyId === r.id;
                     const linkBtn = (color: string) => ({ fontSize: 12, fontWeight: 700, color, background: "none", border: 0, padding: 0, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 } as const);
                     return (
-                    <td style={{ padding: "8px 6px", whiteSpace: "nowrap" }}>
+                    <td style={{ padding: "8px 8px", whiteSpace: "nowrap" }}>
                       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        <Link href={`/tiktok-products/${r.id}/edit`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--blue)", textDecoration: "none" }}>Edit</Link>
-                        <Link href={`/tiktok-products/${r.id}/edit?mode=clone`} prefetch={false} style={{ fontSize: 12, fontWeight: 700, color: "var(--green)", textDecoration: "none" }}>Duplicate</Link>
+                        <button type="button" onClick={() => setModal({ id: r.id, mode: "clone" })} style={linkBtn("#1E8E4E")}>Duplicate</button>
                         {deactivated
                           ? <button type="button" disabled={busy} onClick={() => lifecycle(r, "activate")} style={linkBtn("#1E8E4E")}>Activate</button>
                           : <button type="button" disabled={busy} onClick={() => lifecycle(r, "deactivate")} style={linkBtn("#B7791F")}>Deactivate</button>}
@@ -206,7 +237,16 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
         </div>
       )}
 
-      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Edit = update live on TikTok · Duplicate = clone within the same shop (defaults to draft) · Deactivate = remove from sale (reversible with Activate) · Delete = remove the listing on TikTok (permanent).</div>}
+      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Bấm vào tiêu đề để mở Card Detail (sửa & cập nhật thẳng lên TikTok) · Duplicate = nhân bản trong cùng shop (mặc định draft) · Deactivate = ngừng bán (bật lại được) · Delete = xoá listing trên TikTok (vĩnh viễn).</div>}
+
+      {modal && canManage && (
+        <TiktokEditModal
+          id={modal.id}
+          mode={modal.mode}
+          onClose={() => setModal(null)}
+          onSaved={reload}
+        />
+      )}
     </div>
   );
 }

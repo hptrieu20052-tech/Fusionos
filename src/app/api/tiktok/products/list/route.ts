@@ -35,5 +35,23 @@ export async function GET() {
   }).from(schema.tiktokProducts)
     .where(storeFilter)
     .orderBy(desc(schema.tiktokProducts.ttUpdateTime)).limit(1000);
-  return NextResponse.json({ ok: true, rows: JSON.parse(JSON.stringify(rows)) });
+
+  // Số ĐƠN theo listing: khớp phần SỐ của tiktok_product_id ↔ order_items.etsy_listing_id.
+  const orderCountByPid = new Map<string, number>();
+  try {
+    const oc = (await db.execute(sql`
+      SELECT regexp_replace(coalesce(oi.etsy_listing_id, ''), '[^0-9]', '', 'g') AS pid,
+             count(DISTINCT oi.order_id)::int AS n
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status NOT IN ('new','cancel','trash')
+      GROUP BY 1
+    `)).rows as { pid: string; n: number }[];
+    for (const r of oc) if (r.pid) orderCountByPid.set(r.pid, Number(r.n));
+  } catch { /* để 0 */ }
+  const rowsWithOrders = rows.map((r) => {
+    const d = String(r.tiktokProductId ?? "").replace(/\D/g, "");
+    return { ...r, orders: d ? (orderCountByPid.get(d) ?? 0) : 0 };
+  });
+  return NextResponse.json({ ok: true, rows: JSON.parse(JSON.stringify(rowsWithOrders)) });
 }

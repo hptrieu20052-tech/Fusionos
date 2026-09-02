@@ -37,6 +37,25 @@ export default async function TiktokProductsPage() {
     .where(productWhere)
     .orderBy(desc(schema.tiktokProducts.ttUpdateTime)).limit(1000);
 
+  // Số ĐƠN theo listing: khớp phần SỐ của tiktok_product_id ↔ order_items.etsy_listing_id
+  // (import TikTok ghi etsy_listing_id = product_id). Loại đơn new/cancel/trash.
+  const orderCountByPid = new Map<string, number>();
+  try {
+    const oc = (await db.execute(sql`
+      SELECT regexp_replace(coalesce(oi.etsy_listing_id, ''), '[^0-9]', '', 'g') AS pid,
+             count(DISTINCT oi.order_id)::int AS n
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.status NOT IN ('new','cancel','trash')
+      GROUP BY 1
+    `)).rows as { pid: string; n: number }[];
+    for (const r of oc) if (r.pid) orderCountByPid.set(r.pid, Number(r.n));
+  } catch { /* bảng trống / lỗi → để 0 */ }
+  const rowsWithOrders = rows.map((r) => {
+    const d = String(r.tiktokProductId ?? "").replace(/\D/g, "");
+    return { ...r, orders: d ? (orderCountByPid.get(d) ?? 0) : 0 };
+  });
+
   // Danh sách seller cho filter (theo store TikTok trong phạm vi).
   const sellerIds = Array.from(new Set(stores.map((s) => s.sellerId).filter(Boolean))) as string[];
   const sellers = sellerIds.length
@@ -48,7 +67,7 @@ export default async function TiktokProductsPage() {
   return <TiktokProductsClient
     stores={JSON.parse(JSON.stringify(stores))}
     sellers={JSON.parse(JSON.stringify(sellers))}
-    initial={JSON.parse(JSON.stringify(rows))}
+    initial={JSON.parse(JSON.stringify(rowsWithOrders))}
     isAdmin={isAdmin}
     canManage={canManage}
   />;
