@@ -5,6 +5,7 @@ import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
 // v142: editor Custom options dùng chung với Edit listing và màn Etsy — 1 bản duy nhất.
 import CustomOptions, { NEW_PQ, pqProblem, pqSummary, toPQ, type PQ } from "@/components/custom-options";
+import { Pager } from "@/components/pager";
 
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
@@ -1729,8 +1730,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
           <span>Page {pageC}/{totalPages} · {filtered.length} products</span>
           <div style={{ flex: 1 }} />
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ ...ctl, padding: "6px 8px" }}>{[20, 50, 100].map((n) => <option key={n} value={n}>{n}/page</option>)}</select>
-          <button disabled={pageC <= 1} onClick={() => setPage(pageC - 1)} style={{ ...ghost, opacity: pageC <= 1 ? .5 : 1 }}>Prev</button>
-          <button disabled={pageC >= totalPages} onClick={() => setPage(pageC + 1)} style={{ ...ghost, opacity: pageC >= totalPages ? .5 : 1 }}>Next</button>
+          <Pager page={pageC} totalPages={totalPages} onPage={setPage} accent="#1E8E4E" />
         </div>
       )}
 

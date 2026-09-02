@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { ShopbaseLogo } from "@/components/shopbase-logo";
+import { Pager } from "@/components/pager";
 import ShopbaseEditModal from "./edit-modal";
 
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
@@ -31,6 +32,8 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   const [fStatus, setFStatus] = useState("");
   const [sortOrders, setSortOrders] = useState(false); // sắp xếp theo số đơn cao → thấp
   const [editId, setEditId] = useState<string | null>(null); // Card Detail modal
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
 
   // ── Bulk selection + actions (qua ShopBase API) ──────────────────────────
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -73,6 +76,12 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
     if (sortOrders) list.sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0));
     return list;
   }, [rows, fStore, fSeller, fType, fStatus, q, sortOrders]);
+
+  // Phân trang 20/trang; reset về trang 1 khi đổi filter/sort.
+  useEffect(() => { setPage(1); }, [q, fStore, fSeller, fType, fStatus, sortOrders]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSafe = Math.min(page, totalPages);
+  const paged = useMemo(() => filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE), [filtered, pageSafe]);
 
   // Selection helpers (thao tác trên tập đang lọc).
   const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
@@ -124,7 +133,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   const menuBtn: React.CSSProperties = { display: "block", width: "100%", textAlign: "left", padding: "9px 14px", background: "none", border: 0, fontSize: 13.5, cursor: "pointer", color: "#14213D", whiteSpace: "nowrap" };
 
   return (
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 4px" }}>
+    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 4px" }}>
       {/* Hero — tone xanh ShopBase */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, background: "linear-gradient(90deg, #EEF3FF, #F7FAFF)", border: "1px solid #CBD9FF", borderRadius: 16, padding: "16px 20px", marginBottom: 16, flexWrap: "wrap" }}>
         <ShopbaseLogo s={34} />
@@ -226,7 +235,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => {
+              {paged.map((r) => {
                 const checked = sel.has(r.id);
                 return (
                   <tr key={r.id} style={{ borderTop: "1px solid var(--line)", background: checked ? "#F3F7FF" : undefined }}>
@@ -265,6 +274,13 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
           </table>
         </div>
       </div>
+
+      {filtered.length > PAGE_SIZE && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} of {filtered.length} · Page {pageSafe}/{totalPages}</span>
+          <Pager page={pageSafe} totalPages={totalPages} onPage={setPage} accent={SB_BLUE} />
+        </div>
+      )}
 
       {canEdit && editId && (
         <ShopbaseEditModal id={editId} onClose={() => setEditId(null)} onSaved={load} />

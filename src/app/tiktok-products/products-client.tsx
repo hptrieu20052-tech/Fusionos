@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useConfirm } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { Pager } from "@/components/pager";
 import TiktokEditModal from "./edit-modal";
 
 const TT_PINK = "#FE2C55"; // tone chủ đạo TikTok
@@ -128,7 +129,7 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
   const th: React.CSSProperties = { padding: "10px 12px" };
 
   return (
-    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 4px" }}>
+    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 4px" }}>
       {/* Hero — tone TikTok (đồng bộ layout với Shopify/ShopBase) */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, background: "linear-gradient(90deg, #FFF1F4, #F1FEFF)", border: "1px solid #FFD3DC", borderRadius: 16, padding: "16px 20px", marginBottom: 16, flexWrap: "wrap" }}>
         <MarketplaceLogo mk="tiktok" size={34} />
@@ -245,13 +246,9 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
       {filtered.length > PAGE_SIZE && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>
-            {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} / {filtered.length}
+            {(pageSafe - 1) * PAGE_SIZE + 1}–{Math.min(pageSafe * PAGE_SIZE, filtered.length)} of {filtered.length} · Page {pageSafe}/{totalPages}
           </span>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={pageSafe <= 1} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: pageSafe <= 1 ? "default" : "pointer", opacity: pageSafe <= 1 ? 0.5 : 1 }}>← Prev</button>
-            <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Page {pageSafe}/{totalPages}</span>
-            <button onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={pageSafe >= totalPages} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 13, cursor: pageSafe >= totalPages ? "default" : "pointer", opacity: pageSafe >= totalPages ? 0.5 : 1 }}>Next →</button>
-          </div>
+          <Pager page={pageSafe} totalPages={totalPages} onPage={setPage} accent={TT_PINK} />
         </div>
       )}
 

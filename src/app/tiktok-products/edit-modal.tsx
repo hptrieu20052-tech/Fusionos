@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // Rich-text editor gọn (contentEditable) — B/I/U + list. Xuất HTML cho description.
 function RichText({ value, onChange }: { value: string; onChange: (html: string) => void }) {
@@ -110,6 +110,16 @@ export default function TiktokEditModal({ id, mode, onClose, onSaved }: { id: st
   const setSku = (i: number, patch: Partial<{ price: string; quantity: string; sellerSku: string }>) =>
     setSkus((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)));
   const applyBase = () => { if (basePrice) setSkus((prev) => prev.map((s) => ({ ...s, price: basePrice }))); };
+
+  // Options (read-only) — suy ra từ chuỗi variant "A / B" (TikTok kế thừa từ nguồn, không sửa qua đây).
+  const optionGroups = useMemo(() => {
+    const cols: string[][] = [];
+    for (const s of skus) {
+      const parts = (s.variant || "").split(" / ").map((x) => x.trim()).filter(Boolean);
+      parts.forEach((p, i) => { (cols[i] ||= []); if (!cols[i].includes(p)) cols[i].push(p); });
+    }
+    return cols.filter((c) => c.length);
+  }, [skus]);
 
   const removeImage = (uri: string) => setImages((prev) => prev.filter((im) => im.uri !== uri));
   const makePrimary = (uri: string) => setImages((prev) => { const f = prev.find((im) => im.uri === uri); return f ? [f, ...prev.filter((im) => im.uri !== uri)] : prev; });
@@ -258,6 +268,23 @@ export default function TiktokEditModal({ id, mode, onClose, onSaved }: { id: st
                     </div>
                   </div>
                 </div>
+
+                {optionGroups.length > 0 && (
+                  <div style={sec}>
+                    <label style={lab}>Options <span style={{ color: "var(--faint)", fontWeight: 500 }}>(kế thừa từ nguồn)</span></label>
+                    <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 8, background: "#F9FAFC" }}>
+                      {optionGroups.map((vals, i) => (
+                        <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          <div style={{ flex: "0 0 90px", fontSize: 12.5, fontWeight: 700, color: "var(--muted)", paddingTop: 3 }}>Option {i + 1}</div>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {vals.map((v) => <span key={v} style={{ fontSize: 12, background: "#fff", border: "1px solid var(--line)", borderRadius: 999, padding: "3px 10px" }}>{v}</span>)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>TikTok quản lý tổ hợp option theo nguồn — chỉnh giá/kho/SKU từng biến thể ở bảng dưới.</div>
+                  </div>
+                )}
 
                 <div style={sec}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>

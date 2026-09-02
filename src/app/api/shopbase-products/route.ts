@@ -142,12 +142,11 @@ export async function PATCH(req: NextRequest) {
   const status = ["ACTIVE", "DRAFT", "ARCHIVED"].includes(b.status) ? b.status : row.p.status;
 
   const curVars = (Array.isArray(row.p.variants) ? row.p.variants : []) as Variant[];
-  const inVars = (Array.isArray(b.variants) ? b.variants : []) as Variant[];
-  // Ghép patch giá/sku theo id variant; giữ các field khác.
-  const mergedVars: Variant[] = curVars.map((cv) => {
-    const patch = inVars.find((iv) => String(iv.id ?? "") === String(cv.id ?? ""));
-    return patch ? { ...cv, price: patch.price ?? cv.price, compareAtPrice: patch.compareAtPrice ?? cv.compareAtPrice, sku: patch.sku ?? cv.sku } : cv;
-  });
+  // Modal gửi FULL danh sách variants (kèm selectedOptions) + options. Không gửi → giữ nguyên.
+  const newVars: Variant[] = Array.isArray(b.variants) && b.variants.length ? (b.variants as Variant[]) : curVars;
+  const curOpts = (Array.isArray(row.p.options) ? row.p.options : []) as { name: string; position: number; values: string[] }[];
+  const newOpts = Array.isArray(b.options) ? (b.options as { name: string; position: number; values: string[] }[]) : curOpts;
+  const optsClean = newOpts.map((o) => ({ name: (o.name || "").trim(), values: (o.values ?? []).map((v) => String(v).trim()).filter(Boolean) })).filter((o) => o.name && o.values.length);
 
   const inImgs = (Array.isArray(b.images) ? b.images : null) as Img[] | null;
   const mergedImgs: Img[] = (inImgs ?? (Array.isArray(row.p.images) ? row.p.images : []) as Img[])
@@ -158,7 +157,7 @@ export async function PATCH(req: NextRequest) {
   // Chưa cấu hình API → chỉ lưu local, đánh dấu dirty.
   if (!shopbaseConfigured(cred)) {
     await db.update(schema.shopbaseProducts).set({
-      title, bodyHtml, vendor, productType, tags, status, variants: mergedVars, images: mergedImgs, dirty: true, updatedAt: new Date(),
+      title, bodyHtml, vendor, productType, tags, status, options: newOpts, variants: newVars, images: mergedImgs, dirty: true, updatedAt: new Date(),
     }).where(eq(schema.shopbaseProducts.id, id));
     return NextResponse.json({ ok: true, warn: "store chưa cấu hình API — đã lưu local, CHƯA đẩy lên ShopBase" });
   }
@@ -169,39 +168,49 @@ export async function PATCH(req: NextRequest) {
   const product: Record<string, unknown> = {
     id: pid, title, body_html: bodyHtml, vendor, product_type: productType, tags,
     published: status === "ACTIVE",
-    variants: mergedVars.filter((v) => v.id).map((v) => ({
-      id: Number(v.id) || v.id, price: v.price, compare_at_price: v.compareAtPrice || null, sku: v.sku,
-    })),
+    // Variants: gửi FULL danh sách; option1/2/3 khi có options → ShopBase dựng lại tổ hợp
+    // (variant mới không id sẽ được tạo, tổ hợp bị bỏ sẽ bị xoá — mirror Shopify).
+    variants: newVars.map((v) => {
+      const so = (v.selectedOptions ?? []) as { name: string; value: string }[];
+      const base: Record<string, unknown> = { price: v.price, compare_at_price: v.compareAtPrice || null, sku: v.sku };
+      if (optsClean.length) { base.option1 = so[0]?.value; base.option2 = so[1]?.value; base.option3 = so[2]?.value; }
+      return v.id ? { id: Number(v.id) || v.id, ...base } : base;
+    }),
     images: mergedImgs.filter((im) => im.src).map((im) => (
       im.id ? { id: Number(im.id) || im.id, position: im.position } : { src: im.src, position: im.position }
     )),
   };
+  if (optsClean.length) product.options = optsClean.map((o) => ({ name: o.name }));
 
   try {
     const resp = await shopbaseApi(cred!, `products/${row.p.shopbaseProductId}.json`, { method: "PUT", body: JSON.stringify({ product }) });
     // Lấy lại data chuẩn từ ShopBase để đồng bộ id ảnh/variant mới.
     const rp = (resp?.product ?? null) as Record<string, unknown> | null;
-    let finalVars = mergedVars, finalImgs = mergedImgs;
+    let finalVars = newVars, finalImgs = mergedImgs;
     if (rp) {
-      if (Array.isArray(rp.variants)) finalVars = (rp.variants as Record<string, unknown>[]).map((v) => ({
-        id: String(v.id ?? ""), title: String(v.title ?? ""), price: String(v.price ?? ""),
-        compareAtPrice: v.compare_at_price != null ? String(v.compare_at_price) : null, sku: String(v.sku ?? ""),
-        barcode: String(v.barcode ?? ""), inventoryQty: typeof v.inventory_quantity === "number" ? v.inventory_quantity : null,
-        selectedOptions: [],
-      }));
+      if (Array.isArray(rp.variants)) finalVars = (rp.variants as Record<string, unknown>[]).map((v) => {
+        const so: { name: string; value: string }[] = [];
+        [v.option1, v.option2, v.option3].forEach((val, k) => { if (val != null && optsClean[k]) so.push({ name: optsClean[k].name, value: String(val) }); });
+        return {
+          id: String(v.id ?? ""), title: String(v.title ?? ""), price: String(v.price ?? ""),
+          compareAtPrice: v.compare_at_price != null ? String(v.compare_at_price) : null, sku: String(v.sku ?? ""),
+          barcode: String(v.barcode ?? ""), inventoryQty: typeof v.inventory_quantity === "number" ? v.inventory_quantity : null,
+          selectedOptions: so,
+        };
+      });
       if (Array.isArray(rp.images)) finalImgs = (rp.images as Record<string, unknown>[]).map((im, i) => ({
         id: String(im.id ?? ""), src: String(im.src ?? ""), altText: String(im.alt ?? ""), position: typeof im.position === "number" ? im.position : i + 1,
       }));
     }
     await db.update(schema.shopbaseProducts).set({
-      title, bodyHtml, vendor, productType, tags, status, variants: finalVars, images: finalImgs,
+      title, bodyHtml, vendor, productType, tags, status, options: newOpts, variants: finalVars, images: finalImgs,
       dirty: false, pushedAt: new Date(), updatedAt: new Date(),
     }).where(eq(schema.shopbaseProducts.id, id));
     return NextResponse.json({ ok: true });
   } catch (e) {
     // Push lỗi → vẫn lưu local (dirty) để không mất chỉnh sửa.
     await db.update(schema.shopbaseProducts).set({
-      title, bodyHtml, vendor, productType, tags, status, variants: mergedVars, images: mergedImgs, dirty: true, updatedAt: new Date(),
+      title, bodyHtml, vendor, productType, tags, status, options: newOpts, variants: newVars, images: mergedImgs, dirty: true, updatedAt: new Date(),
     }).where(eq(schema.shopbaseProducts.id, id));
     const err = String((e as Error)?.message ?? e).slice(0, 200);
     return NextResponse.json({ ok: false, error: "Đã lưu local nhưng ShopBase update lỗi: " + err });

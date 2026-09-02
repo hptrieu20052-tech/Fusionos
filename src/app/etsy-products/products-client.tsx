@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
+import { Pager } from "@/components/pager";
 // v142: dùng chung editor Custom options với Manage Products · Shopify — 1 bản, không copy code.
 import CustomOptions, { pqProblem, toPQ, type PQ } from "@/components/custom-options";
 
@@ -711,11 +712,7 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} style={{ ...ctl, padding: "7px 10px" }}>
             {[20, 50, 100].map((n) => <option key={n} value={n}>{n} / page</option>)}
           </select>
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-            <button disabled={pageClamped <= 1} onClick={() => setPage(pageClamped - 1)} style={{ ...ghost, padding: "7px 12px", opacity: pageClamped <= 1 ? .4 : 1 }}>‹ Prev</button>
-            <span style={{ fontSize: 12.5, fontWeight: 700, minWidth: 70, textAlign: "center" }}>Page {pageClamped}/{totalPages}</span>
-            <button disabled={pageClamped >= totalPages} onClick={() => setPage(pageClamped + 1)} style={{ ...ghost, padding: "7px 12px", opacity: pageClamped >= totalPages ? .4 : 1 }}>Next ›</button>
-          </div>
+          <Pager page={pageClamped} totalPages={totalPages} onPage={setPage} />
         </div>
       )}
 

@@ -46,6 +46,32 @@ export default function ShopbaseEditModal({ id, onClose, onSaved }: { id: string
   const setVar = (i: number, patch: Partial<Variant>) => setD((p) => p ? { ...p, variants: p.variants.map((v, j) => j === i ? { ...v, ...patch } : v) } : p);
   const applyBase = () => { if (basePrice) setD((p) => p ? { ...p, variants: p.variants.map((v) => ({ ...v, price: basePrice })) } : p); };
 
+  // ── Options ⇄ Variants (mirror Shopify): sửa option name/values → tự sinh lại tổ hợp variant,
+  // giữ nguyên price/compare/SKU của tổ hợp đã có (khớp theo chữ ký selectedOptions). ──────────
+  const sigOf = (so: { name: string; value: string }[]) => (so ?? []).map((x) => `${x.name}=${x.value}`).join("|");
+  const recompute = (raw: { name: string; position: number; values: string[] }[]) => setD((p) => {
+    if (!p) return p;
+    const options = raw.map((o, i) => ({ ...o, position: i + 1 }));
+    const opts = options.map((o) => ({ name: (o.name || "").trim(), values: (o.values ?? []).map((v) => v.trim()).filter(Boolean) })).filter((o) => o.name && o.values.length);
+    const prev = new Map(p.variants.map((v) => [sigOf(v.selectedOptions ?? []), v] as const));
+    if (!opts.length) {
+      const keep = p.variants[0];
+      return { ...p, options, variants: [{ id: keep?.id ?? "", title: "Default Title", selectedOptions: [], price: keep?.price ?? "0", compareAtPrice: keep?.compareAtPrice ?? null, sku: keep?.sku ?? "", barcode: keep?.barcode ?? "", inventoryQty: keep?.inventoryQty ?? null }] };
+    }
+    let combos: { name: string; value: string }[][] = [[]];
+    for (const o of opts) { const next: { name: string; value: string }[][] = []; for (const c of combos) for (const val of o.values) next.push([...c, { name: o.name, value: val }]); combos = next; }
+    const variants: Variant[] = combos.slice(0, 200).map((so) => {
+      const ex = prev.get(sigOf(so));
+      return ex ? { ...ex, selectedOptions: so, title: so.map((x) => x.value).join(" / ") }
+        : { id: "", title: so.map((x) => x.value).join(" / "), selectedOptions: so, price: "0", compareAtPrice: null, sku: "", barcode: "", inventoryQty: null };
+    });
+    return { ...p, options, variants };
+  });
+  const setOptName = (i: number, name: string) => recompute((d?.options ?? []).map((o, k) => k === i ? { ...o, name } : o));
+  const setOptValues = (i: number, csv: string) => recompute((d?.options ?? []).map((o, k) => k === i ? { ...o, values: csv.split(",").map((v) => v.trim()).filter(Boolean) } : o));
+  const addOption = () => { const os = d?.options ?? []; if (os.length >= 3) return; recompute([...os, { name: os.length === 0 ? "Size" : "", position: os.length + 1, values: [] }]); };
+  const delOption = (i: number) => recompute((d?.options ?? []).filter((_, k) => k !== i));
+
   const delImg = (idx: number) => setD((p) => p ? { ...p, images: p.images.filter((_, i) => i !== idx) } : p);
   const moveImg = (from: number, to: number) => setD((p) => {
     if (!p || from === to || from < 0 || to < 0 || from >= p.images.length || to >= p.images.length) return p;
@@ -63,7 +89,7 @@ export default function ShopbaseEditModal({ id, onClose, onSaved }: { id: string
     try {
       const j = await fetch("/api/shopbase-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
         id: d.id, title: d.title, bodyHtml: d.bodyHtml, vendor: d.vendor, productType: d.productType,
-        tags: d.tags, status: d.status, variants: d.variants, images: d.images,
+        tags: d.tags, status: d.status, options: d.options, variants: d.variants, images: d.images,
       }) }).then((r) => r.json());
       if (j.ok) { setMsg("✓ Saved" + (j.warn ? " · " + j.warn : " & updated on ShopBase")); onSaved(); setTimeout(() => onClose(), 700); }
       else setMsg("✗ " + (j.error || "Save failed"));
@@ -155,6 +181,23 @@ export default function ShopbaseEditModal({ id, onClose, onSaved }: { id: string
                 <div style={sec}>
                   <label style={lab}>Description (HTML)</label>
                   <textarea value={d.bodyHtml} onChange={(e) => set({ bodyHtml: e.target.value })} rows={8} style={{ ...fld, fontFamily: "ui-monospace, monospace", fontSize: 12.5, lineHeight: 1.5, resize: "vertical" }} />
+                </div>
+
+                <div style={sec}>
+                  <label style={lab}>Options</label>
+                  <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                    {(d.options ?? []).map((o, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <input value={o.name} onChange={(e) => setOptName(i, e.target.value)} placeholder="Option name" style={{ ...fld, flex: "0 0 150px" }} />
+                        <input value={(o.values ?? []).join(", ")} onChange={(e) => setOptValues(i, e.target.value)} placeholder="Values, comma-separated" style={fld} />
+                        <button type="button" onClick={() => delOption(i)} title="Remove option" style={{ flex: "0 0 auto", width: 34, height: 34, borderRadius: 8, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", color: "var(--muted)", fontSize: 16, lineHeight: 1 }}>×</button>
+                      </div>
+                    ))}
+                    {(d.options?.length ?? 0) < 3 && (
+                      <button type="button" onClick={addOption} style={{ alignSelf: "flex-start", border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#14213D" }}>+ Add option</button>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Sửa option/giá trị sẽ tự sinh lại tổ hợp variants bên dưới (giữ giá/SKU của tổ hợp đã có). ⚠ Tổ hợp bị bỏ sẽ bị xoá khỏi ShopBase khi Save.</div>
                 </div>
 
                 <div style={sec}>
