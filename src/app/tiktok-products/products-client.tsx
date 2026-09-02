@@ -2,7 +2,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useConfirm } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
+import { MarketplaceLogo } from "@/components/marketplace-logo";
 import TiktokEditModal from "./edit-modal";
+
+const TT_PINK = "#FE2C55"; // tone chủ đạo TikTok
+const inp: React.CSSProperties = { padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", background: "#fff", fontSize: 13, width: "100%", boxSizing: "border-box" };
 
 type Row = {
   id: string; storeId: string; tiktokProductId: string; title: string | null; status: string | null;
@@ -121,107 +125,121 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
     setBusyId("");
   };
 
-  const th: React.CSSProperties = { padding: "10px 8px" };
+  const th: React.CSSProperties = { padding: "10px 12px" };
 
   return (
-    <div className="panel" style={{ padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Manage Products · TikTok Shop <span style={{ color: "var(--muted)", fontWeight: 500, fontSize: 13 }}>({filtered.length})</span></h2>
-        <button onClick={sync} disabled={syncing} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 9, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: syncing ? "default" : "pointer", opacity: syncing ? 0.6 : 1 }}>
-          {syncing ? "Syncing…" : "↻ Sync from TikTok"}
-        </button>
+    <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 4px" }}>
+      {/* Hero — tone TikTok (đồng bộ layout với Shopify/ShopBase) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, background: "linear-gradient(90deg, #FFF1F4, #F1FEFF)", border: "1px solid #FFD3DC", borderRadius: 16, padding: "16px 20px", marginBottom: 16, flexWrap: "wrap" }}>
+        <MarketplaceLogo mk="tiktok" size={34} />
+        <div style={{ fontSize: 20, fontWeight: 900, color: "#14213D" }}>Manage Products · <span style={{ color: TT_PINK }}>TikTok Shop</span> <span style={{ color: "var(--muted)", fontWeight: 600, fontSize: 14 }}>({filtered.length})</span></div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={sync} disabled={syncing} style={{ background: TT_PINK, color: "#fff", border: 0, borderRadius: 11, padding: "10px 18px", fontWeight: 800, fontSize: 13.5, cursor: syncing ? "default" : "pointer", opacity: syncing ? 0.6 : 1, whiteSpace: "nowrap" }}>
+            {syncing ? "Syncing…" : "↻ Sync from TikTok"}
+          </button>
+        </div>
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <input placeholder="Keyword (title / product id / sku)" value={kw} onChange={(e) => setKw(e.target.value)} style={{ flex: 1, minWidth: 220, padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13 }} />
-        {sellers.length > 1 && (
-          <select value={seller} onChange={(e) => { setSeller(e.target.value); setShop(""); }} style={{ padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13 }}>
-            <option value="">All sellers</option>
-            {sellers.map((s) => <option key={s.id} value={s.id}>{s.name || "—"}</option>)}
+      {msg && <div style={{ fontSize: 13, padding: "9px 13px", borderRadius: 10, marginBottom: 12, background: msg.startsWith("✗") ? "var(--red-soft)" : "#F3F6FB", color: msg.startsWith("✗") ? "var(--red)" : "var(--muted)", fontWeight: 600 }}>{msg}</div>}
+
+      {/* Filters card */}
+      <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 14, padding: 14, marginBottom: 14 }}>
+        <input placeholder="Search title / product id / sku" value={kw} onChange={(e) => setKw(e.target.value)} style={{ ...inp, marginBottom: 10 }} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+          {sellers.length > 1 && (
+            <select value={seller} onChange={(e) => { setSeller(e.target.value); setShop(""); }} style={inp}>
+              <option value="">All sellers</option>
+              {sellers.map((s) => <option key={s.id} value={s.id}>{s.name || "—"}</option>)}
+            </select>
+          )}
+          <select value={shop} onChange={(e) => setShop(e.target.value)} style={inp}>
+            <option value="">All shops</option>
+            {shopOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-        )}
-        <select value={shop} onChange={(e) => setShop(e.target.value)} style={{ padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13 }}>
-          <option value="">All shops</option>
-          {shopOptions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ padding: "8px 11px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13 }}>
-          {STATUSES.map((s) => <option key={s} value={s}>{s === "ALL" ? "All status" : s}</option>)}
-        </select>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} style={inp}>
+            {STATUSES.map((s) => <option key={s} value={s}>{s === "ALL" ? "All status" : s}</option>)}
+          </select>
+        </div>
       </div>
 
-      {msg && <div style={{ fontSize: 12.5, marginBottom: 10, color: msg.startsWith("✗") ? "var(--red)" : "var(--muted)" }}>{msg}</div>}
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", margin: "0 4px 10px" }}>{filtered.length} products</div>
 
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ textAlign: "left", color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase" }}>
-              <th style={th}>Image</th>
-              <th style={th}>Title</th>
-              <th style={th}>Store / Seller</th>
-              <th style={th}>Category</th>
-              <th onClick={() => setSortOrders((v) => !v)} title="Số đơn đã bán · bấm để sắp xếp cao → thấp" style={{ ...th, textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
-              <th style={{ ...th, textAlign: "right" }}>Price</th>
-              <th style={th}>Status</th>
-              <th style={th}>Updated</th>
-              {canManage && <th style={th}>Actions</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {paged.map((r) => {
-              const sc = statusColor(r.status);
-              const sName = sellerName.get(storeSeller.get(r.storeId) ?? "") ?? null;
-              return (
-                <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
-                  <td style={{ padding: "8px 8px" }}>
-                    <ThumbZoom src={r.mainImageUrl || thumbs[r.id]} alt={r.title || ""} size={44} radius={7} />
-                  </td>
-                  <td style={{ padding: "8px 8px", maxWidth: 400 }}>
-                    <div
-                      onClick={() => canManage && setModal({ id: r.id, mode: "edit" })}
-                      title={canManage ? "Click to edit" : undefined}
-                      style={{ fontWeight: 600, lineHeight: 1.3, cursor: canManage ? "pointer" : "default", color: canManage ? "var(--blue)" : "inherit" }}>
-                      {(r.title || "(no title)").slice(0, 90)}
-                    </div>
-                    <div
-                      onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.tiktokProductId); }}
-                      title="Click to copy product ID"
-                      style={{ color: "var(--muted)", fontSize: 11.5, cursor: "copy" }}>
-                      ID: {r.tiktokProductId}{r.sellerSku ? ` · SKU: ${r.sellerSku}` : ""}
-                    </div>
-                  </td>
-                  <td style={{ padding: "8px 8px" }}>
-                    <div>{storeName.get(r.storeId) ?? "—"}</div>
-                    {sName && <div style={{ color: "var(--muted)", fontSize: 11.5 }}>{sName}</div>}
-                  </td>
-                  <td style={{ padding: "8px 8px", color: "var(--muted)" }}>{r.categoryName ?? "—"}</td>
-                  <td style={{ padding: "8px 8px", textAlign: "right", fontWeight: (r.orders ?? 0) > 0 ? 700 : 400, color: (r.orders ?? 0) > 0 ? "var(--ink)" : "var(--muted)" }}>{r.orders ?? 0}</td>
-                  <td style={{ padding: "8px 8px", textAlign: "right" }}>{r.priceMin ? `$${Number(r.priceMin).toFixed(2)}` : "—"}</td>
-                  <td style={{ padding: "8px 8px" }}>
-                    <span style={{ background: sc.bg, color: sc.fg, fontWeight: 700, fontSize: 11, borderRadius: 6, padding: "2px 8px" }}>{r.status ?? "—"}</span>
-                  </td>
-                  <td style={{ padding: "8px 8px", color: "var(--muted)", fontSize: 12 }}>{r.ttUpdateTime ? new Date(r.ttUpdateTime).toLocaleDateString() : "—"}</td>
-                  {canManage && (() => {
-                    const deactivated = r.status?.includes("DEACTIVATED");
-                    const busy = busyId === r.id;
-                    const linkBtn = (color: string) => ({ fontSize: 12, fontWeight: 700, color, background: "none", border: 0, padding: 0, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 } as const);
-                    return (
-                    <td style={{ padding: "8px 8px", whiteSpace: "nowrap" }}>
-                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                        <button type="button" onClick={() => setModal({ id: r.id, mode: "clone" })} style={linkBtn("#1E8E4E")}>Duplicate</button>
-                        {deactivated
-                          ? <button type="button" disabled={busy} onClick={() => lifecycle(r, "activate")} style={linkBtn("#1E8E4E")}>Activate</button>
-                          : <button type="button" disabled={busy} onClick={() => lifecycle(r, "deactivate")} style={linkBtn("#B7791F")}>Deactivate</button>}
-                        <button type="button" disabled={busy} onClick={() => lifecycle(r, "delete")} style={linkBtn("#C0392B")}>Delete</button>
+      {/* Table card */}
+      <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 900 }}>
+            <thead>
+              <tr style={{ background: "#F7F9FC", textAlign: "left", color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase", letterSpacing: ".4px" }}>
+                <th style={th}>Image</th>
+                <th style={th}>Title</th>
+                <th style={th}>Store / Seller</th>
+                <th style={th}>Category</th>
+                <th onClick={() => setSortOrders((v) => !v)} title="Số đơn đã bán · bấm để sắp xếp cao → thấp" style={{ ...th, textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? TT_PINK : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
+                <th style={{ ...th, textAlign: "right" }}>Price</th>
+                <th style={th}>Status</th>
+                <th style={th}>Updated</th>
+                {canManage && <th style={th}>Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {paged.map((r) => {
+                const sc = statusColor(r.status);
+                const sName = sellerName.get(storeSeller.get(r.storeId) ?? "") ?? null;
+                return (
+                  <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
+                    <td style={{ padding: "10px 12px" }}>
+                      <ThumbZoom src={r.mainImageUrl || thumbs[r.id]} alt={r.title || ""} size={46} radius={8} />
+                    </td>
+                    <td style={{ padding: "10px 12px", maxWidth: 400 }}>
+                      <div
+                        onClick={() => canManage && setModal({ id: r.id, mode: "edit" })}
+                        title={canManage ? "Click to edit" : undefined}
+                        style={{ fontWeight: 700, lineHeight: 1.35, cursor: canManage ? "pointer" : "default", color: canManage ? TT_PINK : "#14213D" }}>
+                        {(r.title || "(no title)").slice(0, 90)}
+                      </div>
+                      <div
+                        onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.tiktokProductId); }}
+                        title="Click to copy product ID"
+                        style={{ color: "var(--muted)", fontSize: 11.5, cursor: "copy", marginTop: 2 }}>
+                        ID: {r.tiktokProductId}{r.sellerSku ? ` · SKU: ${r.sellerSku}` : ""}
                       </div>
                     </td>
-                    );
-                  })()}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {!filtered.length && <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>No products. Click &quot;Sync from TikTok&quot; to pull them in.</div>}
+                    <td style={{ padding: "10px 12px" }}>
+                      <div style={{ fontWeight: 600 }}>{storeName.get(r.storeId) ?? "—"}</div>
+                      {sName && <div style={{ color: "var(--muted)", fontSize: 12 }}>{sName}</div>}
+                    </td>
+                    <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.categoryName ?? "—"}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: (r.orders ?? 0) > 0 ? 800 : 400, color: (r.orders ?? 0) > 0 ? "#14213D" : "var(--muted)" }}>{r.orders ?? 0}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: 700, whiteSpace: "nowrap" }}>{r.priceMin ? `$${Number(r.priceMin).toFixed(2)}` : "—"}</td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <span style={{ background: sc.bg, color: sc.fg, fontWeight: 700, fontSize: 11, borderRadius: 6, padding: "2px 8px" }}>{r.status ?? "—"}</span>
+                    </td>
+                    <td style={{ padding: "10px 12px", color: "var(--muted)", fontSize: 12 }}>{r.ttUpdateTime ? new Date(r.ttUpdateTime).toLocaleDateString() : "—"}</td>
+                    {canManage && (() => {
+                      const deactivated = r.status?.includes("DEACTIVATED");
+                      const busy = busyId === r.id;
+                      const linkBtn = (color: string) => ({ fontSize: 12, fontWeight: 700, color, background: "none", border: 0, padding: 0, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1 } as const);
+                      return (
+                      <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          <button type="button" onClick={() => setModal({ id: r.id, mode: "clone" })} style={linkBtn("#1E8E4E")}>Duplicate</button>
+                          {deactivated
+                            ? <button type="button" disabled={busy} onClick={() => lifecycle(r, "activate")} style={linkBtn("#1E8E4E")}>Activate</button>
+                            : <button type="button" disabled={busy} onClick={() => lifecycle(r, "deactivate")} style={linkBtn("#B7791F")}>Deactivate</button>}
+                          <button type="button" disabled={busy} onClick={() => lifecycle(r, "delete")} style={linkBtn("#C0392B")}>Delete</button>
+                        </div>
+                      </td>
+                      );
+                    })()}
+                  </tr>
+                );
+              })}
+              {!filtered.length && (
+                <tr><td colSpan={canManage ? 9 : 8} style={{ padding: "40px 12px", textAlign: "center", color: "var(--muted)" }}>No products. Click &quot;Sync from TikTok&quot; to pull them in.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {filtered.length > PAGE_SIZE && (
@@ -237,7 +255,7 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
         </div>
       )}
 
-      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>Bấm vào tiêu đề để mở Card Detail (sửa & cập nhật thẳng lên TikTok) · Duplicate = nhân bản trong cùng shop (mặc định draft) · Deactivate = ngừng bán (bật lại được) · Delete = xoá listing trên TikTok (vĩnh viễn).</div>}
+      {canManage && <div style={{ fontSize: 11, color: "var(--muted)", margin: "10px 4px 0" }}>Bấm vào tiêu đề để mở Card Detail (sửa &amp; cập nhật thẳng lên TikTok) · Duplicate = nhân bản trong cùng shop (mặc định draft) · Deactivate = ngừng bán (bật lại được) · Delete = xoá listing trên TikTok (vĩnh viễn).</div>}
 
       {modal && canManage && (
         <TiktokEditModal
