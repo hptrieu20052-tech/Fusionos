@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { ShopbaseLogo } from "@/components/shopbase-logo";
+import ShopbaseEditModal from "./edit-modal";
 
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
@@ -10,7 +11,7 @@ type Row = {
   status: string; onlineStoreUrl: string | null; totalInventory: number | null;
   dirty: boolean; variantCount: number; imageCount: number;
   priceMin: number | null; priceMax: number | null; skuDone: number; skuTotal: number;
-  thumb: string | null; syncedAt: string | null; updatedAt: string | null;
+  thumb: string | null; orders?: number; syncedAt: string | null; updatedAt: string | null;
 };
 
 const SB_BLUE = "#2F6BFF";
@@ -28,6 +29,8 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   const [fSeller, setFSeller] = useState("");
   const [fType, setFType] = useState("");
   const [fStatus, setFStatus] = useState("");
+  const [sortOrders, setSortOrders] = useState(false); // sắp xếp theo số đơn cao → thấp
+  const [editId, setEditId] = useState<string | null>(null); // Card Detail modal
 
   // ── Bulk selection + actions (qua ShopBase API) ──────────────────────────
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -58,14 +61,18 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   };
 
   const types = useMemo(() => Array.from(new Set(rows.map((r) => r.productType).filter(Boolean))).sort(), [rows]);
-  const filtered = useMemo(() => rows.filter((r) => {
-    if (fStore && r.storeId !== fStore) return false;
-    if (fSeller && r.sellerId !== fSeller) return false;
-    if (fType && r.productType !== fType) return false;
-    if (fStatus && r.status !== fStatus) return false;
-    if (q.trim()) { const s = q.trim().toLowerCase(); if (!(r.title.toLowerCase().includes(s) || r.handle.toLowerCase().includes(s) || r.shopbaseProductId.includes(s))) return false; }
-    return true;
-  }), [rows, fStore, fSeller, fType, fStatus, q]);
+  const filtered = useMemo(() => {
+    const list = rows.filter((r) => {
+      if (fStore && r.storeId !== fStore) return false;
+      if (fSeller && r.sellerId !== fSeller) return false;
+      if (fType && r.productType !== fType) return false;
+      if (fStatus && r.status !== fStatus) return false;
+      if (q.trim()) { const s = q.trim().toLowerCase(); if (!(r.title.toLowerCase().includes(s) || r.handle.toLowerCase().includes(s) || r.shopbaseProductId.includes(s))) return false; }
+      return true;
+    });
+    if (sortOrders) list.sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0));
+    return list;
+  }, [rows, fStore, fSeller, fType, fStatus, q, sortOrders]);
 
   // Selection helpers (thao tác trên tập đang lọc).
   const filteredIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
@@ -212,6 +219,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                 <th style={{ padding: "10px 12px" }}>Title</th>
                 <th style={{ padding: "10px 12px" }}>Store / Seller</th>
                 <th style={{ padding: "10px 12px" }}>Type</th>
+                <th onClick={() => setSortOrders((v) => !v)} title="Số đơn đã bán · bấm để sắp xếp cao → thấp" style={{ padding: "10px 12px", textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? SB_BLUE : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
                 <th style={{ padding: "10px 12px" }}>Price</th>
                 <th style={{ padding: "10px 12px" }}>Status</th>
                 <th style={{ padding: "10px 12px" }}>Link</th>
@@ -230,12 +238,18 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                         : <div style={{ width: 46, height: 46, borderRadius: 8, background: "#EEF0F4" }} />}
                     </td>
                     <td style={{ padding: "10px 12px", maxWidth: 340 }}>
-                      <div style={{ fontWeight: 700, color: "#14213D", lineHeight: 1.35 }}>{r.title}{r.dirty && <span style={{ marginLeft: 6, fontSize: 10, background: "#FFF4E5", color: "#9A6400", borderRadius: 4, padding: "1px 5px", fontWeight: 800 }}>EDITED</span>}</div>
+                      <div
+                        onClick={() => canEdit && setEditId(r.id)}
+                        title={canEdit ? "Click to edit" : undefined}
+                        style={{ fontWeight: 700, color: canEdit ? SB_BLUE : "#14213D", lineHeight: 1.35, cursor: canEdit ? "pointer" : "default" }}>
+                        {r.title}{r.dirty && <span style={{ marginLeft: 6, fontSize: 10, background: "#FFF4E5", color: "#9A6400", borderRadius: 4, padding: "1px 5px", fontWeight: 800 }}>EDITED</span>}
+                      </div>
                       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{r.variantCount} variants · {r.imageCount} images · SKU {r.skuDone}/{r.skuTotal}{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}</div>
-                      <div style={{ fontSize: 10.5, color: "var(--muted)", fontFamily: "monospace", marginTop: 1 }}>#{r.shopbaseProductId}</div>
+                      <div onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.shopbaseProductId); }} title="Click to copy product ID" style={{ fontSize: 10.5, color: "var(--muted)", fontFamily: "monospace", marginTop: 1, cursor: "copy" }}>#{r.shopbaseProductId}</div>
                     </td>
                     <td style={{ padding: "10px 12px" }}><div style={{ fontWeight: 600 }}>{r.storeName}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{r.sellerName}</div></td>
                     <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.productType || "—"}</td>
+                    <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: (r.orders ?? 0) > 0 ? 800 : 400, color: (r.orders ?? 0) > 0 ? "#14213D" : "var(--muted)" }}>{r.orders ?? 0}</td>
                     <td style={{ padding: "10px 12px", fontWeight: 700, whiteSpace: "nowrap" }}>{price(r)}</td>
                     <td style={{ padding: "10px 12px" }}>{statusChip(r.status)}</td>
                     <td style={{ padding: "10px 12px" }}>{r.onlineStoreUrl ? <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" style={{ color: SB_BLUE, fontWeight: 700, textDecoration: "none" }}>Open ↗</a> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
@@ -243,7 +257,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                 );
               })}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan={canEdit ? 8 : 7} style={{ padding: "40px 12px", textAlign: "center", color: "var(--muted)" }}>
+                <tr><td colSpan={canEdit ? 9 : 8} style={{ padding: "40px 12px", textAlign: "center", color: "var(--muted)" }}>
                   {rows.length === 0 ? "Chưa có sản phẩm — chọn store rồi bấm “Sync from ShopBase”." : "Không có sản phẩm khớp bộ lọc."}
                 </td></tr>
               )}
@@ -251,6 +265,10 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
           </table>
         </div>
       </div>
+
+      {canEdit && editId && (
+        <ShopbaseEditModal id={editId} onClose={() => setEditId(null)} onSaved={load} />
+      )}
     </div>
   );
 }
