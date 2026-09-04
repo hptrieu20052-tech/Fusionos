@@ -10,6 +10,7 @@ import { pushShopifyTrackingForOrder } from "@/lib/shopify";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
+import { syncSupportMail } from "@/lib/support-mail";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -184,11 +185,13 @@ async function tick(req: NextRequest) {
   // với "hết giờ, không chạy". ONOS/Compassup/Lenful nằm trong onosWem nên nó luôn là thằng đói.
   // Sửa: (a) đánh dấu rõ `skipped (time budget)`, (b) XOAY vòng thứ tự theo phút để không nhà nào
   // vĩnh viễn đứng cuối hàng.
-  const results: Record<string, unknown> = { printway: null, printify: null, onosWem: null };
+  const results: Record<string, unknown> = { printway: null, printify: null, onosWem: null, supportMail: null };
   const jobs: Array<{ key: string; run: () => Promise<unknown> }> = [
     { key: "printway", run: () => syncPrintway({ force: false }) },
     { key: "printify", run: () => syncPrintify({ force: false }) },
     { key: "onosWem", run: () => syncOnosWem({ force: false }) },
+    // v392/v393: kéo mail các hộp thư support (IMAP) về /support-email — tự bỏ qua nếu chưa cấu hình.
+    { key: "supportMail", run: () => syncSupportMail({ force: false }) },
   ];
   const rot = Math.floor(started / 600_000) % jobs.length; // đổi thứ tự mỗi 10 phút
   for (let i = 0; i < jobs.length; i++) {
@@ -197,9 +200,9 @@ async function tick(req: NextRequest) {
     try { results[job.key] = await job.run(); }
     catch (e) { results[job.key] = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
-  const { printway, printify, onosWem } = results;
+  const { printway, printify, onosWem, supportMail } = results;
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem, supportMail };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }

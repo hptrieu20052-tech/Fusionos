@@ -25,6 +25,12 @@ const ICONS: Record<string, (p: P) => JSX.Element> = {
   statsDesigners: IconReport, finance: IconWallet, stores: IconStore,
   settings: IconSettings, admin: IconProducts, support: IconSupport,
   ai: IconSparkle,
+  // v393 · Customer Emails — top-level cho role support (cạnh Orders).
+  emails: (p: P) => (
+    <svg width={p.width ?? 18} height={p.height ?? 18} style={p.style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
+    </svg>
+  ),
   // v208 · Video Library — nav top-level, ngay cạnh Design Studio.
   videos: (p: P) => (
     <svg width={p.width ?? 18} height={p.height ?? 18} style={p.style} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -49,7 +55,11 @@ export default function AppShell({ user, links, children, canProducts = false, c
 }) {
   const path = usePathname();
   const { t } = useLang();
-  const isActive = (href: string) => href === "/" ? path === "/" : path.startsWith(href);
+  // v392: "/support" không được "ăn" luôn "/support-email" (startsWith) — tách riêng.
+  const isActive = (href: string) =>
+    href === "/" ? path === "/"
+    : href === "/support" ? (path === "/support" || path.startsWith("/support/"))
+    : path.startsWith(href);
 
   // Trang /login KHÔNG BAO GIỜ khoác app chrome (nav/avatar) — kể cả khi session còn sống
   // (middleware đã redirect người đăng nhập khỏi /login; đây là lớp chặn thứ 2 chống flash UI).
@@ -66,7 +76,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
   useEffect(() => {
     setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false);
-    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"];
+    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"];
     setMobileHub(hubPaths.some((p) => path.startsWith(p)));
   }, [path]);
   useEffect(() => {
@@ -124,7 +134,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // đứng liền ngay sau Design Studio thay vì bị đẩy xuống sau các dropdown.
   const hubAnchor = links.some((l) => !l.more && l.href === "/videos") ? "/videos" : "/designs";
   const hasAnchor = links.some((l) => !l.more && l.href === hubAnchor);
-  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
+  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image", "/ai-video", "/prompts"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
@@ -214,6 +224,13 @@ export default function AppShell({ user, links, children, canProducts = false, c
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="21" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.25" y="7" width="3.5" height="11" /><rect x="15.5" y="4" width="3.5" height="14" /></svg>
             </span>
             Product Sales
+          </Link>}
+          {/* v393: Customer Emails trong Seller Hub CHỈ cho admin — role support có link top-level cạnh Orders. */}
+          {canSupport && user.role === "admin" && <Link href="/support-email" prefetch className={`topnav-more-item${isActive("/support-email") ? " active" : ""}`}>
+            <span className="topnav-ic">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
+            </span>
+            Customer Emails
           </Link>}
           {canSupport && <Link href="/support" prefetch className={`topnav-more-item${isActive("/support") ? " active" : ""}`}>
             <span className="topnav-ic"><IconSupport width={16} height={16} /></span>
@@ -339,7 +356,12 @@ export default function AppShell({ user, links, children, canProducts = false, c
                     { href: "/tiktok-products", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Products Tiktok" },
                     { href: "/tiktok-templates", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Templates Tiktok" },
                   ] : []),
-                  ...(canSupport ? [{ href: "/support", icon: <IconSupport width={18} height={18} />, label: "Customer Messages Tiktok" }] : []),
+                  ...(canSupport && user.role === "admin" ? [
+                    { href: "/support-email", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>, label: "Customer Emails" },
+                  ] : []),
+                  ...(canSupport ? [
+                    { href: "/support", icon: <IconSupport width={18} height={18} />, label: "Customer Messages Tiktok" },
+                  ] : []),
                   ...(canMarketing ? [{ href: "/marketing", icon: <IconMarketing width={18} height={18} />, label: "Marketing Tiktok" }] : []),
                   ...(canFinanceTiktok ? [{ href: "/tiktok-finance", icon: <IconWallet width={18} height={18} />, label: "Finance Tiktok" }] : []),
                 ];
@@ -386,6 +408,14 @@ export default function AppShell({ user, links, children, canProducts = false, c
               <Link href="/tiktok-products" prefetch className={`mobile-nav-item${isActive("/tiktok-products") ? " active" : ""}`}>
                 <span className="topnav-ic"><MarketplaceLogo mk="tiktok" size={18} /></span>
                 Manage Products Tiktok
+              </Link>
+            )}
+            {!hasDesigns && canSupport && user.role === "admin" && (
+              <Link href="/support-email" prefetch className={`mobile-nav-item${isActive("/support-email") ? " active" : ""}`}>
+                <span className="topnav-ic">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
+                </span>
+                Customer Emails
               </Link>
             )}
             {!hasDesigns && canSupport && (

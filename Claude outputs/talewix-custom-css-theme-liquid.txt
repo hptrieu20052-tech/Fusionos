@@ -1,0 +1,241 @@
+<style>
+/* ================= THEME DEMO CSS (giữ nguyên) ================= */
+#shopify-section-template--16607070486764__be5613ec-d9d8-4a13-b4a3-5c4ec29db227.t4s-promo-text p a::after {
+  content:""; width:100%; height:2px; background-color:#fff; position:absolute; z-index:1; left:0; right:0; bottom:-2px;
+}
+#shopify-section-template--16607070486764__be5613ec-d9d8-4a13-b4a3-5c4ec29db227.t4s-promo-text p a { position:relative; }
+.t4s-shipping .t4s-shipping-title { font-size:19px; color:#b06b30; margin-bottom:3px; }
+.t4s-col__textSocial p { margin-bottom:0; color:#b06b30; }
+.t4s-type__mega>.t4s-sub-menu, .t4s-type__drop>.t4s-sub-menu, .t4s-type__lv0_mega>.t4s-sub-menu, .t4s-type__lv0_drop>.t4s-sub-menu { min-width:280px; }
+.t4s-product_meta a { color:var(--secondary-color); }
+
+/* ================= TALEWIX — FLAGWIX STYLE (all-in-one) ================= */
+
+/* 1) Thanh full-width, nội dung boxed (đã thêm .t4s-section-header) */
+.t4s-wrapper__boxed .t4s-announcement-bar,
+.t4s-wrapper__boxed .t4s-top-bar,
+.t4s-wrapper__boxed .t4s-section-header,
+.t4s-wrapper__boxed #t4s-footer{
+  width:100vw!important; max-width:100vw!important;
+  margin-left:calc(50% - 50vw)!important; margin-right:calc(50% - 50vw)!important;
+}
+
+/* 2) Header desktop: gọn + logo trái + search tràn giữa + nút Search */
+@media (min-width:1025px){
+  .t4s-header-layout_logo_search .t4s-row[data-header-height]{ padding-top:10px!important; padding-bottom:10px!important; }
+  .t4s-header-layout_logo_search .t4s-header__logo img{ max-height:70px!important; height:auto!important; width:auto!important; }
+  .t4s-header-layout_logo_search .t4s-row[data-header-height]{ flex-wrap:wrap!important; }
+.t4s-header-layout_logo_search .t4s-row[data-header-height]>.t4s-col.t4s-d-lg-block{
+  display:block!important; flex:0 0 100%!important; max-width:100%!important; order:10;
+  margin-top:6px; padding-top:8px; border-top:1px solid #f0e7dd;
+}
+.t4s-header-layout_logo_search .t4s-nav__ul{ justify-content:center; }
+  .t4s-header-layout_logo_search .t4s-col-group_btns{ flex:1 1 auto!important; max-width:none!important; }
+  .t4s-header-layout_logo_search .t4s-site-nav__icons{ display:flex!important; width:100%!important; }
+  .t4s-header-layout_logo_search .t4s-site-nav__search{ flex:1 1 auto!important; margin:0 30px!important; }
+  .t4s-header-layout_logo_search .t4s-search-header__form-wrap{ margin:0 auto!important; }
+  .t4s-header-layout_logo_search .t4s-search-header__form-wrap{ width:100%!important; max-width:860px!important; }
+  .t4s-header-layout_logo_search .t4s-search-header__form{ width:100%!important; }
+  .t4s-header-layout_logo_search .t4s-search-header__type,
+  .t4s-header-layout_logo_search .t4s-search-header_border{ display:none!important; }
+  .t4s-header-layout_logo_search .t4s-search-header__submit{ width:120px!important; right:0!important; top:0!important; bottom:0!important; background:#B06B30!important; border-radius:0 30px 30px 0!important; }
+  .t4s-header-layout_logo_search .t4s-search-header__submit svg{ display:none!important; }
+  .t4s-header-layout_logo_search .t4s-search-header__submit::after{ content:"Search"; font-weight:700; font-size:14px; color:#fff; }
+  .t4s-header-layout_logo_search .t4s-search-header__input{ padding-inline-end:135px!important; }
+}
+
+/* 3) Thẻ sản phẩm: nền trắng, bo góc, đổ bóng — gắn thẳng vào card, không lệch */
+.t4s-pr-grid{ padding-bottom:26px; }
+.t4s-pr-grid .t4s-product-wrapper{
+  background:#fff; border-radius:16px; overflow:hidden;
+  box-shadow:0 10px 28px rgba(120,70,20,.14);
+}
+.t4s-pr-grid .t4s-product-info{ padding:14px 14px 18px; text-align:center; }
+.t4s-pr-grid .t4s-product-title{ display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-size:15px; line-height:1.45; min-height:44px; }
+
+/* 4) Nút View All hợp tông caramel */
+.t4s-viewall-btn{
+  background:transparent!important; color:#B06B30!important;
+  border:2px solid #B06B30!important; border-radius:30px!important;
+  padding:12px 36px!important; font-weight:700!important; letter-spacing:.3px; transition:.2s!important;
+}
+.t4s-viewall-btn:hover{ background:#B06B30!important; color:#fff!important; }
+
+/* 5) Chữ trên slideshow/hero: thêm bóng cho dễ đọc */
+.t4s-slideshow .t4s-content-position h1,
+.t4s-slideshow .t4s-content-position h2,
+.t4s-slideshow .t4s-content-position h3,
+.t4s-slideshow .t4s-content-position p{
+  text-shadow:0 2px 14px rgba(0,0,0,.45);
+}
+
+/* 6) Ô search viền nổi kiểu Flagwix */
+@media (min-width:1025px){
+  .t4s-header-layout_logo_search .t4s-search-header__form{
+    border:2px solid #B06B30!important; border-radius:30px!important; overflow:hidden;
+  }
+}
+
+/* 7) Mô tả section: bỏ chữ nghiêng cho sạch (giống Flagwix) */
+.t4s-section-des, .t4s-section-des em, .t4s-section-des i{ font-style:normal!important; }
+
+/* Nền section bo góc */
+.t4s-section-inner.t4s-container-wrap,
+.t4s-section-inner.t4s-has-imgbg{
+  border-radius:24px;
+}
+
+/* Nút View All kéo lên gần sản phẩm */
+.t4s-prs-footer{ margin-top:5px!important; }
+/* Bỏ bóng viền của khung boxed */
+.t4s-wrapper__boxed .t4s-website-wrapper{ box-shadow:none!important; }
+/* Quick view: nút tròn góc trên-trái card */
+.t4s-pr-style1 .t4s-product-btns,
+.t4s-pr-style1:not(.t4s-colors-selected):hover .t4s-product-btns,
+.t4s-pr-style1.t4s-colors-selected .t4s-product-inner:hover .t4s-product-btns{
+  top:10px!important; left:10px!important; right:auto!important; bottom:auto!important;
+  transform:none!important; align-items:flex-start!important; margin:0!important;
+  background:transparent!important; box-shadow:none!important;
+}
+.t4s-pr-style1 .t4s-product-btns a{
+  width:40px!important; min-width:40px!important; height:40px!important;
+  border-radius:50%!important; padding:0!important;
+}
+/* Nút quick view: ẩn chữ, hiện icon mắt */
+.t4s-pr-style1 .t4s-product-btns a .t4s-text-pr{ display:none!important; }
+.t4s-pr-style1 .t4s-product-btns a .t4s-svg-pr-icon{
+  position:static!important; transform:none!important;
+  display:flex!important; align-items:center; justify-content:center;
+  width:100%; height:100%;
+}
+/* Chữ trong dropdown: đậm + rõ hơn */
+.t4s-sub-menu a{
+  font-weight:400!important;
+  font-size:14px!important;
+  color:#2b2213!important;
+}
+/* Bỏ bo góc Footer và Footer bottom */
+.t4s-footer,
+.t4s-footer-bottom,
+.t4s-footer .t4s-section-inner,
+.t4s-footer-bottom .t4s-section-inner,
+.t4s-footer .t4s-container,
+.t4s-footer-bottom .t4s-container {
+  border-radius: 0 !important;
+}
+.contact-form label,
+.contact-form input,
+.contact-form textarea {
+  color: #333333 !important;
+  font-weight: 500 !important;
+}
+/* Làm chữ nội dung trên tất cả Page và Policy đậm, rõ hơn */
+.shopify-policy__container,
+.shopify-policy__body,
+.t4s-page-content,
+.t4s-page-content p,
+.t4s-page-content li,
+.t4s-page-content a,
+.t4s-page-content td,
+.rte,
+.rte p,
+.rte li,
+.rte a {
+  color: #333333 !important;
+  font-weight: 500 !important;
+}
+
+/* Tiêu đề chính */
+.shopify-policy__title h1,
+.t4s-page-content h1,
+.rte h1 {
+  color: #222222 !important;
+  font-weight: 700 !important;
+}
+
+/* Các tiêu đề nhỏ trong nội dung */
+.shopify-policy__body h2,
+.shopify-policy__body h3,
+.shopify-policy__body h4,
+.t4s-page-content h2,
+.t4s-page-content h3,
+.t4s-page-content h4,
+.rte h2,
+.rte h3,
+.rte h4,
+.rte strong,
+.rte b {
+  color: #222222 !important;
+  font-weight: 600 !important;
+}
+/* Bo góc ảnh sản phẩm + thumbnail (bản mạnh) */
+.t4s-main-product__content .t4s-product__media,
+.t4s-main-product__content .t4s-product__media img{ border-radius:16px!important; overflow:hidden; }
+.t4s-product__thumb-item,
+.t4s-product__thumb-item .t4s_ratio,
+.t4s-product__thumb-item > div,
+.t4s-product__thumb-item img{ border-radius:10px!important; overflow:hidden; }
+/* Chữ màu đen */
+.t4s-tab-content,
+.t4s-tab-content p,
+.t4s-tab-content li,
+.t4s-tab-content span,
+.t4s-accordion-content,
+.t4s-accordion-content p,
+.t4s-accordion-content li {
+  color: #111 !important;
+  opacity: 1 !important;
+}
+
+/* Khung nội dung */
+.t4s-tab-content,
+.t4s-accordion-content {
+  max-height: 520px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 0;
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+  box-sizing: border-box;
+  line-height: 1.7;
+}
+
+/* Thanh cuộn gọn hơn */
+.t4s-tab-content::-webkit-scrollbar,
+.t4s-accordion-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.t4s-tab-content::-webkit-scrollbar-thumb,
+.t4s-accordion-content::-webkit-scrollbar-thumb {
+  background: #b5b5b5;
+  border-radius: 10px;
+}
+.t4s-tab-content,
+.t4s-accordion-content {
+  border-bottom: 2px solid #d9d9d9 !important;
+  padding-bottom: 16px;
+}
+/* ===== CHECK OUT BUTTON — CART PAGE + DRAWER ===== */
+*:has(> button[name="checkout"]) {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+button[name="checkout"],
+.cart__checkout-button,
+.btn-checkout {
+  width: 100% !important;
+  min-width: 0 !important;
+  padding: 17px 20px !important;
+  font-size: 18px !important;
+  font-weight: 700 !important;
+  border-radius: 6px !important;
+  letter-spacing: .04em !important;
+  line-height: 1.2 !important;
+}
+/* Ẩn thanh tab MENU/CATEGORIES của menu mobile */
+.t4s-drawer__header.t4s-mb-nav__tabs { display: none !important; }
+/* Ẩn panel Categories */
+#shopify-section-mb_cat, #menu-mb__cat { display: none !important; }</style>

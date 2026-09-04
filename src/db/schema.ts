@@ -847,3 +847,68 @@ export const aiPrompts = pgTable("ai_prompts", {
   updatedBy: uuid("updated_by").references(() => users.id),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ---------- SUPPORT EMAIL (v392 · hộp thư support@talewix.com trong FUSION) ----------
+// Cron tick kéo mail qua IMAP (PrivateEmail/Namecheap) → 2 bảng dưới. Nhân viên đọc/rep tại
+// /support-email theo quyền module "support" (1 = xem, 2 = trả lời/đóng). Mật khẩu hộp thư chỉ
+// nằm trong env (SUPPORT_EMAIL / SUPPORT_EMAIL_PASS) — không ai phải cầm email gốc.
+// v393: NHIỀU hộp thư — mỗi store/brand 1 account, admin thêm/sửa ngay trong FUSION
+// (không cần env + redeploy). Mật khẩu mã hoá AES-256-GCM (lib/crypto, khoá từ AUTH_SECRET).
+export const supportEmailAccounts = pgTable("support_email_accounts", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  label: text("label").notNull(),                 // tên hiển thị: "Talewix", "Store B"…
+  email: text("email").notNull(),
+  fromName: text("from_name"),                    // tên người gửi khi reply (mặc định = label + " Support")
+  imapHost: text("imap_host").notNull().default("mail.privateemail.com"),
+  imapPort: integer("imap_port").notNull().default(993),
+  smtpHost: text("smtp_host").notNull().default("mail.privateemail.com"),
+  smtpPort: integer("smtp_port").notNull().default(465),
+  passEnc: text("pass_enc").notNull(),            // encryptSecret(mật khẩu hộp thư)
+  active: boolean("active").notNull().default(true),
+  lastSyncAt: timestamp("last_sync_at", { withTimezone: true }),
+  lastSyncError: text("last_sync_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex("uq_sup_email_accounts_email").on(t.email)]);
+
+export const supportEmailThreads = pgTable("support_email_threads", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // v393: thread thuộc hộp thư nào. NULL = hộp thư cấu hình bằng env (SUPPORT_EMAIL) thời v392.
+  accountId: uuid("account_id").references(() => supportEmailAccounts.id),
+  customerEmail: text("customer_email").notNull(),
+  customerName: text("customer_name"),
+  subject: text("subject").notNull().default(""),          // subject gốc (đã bỏ Re:/Fwd:)
+  status: text("status").notNull().default("open"),        // open | closed
+  lastDirection: text("last_direction").notNull().default("in"), // in = khách vừa nhắn (chờ rep) | out
+  lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSnippet: text("last_snippet").notNull().default(""),
+  unread: boolean("unread").notNull().default(true),
+  msgCount: integer("msg_count").notNull().default(0),
+  assignedTo: uuid("assigned_to").references(() => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_sup_email_threads_last").on(t.lastMessageAt),
+  index("idx_sup_email_threads_customer").on(t.customerEmail),
+  index("idx_sup_email_threads_account").on(t.accountId),
+]);
+
+export const supportEmailMessages = pgTable("support_email_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  threadId: uuid("thread_id").notNull().references(() => supportEmailThreads.id),
+  direction: text("direction").notNull(),                  // in (khách gửi) | out (mình rep)
+  messageId: text("message_id"),                           // Message-ID header — khoá dedupe khi sync IMAP
+  inReplyTo: text("in_reply_to"),
+  refs: text("refs"),                                      // References header (nối thread phía khách)
+  fromEmail: text("from_email").notNull(),
+  fromName: text("from_name"),
+  toEmail: text("to_email"),
+  subject: text("subject"),
+  bodyText: text("body_text"),
+  bodyHtml: text("body_html"),
+  attachments: jsonb("attachments").notNull().default([]), // [{ name, key, size, type }] — file lưu storage
+  sentByUserId: uuid("sent_by_user_id").references(() => users.id), // nhân viên bấm gửi (direction=out)
+  messageAt: timestamp("message_at", { withTimezone: true }).notNull().defaultNow(), // Date header
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_sup_email_msgs_thread").on(t.threadId),
+  uniqueIndex("uq_sup_email_msgs_mid").on(t.messageId),
+]);

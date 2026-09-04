@@ -40,6 +40,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const links: NavLink[] = session ? [
     { href: "/", label: "nav.dashboard", icon: "dashboard", section: "Operations" },
     ...(orders ? [{ href: "/orders", label: "nav.orders", icon: "orders", section: "Operations" }] : []),
+    // v393: role SUPPORT thấy Customer Emails top-level ngay cạnh Orders. Admin vẫn vào qua Seller Hub.
+    ...(session.role === "support" && support ? [{ href: "/support-email", label: "Customer Emails", icon: "emails", section: "Operations" }] : []),
     ...(designs ? [{ href: "/designs", label: "nav.designs", icon: "designs", section: "Operations" }] : []),
     // v208 · Video Library đứng ngang hàng Design Studio (cùng luồng: seller giao → creator quay → upload).
     ...(videos ? [{ href: "/videos", label: "nav.videos", icon: "videos", section: "Operations" }] : []),
