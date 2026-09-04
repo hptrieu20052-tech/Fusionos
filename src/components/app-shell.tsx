@@ -188,12 +188,17 @@ export default function AppShell({ user, links, children, canProducts = false, c
     | { t: "group"; key: string; label: string; icon: JSX.Element; children: { href: string; label: string }[] };
   const hubNodes: HubNode[] = [
     ...(canProducts ? [
-      { t: "link", href: "/etsy-products", label: "Manage Products Etsy", icon: <MarketplaceLogo mk="etsy" size={16} /> },
+      // Etsy/ShopBase hiện mới 1 trang nhưng vẫn để dạng nhóm — sau này thêm trang chỉ cần thêm children.
+      { t: "group", key: "etsy", label: "Etsy", icon: <MarketplaceLogo mk="etsy" size={16} />, children: [
+        { href: "/etsy-products", label: "Manage Products" },
+      ] },
       { t: "group", key: "shopify", label: "Shopify", icon: <MarketplaceLogo mk="shopify" size={16} />, children: [
         { href: "/shopify-products", label: "Manage Products" },
         { href: "/shopify-templates", label: "Manage Templates" },
       ] },
-      { t: "link", href: "/shopbase-products", label: "Manage Products ShopBase", icon: <MarketplaceLogo mk="shopbase" size={16} /> },
+      { t: "group", key: "shopbase", label: "ShopBase", icon: <MarketplaceLogo mk="shopbase" size={16} />, children: [
+        { href: "/shopbase-products", label: "Manage Products" },
+      ] },
       { t: "group", key: "amazon", label: "Amazon", icon: <AmazonLogo size={16} />, children: [
         { href: "/amazon-products", label: "Manage Products" },
         { href: "/amazon-templates", label: "Manage Templates" },
@@ -239,19 +244,23 @@ export default function AppShell({ user, links, children, canProducts = false, c
             <div key={n.key}>
               <button
                 type="button"
-                className={`topnav-more-item${n.children.some((c) => isActive(c.href)) && hubGroup !== n.key ? " active" : ""}`}
-                style={{ width: "100%", background: "none", border: 0, cursor: "pointer", font: "inherit", textAlign: "left", display: "flex", alignItems: "center" }}
+                className={`topnav-more-item${n.children.some((c) => isActive(c.href)) || hubGroup === n.key ? " active" : ""}`}
+                style={{ width: "100%", background: hubGroup === n.key ? "var(--blue-soft)" : "none", border: 0, cursor: "pointer", textAlign: "left" }}
                 onClick={(e) => { e.stopPropagation(); setHubGroup((g) => (g === n.key ? "" : n.key)); }}
               >
                 <span className="topnav-ic">{n.icon}</span>
                 {n.label}
-                <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--muted)", transform: hubGroup === n.key ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
+                <span style={{ marginLeft: "auto", paddingLeft: 18, fontSize: 10, transform: hubGroup === n.key ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
               </button>
-              {hubGroup === n.key && n.children.map((c) => (
-                <Link key={c.href} href={c.href} prefetch className={`topnav-more-item${isActive(c.href) ? " active" : ""}`} style={{ paddingLeft: 42, fontSize: 13 }}>
-                  {c.label}
-                </Link>
-              ))}
+              {hubGroup === n.key && (
+                <div style={{ margin: "2px 0 4px 22px", paddingLeft: 6, borderLeft: "2px solid var(--line)", display: "flex", flexDirection: "column", gap: 2 }}>
+                  {n.children.map((c) => (
+                    <Link key={c.href} href={c.href} prefetch className={`topnav-more-item${isActive(c.href) ? " active" : ""}`} style={{ padding: "7px 12px", fontSize: 13 }}>
+                      {c.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

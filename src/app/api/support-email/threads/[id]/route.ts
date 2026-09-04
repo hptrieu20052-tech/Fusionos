@@ -48,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const body = await req.json().catch(() => ({}));
   const status = body?.status === "closed" ? "closed" : body?.status === "open" ? "open" : null;
-  if (!status) return NextResponse.json({ ok: false, error: "status phải là open hoặc closed" }, { status: 400 });
+  if (!status) return NextResponse.json({ ok: false, error: "status must be open or closed" }, { status: 400 });
 
   const rows = await db.update(schema.supportEmailThreads).set({ status })
     .where(eq(schema.supportEmailThreads.id, params.id)).returning({ id: schema.supportEmailThreads.id });

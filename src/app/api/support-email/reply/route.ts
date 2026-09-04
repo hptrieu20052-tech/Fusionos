@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => ({}));
   const threadId = String(b?.threadId ?? "");
   const body = String(b?.body ?? "");
-  if (!threadId) return NextResponse.json({ ok: false, error: "thiếu threadId" }, { status: 400 });
+  if (!threadId) return NextResponse.json({ ok: false, error: "missing threadId" }, { status: 400 });
 
   try {
     const res = await sendSupportReply({ threadId, body, userId: session.sub });

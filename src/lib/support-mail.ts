@@ -183,7 +183,7 @@ async function syncFolder(
     // Bước 2: tải FULL source cho mail mới — MỚI NHẤT TRƯỚC (uid giảm dần), tới hết deadline.
     const fresh = metas.filter((m) => !m.mid || !existing.has(m.mid)).sort((a, b) => b.uid - a.uid);
     for (const m of fresh) {
-      if (Date.now() > deadline) { errors.push("hết thời gian — phần còn lại chờ vòng sau"); break; }
+      if (Date.now() > deadline) { errors.push("time budget reached — remaining mail next round"); break; }
       try {
         const one = await client.fetchOne(String(m.uid), { source: true }, { uid: true });
         if (!one || !one.source) continue;
@@ -289,7 +289,7 @@ async function syncOneAccount(acc: MailAccount, deadline: number): Promise<Recor
 export async function syncSupportMail(opts: { force?: boolean } = {}): Promise<Record<string, unknown>> {
   void opts;
   const accounts = await allAccounts();
-  if (!accounts.length) return { ok: false, error: "chưa cấu hình hộp thư nào (Mailboxes hoặc SUPPORT_EMAIL env)" };
+  if (!accounts.length) return { ok: false, error: "no mailbox configured" };
   const deadline = Date.now() + 45_000; // tổng ngân sách, chia cho các hộp thư
   const byAccount: Record<string, unknown> = {};
   let scanned = 0, created = 0;
@@ -312,11 +312,11 @@ export async function syncSupportMail(opts: { force?: boolean } = {}): Promise<R
 /** Gửi trả lời cho 1 thread — từ ĐÚNG hộp thư mà thread đó thuộc về. */
 export async function sendSupportReply(args: { threadId: string; body: string; userId: string }): Promise<Record<string, unknown>> {
   const body = (args.body ?? "").trim();
-  if (!body) return { ok: false, error: "nội dung trống" };
+  if (!body) return { ok: false, error: "empty message" };
 
   const [thread] = await db.select().from(schema.supportEmailThreads)
     .where(eq(schema.supportEmailThreads.id, args.threadId)).limit(1);
-  if (!thread) return { ok: false, error: "thread không tồn tại" };
+  if (!thread) return { ok: false, error: "thread not found" };
 
   // Account của thread: theo account_id; thread cũ (NULL) → account ENV.
   let acc: MailAccount | null = null;
@@ -325,7 +325,7 @@ export async function sendSupportReply(args: { threadId: string; body: string; u
       .where(eq(schema.supportEmailAccounts.id, thread.accountId)).limit(1);
     if (row) acc = rowToAccount(row);
   } else acc = envAccount();
-  if (!acc || !acc.pass) return { ok: false, error: "hộp thư của thread này chưa cấu hình / đã bị xoá" };
+  if (!acc || !acc.pass) return { ok: false, error: "mailbox for this thread is not configured or was deleted" };
 
   // Mail khách gần nhất → lấy Message-ID làm In-Reply-To cho đúng chuỗi hội thoại.
   const [lastIn] = await db.select().from(schema.supportEmailMessages)

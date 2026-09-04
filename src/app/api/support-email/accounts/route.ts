@@ -39,12 +39,12 @@ export async function POST(req: NextRequest) {
   const label = String(b?.label ?? "").trim();
   const email = String(b?.email ?? "").trim().toLowerCase();
   const pass = String(b?.pass ?? "");
-  if (!label || !email || !pass) return NextResponse.json({ ok: false, error: "cần label, email, mật khẩu" }, { status: 400 });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ ok: false, error: "email không hợp lệ" }, { status: 400 });
+  if (!label || !email || !pass) return NextResponse.json({ ok: false, error: "label, email and password are required" }, { status: 400 });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return NextResponse.json({ ok: false, error: "invalid email" }, { status: 400 });
 
   const dup = await db.select({ id: schema.supportEmailAccounts.id }).from(schema.supportEmailAccounts)
     .where(eq(schema.supportEmailAccounts.email, email)).limit(1);
-  if (dup.length) return NextResponse.json({ ok: false, error: "email này đã có trong danh sách" }, { status: 400 });
+  if (dup.length) return NextResponse.json({ ok: false, error: "this email already exists" }, { status: 400 });
 
   const [row] = await db.insert(schema.supportEmailAccounts).values({
     label, email,

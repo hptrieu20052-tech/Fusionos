@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (b?.smtpPort != null && Number(b.smtpPort)) patch.smtpPort = Number(b.smtpPort);
   if (typeof b?.active === "boolean") patch.active = b.active;
   if (typeof b?.pass === "string" && b.pass) { patch.passEnc = encryptSecret(b.pass); patch.lastSyncError = null; }
-  if (!Object.keys(patch).length) return NextResponse.json({ ok: false, error: "không có gì để sửa" }, { status: 400 });
+  if (!Object.keys(patch).length) return NextResponse.json({ ok: false, error: "nothing to update" }, { status: 400 });
 
   const rows = await db.update(schema.supportEmailAccounts).set(patch)
     .where(eq(schema.supportEmailAccounts.id, params.id)).returning({ id: schema.supportEmailAccounts.id });
@@ -39,7 +39,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
   const [{ n }] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.supportEmailThreads)
     .where(eq(schema.supportEmailThreads.accountId, params.id));
   if (Number(n) > 0) {
-    return NextResponse.json({ ok: false, error: `hộp thư này đã có ${n} thread — tắt Active thay vì xoá để giữ lịch sử` }, { status: 400 });
+    return NextResponse.json({ ok: false, error: `this mailbox has ${n} threads — disable it instead of deleting to keep history` }, { status: 400 });
   }
   const rows = await db.delete(schema.supportEmailAccounts)
     .where(eq(schema.supportEmailAccounts.id, params.id)).returning({ id: schema.supportEmailAccounts.id });

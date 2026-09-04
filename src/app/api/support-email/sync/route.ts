@@ -14,7 +14,7 @@ export async function POST() {
   if (session.role !== "admin" && session.role !== "support") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   if ((await levelOf(session, "support")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   if (!(await supportMailReady())) {
-    return NextResponse.json({ ok: false, error: "Chưa có hộp thư nào — admin thêm trong Mailboxes (hoặc đặt SUPPORT_EMAIL env)" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "No mailbox configured — add one in Mailboxes" }, { status: 400 });
   }
   try {
     const res = await syncSupportMail({ force: true });

@@ -26,13 +26,17 @@ type Msg = {
   attachments: Att[]; messageAt: string;
 };
 
-const FOLDERS: { key: string; label: string; icon: string }[] = [
-  { key: "inbox", label: "Inbox", icon: "📥" },
-  { key: "sent", label: "Sent", icon: "📤" },
-  { key: "archive", label: "Archive", icon: "🗄" },
-  { key: "spam", label: "Spam", icon: "🚫" },
-  { key: "trash", label: "Trash", icon: "🗑" },
-  { key: "drafts", label: "Drafts", icon: "📝" },
+// Icon line-style (stroke) như webmail — currentColor nên tự trắng khi folder đang chọn.
+const fIc = (paths: React.ReactNode) => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>{paths}</svg>
+);
+const FOLDERS: { key: string; label: string; icon: React.ReactNode }[] = [
+  { key: "inbox", label: "Inbox", icon: fIc(<><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z" /></>) },
+  { key: "sent", label: "Sent", icon: fIc(<><line x1="22" y1="2" x2="11" y2="13" /><path d="M22 2 15 22l-4-9-9-4 20-7Z" /></>) },
+  { key: "archive", label: "Archive", icon: fIc(<><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></>) },
+  { key: "spam", label: "Spam", icon: fIc(<><circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" /></>) },
+  { key: "trash", label: "Trash", icon: fIc(<><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>) },
+  { key: "drafts", label: "Drafts", icon: fIc(<><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><polyline points="14 2 14 8 20 8" /></>) },
 ];
 
 const fmtTime = (iso: string) => {
@@ -110,7 +114,7 @@ function MailboxManager({ onClose, onChanged }: { onClose: () => void; onChanged
   useEffect(() => { load(); }, [load]);
 
   const add = async () => {
-    if (!label.trim() || !email.trim() || !pass) { setErr("Cần đủ tên hiển thị, email và mật khẩu"); return; }
+    if (!label.trim() || !email.trim() || !pass) { setErr("Label, email and password are required"); return; }
     setBusy(true); setErr("");
     try {
       const j = await fetch("/api/support-email/accounts", {
@@ -147,7 +151,7 @@ function MailboxManager({ onClose, onChanged }: { onClose: () => void; onChanged
   };
 
   const changePass = (id: string) => {
-    const p = window.prompt("Mật khẩu mới cho hộp thư này (được mã hoá trước khi lưu):");
+    const p = window.prompt("New password for this mailbox:");
     if (p) patch(id, { pass: p });
   };
 
@@ -169,35 +173,34 @@ function MailboxManager({ onClose, onChanged }: { onClose: () => void; onChanged
               <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{a.email}</span>
               {!a.active && <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 8, padding: "0 6px" }}>OFF</span>}
               <div style={{ flex: 1 }} />
-              <button onClick={() => changePass(a.id)} disabled={busy} style={{ ...selStyle, cursor: "pointer", fontSize: 12, padding: "5px 9px" }}>Đổi mật khẩu</button>
-              <button onClick={() => patch(a.id, { active: !a.active })} disabled={busy} style={{ ...selStyle, cursor: "pointer", fontSize: 12, padding: "5px 9px" }}>{a.active ? "Tắt" : "Bật"}</button>
-              <button onClick={() => remove(a.id)} disabled={busy} style={{ ...selStyle, cursor: "pointer", fontSize: 12, padding: "5px 9px", color: "var(--red)" }}>Xoá</button>
+              <button onClick={() => changePass(a.id)} disabled={busy} style={{ ...selStyle, cursor: "pointer", fontSize: 12, padding: "5px 9px" }}>Change password</button>
+              <button onClick={() => patch(a.id, { active: !a.active })} disabled={busy} style={{ ...selStyle, cursor: "pointer", fontSize: 12, padding: "5px 9px" }}>{a.active ? "Disable" : "Enable"}</button>
+              <button onClick={() => remove(a.id)} disabled={busy} style={{ ...selStyle, cursor: "pointer", fontSize: 12, padding: "5px 9px", color: "var(--red)" }}>Delete</button>
             </div>
             <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>
               IMAP {a.imapHost}:{a.imapPort} · SMTP {a.smtpHost}:{a.smtpPort}
-              {a.lastSyncAt ? ` · sync ${fmtFull(String(a.lastSyncAt))}` : " · chưa sync"}
+              {a.lastSyncAt ? ` · sync ${fmtFull(String(a.lastSyncAt))}` : " · not synced yet"}
               {a.lastSyncError && <span style={{ color: "var(--red)" }}> · ✗ {a.lastSyncError}</span>}
             </div>
           </div>
         ))}
         {envEmail && !rows.some((r) => r.email.toLowerCase() === envEmail.toLowerCase()) && (
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
-            ℹ Hộp thư <b>{envEmail}</b> đang chạy bằng biến môi trường (SUPPORT_EMAIL) — vẫn hoạt động bình thường.
-            Muốn quản lý tại đây thì thêm nó vào danh sách này rồi xoá env sau.
+            ℹ <b>{envEmail}</b> is configured via server environment variables and works normally.
           </div>
         )}
 
         {/* Thêm hộp thư mới */}
         <div style={{ borderTop: "1px dashed var(--line)", marginTop: 12, paddingTop: 12 }}>
-          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>+ Thêm hộp thư</div>
+          <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8 }}>+ Add mailbox</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Tên hiển thị (vd: Talewix)" style={inpStyle} />
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Display name (e.g. Talewix)" style={inpStyle} />
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="support@store.com" style={inpStyle} />
-            <input value={pass} onChange={(e) => setPass(e.target.value)} type="password" placeholder="Mật khẩu hộp thư" style={inpStyle} autoComplete="new-password" />
-            <input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder='Tên người gửi (vd: "Talewix Support")' style={inpStyle} />
+            <input value={pass} onChange={(e) => setPass(e.target.value)} type="password" placeholder="Mailbox password" style={inpStyle} autoComplete="new-password" />
+            <input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder='Sender name (e.g. "Talewix Support")' style={inpStyle} />
           </div>
           <button onClick={() => setShowAdv((v) => !v)} style={{ background: "none", border: 0, color: "var(--blue)", fontSize: 12, cursor: "pointer", padding: "6px 0" }}>
-            {showAdv ? "▾" : "▸"} Nâng cao (host/port — mặc định PrivateEmail)
+            {showAdv ? "▾" : "▸"} Advanced (host/port)
           </button>
           {showAdv && (
             <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 2fr 1fr", gap: 8, marginBottom: 8 }}>
@@ -208,11 +211,8 @@ function MailboxManager({ onClose, onChanged }: { onClose: () => void; onChanged
             </div>
           )}
           <button onClick={add} disabled={busy} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 9, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", opacity: busy ? 0.6 : 1 }}>
-            {busy ? "Đang lưu…" : "Thêm hộp thư"}
+            {busy ? "Saving…" : "Add mailbox"}
           </button>
-          <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>
-            Mật khẩu được mã hoá (AES-256) trước khi lưu — nhân viên support không bao giờ nhìn thấy.
-          </div>
         </div>
       </div>
     </div>
@@ -294,7 +294,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
     try {
       const j = await fetch("/api/support-email/sync", { method: "POST" }).then((r) => r.json());
       if (j.ok) {
-        setSyncNote(`✓ Quét ${j.scanned ?? 0} mail, ${j.created ?? 0} mới`);
+        setSyncNote(`✓ Scanned ${j.scanned ?? 0}, ${j.created ?? 0} new`);
         await loadThreads(folder, filter, accFilter, page);
         if (sel) { const cur = sel; await openThread(cur); }
       } else setSyncNote("✗ " + (j.error || "Sync failed"));
@@ -342,16 +342,16 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
         </span>
         <div>
-          <div style={{ fontSize: 20, fontWeight: 900, color: "#14213D" }}>Customer <span style={{ color: "var(--blue)" }}>Emails</span>{unreadCount > 0 && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 800, color: "#fff", background: "var(--red)", borderRadius: 99, padding: "2px 9px", verticalAlign: "middle" }}>{unreadCount} mới</span>}</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: "#14213D" }}>Customer <span style={{ color: "var(--blue)" }}>Emails</span>{unreadCount > 0 && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 800, color: "#fff", background: "var(--red)", borderRadius: 99, padding: "2px 9px", verticalAlign: "middle" }}>{unreadCount} new</span>}</div>
           <div style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>
-            {manyAccounts ? `${accounts.length} hộp thư` : (accounts[0]?.email ?? "—")}
+            {manyAccounts ? `${accounts.length} mailboxes` : (accounts[0]?.email ?? "—")}
           </div>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {syncNote && <span style={{ fontSize: 12, fontWeight: 700, color: syncNote.startsWith("✓") ? "var(--green)" : "var(--red)" }}>{syncNote}</span>}
           {manyAccounts && (
             <select value={accFilter} onChange={(e) => { setAccFilter(e.target.value); setPage(1); setSel(null); setMsgs([]); }} style={{ ...selStyle, borderRadius: 10 }}>
-              <option value="">Tất cả hộp thư</option>
+              <option value="">All mailboxes</option>
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.label} · {a.email}</option>)}
             </select>
           )}
@@ -371,7 +371,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
 
       {!ready && (
         <div style={{ fontSize: 13, padding: "9px 13px", borderRadius: 10, marginBottom: 12, background: "var(--red-soft)", color: "var(--red)", fontWeight: 600 }}>
-          ✗ Chưa có hộp thư nào{isAdmin ? " — bấm ⚙ Mailboxes để thêm (email + mật khẩu hộp thư, chạy ngay không cần redeploy)." : " — nhờ admin thêm trong ⚙ Mailboxes."}
+          ✗ No mailbox configured{isAdmin ? " — click ⚙ Mailboxes to add one." : " — ask an admin to add one in ⚙ Mailboxes."}
         </div>
       )}
       {err && <div style={{ fontSize: 13, padding: "9px 13px", borderRadius: 10, marginBottom: 12, background: "var(--red-soft)", color: "var(--red)", fontWeight: 600 }}>✗ {err}</div>}
@@ -390,7 +390,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
                 background: active ? "var(--blue)" : "transparent",
                 color: active ? "#fff" : "var(--ink)", fontWeight: active ? 800 : 600, fontSize: 13,
               }}>
-                <span style={{ fontSize: 13, filter: active ? "grayscale(1) brightness(3)" : "none" }}>{f.icon}</span>
+                <span style={{ display: "flex", alignItems: "center", opacity: active ? 1 : 0.75 }}>{f.icon}</span>
                 <span style={{ flex: 1 }}>{f.label}</span>
                 {n > 0 && (
                   <span style={{
@@ -412,7 +412,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
           </div>
           <div style={{ flex: 1, overflowY: "auto" }}>
             {loading && !threads.length && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Loading…</div>}
-            {!loading && !threads.length && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Không có email nào.</div>}
+            {!loading && !threads.length && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>No emails.</div>}
             {threads.map((t) => (
               <button key={t.id} onClick={() => openThread(t)} style={{
                 display: "block", width: "100%", textAlign: "left", padding: "11px 12px", border: 0,
@@ -454,7 +454,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
         {/* CONVERSATION */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           {!sel ? (
-            <div style={{ margin: "auto", color: "var(--muted)", fontSize: 13 }}>Chọn 1 email bên trái.</div>
+            <div style={{ margin: "auto", color: "var(--muted)", fontSize: 13 }}>Select an email.</div>
           ) : (
             <>
               <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 10 }}>
@@ -462,7 +462,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
                   <div style={{ fontWeight: 800, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sel.subject || "(no subject)"}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)" }}>
                     {sel.customerName ? `${sel.customerName} · ` : ""}{sel.customerEmail}
-                    {manyAccounts && accLabel(sel) ? ` · hộp thư: ${accLabel(sel)}` : ""}
+                    {manyAccounts && accLabel(sel) ? ` · mailbox: ${accLabel(sel)}` : ""}
                   </div>
                 </div>
                 {level >= 2 && (
@@ -510,7 +510,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
                     value={reply}
                     onChange={(e) => setReply(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }}
-                    placeholder={ready ? "Trả lời khách…  (Ctrl+Enter để gửi)" : "Chưa cấu hình hộp thư — không gửi được"}
+                    placeholder={ready ? "Reply…  (Ctrl+Enter to send)" : "No mailbox configured"}
                     disabled={sending || !ready}
                     rows={Math.min(6, Math.max(2, reply.split("\n").length))}
                     style={{ flex: 1, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13.5, resize: "vertical", fontFamily: "inherit", lineHeight: 1.45 }}
@@ -521,17 +521,13 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
                 </div>
               ) : (
                 <div style={{ borderTop: "1px solid var(--line)", padding: "10px 14px", fontSize: 12, color: "var(--muted)" }}>
-                  Bạn có quyền xem. Trả lời cần quyền Support mức 2 (full).
+                  View only. Replying requires Support level 2.
                 </div>
               )}
             </>
           )}
         </div>
       </div>
-      <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 8 }}>
-        Mail mới được hệ thống tự kéo về định kỳ (mới nhất trước); bấm ↻ Sync now để lấy ngay — backlog nhiều thì bấm vài lần, mỗi lần lấy tiếp phần còn lại. Trả lời gửi đi từ đúng hộp thư của từng thread.
-      </div>
-
       {showMailboxes && <MailboxManager onClose={() => setShowMailboxes(false)} onChanged={() => loadThreads(folder, filter, accFilter, page)} />}
     </div>
   );
