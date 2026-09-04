@@ -1,10 +1,11 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Pager } from "@/components/pager";
 
 /**
- * v392/v393 · Customer Emails — inbox 2 cột cho các hộp thư support.
- * v393: nhiều hộp thư — lọc theo mailbox, admin quản lý mailbox ngay tại đây (modal ⚙),
- * mật khẩu mã hoá server-side, nhân viên không bao giờ thấy.
+ * v392–v394 · Customer Emails — webmail thu gọn trong FUSION.
+ * v394: cột FOLDER như PrivateEmail (Inbox/Sent/Archive/Spam/Trash/Drafts) + phân trang 20 thread/trang.
+ * Giữ chất FUSION: lọc theo hộp thư (store), Open/Closed, quyền module support, admin quản lý Mailboxes.
  * HTML của khách render trong <iframe sandbox> để script/tracking trong mail không chạy được.
  */
 
@@ -20,10 +21,19 @@ type Thread = {
 };
 type Att = { name: string; key: string; size: number; type: string; url: string | null };
 type Msg = {
-  id: string; direction: string; fromEmail: string; fromName: string | null;
+  id: string; direction: string; folder?: string; fromEmail: string; fromName: string | null;
   subject: string | null; bodyText: string | null; bodyHtml: string | null;
   attachments: Att[]; messageAt: string;
 };
+
+const FOLDERS: { key: string; label: string; icon: string }[] = [
+  { key: "inbox", label: "Inbox", icon: "📥" },
+  { key: "sent", label: "Sent", icon: "📤" },
+  { key: "archive", label: "Archive", icon: "🗄" },
+  { key: "spam", label: "Spam", icon: "🚫" },
+  { key: "trash", label: "Trash", icon: "🗑" },
+  { key: "drafts", label: "Drafts", icon: "📝" },
+];
 
 const fmtTime = (iso: string) => {
   const d = new Date(iso);
@@ -212,8 +222,12 @@ function MailboxManager({ onClose, onChanged }: { onClose: () => void; onChanged
 export default function InboxClient({ level, isAdmin, configured }: { level: number; isAdmin: boolean; configured: boolean }) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [filter, setFilter] = useState<"all" | "open" | "closed">("open");
+  const [folder, setFolder] = useState("inbox");
+  const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
+  const [filter, setFilter] = useState<"all" | "open" | "closed">("all");
   const [accFilter, setAccFilter] = useState<string>(""); // "" = tất cả hộp thư
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [sel, setSel] = useState<Thread | null>(null);
@@ -236,16 +250,18 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
     return (t: Thread) => m.get(t.accountId ?? "env") ?? "";
   }, [accounts]);
 
-  const loadThreads = useCallback(async (f: "all" | "open" | "closed", acc: string) => {
+  const loadThreads = useCallback(async (fd: string, f: "all" | "open" | "closed", acc: string, p: number) => {
     setLoading(true); setErr("");
     try {
-      const qs = new URLSearchParams();
+      const qs = new URLSearchParams({ folder: fd, page: String(p) });
       if (f !== "all") qs.set("status", f);
       if (acc) qs.set("account", acc);
-      const q = qs.toString();
-      const j = await fetch(`/api/support-email/threads${q ? `?${q}` : ""}`).then((r) => r.json());
-      if (j.ok) { setThreads(j.threads); setAccounts(j.accounts ?? []); setReady(!!j.configured); }
-      else setErr(j.error || "Failed to load");
+      const j = await fetch(`/api/support-email/threads?${qs.toString()}`).then((r) => r.json());
+      if (j.ok) {
+        setThreads(j.threads); setAccounts(j.accounts ?? []); setReady(!!j.configured);
+        setFolderCounts(j.folderCounts ?? {}); setTotalPages(j.totalPages ?? 1);
+        if (j.page && j.page !== p) setPage(j.page);
+      } else setErr(j.error || "Failed to load");
     } catch (e) { setErr(String((e as Error)?.message ?? e)); }
     setLoading(false);
   }, []);
@@ -264,12 +280,14 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
     setLoadingM(false);
   };
 
-  useEffect(() => { loadThreads(filter, accFilter); }, [filter, accFilter, loadThreads]);
+  useEffect(() => { loadThreads(folder, filter, accFilter, page); }, [folder, filter, accFilter, page, loadThreads]);
   // Tự refresh danh sách mỗi 60s (mail mới do cron kéo về).
   useEffect(() => {
-    const t = setInterval(() => loadThreads(filter, accFilter), 60_000);
+    const t = setInterval(() => loadThreads(folder, filter, accFilter, page), 60_000);
     return () => clearInterval(t);
-  }, [filter, accFilter, loadThreads]);
+  }, [folder, filter, accFilter, page, loadThreads]);
+
+  const pickFolder = (fd: string) => { setFolder(fd); setPage(1); setSel(null); setMsgs([]); };
 
   const syncNow = async () => {
     setSyncing(true); setSyncNote("");
@@ -277,7 +295,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
       const j = await fetch("/api/support-email/sync", { method: "POST" }).then((r) => r.json());
       if (j.ok) {
         setSyncNote(`✓ Quét ${j.scanned ?? 0} mail, ${j.created ?? 0} mới`);
-        await loadThreads(filter, accFilter);
+        await loadThreads(folder, filter, accFilter, page);
         if (sel) { const cur = sel; await openThread(cur); }
       } else setSyncNote("✗ " + (j.error || "Sync failed"));
     } catch (e) { setSyncNote("✗ " + String((e as Error)?.message ?? e)); }
@@ -295,7 +313,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
       if (j.ok) {
         setReply("");
         await openThread(sel);
-        loadThreads(filter, accFilter);
+        loadThreads(folder, filter, accFilter, page);
       } else setErrM("✗ " + (j.error || "Send failed"));
     } catch (e) { setErrM("✗ " + String((e as Error)?.message ?? e)); }
     setSending(false);
@@ -308,88 +326,132 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
         method: "PATCH", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status }),
       }).then((r) => r.json());
-      if (j.ok) { setSel({ ...sel, status }); loadThreads(filter, accFilter); }
+      if (j.ok) { setSel({ ...sel, status }); loadThreads(folder, filter, accFilter, page); }
       else setErrM("✗ " + (j.error || "Failed"));
     } catch (e) { setErrM("✗ " + String((e as Error)?.message ?? e)); }
   };
 
   const unreadCount = useMemo(() => threads.filter((t) => t.unread).length, [threads]);
-  const activeAccounts = useMemo(() => accounts.filter((a) => a.active), [accounts]);
   const manyAccounts = accounts.length > 1;
 
   return (
-    <div className="panel" style={{ padding: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>✉ Customer Emails</h2>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>
-          {manyAccounts ? `${accounts.length} hộp thư` : (accounts[0]?.email ?? "")}{unreadCount ? ` · ${unreadCount} chưa đọc` : ""}
+    <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 4px" }}>
+      {/* Hero — đồng bộ layout với Manage Products (Shopify/TikTok/ShopBase/Amazon) */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14, background: "linear-gradient(90deg, #EAF2FF, #F2FBFF)", border: "1px solid #CBDDF3", borderRadius: 16, padding: "16px 20px", marginBottom: 16, flexWrap: "wrap" }}>
+        <span style={{ width: 38, height: 38, borderRadius: 11, background: "var(--blue)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
         </span>
-        <div style={{ flex: 1 }} />
-        {syncNote && <span style={{ fontSize: 12, color: syncNote.startsWith("✓") ? "var(--green, #1E8E4E)" : "var(--red)" }}>{syncNote}</span>}
-        {manyAccounts && (
-          <select value={accFilter} onChange={(e) => { setAccFilter(e.target.value); setSel(null); setMsgs([]); }} style={selStyle}>
-            <option value="">Tất cả hộp thư</option>
-            {accounts.map((a) => <option key={a.id} value={a.id}>{a.label} · {a.email}</option>)}
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: "#14213D" }}>Customer <span style={{ color: "var(--blue)" }}>Emails</span>{unreadCount > 0 && <span style={{ marginLeft: 8, fontSize: 11.5, fontWeight: 800, color: "#fff", background: "var(--red)", borderRadius: 99, padding: "2px 9px", verticalAlign: "middle" }}>{unreadCount} mới</span>}</div>
+          <div style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>
+            {manyAccounts ? `${accounts.length} hộp thư` : (accounts[0]?.email ?? "—")}
+          </div>
+        </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {syncNote && <span style={{ fontSize: 12, fontWeight: 700, color: syncNote.startsWith("✓") ? "var(--green)" : "var(--red)" }}>{syncNote}</span>}
+          {manyAccounts && (
+            <select value={accFilter} onChange={(e) => { setAccFilter(e.target.value); setPage(1); setSel(null); setMsgs([]); }} style={{ ...selStyle, borderRadius: 10 }}>
+              <option value="">Tất cả hộp thư</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.label} · {a.email}</option>)}
+            </select>
+          )}
+          <select value={filter} onChange={(e) => { setFilter(e.target.value as "all" | "open" | "closed"); setPage(1); }} style={{ ...selStyle, borderRadius: 10 }}>
+            <option value="all">All</option>
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
           </select>
-        )}
-        <select value={filter} onChange={(e) => setFilter(e.target.value as "all" | "open" | "closed")} style={selStyle}>
-          <option value="open">Open</option>
-          <option value="closed">Closed</option>
-          <option value="all">All</option>
-        </select>
-        <button onClick={syncNow} disabled={syncing || !ready} style={{ ...selStyle, cursor: "pointer", fontWeight: 700, opacity: syncing ? 0.6 : 1 }}>
-          {syncing ? "Syncing…" : "↻ Sync now"}
-        </button>
-        {isAdmin && (
-          <button onClick={() => setShowMailboxes(true)} style={{ ...selStyle, cursor: "pointer", fontWeight: 700 }}>⚙ Mailboxes</button>
-        )}
+          <button onClick={syncNow} disabled={syncing || !ready} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 11, padding: "10px 18px", fontWeight: 800, fontSize: 13.5, cursor: syncing ? "default" : "pointer", opacity: syncing || !ready ? 0.6 : 1, whiteSpace: "nowrap" }}>
+            {syncing ? "Syncing…" : "↻ Sync now"}
+          </button>
+          {isAdmin && (
+            <button onClick={() => setShowMailboxes(true)} style={{ background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 11, padding: "10px 16px", fontWeight: 800, fontSize: 13.5, cursor: "pointer", whiteSpace: "nowrap" }}>⚙ Mailboxes</button>
+          )}
+        </div>
       </div>
 
       {!ready && (
-        <div style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, padding: "9px 13px", borderRadius: 10, marginBottom: 12, background: "var(--red-soft)", color: "var(--red)", fontWeight: 600 }}>
           ✗ Chưa có hộp thư nào{isAdmin ? " — bấm ⚙ Mailboxes để thêm (email + mật khẩu hộp thư, chạy ngay không cần redeploy)." : " — nhờ admin thêm trong ⚙ Mailboxes."}
         </div>
       )}
-      {err && <div style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 10 }}>✗ {err}</div>}
+      {err && <div style={{ fontSize: 13, padding: "9px 13px", borderRadius: 10, marginBottom: 12, background: "var(--red-soft)", color: "var(--red)", fontWeight: 600 }}>✗ {err}</div>}
 
-      <div style={{ display: "flex", gap: 0, border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden", height: 620 }}>
-        {/* LEFT: thread list */}
-        <div style={{ width: 330, borderRight: "1px solid var(--line)", overflowY: "auto", flexShrink: 0, background: "#fff" }}>
-          {loading && !threads.length && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Loading…</div>}
-          {!loading && !threads.length && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Không có email nào{filter !== "all" ? ` (${filter})` : ""}.</div>}
-          {threads.map((t) => (
-            <button key={t.id} onClick={() => openThread(t)} style={{
-              display: "block", width: "100%", textAlign: "left", padding: "11px 12px", border: 0,
-              borderBottom: "1px solid var(--line)", background: sel?.id === t.id ? "var(--blue-soft)" : "#fff", cursor: "pointer",
-            }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
-                <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
-                  {t.unread && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--blue)", flexShrink: 0 }} />}
-                  <span style={{ fontWeight: t.unread ? 800 : 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {t.customerName || t.customerEmail}
-                  </span>
-                </span>
-                <span style={{ fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>{fmtTime(t.lastMessageAt)}</span>
-              </div>
-              <div style={{ fontSize: 12.5, fontWeight: t.unread ? 700 : 500, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {t.subject || "(no subject)"}
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 6, marginTop: 2, alignItems: "center" }}>
-                <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {t.lastDirection === "out" ? "You: " : ""}{t.lastSnippet || "—"}
-                </span>
-                <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                  {manyAccounts && accLabel(t) && (
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "var(--blue)", background: "var(--blue-soft)", borderRadius: 8, padding: "0 6px" }}>{accLabel(t)}</span>
-                  )}
-                  {t.status === "closed" && <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 8, padding: "0 6px" }}>CLOSED</span>}
-                </span>
-              </div>
-            </button>
-          ))}
+      <div style={{ display: "flex", gap: 0, background: "#fff", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden", height: 640, boxShadow: "var(--sh)" }}>
+        {/* FOLDERS — như webmail */}
+        <div style={{ width: 148, borderRight: "1px solid var(--line)", background: "#F7F9FC", flexShrink: 0, padding: "12px 8px", overflowY: "auto" }}>
+          <div style={{ fontSize: 10.5, fontWeight: 800, color: "var(--faint)", textTransform: "uppercase", letterSpacing: ".6px", padding: "0 9px", marginBottom: 8 }}>Folders</div>
+          {FOLDERS.map((f) => {
+            const active = folder === f.key;
+            const n = folderCounts[f.key] ?? 0;
+            return (
+              <button key={f.key} onClick={() => pickFolder(f.key)} style={{
+                display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+                padding: "9px 10px", marginBottom: 3, border: 0, borderRadius: 9, cursor: "pointer",
+                background: active ? "var(--blue)" : "transparent",
+                color: active ? "#fff" : "var(--ink)", fontWeight: active ? 800 : 600, fontSize: 13,
+              }}>
+                <span style={{ fontSize: 13, filter: active ? "grayscale(1) brightness(3)" : "none" }}>{f.icon}</span>
+                <span style={{ flex: 1 }}>{f.label}</span>
+                {n > 0 && (
+                  <span style={{
+                    fontSize: 10.5, fontWeight: 800, borderRadius: 99, padding: "1px 7px",
+                    background: active ? "rgba(255,255,255,.22)" : "var(--blue-soft)",
+                    color: active ? "#fff" : "var(--blue)",
+                  }}>{n}</span>
+                )}
+              </button>
+            );
+          })}
         </div>
 
-        {/* RIGHT: conversation */}
+        {/* THREAD LIST + pager */}
+        <div style={{ width: 336, borderRight: "1px solid var(--line)", flexShrink: 0, background: "#fff", display: "flex", flexDirection: "column" }}>
+          <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line)", background: "#F7F9FC", fontSize: 11.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px", display: "flex", justifyContent: "space-between" }}>
+            <span>{FOLDERS.find((f) => f.key === folder)?.label ?? folder}</span>
+            <span>{folderCounts[folder] ?? 0}</span>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {loading && !threads.length && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Loading…</div>}
+            {!loading && !threads.length && <div style={{ padding: 16, color: "var(--muted)", fontSize: 13 }}>Không có email nào.</div>}
+            {threads.map((t) => (
+              <button key={t.id} onClick={() => openThread(t)} style={{
+                display: "block", width: "100%", textAlign: "left", padding: "11px 12px", border: 0,
+                borderBottom: "1px solid var(--line)", background: sel?.id === t.id ? "var(--blue-soft)" : "#fff", cursor: "pointer",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                    {t.unread && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--blue)", flexShrink: 0 }} />}
+                    <span style={{ fontWeight: t.unread ? 800 : 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {t.customerName || t.customerEmail}
+                    </span>
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--muted)", flexShrink: 0 }}>{fmtTime(t.lastMessageAt)}</span>
+                </div>
+                <div style={{ fontSize: 12.5, fontWeight: t.unread ? 700 : 500, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {t.subject || "(no subject)"}
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 6, marginTop: 2, alignItems: "center" }}>
+                  <span style={{ fontSize: 12, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {t.lastDirection === "out" ? "You: " : ""}{t.lastSnippet || "—"}
+                  </span>
+                  <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    {manyAccounts && accLabel(t) && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "var(--blue)", background: "var(--blue-soft)", borderRadius: 8, padding: "0 6px" }}>{accLabel(t)}</span>
+                    )}
+                    {t.status === "closed" && <span style={{ fontSize: 10, fontWeight: 800, color: "var(--muted)", border: "1px solid var(--line)", borderRadius: 8, padding: "0 6px" }}>CLOSED</span>}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+          {totalPages > 1 && (
+            <div style={{ borderTop: "1px solid var(--line)", padding: "8px 8px", display: "flex", justifyContent: "center" }}>
+              <Pager page={page} totalPages={totalPages} onPage={(p) => { setPage(p); setSel(null); setMsgs([]); }} />
+            </div>
+          )}
+        </div>
+
+        {/* CONVERSATION */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
           {!sel ? (
             <div style={{ margin: "auto", color: "var(--muted)", fontSize: 13 }}>Chọn 1 email bên trái.</div>
@@ -419,6 +481,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
                       <div style={{ width: "min(92%, 640px)" }}>
                         <div style={{ fontSize: 10.5, color: "var(--muted)", margin: mine ? "0 4px 2px 0" : "0 0 2px 4px", textAlign: mine ? "right" : "left" }}>
                           {mine ? (m.fromName || "Support") : (m.fromName || m.fromEmail)} · {fmtFull(m.messageAt)}
+                          {m.folder && m.folder !== "inbox" && m.folder !== "sent" ? ` · ${m.folder}` : ""}
                         </div>
                         <div style={{
                           background: "#fff", border: mine ? "1.5px solid var(--blue)" : "1px solid var(--line)",
@@ -466,11 +529,10 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
         </div>
       </div>
       <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 8 }}>
-        Mail mới được hệ thống tự kéo về định kỳ; bấm ↻ Sync now để lấy ngay. Trả lời gửi đi từ đúng hộp thư của từng thread.
-        {activeAccounts.length > 0 && ` Đang bật: ${activeAccounts.map((a) => a.email).join(", ")}.`}
+        Mail mới được hệ thống tự kéo về định kỳ (mới nhất trước); bấm ↻ Sync now để lấy ngay — backlog nhiều thì bấm vài lần, mỗi lần lấy tiếp phần còn lại. Trả lời gửi đi từ đúng hộp thư của từng thread.
       </div>
 
-      {showMailboxes && <MailboxManager onClose={() => setShowMailboxes(false)} onChanged={() => loadThreads(filter, accFilter)} />}
+      {showMailboxes && <MailboxManager onClose={() => setShowMailboxes(false)} onChanged={() => loadThreads(folder, filter, accFilter, page)} />}
     </div>
   );
 }

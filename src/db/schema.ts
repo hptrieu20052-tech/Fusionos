@@ -895,6 +895,9 @@ export const supportEmailMessages = pgTable("support_email_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   threadId: uuid("thread_id").notNull().references(() => supportEmailThreads.id),
   direction: text("direction").notNull(),                  // in (khách gửi) | out (mình rep)
+  // v394: folder IMAP của mail — inbox | sent | archive | spam | trash | drafts.
+  // Mail bị move trong webmail sẽ được cập nhật lại folder ở vòng sync sau.
+  folder: text("folder").notNull().default("inbox"),
   messageId: text("message_id"),                           // Message-ID header — khoá dedupe khi sync IMAP
   inReplyTo: text("in_reply_to"),
   refs: text("refs"),                                      // References header (nối thread phía khách)
@@ -911,4 +914,5 @@ export const supportEmailMessages = pgTable("support_email_messages", {
 }, (t) => [
   index("idx_sup_email_msgs_thread").on(t.threadId),
   uniqueIndex("uq_sup_email_msgs_mid").on(t.messageId),
+  index("idx_sup_email_msgs_folder").on(t.folder),
 ]);

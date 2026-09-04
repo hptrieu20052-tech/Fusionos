@@ -71,11 +71,12 @@ export default function AppShell({ user, links, children, canProducts = false, c
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
   const [mobileHub, setMobileHub] = useState(false); // nhóm Seller Hub trên mobile (thu gọn/mở)
+  const [hubGroup, setHubGroup] = useState("");      // v396: nhóm sàn đang xổ trong dropdown Seller Hub
 
   // Đóng drawer + mọi dropdown khi chuyển trang + khoá scroll nền khi drawer mở.
   // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
   useEffect(() => {
-    setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false);
+    setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false); setHubGroup("");
     const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"];
     setMobileHub(hubPaths.some((p) => path.startsWith(p)));
   }, [path]);
@@ -179,71 +180,80 @@ export default function AppShell({ user, links, children, canProducts = false, c
     </div>
   ) : null;
 
+  // v396: Seller Hub gọn — gom theo SÀN. Sàn có nhiều trang (Shopify/Amazon/TikTok) là nhóm
+  // bấm để xổ dòng con; sàn 1 trang (Etsy/ShopBase) và mục chung (Product Sales, Customer Emails)
+  // vẫn là link thẳng. Nhóm chứa trang đang mở sẽ tự xổ sẵn khi mở dropdown.
+  type HubNode =
+    | { t: "link"; href: string; label: string; icon: JSX.Element }
+    | { t: "group"; key: string; label: string; icon: JSX.Element; children: { href: string; label: string }[] };
+  const hubNodes: HubNode[] = [
+    ...(canProducts ? [
+      { t: "link", href: "/etsy-products", label: "Manage Products Etsy", icon: <MarketplaceLogo mk="etsy" size={16} /> },
+      { t: "group", key: "shopify", label: "Shopify", icon: <MarketplaceLogo mk="shopify" size={16} />, children: [
+        { href: "/shopify-products", label: "Manage Products" },
+        { href: "/shopify-templates", label: "Manage Templates" },
+      ] },
+      { t: "link", href: "/shopbase-products", label: "Manage Products ShopBase", icon: <MarketplaceLogo mk="shopbase" size={16} /> },
+      { t: "group", key: "amazon", label: "Amazon", icon: <AmazonLogo size={16} />, children: [
+        { href: "/amazon-products", label: "Manage Products" },
+        { href: "/amazon-templates", label: "Manage Templates" },
+      ] },
+    ] as HubNode[] : []),
+    ...((canProducts || canSupport || canMarketing || canFinanceTiktok) ? [{
+      t: "group", key: "tiktok", label: "TikTok", icon: <MarketplaceLogo mk="tiktok" size={16} />, children: [
+        ...(canProducts ? [{ href: "/tiktok-products", label: "Manage Products" }, { href: "/tiktok-templates", label: "Manage Templates" }] : []),
+        ...(canSupport ? [{ href: "/support", label: "Customer Messages" }] : []),
+        ...(canMarketing ? [{ href: "/marketing", label: "Marketing" }] : []),
+        ...(canFinanceTiktok ? [{ href: "/tiktok-finance", label: "Finance" }] : []),
+      ],
+    }] as HubNode[] : []),
+    ...(canProducts ? [{
+      t: "link", href: "/stats/products", label: "Product Sales",
+      icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="21" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.25" y="7" width="3.5" height="11" /><rect x="15.5" y="4" width="3.5" height="14" /></svg>,
+    }] as HubNode[] : []),
+    // v393: Customer Emails trong Seller Hub CHỈ cho admin — role support có link top-level cạnh Orders.
+    ...(canSupport && user.role === "admin" ? [{
+      t: "link", href: "/support-email", label: "Customer Emails",
+      icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>,
+    }] as HubNode[] : []),
+  ].filter((n) => n.t === "link" || n.children.length > 0);
+  const groupOfPath = () => {
+    for (const n of hubNodes) if (n.t === "group" && n.children.some((c) => isActive(c.href))) return n.key;
+    return "";
+  };
+
   const productsDropdown = (canProducts || canSupport || canMarketing || canFinanceTiktok) ? (
     <div key="__sellerhub" className="topnav-more">
-      <button className={`topnav-item${hubActive ? " active" : ""}`} onClick={() => { setAiOpen(false); setMoreOpen(false); setProdOpen((v) => !v); }}>
+      <button className={`topnav-item${hubActive ? " active" : ""}`} onClick={() => { setAiOpen(false); setMoreOpen(false); if (!prodOpen) setHubGroup(groupOfPath()); setProdOpen((v) => !v); }}>
         <span className="topnav-ic"><IconBox width={17} height={17} /></span>
         Seller Hub <span style={{ fontSize: 10, marginLeft: 2 }}>▾</span>
       </button>
       {prodOpen && (
         <div className="topnav-more-menu" onClick={() => setProdOpen(false)}>
-          {canProducts && <Link href="/etsy-products" prefetch className={`topnav-more-item${isActive("/etsy-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><MarketplaceLogo mk="etsy" size={16} /></span>
-            Manage Products Etsy
-          </Link>}
-          {canProducts && <Link href="/shopify-products" prefetch className={`topnav-more-item${isActive("/shopify-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><MarketplaceLogo mk="shopify" size={16} /></span>
-            Manage Products Shopify
-          </Link>}
-          {canProducts && <Link href="/shopify-templates" prefetch className={`topnav-more-item${isActive("/shopify-templates") ? " active" : ""}`}>
-            <span className="topnav-ic"><MarketplaceLogo mk="shopify" size={16} /></span>
-            Manage Templates Shopify
-          </Link>}
-          {canProducts && <Link href="/shopbase-products" prefetch className={`topnav-more-item${isActive("/shopbase-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><MarketplaceLogo mk="shopbase" size={16} /></span>
-            Manage Products ShopBase
-          </Link>}
-          {canProducts && <Link href="/amazon-products" prefetch className={`topnav-more-item${isActive("/amazon-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><AmazonLogo size={16} /></span>
-            Manage Products Amazon
-          </Link>}
-          {canProducts && <Link href="/amazon-templates" prefetch className={`topnav-more-item${isActive("/amazon-templates") ? " active" : ""}`}>
-            <span className="topnav-ic"><AmazonLogo size={16} /></span>
-            Manage Templates Amazon
-          </Link>}
-          {canProducts && <Link href="/tiktok-products" prefetch className={`topnav-more-item${isActive("/tiktok-products") ? " active" : ""}`}>
-            <span className="topnav-ic"><MarketplaceLogo mk="tiktok" size={16} /></span>
-            Manage Products Tiktok
-          </Link>}
-          {canProducts && <Link href="/tiktok-templates" prefetch className={`topnav-more-item${isActive("/tiktok-templates") ? " active" : ""}`}>
-            <span className="topnav-ic"><MarketplaceLogo mk="tiktok" size={16} /></span>
-            Manage Templates Tiktok
-          </Link>}
-          {canProducts && <Link href="/stats/products" prefetch className={`topnav-more-item${isActive("/stats/products") ? " active" : ""}`}>
-            <span className="topnav-ic">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="21" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.25" y="7" width="3.5" height="11" /><rect x="15.5" y="4" width="3.5" height="14" /></svg>
-            </span>
-            Product Sales
-          </Link>}
-          {/* v393: Customer Emails trong Seller Hub CHỈ cho admin — role support có link top-level cạnh Orders. */}
-          {canSupport && user.role === "admin" && <Link href="/support-email" prefetch className={`topnav-more-item${isActive("/support-email") ? " active" : ""}`}>
-            <span className="topnav-ic">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>
-            </span>
-            Customer Emails
-          </Link>}
-          {canSupport && <Link href="/support" prefetch className={`topnav-more-item${isActive("/support") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconSupport width={16} height={16} /></span>
-            Customer Messages Tiktok
-          </Link>}
-          {canMarketing && <Link href="/marketing" prefetch className={`topnav-more-item${isActive("/marketing") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconMarketing width={16} height={16} /></span>
-            Marketing Tiktok
-          </Link>}
-          {canFinanceTiktok && <Link href="/tiktok-finance" prefetch className={`topnav-more-item${isActive("/tiktok-finance") ? " active" : ""}`}>
-            <span className="topnav-ic"><IconWallet width={16} height={16} /></span>
-            Finance Tiktok
-          </Link>}
+          {hubNodes.map((n) => n.t === "link" ? (
+            <Link key={n.href} href={n.href} prefetch className={`topnav-more-item${isActive(n.href) ? " active" : ""}`}>
+              <span className="topnav-ic">{n.icon}</span>
+              {n.label}
+            </Link>
+          ) : (
+            <div key={n.key}>
+              <button
+                type="button"
+                className={`topnav-more-item${n.children.some((c) => isActive(c.href)) && hubGroup !== n.key ? " active" : ""}`}
+                style={{ width: "100%", background: "none", border: 0, cursor: "pointer", font: "inherit", textAlign: "left", display: "flex", alignItems: "center" }}
+                onClick={(e) => { e.stopPropagation(); setHubGroup((g) => (g === n.key ? "" : n.key)); }}
+              >
+                <span className="topnav-ic">{n.icon}</span>
+                {n.label}
+                <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--muted)", transform: hubGroup === n.key ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▸</span>
+              </button>
+              {hubGroup === n.key && n.children.map((c) => (
+                <Link key={c.href} href={c.href} prefetch className={`topnav-more-item${isActive(c.href) ? " active" : ""}`} style={{ paddingLeft: 42, fontSize: 13 }}>
+                  {c.label}
+                </Link>
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </div>
