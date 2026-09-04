@@ -18,9 +18,16 @@ export async function POST(req: NextRequest) {
   const threadId = String(b?.threadId ?? "");
   const body = String(b?.body ?? "");
   if (!threadId) return NextResponse.json({ ok: false, error: "missing threadId" }, { status: 400 });
+  // Đính kèm: client đã upload lên storage qua /upload-url, ở đây chỉ nhận danh sách key.
+  const attachments = Array.isArray(b?.attachments)
+    ? (b.attachments as { name?: string; key?: string; size?: number; type?: string }[])
+        .filter((a) => typeof a?.key === "string" && a.key.startsWith("support-email/outgoing/"))
+        .slice(0, 5)
+        .map((a) => ({ name: String(a.name ?? "file"), key: String(a.key), size: Number(a.size ?? 0), type: String(a.type ?? "") }))
+    : [];
 
   try {
-    const res = await sendSupportReply({ threadId, body, userId: session.sub });
+    const res = await sendSupportReply({ threadId, body, userId: session.sub, attachments });
     return NextResponse.json(res, { status: res.ok ? 200 : 400 });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) }, { status: 500 });

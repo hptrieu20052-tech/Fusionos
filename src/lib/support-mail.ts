@@ -3,7 +3,7 @@ import { simpleParser, type ParsedMail } from "mailparser";
 import nodemailer from "nodemailer";
 import { db, schema } from "@/lib/db";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
-import { writeFile } from "@/lib/storage";
+import { readFile, writeFile } from "@/lib/storage";
 import { decryptSecret } from "@/lib/crypto";
 
 /**
@@ -309,10 +309,11 @@ export async function syncSupportMail(opts: { force?: boolean } = {}): Promise<R
   return { ok: true, scanned, created, accounts: byAccount };
 }
 
-/** Gửi trả lời cho 1 thread — từ ĐÚNG hộp thư mà thread đó thuộc về. */
-export async function sendSupportReply(args: { threadId: string; body: string; userId: string }): Promise<Record<string, unknown>> {
+/** Gửi trả lời cho 1 thread — từ ĐÚNG hộp thư mà thread đó thuộc về. Kèm đính kèm (đã upload lên storage). */
+export async function sendSupportReply(args: { threadId: string; body: string; userId: string; attachments?: Att[] }): Promise<Record<string, unknown>> {
   const body = (args.body ?? "").trim();
-  if (!body) return { ok: false, error: "empty message" };
+  const attIn = (args.attachments ?? []).slice(0, 5);
+  if (!body && !attIn.length) return { ok: false, error: "empty message" };
 
   const [thread] = await db.select().from(schema.supportEmailThreads)
     .where(eq(schema.supportEmailThreads.id, args.threadId)).limit(1);
@@ -338,32 +339,44 @@ export async function sendSupportReply(args: { threadId: string; body: string; u
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#222">${esc(body).replace(/\n/g, "<br>")}</div>`;
   const references = [lastIn?.refs, lastIn?.messageId].filter(Boolean).join(" ").trim() || undefined;
 
+  // Đọc file đính kèm từ storage (client đã upload qua /api/support-email/upload-url).
+  // Chỉ nhận key trong prefix support-email/ để không đọc được file tuỳ ý trong storage.
+  const files: { filename: string; content: Buffer; contentType?: string }[] = [];
+  const attSaved: Att[] = [];
+  for (const a of attIn) {
+    if (!a?.key || !String(a.key).startsWith("support-email/")) continue;
+    try {
+      const buf = await readFile(a.key);
+      if (buf.length > 10 * 1024 * 1024) continue;
+      files.push({ filename: a.name || "file", content: buf, contentType: a.type || undefined });
+      attSaved.push({ name: a.name || "file", key: a.key, size: buf.length, type: a.type || "" });
+    } catch { /* file thiếu → bỏ qua, không chặn cả reply */ }
+  }
+
+  // Compose 1 bản MIME duy nhất (kèm đính kèm) → gửi SMTP + append y nguyên vào folder Sent.
+  const messageId = `<fusion-${Date.now()}-${Math.random().toString(36).slice(2, 10)}@${acc.email.split("@")[1] || "fusion.local"}>`;
+  const { default: MailComposer } = await import("nodemailer/lib/mail-composer");
+  const mime = new MailComposer({
+    from: `"${acc.fromName}" <${acc.email}>`,
+    to: thread.customerEmail,
+    subject, text: body || " ", html,
+    inReplyTo: lastIn?.messageId ?? undefined,
+    references,
+    messageId,
+    attachments: files,
+  }).compile();
+  const raw: Buffer = await new Promise((resolve, reject) =>
+    mime.build((err, msg) => (err ? reject(err) : resolve(msg)))
+  );
+
   const transporter = nodemailer.createTransport({
     host: acc.smtpHost, port: acc.smtpPort, secure: acc.smtpPort === 465,
     auth: { user: acc.email, pass: acc.pass },
   });
-  const info = await transporter.sendMail({
-    from: `"${acc.fromName}" <${acc.email}>`,
-    to: thread.customerEmail,
-    subject, text: body, html,
-    inReplyTo: lastIn?.messageId ?? undefined,
-    references,
-  });
+  await transporter.sendMail({ envelope: { from: acc.email, to: [thread.customerEmail] }, raw });
 
-  // Best-effort: chép bản gửi vào folder Sent để webmail nhìn thấy (SMTP không tự lưu).
+  // Best-effort: chép bản gửi (đúng bản có đính kèm) vào folder Sent để webmail nhìn thấy.
   try {
-    const raw = [
-      `From: "${acc.fromName}" <${acc.email}>`,
-      `To: ${thread.customerEmail}`,
-      `Subject: ${subject}`,
-      `Date: ${new Date().toUTCString()}`,
-      `Message-ID: ${info.messageId}`,
-      lastIn?.messageId ? `In-Reply-To: ${lastIn.messageId}` : "",
-      references ? `References: ${references}` : "",
-      `MIME-Version: 1.0`,
-      `Content-Type: text/plain; charset=utf-8`,
-      "", body, "",
-    ].filter((l) => l !== "").join("\r\n");
     const client = new ImapFlow({ host: acc.imapHost, port: acc.imapPort, secure: true, auth: { user: acc.email, pass: acc.pass }, logger: false });
     await client.connect();
     await client.append("Sent", raw, ["\\Seen"]).catch(() => {});
@@ -373,15 +386,16 @@ export async function sendSupportReply(args: { threadId: string; body: string; u
   const now = new Date();
   const [msg] = await db.insert(schema.supportEmailMessages).values({
     threadId: args.threadId, direction: "out", folder: "sent",
-    messageId: info.messageId ?? null,
+    messageId,
     inReplyTo: lastIn?.messageId ?? null, refs: references ?? null,
     fromEmail: acc.email, fromName: acc.fromName, toEmail: thread.customerEmail,
     subject, bodyText: body, bodyHtml: html,
-    attachments: [], sentByUserId: args.userId, messageAt: now,
+    attachments: attSaved, sentByUserId: args.userId, messageAt: now,
   }).returning();
 
   await db.update(schema.supportEmailThreads).set({
-    lastMessageAt: now, lastSnippet: body.replace(/\s+/g, " ").slice(0, 140),
+    lastMessageAt: now,
+    lastSnippet: (body || `📎 ${attSaved[0]?.name ?? "attachment"}`).replace(/\s+/g, " ").slice(0, 140),
     lastDirection: "out", unread: false, status: "open",
     msgCount: sql`${schema.supportEmailThreads.msgCount} + 1`,
   }).where(eq(schema.supportEmailThreads.id, args.threadId));

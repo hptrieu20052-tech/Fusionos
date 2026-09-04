@@ -235,6 +235,9 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
   const [loadingM, setLoadingM] = useState(false);
   const [errM, setErrM] = useState("");
   const [reply, setReply] = useState("");
+  const [atts, setAtts] = useState<{ name: string; key: string; size: number; type: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [sending, setSending] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState("");
@@ -267,7 +270,7 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
   }, []);
 
   const openThread = async (t: Thread) => {
-    setSel(t); setMsgs([]); setErrM(""); setLoadingM(true);
+    setSel(t); setMsgs([]); setErrM(""); setLoadingM(true); setAtts([]);
     setThreads((prev) => prev.map((x) => (x.id === t.id ? { ...x, unread: false } : x)));
     try {
       const j = await fetch(`/api/support-email/threads/${t.id}`).then((r) => r.json());
@@ -302,16 +305,37 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
     setSyncing(false);
   };
 
+  // Đính kèm khi reply: upload thẳng lên storage (presigned) rồi chỉ gửi key sang API.
+  const addFiles = async (list: FileList | null) => {
+    if (!list?.length) return;
+    setUploading(true); setErrM("");
+    try {
+      for (const f of Array.from(list).slice(0, Math.max(0, 5 - atts.length))) {
+        if (f.size > 10 * 1024 * 1024) { setErrM(`✗ ${f.name}: max 10MB`); continue; }
+        const t = await fetch("/api/support-email/upload-url", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: f.name, contentType: f.type || "application/octet-stream", size: f.size }),
+        }).then((r) => r.json());
+        if (!t.ok) { setErrM("✗ " + (t.error || "Upload failed")); continue; }
+        const put = await fetch(t.url, { method: "PUT", headers: { "Content-Type": f.type || "application/octet-stream" }, body: f });
+        if (!put.ok) { setErrM(`✗ ${f.name}: upload failed`); continue; }
+        setAtts((prev) => [...prev, { name: f.name, key: t.key, size: f.size, type: f.type || "" }]);
+      }
+    } catch (e) { setErrM("✗ " + String((e as Error)?.message ?? e)); }
+    setUploading(false);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
   const send = async () => {
-    if (!sel || !reply.trim() || sending) return;
+    if (!sel || (!reply.trim() && !atts.length) || sending || uploading) return;
     setSending(true); setErrM("");
     try {
       const j = await fetch("/api/support-email/reply", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId: sel.id, body: reply.trim() }),
+        body: JSON.stringify({ threadId: sel.id, body: reply.trim(), attachments: atts }),
       }).then((r) => r.json());
       if (j.ok) {
-        setReply("");
+        setReply(""); setAtts([]);
         await openThread(sel);
         loadThreads(folder, filter, accFilter, page);
       } else setErrM("✗ " + (j.error || "Send failed"));
@@ -505,19 +529,40 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
                 <div ref={bottomRef} />
               </div>
               {level >= 2 ? (
-                <div style={{ borderTop: "1px solid var(--line)", padding: 10, display: "flex", gap: 8, alignItems: "flex-end" }}>
-                  <textarea
-                    value={reply}
-                    onChange={(e) => setReply(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }}
-                    placeholder={ready ? "Reply…  (Ctrl+Enter to send)" : "No mailbox configured"}
-                    disabled={sending || !ready}
-                    rows={Math.min(6, Math.max(2, reply.split("\n").length))}
-                    style={{ flex: 1, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13.5, resize: "vertical", fontFamily: "inherit", lineHeight: 1.45 }}
-                  />
-                  <button onClick={send} disabled={sending || !reply.trim() || !ready} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 9, padding: "10px 20px", fontWeight: 700, fontSize: 13.5, cursor: sending || !reply.trim() ? "default" : "pointer", opacity: sending || !reply.trim() || !ready ? 0.6 : 1 }}>
-                    {sending ? "Sending…" : "Send"}
-                  </button>
+                <div style={{ borderTop: "1px solid var(--line)", padding: 10 }}>
+                  {atts.length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                      {atts.map((a, i) => (
+                        <span key={a.key} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, border: "1px solid var(--line)", background: "#F7F9FC", borderRadius: 8, padding: "4px 9px" }}>
+                          📎 {a.name} <span style={{ color: "var(--muted)" }}>({fmtSize(a.size)})</span>
+                          <button onClick={() => setAtts((prev) => prev.filter((_, x) => x !== i))} style={{ border: 0, background: "none", cursor: "pointer", color: "var(--muted)", fontSize: 13, padding: 0, lineHeight: 1 }}>✕</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                    <input ref={fileRef} type="file" multiple hidden onChange={(e) => addFiles(e.target.files)} />
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      disabled={sending || uploading || !ready || atts.length >= 5}
+                      title="Attach files (max 5 × 10MB)"
+                      style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 9, width: 40, height: 40, fontSize: 16, cursor: "pointer", opacity: uploading || atts.length >= 5 ? 0.5 : 1, flexShrink: 0 }}
+                    >
+                      {uploading ? "…" : "📎"}
+                    </button>
+                    <textarea
+                      value={reply}
+                      onChange={(e) => setReply(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); } }}
+                      placeholder={ready ? "Reply…  (Ctrl+Enter to send)" : "No mailbox configured"}
+                      disabled={sending || !ready}
+                      rows={Math.min(6, Math.max(2, reply.split("\n").length))}
+                      style={{ flex: 1, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 9, fontSize: 13.5, resize: "vertical", fontFamily: "inherit", lineHeight: 1.45 }}
+                    />
+                    <button onClick={send} disabled={sending || uploading || (!reply.trim() && !atts.length) || !ready} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 9, padding: "10px 20px", fontWeight: 700, fontSize: 13.5, cursor: sending || (!reply.trim() && !atts.length) ? "default" : "pointer", opacity: sending || uploading || (!reply.trim() && !atts.length) || !ready ? 0.6 : 1 }}>
+                      {sending ? "Sending…" : "Send"}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div style={{ borderTop: "1px solid var(--line)", padding: "10px 14px", fontSize: 12, color: "var(--muted)" }}>
