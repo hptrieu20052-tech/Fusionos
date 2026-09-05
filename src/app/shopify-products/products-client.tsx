@@ -209,8 +209,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   // Lọc theo trạng thái Shopify — listing đẩy từ Etsy sang luôn là DRAFT, lọc "Draft" để soát trước khi bật Active.
   const [statusFilter, setStatusFilter] = useState("");
   // Lọc theo trạng thái AI: "" tất cả · "todo" chưa chạy AI · "done" đã có AI · "unpushed" đã AI nhưng chưa Push
-  const [aiFilter, setAiFilter] = useState<"" | "todo" | "done" | "unpushed">("");
-  const [feedFilter, setFeedFilter] = useState<"" | "todo" | "done">("");
+  // v401: "stale" = aiAt cũ hơn 24h — chạy lại đại trà bằng prompt mới, con nào FAIL giữa chừng
+  // vẫn giữ aiAt của lần cũ (hoặc null) nên lọt vào đây; con thành công có aiAt hôm nay thì thoát.
+  const [aiFilter, setAiFilter] = useState<"" | "todo" | "done" | "unpushed" | "stale">("");
+  // v401: "stale" = feed viết TRƯỚC lần AI Optimize gần nhất — đổi prompt rồi chạy lại optimize,
+  // con nào chưa gen lại feed theo prompt mới sẽ rơi vào nhóm này (feedAt < aiAt).
+  const [feedFilter, setFeedFilter] = useState<"" | "todo" | "done" | "stale">("");
   const [prepFilter, setPrepFilter] = useState<"" | "sku" | "alt" | "done">(""); // v127
   const [riskFilter, setRiskFilter] = useState<"" | "high" | "medium" | "clean" | "unchecked">(""); // v177
   const [videoFilter, setVideoFilter] = useState<"" | "has" | "no">(""); // listing có / không có video
@@ -299,8 +303,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     (!categoryFilter || (categoryFilter === "__none__" ? !(r.categoryName ?? "").trim() : r.categoryName === categoryFilter)) &&
     (!collectionFilter || (collectionFilter === "__none__" ? !(r.collectionTitles ?? []).length : (r.collectionTitles ?? []).includes(collectionFilter))) &&
     (!statusFilter || (r.status || "").toUpperCase() === statusFilter) &&
-    (!aiFilter || (aiFilter === "todo" ? !r.aiAt : aiFilter === "done" ? !!r.aiAt : !!r.aiAt && r.dirty)) &&
-    (!feedFilter || (feedFilter === "done" ? feedOk(r) : !feedOk(r))) &&
+    (!aiFilter || (aiFilter === "todo" ? !r.aiAt : aiFilter === "done" ? !!r.aiAt : aiFilter === "stale" ? (!r.aiAt || Date.now() - +new Date(r.aiAt) > 24 * 3600_000) : !!r.aiAt && r.dirty)) &&
+    (!feedFilter || (feedFilter === "done" ? feedOk(r) : feedFilter === "stale" ? (!!r.feedAt && !!r.aiAt && new Date(r.feedAt) < new Date(r.aiAt)) : !feedOk(r))) &&
     (!prepFilter || (prepFilter === "sku" ? r.skuDone < r.skuTotal : prepFilter === "alt" ? r.altDone < r.altTotal : r.skuDone >= r.skuTotal && r.altDone >= r.altTotal)) &&
     (!riskFilter || (riskFilter === "unchecked" ? !r.policyRisk : r.policyRisk === riskFilter)) &&
     (!videoFilter || (videoFilter === "has" ? r.videoCode != null : r.videoCode == null)) &&
@@ -1390,16 +1394,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               <option key={st} value={st}>{st.charAt(0) + st.slice(1).toLowerCase()}</option>
             ))}
           </select>
-          <select value={aiFilter} onChange={(e) => setAiFilter(e.target.value as "" | "todo" | "done" | "unpushed")} title="AI Optimize status — pick 'Not optimized yet' so you never pay to rewrite the same listing twice" style={fsel(!!aiFilter, "#5B3FBF", "#C9B8F5", "#F8F6FF")}>
+          <select value={aiFilter} onChange={(e) => setAiFilter(e.target.value as "" | "todo" | "done" | "unpushed" | "stale")} title="AI Optimize status — pick 'Not optimized yet' so you never pay to rewrite the same listing twice" style={fsel(!!aiFilter, "#5B3FBF", "#C9B8F5", "#F8F6FF")}>
             <option value="">AI: all</option>
             <option value="todo">✦ Not optimized yet</option>
             <option value="done">✦ AI optimized</option>
             <option value="unpushed">✦ Optimized · not pushed</option>
+            <option value="stale">✦ AI older than 24h / failed</option>
           </select>
-          <select value={feedFilter} onChange={(e) => setFeedFilter(e.target.value as "" | "todo" | "done")} title="Google Merchant feed copy — pick 'No feed copy yet' to see exactly which listings Export supplemental feed would skip" style={fsel(!!feedFilter, "#1F6F45", "#BFE3CD", "#F3FBF6")}>
+          <select value={feedFilter} onChange={(e) => setFeedFilter(e.target.value as "" | "todo" | "done" | "stale")} title="Google Merchant feed copy — pick 'No feed copy yet' to see exactly which listings Export supplemental feed would skip" style={fsel(!!feedFilter, "#1F6F45", "#BFE3CD", "#F3FBF6")}>
             <option value="">Feed: all</option>
             <option value="todo">No feed copy yet</option>
             <option value="done">Feed copy ready</option>
+            <option value="stale">Feed older than last AI run</option>
           </select>
           {/* v127: lọc đúng những listing còn thiếu SKU / alt để chỉ chạy lại đúng chỗ đó,
               khỏi bắn cả 135 con qua vision lần nữa. */}
