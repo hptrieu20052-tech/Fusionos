@@ -424,6 +424,16 @@ export const amazonProducts = pgTable("amazon_products", {
 
 // ---------- SHOPIFY VARIANT TEMPLATES (preset: options + giá theo tổ hợp + collection/tags/status/kênh) ----------
 // Dựng 1 lần, áp cho nhiều sản phẩm: lúc Push Etsy→Shopify, và bulk-edit listing Shopify đã có (productSet).
+// v404 · Custom label 0 cho feed GMC — ADMIN/SELLER tự quản trong FUSION: mỗi rule map
+// 1 collection (theo TÊN, không phân biệt hoa thường) → 1 nhãn. Feed phụ đọc bảng này khi xuất.
+export const feedLabelRules = pgTable("feed_label_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),
+  collectionTitle: text("collection_title").notNull(),
+  label: text("label").notNull(),                 // chữ thường a-z0-9- (vd "halloween")
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("idx_feed_label_rules_store").on(t.storeId)]);
+
 export const shopifyTemplates = pgTable("shopify_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   storeId: uuid("store_id").notNull(),          // template gắn với 1 store Shopify (collection/kênh theo store)

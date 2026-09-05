@@ -53,6 +53,7 @@ export async function GET(req: NextRequest) {
     feedTitle: schema.shopifyProducts.feedTitle,
     feedDescription: schema.shopifyProducts.feedDescription,
     productType: schema.shopifyProducts.productType,
+    collections: schema.shopifyProducts.collections,
   }).from(schema.shopifyProducts).where(eq(schema.shopifyProducts.storeId, storeId));
 
   // v193 · shipping_label = slug Product type — GIỐNG HỆT feed-export (v190). GMC shipping policy
@@ -68,8 +69,26 @@ export async function GET(req: NextRequest) {
       .map((i) => cell(i.src)).find((s) => /^https:\/\//i.test(s)) ?? "";
   };
 
+  // v402 · custom_label_0 = mùa vụ, suy từ COLLECTION của sản phẩm (Halloween/Christmas trên store).
+  // Google Ads subdivide theo Custom label 0 ⇒ camp mùa lễ chọn nguyên nhóm, khỏi tick từng Item ID.
+  // Sản phẩm nằm cả 2 collection: ưu tiên halloween (mùa gần hơn); không thuộc mùa nào ⇒ ô trống.
+  // v404 · custom_label_0 đọc từ BẢNG feed_label_rules — admin/seller tự quản trong FUSION
+  // (Manage Products Shopify → More actions → Feed labels): mỗi rule map 1 collection → 1 nhãn.
+  // Sản phẩm khớp nhiều rule → lấy rule tạo TRƯỚC. Không khớp rule nào → ô trống.
+  const rules = await db.select().from(schema.feedLabelRules)
+    .where(eq(schema.feedLabelRules.storeId, storeId))
+    .orderBy(schema.feedLabelRules.createdAt);
+  const labelOf = (cols: unknown): string => {
+    if (!rules.length) return "";
+    const titles = ((Array.isArray(cols) ? cols : []) as { title?: string }[])
+      .map((c) => String(c?.title ?? "").trim().toLowerCase()).filter(Boolean);
+    if (!titles.length) return "";
+    const hit = rules.find((r) => titles.includes(r.collectionTitle.trim().toLowerCase()));
+    return hit ? hit.label : "";
+  };
+
   let skipped = 0;
-  const lines: string[] = ["id\ttitle\tdescription\tshipping_label\timage_link"];
+  const lines: string[] = ["id\ttitle\tdescription\tshipping_label\timage_link\tcustom_label_0"];
   for (const r of rows) {
     const t = cell(r.feedTitle);
     const d = cell(r.feedDescription);
@@ -81,7 +100,8 @@ export async function GET(req: NextRequest) {
     if (!vids.length) { skipped++; continue; }
     const label = slug(cell(r.productType));
     const img = mainImage(r.images); // rỗng ⇒ ô image_link trống, GMC bỏ qua (không xoá gì)
-    for (const vid of vids) lines.push(`shopify_${prefix}_${pid}_${vid}\t${t}\t${d}\t${label}\t${img}`);
+    const season = labelOf(r.collections);
+    for (const vid of vids) lines.push(`shopify_${prefix}_${pid}_${vid}\t${t}\t${d}\t${label}\t${img}\t${season}`);
   }
 
   return new NextResponse(lines.join("\n") + "\n", {
