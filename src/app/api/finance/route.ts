@@ -80,16 +80,19 @@ export async function GET(req: NextRequest) {
       WHERE ${ordersWhere}
       GROUP BY 1,2 ORDER BY rev DESC`),
     // THEO STORE (chi tiết store của seller): store + marketplace + seller
+    // v400 FIX: cost/fee phải lọc theo CẢ seller — trước đây chỉ lọc store_id nên store nhiều seller
+    // (vd Talewix Shopify) bị dán NGUYÊN tổng cost của store vào từng dòng seller → trùng N lần.
+    // IS NOT DISTINCT FROM để dòng "seller trống" (đơn không gắn seller) vẫn khớp transaction seller NULL.
     db.execute(sql`
       SELECT s.id, s.name store, s.marketplace, u.full_name seller,
         coalesce(sum(o.total),0) rev, count(*)::int orders,
         coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.store_id = s.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) fee,
+          WHERE t.store_id = s.id AND t.seller_id IS NOT DISTINCT FROM u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.store_id = s.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) cost
+          WHERE t.store_id = s.id AND t.seller_id IS NOT DISTINCT FROM u.id AND t.type NOT IN ('revenue','platform_fee') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id LEFT JOIN users u ON u.id = o.seller_at_order
       WHERE ${ordersWhere}
-      GROUP BY 1,2,3,4 ORDER BY rev DESC`),
+      GROUP BY s.id, s.name, s.marketplace, u.id, u.full_name ORDER BY rev DESC`),
     db.execute(sql`
       SELECT s.marketplace,
         coalesce(sum(o.total),0) rev,
