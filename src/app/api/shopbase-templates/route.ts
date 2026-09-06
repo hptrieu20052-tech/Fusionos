@@ -28,7 +28,29 @@ type TplBody = {
   shipIntlMin?: number | null; shipIntlMax?: number | null;
   shipCutoffHour?: number | null;
   shipCountries?: Record<string, unknown>;   // { ca:[6,12], gb:[7,14], au:[8,16], de:[7,14] }
+  personalization?: unknown;                 // v407 · [{ type, label, required, options[], maxChars }]
 };
+
+// v407 · Customize (buyer inputs): text | dropdown, ≤5 câu, dropdown ≤50 lựa chọn (Color 17 màu thoải mái).
+type PQ = { type: "text" | "dropdown"; label: string; required: boolean; options: string[]; maxChars: number };
+function clampPersonalization(v: unknown): PQ[] {
+  const out: PQ[] = [];
+  for (const x of (Array.isArray(v) ? v : [])) {
+    const q = x as Partial<PQ>;
+    const type: PQ["type"] = q?.type === "dropdown" ? "dropdown" : "text";
+    const label = String(q?.label ?? "").trim().slice(0, 45);
+    if (!label) continue;
+    const options = (Array.isArray(q?.options) ? q!.options! : []).map((s) => String(s).trim().slice(0, 40)).filter(Boolean).slice(0, 50);
+    if (type === "dropdown" && !options.length) continue;   // dropdown rỗng = ô chết
+    out.push({
+      type, label, required: !!q?.required,
+      options: type === "dropdown" ? options : [],
+      maxChars: type === "text" ? Math.min(Math.max(Math.round(Number(q?.maxChars) || 0) || 100, 1), 1024) : 0,
+    });
+    if (out.length >= 5) break;
+  }
+  return out;
+}
 
 // 4 nước có ô riêng trong editor + widget. Nước khác ⇒ Rest of world (ship_intl_*).
 const DELIVERY_COUNTRIES = ["ca", "gb", "au", "de"] as const;
@@ -72,7 +94,7 @@ const clampOptions = (v: unknown): TplOption[] =>
   })).filter((o) => o.name && o.values.length);
 
 const clampVariants = (v: unknown): TplVariant[] =>
-  (Array.isArray(v) ? v : []).slice(0, 100).map((x) => {
+  (Array.isArray(v) ? v : []).slice(0, 500).map((x) => {   // ShopBase: tối đa 500 variants/sản phẩm
     const o = x as TplVariant;
     const price = String(o?.price ?? "").trim();
     const cap = o?.compareAtPrice == null ? null : String(o.compareAtPrice).trim();
@@ -116,6 +138,7 @@ function payloadOf(b: TplBody) {
         shipCountries: clampCountries(b.shipCountries),
       };
     })(),
+    personalization: clampPersonalization(b.personalization),
     updatedAt: new Date(),
   };
 }

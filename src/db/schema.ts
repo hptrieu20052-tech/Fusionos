@@ -394,6 +394,10 @@ export const shopbaseTemplates = pgTable("shopbase_templates", {
   shipCutoffHour: integer("ship_cutoff_hour"),
   // Số ngày ship riêng từng nước: { "ca":[6,12], "gb":[7,14], "au":[8,16], "de":[7,14] } — nước khác dùng intl.
   shipCountries: jsonb("ship_countries").$type<Record<string, [number, number]>>().notNull().default({}),
+  // v407 · Customize (buyer inputs) — [{ type:"text"|"dropdown", label, required, options[], maxChars }].
+  // Đưa Color/tên khắc... ra khỏi variants (thoát trần 500): stage nhúng data-fusion-customize vào mô tả,
+  // widget shopbase-customize-widget.html render ô chọn, giá trị đi vào line item properties của đơn.
+  personalization: jsonb("personalization").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({

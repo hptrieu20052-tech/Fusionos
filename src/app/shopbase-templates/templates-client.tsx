@@ -24,7 +24,10 @@ type Draft = {
   shipIntlMin: number | null; shipIntlMax: number | null;
   shipCutoffHour: number | null;
   shipCountries: Record<string, [number | null, number | null]>;
+  // v407 · Customize (buyer inputs) — Color/tên khắc... khách tự chọn, KHÔNG ăn variants
+  personalization: PQ[];
 };
+type PQ = { type: "text" | "dropdown"; label: string; required: boolean; options: string[]; maxChars: number };
 type Tpl = Draft & { updatedAt?: string };
 
 const SB_BLUE = "#2F6BFF";
@@ -38,7 +41,7 @@ const priceKey = (o: Record<string, string>) => Object.keys(o).sort().map((k) =>
 function cartesian(options: Opt[]): Record<string, string>[] {
   const clean = options.filter((o) => o.name.trim() && o.values.length);
   if (!clean.length) return [];
-  return clean.reduce<Record<string, string>[]>((acc, o) => acc.flatMap((c) => o.values.map((v) => ({ ...c, [o.name]: v }))), [{}]).slice(0, 100);
+  return clean.reduce<Record<string, string>[]>((acc, o) => acc.flatMap((c) => o.values.map((v) => ({ ...c, [o.name]: v }))), [{}]).slice(0, 500);   // ShopBase cho tối đa 500 variants/sản phẩm
 }
 // Số ngày mặc định cho template mới — theo facts supplier: xử lý 1-3, US 4-8, quốc tế 10-30.
 const DEFAULT_SHIP = {
@@ -52,7 +55,11 @@ const SHIP_COUNTRIES: { cc: string; label: string; ph: [string, string] }[] = [
   { cc: "de", label: "Germany", ph: ["7", "14"] },
 ];
 const numOrNull = (v: string): number | null => { const n = parseInt(v, 10); return isFinite(n) && n >= 0 ? n : null; };
-const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", thumbUrl: "", options: [], variants: [], collections: [], status: "DRAFT", productType: "", vendor: "", description: "", ...DEFAULT_SHIP });
+const normPQ = (v: unknown): PQ[] => (Array.isArray(v) ? v : []).map((x) => {
+  const q = x as Partial<PQ>;
+  return { type: q?.type === "dropdown" ? "dropdown" as const : "text" as const, label: String(q?.label ?? ""), required: !!q?.required, options: Array.isArray(q?.options) ? q!.options!.map(String) : [], maxChars: Number(q?.maxChars) || 100 };
+}).slice(0, 5);
+const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", thumbUrl: "", options: [], variants: [], collections: [], status: "DRAFT", productType: "", vendor: "", description: "", personalization: [], ...DEFAULT_SHIP });
 
 export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] }) {
   const confirm = useConfirm();
@@ -63,6 +70,7 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
   const [storeFilter, setStoreFilter] = useState(stores[0]?.id ?? "");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [optTexts, setOptTexts] = useState<string[]>([]); // text thô ô values — không nuốt dấu phẩy khi gõ
+  const [pqTexts, setPqTexts] = useState<string[]>([]);   // text thô ô options của câu Customize
   const [storeCols, setStoreCols] = useState<Col[]>([]);  // collections live của store cho picker
   const [prodPick, setProdPick] = useState<{ list: { id: string; title: string }[] } | null>(null);
 
@@ -82,7 +90,7 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
     } catch { /* store chưa cấu hình API → picker trống, vẫn sửa được phần khác */ }
   }, []);
 
-  const openEditor = async (d: Draft) => { setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); loadCols(d.storeId); };
+  const openEditor = async (d: Draft) => { setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", "))); setPqTexts(d.personalization.map((q) => q.options.join(", "))); loadCols(d.storeId); };
   const newBlank = () => { if (!storeFilter) return flash("✗ Pick a store first", false); openEditor(emptyDraft(storeFilter)); };
   const editTpl = (t: Tpl) => openEditor({
     ...t, thumbUrl: t.thumbUrl ?? "",
@@ -94,6 +102,7 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
     shipIntlMin: t.shipIntlMin ?? null, shipIntlMax: t.shipIntlMax ?? null,
     shipCutoffHour: t.shipCutoffHour ?? null,
     shipCountries: (t.shipCountries && typeof t.shipCountries === "object") ? t.shipCountries : {},
+    personalization: normPQ(t.personalization),
   });
 
   // From ShopBase product — copy options/variants/giá từ 1 sản phẩm đã sync.
@@ -124,6 +133,7 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
         collections: p.collections ?? [],
         status: "DRAFT", productType: p.productType ?? "", vendor: p.vendor ?? "",
         description: typeof p.description === "string" ? p.description : "",
+        personalization: [],
         ...DEFAULT_SHIP,
       };
       setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", ")));
@@ -149,6 +159,20 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
     else map[cc] = next;
     return { ...d, shipCountries: map };
   });
+  // v407 · Customize helpers — pqTexts giữ text thô ô options để gõ dấu phẩy không bị nuốt.
+  const setPQ = (i: number, patch: Partial<PQ>) => setDraft((d) => d ? { ...d, personalization: d.personalization.map((q, k) => k === i ? { ...q, ...patch } : q) } : d);
+  const addPQ = (type: PQ["type"]) => {
+    setDraft((d) => (d && d.personalization.length < 5) ? { ...d, personalization: [...d.personalization, { type, label: "", required: type === "dropdown", options: [], maxChars: 100 }] } : d);
+    setPqTexts((ts) => ts.length < 5 ? [...ts, ""] : ts);
+  };
+  const removePQ = (i: number) => {
+    setDraft((d) => d ? { ...d, personalization: d.personalization.filter((_, k) => k !== i) } : d);
+    setPqTexts((ts) => ts.filter((_, k) => k !== i));
+  };
+  const setPQOptionsText = (i: number, text: string) => {
+    setPqTexts((ts) => { const n = [...ts]; n[i] = text; return n; });
+    setPQ(i, { options: text.split(",").map((x) => x.trim()).filter(Boolean) });
+  };
   const regenVariants = (options: Opt[], prev: Vari[]) => {
     const map = new Map(prev.map((v) => [priceKey(v.options), v]));
     return cartesian(options).map((o) => map.get(priceKey(o)) ?? { options: o, price: "0.00", compareAtPrice: null, sku: "" });
@@ -181,6 +205,8 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
   const save = async () => {
     if (!draft) return;
     if (!draft.name.trim()) return flash("✗ Template name required", false);
+    const badPQ = draft.personalization.findIndex((q) => !q.label.trim() || (q.type === "dropdown" && !q.options.length));
+    if (badPQ >= 0) return flash(`✗ Customize #${badPQ + 1}: label${draft.personalization[badPQ].type === "dropdown" ? " and choices are" : " is"} required`, false);
     setBusy(true);
     try {
       const method = draft.id ? "PATCH" : "POST";
@@ -392,6 +418,47 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
                 </div>
               </div>
             )}
+
+            {/* v407 · CUSTOMIZE — ô khách tự điền/chọn trên trang sản phẩm (Color, tên khắc...).
+                KHÔNG ăn variants → đưa Color vào đây để thoát trần 500 variants của ShopBase.
+                Cần dán shopbase-customize-widget.html vào theme (1 lần) để ô hiện trên storefront. */}
+            <div style={{ border: "1px solid #F0DCC6", background: "#FFFBF5", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800 }}>✏️ Customize · buyer inputs</div>
+                <div style={{ fontSize: 12, color: "var(--muted)" }}>{draft.personalization.length}/5</div>
+              </div>
+              {draft.personalization.map((q, i) => (
+                <div key={i} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <select value={q.type} onChange={(e) => { setPQ(i, { type: e.target.value as PQ["type"], options: [] }); setPqTexts((ts) => { const n = [...ts]; n[i] = ""; return n; }); }} style={{ ...ctl, width: 130, padding: "8px 10px" }}>
+                      <option value="dropdown">Dropdown</option>
+                      <option value="text">Text box</option>
+                    </select>
+                    <input value={q.label} maxLength={45} onChange={(e) => setPQ(i, { label: e.target.value })} placeholder="Label shown to the buyer (e.g. Color)" style={{ ...ctl, flex: 1, padding: "8px 10px" }} />
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, whiteSpace: "nowrap", cursor: "pointer" }}>
+                      <input type="checkbox" checked={q.required} onChange={(e) => setPQ(i, { required: e.target.checked })} />Required
+                    </label>
+                    <button onClick={() => removePQ(i)} style={{ ...ghost, color: "var(--red)", padding: "7px 10px" }}>×</button>
+                  </div>
+                  {q.type === "dropdown" && (
+                    <input value={pqTexts[i] ?? q.options.join(", ")} onChange={(e) => setPQOptionsText(i, e.target.value)} placeholder="Choices, comma-separated (e.g. Black, White, Navy, Sport Grey…)" style={{ ...ctl, width: "100%", padding: "8px 10px", marginTop: 8 }} />
+                  )}
+                  {q.type === "text" && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 8, alignItems: "center" }}>
+                      <input type="number" min={1} max={1024} value={q.maxChars} onChange={(e) => setPQ(i, { maxChars: Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 1024) })} style={{ ...ctl, width: 100, padding: "8px 10px" }} />
+                      <span style={{ fontSize: 12, color: "var(--muted)" }}>max characters</span>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {draft.personalization.length < 5 && (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => addPQ("dropdown")} style={{ ...ghost, fontSize: 12.5 }}>+ Dropdown</button>
+                  <button onClick={() => addPQ("text")} style={{ ...ghost, fontSize: 12.5 }}>+ Text box</button>
+                </div>
+              )}
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>Shown above Add to cart by the FUSION customize widget on your ShopBase theme. Buyer&apos;s choices land in the order as line item properties.</div>
+            </div>
 
             {/* COLLECTIONS */}
             <div style={{ marginBottom: 18 }}>

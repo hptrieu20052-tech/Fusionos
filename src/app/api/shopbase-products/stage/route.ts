@@ -50,7 +50,7 @@ function fromTemplate(tpl: Tpl): { options: SbOption[]; variants: SbVariant[] } 
   const key = (o: Record<string, string>) => Object.keys(o).sort().map((k) => `${k}=${o[k]}`).join("|");
   const priceMap = new Map(tVars.map((v) => [key(v.options ?? {}), v]));
   const combos = tVars.length ? tVars.map((v) => v.options ?? {}) : (tOpts.length ? cartesian() : [{}]);
-  const variants: SbVariant[] = combos.slice(0, 100).map((opts) => {
+  const variants: SbVariant[] = combos.slice(0, 500).map((opts) => {   // ShopBase: 500 variants/sản phẩm
     const hit = priceMap.get(key(opts));
     const sel = tOpts.map((o) => ({ name: o.name, value: opts[o.name] ?? "" })).filter((x) => x.value);
     return {
@@ -79,7 +79,7 @@ function fromEtsy(p: typeof schema.etsyProducts.$inferSelect): { options: SbOpti
     ? vars.reduce<string[][]>((acc, v) => acc.flatMap((c) => v.values.map((val) => [...c, val])), [[]])
     : [[]];
   const options: SbOption[] = vars.map((v, i) => ({ name: v.name, position: i + 1, values: v.values }));
-  const variants: SbVariant[] = combos.slice(0, 100).map((vals) => ({
+  const variants: SbVariant[] = combos.slice(0, 500).map((vals) => ({
     id: "", title: vals.join(" / ") || "Default Title",
     selectedOptions: vars.map((v, i) => ({ name: v.name, value: vals[i] })),
     price: priceFor(vals), compareAtPrice: null,
@@ -125,6 +125,23 @@ function buildBody(tpl: Tpl | null, sourceHtml: string): string {
     `<div class="fusion-delivery" data-fusion-delivery='${json}' style="display:none"></div>` +
     `<p class="fusion-delivery-fallback"><strong>\u{1F69A} Estimated delivery</strong><br>${lines.join("<br>")}</p>`;
   return body;
+}
+
+// v407 · Customize (buyer inputs) của template ⇒ thẻ ẩn data-fusion-customize trong mô tả.
+// Widget shopbase-customize-widget.html trên theme đọc ra, render ô Color/tên khắc... phía trên
+// nút Add to cart; giá trị khách chọn đi vào line item properties của đơn ShopBase.
+function appendCustomize(tpl: Tpl | null, body: string): string {
+  const pqs = (Array.isArray(tpl?.personalization) ? tpl!.personalization : []) as { type?: string; label?: string; required?: boolean; options?: string[]; maxChars?: number }[];
+  const clean = pqs.map((q) => ({
+    type: q?.type === "dropdown" ? "dropdown" : "text",
+    label: strv(q?.label).slice(0, 45),
+    required: !!q?.required,
+    options: (Array.isArray(q?.options) ? q.options : []).map((s) => strv(s)).filter(Boolean).slice(0, 50),
+    maxChars: Math.min(Math.max(Math.round(Number(q?.maxChars) || 0) || 100, 1), 1024),
+  })).filter((q) => q.label && (q.type === "text" || q.options.length));
+  if (!clean.length) return body;
+  const json = JSON.stringify(clean).replace(/'/g, "&#39;");
+  return body + `<div class="fusion-customize" data-fusion-customize='${json}' style="display:none"></div>`;
 }
 
 // Ảnh từ raw TikTok: main_images[].urls[0] (search + detail cùng shape).
@@ -204,7 +221,7 @@ export async function POST(req: NextRequest) {
         const draft = {
           storeId,
           title,
-          bodyHtml: buildBody(tpl, (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>")),
+          bodyHtml: appendCustomize(tpl, buildBody(tpl, (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>"))),
           vendor: (tpl?.vendor ?? "").trim() || store.name,
           productType: (tpl?.productType ?? "").trim() || "Personalized",
           tags: (p.shopifyTags || p.tags || "").split(",").map((t) => t.trim().replace(/_/g, " ")).filter(Boolean).slice(0, 250).join(", "),
@@ -281,7 +298,7 @@ export async function POST(req: NextRequest) {
         const draft = {
           storeId,
           title,
-          bodyHtml: buildBody(tpl, description),   // TikTok trả description dạng HTML sẵn
+          bodyHtml: appendCustomize(tpl, buildBody(tpl, description)),   // TikTok trả description dạng HTML sẵn
           vendor: (tpl?.vendor ?? "").trim() || store.name,
           productType: (tpl?.productType ?? "").trim() || "Personalized",
           tags: "",
