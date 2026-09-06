@@ -21,7 +21,40 @@ type TplBody = {
   id?: string; storeId?: string; name?: string; thumbUrl?: string | null;
   options?: TplOption[]; variants?: TplVariant[]; collections?: TplCollection[];
   status?: string; productType?: string; vendor?: string;
+  // v406 · description chuẩn + estimated delivery (ShopBase không chạy AI Optimize)
+  description?: string;
+  shipProcMin?: number | null; shipProcMax?: number | null;
+  shipUsMin?: number | null; shipUsMax?: number | null;
+  shipIntlMin?: number | null; shipIntlMax?: number | null;
+  shipCutoffHour?: number | null;
+  shipCountries?: Record<string, unknown>;   // { ca:[6,12], gb:[7,14], au:[8,16], de:[7,14] }
 };
+
+// 4 nước có ô riêng trong editor + widget. Nước khác ⇒ Rest of world (ship_intl_*).
+const DELIVERY_COUNTRIES = ["ca", "gb", "au", "de"] as const;
+// { ca:[6,12], … } — chỉ giữ nước trong danh sách và cặp số ĐẦY ĐỦ, thiếu 1 vế thì bỏ cả nước đó.
+
+// Ô số ngày: rỗng/rác → null. Chặn số âm và số vô lý.
+const clampDays = (v: unknown, max = 180): number | null => {
+  if (v === "" || v === null || v === undefined) return null;
+  const n = Math.round(Number(v));
+  if (!isFinite(n) || n < 0) return null;
+  return Math.min(n, max);
+};
+
+function clampCountries(v: unknown): Record<string, [number, number]> {
+  const out: Record<string, [number, number]> = {};
+  if (!v || typeof v !== "object") return out;
+  const src = v as Record<string, unknown>;
+  for (const cc of DELIVERY_COUNTRIES) {
+    const a = src[cc];
+    if (!Array.isArray(a)) continue;
+    const lo = clampDays(a[0]), hi = clampDays(a[1]);
+    if (lo == null || hi == null) continue;
+    out[cc] = [Math.min(lo, hi), Math.max(lo, hi)];
+  }
+  return out;
+}
 
 // Store nào user được phép thao tác (ShopBase + trong scope)?
 async function allowedStoreIds(session: Awaited<ReturnType<typeof getSession>>): Promise<Set<string>> {
@@ -67,6 +100,22 @@ function payloadOf(b: TplBody) {
     status: ["ACTIVE", "DRAFT", "ARCHIVED"].includes(String(b.status)) ? String(b.status) : "DRAFT",
     productType: String(b.productType ?? "").slice(0, 120) || null,
     vendor: String(b.vendor ?? "").slice(0, 120) || null,
+    description: String(b.description ?? "").slice(0, 20000).trim() || null,
+    // min/max tự đảo nếu người dùng gõ ngược (min 8, max 4 → 4..8).
+    ...(() => {
+      const pmin = clampDays(b.shipProcMin), pmax = clampDays(b.shipProcMax);
+      const umin = clampDays(b.shipUsMin), umax = clampDays(b.shipUsMax);
+      const imin = clampDays(b.shipIntlMin), imax = clampDays(b.shipIntlMax);
+      const lo = (a: number | null, z: number | null) => (a != null && z != null ? Math.min(a, z) : a);
+      const hi = (a: number | null, z: number | null) => (a != null && z != null ? Math.max(a, z) : z);
+      return {
+        shipProcMin: lo(pmin, pmax), shipProcMax: hi(pmin, pmax),
+        shipUsMin: lo(umin, umax), shipUsMax: hi(umin, umax),
+        shipIntlMin: lo(imin, imax), shipIntlMax: hi(imin, imax),
+        shipCutoffHour: clampDays(b.shipCutoffHour, 23),
+        shipCountries: clampCountries(b.shipCountries),
+      };
+    })(),
     updatedAt: new Date(),
   };
 }

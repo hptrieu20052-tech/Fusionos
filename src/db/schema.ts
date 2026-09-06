@@ -380,6 +380,20 @@ export const shopbaseTemplates = pgTable("shopbase_templates", {
   status: text("status").notNull().default("DRAFT"),
   productType: text("product_type"),
   vendor: text("vendor"),
+  // v406 · ShopBase KHÔNG chạy AI Optimize → template mang sẵn DESCRIPTION CHUẨN của loại sản phẩm.
+  // Có description ⇒ lúc stage (Push Etsy/TikTok) bản nháp dùng nó THAY mô tả nguồn.
+  description: text("description"),
+  // v406 · Estimated delivery (số NGÀY LÀM VIỆC) — gắn thành khối "🚚 Estimated delivery" ở CUỐI
+  // mô tả lúc stage (ShopBase không có metafield/widget như Shopify). null = không gắn.
+  shipProcMin: integer("ship_proc_min"),
+  shipProcMax: integer("ship_proc_max"),
+  shipUsMin: integer("ship_us_min"),
+  shipUsMax: integer("ship_us_max"),
+  shipIntlMin: integer("ship_intl_min"),
+  shipIntlMax: integer("ship_intl_max"),
+  shipCutoffHour: integer("ship_cutoff_hour"),
+  // Số ngày ship riêng từng nước: { "ca":[6,12], "gb":[7,14], "au":[8,16], "de":[7,14] } — nước khác dùng intl.
+  shipCountries: jsonb("ship_countries").$type<Record<string, [number, number]>>().notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({

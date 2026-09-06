@@ -17,6 +17,13 @@ type Draft = {
   id?: string; storeId: string; name: string; thumbUrl: string;
   options: Opt[]; variants: Vari[]; collections: Col[];
   status: string; productType: string; vendor: string;
+  // v406 · description chuẩn + estimated delivery (ShopBase không chạy AI Optimize)
+  description: string;
+  shipProcMin: number | null; shipProcMax: number | null;
+  shipUsMin: number | null; shipUsMax: number | null;
+  shipIntlMin: number | null; shipIntlMax: number | null;
+  shipCutoffHour: number | null;
+  shipCountries: Record<string, [number | null, number | null]>;
 };
 type Tpl = Draft & { updatedAt?: string };
 
@@ -33,7 +40,19 @@ function cartesian(options: Opt[]): Record<string, string>[] {
   if (!clean.length) return [];
   return clean.reduce<Record<string, string>[]>((acc, o) => acc.flatMap((c) => o.values.map((v) => ({ ...c, [o.name]: v }))), [{}]).slice(0, 100);
 }
-const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", thumbUrl: "", options: [], variants: [], collections: [], status: "DRAFT", productType: "", vendor: "" });
+// Số ngày mặc định cho template mới — theo facts supplier: xử lý 1-3, US 4-8, quốc tế 10-30.
+const DEFAULT_SHIP = {
+  shipProcMin: 1, shipProcMax: 3, shipUsMin: 4, shipUsMax: 8, shipIntlMin: 10, shipIntlMax: 30, shipCutoffHour: 14,
+  shipCountries: { ca: [6, 12], gb: [7, 14], au: [8, 16], de: [7, 14] } as Record<string, [number | null, number | null]>,
+};
+const SHIP_COUNTRIES: { cc: string; label: string; ph: [string, string] }[] = [
+  { cc: "ca", label: "Canada", ph: ["6", "12"] },
+  { cc: "gb", label: "United Kingdom", ph: ["7", "14"] },
+  { cc: "au", label: "Australia", ph: ["8", "16"] },
+  { cc: "de", label: "Germany", ph: ["7", "14"] },
+];
+const numOrNull = (v: string): number | null => { const n = parseInt(v, 10); return isFinite(n) && n >= 0 ? n : null; };
+const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", thumbUrl: "", options: [], variants: [], collections: [], status: "DRAFT", productType: "", vendor: "", description: "", ...DEFAULT_SHIP });
 
 export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] }) {
   const confirm = useConfirm();
@@ -69,6 +88,12 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
     ...t, thumbUrl: t.thumbUrl ?? "",
     options: t.options ?? [], variants: (t.variants ?? []).map((v) => ({ ...v, compareAtPrice: v.compareAtPrice ?? null, sku: v.sku ?? "" })),
     collections: t.collections ?? [], productType: t.productType ?? "", vendor: t.vendor ?? "",
+    description: t.description ?? "",
+    shipProcMin: t.shipProcMin ?? null, shipProcMax: t.shipProcMax ?? null,
+    shipUsMin: t.shipUsMin ?? null, shipUsMax: t.shipUsMax ?? null,
+    shipIntlMin: t.shipIntlMin ?? null, shipIntlMax: t.shipIntlMax ?? null,
+    shipCutoffHour: t.shipCutoffHour ?? null,
+    shipCountries: (t.shipCountries && typeof t.shipCountries === "object") ? t.shipCountries : {},
   });
 
   // From ShopBase product — copy options/variants/giá từ 1 sản phẩm đã sync.
@@ -98,6 +123,8 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
         variants: (p.variants ?? []).map((v: Vari) => ({ ...v, compareAtPrice: v.compareAtPrice ?? null, sku: v.sku ?? "" })),
         collections: p.collections ?? [],
         status: "DRAFT", productType: p.productType ?? "", vendor: p.vendor ?? "",
+        description: typeof p.description === "string" ? p.description : "",
+        ...DEFAULT_SHIP,
       };
       setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", ")));
       loadCols(p.storeId);
@@ -107,6 +134,21 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
 
   // ---- editor helpers (cùng luật với Templates Shopify) ----
   const setD = (patch: Partial<Draft>) => setDraft((d) => d ? { ...d, ...patch } : d);
+  // Ô số ngày theo nước — xoá cả 2 ô ⇒ bỏ nước đó ⇒ widget cho nước đó chạy theo Rest of world.
+  const cGet = (cc: string, i: 0 | 1): number | "" => {
+    const v = draft?.shipCountries?.[cc];
+    return Array.isArray(v) && v[i] != null ? v[i] : "";
+  };
+  const cSet = (cc: string, i: 0 | 1, val: number | null) => setDraft((d) => {
+    if (!d) return d;
+    const cur = d.shipCountries?.[cc];
+    const next: [number | null, number | null] = Array.isArray(cur) ? [cur[0], cur[1]] : [null, null];
+    next[i] = val;
+    const map: Record<string, [number | null, number | null]> = { ...(d.shipCountries ?? {}) };
+    if (next[0] == null && next[1] == null) delete map[cc];
+    else map[cc] = next;
+    return { ...d, shipCountries: map };
+  });
   const regenVariants = (options: Opt[], prev: Vari[]) => {
     const map = new Map(prev.map((v) => [priceKey(v.options), v]));
     return cartesian(options).map((o) => map.get(priceKey(o)) ?? { options: o, price: "0.00", compareAtPrice: null, sku: "" });
@@ -247,6 +289,72 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
               <div><label style={lab}>Status</label><select value={draft.status} onChange={(e) => setD({ status: e.target.value })} style={{ ...ctl, width: "100%" }}><option value="DRAFT">Draft</option><option value="ACTIVE">Active</option><option value="ARCHIVED">Archived</option></select></div>
               <div><label style={lab}>Type</label><input value={draft.productType} onChange={(e) => setD({ productType: e.target.value })} placeholder="Personalized" style={{ ...ctl, width: "100%" }} /></div>
               <div><label style={lab}>Vendor</label><input value={draft.vendor} onChange={(e) => setD({ vendor: e.target.value })} style={{ ...ctl, width: "100%" }} /></div>
+            </div>
+
+            {/* v406 · DESCRIPTION — ShopBase không chạy AI Optimize: mô tả chuẩn của loại sản phẩm.
+                Có nội dung ⇒ lúc Push từ Etsy/TikTok, bản nháp dùng mô tả NÀY thay mô tả nguồn. */}
+            <div style={{ border: "1px solid #DCE9F5", background: "#F7FBFF", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Description</div>
+              <textarea value={draft.description} onChange={(e) => setD({ description: e.target.value })}
+                placeholder={"Standard description for this product type (HTML or plain text).\nIf filled, staged drafts use THIS instead of the source listing's description."}
+                style={{ ...ctl, width: "100%", minHeight: 130, resize: "vertical", fontFamily: "inherit" }} />
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Leave empty to keep the source listing&apos;s description when pushing from Etsy/TikTok.</div>
+            </div>
+
+            {/* v406 · ESTIMATED DELIVERY — dữ liệu nhúng ẩn vào cuối mô tả lúc stage; widget trên
+                theme ShopBase (file shopbase-delivery-widget.html) đọc ra và vẽ timeline động. */}
+            <div style={{ border: "1px solid #E3DCF5", background: "#FAF8FF", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>🚚 Estimated delivery · business days</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10 }}>
+                <div>
+                  <label style={lab}>Processing</label>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="number" min={0} max={180} value={draft.shipProcMin ?? ""} onChange={(e) => setD({ shipProcMin: numOrNull(e.target.value) })} placeholder="1" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    <span style={{ color: "var(--muted)" }}>–</span>
+                    <input type="number" min={0} max={180} value={draft.shipProcMax ?? ""} onChange={(e) => setD({ shipProcMax: numOrNull(e.target.value) })} placeholder="3" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={lab}>United States</label>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="number" min={0} max={180} value={draft.shipUsMin ?? ""} onChange={(e) => setD({ shipUsMin: numOrNull(e.target.value) })} placeholder="4" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    <span style={{ color: "var(--muted)" }}>–</span>
+                    <input type="number" min={0} max={180} value={draft.shipUsMax ?? ""} onChange={(e) => setD({ shipUsMax: numOrNull(e.target.value) })} placeholder="8" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                  </div>
+                </div>
+                {SHIP_COUNTRIES.map((c) => (
+                  <div key={c.cc}>
+                    <label style={lab}>{c.label}</label>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input type="number" min={0} max={180} value={cGet(c.cc, 0)} onChange={(e) => cSet(c.cc, 0, numOrNull(e.target.value))} placeholder={c.ph[0]} style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                      <span style={{ color: "var(--muted)" }}>–</span>
+                      <input type="number" min={0} max={180} value={cGet(c.cc, 1)} onChange={(e) => cSet(c.cc, 1, numOrNull(e.target.value))} placeholder={c.ph[1]} style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    </div>
+                  </div>
+                ))}
+                <div>
+                  <label style={lab}>Rest of world</label>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input type="number" min={0} max={180} value={draft.shipIntlMin ?? ""} onChange={(e) => setD({ shipIntlMin: numOrNull(e.target.value) })} placeholder="10" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                    <span style={{ color: "var(--muted)" }}>–</span>
+                    <input type="number" min={0} max={180} value={draft.shipIntlMax ?? ""} onChange={(e) => setD({ shipIntlMax: numOrNull(e.target.value) })} placeholder="30" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={lab}>Cut-off hour</label>
+                  <input type="number" min={0} max={23} value={draft.shipCutoffHour ?? ""} onChange={(e) => setD({ shipCutoffHour: numOrNull(e.target.value) })} placeholder="14" style={{ ...ctl, width: "100%", padding: "8px 10px" }} />
+                </div>
+              </div>
+              <div style={{ marginTop: 10, fontSize: 12.5, color: "#4C3A87", background: "#fff", border: "1px solid #E3DCF5", borderRadius: 9, padding: "8px 12px" }}>
+                {(() => {
+                  const bd = (from: Date, n: number) => { const d = new Date(from); let left = n; while (left > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) left--; } return d; };
+                  const f = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "2-digit" });
+                  const pMin = draft.shipProcMin ?? 1, pMax = draft.shipProcMax ?? 3, uMin = draft.shipUsMin ?? 4, uMax = draft.shipUsMax ?? 8;
+                  const now = new Date();
+                  const start = (draft.shipCutoffHour != null && now.getHours() >= draft.shipCutoffHour) ? bd(now, 1) : now;
+                  return <>US · ships <b>{f(bd(start, pMin))} – {f(bd(start, pMax))}</b> · arrives <b>{f(bd(start, pMin + uMin))} – {f(bd(start, pMax + uMax))}</b> · widget on the ShopBase theme reads these numbers per product</>;
+                })()}
+              </div>
             </div>
 
             {/* OPTIONS */}

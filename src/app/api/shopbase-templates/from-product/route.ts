@@ -54,6 +54,7 @@ export async function GET(req: NextRequest) {
       collections: (Array.isArray(p.collections) ? p.collections : []) as { id: string; title: string }[],
       productType: p.productType ?? "",
       vendor: p.vendor ?? "",
+      description: p.bodyHtml ?? "",
     },
   });
 }

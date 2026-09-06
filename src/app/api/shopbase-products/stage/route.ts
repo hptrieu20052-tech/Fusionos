@@ -88,6 +88,45 @@ function fromEtsy(p: typeof schema.etsyProducts.$inferSelect): { options: SbOpti
   return { options, variants };
 }
 
+// v406 · Mô tả bản nháp: template có description ⇒ dùng NÓ thay mô tả nguồn (ShopBase không chạy
+// AI Optimize, mô tả chuẩn sống trong template). Số ngày giao có ⇒ gắn vào CUỐI mô tả:
+//   1. thẻ ẩn data-fusion-delivery='{json}' — widget shopbase-delivery-widget.html trên theme
+//      ShopBase đọc ra, vẽ timeline Ordered/Shipped/Delivered với ngày ĐỘNG theo từng nước;
+//   2. khối text tĩnh class "fusion-delivery-fallback" — hiện khi theme CHƯA cài widget
+//      (widget cài rồi sẽ tự ẩn khối này đi).
+function buildBody(tpl: Tpl | null, sourceHtml: string): string {
+  let body = sourceHtml;
+  const td = strv(tpl?.description);
+  if (td) body = /<[a-z][\s\S]*>/i.test(td) ? td : td.replace(/\r\n/g, "\n").replace(/\n/g, "<br>");
+  if (!tpl) return body;
+
+  const pair = (a: number | null | undefined, b: number | null | undefined): [number, number] | null =>
+    a == null && b == null ? null : [a ?? (b as number), b ?? (a as number)];
+  const proc = pair(tpl.shipProcMin, tpl.shipProcMax);
+  const us = pair(tpl.shipUsMin, tpl.shipUsMax);
+  const intl = pair(tpl.shipIntlMin, tpl.shipIntlMax);
+  if (!proc && !us && !intl) return body;
+
+  const countries = (tpl.shipCountries && typeof tpl.shipCountries === "object" ? tpl.shipCountries : {}) as Record<string, [number, number]>;
+  const cfg: Record<string, unknown> = {};
+  if (proc) cfg.proc = proc;
+  if (us) cfg.us = us;
+  if (intl) cfg.intl = intl;
+  if (tpl.shipCutoffHour != null) cfg.cutoff = tpl.shipCutoffHour;
+  if (Object.keys(countries).length) cfg.countries = countries;
+  const json = JSON.stringify(cfg).replace(/'/g, "&#39;");
+
+  const lines: string[] = [];
+  if (proc) lines.push(`Processing time: ${proc[0]}\u2013${proc[1]} business days`);
+  if (us) lines.push(`United States shipping: ${us[0]}\u2013${us[1]} business days`);
+  if (intl) lines.push(`International shipping: ${intl[0]}\u2013${intl[1]} business days`);
+
+  body += `${body ? "<br><br>" : ""}` +
+    `<div class="fusion-delivery" data-fusion-delivery='${json}' style="display:none"></div>` +
+    `<p class="fusion-delivery-fallback"><strong>\u{1F69A} Estimated delivery</strong><br>${lines.join("<br>")}</p>`;
+  return body;
+}
+
 // Ảnh từ raw TikTok: main_images[].urls[0] (search + detail cùng shape).
 function tiktokImages(raw: Record<string, unknown> | null): string[] {
   const imgs = (Array.isArray(raw?.main_images) ? raw!.main_images : []) as { urls?: string[]; thumb_urls?: string[] }[];
@@ -165,7 +204,7 @@ export async function POST(req: NextRequest) {
         const draft = {
           storeId,
           title,
-          bodyHtml: (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>"),
+          bodyHtml: buildBody(tpl, (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>")),
           vendor: (tpl?.vendor ?? "").trim() || store.name,
           productType: (tpl?.productType ?? "").trim() || "Personalized",
           tags: (p.shopifyTags || p.tags || "").split(",").map((t) => t.trim().replace(/_/g, " ")).filter(Boolean).slice(0, 250).join(", "),
@@ -242,7 +281,7 @@ export async function POST(req: NextRequest) {
         const draft = {
           storeId,
           title,
-          bodyHtml: description,   // TikTok trả description dạng HTML sẵn
+          bodyHtml: buildBody(tpl, description),   // TikTok trả description dạng HTML sẵn
           vendor: (tpl?.vendor ?? "").trim() || store.name,
           productType: (tpl?.productType ?? "").trim() || "Personalized",
           tags: "",
