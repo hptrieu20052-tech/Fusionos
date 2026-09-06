@@ -71,6 +71,9 @@ export async function GET(req: NextRequest) {
   const stagedSet = new Set<string>();
   const shopByEid = new Map<string, { id: string; title: string }>();
   const shopByGid = new Map<string, { id: string; title: string }>();
+  // v423 · Badge ShopBase — bản tương ứng bên Manage Products · ShopBase (tra theo etsy_product_id).
+  // pushed = đã tạo thật (pid ≠ ''); ngược lại là bản nháp staged. Store chung (sellerId NULL) ai cũng thấy.
+  const sbByEid = new Map<string, { id: string; title: string; pushed: boolean }>();
   if (etsyIds.length) {
     const conds = [inArray(schema.shopifyProducts.etsyProductId, etsyIds)];
     if (linkGids.length) conds.push(inArray(schema.shopifyProducts.shopifyProductId, linkGids));
@@ -93,6 +96,24 @@ export async function GET(req: NextRequest) {
       if (s.eid) shopByEid.set(s.eid, item);
       if (s.gid) shopByGid.set(s.gid, item);
     }
+
+    // v423 · ShopBase side — cùng scope check; ưu tiên bản đã push nếu có nhiều bản.
+    const sb = await db.select({
+      rowId: schema.shopbaseProducts.id,
+      eid: schema.shopbaseProducts.etsyProductId,
+      pid: schema.shopbaseProducts.shopbaseProductId,
+      title: schema.shopbaseProducts.title,
+      shopSellerId: schema.stores.sellerId,
+    }).from(schema.shopbaseProducts)
+      .leftJoin(schema.stores, eq(schema.stores.id, schema.shopbaseProducts.storeId))
+      .where(inArray(schema.shopbaseProducts.etsyProductId, etsyIds));
+    for (const s of sb) {
+      if (!s.eid) continue;
+      if (scopeIds && s.shopSellerId && !scopeIds.includes(s.shopSellerId)) continue;   // sellerId NULL = store chung
+      const item = { id: s.rowId, title: s.title, pushed: !!s.pid };
+      const prev = sbByEid.get(s.eid);
+      if (!prev || (!prev.pushed && item.pushed)) sbByEid.set(s.eid, item);
+    }
   }
 
   // Chỉ giữ ảnh đầu cho list (payload nhẹ); variations rút gọn thành chuỗi tóm tắt
@@ -106,6 +127,8 @@ export async function GET(req: NextRequest) {
     staged: stagedSet.has(r.id) && !r.shopifyProductId, // đã stage sang Shopify side, chờ hoàn thiện + Push
     // v183: bản ghi tương ứng bên Manage Products · Shopify — null nếu chưa stage/push hoặc người xem không có quyền
     shopifyListing: shopByEid.get(r.id) ?? (r.shopifyProductId ? shopByGid.get(String(r.shopifyProductId)) ?? null : null) ?? null,
+    // v423 · bản ShopBase tương ứng — null nếu chưa stage/push hoặc người xem không có quyền
+    shopbaseListing: sbByEid.get(r.id) ?? null,
     mainImageUrl: Array.isArray(r.images) && r.images.length ? String((r.images as string[])[0]) : null,
     // v234 · tất cả URL ảnh để lightbox trượt qua lại cả listing.
     imageUrls: Array.isArray(r.images) ? (r.images as string[]).map(String).filter(Boolean).slice(0, 20) : [],

@@ -15,6 +15,7 @@ type Row = {
   storeName: string | null; mainImageUrl: string | null; imageUrls?: string[]; variationsSummary: string;
   sellerId: string | null; sellerName: string | null; pushed?: boolean; staged?: boolean;
   shopifyListing?: { id: string; title: string } | null; // v183: chỉ có khi người xem có quyền trên store Shopify đích
+  shopbaseListing?: { id: string; title: string; pushed: boolean } | null; // v423: bản ShopBase tương ứng (pushed=false → mới stage)
   persCount?: number; // v142 · số ô Custom options của listing
 };
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
@@ -693,6 +694,14 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
                           style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px", textDecoration: "none", cursor: "pointer" }}>↑ SHOPIFY</a>
                       : <span title="Đã tạo thật trên Shopify — push lại sẽ CẬP NHẬT, không tạo trùng" style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#5E8E3E", borderRadius: 6, padding: "1px 7px" }}>↑ SHOPIFY</span>)}
                     {r.staged && !r.pushed && <span title="Đã tạo bản nháp trong Manage Products · Shopify — hoàn thiện rồi bấm Push bên đó để tạo trên Shopify" style={{ fontSize: 10, fontWeight: 800, color: "#8A5A00", background: "#FCEFCB", border: "1px solid #F0D897", borderRadius: 6, padding: "1px 7px" }}>◷ STAGED</span>}
+                    {/* v423 · badge ShopBase — mirror của ↑SHOPIFY: xanh SB khi đã push, xanh nhạt khi mới stage; click nhảy sang đúng dòng */}
+                    {r.shopbaseListing && (r.shopbaseListing.pushed
+                      ? <a href={`/shopbase-products?pid=${encodeURIComponent(r.shopbaseListing.id)}`} target="_blank" rel="noreferrer"
+                          title={`View in Manage Products · ShopBase: ${r.shopbaseListing.title}`}
+                          style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: "#2F6BFF", borderRadius: 6, padding: "1px 7px", textDecoration: "none", cursor: "pointer" }}>↑ SHOPBASE</a>
+                      : <a href={`/shopbase-products?pid=${encodeURIComponent(r.shopbaseListing.id)}`} target="_blank" rel="noreferrer"
+                          title="Đã tạo bản nháp trong Manage Products · ShopBase — hoàn thiện rồi bấm Push bên đó để tạo trên ShopBase"
+                          style={{ fontSize: 10, fontWeight: 800, color: "#1D4ED8", background: "#E3ECFF", border: "1px solid #BDD2FF", borderRadius: 6, padding: "1px 7px", textDecoration: "none", cursor: "pointer" }}>◷ SB STAGED</a>)}
                   </div>
                   {/* v276 · Product ID để dán nhanh (attach video, tra cứu). Click = copy.
                       LƯU Ý: attach video ở Video Library dùng ID của bản SHOPIFY — nếu đã ↑SHOPIFY thì copy ID ở đó. */}

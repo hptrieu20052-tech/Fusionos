@@ -38,6 +38,9 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   const [editId, setEditId] = useState<string | null>(null); // Card Detail modal
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
+  // v423 · ?pid= — badge ↑SHOPBASE bên Manage Products · Etsy nhảy về ĐÚNG 1 dòng theo id local
+  const [pidFilter, setPidFilter] = useState(() => { if (typeof window === "undefined") return "";
+    try { return new URLSearchParams(window.location.search).get("pid") ?? ""; } catch { return ""; } });
 
   // ── Bulk selection + actions (qua ShopBase API) ──────────────────────────
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -93,6 +96,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   }, [rows]);
   const filtered = useMemo(() => {
     const list = rows.filter((r) => {
+      if (pidFilter && r.id !== pidFilter) return false;   // v423 · deep-link 1 dòng
       if (fStore && r.storeId !== fStore) return false;
       if (fSeller && r.createdBy !== fSeller) return false;   // v411 · lọc theo người tạo
       if (fTemplate && r.templateId !== fTemplate) return false;
@@ -105,7 +109,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
     });
     if (sortOrders) list.sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0));
     return list;
-  }, [rows, fStore, fSeller, fType, fStatus, fCollection, fTemplate, q, sortOrders]);
+  }, [rows, pidFilter, fStore, fSeller, fType, fStatus, fCollection, fTemplate, q, sortOrders]);
 
   // Phân trang 20/trang; reset về trang 1 khi đổi filter/sort.
   useEffect(() => { setPage(1); }, [q, fStore, fSeller, fType, fStatus, fCollection, fTemplate, sortOrders]);
@@ -320,7 +324,15 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
         </div>
       )}
 
-      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", margin: "0 4px 10px" }}>{filtered.length} products{loading ? " · loading…" : ""}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", margin: "0 4px 10px", display: "flex", alignItems: "center", gap: 10 }}>
+        {filtered.length} products{loading ? " · loading…" : ""}
+        {pidFilter && (
+          <button onClick={() => { setPidFilter(""); try { window.history.replaceState(null, "", window.location.pathname); } catch {} }}
+            style={{ border: "1px solid #BDD2FF", background: "#E3ECFF", color: "#1D4ED8", borderRadius: 999, padding: "3px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+            Đang xem 1 listing từ Etsy — bấm để xem tất cả ×
+          </button>
+        )}
+      </div>
 
       {/* Table */}
       <div style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 14, overflow: "hidden" }}>
