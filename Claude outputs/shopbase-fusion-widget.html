@@ -67,16 +67,25 @@
     return (cfg.countries || {})[key] || cfg.intl || [10, 30];
   }
 
+  function log() { try { console.log.apply(console, ["[FUSION]"].concat([].slice.call(arguments))); } catch (e) {} }
   function findBuyBox() {
+    // Nhận cả theme cũ lẫn Website Builder (class wb-*) — quét theo text nút nếu class lạ.
     var btn = document.querySelector(
-      'button[name="add"], .btn-add-cart, .btn-addtocart, [class*="add-to-cart"], [class*="add_to_cart"], .product-form button[type="submit"], form[action*="/cart"] button'
+      'button[name="add"], .btn-add-cart, .btn-addtocart, [class*="add-to-cart"], [class*="add_to_cart"], [class*="add-cart"], [class*="addcart"], [class*="AddToCart"], [data-testid*="add-to-cart"], .product-form button[type="submit"], form[action*="/cart"] button'
     );
+    if (!btn) {
+      var all = document.querySelectorAll("button");
+      for (var i = 0; i < all.length; i++) {
+        var t = (all[i].textContent || "").trim().toLowerCase();
+        if (t === "add to cart" || t === "add to bag" || t.indexOf("add to cart") === 0) { btn = all[i]; break; }
+      }
+    }
     var form = btn ? btn.closest("form") : null;
     if (!form) form = document.querySelector('form[action*="/cart"], .product-form form, form.product-form');
     return { form: form, btn: btn };
   }
   function findDescription() {
-    return document.querySelector('.product__description, .product-description, [class*="product"][class*="description"], .prod-desc, #product-description');
+    return document.querySelector('.product__description, .product-description, [class*="product"][class*="description"], [class*="wb-"][class*="description"], .prod-desc, #product-description');
   }
   // Khối text tĩnh "🚚 Estimated delivery" trong mô tả (fallback khi chưa cài widget) → ẩn đi.
   function hideFallbackText() {
@@ -93,7 +102,7 @@
   function renderCustomize(fields) {
     if (!fields || !fields.length || document.querySelector(".fcz-wrap")) return;
     var target = findBuyBox();
-    if (!target.form && !target.btn) return;
+    if (!target.form && !target.btn) { log("customize: add-to-cart button/form not found yet"); return; }
     var wrap = document.createElement("div");
     wrap.className = "fcz-wrap";
     fields.slice(0, 5).forEach(function (f) {
@@ -173,7 +182,8 @@
     if (document.querySelector(".fsd-wrap")) return;
     var anchor = findDescription();
     if (!anchor) { var bb = findBuyBox(); anchor = bb.btn ? bb.btn.parentNode : bb.form; }
-    if (!anchor) return;
+    if (!anchor) { var h1 = document.querySelector("h1"); anchor = h1 ? h1.parentNode : null; }
+    if (!anchor) { log("delivery: no anchor found (description/buybox/h1 all missing)"); return; }
     var wrap = document.createElement("div");
     wrap.className = "fsd-wrap";
     var sel = document.createElement("select");
@@ -218,14 +228,17 @@
     hideFallbackText();
     if (!fetched) {
       fetched = true;
+      log("boot: handle =", m[1]);
       fetch(FUSION_BASE + "/api/widget/shopbase?handle=" + encodeURIComponent(m[1].toLowerCase()))
         .then(function (r) { return r.json(); })
         .then(function (j) {
           cfgCache = j && j.ok ? j : {};
+          log("config loaded:", JSON.stringify({ delivery: !!cfgCache.delivery, customize: (cfgCache.customize || []).length }));
           renderDelivery((cfgCache.delivery) || DEFAULT_DELIVERY);
           renderCustomize(cfgCache.customize || []);
+          log("rendered:", JSON.stringify({ delivery: !!document.querySelector(".fsd-wrap"), customize: !!document.querySelector(".fcz-wrap") }));
         })
-        .catch(function () { cfgCache = {}; renderDelivery(DEFAULT_DELIVERY); });
+        .catch(function (e) { log("config fetch FAILED:", String(e)); cfgCache = {}; renderDelivery(DEFAULT_DELIVERY); });
     } else if (cfgCache) {
       renderDelivery((cfgCache.delivery) || DEFAULT_DELIVERY);
       renderCustomize(cfgCache.customize || []);

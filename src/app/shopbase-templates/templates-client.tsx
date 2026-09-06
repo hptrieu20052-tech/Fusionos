@@ -26,6 +26,9 @@ type Draft = {
   shipCountries: Record<string, [number | null, number | null]>;
   // v407 · Customize (buyer inputs) — Color/tên khắc... khách tự chọn, KHÔNG ăn variants
   personalization: PQ[];
+  // v410 · nội dung 2 tab accordion trên trang sản phẩm (widget đổ vào)
+  shippingInfo: string;
+  returnWarranty: string;
 };
 type PQ = { type: "text" | "dropdown"; label: string; required: boolean; options: string[]; maxChars: number };
 type Tpl = Draft & { updatedAt?: string };
@@ -59,7 +62,7 @@ const normPQ = (v: unknown): PQ[] => (Array.isArray(v) ? v : []).map((x) => {
   const q = x as Partial<PQ>;
   return { type: q?.type === "dropdown" ? "dropdown" as const : "text" as const, label: String(q?.label ?? ""), required: !!q?.required, options: Array.isArray(q?.options) ? q!.options!.map(String) : [], maxChars: Number(q?.maxChars) || 100 };
 }).slice(0, 5);
-const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", thumbUrl: "", options: [], variants: [], collections: [], status: "DRAFT", productType: "", vendor: "", description: "", personalization: [], ...DEFAULT_SHIP });
+const emptyDraft = (storeId: string): Draft => ({ storeId, name: "", thumbUrl: "", options: [], variants: [], collections: [], status: "DRAFT", productType: "", vendor: "", description: "", personalization: [], shippingInfo: "", returnWarranty: "", ...DEFAULT_SHIP });
 
 export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] }) {
   const confirm = useConfirm();
@@ -103,6 +106,8 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
     shipCutoffHour: t.shipCutoffHour ?? null,
     shipCountries: (t.shipCountries && typeof t.shipCountries === "object") ? t.shipCountries : {},
     personalization: normPQ(t.personalization),
+    shippingInfo: t.shippingInfo ?? "",
+    returnWarranty: t.returnWarranty ?? "",
   });
 
   // From ShopBase product — copy options/variants/giá từ 1 sản phẩm đã sync.
@@ -133,7 +138,7 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
         collections: p.collections ?? [],
         status: "DRAFT", productType: p.productType ?? "", vendor: p.vendor ?? "",
         description: typeof p.description === "string" ? p.description : "",
-        personalization: [],
+        personalization: [], shippingInfo: "", returnWarranty: "",
         ...DEFAULT_SHIP,
       };
       setDraft(d); setOptTexts(d.options.map((o) => o.values.join(", ")));
@@ -325,6 +330,22 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
                 placeholder={"Standard description for this product type (HTML or plain text).\nIf filled, staged drafts use THIS instead of the source listing's description."}
                 style={{ ...ctl, width: "100%", minHeight: 130, resize: "vertical", fontFamily: "inherit" }} />
               <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Leave empty to keep the source listing&apos;s description when pushing from Etsy/TikTok.</div>
+            </div>
+
+            {/* v410 · INFO TABS — nội dung 2 tab accordion trên trang sản phẩm (SHIPPING /
+                RETURN & WARRANTY). Widget tìm đúng heading trên theme và đổ nội dung này vào.
+                Để trống = giữ nội dung mặc định của theme. */}
+            <div style={{ border: "1px solid #DCE9F5", background: "#F7FBFF", borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Info tabs · product page accordions</div>
+              <label style={lab}>Shipping</label>
+              <textarea value={draft.shippingInfo} onChange={(e) => setD({ shippingInfo: e.target.value })}
+                placeholder={"Processing time: 2-4 business days.\nUS shipping: 4-8 business days with tracking.\nFree shipping on all US orders."}
+                style={{ ...ctl, width: "100%", minHeight: 90, resize: "vertical", fontFamily: "inherit" }} />
+              <label style={{ ...lab, marginTop: 10 }}>Return &amp; Warranty</label>
+              <textarea value={draft.returnWarranty} onChange={(e) => setD({ returnWarranty: e.target.value })}
+                placeholder={"If you're not 100% satisfied, let us know and we'll make it right.\nReturns accepted within 30 days of delivery for non-personalized items…"}
+                style={{ ...ctl, width: "100%", minHeight: 90, resize: "vertical", fontFamily: "inherit" }} />
+              <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Leave empty to keep the theme&apos;s default tab content.</div>
             </div>
 
             {/* v406 · ESTIMATED DELIVERY — dữ liệu nhúng ẩn vào cuối mô tả lúc stage; widget trên

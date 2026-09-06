@@ -29,6 +29,8 @@ type TplBody = {
   shipCutoffHour?: number | null;
   shipCountries?: Record<string, unknown>;   // { ca:[6,12], gb:[7,14], au:[8,16], de:[7,14] }
   personalization?: unknown;                 // v407 · [{ type, label, required, options[], maxChars }]
+  shippingInfo?: string;                     // v410 · tab SHIPPING trên trang sản phẩm
+  returnWarranty?: string;                   // v410 · tab RETURN & WARRANTY
 };
 
 // v407 · Customize (buyer inputs): text | dropdown, ≤5 câu, dropdown ≤50 lựa chọn (Color 17 màu thoải mái).
@@ -139,6 +141,8 @@ function payloadOf(b: TplBody) {
       };
     })(),
     personalization: clampPersonalization(b.personalization),
+    shippingInfo: String(b.shippingInfo ?? "").slice(0, 6000).trim() || null,
+    returnWarranty: String(b.returnWarranty ?? "").slice(0, 6000).trim() || null,
     updatedAt: new Date(),
   };
 }

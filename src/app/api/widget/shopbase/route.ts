@@ -67,5 +67,12 @@ export async function GET(req: NextRequest) {
     .filter((q) => q.label && (q.type === "text" || q.options.length))
     .slice(0, 5);
 
-  return NextResponse.json({ ok: true, delivery, customize }, { headers: CORS });
+  // v410 · Nội dung 2 tab accordion — plain text, xuống dòng thành <br> để widget đổ thẳng vào panel.
+  const nl2br = (v: string | null) => { const t = String(v ?? "").trim(); return t ? t.replace(/\r\n/g, "\n").replace(/\n/g, "<br>") : null; };
+  const tabs = {
+    shipping: nl2br(tpl.shippingInfo),
+    returnWarranty: nl2br(tpl.returnWarranty),
+  };
+
+  return NextResponse.json({ ok: true, delivery, customize, tabs }, { headers: CORS });
 }
