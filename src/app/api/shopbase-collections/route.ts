@@ -10,15 +10,18 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * v405 · SHOPBASE COLLECTIONS — quản lý collection ngay trong FUSION (REST clone Shopify legacy):
- *   GET  ?store=<uuid>                    → danh sách collection (custom + smart) của store
- *   GET  ?store=<uuid>&collection=<id>    → sản phẩm trong collection (collects + map với bản sync local)
+ * v405b · SHOPBASE COLLECTIONS — quản lý collection ngay trong FUSION.
+ *
+ * ShopBase clone REST của Shopify nhưng KHÔNG mở đủ path legacy: custom_collections.json có thể
+ * trả 404 "no service available" (API gateway không route resource đó). Không có docs công khai
+ * cho collection, nên route này TỰ DÒ endpoint: thử lần lượt các path ứng viên, dùng path nào
+ * sống; tất cả chết → trả lỗi kèm status từng path (đọc được ngay trên UI để biết store mở gì).
+ *
+ *   GET  ?store=<uuid>                    → danh sách collection
+ *   GET  ?store=<uuid>&collection=<id>    → sản phẩm trong collection
  *   POST { storeId, action: "create", title }
  *   POST { storeId, action: "delete", collectionId }
- *   POST { storeId, action: "add"|"remove", collectionId, collectionTitle, productIds: string[] }
- *        productIds = id SỐ ShopBase. add = POST collects.json từng sản phẩm; remove = tra collect id rồi DELETE.
- * Smart collection (tự gom theo rule) không add/remove tay được — UI chỉ cho thao tác với custom.
- * Sau add/remove: cập nhật luôn jsonb collections của bản ghi local để Manage Products hiển thị đúng.
+ *   POST { storeId, action: "add"|"remove", collectionId, collectionTitle, productIds }
  */
 const strv = (v: unknown) => (v == null ? "" : String(v)).trim();
 
@@ -33,17 +36,72 @@ async function loadStore(storeId: string, session: NonNullable<Awaited<ReturnTyp
 }
 
 type Col = { id: string; title: string; handle: string; published: boolean; kind: "custom" | "smart" };
-function normCol(c: Record<string, unknown>, kind: "custom" | "smart"): Col {
-  return { id: strv(c.id), title: strv(c.title), handle: strv(c.handle), published: !!strv(c.published_at), kind };
+
+// Collection JSON của ShopBase có thể mang cờ smart theo nhiều kiểu — đoán phòng thủ.
+function colKind(c: Record<string, unknown>, hint?: "custom" | "smart"): "custom" | "smart" {
+  if (hint) return hint;
+  if (Array.isArray(c.rules) && c.rules.length) return "smart";
+  if (c.is_smart === true || strv(c.collection_type) === "smart") return "smart";
+  return "custom";
+}
+function normCol(c: Record<string, unknown>, hint?: "custom" | "smart"): Col {
+  return { id: strv(c.id), title: strv(c.title), handle: strv(c.handle), published: c.published === true || !!strv(c.published_at), kind: colKind(c, hint) };
 }
 
-// Kéo toàn bộ collects của 1 collection (paginate since_id, trần trang chống chạy vô tận).
-async function fetchCollects(cred: ShopBaseCred, collectionId: string): Promise<{ collectId: string; productId: string }[]> {
+// Thử 1 path — trả data hoặc lỗi gọn (để gom bảng status).
+async function tryPath<T>(cred: ShopBaseCred, path: string, pick: (j: Record<string, unknown>) => T | null, init?: RequestInit): Promise<{ ok: true; data: T } | { ok: false; err: string }> {
+  try {
+    const j = await shopbaseApi(cred, path, init);
+    const data = pick(j);
+    if (data == null) return { ok: false, err: "unexpected shape: " + Object.keys(j).slice(0, 5).join(",") };
+    return { ok: true, data };
+  } catch (e) {
+    const m = String((e as Error)?.message ?? e);
+    const code = /HTTP (\d{3})/.exec(m)?.[1] ?? "ERR";
+    return { ok: false, err: code };
+  }
+}
+
+const arr = (j: Record<string, unknown>, key: string) => (Array.isArray(j[key]) ? (j[key] as Record<string, unknown>[]) : null);
+
+/**
+ * Danh sách collection — dò theo thứ tự:
+ *   1. custom_collections.json (+ smart_collections.json)  — chuẩn Shopify legacy
+ *   2. collections.json                                    — gộp chung, đoán kind theo field
+ * Trả kèm "flavor" để create/delete dùng đúng họ path, và probe log khi tất cả chết.
+ */
+async function listCollections(cred: ShopBaseCred): Promise<{ ok: true; collections: Col[]; flavor: "legacy" | "unified" } | { ok: false; error: string }> {
+  const probes: string[] = [];
+
+  const legacy = await tryPath(cred, "custom_collections.json?limit=250", (j) => arr(j, "custom_collections"));
+  if (legacy.ok) {
+    const out = legacy.data.map((c) => normCol(c, "custom"));
+    const smart = await tryPath(cred, "smart_collections.json?limit=250", (j) => arr(j, "smart_collections"));
+    if (smart.ok) out.push(...smart.data.map((c) => normCol(c, "smart")));
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return { ok: true, collections: out, flavor: "legacy" };
+  }
+  probes.push(`custom_collections.json → ${legacy.err}`);
+
+  const unified = await tryPath(cred, "collections.json?limit=250", (j) => arr(j, "collections"));
+  if (unified.ok) {
+    const out = unified.data.map((c) => normCol(c));
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return { ok: true, collections: out, flavor: "unified" };
+  }
+  probes.push(`collections.json → ${unified.err}`);
+
+  return { ok: false, error: "ShopBase collections API not reachable on this store · " + probes.join(" · ") };
+}
+
+// Kéo collects của 1 collection (paginate since_id). Path collects.json cũng có thể chết → err.
+async function fetchCollects(cred: ShopBaseCred, collectionId: string): Promise<{ ok: true; collects: { collectId: string; productId: string }[] } | { ok: false; err: string }> {
   const out: { collectId: string; productId: string }[] = [];
   let sinceId = "0";
   for (let i = 0; i < 8; i++) {
-    const j = await shopbaseApi(cred, `collects.json?collection_id=${collectionId}&limit=250&since_id=${sinceId}`);
-    const batch = (Array.isArray(j.collects) ? j.collects : []) as Record<string, unknown>[];
+    const r = await tryPath(cred, `collects.json?collection_id=${collectionId}&limit=250&since_id=${sinceId}`, (j) => arr(j, "collects"));
+    if (!r.ok) return i === 0 ? { ok: false, err: r.err } : { ok: true, collects: out };
+    const batch = r.data;
     if (!batch.length) break;
     for (const c of batch) out.push({ collectId: strv(c.id), productId: strv(c.product_id) });
     const last = strv(batch[batch.length - 1]?.id);
@@ -51,7 +109,25 @@ async function fetchCollects(cred: ShopBaseCred, collectionId: string): Promise<
     sinceId = last;
     if (batch.length < 250) break;
   }
-  return out;
+  return { ok: true, collects: out };
+}
+
+// Fallback đọc sản phẩm trong collection khi collects.json chết: products.json?collection_id=
+async function fetchCollectionProductIds(cred: ShopBaseCred, collectionId: string): Promise<{ ok: true; productIds: string[] } | { ok: false; err: string }> {
+  const out: string[] = [];
+  let sinceId = "0";
+  for (let i = 0; i < 8; i++) {
+    const r = await tryPath(cred, `products.json?collection_id=${collectionId}&limit=250&since_id=${sinceId}`, (j) => arr(j, "products"));
+    if (!r.ok) return i === 0 ? { ok: false, err: r.err } : { ok: true, productIds: out };
+    const batch = r.data;
+    if (!batch.length) break;
+    for (const p of batch) { const id = strv(p.id); if (id) out.push(id); }
+    const last = strv(batch[batch.length - 1]?.id);
+    if (!last || last === sinceId) break;
+    sinceId = last;
+    if (batch.length < 250) break;
+  }
+  return { ok: true, productIds: out };
 }
 
 // Cập nhật jsonb collections của bản ghi local (add/remove) — sai lệch không chặn response.
@@ -81,48 +157,42 @@ export async function GET(req: NextRequest) {
 
   // ── Chi tiết: sản phẩm trong 1 collection ──────────────────────────────
   if (collectionId) {
-    try {
-      const collects = await fetchCollects(ctx.cred, collectionId);
-      const pids = collects.map((c) => c.productId).filter(Boolean);
-      const locals = pids.length
-        ? await db.select({
-            id: schema.shopbaseProducts.id, pid: schema.shopbaseProducts.shopbaseProductId,
-            title: schema.shopbaseProducts.title, status: schema.shopbaseProducts.status,
-            images: schema.shopbaseProducts.images, onlineStoreUrl: schema.shopbaseProducts.onlineStoreUrl,
-          }).from(schema.shopbaseProducts)
-            .where(and(eq(schema.shopbaseProducts.storeId, storeId), inArray(schema.shopbaseProducts.shopbaseProductId, pids)))
-        : [];
-      const byPid = new Map(locals.map((l) => [l.pid, l]));
-      const products = collects.map((c) => {
-        const l = byPid.get(c.productId);
-        const imgs = (Array.isArray(l?.images) ? l!.images : []) as { src?: string; position?: number }[];
-        const thumb = imgs.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).map((i) => strv(i?.src)).find((s) => /^https?:\/\//i.test(s)) ?? null;
-        return {
-          productId: c.productId, collectId: c.collectId,
-          localId: l?.id ?? null, title: l?.title ?? `#${c.productId}`,
-          status: l?.status ?? "—", thumb, onlineStoreUrl: l?.onlineStoreUrl ?? null,
-        };
-      });
-      return NextResponse.json({ ok: true, products });
-    } catch (e) {
-      return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 250) });
+    // Ưu tiên collects (có collect id để remove); chết thì fallback products.json?collection_id=.
+    let entries: { collectId: string; productId: string }[] = [];
+    const viaCollects = await fetchCollects(ctx.cred, collectionId);
+    if (viaCollects.ok) entries = viaCollects.collects;
+    else {
+      const viaProducts = await fetchCollectionProductIds(ctx.cred, collectionId);
+      if (!viaProducts.ok) return NextResponse.json({ ok: false, error: `Cannot read collection products · collects.json → ${viaCollects.err} · products.json?collection_id → ${viaProducts.err}` });
+      entries = viaProducts.productIds.map((pid) => ({ collectId: "", productId: pid }));
     }
+    const pids = entries.map((c) => c.productId).filter(Boolean);
+    const locals = pids.length
+      ? await db.select({
+          id: schema.shopbaseProducts.id, pid: schema.shopbaseProducts.shopbaseProductId,
+          title: schema.shopbaseProducts.title, status: schema.shopbaseProducts.status,
+          images: schema.shopbaseProducts.images, onlineStoreUrl: schema.shopbaseProducts.onlineStoreUrl,
+        }).from(schema.shopbaseProducts)
+          .where(and(eq(schema.shopbaseProducts.storeId, storeId), inArray(schema.shopbaseProducts.shopbaseProductId, pids)))
+      : [];
+    const byPid = new Map(locals.map((l) => [l.pid, l]));
+    const products = entries.map((c) => {
+      const l = byPid.get(c.productId);
+      const imgs = (Array.isArray(l?.images) ? l!.images : []) as { src?: string; position?: number }[];
+      const thumb = imgs.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).map((i) => strv(i?.src)).find((s) => /^https?:\/\//i.test(s)) ?? null;
+      return {
+        productId: c.productId, collectId: c.collectId,
+        localId: l?.id ?? null, title: l?.title ?? `#${c.productId}`,
+        status: l?.status ?? "—", thumb, onlineStoreUrl: l?.onlineStoreUrl ?? null,
+      };
+    });
+    return NextResponse.json({ ok: true, products });
   }
 
-  // ── Danh sách collection (custom + smart) ──────────────────────────────
-  const collections: Col[] = [];
-  try {
-    const j = await shopbaseApi(ctx.cred, "custom_collections.json?limit=250");
-    for (const c of (Array.isArray(j.custom_collections) ? j.custom_collections : []) as Record<string, unknown>[]) collections.push(normCol(c, "custom"));
-  } catch (e) {
-    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 250) });
-  }
-  try {
-    const j = await shopbaseApi(ctx.cred, "smart_collections.json?limit=250");
-    for (const c of (Array.isArray(j.smart_collections) ? j.smart_collections : []) as Record<string, unknown>[]) collections.push(normCol(c, "smart"));
-  } catch { /* store không có smart collections / endpoint không hỗ trợ → bỏ qua */ }
-  collections.sort((a, b) => a.title.localeCompare(b.title));
-  return NextResponse.json({ ok: true, collections });
+  // ── Danh sách collection ───────────────────────────────────────────────
+  const list = await listCollections(ctx.cred);
+  if (!list.ok) return NextResponse.json({ ok: false, error: list.error });
+  return NextResponse.json({ ok: true, collections: list.collections, flavor: list.flavor });
 }
 
 export async function POST(req: NextRequest) {
@@ -139,16 +209,25 @@ export async function POST(req: NextRequest) {
     if (action === "create") {
       const title = strv(b?.title).slice(0, 200);
       if (!title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
-      const j = await shopbaseApi(ctx.cred, "custom_collections.json", { method: "POST", body: JSON.stringify({ custom_collection: { title } }) });
-      const c = (j.custom_collection ?? {}) as Record<string, unknown>;
-      return NextResponse.json({ ok: true, collection: normCol(c, "custom") });
+      // Dò path create: custom_collections.json → collections.json.
+      const viaLegacy = await tryPath(ctx.cred, "custom_collections.json", (j) => (j.custom_collection && typeof j.custom_collection === "object" ? j.custom_collection as Record<string, unknown> : null),
+        { method: "POST", body: JSON.stringify({ custom_collection: { title } }) });
+      if (viaLegacy.ok) return NextResponse.json({ ok: true, collection: normCol(viaLegacy.data, "custom") });
+      const viaUnified = await tryPath(ctx.cred, "collections.json", (j) => (j.collection && typeof j.collection === "object" ? j.collection as Record<string, unknown> : null),
+        { method: "POST", body: JSON.stringify({ collection: { title } }) });
+      if (viaUnified.ok) return NextResponse.json({ ok: true, collection: normCol(viaUnified.data, "custom") });
+      return NextResponse.json({ ok: false, error: `Create failed · custom_collections.json → ${viaLegacy.err} · collections.json → ${viaUnified.err}` });
     }
 
     const collectionId = strv(b?.collectionId);
     if (!collectionId) return NextResponse.json({ ok: false, error: "collectionId required" }, { status: 400 });
 
     if (action === "delete") {
-      await shopbaseApi(ctx.cred, `custom_collections/${collectionId}.json`, { method: "DELETE" });
+      const viaLegacy = await tryPath(ctx.cred, `custom_collections/${collectionId}.json`, () => ({}), { method: "DELETE" });
+      if (!viaLegacy.ok) {
+        const viaUnified = await tryPath(ctx.cred, `collections/${collectionId}.json`, () => ({}), { method: "DELETE" });
+        if (!viaUnified.ok) return NextResponse.json({ ok: false, error: `Delete failed · custom_collections/{id} → ${viaLegacy.err} · collections/{id} → ${viaUnified.err}` });
+      }
       // Gỡ collection khỏi jsonb local của mọi sản phẩm đang mang nó.
       try {
         const rows = await db.select({ id: schema.shopbaseProducts.id, collections: schema.shopbaseProducts.collections })
@@ -181,8 +260,9 @@ export async function POST(req: NextRequest) {
           }
         }
       } else {
-        const collects = await fetchCollects(ctx.cred, collectionId);
-        const collectByPid = new Map(collects.map((c) => [c.productId, c.collectId]));
+        const viaCollects = await fetchCollects(ctx.cred, collectionId);
+        if (!viaCollects.ok) return NextResponse.json({ ok: false, error: `Remove needs collects.json which this store does not expose (→ ${viaCollects.err})` });
+        const collectByPid = new Map(viaCollects.collects.map((c) => [c.productId, c.collectId]));
         for (const pid of productIds) {
           const cid = collectByPid.get(pid);
           if (!cid) { done++; continue; }   // không còn trong collection = coi như xong
