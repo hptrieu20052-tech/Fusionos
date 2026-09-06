@@ -104,7 +104,8 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
       const j = await fetch("/api/shopbase-products/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, ids, tags }) }).then((r) => r.json());
       if (j.ok) {
         const failN = j.failed?.length ?? 0;
-        flash(`✓ ${j.done} sản phẩm đã xử lý${failN ? ` · ${failN} lỗi` : ""}`, failN === 0);
+        const firstErr = failN ? String(j.failed[0]?.error ?? "") : "";
+        flash(`✓ ${j.done} sản phẩm đã xử lý${failN ? ` · ${failN} lỗi: ${firstErr}` : ""}`, failN === 0);
         clearSel();
         await load();
       } else flash("✗ " + (j.error ?? "action failed"), false);

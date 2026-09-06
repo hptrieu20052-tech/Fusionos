@@ -109,7 +109,16 @@ export async function POST(req: NextRequest) {
           await db.delete(schema.shopbaseProducts).where(eq(schema.shopbaseProducts.id, r.id));
         } else if (action === "publish" || action === "unpublish") {
           const published = action === "publish";
-          await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "PUT", body: JSON.stringify({ product: { id: pid, published } }) });
+          // v407b · Gửi CẢ published lẫn published_at — một số bản ShopBase chỉ ăn published_at
+          // (mirror Shopify legacy). Đối chiếu response: published_at còn null sau khi publish = thất bại thật.
+          const resp = await shopbaseApi(cred!, `products/${r.pid}.json`, {
+            method: "PUT",
+            body: JSON.stringify({ product: { id: pid, published, published_at: published ? new Date().toISOString() : null } }),
+          });
+          const rp = (resp?.product ?? null) as Record<string, unknown> | null;
+          const liveAt = rp ? String(rp.published_at ?? "").trim() : "";
+          const ok = rp ? (published ? !!liveAt || rp.published === true : !liveAt || rp.published === false) : true;
+          if (!ok) throw new Error(`ShopBase accepted the update but published_at is still ${liveAt || "null"} — check the product in ShopBase admin`);
           await db.update(schema.shopbaseProducts).set({ status: published ? "ACTIVE" : "DRAFT", updatedAt: new Date() }).where(eq(schema.shopbaseProducts.id, r.id));
         } else {
           const next = action === "addTags" ? mergeTags(r.tags ?? "", tags) : stripTags(r.tags ?? "", tags);
