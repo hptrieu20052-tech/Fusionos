@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * Dùng cho flow Push Etsy/TikTok → ShopBase (stage bản nháp, options/variants/giá theo template;
  * collections áp lúc Push bằng POST collects.json).
  */
-type TplOption = { name: string; values: string[] };
+type TplOption = { name: string; values: string[]; priceVaries?: boolean };   // v422 · priceVaries=false → giá KHÔNG phụ thuộc option này (vd Color)
 type TplVariant = { options: Record<string, string>; price: string; compareAtPrice?: string | null; sku?: string };
 type TplCollection = { id: string; title: string };
 type TplBody = {
@@ -93,6 +93,7 @@ const clampOptions = (v: unknown): TplOption[] =>
   (Array.isArray(v) ? v : []).slice(0, 3).map((o) => ({
     name: String((o as TplOption)?.name ?? "").trim().slice(0, 60),
     values: Array.isArray((o as TplOption)?.values) ? (o as TplOption).values.map((x) => String(x).trim()).filter(Boolean).slice(0, 100) : [],
+    priceVaries: (o as TplOption)?.priceVaries !== false,   // v422 · mặc định true (giá theo option)
   })).filter((o) => o.name && o.values.length);
 
 const clampVariants = (v: unknown): TplVariant[] =>

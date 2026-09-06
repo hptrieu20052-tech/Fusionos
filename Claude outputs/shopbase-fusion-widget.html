@@ -11,10 +11,16 @@
   → XOÁ 2 đoạn widget cũ (nếu đã dán) → dán TOÀN BỘ file này vào ô HEAD → Save.
 ============================================================================ -->
 <style>
-  .fsd-wrap{margin:18px 0;font-family:inherit;max-width:620px;border:1px solid #E6EAF3;border-radius:14px;padding:16px 18px 14px;background:#fff}
-  .fsd-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px}
-  .fsd-title{font-weight:700;font-size:15px;margin:0}
-  .fsd-select{width:auto;min-width:150px;padding:7px 30px 7px 10px;border:1px solid #d9dee7;border-radius:8px;font-size:13px;background:#fff;appearance:auto;color:#333}
+  .fsd-wrap{font-family:inherit;border-bottom:1px solid #e8e8ee;padding:6px 0 18px;background:transparent}
+  .fsd-acc-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:16px 0 12px;user-select:none}
+  .fsd-acc-title{font-weight:700;font-size:15.5px;letter-spacing:.04em;text-transform:uppercase;color:#0C0A1F}
+  .fsd-acc-chev{transition:transform .18s;color:#0C0A1F}
+  .fsd-wrap.fsd-closed .fsd-acc-chev{transform:rotate(-180deg)}
+  .fsd-wrap.fsd-closed .fsd-acc-body{display:none}
+  .fsd-wrap.fsd-closed{padding-bottom:6px}
+  .fsd-head{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+  .fsd-title{font-weight:700;font-size:15px;margin:0;display:flex;align-items:center;gap:6px}
+  .fsd-select{width:auto;min-width:150px;padding:6px 28px 6px 10px;border:1px solid #d9dee7;border-radius:8px;font-size:14.5px;font-weight:700;background:#fff;appearance:auto;color:#0C0A1F;font-family:inherit}
   .fsd-line{font-size:14px;margin:2px 0 16px;color:#333}
   .fsd-line b{font-weight:700;color:#111}
   .fsd-steps{display:flex;align-items:flex-start;position:relative;margin:4px 0 2px}
@@ -36,6 +42,11 @@
   .fcz-pill{border:1px solid #d9dee7;background:#fff;color:#1a1a2e;border-radius:999px;padding:10px 18px;font-size:14px;font-family:inherit;cursor:pointer;line-height:1;transition:all .12s}
   .fcz-pill:hover{border-color:#9aa7bd}
   .fcz-pill.on{background:#1e1b4b;border-color:#1e1b4b;color:#fff;font-weight:600}
+  /* v422 · Bo tròn góc ảnh — mockup gallery trang sản phẩm + product card homepage/collection.
+     Áp cho mọi <img> của theme; radius tự giới hạn theo kích thước với ảnh nhỏ.
+     Cờ quốc gia trong widget có style inline riêng nên không bị ảnh hưởng. */
+  img{border-radius:14px}
+  @media (max-width:480px){img{border-radius:10px}}
 </style>
 <script>
 (function () {
@@ -48,14 +59,18 @@
     countries: { ca: [6, 12], gb: [7, 14], au: [8, 16], de: [7, 14] }
   };
 
+  // Windows không render emoji cờ (hiện thành chữ "us") → dùng ảnh cờ flagcdn (~1KB, mọi OS đều hiện).
   var COUNTRY_META = [
-    { key: "us",   flag: "🇺🇸", label: "United States" },
-    { key: "ca",   flag: "🇨🇦", label: "Canada" },
-    { key: "gb",   flag: "🇬🇧", label: "United Kingdom" },
-    { key: "au",   flag: "🇦🇺", label: "Australia" },
-    { key: "de",   flag: "🇩🇪", label: "Germany" },
-    { key: "intl", flag: "🌍", label: "Rest of world" }
+    { key: "us",   iso: "us", label: "United States" },
+    { key: "ca",   iso: "ca", label: "Canada" },
+    { key: "gb",   iso: "gb", label: "United Kingdom" },
+    { key: "au",   iso: "au", label: "Australia" },
+    { key: "de",   iso: "de", label: "Germany" },
+    { key: "intl", iso: "un", label: "Rest of world" }
   ];
+  function flagImg(iso) {
+    return '<img src="https://flagcdn.com/w20/' + iso + '.png" srcset="https://flagcdn.com/w40/' + iso + '.png 2x" width="20" alt="" style="vertical-align:-2px;border-radius:2px;margin:0 2px">';
+  }
 
   function bd(from, n) {
     var d = new Date(from.getTime()), left = n;
@@ -97,6 +112,42 @@
     var form = btn ? btn.closest("form") : null;
     if (!form) form = document.querySelector('form[action*="/cart"], .product-form form, form.product-form');
     return { form: form, btn: btn };
+  }
+  // Tìm NGUYÊN KHỐI accordion info (chứa cả PRODUCT DETAILS + SHIPPING + RETURN) —
+  // chèn widget TRƯỚC cả khối (cùng cấp section) chứ không chen giữa các mục bên trong
+  // (chen giữa là React của theme so le danh sách → nhân bản như lần trước).
+  function findInfoSection() {
+    var heads = document.querySelectorAll("h1,h2,h3,h4,h5,h6,button,span,div,p,summary");
+    var head = null;
+    for (var i = 0; i < heads.length; i++) {
+      var t = (heads[i].textContent || "").trim();
+      if (t.length < 40 && /^product details$/i.test(t)) head = heads[i];   // match sâu nhất
+    }
+    if (!head || !isVisible(head)) return null;
+    // Leo lên tới element ĐẦU TIÊN có đủ cả 3 heading → đó là container accordion.
+    var node = head, container = null;
+    for (var up = 0; up < 8 && node; up++) {
+      var txt = (node.textContent || "").toLowerCase();
+      if (txt.indexOf("product details") !== -1 && txt.indexOf("shipping") !== -1 && txt.indexOf("return") !== -1) { container = node; break; }
+      node = node.parentElement;
+    }
+    if (!container) return null;
+    // Nếu cha chỉ là wrapper bọc đúng nội dung này thì leo thêm (ra tới section độc lập).
+    while (container.parentElement && container.parentElement !== document.body &&
+           (container.parentElement.textContent || "").trim() === (container.textContent || "").trim()) {
+      container = container.parentElement;
+    }
+    return container;
+  }
+  function findBuyNow() {
+    // Lấy nút Buy now CUỐI CÙNG đang hiển thị → widget nằm dưới nó, ngay trên PRODUCT DETAILS.
+    var all = document.querySelectorAll("button, a");
+    var hit = null;
+    for (var i = 0; i < all.length; i++) {
+      var t = (all[i].textContent || "").trim().toLowerCase();
+      if ((t === "buy now" || t === "buy it now") && isVisible(all[i])) hit = all[i];
+    }
+    return hit;
   }
   function findDescription() {
     return document.querySelector('.product__description, .product-description, [class*="product"][class*="description"], [class*="wb-"][class*="description"], .prod-desc, #product-description');
@@ -235,13 +286,39 @@
   // ── Delivery widget — timeline Ordered/Shipped/Delivered ──
   function renderDelivery(cfg) {
     if (document.querySelector(".fsd-wrap")) return;
-    var anchor = findDescription();
-    if (anchor && !isVisible(anchor)) anchor = null;
+    // Vị trí CHỐT: TRƯỚC nguyên khối accordion PRODUCT DETAILS (tức dưới toàn bộ khu mua hàng).
+    // Fallback: sau khối chứa Buy now → mô tả → buy box → h1.
+    var infoSec = findInfoSection();
+    var anchor = null, mode = "after";
+    if (infoSec) { anchor = infoSec; mode = "before"; }
+    if (!anchor) {
+      anchor = findBuyNow();
+      if (anchor) {
+        var node = anchor;
+        for (var up = 0; up < 6 && node.parentElement && node.parentElement !== document.body; up++) {
+          var pw = node.parentElement.getBoundingClientRect().width;
+          var nw = node.getBoundingClientRect().width;
+          if (pw > 0 && nw >= pw * 0.85) break;
+          node = node.parentElement;
+        }
+        anchor = node;
+      }
+    }
+    if (!anchor) { anchor = findDescription(); if (anchor && !isVisible(anchor)) anchor = null; }
     if (!anchor) { var bb = findBuyBox(); anchor = bb.btn ? bb.btn.parentNode : bb.form; }
     if (!anchor) { var h1 = document.querySelector("h1"); anchor = h1 ? h1.parentNode : null; }
-    if (!anchor) { log("delivery: no anchor found (description/buybox/h1 all missing)"); return; }
+    if (!anchor) { log("delivery: no anchor found (details/buynow/description/buybox/h1 all missing)"); return; }
     var wrap = document.createElement("div");
     wrap.className = "fsd-wrap";
+    // Accordion row đồng bộ theme: heading in hoa + chevron, bấm để xổ/bung bảng delivery.
+    var accHead = document.createElement("div");
+    accHead.className = "fsd-acc-head";
+    accHead.innerHTML = '<span class="fsd-acc-title">Estimated Delivery</span>' +
+      '<svg class="fsd-acc-chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></svg>';
+    accHead.addEventListener("click", function () { wrap.classList.toggle("fsd-closed"); });
+    var body = document.createElement("div");
+    body.className = "fsd-acc-body";
+    wrap.appendChild(accHead); wrap.appendChild(body);
     var head = document.createElement("div");
     head.className = "fsd-head";
     var title = document.createElement("p");
@@ -250,12 +327,12 @@
     sel.className = "fsd-select";
     COUNTRY_META.forEach(function (c) {
       var o = document.createElement("option");
-      o.value = c.key; o.textContent = c.flag + "  " + c.label;
+      o.value = c.key; o.textContent = c.label;   // option không nhét ảnh được → chỉ tên nước
       sel.appendChild(o);
     });
     head.appendChild(title); head.appendChild(sel);
     var info = document.createElement("div");
-    wrap.appendChild(head); wrap.appendChild(info);
+    body.appendChild(head); body.appendChild(info);
     var SVG_CART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
     var SVG_TRUCK = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 5.5A1.5 1.5 0 0 1 1.5 4h11A1.5 1.5 0 0 1 14 5.5V7h2.02c.44 0 .85.19 1.13.53l2.5 3c.22.27.35.61.35.96V15.5a1.5 1.5 0 0 1-1.5 1.5h-.55a2.75 2.75 0 0 1-5.4 0h-3.1a2.75 2.75 0 0 1-5.4 0H1.5A1.5 1.5 0 0 1 0 15.5v-10ZM14 9v3h4.6l-2.5-3H14ZM6.75 16.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z"/></svg>';
     var SVG_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
@@ -268,7 +345,7 @@
       var start = (cfg.cutoff != null && now.getHours() >= cfg.cutoff) ? bd(now, 1) : now;
       var shipA = bd(start, proc[0]), shipB = bd(start, proc[1]);
       var delA = bd(start, proc[0] + transit[0]), delB = bd(start, proc[1] + transit[1]);
-      title.innerHTML = 'Delivery to ' + meta.flag + ' <b>' + meta.label + '</b>';
+      title.innerHTML = 'Delivery to ' + flagImg(meta.iso);   // tên nước hiển thị trong chính select — không lặp
       info.innerHTML =
         '<p class="fsd-line">You’ll receive your package between <b>' + fmt(delA) + '</b> - <b>' + fmt(delB) + '</b></p>' +
         '<div class="fsd-steps"><div class="fsd-bar"></div>' +
@@ -279,7 +356,24 @@
     }
     sel.addEventListener("change", update);
     update();
-    anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+    if (mode === "before") anchor.parentNode.insertBefore(wrap, anchor);
+    else anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+    // Canh mép trái/phải THẲNG HÀNG với khối accordion của theme (theme có padding ngang
+    // riêng theo breakpoint — đo thực tế rồi bù margin, mọi cỡ màn hình đều thẳng).
+    function align() {
+      try {
+        if (!wrap.isConnected || !anchor.isConnected) return;
+        wrap.style.marginLeft = "0px"; wrap.style.marginRight = "0px";
+        var a = wrap.getBoundingClientRect(), b = anchor.getBoundingClientRect();
+        if (!a.width || !b.width) return;
+        wrap.style.marginLeft = (b.left - a.left) + "px";
+        wrap.style.marginRight = (a.right - b.right) + "px";
+      } catch (e) {}
+    }
+    align();
+    setTimeout(align, 300);   // đo lại sau khi font/ảnh load xong
+    var alignT;
+    window.addEventListener("resize", function () { clearTimeout(alignT); alignT = setTimeout(align, 150); });
   }
 
   var fetched = false, cfgCache = null;
@@ -313,10 +407,10 @@
   // Theme render trễ (SPA) → thử lại vài nhịp; dừng khi cả 2 widget đã gắn hoặc quá 20 lần.
   var tries = 0;
   var t = setInterval(function () {
+    if (++tries > 120) { clearInterval(t); return; }   // canh 60s — theme re-render nuốt widget thì vẽ lại
     var fcz = document.querySelector(".fcz-wrap");
     var done = document.querySelector(".fsd-wrap") && (!cfgCache || !(cfgCache.customize || []).length || (fcz && isVisible(fcz)));
-    if (done || ++tries > 20) { clearInterval(t); return; }
-    boot();
+    if (!done) boot();
   }, 500);
 })();
 </script>

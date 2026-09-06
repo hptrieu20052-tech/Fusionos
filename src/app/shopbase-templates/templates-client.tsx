@@ -10,7 +10,7 @@ import { ShopbaseLogo } from "@/components/shopbase-logo";
  * collections của template được áp lúc Push (POST collects).
  */
 type Store = { id: string; name: string };
-type Opt = { name: string; values: string[] };
+type Opt = { name: string; values: string[]; priceVaries?: boolean };   // v422 · priceVaries=false → giá KHÔNG theo option này (vd Color)
 type Vari = { options: Record<string, string>; price: string; compareAtPrice: string | null; sku: string };
 type Col = { id: string; title: string };
 type Draft = {
@@ -89,7 +89,8 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
     setStoreCols([]);
     try {
       const j = await fetch(`/api/shopbase-collections?store=${storeId}`).then((r) => r.json());
-      if (j.ok) setStoreCols((j.collections ?? []).map((c: { id: string; title: string }) => ({ id: c.id, title: c.title })));
+      // v417 · collection = TAG: dùng tag làm id — lúc Push, tag này được gắn thẳng vào sản phẩm.
+      if (j.ok) setStoreCols((j.collections ?? []).map((c: { id: string; tag?: string; title: string }) => ({ id: c.tag || c.id, title: c.title })));
     } catch { /* store chưa cấu hình API → picker trống, vẫn sửa được phần khác */ }
   }, []);
 
@@ -200,7 +201,19 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
     });
     setOptTexts((ts) => ts.filter((_, k) => k !== i));
   };
-  const setVariant = (i: number, patch: Partial<Vari>) => setDraft((d) => d ? { ...d, variants: d.variants.map((v, k) => k === i ? { ...v, ...patch } : v) } : d);
+  // v422 · "Prices vary for…" kiểu Etsy — lưới giá chỉ gồm option ĐƯỢC TICK; option bỏ tick
+  // (thường là Color) không cần nhập giá riêng: 1 dòng giá áp cho mọi biến thể cùng tổ hợp.
+  // draft.variants vẫn là cartesian ĐẦY ĐỦ (stage/push không đổi) — chỉ cách nhập gọn lại.
+  const comboMatch = (v: Vari, combo: Record<string, string>) => Object.entries(combo).every(([k, val]) => v.options[k] === val);
+  const setCombo = (combo: Record<string, string>, patch: Partial<Vari>) =>
+    setDraft((d) => d ? { ...d, variants: d.variants.map((v) => comboMatch(v, combo) ? { ...v, ...patch } : v) } : d);
+  const gridCombos = useMemo(() => {
+    if (!draft) return [] as Record<string, string>[];
+    const all = draft.options.filter((o) => o.name.trim() && o.values.length);
+    if (!all.length) return [];
+    const po = all.filter((o) => o.priceVaries !== false);
+    return po.length ? cartesian(po) : [{}];   // bỏ tick hết → 1 dòng giá chung cho tất cả
+  }, [draft]);
   const toggleCol = (c: Col) => setDraft((d) => {
     if (!d) return d;
     const has = d.collections.some((x) => x.id === c.id);
@@ -410,35 +423,56 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
               <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                 <input value={o.name} onChange={(e) => setOption(i, { name: e.target.value })} placeholder="Option name (e.g. Size)" style={{ ...ctl, width: 180 }} />
                 <input value={optTexts[i] ?? o.values.join(", ")} onChange={(e) => setOptionValuesText(i, e.target.value)} placeholder="Values, comma-separated (e.g. 8x8, 10x10, 12x12)" style={{ ...ctl, flex: 1 }} />
+                <label title="Bỏ tick nếu giá KHÔNG phụ thuộc option này (vd Color) — lưới giá sẽ gọn lại" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: "var(--muted)", whiteSpace: "nowrap", cursor: "pointer" }}>
+                  <input type="checkbox" checked={o.priceVaries !== false} onChange={(e) => setOption(i, { priceVaries: e.target.checked })} /> Prices vary
+                </label>
                 <button onClick={() => removeOption(i)} style={{ ...ghost, color: "var(--red)", padding: "8px 12px" }}>×</button>
               </div>
             ))}
             {draft.options.length < 3 && <button onClick={addOption} style={{ ...ghost, fontSize: 12.5, marginBottom: 14 }}>+ Add option</button>}
 
-            {/* VARIANTS GRID */}
-            {draft.variants.length > 0 && (
-              <div style={{ marginTop: 10, marginBottom: 16 }}>
-                <div style={{ ...lab, fontSize: 13, color: "var(--ink)", marginBottom: 8 }}>Variants ({draft.variants.length})</div>
-                <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden", maxHeight: 320, overflowY: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-                    <thead><tr style={{ background: "#F7F8FA", textAlign: "left" }}>
-                      {draft.options.filter((o) => o.name).map((o) => <th key={o.name} style={{ padding: "8px 10px" }}>{o.name}</th>)}
-                      <th style={{ padding: "8px 10px", width: 100 }}>Price</th><th style={{ padding: "8px 10px", width: 110 }}>Compare-at</th><th style={{ padding: "8px 10px", width: 130 }}>SKU</th>
-                    </tr></thead>
-                    <tbody>
-                      {draft.variants.map((v, i) => (
-                        <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
-                          {draft.options.filter((o) => o.name).map((o) => <td key={o.name} style={{ padding: "6px 10px" }}>{v.options[o.name] ?? "—"}</td>)}
-                          <td style={{ padding: "4px 8px" }}><input type="number" step="0.01" min="0" value={v.price} onChange={(e) => setVariant(i, { price: e.target.value })} style={{ ...ctl, width: 84, padding: "6px 8px", textAlign: "right" }} /></td>
-                          <td style={{ padding: "4px 8px" }}><input type="number" step="0.01" min="0" value={v.compareAtPrice ?? ""} onChange={(e) => setVariant(i, { compareAtPrice: e.target.value || null })} placeholder="—" style={{ ...ctl, width: 94, padding: "6px 8px", textAlign: "right" }} /></td>
-                          <td style={{ padding: "4px 8px" }}><input value={v.sku} onChange={(e) => setVariant(i, { sku: e.target.value })} style={{ ...ctl, width: 120, padding: "6px 8px" }} /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            {/* VARIANTS GRID — v422: lưới giá theo option được tick "Prices vary" (kiểu Etsy).
+                Option bỏ tick (vd Color 17 màu) không nhân dòng giá: 500 variants → 35 dòng nhập. */}
+            {draft.variants.length > 0 && (() => {
+              const priceCols = draft.options.filter((o) => o.name.trim() && o.values.length && o.priceVaries !== false).map((o) => o.name);
+              const collapsed = gridCombos.length !== draft.variants.length;
+              return (
+                <div style={{ marginTop: 10, marginBottom: 16 }}>
+                  <div style={{ ...lab, fontSize: 13, color: "var(--ink)", marginBottom: 4 }}>Variants ({draft.variants.length})</div>
+                  {collapsed && (
+                    <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+                      Giá đặt theo <b>{priceCols.join(" × ") || "một mức chung"}</b> — {gridCombos.length} dòng nhập thay vì {draft.variants.length}; mỗi dòng áp giá cho mọi biến thể cùng tổ hợp.
+                    </div>
+                  )}
+                  <div style={{ border: "1px solid var(--line)", borderRadius: 12, overflow: "hidden", maxHeight: 320, overflowY: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                      <thead><tr style={{ background: "#F7F8FA", textAlign: "left" }}>
+                        {priceCols.length ? priceCols.map((n) => <th key={n} style={{ padding: "8px 10px" }}>{n}</th>) : <th style={{ padding: "8px 10px" }}>All variants</th>}
+                        <th style={{ padding: "8px 10px", width: 100 }}>Price</th><th style={{ padding: "8px 10px", width: 110 }}>Compare-at</th>
+                        {collapsed ? <th style={{ padding: "8px 10px", width: 110 }}>Applies to</th> : <th style={{ padding: "8px 10px", width: 130 }}>SKU</th>}
+                      </tr></thead>
+                      <tbody>
+                        {gridCombos.map((combo, i) => {
+                          const v = draft.variants.find((x) => comboMatch(x, combo));
+                          if (!v) return null;
+                          const n = draft.variants.filter((x) => comboMatch(x, combo)).length;
+                          return (
+                            <tr key={i} style={{ borderTop: "1px solid var(--line)" }}>
+                              {priceCols.length ? priceCols.map((name) => <td key={name} style={{ padding: "6px 10px" }}>{combo[name] ?? "—"}</td>) : <td style={{ padding: "6px 10px", color: "var(--muted)" }}>All</td>}
+                              <td style={{ padding: "4px 8px" }}><input type="number" step="0.01" min="0" value={v.price} onChange={(e) => setCombo(combo, { price: e.target.value })} style={{ ...ctl, width: 84, padding: "6px 8px", textAlign: "right" }} /></td>
+                              <td style={{ padding: "4px 8px" }}><input type="number" step="0.01" min="0" value={v.compareAtPrice ?? ""} onChange={(e) => setCombo(combo, { compareAtPrice: e.target.value || null })} placeholder="—" style={{ ...ctl, width: 94, padding: "6px 8px", textAlign: "right" }} /></td>
+                              {collapsed
+                                ? <td style={{ padding: "6px 10px", color: "var(--muted)" }}>{n} variants</td>
+                                : <td style={{ padding: "4px 8px" }}><input value={v.sku} onChange={(e) => setCombo(combo, { sku: e.target.value })} style={{ ...ctl, width: 120, padding: "6px 8px" }} /></td>}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* v407 · CUSTOMIZE — ô khách tự điền/chọn trên trang sản phẩm (Color, tên khắc...).
                 KHÔNG ăn variants → đưa Color vào đây để thoát trần 500 variants của ShopBase.
