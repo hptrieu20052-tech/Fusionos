@@ -274,6 +274,17 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
       {canEdit && selCount > 0 && (
         <div style={{ background: "#EEF3FF", border: "1px solid #CBD9FF", borderRadius: 12, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 800, fontSize: 13.5, color: "#14213D" }}>{selCount} đã chọn</span>
+          {/* v428 · Push đưa RA NGOÀI menu cho nhanh — chỉ sáng khi có bản nháp STAGED trong lựa chọn */}
+          {(() => {
+            const stagedSel = rows.filter((r) => sel.has(r.id) && !r.shopbaseProductId).length;
+            return (
+              <button onClick={runPush} disabled={acting || stagedSel === 0}
+                title={stagedSel === 0 ? "Chỉ bản nháp STAGED mới push được — tick các dòng có badge STAGED" : `Push ${stagedSel} bản nháp lên ShopBase`}
+                style={{ background: stagedSel === 0 ? "#B8C6E8" : "#14213D", color: "#fff", border: 0, borderRadius: 10, padding: "8px 16px", fontWeight: 800, fontSize: 13, cursor: acting || stagedSel === 0 ? "default" : "pointer", opacity: acting ? 0.6 : 1 }}>
+                ▲ Push to ShopBase{stagedSel > 0 ? ` (${stagedSel})` : ""}
+              </button>
+            );
+          })()}
           <div style={{ position: "relative" }}>
             <button onClick={() => setActMenu((v) => !v)} disabled={acting} style={{ background: SB_BLUE, color: "#fff", border: 0, borderRadius: 10, padding: "8px 16px", fontWeight: 800, fontSize: 13, cursor: acting ? "default" : "pointer", opacity: acting ? 0.6 : 1 }}>
               {acting ? "Đang xử lý…" : "Action ▾"}
@@ -282,8 +293,6 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
               <>
                 <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setActMenu(false)} />
                 <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 12px 32px rgba(20,33,61,.14)", padding: "6px 0", minWidth: 210 }}>
-                  <button style={{ ...menuBtn, color: SB_BLUE, fontWeight: 800 }} onClick={runPush}>▲ Push to ShopBase (staged drafts)</button>
-                  <div style={{ height: 1, background: "var(--line)", margin: "5px 0" }} />
                   <button style={menuBtn} onClick={() => runAction("publish")}>✓ Make available</button>
                   <button style={menuBtn} onClick={() => runAction("unpublish")}>⦸ Make unavailable</button>
                   <button style={menuBtn} onClick={() => runAction("duplicate")}>⧉ Duplicate (bản nháp)</button>
