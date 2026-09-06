@@ -103,17 +103,11 @@ export async function POST(req: NextRequest) {
         }));
       }
 
-      // Áp collections của template (POST collects.json từng collection — lỗi lẻ không chặn).
+      // v417 · Collection = TAG: tag đã nằm trong p.tags từ lúc stage → smart collection bên
+      // ShopBase tự gom, KHÔNG gọi collects API (private app không có quyền collection).
       const tpl = p.templateId ? tplById.get(p.templateId) : null;
-      const tplCols = ((Array.isArray(tpl?.collections) ? tpl!.collections : []) as { id?: string; title?: string }[])
-        .map((c) => ({ id: strv(c?.id), title: strv(c?.title) })).filter((c) => c.id);
-      const appliedCols: { id: string; title: string }[] = [];
-      for (const c of tplCols) {
-        try {
-          await shopbaseApi(cred!, "collects.json", { method: "POST", body: JSON.stringify({ collect: { product_id: Number(pid) || pid, collection_id: Number(c.id) || c.id } }) });
-          appliedCols.push(c);
-        } catch { /* collection có thể là smart / đã xoá — bỏ qua */ }
-      }
+      const appliedCols = ((Array.isArray(tpl?.collections) ? tpl!.collections : []) as { id?: string; title?: string }[])
+        .map((c) => ({ id: strv(c?.id), title: strv(c?.title) })).filter((c) => c.id);   // hiển thị local
 
       await db.update(schema.shopbaseProducts).set({
         shopbaseProductId: pid, handle,

@@ -136,6 +136,17 @@ function tiktokImages(raw: Record<string, unknown> | null): string[] {
   return imgs.map((im) => strv(im?.urls?.[0]) || strv(im?.thumb_urls?.[0])).filter(Boolean);
 }
 
+// v417 · Collection = TAG: gộp tag collection của template vào tags bản nháp (unique, giữ thứ tự).
+function withCollectionTags(tags: string, tpl: Tpl | null): string {
+  const colTags = ((Array.isArray(tpl?.collections) ? tpl!.collections : []) as { id?: string }[])
+    .map((c) => strv(c?.id).toLowerCase()).filter(Boolean);
+  if (!colTags.length) return tags;
+  const m = new Map<string, string>();
+  for (const t of tags.split(",").map((x) => x.trim()).filter(Boolean)) m.set(t.toLowerCase(), t);
+  for (const t of colTags) if (!m.has(t)) m.set(t, t);
+  return Array.from(m.values()).join(", ");
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) {
@@ -211,7 +222,7 @@ export async function POST(req: NextRequest) {
           bodyHtml: buildBody(tpl, (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>")),
           vendor: (tpl?.vendor ?? "").trim() || store.name,
           productType: (tpl?.productType ?? "").trim() || "Personalized",
-          tags: (p.shopifyTags || p.tags || "").split(",").map((t) => t.trim().replace(/_/g, " ")).filter(Boolean).slice(0, 250).join(", "),
+          tags: withCollectionTags((p.shopifyTags || p.tags || "").split(",").map((t) => t.trim().replace(/_/g, " ")).filter(Boolean).slice(0, 250).join(", "), tpl),
           status: "DRAFT",
           options: built.options, variants: built.variants, images,
           templateId: templateId || null,
@@ -289,7 +300,7 @@ export async function POST(req: NextRequest) {
           bodyHtml: buildBody(tpl, description),   // TikTok trả description dạng HTML sẵn
           vendor: (tpl?.vendor ?? "").trim() || store.name,
           productType: (tpl?.productType ?? "").trim() || "Personalized",
-          tags: "",
+          tags: withCollectionTags("", tpl),
           status: "DRAFT",
           options: built.options, variants: built.variants, images,
           templateId: templateId || null,
