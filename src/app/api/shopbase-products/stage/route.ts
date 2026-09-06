@@ -121,28 +121,14 @@ function buildBody(tpl: Tpl | null, sourceHtml: string): string {
   if (us) lines.push(`United States shipping: ${us[0]}\u2013${us[1]} business days`);
   if (intl) lines.push(`International shipping: ${intl[0]}\u2013${intl[1]} business days`);
 
-  body += `${body ? "<br><br>" : ""}` +
-    `<div class="fusion-delivery" data-fusion-delivery='${json}' style="display:none"></div>` +
-    `<p class="fusion-delivery-fallback"><strong>\u{1F69A} Estimated delivery</strong><br>${lines.join("<br>")}</p>`;
+  // v409 · KHÔNG nhúng thẻ ẩn nữa — ShopBase sanitize mô tả, gỡ hết data-attribute.
+  // Widget lấy cấu hình qua /api/widget/shopbase?handle=... ; khối text dưới là fallback
+  // hiển thị khi theme CHƯA cài widget (widget cài rồi sẽ tự ẩn nó theo nội dung text).
+  void json;
+  body += `${body ? "<br><br>" : ""}<p><strong>\u{1F69A} Estimated delivery</strong><br>${lines.join("<br>")}</p>`;
   return body;
 }
 
-// v407 · Customize (buyer inputs) của template ⇒ thẻ ẩn data-fusion-customize trong mô tả.
-// Widget shopbase-customize-widget.html trên theme đọc ra, render ô Color/tên khắc... phía trên
-// nút Add to cart; giá trị khách chọn đi vào line item properties của đơn ShopBase.
-function appendCustomize(tpl: Tpl | null, body: string): string {
-  const pqs = (Array.isArray(tpl?.personalization) ? tpl!.personalization : []) as { type?: string; label?: string; required?: boolean; options?: string[]; maxChars?: number }[];
-  const clean = pqs.map((q) => ({
-    type: q?.type === "dropdown" ? "dropdown" : "text",
-    label: strv(q?.label).slice(0, 45),
-    required: !!q?.required,
-    options: (Array.isArray(q?.options) ? q.options : []).map((s) => strv(s)).filter(Boolean).slice(0, 50),
-    maxChars: Math.min(Math.max(Math.round(Number(q?.maxChars) || 0) || 100, 1), 1024),
-  })).filter((q) => q.label && (q.type === "text" || q.options.length));
-  if (!clean.length) return body;
-  const json = JSON.stringify(clean).replace(/'/g, "&#39;");
-  return body + `<div class="fusion-customize" data-fusion-customize='${json}' style="display:none"></div>`;
-}
 
 // Ảnh từ raw TikTok: main_images[].urls[0] (search + detail cùng shape).
 function tiktokImages(raw: Record<string, unknown> | null): string[] {
@@ -221,7 +207,7 @@ export async function POST(req: NextRequest) {
         const draft = {
           storeId,
           title,
-          bodyHtml: appendCustomize(tpl, buildBody(tpl, (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>"))),
+          bodyHtml: buildBody(tpl, (p.shopifyDesc || p.description || "").replace(/\r\n/g, "\n").replace(/\n/g, "<br>")),
           vendor: (tpl?.vendor ?? "").trim() || store.name,
           productType: (tpl?.productType ?? "").trim() || "Personalized",
           tags: (p.shopifyTags || p.tags || "").split(",").map((t) => t.trim().replace(/_/g, " ")).filter(Boolean).slice(0, 250).join(", "),
@@ -298,7 +284,7 @@ export async function POST(req: NextRequest) {
         const draft = {
           storeId,
           title,
-          bodyHtml: appendCustomize(tpl, buildBody(tpl, description)),   // TikTok trả description dạng HTML sẵn
+          bodyHtml: buildBody(tpl, description),   // TikTok trả description dạng HTML sẵn
           vendor: (tpl?.vendor ?? "").trim() || store.name,
           productType: (tpl?.productType ?? "").trim() || "Personalized",
           tags: "",
