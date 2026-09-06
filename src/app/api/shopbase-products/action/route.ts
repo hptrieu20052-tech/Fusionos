@@ -20,8 +20,8 @@ export const maxDuration = 60;
  * Gom theo store để nạp credential 1 lần/store; trả về số thành công + danh sách lỗi.
  * Độc lập hệ Shopify.
  */
-type Action = "publish" | "unpublish" | "addTags" | "removeTags" | "delete";
-const ACTIONS = new Set<Action>(["publish", "unpublish", "addTags", "removeTags", "delete"]);
+type Action = "publish" | "unpublish" | "addTags" | "removeTags" | "delete" | "duplicate";
+const ACTIONS = new Set<Action>(["publish", "unpublish", "addTags", "removeTags", "delete", "duplicate"]);
 const MAX_IDS = 250; // trần 1 lần gọi để không vượt maxDuration 60s
 
 const tagList = (s: string) => s.split(",").map((t) => t.trim()).filter(Boolean);
@@ -66,6 +66,34 @@ export async function POST(req: NextRequest) {
   const scopeIds = await storeOwnerScopeIds(session);
   const allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || !r.sellerId || scopeIds.includes(r.sellerId))); // sellerId NULL = store chung
   if (!allowed.length) return NextResponse.json({ ok: false, error: "không có sản phẩm hợp lệ" }, { status: 400 });
+
+  // v426 · duplicate — nhân bản LOCAL thành BẢN NHÁP staged (pid = ''): sửa thoải mái rồi Push
+  // như listing mới. Không gọi ShopBase; bỏ id variant/image của bản gốc để Push tạo mới sạch.
+  if (action === "duplicate") {
+    let dupDone = 0;
+    const dupFailed: { id: string; error: string }[] = [];
+    const full = await db.select().from(schema.shopbaseProducts)
+      .where(inArray(schema.shopbaseProducts.id, allowed.map((r) => r.id)));
+    const stripIds = (v: unknown) => (Array.isArray(v) ? v : []).map((x) => {
+      const o = { ...(x as Record<string, unknown>) }; delete o.id; delete o.product_id; delete o.productId; return o;
+    });
+    for (const p of full) {
+      try {
+        await db.insert(schema.shopbaseProducts).values({
+          storeId: p.storeId, shopbaseProductId: "", handle: "",
+          title: `${p.title} (copy)`, bodyHtml: p.bodyHtml, vendor: p.vendor, productType: p.productType,
+          tags: p.tags, status: "DRAFT", seoTitle: p.seoTitle, seoDescription: p.seoDescription,
+          collections: p.collections ?? [], options: p.options ?? [],
+          variants: stripIds(p.variants), images: stripIds(p.images),
+          onlineStoreUrl: null, totalInventory: null, dirty: true,
+          etsyProductId: null, tiktokProductId: null, templateId: p.templateId ?? null,
+          createdBy: session.sub, pushedAt: null,
+        });
+        dupDone++;
+      } catch (e) { dupFailed.push({ id: p.id, error: String((e as Error)?.message ?? e).slice(0, 180) }); }
+    }
+    return NextResponse.json({ ok: true, action, done: dupDone, failed: dupFailed, total: allowed.length });
+  }
 
   // Gom theo store.
   const byStore = new Map<string, typeof allowed>();

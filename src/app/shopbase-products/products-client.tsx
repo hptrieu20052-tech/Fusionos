@@ -44,6 +44,17 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   // v424 · copy link: báo NGAY TẠI NÚT (⧉ → ✓ xanh 1.5s) thay vì flash tít trên đầu trang
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyLink = (id: string, url: string) => { navigator.clipboard?.writeText(url); setCopiedId(id); setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500); };
+  // v426 · Dup 1 dòng → tạo bản nháp "(copy)" staged, sửa rồi Push như listing mới
+  const [dupingId, setDupingId] = useState<string | null>(null);
+  const dupOne = async (id: string) => {
+    setDupingId(id);
+    try {
+      const j = await fetch("/api/shopbase-products/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "duplicate", ids: [id] }) }).then((r) => r.json());
+      if (j.ok && j.done > 0) { flash("✓ Đã nhân bản thành bản nháp (copy) — sửa rồi Push to ShopBase"); await load(); }
+      else flash("✗ " + (j.failed?.[0]?.error ?? j.error ?? "duplicate failed"), false);
+    } catch { flash("✗ Network error", false); }
+    setDupingId(null);
+  };
 
   // ── Bulk selection + actions (qua ShopBase API) ──────────────────────────
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -275,6 +286,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                   <div style={{ height: 1, background: "var(--line)", margin: "5px 0" }} />
                   <button style={menuBtn} onClick={() => runAction("publish")}>✓ Make available</button>
                   <button style={menuBtn} onClick={() => runAction("unpublish")}>⦸ Make unavailable</button>
+                  <button style={menuBtn} onClick={() => runAction("duplicate")}>⧉ Duplicate (bản nháp)</button>
                   <div style={{ height: 1, background: "var(--line)", margin: "5px 0" }} />
                   <button style={menuBtn} onClick={() => { setActMenu(false); setConfirmDel(false); setTagPanel("add"); }}>＋ Add tags</button>
                   <button style={menuBtn} onClick={() => { setActMenu(false); setConfirmDel(false); setTagPanel("remove"); }}>－ Remove tags</button>
@@ -385,15 +397,22 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                     <td style={{ padding: "10px 12px", fontWeight: 700, whiteSpace: "nowrap" }}>{price(r)}</td>
                     <td style={{ padding: "10px 12px" }}>{statusChip(r.status)}</td>
                     <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
-                      {r.onlineStoreUrl ? (
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                          <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" title="View on store" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, border: "1px solid #CBD9FF", background: "#F3F7FF", color: SB_BLUE }}>
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
-                          </a>
-                          <button onClick={() => copyLink(r.id, r.onlineStoreUrl!)} title={copiedId === r.id ? "Copied!" : "Copy product link"}
-                            style={{ border: "1px solid " + (copiedId === r.id ? "#7BC98B" : "var(--line)"), background: copiedId === r.id ? "#EAF8EE" : "#fff", borderRadius: 7, width: 26, height: 26, cursor: "pointer", fontSize: 13, lineHeight: 1, color: copiedId === r.id ? "#1E7A38" : "var(--muted)", fontWeight: copiedId === r.id ? 800 : 400, transition: "all .12s" }}>{copiedId === r.id ? "✓" : "⧉"}</button>
-                        </span>
-                      ) : <span style={{ color: "var(--muted)" }}>—</span>}
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        {r.onlineStoreUrl ? (
+                          <>
+                            <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" title="View on store" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, border: "1px solid #CBD9FF", background: "#F3F7FF", color: SB_BLUE }}>
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+                            </a>
+                            <button onClick={() => copyLink(r.id, r.onlineStoreUrl!)} title={copiedId === r.id ? "Copied!" : "Copy product link"}
+                              style={{ border: "1px solid " + (copiedId === r.id ? "#7BC98B" : "var(--line)"), background: copiedId === r.id ? "#EAF8EE" : "#fff", borderRadius: 7, width: 26, height: 26, cursor: "pointer", fontSize: 13, lineHeight: 1, color: copiedId === r.id ? "#1E7A38" : "var(--muted)", fontWeight: copiedId === r.id ? 800 : 400, transition: "all .12s" }}>{copiedId === r.id ? "✓" : "⧉"}</button>
+                          </>
+                        ) : <span style={{ color: "var(--muted)" }}>—</span>}
+                        {/* v426 · Dup → bản nháp "(copy)" để sửa rồi Push như listing mới */}
+                        {canEdit && (
+                          <button disabled={dupingId === r.id} onClick={() => dupOne(r.id)} title="Duplicate — tạo bản nháp (copy)"
+                            style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 7, height: 26, padding: "0 8px", cursor: dupingId === r.id ? "default" : "pointer", fontSize: 11, fontWeight: 800, lineHeight: 1, color: dupingId === r.id ? "#B8C0CC" : "var(--muted)" }}>{dupingId === r.id ? "…" : "Dup"}</button>
+                        )}
+                      </span>
                     </td>
                   </tr>
                 );
