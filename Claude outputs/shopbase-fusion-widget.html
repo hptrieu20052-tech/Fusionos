@@ -1,0 +1,245 @@
+<!-- ============================================================================
+  FUSION · ShopBase Widget v2 (v409) — GỘP 2 widget làm 1:
+    • Estimated delivery: "Delivery to 🇺🇸 United States … Ordered → Shipped → Delivered"
+    • Customize: ô Color / text khách tự chọn phía trên Add to cart (đi vào order properties)
+
+  KHÁC BẢN CŨ: KHÔNG đọc dữ liệu nhúng trong mô tả nữa (ShopBase sanitize mất) —
+  widget GỌI THẲNG VỀ FUSION theo handle sản phẩm. Sửa template trong FUSION là
+  storefront đổi theo, không cần push lại sản phẩm.
+
+  CÀI ĐẶT: Online Store → Design → Customize → Settings → General → Additional scripts
+  → XOÁ 2 đoạn widget cũ (nếu đã dán) → dán TOÀN BỘ file này vào ô HEAD → Save.
+============================================================================ -->
+<style>
+  .fsd-wrap{margin:18px 0;font-family:inherit;max-width:560px}
+  .fsd-select{width:100%;padding:10px 12px;border:1px solid #d9dee7;border-radius:8px;font-size:14px;background:#fff;appearance:auto;margin-bottom:14px}
+  .fsd-title{font-weight:700;font-size:15px;margin:0 0 4px}
+  .fsd-line{font-size:14px;margin:0 0 18px}
+  .fsd-line b{font-weight:700}
+  .fsd-steps{display:flex;align-items:flex-start;position:relative;margin:8px 0 4px}
+  .fsd-step{flex:1;text-align:center;position:relative;z-index:1}
+  .fsd-ic{width:52px;height:52px;border-radius:50%;background:#fff;box-shadow:0 1px 6px rgba(20,40,80,.15);display:inline-flex;align-items:center;justify-content:center;color:#1d4a8f}
+  .fsd-ic svg{width:24px;height:24px}
+  .fsd-step-label{font-weight:700;font-size:13.5px;margin-top:8px}
+  .fsd-step-date{font-size:12.5px;color:#333;margin-top:2px}
+  .fsd-bar{position:absolute;top:26px;left:12%;right:12%;height:4px;background:#dbe3f3;border-radius:2px;z-index:0}
+  .fcz-wrap{margin:14px 0;font-family:inherit}
+  .fcz-field{margin-bottom:12px}
+  .fcz-label{display:block;font-weight:600;font-size:13.5px;margin-bottom:6px}
+  .fcz-label .fcz-req{color:#d33;margin-left:2px}
+  .fcz-input,.fcz-select{width:100%;padding:10px 12px;border:1px solid #d9dee7;border-radius:8px;font-size:14px;background:#fff;box-sizing:border-box}
+  .fcz-error{color:#d33;font-size:12.5px;margin-top:4px;display:none}
+  .fcz-label .fcz-val{font-weight:600}
+  .fcz-pills{display:flex;flex-wrap:wrap;gap:10px}
+  .fcz-pill{border:1px solid #d9dee7;background:#fff;color:#1a1a2e;border-radius:999px;padding:10px 18px;font-size:14px;font-family:inherit;cursor:pointer;line-height:1;transition:all .12s}
+  .fcz-pill:hover{border-color:#9aa7bd}
+  .fcz-pill.on{background:#1e1b4b;border-color:#1e1b4b;color:#fff;font-weight:600}
+</style>
+<script>
+(function () {
+  "use strict";
+  var FUSION_BASE = "https://os.fusiondn.com";   // đổi nếu FUSION chạy domain khác
+
+  // Số mặc định khi FUSION không có cấu hình cho sản phẩm này (sản phẩm cũ, không template).
+  var DEFAULT_DELIVERY = {
+    proc: [1, 3], us: [4, 8], intl: [10, 30], cutoff: 14,
+    countries: { ca: [6, 12], gb: [7, 14], au: [8, 16], de: [7, 14] }
+  };
+
+  var COUNTRY_META = [
+    { key: "us",   flag: "🇺🇸", label: "United States" },
+    { key: "ca",   flag: "🇨🇦", label: "Canada" },
+    { key: "gb",   flag: "🇬🇧", label: "United Kingdom" },
+    { key: "au",   flag: "🇦🇺", label: "Australia" },
+    { key: "de",   flag: "🇩🇪", label: "Germany" },
+    { key: "intl", flag: "🌍", label: "Rest of world" }
+  ];
+
+  function bd(from, n) {
+    var d = new Date(from.getTime()), left = n;
+    while (left > 0) { d.setDate(d.getDate() + 1); var w = d.getDay(); if (w !== 0 && w !== 6) left--; }
+    return d;
+  }
+  function fmt(d) { return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" }); }
+  function transitFor(cfg, key) {
+    if (key === "us") return cfg.us || cfg.intl || [10, 30];
+    if (key === "intl") return cfg.intl || [10, 30];
+    return (cfg.countries || {})[key] || cfg.intl || [10, 30];
+  }
+
+  function findBuyBox() {
+    var btn = document.querySelector(
+      'button[name="add"], .btn-add-cart, .btn-addtocart, [class*="add-to-cart"], [class*="add_to_cart"], .product-form button[type="submit"], form[action*="/cart"] button'
+    );
+    var form = btn ? btn.closest("form") : null;
+    if (!form) form = document.querySelector('form[action*="/cart"], .product-form form, form.product-form');
+    return { form: form, btn: btn };
+  }
+  function findDescription() {
+    return document.querySelector('.product__description, .product-description, [class*="product"][class*="description"], .prod-desc, #product-description');
+  }
+  // Khối text tĩnh "🚚 Estimated delivery" trong mô tả (fallback khi chưa cài widget) → ẩn đi.
+  function hideFallbackText() {
+    var els = document.querySelectorAll("p, div");
+    for (var i = 0; i < els.length; i++) {
+      var t = (els[i].textContent || "").trim();
+      if (t.indexOf("Estimated delivery") === 0 || t.indexOf("🚚 Estimated delivery") === 0) {
+        if (t.length < 400) els[i].style.display = "none";
+      }
+    }
+  }
+
+  // ── Customize fields (Color, tên khắc…) — chèn trước Add to cart, ghi vào properties[] ──
+  function renderCustomize(fields) {
+    if (!fields || !fields.length || document.querySelector(".fcz-wrap")) return;
+    var target = findBuyBox();
+    if (!target.form && !target.btn) return;
+    var wrap = document.createElement("div");
+    wrap.className = "fcz-wrap";
+    fields.slice(0, 5).forEach(function (f) {
+      var label = String(f.label || "").slice(0, 45);
+      if (!label) return;
+      var field = document.createElement("div");
+      field.className = "fcz-field";
+      var lab = document.createElement("label");
+      lab.className = "fcz-label";
+      lab.textContent = label;
+      var isPills = f.type === "dropdown" && Array.isArray(f.options) && f.options.length;
+      if (f.required && !isPills) { var r = document.createElement("span"); r.className = "fcz-req"; r.textContent = "*"; lab.appendChild(r); }
+      field.appendChild(lab);
+      var input;
+      if (f.type === "dropdown" && Array.isArray(f.options) && f.options.length) {
+        // Pill buttons — giống hệt variant picker Styles/Size của theme.
+        lab.textContent = label + ": ";
+        var val = document.createElement("span");
+        val.className = "fcz-val";
+        lab.appendChild(val);
+        if (f.required) { var r2 = document.createElement("span"); r2.className = "fcz-req"; r2.textContent = "*"; lab.appendChild(r2); }
+        input = document.createElement("input");
+        input.type = "hidden";
+        var pills = document.createElement("div");
+        pills.className = "fcz-pills";
+        f.options.forEach(function (o) {
+          var btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "fcz-pill";
+          btn.textContent = String(o);
+          btn.addEventListener("click", function () {
+            input.value = String(o);
+            val.textContent = String(o);
+            pills.querySelectorAll(".fcz-pill").forEach(function (b) { b.classList.remove("on"); });
+            btn.classList.add("on");
+            var err = field.querySelector(".fcz-error");
+            if (err) err.style.display = "none";
+          });
+          pills.appendChild(btn);
+        });
+        field.appendChild(pills);
+      } else {
+        input = document.createElement("input");
+        input.className = "fcz-input";
+        input.type = "text";
+        input.placeholder = label;
+        if (f.maxChars) input.maxLength = Number(f.maxChars) || 100;
+      }
+      input.name = "properties[" + label + "]";
+      input.setAttribute("data-fcz-required", f.required ? "1" : "");
+      field.appendChild(input);
+      var err = document.createElement("div");
+      err.className = "fcz-error";
+      err.textContent = "Please " + (f.type === "dropdown" ? "select" : "enter") + " " + label + " before adding to cart.";
+      field.appendChild(err);
+      wrap.appendChild(field);
+    });
+    if (!wrap.children.length) return;
+    if (target.btn && target.btn.parentNode) target.btn.parentNode.insertBefore(wrap, target.btn);
+    else target.form.insertBefore(wrap, target.form.firstChild);
+    var guard = function (e) {
+      var ok = true;
+      wrap.querySelectorAll('[data-fcz-required="1"]').forEach(function (inp) {
+        var bad = !String(inp.value || "").trim();
+        var err = inp.parentNode.querySelector(".fcz-error");
+        if (err) err.style.display = bad ? "block" : "none";
+        if (bad) ok = false;
+      });
+      if (!ok) { e.preventDefault(); e.stopPropagation(); wrap.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    };
+    if (target.btn) target.btn.addEventListener("click", guard, true);
+    if (target.form) target.form.addEventListener("submit", guard, true);
+  }
+
+  // ── Delivery widget — timeline Ordered/Shipped/Delivered ──
+  function renderDelivery(cfg) {
+    if (document.querySelector(".fsd-wrap")) return;
+    var anchor = findDescription();
+    if (!anchor) { var bb = findBuyBox(); anchor = bb.btn ? bb.btn.parentNode : bb.form; }
+    if (!anchor) return;
+    var wrap = document.createElement("div");
+    wrap.className = "fsd-wrap";
+    var sel = document.createElement("select");
+    sel.className = "fsd-select";
+    COUNTRY_META.forEach(function (c) {
+      var o = document.createElement("option");
+      o.value = c.key; o.textContent = c.label;
+      sel.appendChild(o);
+    });
+    var info = document.createElement("div");
+    wrap.appendChild(sel); wrap.appendChild(info);
+    var SVG_CART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
+    var SVG_TRUCK = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 5.5A1.5 1.5 0 0 1 1.5 4h11A1.5 1.5 0 0 1 14 5.5V7h2.02c.44 0 .85.19 1.13.53l2.5 3c.22.27.35.61.35.96V15.5a1.5 1.5 0 0 1-1.5 1.5h-.55a2.75 2.75 0 0 1-5.4 0h-3.1a2.75 2.75 0 0 1-5.4 0H1.5A1.5 1.5 0 0 1 0 15.5v-10ZM14 9v3h4.6l-2.5-3H14ZM6.75 16.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z"/></svg>';
+    var SVG_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
+    function update() {
+      var key = sel.value;
+      var meta = COUNTRY_META.filter(function (c) { return c.key === key; })[0];
+      var proc = cfg.proc || [1, 3];
+      var transit = transitFor(cfg, key);
+      var now = new Date();
+      var start = (cfg.cutoff != null && now.getHours() >= cfg.cutoff) ? bd(now, 1) : now;
+      var shipA = bd(start, proc[0]), shipB = bd(start, proc[1]);
+      var delA = bd(start, proc[0] + transit[0]), delB = bd(start, proc[1] + transit[1]);
+      info.innerHTML =
+        '<p class="fsd-title">Delivery to ' + meta.flag + ' <b>' + meta.label + '</b></p>' +
+        '<p class="fsd-line">You’ll receive your package between <b>' + fmt(delA) + '</b> - <b>' + fmt(delB) + '</b></p>' +
+        '<div class="fsd-steps"><div class="fsd-bar"></div>' +
+        '<div class="fsd-step"><span class="fsd-ic">' + SVG_CART + '</span><div class="fsd-step-label">Ordered</div><div class="fsd-step-date">' + fmt(now) + '</div></div>' +
+        '<div class="fsd-step"><span class="fsd-ic">' + SVG_TRUCK + '</span><div class="fsd-step-label">Shipped</div><div class="fsd-step-date">' + fmt(shipA) + ' - ' + fmt(shipB) + '</div></div>' +
+        '<div class="fsd-step"><span class="fsd-ic">' + SVG_PIN + '</span><div class="fsd-step-label">Delivered</div><div class="fsd-step-date">' + fmt(delA) + ' - ' + fmt(delB) + '</div></div>' +
+        '</div>';
+    }
+    sel.addEventListener("change", update);
+    update();
+    anchor.parentNode.insertBefore(wrap, anchor.nextSibling);
+  }
+
+  var fetched = false, cfgCache = null;
+  function boot() {
+    var m = location.pathname.match(/\/products\/([^\/?#]+)/);
+    if (!m) return;   // không phải trang sản phẩm
+    hideFallbackText();
+    if (!fetched) {
+      fetched = true;
+      fetch(FUSION_BASE + "/api/widget/shopbase?handle=" + encodeURIComponent(m[1].toLowerCase()))
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          cfgCache = j && j.ok ? j : {};
+          renderDelivery((cfgCache.delivery) || DEFAULT_DELIVERY);
+          renderCustomize(cfgCache.customize || []);
+        })
+        .catch(function () { cfgCache = {}; renderDelivery(DEFAULT_DELIVERY); });
+    } else if (cfgCache) {
+      renderDelivery((cfgCache.delivery) || DEFAULT_DELIVERY);
+      renderCustomize(cfgCache.customize || []);
+    }
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+  // Theme render trễ (SPA) → thử lại vài nhịp; dừng khi cả 2 widget đã gắn hoặc quá 20 lần.
+  var tries = 0;
+  var t = setInterval(function () {
+    var done = document.querySelector(".fsd-wrap") && (!cfgCache || !(cfgCache.customize || []).length || document.querySelector(".fcz-wrap"));
+    if (done || ++tries > 20) { clearInterval(t); return; }
+    boot();
+  }, 500);
+})();
+</script>
