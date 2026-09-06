@@ -41,6 +41,9 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   // v423 · ?pid= — badge ↑SHOPBASE bên Manage Products · Etsy nhảy về ĐÚNG 1 dòng theo id local
   const [pidFilter, setPidFilter] = useState(() => { if (typeof window === "undefined") return "";
     try { return new URLSearchParams(window.location.search).get("pid") ?? ""; } catch { return ""; } });
+  // v424 · copy link: báo NGAY TẠI NÚT (⧉ → ✓ xanh 1.5s) thay vì flash tít trên đầu trang
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyLink = (id: string, url: string) => { navigator.clipboard?.writeText(url); setCopiedId(id); setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500); };
 
   // ── Bulk selection + actions (qua ShopBase API) ──────────────────────────
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -387,8 +390,8 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                           <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" title="View on store" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, border: "1px solid #CBD9FF", background: "#F3F7FF", color: SB_BLUE }}>
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
                           </a>
-                          <button onClick={() => { navigator.clipboard?.writeText(r.onlineStoreUrl!); flash("✓ Link copied"); }} title="Copy product link"
-                            style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 7, width: 26, height: 26, cursor: "pointer", fontSize: 13, lineHeight: 1, color: "var(--muted)" }}>⧉</button>
+                          <button onClick={() => copyLink(r.id, r.onlineStoreUrl!)} title={copiedId === r.id ? "Copied!" : "Copy product link"}
+                            style={{ border: "1px solid " + (copiedId === r.id ? "#7BC98B" : "var(--line)"), background: copiedId === r.id ? "#EAF8EE" : "#fff", borderRadius: 7, width: 26, height: 26, cursor: "pointer", fontSize: 13, lineHeight: 1, color: copiedId === r.id ? "#1E7A38" : "var(--muted)", fontWeight: copiedId === r.id ? 800 : 400, transition: "all .12s" }}>{copiedId === r.id ? "✓" : "⧉"}</button>
                         </span>
                       ) : <span style={{ color: "var(--muted)" }}>—</span>}
                     </td>
