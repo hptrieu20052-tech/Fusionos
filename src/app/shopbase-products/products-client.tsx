@@ -57,7 +57,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
     setSyncing(true);
     try {
       const j = await fetch("/api/shopbase-products/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: syncStore }) }).then((r) => r.json());
-      if (j.ok) { flash(`✓ Synced ${j.fetched ?? 0} · ${j.created ?? 0} new · ${j.updated ?? 0} updated`); await load(); }
+      if (j.ok) { flash(`✓ Synced ${j.fetched ?? 0} · ${j.created ?? 0} new · ${j.updated ?? 0} updated${j.removed ? ` · ${j.removed} removed (deleted on ShopBase)` : ""}`); await load(); }
       else flash("✗ " + (j.error ?? "sync failed"), false);
     } catch { flash("✗ Network error", false); }
     setSyncing(false);
@@ -69,7 +69,8 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
       if (fStore && r.storeId !== fStore) return false;
       if (fSeller && r.sellerId !== fSeller) return false;
       if (fType && r.productType !== fType) return false;
-      if (fStatus && r.status !== fStatus) return false;
+      if (fStatus === "__staged") { if (r.shopbaseProductId) return false; }
+      else if (fStatus && r.status !== fStatus) return false;
       if (q.trim()) { const s = q.trim().toLowerCase(); if (!(r.title.toLowerCase().includes(s) || r.handle.toLowerCase().includes(s) || r.shopbaseProductId.includes(s))) return false; }
       return true;
     });
@@ -107,6 +108,24 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
         clearSel();
         await load();
       } else flash("✗ " + (j.error ?? "action failed"), false);
+    } catch { flash("✗ Network error", false); }
+    setActing(false);
+  };
+
+  // v405 · Push bản nháp đã stage (Etsy/TikTok) lên ShopBase — chỉ tác dụng với dòng STAGED.
+  const runPush = async () => {
+    setActMenu(false);
+    const drafts = rows.filter((r) => sel.has(r.id) && !r.shopbaseProductId).map((r) => r.id);
+    if (!drafts.length) { flash("✗ No staged drafts selected — the STAGED badge marks drafts that can be pushed", false); return; }
+    setActing(true);
+    try {
+      const j = await fetch("/api/shopbase-products/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: drafts }) }).then((r) => r.json());
+      if (j.ok || j.created) {
+        const fail = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
+        flash(`✓ Pushed ${j.created}/${(j.results ?? []).length} to ShopBase (as unpublished drafts)${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`, j.failed === 0);
+        clearSel();
+        await load();
+      } else flash("✗ " + (j.error ?? (j.results ?? [])[0]?.error ?? "Push failed"), false);
     } catch { flash("✗ Network error", false); }
     setActing(false);
   };
@@ -161,7 +180,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
           <select value={fStore} onChange={(e) => setFStore(e.target.value)} style={inp}><option value="">All stores</option>{stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
           <select value={fSeller} onChange={(e) => setFSeller(e.target.value)} style={inp}><option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
           <select value={fType} onChange={(e) => setFType(e.target.value)} style={inp}><option value="">All types</option>{types.map((t) => <option key={t} value={t}>{t}</option>)}</select>
-          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} style={inp}><option value="">All status</option><option value="ACTIVE">Available (Active)</option><option value="DRAFT">Unavailable (Draft)</option><option value="ARCHIVED">Archived</option></select>
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} style={inp}><option value="">All status</option><option value="ACTIVE">Available (Active)</option><option value="DRAFT">Unavailable (Draft)</option><option value="ARCHIVED">Archived</option><option value="__staged">Staged drafts (not on ShopBase yet)</option></select>
         </div>
       </div>
 
@@ -177,6 +196,8 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
               <>
                 <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setActMenu(false)} />
                 <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 41, background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 12px 32px rgba(20,33,61,.14)", padding: "6px 0", minWidth: 210 }}>
+                  <button style={{ ...menuBtn, color: SB_BLUE, fontWeight: 800 }} onClick={runPush}>▲ Push to ShopBase (staged drafts)</button>
+                  <div style={{ height: 1, background: "var(--line)", margin: "5px 0" }} />
                   <button style={menuBtn} onClick={() => runAction("publish")}>✓ Make available</button>
                   <button style={menuBtn} onClick={() => runAction("unpublish")}>⦸ Make unavailable</button>
                   <div style={{ height: 1, background: "var(--line)", margin: "5px 0" }} />
@@ -251,7 +272,9 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                         onClick={() => canEdit && setEditId(r.id)}
                         title={canEdit ? "Click to edit" : undefined}
                         style={{ fontWeight: 700, color: canEdit ? SB_BLUE : "#14213D", lineHeight: 1.35, cursor: canEdit ? "pointer" : "default" }}>
-                        {r.title}{r.dirty && <span style={{ marginLeft: 6, fontSize: 10, background: "#FFF4E5", color: "#9A6400", borderRadius: 4, padding: "1px 5px", fontWeight: 800 }}>EDITED</span>}
+                        {r.title}{!r.shopbaseProductId
+                          ? <span style={{ marginLeft: 6, fontSize: 10, background: "#EEF3FF", color: SB_BLUE, borderRadius: 4, padding: "1px 5px", fontWeight: 800 }} title="Staged draft — not on ShopBase yet. Select it and use Action → Push to ShopBase.">STAGED</span>
+                          : r.dirty && <span style={{ marginLeft: 6, fontSize: 10, background: "#FFF4E5", color: "#9A6400", borderRadius: 4, padding: "1px 5px", fontWeight: 800 }}>EDITED</span>}
                       </div>
                       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{r.variantCount} variants · {r.imageCount} images · SKU {r.skuDone}/{r.skuTotal}{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}</div>
                       <div onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.shopbaseProductId); }} title="Click to copy product ID" style={{ fontSize: 10.5, color: "var(--muted)", fontFamily: "monospace", marginTop: 1, cursor: "copy" }}>#{r.shopbaseProductId}</div>

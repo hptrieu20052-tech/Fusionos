@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -68,6 +68,20 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // v405c · DỌN RÁC: sản phẩm đã bị XOÁ bên ShopBase → xoá luôn bản ghi local (kể cả dirty —
+  // sản phẩm gốc không còn thì bản sửa local cũng vô nghĩa). GIỮ NGUYÊN bản nháp stage từ
+  // Etsy/TikTok (pid = '') vì chúng chưa từng có trên ShopBase. Chỉ dọn khi chắc chắn đã kéo
+  // TRỌN danh sách (fetch không chạm trần trang) để không xoá nhầm lúc fetch dở dang.
+  let removed = 0;
+  if (products.length < 40 * 250) {
+    const livePids = new Set(products.map((p) => p.shopbaseProductId));
+    const stale = existing.filter((r) => r.pid && !livePids.has(r.pid)).map((r) => r.id);
+    if (stale.length) {
+      await db.delete(schema.shopbaseProducts).where(inArray(schema.shopbaseProducts.id, stale));
+      removed = stale.length;
+    }
+  }
+
   await touchShopBaseSync(storeId);
-  return NextResponse.json({ ok: true, fetched: products.length, created, updated, skippedDirty });
+  return NextResponse.json({ ok: true, fetched: products.length, created, updated, skippedDirty, removed });
 }
