@@ -82,6 +82,21 @@ export default function ShopbaseEditModal({ id, onClose, onSaved }: { id: string
     if (!url || !/^https?:\/\//i.test(url.trim())) return;
     setD((p) => p ? { ...p, images: [...p.images, { src: url.trim(), altText: "", position: p.images.length + 1 }] } : p);
   };
+  // v433 · Upload ảnh từ máy (qua /api/product-image/upload — cùng endpoint với editor Shopify/Etsy)
+  const [upBusy, setUpBusy] = useState(false);
+  const uploadImgs = async (files: FileList | null) => {
+    const list = (files ? Array.from(files) : []).filter((f) => f && f.type.startsWith("image/"));
+    if (!list.length) return;
+    setUpBusy(true);
+    for (const file of list) {
+      try {
+        const fd = new FormData(); fd.append("file", file);
+        const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+        if (j.ok && j.url) setD((p) => p ? { ...p, images: [...p.images, { src: j.url, altText: "", position: p.images.length + 1 }] } : p);
+      } catch { /* bỏ qua ảnh lỗi */ }
+    }
+    setUpBusy(false);
+  };
 
   const save = async () => {
     if (!d) return;
@@ -145,9 +160,13 @@ export default function ShopbaseEditModal({ id, onClose, onSaved }: { id: string
                         <button type="button" onClick={() => delImg(i)} title="Delete" style={{ position: "absolute", right: -6, top: -6, width: 20, height: 20, borderRadius: "50%", background: "var(--red)", color: "#fff", border: 0, cursor: "pointer", fontSize: 13, lineHeight: 1 }}>×</button>
                       </div>
                     ))}
-                    <button type="button" onClick={addByUrl} style={{ width: 88, height: 88, border: "1.5px dashed var(--line)", borderRadius: 8, background: "#fff", cursor: "pointer", color: "var(--muted)", fontSize: 12, fontWeight: 700 }}>+ Add by URL</button>
+                    <label style={{ width: 88, height: 88, border: `1.5px dashed ${SB_BLUE}88`, borderRadius: 8, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, color: SB_BLUE, fontSize: 11, fontWeight: 700, cursor: upBusy ? "default" : "pointer", opacity: upBusy ? .5 : 1 }}>
+                      <span style={{ fontSize: 19, lineHeight: 1 }}>+</span>{upBusy ? "Uploading…" : "Add photos"}
+                      <input type="file" accept="image/*" multiple hidden disabled={upBusy} onChange={(e) => { uploadImgs(e.target.files); e.currentTarget.value = ""; }} />
+                    </label>
                   </div>
-                  <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Kéo-thả đổi thứ tự · × xoá. Ảnh đầu là ảnh chính. (Thêm ảnh bằng URL công khai.)</div>
+                  <button type="button" onClick={addByUrl} style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#1D4ED8", padding: 0, marginTop: 8 }}>+ Add by URL</button>
+                  <div style={{ fontSize: 11, color: "var(--faint)", marginTop: 6 }}>Kéo-thả đổi thứ tự · × xoá. Ảnh đầu là ảnh chính.</div>
                 </div>
 
                 <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>

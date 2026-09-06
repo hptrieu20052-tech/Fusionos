@@ -153,12 +153,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
   const b = await req.json().catch(() => null);
-  const source = String(b?.source ?? "") as "etsy" | "tiktok";
+  const source = String(b?.source ?? "") as "etsy" | "tiktok" | "manual";
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 100);
   const storeId = String(b?.storeId ?? "").trim();
   const templateId = /^[0-9a-f-]{36}$/i.test(String(b?.templateId ?? "")) ? String(b.templateId) : "";
-  if (!["etsy", "tiktok"].includes(source) || !ids.length || !storeId) {
-    return NextResponse.json({ ok: false, error: "source + ids + storeId required" }, { status: 400 });
+  // v431 · source "manual": tạo bản nháp TAY (không cần listing nguồn) — chỉ cần title (+ template).
+  const manualTitle = strv(b?.title).slice(0, 300);
+  if (!["etsy", "tiktok", "manual"].includes(source) || !storeId || (source === "manual" ? !manualTitle : !ids.length)) {
+    return NextResponse.json({ ok: false, error: source === "manual" ? "title + storeId required" : "source + ids + storeId required" }, { status: 400 });
   }
 
   // Store ShopBase đích — stage không gọi API ShopBase nên không cần credentials, chỉ cần đúng store.
@@ -194,6 +196,34 @@ export async function POST(req: NextRequest) {
 
   const results: { id: string; title: string; ok: boolean; error?: string }[] = [];
   let staged = 0;
+
+  // ── v431 · TẠO TAY (manual) — 1 bản nháp trống theo template, sửa tiếp trong Card Detail ──
+  if (source === "manual") {
+    const dup = byTitleKey.get(titleKey(manualTitle));
+    if (dup) return NextResponse.json({ ok: false, error: `duplicate design — already in this store as "${dup.handle ?? "?"}"` }, { status: 400 });
+    // v432 · nhận luôn ảnh mockup (mảng URL) ngay bước tạo
+    const manualImgs: string[] = (Array.isArray(b?.images) ? b.images : [])
+      .map((x: unknown) => strv(x)).filter((s: string) => /^https?:\/\//i.test(s)).slice(0, 12);
+    const built = tpl ? fromTemplate(tpl) : {
+      options: [] as SbOption[],
+      variants: [{ id: "", title: "Default Title", selectedOptions: [], price: "0.00", compareAtPrice: null, sku: "", barcode: "", inventoryQty: null }] as SbVariant[],
+    };
+    const [row] = await db.insert(schema.shopbaseProducts).values({
+      storeId, shopbaseProductId: "", handle: "",
+      title: manualTitle,
+      bodyHtml: buildBody(tpl, ""),
+      vendor: (tpl?.vendor ?? "").trim() || store.name,
+      productType: (tpl?.productType ?? "").trim() || "Personalized",
+      tags: withCollectionTags("", tpl),
+      status: "DRAFT",
+      options: built.options, variants: built.variants,
+      images: manualImgs.map((src, i) => ({ id: "", src, altText: "", position: i + 1 })),
+      templateId: templateId || null,
+      etsyProductId: null, tiktokProductId: null,
+      createdBy: session.sub, dirty: true, updatedAt: new Date(),
+    }).returning({ id: schema.shopbaseProducts.id });
+    return NextResponse.json({ ok: true, staged: 1, results: [{ id: row.id, title: manualTitle, ok: true }] });
+  }
 
   // ── Nguồn ETSY ─────────────────────────────────────────────────────────
   if (source === "etsy") {

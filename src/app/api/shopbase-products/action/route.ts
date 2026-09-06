@@ -72,6 +72,7 @@ export async function POST(req: NextRequest) {
   if (action === "duplicate") {
     let dupDone = 0;
     const dupFailed: { id: string; error: string }[] = [];
+    const created: { src: string; id: string }[] = [];   // v434 · trả id bản copy để client mở Card Detail luôn
     const full = await db.select().from(schema.shopbaseProducts)
       .where(inArray(schema.shopbaseProducts.id, allowed.map((r) => r.id)));
     const stripIds = (v: unknown) => (Array.isArray(v) ? v : []).map((x) => {
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
     });
     for (const p of full) {
       try {
-        await db.insert(schema.shopbaseProducts).values({
+        const [row] = await db.insert(schema.shopbaseProducts).values({
           storeId: p.storeId, shopbaseProductId: "", handle: "",
           title: `${p.title} (copy)`, bodyHtml: p.bodyHtml, vendor: p.vendor, productType: p.productType,
           tags: p.tags, status: "DRAFT", seoTitle: p.seoTitle, seoDescription: p.seoDescription,
@@ -88,11 +89,12 @@ export async function POST(req: NextRequest) {
           onlineStoreUrl: null, totalInventory: null, dirty: true,
           etsyProductId: null, tiktokProductId: null, templateId: p.templateId ?? null,
           createdBy: session.sub, pushedAt: null,
-        });
+        }).returning({ id: schema.shopbaseProducts.id });
+        created.push({ src: p.id, id: row.id });
         dupDone++;
       } catch (e) { dupFailed.push({ id: p.id, error: String((e as Error)?.message ?? e).slice(0, 180) }); }
     }
-    return NextResponse.json({ ok: true, action, done: dupDone, failed: dupFailed, total: allowed.length });
+    return NextResponse.json({ ok: true, action, done: dupDone, failed: dupFailed, total: allowed.length, created });
   }
 
   // Gom theo store.

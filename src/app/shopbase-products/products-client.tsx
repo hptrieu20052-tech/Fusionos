@@ -44,13 +44,75 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   // v424 · copy link: báo NGAY TẠI NÚT (⧉ → ✓ xanh 1.5s) thay vì flash tít trên đầu trang
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyLink = (id: string, url: string) => { navigator.clipboard?.writeText(url); setCopiedId(id); setTimeout(() => setCopiedId((c) => (c === id ? null : c)), 1500); };
+  // v431 · ＋ New product — tạo bản nháp TAY theo template (không cần listing nguồn)
+  const [newOpen, setNewOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [newStore, setNewStore] = useState("");
+  const [newTpl, setNewTpl] = useState("");
+  const [newTpls, setNewTpls] = useState<{ id: string; name: string }[]>([]);
+  const [creating, setCreating] = useState(false);
+  // v433 · mockup ngay bước tạo — upload từ máy (qua /api/product-image/upload) hoặc dán URL, style Photos như Etsy
+  const [newImgList, setNewImgList] = useState<string[]>([]);
+  const [upBusy, setUpBusy] = useState(false);
+  const [dragNewImg, setDragNewImg] = useState<number | null>(null);
+  const uploadNewImgs = async (files: FileList | null) => {
+    const list = (files ? Array.from(files) : []).filter((f) => f && f.type.startsWith("image/"));
+    if (!list.length) return;
+    setUpBusy(true);
+    let fail = 0;
+    for (const file of list) {
+      try {
+        const fd = new FormData(); fd.append("file", file);
+        const j = await fetch("/api/product-image/upload", { method: "POST", body: fd }).then((r) => r.json());
+        if (j.ok && j.url) setNewImgList((a) => a.length < 12 ? [...a, j.url] : a); else fail++;
+      } catch { fail++; }
+    }
+    if (fail) flash(`✗ ${fail} ảnh upload lỗi`, false);
+    setUpBusy(false);
+  };
+  const addNewImgUrl = () => {
+    const url = window.prompt("Dán URL ảnh (https://...)");
+    if (url && /^https?:\/\//i.test(url.trim())) setNewImgList((a) => a.length < 12 ? [...a, url.trim()] : a);
+  };
+  const moveNewImg = (from: number, to: number) => setNewImgList((a) => {
+    if (from === to || from < 0 || to < 0 || from >= a.length || to >= a.length) return a;
+    const b = a.slice(); const [x] = b.splice(from, 1); b.splice(to, 0, x); return b;
+  });
+  const loadNewTpls = (sid: string) => {
+    setNewTpls([]); setNewTpl("");
+    if (!sid) return;
+    fetch(`/api/shopbase-templates?storeId=${sid}`).then((r) => r.json())
+      .then((j) => { if (j.ok) setNewTpls((j.rows ?? j.templates ?? []).map((t: { id: string; name: string }) => ({ id: t.id, name: t.name }))); })
+      .catch(() => {});
+  };
+  const openNew = () => { const sid = syncStore || stores[0]?.id || ""; setNewStore(sid); setNewTitle(""); setNewImgList([]); setNewOpen(true); loadNewTpls(sid); };
+  const createNew = async () => {
+    if (!newTitle.trim() || !newStore) { flash("✗ Nhập title + chọn store", false); return; }
+    setCreating(true);
+    try {
+      const j = await fetch("/api/shopbase-products/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "manual", title: newTitle.trim(), storeId: newStore, templateId: newTpl || undefined, images: newImgList }) }).then((r) => r.json());
+      if (j.ok) {
+        flash("✓ Đã tạo bản nháp — thêm ảnh/sửa giá rồi Push to ShopBase");
+        setNewOpen(false);
+        await load();
+        const nid = j.results?.[0]?.id; if (nid) setEditId(nid);   // mở luôn Card Detail để hoàn thiện
+      } else flash("✗ " + (j.error ?? "create failed"), false);
+    } catch { flash("✗ Network error", false); }
+    setCreating(false);
+  };
+
   // v426 · Dup 1 dòng → tạo bản nháp "(copy)" staged, sửa rồi Push như listing mới
   const [dupingId, setDupingId] = useState<string | null>(null);
   const dupOne = async (id: string) => {
     setDupingId(id);
     try {
       const j = await fetch("/api/shopbase-products/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "duplicate", ids: [id] }) }).then((r) => r.json());
-      if (j.ok && j.done > 0) { flash("✓ Đã nhân bản thành bản nháp (copy) — sửa rồi Push to ShopBase"); await load(); }
+      if (j.ok && j.done > 0) {
+        flash("✓ Đã tạo bản nháp (copy) — sửa title/ảnh rồi Save & Push");
+        await load();
+        const nid = j.created?.[0]?.id;   // v434 · mở Card Detail ngay để sửa trước khi Push
+        if (nid) setEditId(nid);
+      }
       else flash("✗ " + (j.failed?.[0]?.error ?? j.error ?? "duplicate failed"), false);
     } catch { flash("✗ Network error", false); }
     setDupingId(null);
@@ -242,6 +304,9 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
         <ShopbaseLogo s={34} />
         <div style={{ fontSize: 20, fontWeight: 900, color: "#14213D" }}>Manage Products · <span style={{ color: SB_BLUE }}>ShopBase</span></div>
         <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {canEdit && (
+            <button onClick={openNew} style={{ background: "#14213D", color: "#fff", border: 0, borderRadius: 11, padding: "10px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>＋ New product</button>
+          )}
           <button onClick={exportCsv} style={{ background: "#fff", color: "#14213D", border: "1px solid #CBD9FF", borderRadius: 11, padding: "10px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>⭳ Export CSV</button>
           <select value={syncStore} onChange={(e) => setSyncStore(e.target.value)} style={{ ...inp, width: "auto", minWidth: 150 }}>
             {stores.length === 0 && <option value="">No ShopBase store</option>}
@@ -445,6 +510,67 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
 
       {canEdit && editId && (
         <ShopbaseEditModal id={editId} onClose={() => setEditId(null)} onSaved={load} />
+      )}
+
+      {/* v431 · ＋ NEW PRODUCT MODAL — tạo bản nháp tay theo template */}
+      {newOpen && (
+        <>
+          <div style={{ position: "fixed", inset: 0, background: "rgba(10,16,30,.45)", zIndex: 60 }} onClick={() => !creating && setNewOpen(false)} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 61, background: "#fff", borderRadius: 16, boxShadow: "0 24px 64px rgba(10,16,30,.25)", padding: "22px 24px", width: "min(480px, 92vw)" }}>
+            <div style={{ fontSize: 17, fontWeight: 900, color: "#14213D", marginBottom: 14 }}>＋ New product (bản nháp)</div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>Title</label>
+            <input autoFocus value={newTitle} onChange={(e) => setNewTitle(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") createNew(); }}
+              placeholder="e.g. Cute Cat Mom 2027 Wall Calendar, Funny Kitten Monthly Planner" style={{ ...inp, width: "100%", marginBottom: 12 }} />
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>Store</label>
+            <select value={newStore} onChange={(e) => { setNewStore(e.target.value); loadNewTpls(e.target.value); }} style={{ ...inp, width: "100%", marginBottom: 12 }}>
+              {stores.length === 0 && <option value="">No ShopBase store</option>}
+              {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>Template</label>
+            <select value={newTpl} onChange={(e) => setNewTpl(e.target.value)} style={{ ...inp, width: "100%", marginBottom: 12 }}>
+              <option value="">(No template — 1 variant trống)</option>
+              {newTpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+            {/* v433 · Photos — upload từ máy hoặc dán URL, kéo-thả đổi thứ tự, ảnh đầu = thumbnail */}
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>
+              Photos ({newImgList.length}/12) <span style={{ fontWeight: 500, color: "var(--faint)" }}>· kéo để sắp xếp · ảnh đầu = thumbnail</span>
+            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+              {newImgList.map((u, i) => (
+                <div key={u + i} draggable
+                  onDragStart={() => setDragNewImg(i)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => { if (dragNewImg !== null) moveNewImg(dragNewImg, i); setDragNewImg(null); }}
+                  onDragEnd={() => setDragNewImg(null)}
+                  style={{ position: "relative", width: 72, height: 72, cursor: "grab", opacity: dragNewImg === i ? .45 : 1 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={u} alt="" draggable={false} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 8, border: i === 0 ? `2px solid ${SB_BLUE}` : "1px solid var(--line)" }} />
+                  {i === 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, fontSize: 9, fontWeight: 800, background: "rgba(0,0,0,.62)", color: "#fff", padding: "1px 0", textAlign: "center", borderRadius: "0 0 6px 6px", pointerEvents: "none" }}>Thumbnail</span>}
+                  <button type="button" onClick={() => setNewImgList((a) => a.filter((_, k) => k !== i))}
+                    style={{ position: "absolute", top: 2, right: 2, border: "none", background: "rgba(0,0,0,.6)", color: "#fff", borderRadius: 6, width: 18, height: 18, fontSize: 11, lineHeight: "18px", padding: 0, cursor: "pointer" }}>×</button>
+                </div>
+              ))}
+              {newImgList.length < 12 && (
+                <label style={{ width: 72, height: 72, borderRadius: 8, border: `1.5px dashed ${SB_BLUE}88`, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, color: SB_BLUE, fontSize: 10.5, fontWeight: 700, cursor: upBusy ? "default" : "pointer", opacity: upBusy ? .5 : 1 }}>
+                  <span style={{ fontSize: 18, lineHeight: 1 }}>+</span>{upBusy ? "Uploading…" : "Add photos"}
+                  <input type="file" accept="image/*" multiple hidden disabled={upBusy} onChange={(e) => { uploadNewImgs(e.target.files); e.currentTarget.value = ""; }} />
+                </label>
+              )}
+            </div>
+            <button type="button" onClick={addNewImgUrl} disabled={newImgList.length >= 12}
+              style={{ border: "none", background: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, color: "#1D4ED8", padding: 0, marginBottom: 6 }}>+ Add by URL</button>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16 }}>
+              Bản nháp lấy description · options/variants/giá · 🚚 delivery · tags collection từ template. Tạo xong Card Detail mở luôn để chỉnh tiếp, rồi Push to ShopBase.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button onClick={() => setNewOpen(false)} disabled={creating} style={{ background: "#fff", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Cancel</button>
+              <button onClick={createNew} disabled={creating || !newTitle.trim() || !newStore}
+                style={{ background: SB_BLUE, color: "#fff", border: 0, borderRadius: 10, padding: "9px 20px", fontWeight: 800, fontSize: 13, cursor: creating ? "default" : "pointer", opacity: creating || !newTitle.trim() || !newStore ? 0.6 : 1 }}>
+                {creating ? "Creating…" : "Create draft"}
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
