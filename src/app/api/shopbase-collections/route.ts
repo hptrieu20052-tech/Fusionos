@@ -4,6 +4,7 @@ import { and, asc, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
+import { storefrontUrl } from "@/lib/shopbase";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,7 @@ const slugTag = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").repla
 const tagList = (s: string | null | undefined) => String(s ?? "").split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
 
 async function checkStore(storeId: string, session: NonNullable<Awaited<ReturnType<typeof getSession>>>) {
-  const [store] = await db.select({ id: schema.stores.id, sellerId: schema.stores.sellerId, marketplace: schema.stores.marketplace })
+  const [store] = await db.select({ id: schema.stores.id, sellerId: schema.stores.sellerId, marketplace: schema.stores.marketplace, storeUrl: schema.stores.storeUrl })
     .from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
   if (!store || store.marketplace !== "shopbase") return { error: "not a ShopBase store" };
   const scopeIds = await storeOwnerScopeIds(session);
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     const products = prods.filter((p) => tagList(p.tags).includes(tagQ)).map((p) => {
       const imgs = (Array.isArray(p.images) ? p.images : []) as { src?: string; position?: number }[];
       const thumb = imgs.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).map((i) => strv(i?.src)).find((s) => /^https?:\/\//i.test(s)) ?? null;
-      return { localId: p.id, productId: p.pid, title: p.title, status: p.status, thumb, onlineStoreUrl: p.onlineStoreUrl ?? null };
+      return { localId: p.id, productId: p.pid, title: p.title, status: p.status, thumb, onlineStoreUrl: storefrontUrl(p.onlineStoreUrl, ctx.store.storeUrl) };   // v425 · domain bán hàng
     });
     return NextResponse.json({ ok: true, products });
   }

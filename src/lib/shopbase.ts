@@ -25,6 +25,15 @@ export function shopbaseConfigured(cred: ShopBaseCred | null): boolean {
   return !!(cred && shopbaseHost(cred) && String(cred.apiKey ?? "").trim() && String(cred.password ?? "").trim());
 }
 
+/** v425 · Link sản phẩm cho KHÁCH: đổi host {sub}.onshopbase.com → domain bán hàng (stores.store_url,
+ *  vd annitee.com). Store URL trống hoặc không phải domain → giữ nguyên link gốc. */
+export function storefrontUrl(u: string | null | undefined, storeUrl: string | null | undefined): string | null {
+  if (!u) return null;
+  const dom = String(storeUrl ?? "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+  if (!dom || !dom.includes(".")) return u;
+  try { const url = new URL(u); url.host = dom; url.protocol = "https:"; return url.toString(); } catch { return u; }
+}
+
 /** Gọi ShopBase Admin REST API. Basic auth (apiKey:password). Trả JSON, ném lỗi có nội dung để log. */
 export async function shopbaseApi(cred: ShopBaseCred, path: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
   const host = shopbaseHost(cred);

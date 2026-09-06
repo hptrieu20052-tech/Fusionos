@@ -4,7 +4,7 @@ import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
-import { shopbaseApi, shopbaseConfigured, type ShopBaseCred } from "@/lib/shopbase";
+import { shopbaseApi, shopbaseConfigured, storefrontUrl, type ShopBaseCred } from "@/lib/shopbase";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
       p: schema.shopbaseProducts,
       sellerId: schema.stores.sellerId,
       storeName: schema.stores.name,
+      storeUrl: schema.stores.storeUrl,
       marketplace: schema.stores.marketplace,
     }).from(schema.shopbaseProducts)
       .leftJoin(schema.stores, eq(schema.stores.id, schema.shopbaseProducts.storeId))
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
       id: p.id, shopbaseProductId: p.shopbaseProductId, handle: p.handle ?? "",
       title: p.title, bodyHtml: p.bodyHtml ?? "", vendor: p.vendor ?? "", productType: p.productType ?? "",
       tags: p.tags ?? "", status: p.status, seoTitle: p.seoTitle ?? "", seoDescription: p.seoDescription ?? "",
-      onlineStoreUrl: p.onlineStoreUrl ?? null, storeName: row.storeName ?? "—",
+      onlineStoreUrl: storefrontUrl(p.onlineStoreUrl, row.storeUrl), storeName: row.storeName ?? "—",   // v425 · domain bán hàng
       options: Array.isArray(p.options) ? p.options : [],
       variants: Array.isArray(p.variants) ? p.variants : [],
       images: Array.isArray(p.images) ? p.images : [],
@@ -52,6 +53,7 @@ export async function GET(req: NextRequest) {
   const rows = await db.select({
     p: schema.shopbaseProducts,
     storeName: schema.stores.name,
+    storeUrl: schema.stores.storeUrl,
     sellerId: schema.stores.sellerId,
     sellerName: schema.users.fullName,
     marketplace: schema.stores.marketplace,
@@ -106,7 +108,7 @@ export async function GET(req: NextRequest) {
       shopbaseProductId: r.p.shopbaseProductId, handle: r.p.handle ?? "",
       title: r.p.title, productType: r.p.productType ?? "", tags: r.p.tags ?? "",
       status: r.p.status, collections: r.p.collections ?? [],
-      onlineStoreUrl: r.p.onlineStoreUrl ?? null, totalInventory: r.p.totalInventory ?? null,
+      onlineStoreUrl: storefrontUrl(r.p.onlineStoreUrl, r.storeUrl), totalInventory: r.p.totalInventory ?? null,   // v425 · domain bán hàng
       dirty: r.p.dirty, variantCount: vars.length, imageCount: imgs.length,
       priceMin: prices.length ? Math.min(...prices) : null,
       priceMax: prices.length ? Math.max(...prices) : null,
