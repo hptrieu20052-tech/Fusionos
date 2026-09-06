@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds } from "@/lib/scope";
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
       .leftJoin(schema.stores, eq(schema.stores.id, schema.shopbaseProducts.storeId))
       .where(eq(schema.shopbaseProducts.id, id)).limit(1);
     if (!row || row.marketplace !== "shopbase") return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-    if (scopeIds && !(row.sellerId && scopeIds.includes(row.sellerId))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    if (scopeIds && row.sellerId && !scopeIds.includes(row.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
     const p = row.p;
     return NextResponse.json({ ok: true, product: {
       id: p.id, shopbaseProductId: p.shopbaseProductId, handle: p.handle ?? "",
@@ -61,7 +61,20 @@ export async function GET(req: NextRequest) {
     .where(eq(schema.stores.marketplace, "shopbase"))
     .orderBy(desc(schema.shopbaseProducts.updatedAt));
 
-  const scoped = scopeIds ? rows.filter((r) => r.sellerId && scopeIds.includes(r.sellerId)) : rows;
+  // v411 · store ShopBase có sellerId NULL = store CHUNG → mọi user có quyền products đều thấy.
+  const scoped = scopeIds ? rows.filter((r) => !r.sellerId || scopeIds.includes(r.sellerId)) : rows;
+
+  // v411 · Store chung nhiều seller: gắn công NGƯỜI TẠO (created_by) + tên template đã dùng.
+  const creatorIds = Array.from(new Set(scoped.map((r) => r.p.createdBy).filter(Boolean))) as string[];
+  const creators = creatorIds.length
+    ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, creatorIds))
+    : [];
+  const creatorById = new Map(creators.map((c) => [c.id, c.name]));
+  const tplIds = Array.from(new Set(scoped.map((r) => r.p.templateId).filter(Boolean))) as string[];
+  const tpls = tplIds.length
+    ? await db.select({ id: schema.shopbaseTemplates.id, name: schema.shopbaseTemplates.name }).from(schema.shopbaseTemplates).where(inArray(schema.shopbaseTemplates.id, tplIds))
+    : [];
+  const tplById = new Map(tpls.map((t) => [t.id, t.name]));
 
   // Số ĐƠN theo listing: khớp phần SỐ của shopbase_product_id ↔ order_items.etsy_listing_id
   // (import ShopBase ghi etsy_listing_id = product_id). Loại đơn new/cancel/trash.
@@ -99,6 +112,10 @@ export async function GET(req: NextRequest) {
       priceMax: prices.length ? Math.max(...prices) : null,
       skuDone, skuTotal, thumb,
       orders: digits ? (orderCountByPid.get(digits) ?? 0) : 0,
+      createdBy: r.p.createdBy ?? null,
+      creatorName: r.p.createdBy ? (creatorById.get(r.p.createdBy) ?? "—") : null,
+      templateId: r.p.templateId ?? null,
+      templateName: r.p.templateId ? (tplById.get(r.p.templateId) ?? null) : null,
       syncedAt: r.p.syncedAt, updatedAt: r.p.updatedAt,
     };
   });
@@ -131,7 +148,7 @@ export async function PATCH(req: NextRequest) {
   if (!row || row.marketplace !== "shopbase") return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && !(row.sellerId && scopeIds.includes(row.sellerId))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (scopeIds && row.sellerId && !scopeIds.includes(row.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
 
   // Chuẩn hoá field từ client (giữ nguyên field không gửi).
   const title = typeof b.title === "string" ? b.title : row.p.title;

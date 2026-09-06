@@ -11,18 +11,20 @@
   → XOÁ 2 đoạn widget cũ (nếu đã dán) → dán TOÀN BỘ file này vào ô HEAD → Save.
 ============================================================================ -->
 <style>
-  .fsd-wrap{margin:18px 0;font-family:inherit;max-width:560px}
-  .fsd-select{width:100%;padding:10px 12px;border:1px solid #d9dee7;border-radius:8px;font-size:14px;background:#fff;appearance:auto;margin-bottom:14px}
-  .fsd-title{font-weight:700;font-size:15px;margin:0 0 4px}
-  .fsd-line{font-size:14px;margin:0 0 18px}
-  .fsd-line b{font-weight:700}
-  .fsd-steps{display:flex;align-items:flex-start;position:relative;margin:8px 0 4px}
+  .fsd-wrap{margin:18px 0;font-family:inherit;max-width:620px;border:1px solid #E6EAF3;border-radius:14px;padding:16px 18px 14px;background:#fff}
+  .fsd-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+  .fsd-title{font-weight:700;font-size:15px;margin:0}
+  .fsd-select{width:auto;min-width:150px;padding:7px 30px 7px 10px;border:1px solid #d9dee7;border-radius:8px;font-size:13px;background:#fff;appearance:auto;color:#333}
+  .fsd-line{font-size:14px;margin:2px 0 16px;color:#333}
+  .fsd-line b{font-weight:700;color:#111}
+  .fsd-steps{display:flex;align-items:flex-start;position:relative;margin:4px 0 2px}
   .fsd-step{flex:1;text-align:center;position:relative;z-index:1}
-  .fsd-ic{width:52px;height:52px;border-radius:50%;background:#fff;box-shadow:0 1px 6px rgba(20,40,80,.15);display:inline-flex;align-items:center;justify-content:center;color:#1d4a8f}
-  .fsd-ic svg{width:24px;height:24px}
-  .fsd-step-label{font-weight:700;font-size:13.5px;margin-top:8px}
-  .fsd-step-date{font-size:12.5px;color:#333;margin-top:2px}
-  .fsd-bar{position:absolute;top:26px;left:12%;right:12%;height:4px;background:#dbe3f3;border-radius:2px;z-index:0}
+  .fsd-ic{width:48px;height:48px;border-radius:50%;background:#fff;border:1px solid #E6EAF3;box-shadow:0 1px 5px rgba(20,40,80,.10);display:inline-flex;align-items:center;justify-content:center;color:#1d4a8f}
+  .fsd-ic svg{width:22px;height:22px}
+  .fsd-step-label{font-weight:700;font-size:13px;margin-top:7px}
+  .fsd-step-date{font-size:12px;color:#555;margin-top:2px}
+  .fsd-bar{position:absolute;top:24px;left:14%;right:14%;height:3px;background:linear-gradient(90deg,#c9d6f2,#dbe3f3);border-radius:2px;z-index:0}
+  @media (max-width:480px){.fsd-wrap{padding:14px 12px 12px}.fsd-ic{width:42px;height:42px}.fsd-ic svg{width:19px;height:19px}}
   .fcz-wrap{margin:14px 0;font-family:inherit}
   .fcz-field{margin-bottom:12px}
   .fcz-label{display:block;font-weight:600;font-size:13.5px;margin-bottom:6px}
@@ -68,18 +70,30 @@
   }
 
   function log() { try { console.log.apply(console, ["[FUSION]"].concat([].slice.call(arguments))); } catch (e) {} }
+  // Nút phải ĐANG HIỂN THỊ — theme thường có thêm 1 nút Add to cart trong thanh sticky/mobile
+  // đang ẩn; chèn vào đó là widget "tàng hình". Chỉ nhận nút có kích thước thật trên màn hình.
+  function isVisible(el) {
+    if (!el || !el.getBoundingClientRect) return false;
+    var r = el.getBoundingClientRect();
+    if (r.width < 10 || r.height < 10) return false;
+    var st = window.getComputedStyle(el);
+    return st.display !== "none" && st.visibility !== "hidden" && st.opacity !== "0";
+  }
+  function pickVisible(list) {
+    for (var i = 0; i < list.length; i++) if (isVisible(list[i])) return list[i];
+    return list[0] || null;
+  }
   function findBuyBox() {
-    // Nhận cả theme cũ lẫn Website Builder (class wb-*) — quét theo text nút nếu class lạ.
-    var btn = document.querySelector(
+    // Nhận cả theme cũ lẫn Website Builder — gom TẤT CẢ ứng viên rồi ưu tiên nút đang hiển thị.
+    var cands = [].slice.call(document.querySelectorAll(
       'button[name="add"], .btn-add-cart, .btn-addtocart, [class*="add-to-cart"], [class*="add_to_cart"], [class*="add-cart"], [class*="addcart"], [class*="AddToCart"], [data-testid*="add-to-cart"], .product-form button[type="submit"], form[action*="/cart"] button'
-    );
-    if (!btn) {
-      var all = document.querySelectorAll("button");
-      for (var i = 0; i < all.length; i++) {
-        var t = (all[i].textContent || "").trim().toLowerCase();
-        if (t === "add to cart" || t === "add to bag" || t.indexOf("add to cart") === 0) { btn = all[i]; break; }
-      }
+    ));
+    var all = document.querySelectorAll("button");
+    for (var i = 0; i < all.length; i++) {
+      var t = (all[i].textContent || "").trim().toLowerCase();
+      if (t === "add to cart" || t === "add to bag" || t.indexOf("add to cart") === 0) cands.push(all[i]);
     }
+    var btn = pickVisible(cands);
     var form = btn ? btn.closest("form") : null;
     if (!form) form = document.querySelector('form[action*="/cart"], .product-form form, form.product-form');
     return { form: form, btn: btn };
@@ -98,9 +112,50 @@
     }
   }
 
+  // ── Info tabs — đổ nội dung template vào panel accordion SHIPPING / RETURN & WARRANTY ──
+  function fillTabs(tabs) {
+    if (!tabs) return;
+    var jobs = [
+      { re: /^shipping$/i, html: tabs.shipping, key: "shipping" },
+      { re: /^return\s*&\s*warranty$/i, html: tabs.returnWarranty, key: "returnWarranty" }
+    ];
+    jobs.forEach(function (job) {
+      if (!job.html) return;
+      if (document.querySelector('[data-fusion-tab="' + job.key + '"]')) return;   // đã đổ rồi
+      // Tìm heading NHỎ NHẤT khớp đúng text (deepest match) trong các thẻ tiêu đề thường gặp.
+      var heads = document.querySelectorAll("h1,h2,h3,h4,h5,h6,button,span,div,p,summary");
+      var head = null;
+      for (var i = 0; i < heads.length; i++) {
+        var t = (heads[i].textContent || "").trim();
+        if (t.length < 40 && job.re.test(t)) head = heads[i];   // lấy match sâu nhất (duyệt sau cùng)
+      }
+      if (!head) { log("tab '" + job.key + "': heading not found"); return; }
+      // Panel = sibling kế tiếp có nội dung, dò từ heading đi lên tối đa 4 cấp.
+      var node = head, panel = null;
+      for (var up = 0; up < 4 && node && !panel; up++) {
+        var sib = node.nextElementSibling;
+        while (sib) {
+          var txt = (sib.textContent || "").trim();
+          if (txt.length > 10 || sib.children.length) { panel = sib; break; }
+          sib = sib.nextElementSibling;
+        }
+        node = node.parentElement;
+      }
+      if (!panel) { log("tab '" + job.key + "': panel not found"); return; }
+      panel.innerHTML = '<div data-fusion-tab="' + job.key + '" style="padding:6px 0;line-height:1.65;font-size:14px">' + job.html + "</div>";
+      log("tab '" + job.key + "': filled");
+    });
+  }
+
   // ── Customize fields (Color, tên khắc…) — chèn trước Add to cart, ghi vào properties[] ──
   function renderCustomize(fields) {
-    if (!fields || !fields.length || document.querySelector(".fcz-wrap")) return;
+    if (!fields || !fields.length) return;
+    var existing = document.querySelector(".fcz-wrap");
+    if (existing) {
+      if (isVisible(existing)) return;
+      existing.parentNode.removeChild(existing);   // đã chèn vào khu ẩn → chèn lại chỗ hiển thị
+      log("customize: re-inserting (was in a hidden container)");
+    }
     var target = findBuyBox();
     if (!target.form && !target.btn) { log("customize: add-to-cart button/form not found yet"); return; }
     var wrap = document.createElement("div");
@@ -181,20 +236,26 @@
   function renderDelivery(cfg) {
     if (document.querySelector(".fsd-wrap")) return;
     var anchor = findDescription();
+    if (anchor && !isVisible(anchor)) anchor = null;
     if (!anchor) { var bb = findBuyBox(); anchor = bb.btn ? bb.btn.parentNode : bb.form; }
     if (!anchor) { var h1 = document.querySelector("h1"); anchor = h1 ? h1.parentNode : null; }
     if (!anchor) { log("delivery: no anchor found (description/buybox/h1 all missing)"); return; }
     var wrap = document.createElement("div");
     wrap.className = "fsd-wrap";
+    var head = document.createElement("div");
+    head.className = "fsd-head";
+    var title = document.createElement("p");
+    title.className = "fsd-title";
     var sel = document.createElement("select");
     sel.className = "fsd-select";
     COUNTRY_META.forEach(function (c) {
       var o = document.createElement("option");
-      o.value = c.key; o.textContent = c.label;
+      o.value = c.key; o.textContent = c.flag + "  " + c.label;
       sel.appendChild(o);
     });
+    head.appendChild(title); head.appendChild(sel);
     var info = document.createElement("div");
-    wrap.appendChild(sel); wrap.appendChild(info);
+    wrap.appendChild(head); wrap.appendChild(info);
     var SVG_CART = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>';
     var SVG_TRUCK = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M0 5.5A1.5 1.5 0 0 1 1.5 4h11A1.5 1.5 0 0 1 14 5.5V7h2.02c.44 0 .85.19 1.13.53l2.5 3c.22.27.35.61.35.96V15.5a1.5 1.5 0 0 1-1.5 1.5h-.55a2.75 2.75 0 0 1-5.4 0h-3.1a2.75 2.75 0 0 1-5.4 0H1.5A1.5 1.5 0 0 1 0 15.5v-10ZM14 9v3h4.6l-2.5-3H14ZM6.75 16.5a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm8.5 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z"/></svg>';
     var SVG_PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
@@ -207,8 +268,8 @@
       var start = (cfg.cutoff != null && now.getHours() >= cfg.cutoff) ? bd(now, 1) : now;
       var shipA = bd(start, proc[0]), shipB = bd(start, proc[1]);
       var delA = bd(start, proc[0] + transit[0]), delB = bd(start, proc[1] + transit[1]);
+      title.innerHTML = 'Delivery to ' + meta.flag + ' <b>' + meta.label + '</b>';
       info.innerHTML =
-        '<p class="fsd-title">Delivery to ' + meta.flag + ' <b>' + meta.label + '</b></p>' +
         '<p class="fsd-line">You’ll receive your package between <b>' + fmt(delA) + '</b> - <b>' + fmt(delB) + '</b></p>' +
         '<div class="fsd-steps"><div class="fsd-bar"></div>' +
         '<div class="fsd-step"><span class="fsd-ic">' + SVG_CART + '</span><div class="fsd-step-label">Ordered</div><div class="fsd-step-date">' + fmt(now) + '</div></div>' +
@@ -236,12 +297,14 @@
           log("config loaded:", JSON.stringify({ delivery: !!cfgCache.delivery, customize: (cfgCache.customize || []).length }));
           renderDelivery((cfgCache.delivery) || DEFAULT_DELIVERY);
           renderCustomize(cfgCache.customize || []);
+          fillTabs(cfgCache.tabs);
           log("rendered:", JSON.stringify({ delivery: !!document.querySelector(".fsd-wrap"), customize: !!document.querySelector(".fcz-wrap") }));
         })
         .catch(function (e) { log("config fetch FAILED:", String(e)); cfgCache = {}; renderDelivery(DEFAULT_DELIVERY); });
     } else if (cfgCache) {
       renderDelivery((cfgCache.delivery) || DEFAULT_DELIVERY);
       renderCustomize(cfgCache.customize || []);
+      fillTabs(cfgCache.tabs);
     }
   }
 
@@ -250,7 +313,8 @@
   // Theme render trễ (SPA) → thử lại vài nhịp; dừng khi cả 2 widget đã gắn hoặc quá 20 lần.
   var tries = 0;
   var t = setInterval(function () {
-    var done = document.querySelector(".fsd-wrap") && (!cfgCache || !(cfgCache.customize || []).length || document.querySelector(".fcz-wrap"));
+    var fcz = document.querySelector(".fcz-wrap");
+    var done = document.querySelector(".fsd-wrap") && (!cfgCache || !(cfgCache.customize || []).length || (fcz && isVisible(fcz)));
     if (done || ++tries > 20) { clearInterval(t); return; }
     boot();
   }, 500);

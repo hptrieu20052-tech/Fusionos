@@ -1,7 +1,7 @@
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { db, schema } from "@/lib/db";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import EtsyProductsClient from "./products-client";
 
@@ -38,8 +38,8 @@ export default async function EtsyProductsPage() {
     .from(schema.stores).where(shopWhere).orderBy(asc(schema.stores.name));
   // v405 · Store SHOPBASE (đích để Push to ShopBase) — cùng scope seller.
   const sbWhere = scopeIds
-    ? and(eq(schema.stores.marketplace, "shopbase"), inArray(schema.stores.sellerId, scopeIds))
-    : eq(schema.stores.marketplace, "shopbase");
+    ? and(eq(schema.stores.marketplace, "shopbase"), or(isNull(schema.stores.sellerId), inArray(schema.stores.sellerId, scopeIds)))
+    : eq(schema.stores.marketplace, "shopbase");   // sellerId NULL = store chung
   const shopbaseStores = await db.select({ id: schema.stores.id, name: schema.stores.name, sellerId: schema.stores.sellerId })
     .from(schema.stores).where(sbWhere).orderBy(asc(schema.stores.name));
   // v185: chỉ admin được xoá listing đã stage/push sang Shopify (seller xoá là mất dấu link)

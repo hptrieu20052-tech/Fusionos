@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
   if (!store) return NextResponse.json({ ok: false, error: "store not found" }, { status: 404 });
   if (store.marketplace !== "shopbase") return NextResponse.json({ ok: false, error: "not a ShopBase store" }, { status: 400 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && (!store.sellerId || !scopeIds.includes(store.sellerId))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (scopeIds && store.sellerId && !scopeIds.includes(store.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
 
   const cred = ((store.apiCredentials ?? {}) as Record<string, unknown>).shopbase as ShopBaseCred | undefined;
   if (!shopbaseConfigured(cred ?? null)) {

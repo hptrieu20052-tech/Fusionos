@@ -156,7 +156,8 @@ export async function POST(req: NextRequest) {
 
   // Scope: seller chỉ stage từ listing của mình VÀ tới store của mình.
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && (!store.sellerId || !scopeIds.includes(store.sellerId))) {
+  // v411 · store ShopBase có sellerId NULL = store CHUNG — mọi seller đều stage vào được.
+  if (scopeIds && store.sellerId && !scopeIds.includes(store.sellerId)) {
     return NextResponse.json({ ok: false, error: "forbidden: target store not in your scope" }, { status: 403 });
   }
 
@@ -215,6 +216,7 @@ export async function POST(req: NextRequest) {
           options: built.options, variants: built.variants, images,
           templateId: templateId || null,
           etsyProductId: p.id, tiktokProductId: null,
+          createdBy: session.sub,   // v411 · store chung nhiều seller — gắn công người stage
           dirty: true, updatedAt: new Date(),
         };
         const [cur] = await db.select({ id: schema.shopbaseProducts.id, pid: schema.shopbaseProducts.shopbaseProductId })
@@ -292,6 +294,7 @@ export async function POST(req: NextRequest) {
           options: built.options, variants: built.variants, images,
           templateId: templateId || null,
           etsyProductId: null, tiktokProductId: p.id,
+          createdBy: session.sub,   // v411
           dirty: true, updatedAt: new Date(),
         };
         const [cur] = await db.select({ id: schema.shopbaseProducts.id, pid: schema.shopbaseProducts.shopbaseProductId })

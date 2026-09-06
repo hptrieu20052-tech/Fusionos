@@ -12,6 +12,8 @@ type Row = {
   shopbaseProductId: string; handle: string; title: string; productType: string; tags: string;
   status: string; onlineStoreUrl: string | null; totalInventory: number | null;
   collections?: { id: string; title: string }[];
+  createdBy?: string | null; creatorName?: string | null;
+  templateId?: string | null; templateName?: string | null;
   dirty: boolean; variantCount: number; imageCount: number;
   priceMin: number | null; priceMax: number | null; skuDone: number; skuTotal: number;
   thumb: string | null; orders?: number; syncedAt: string | null; updatedAt: string | null;
@@ -45,6 +47,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   const [tagInput, setTagInput] = useState("");
   // v408 · filter theo collection + Action "Add to collection"
   const [fCollection, setFCollection] = useState("");
+  const [fTemplate, setFTemplate] = useState("");   // v411 · lọc theo template đã dùng
   const [colPanel, setColPanel] = useState(false);
   const [colList, setColList] = useState<{ id: string; title: string }[]>([]);
   const [colPick, setColPick] = useState("");
@@ -71,6 +74,17 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   };
 
   const types = useMemo(() => Array.from(new Set(rows.map((r) => r.productType).filter(Boolean))).sort(), [rows]);
+  // v411 · Store chung: filter Seller = NGƯỜI TẠO listing (created_by), gom từ rows.
+  const creatorOpts = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) if (r.createdBy && !m.has(r.createdBy)) m.set(r.createdBy, r.creatorName || "—");
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+  const templateOpts = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) if (r.templateId && !m.has(r.templateId)) m.set(r.templateId, r.templateName || "—");
+    return Array.from(m, ([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
   // Collection filter options — gom từ jsonb collections của các dòng (id → title).
   const collectionOpts = useMemo(() => {
     const m = new Map<string, string>();
@@ -80,7 +94,8 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   const filtered = useMemo(() => {
     const list = rows.filter((r) => {
       if (fStore && r.storeId !== fStore) return false;
-      if (fSeller && r.sellerId !== fSeller) return false;
+      if (fSeller && r.createdBy !== fSeller) return false;   // v411 · lọc theo người tạo
+      if (fTemplate && r.templateId !== fTemplate) return false;
       if (fType && r.productType !== fType) return false;
       if (fStatus === "__staged") { if (r.shopbaseProductId) return false; }
       else if (fStatus && r.status !== fStatus) return false;
@@ -90,10 +105,10 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
     });
     if (sortOrders) list.sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0));
     return list;
-  }, [rows, fStore, fSeller, fType, fStatus, fCollection, q, sortOrders]);
+  }, [rows, fStore, fSeller, fType, fStatus, fCollection, fTemplate, q, sortOrders]);
 
   // Phân trang 20/trang; reset về trang 1 khi đổi filter/sort.
-  useEffect(() => { setPage(1); }, [q, fStore, fSeller, fType, fStatus, fCollection, sortOrders]);
+  useEffect(() => { setPage(1); }, [q, fStore, fSeller, fType, fStatus, fCollection, fTemplate, sortOrders]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE), [filtered, pageSafe]);
@@ -229,7 +244,8 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search title / handle / ID" style={{ ...inp, marginBottom: 10 }} />
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
           <select value={fStore} onChange={(e) => setFStore(e.target.value)} style={inp}><option value="">All stores</option>{stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-          <select value={fSeller} onChange={(e) => setFSeller(e.target.value)} style={inp}><option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          <select value={fSeller} onChange={(e) => setFSeller(e.target.value)} style={inp}><option value="">All sellers</option>{creatorOpts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          <select value={fTemplate} onChange={(e) => setFTemplate(e.target.value)} style={inp}><option value="">All templates</option>{templateOpts.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select>
           <select value={fType} onChange={(e) => setFType(e.target.value)} style={inp}><option value="">All types</option>{types.map((t) => <option key={t} value={t}>{t}</option>)}</select>
           <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} style={inp}><option value="">All status</option><option value="ACTIVE">Available (Active)</option><option value="DRAFT">Unavailable (Draft)</option><option value="ARCHIVED">Archived</option><option value="__staged">Staged drafts (not on ShopBase yet)</option></select>
           <select value={fCollection} onChange={(e) => setFCollection(e.target.value)} style={inp}><option value="">All collections</option>{collectionOpts.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}</select>
@@ -344,7 +360,11 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{r.variantCount} variants · {r.imageCount} images · SKU {r.skuDone}/{r.skuTotal}{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}</div>
                       <div onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.shopbaseProductId); }} title="Click to copy product ID" style={{ fontSize: 10.5, color: "var(--muted)", fontFamily: "monospace", marginTop: 1, cursor: "copy" }}>#{r.shopbaseProductId}</div>
                     </td>
-                    <td style={{ padding: "10px 12px" }}><div style={{ fontWeight: 600 }}>{r.storeName}</div><div style={{ fontSize: 12, color: "var(--muted)" }}>{r.sellerName}</div></td>
+                    <td style={{ padding: "10px 12px" }}>
+                      <div style={{ fontWeight: 600 }}>{r.storeName}</div>
+                      <div style={{ fontSize: 12, color: r.creatorName ? "#14213D" : "var(--muted)", fontWeight: r.creatorName ? 700 : 400 }}>{r.creatorName ?? r.sellerName}</div>
+                      {r.templateName && <div style={{ fontSize: 11, color: "var(--muted)" }}>tpl: {r.templateName}</div>}
+                    </td>
                     <td style={{ padding: "10px 12px", color: "var(--muted)" }}>{r.productType || "—"}</td>
                     <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: (r.orders ?? 0) > 0 ? 800 : 400, color: (r.orders ?? 0) > 0 ? "#14213D" : "var(--muted)" }}>{r.orders ?? 0}</td>
                     <td style={{ padding: "10px 12px", fontWeight: 700, whiteSpace: "nowrap" }}>{price(r)}</td>
@@ -352,7 +372,9 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                     <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
                       {r.onlineStoreUrl ? (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                          <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" style={{ color: SB_BLUE, fontWeight: 700, textDecoration: "none" }}>Open ↗</a>
+                          <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" title="View on store" style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 8, border: "1px solid #CBD9FF", background: "#F3F7FF", color: SB_BLUE }}>
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" /><circle cx="12" cy="12" r="3" /></svg>
+                          </a>
                           <button onClick={() => { navigator.clipboard?.writeText(r.onlineStoreUrl!); flash("✓ Link copied"); }} title="Copy product link"
                             style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 7, width: 26, height: 26, cursor: "pointer", fontSize: 13, lineHeight: 1, color: "var(--muted)" }}>⧉</button>
                         </span>

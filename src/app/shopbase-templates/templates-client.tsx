@@ -31,7 +31,7 @@ type Draft = {
   returnWarranty: string;
 };
 type PQ = { type: "text" | "dropdown"; label: string; required: boolean; options: string[]; maxChars: number };
-type Tpl = Draft & { updatedAt?: string };
+type Tpl = Draft & { updatedAt?: string; creatorName?: string | null; creatorIsAdmin?: boolean };
 
 const SB_BLUE = "#2F6BFF";
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -266,7 +266,7 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div onClick={() => editTpl(t)} title="Edit template" style={{ fontWeight: 700, fontSize: 14.5, color: SB_BLUE, cursor: "pointer", display: "inline-block" }}>{t.name}</div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
-                    {storeName(t.storeId)} · {(t.options ?? []).map((o) => `${o.name} (${o.values.length})`).join(" × ") || "no options"} · {(t.variants ?? []).length} variants · {(t.collections ?? []).length} collections · {t.status}
+                    {storeName(t.storeId)} · {(t.options ?? []).map((o) => `${o.name} (${o.values.length})`).join(" × ") || "no options"} · {(t.variants ?? []).length} variants · {(t.collections ?? []).length} collections · {t.status}{t.creatorName && <> · by <b style={{ color: t.creatorIsAdmin ? "#B7791F" : "var(--ink)" }}>{t.creatorName}{t.creatorIsAdmin ? " (admin)" : ""}</b></>}
                   </div>
                 </div>
                 <button onClick={() => del(t)} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }}>Delete</button>

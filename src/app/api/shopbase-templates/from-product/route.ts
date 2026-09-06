@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
     .where(eq(schema.shopbaseProducts.id, productId)).limit(1);
   if (!row || row.mk !== "shopbase") return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && !(row.sellerId && scopeIds.includes(row.sellerId))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (scopeIds && row.sellerId && !scopeIds.includes(row.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
 
   const p = row.p;
   const options = ((Array.isArray(p.options) ? p.options : []) as { name?: string; values?: string[] }[])

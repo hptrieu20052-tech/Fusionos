@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
   // Phân quyền: seller chỉ thao tác sản phẩm thuộc store của mình.
   const scopeIds = await storeOwnerScopeIds(session);
-  const allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || (r.sellerId && scopeIds.includes(r.sellerId))));
+  const allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || !r.sellerId || scopeIds.includes(r.sellerId))); // sellerId NULL = store chung
   if (!allowed.length) return NextResponse.json({ ok: false, error: "không có sản phẩm hợp lệ" }, { status: 400 });
 
   // Gom theo store.

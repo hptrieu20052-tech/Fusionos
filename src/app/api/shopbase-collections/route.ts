@@ -29,7 +29,7 @@ async function loadStore(storeId: string, session: NonNullable<Awaited<ReturnTyp
   const [store] = await db.select().from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
   if (!store || store.marketplace !== "shopbase") return { error: "not a ShopBase store" };
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && (!store.sellerId || !scopeIds.includes(store.sellerId))) return { error: "forbidden" };
+  if (scopeIds && store.sellerId && !scopeIds.includes(store.sellerId)) return { error: "forbidden" }; // sellerId NULL = store chung
   const cred = ((store.apiCredentials ?? {}) as Record<string, unknown>).shopbase as ShopBaseCred | undefined;
   if (!shopbaseConfigured(cred ?? null)) return { error: "ShopBase store is not configured — add Subdomain + API key + Password in Stores first" };
   return { store, cred: cred! };
@@ -91,7 +91,19 @@ async function listCollections(cred: ShopBaseCred): Promise<{ ok: true; collecti
   }
   probes.push(`collections.json → ${unified.err}`);
 
-  return { ok: false, error: "ShopBase collections API not reachable on this store · " + probes.join(" · ") };
+  // 3. collection_listings.json — họ path của scope "Product Listing / Collection Listing" (read-only).
+  const listings = await tryPath(cred, "collection_listings.json?limit=250", (j) => arr(j, "collection_listings"));
+  if (listings.ok) {
+    const out = listings.data.map((c) => normCol({ ...c, id: c.collection_id ?? c.id }));
+    out.sort((a, b) => a.title.localeCompare(b.title));
+    return { ok: true, collections: out, flavor: "unified" };
+  }
+  probes.push(`collection_listings.json → ${listings.err}`);
+
+  const hint = probes.some((x) => x.endsWith("401"))
+    ? " — 401 = private app is missing the Collections/Product listing permission. Open the private app in ShopBase → Admin API permissions → grant Read/Write on Collection-related scopes, then Refresh."
+    : "";
+  return { ok: false, error: "ShopBase collections API not reachable on this store · " + probes.join(" · ") + hint };
 }
 
 // Kéo collects của 1 collection (paginate since_id). Path collects.json cũng có thể chết → err.

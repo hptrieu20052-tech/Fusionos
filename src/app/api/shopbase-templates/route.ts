@@ -85,7 +85,7 @@ async function allowedStoreIds(session: Awaited<ReturnType<typeof getSession>>):
   const scopeIds = await storeOwnerScopeIds(session!);
   const stores = await db.select({ id: schema.stores.id, seller: schema.stores.sellerId, mk: schema.stores.marketplace }).from(schema.stores);
   const ok = new Set<string>();
-  for (const s of stores) if (s.mk === "shopbase" && (!scopeIds || (s.seller && scopeIds.includes(s.seller)))) ok.add(s.id);
+  for (const s of stores) if (s.mk === "shopbase" && (!scopeIds || !s.seller || scopeIds.includes(s.seller))) ok.add(s.id); // seller NULL = store chung
   return ok;
 }
 
@@ -155,7 +155,17 @@ export async function GET(req: NextRequest) {
   const storeId = req.nextUrl.searchParams.get("storeId") ?? "";
   const rows = await db.select().from(schema.shopbaseTemplates).orderBy(desc(schema.shopbaseTemplates.updatedAt));
   const out = rows.filter((r) => allowed.has(r.storeId) && (!storeId || r.storeId === storeId));
-  return NextResponse.json({ ok: true, templates: out });
+  // v411 · kèm tên + role người tạo (store chung: template của mọi người trong store đều dùng được).
+  const creatorIds = Array.from(new Set(out.map((r) => r.createdBy).filter(Boolean))) as string[];
+  const creators = creatorIds.length
+    ? await db.select({ id: schema.users.id, name: schema.users.fullName, role: schema.users.role }).from(schema.users).where(inArray(schema.users.id, creatorIds))
+    : [];
+  const byId = new Map(creators.map((c) => [c.id, c]));
+  return NextResponse.json({ ok: true, templates: out.map((r) => ({
+    ...r,
+    creatorName: r.createdBy ? (byId.get(r.createdBy)?.name ?? "—") : null,
+    creatorIsAdmin: r.createdBy ? byId.get(r.createdBy)?.role === "admin" : false,
+  })) });
 }
 
 // POST create
@@ -166,7 +176,7 @@ export async function POST(req: NextRequest) {
   const storeId = String(b?.storeId ?? "");
   const allowed = await allowedStoreIds(session);
   if (!allowed.has(storeId)) return NextResponse.json({ ok: false, error: "store not allowed" }, { status: 403 });
-  const [row] = await db.insert(schema.shopbaseTemplates).values({ storeId, ...payloadOf(b!) }).returning();
+  const [row] = await db.insert(schema.shopbaseTemplates).values({ storeId, ...payloadOf(b!), createdBy: session.sub }).returning();
   return NextResponse.json({ ok: true, template: row });
 }
 

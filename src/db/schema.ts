@@ -356,6 +356,8 @@ export const shopbaseProducts = pgTable("shopbase_products", {
   etsyProductId: uuid("etsy_product_id"),
   tiktokProductId: uuid("tiktok_product_id"),
   templateId: uuid("template_id"),
+  // v411 · Ai stage listing này (users.id) — store ShopBase dùng CHUNG nhiều seller nên gắn công theo người tạo.
+  createdBy: uuid("created_by"),
   syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
   pushedAt: timestamp("pushed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -401,6 +403,9 @@ export const shopbaseTemplates = pgTable("shopbase_templates", {
   // RETURN & WARRANTY). Plain text, xuống dòng = <br>. null = giữ nội dung sẵn của theme.
   shippingInfo: text("shipping_info"),
   returnWarranty: text("return_warranty"),
+  // v411 · Ai tạo template (users.id). Store dùng chung: template của MỌI người trong store đều thấy
+  // và dùng được (admin tạo ⇒ cả 10 seller dùng chung).
+  createdBy: uuid("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 }, (t) => ({

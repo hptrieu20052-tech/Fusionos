@@ -1,7 +1,7 @@
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { db, schema } from "@/lib/db";
-import { desc, inArray, sql, and, eq } from "drizzle-orm";
+import { desc, inArray, sql, and, eq, isNull, or } from "drizzle-orm";
 import { storeOwnerScopeIds } from "@/lib/scope";
 import TiktokProductsClient from "./products-client";
 
@@ -64,7 +64,7 @@ export default async function TiktokProductsPage() {
 
   // v405 · Store SHOPBASE (đích để Push to ShopBase) — cùng scope seller.
   const sbConds = [eq(schema.stores.marketplace, "shopbase")];
-  if (scopeIds) sbConds.push(inArray(schema.stores.sellerId, scopeIds));
+  if (scopeIds) sbConds.push(or(isNull(schema.stores.sellerId), inArray(schema.stores.sellerId, scopeIds))!);   // sellerId NULL = store chung
   const shopbaseStores = await db.select({ id: schema.stores.id, name: schema.stores.name })
     .from(schema.stores).where(and(...sbConds));
 
