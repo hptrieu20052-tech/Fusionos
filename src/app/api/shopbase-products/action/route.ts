@@ -140,14 +140,21 @@ export async function POST(req: NextRequest) {
           // v427 · Theo ĐÚNG docs ShopBase (rest-api-references): body CHỈ { id, published } —
           // KHÔNG kèm published_at (kèm theo kiểu Shopify legacy có thể bị reset về null → no-op).
           // Xác minh bằng GET đọc lại; nếu chưa ăn, thử lần 2 kèm published_at rồi mới báo lỗi.
+          // v430 · Field publish THẬT của ShopBase là `product_availability` (1 = Available, 0 = Unavailable)
+          // — KHÔNG có trong docs; dò ra bằng cách diff JSON sản phẩm trước/sau khi bật tay trong admin.
+          // `published`/`published_at` chỉ là hệ quả đọc ra, PUT vào chúng bị ShopBase bỏ qua (đã thử 2 cách).
           const readState = async () => {
             const chk = await shopbaseApi(cred!, `products/${r.pid}.json`);
             const cp = (chk?.product ?? null) as Record<string, unknown> | null;
             const liveAt = cp ? String(cp.published_at ?? "").replace(/^null$/, "").trim() : "";
-            const known = !!cp && ("published" in cp || "published_at" in cp);
-            return { cp, liveAt, known, isPub: cp ? (cp.published === true || !!liveAt) : false };
+            const known = !!cp && ("product_availability" in cp || "published" in cp || "published_at" in cp);
+            const isPub = cp ? (cp.product_availability === 1 || cp.published === true || !!liveAt) : false;
+            return { cp, liveAt, known, isPub };
           };
-          await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "PUT", body: JSON.stringify({ product: { id: pid, published } }) });
+          await shopbaseApi(cred!, `products/${r.pid}.json`, {
+            method: "PUT",
+            body: JSON.stringify({ product: { id: pid, product_availability: published ? 1 : 0, published } }),
+          });
           let st = await readState();
           if (st.known && st.isPub !== published) {
             await shopbaseApi(cred!, `products/${r.pid}.json`, {
@@ -156,7 +163,7 @@ export async function POST(req: NextRequest) {
             });
             st = await readState();
             if (st.known && st.isPub !== published) {
-              throw new Error(`ShopBase vẫn trả published=${String(st.cp?.published)} · published_at=${st.liveAt || "null"} sau 2 cách gửi — thử bật tay trong ShopBase admin xem sản phẩm có bị chặn điều kiện gì không`);
+              throw new Error(`ShopBase vẫn trả product_availability=${String(st.cp?.product_availability)} · published=${String(st.cp?.published)} sau 2 cách gửi — báo lại để dò tiếp`);
             }
           }
           await db.update(schema.shopbaseProducts).set({ status: published ? "ACTIVE" : "DRAFT", updatedAt: new Date() }).where(eq(schema.shopbaseProducts.id, r.id));
