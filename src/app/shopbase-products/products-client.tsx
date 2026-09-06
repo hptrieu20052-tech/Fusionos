@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ShopbaseLogo } from "@/components/shopbase-logo";
 import { Pager } from "@/components/pager";
 import ShopbaseEditModal from "./edit-modal";
+import ThumbZoom from "@/components/thumb-zoom";
 
 type Store = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Seller = { id: string; name: string };
@@ -10,6 +11,7 @@ type Row = {
   id: string; storeId: string; storeName: string; sellerId: string | null; sellerName: string;
   shopbaseProductId: string; handle: string; title: string; productType: string; tags: string;
   status: string; onlineStoreUrl: string | null; totalInventory: number | null;
+  collections?: { id: string; title: string }[];
   dirty: boolean; variantCount: number; imageCount: number;
   priceMin: number | null; priceMax: number | null; skuDone: number; skuTotal: number;
   thumb: string | null; orders?: number; syncedAt: string | null; updatedAt: string | null;
@@ -41,6 +43,11 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   const [actMenu, setActMenu] = useState(false);
   const [tagPanel, setTagPanel] = useState<null | "add" | "remove">(null);
   const [tagInput, setTagInput] = useState("");
+  // v408 · filter theo collection + Action "Add to collection"
+  const [fCollection, setFCollection] = useState("");
+  const [colPanel, setColPanel] = useState(false);
+  const [colList, setColList] = useState<{ id: string; title: string }[]>([]);
+  const [colPick, setColPick] = useState("");
   const [confirmDel, setConfirmDel] = useState(false);
 
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 6000); };
@@ -64,6 +71,12 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
   };
 
   const types = useMemo(() => Array.from(new Set(rows.map((r) => r.productType).filter(Boolean))).sort(), [rows]);
+  // Collection filter options — gom từ jsonb collections của các dòng (id → title).
+  const collectionOpts = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const r of rows) for (const c of (r.collections ?? [])) if (c?.id && !m.has(c.id)) m.set(c.id, c.title || c.id);
+    return Array.from(m, ([id, title]) => ({ id, title })).sort((a, b) => a.title.localeCompare(b.title));
+  }, [rows]);
   const filtered = useMemo(() => {
     const list = rows.filter((r) => {
       if (fStore && r.storeId !== fStore) return false;
@@ -71,15 +84,16 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
       if (fType && r.productType !== fType) return false;
       if (fStatus === "__staged") { if (r.shopbaseProductId) return false; }
       else if (fStatus && r.status !== fStatus) return false;
+      if (fCollection && !(r.collections ?? []).some((c) => c?.id === fCollection)) return false;
       if (q.trim()) { const s = q.trim().toLowerCase(); if (!(r.title.toLowerCase().includes(s) || r.handle.toLowerCase().includes(s) || r.shopbaseProductId.includes(s))) return false; }
       return true;
     });
     if (sortOrders) list.sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0));
     return list;
-  }, [rows, fStore, fSeller, fType, fStatus, q, sortOrders]);
+  }, [rows, fStore, fSeller, fType, fStatus, fCollection, q, sortOrders]);
 
   // Phân trang 20/trang; reset về trang 1 khi đổi filter/sort.
-  useEffect(() => { setPage(1); }, [q, fStore, fSeller, fType, fStatus, sortOrders]);
+  useEffect(() => { setPage(1); }, [q, fStore, fSeller, fType, fStatus, fCollection, sortOrders]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageSafe = Math.min(page, totalPages);
   const paged = useMemo(() => filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE), [filtered, pageSafe]);
@@ -94,7 +108,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
     return n;
   });
   const toggleOne = (id: string) => setSel((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const clearSel = () => { setSel(new Set()); setActMenu(false); setTagPanel(null); setTagInput(""); setConfirmDel(false); };
+  const clearSel = () => { setSel(new Set()); setActMenu(false); setTagPanel(null); setTagInput(""); setConfirmDel(false); setColPanel(false); };
 
   const runAction = async (action: string, tags?: string) => {
     const ids = filteredIds.filter((id) => sel.has(id));
@@ -109,6 +123,42 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
         clearSel();
         await load();
       } else flash("✗ " + (j.error ?? "action failed"), false);
+    } catch { flash("✗ Network error", false); }
+    setActing(false);
+  };
+
+  // v408 · Action "Add to collection" — nạp collection (custom) của store các dòng đã chọn.
+  const openColPanel = async () => {
+    setActMenu(false); setTagPanel(null); setConfirmDel(false);
+    const selRows = rows.filter((r) => sel.has(r.id));
+    const storeIds = Array.from(new Set(selRows.map((r) => r.storeId)));
+    if (storeIds.length !== 1) { flash("✗ Select products of ONE store to add to a collection", false); return; }
+    if (!selRows.some((r) => r.shopbaseProductId)) { flash("✗ Only products already on ShopBase can join a collection (staged drafts: Push first)", false); return; }
+    setColList([]); setColPick(""); setColPanel(true);
+    try {
+      const j = await fetch(`/api/shopbase-collections?store=${storeIds[0]}`).then((r) => r.json());
+      if (j.ok) {
+        const customs = (j.collections ?? []).filter((c: { kind: string }) => c.kind === "custom").map((c: { id: string; title: string }) => ({ id: c.id, title: c.title }));
+        setColList(customs);
+        if (!customs.length) flash("✗ This store has no custom collection yet — create one in Manage Collections · ShopBase", false);
+      } else flash("✗ " + (j.error ?? "Failed to load collections"), false);
+    } catch { flash("✗ Network error", false); }
+  };
+  const doAddToCollection = async () => {
+    const col = colList.find((c) => c.id === colPick);
+    if (!col) return;
+    const selRows = rows.filter((r) => sel.has(r.id) && r.shopbaseProductId);
+    const storeId = selRows[0]?.storeId;
+    const pids = selRows.map((r) => r.shopbaseProductId);
+    if (!storeId || !pids.length) return;
+    setActing(true);
+    try {
+      const j = await fetch("/api/shopbase-collections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, action: "add", collectionId: col.id, collectionTitle: col.title, productIds: pids }) }).then((r) => r.json());
+      if (j.ok || j.done) {
+        flash(`✓ Added ${j.done}/${pids.length} product(s) to "${col.title}"${j.failed?.length ? ` · ${j.failed.length} failed: ${j.failed[0]?.error ?? ""}` : ""}`, !j.failed?.length);
+        setColPanel(false); clearSel();
+        await load();
+      } else flash("✗ " + (j.failed?.[0]?.error ?? j.error ?? "Add failed"), false);
     } catch { flash("✗ Network error", false); }
     setActing(false);
   };
@@ -182,6 +232,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
           <select value={fSeller} onChange={(e) => setFSeller(e.target.value)} style={inp}><option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
           <select value={fType} onChange={(e) => setFType(e.target.value)} style={inp}><option value="">All types</option>{types.map((t) => <option key={t} value={t}>{t}</option>)}</select>
           <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} style={inp}><option value="">All status</option><option value="ACTIVE">Available (Active)</option><option value="DRAFT">Unavailable (Draft)</option><option value="ARCHIVED">Archived</option><option value="__staged">Staged drafts (not on ShopBase yet)</option></select>
+          <select value={fCollection} onChange={(e) => setFCollection(e.target.value)} style={inp}><option value="">All collections</option>{collectionOpts.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}</select>
         </div>
       </div>
 
@@ -204,6 +255,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                   <div style={{ height: 1, background: "var(--line)", margin: "5px 0" }} />
                   <button style={menuBtn} onClick={() => { setActMenu(false); setConfirmDel(false); setTagPanel("add"); }}>＋ Add tags</button>
                   <button style={menuBtn} onClick={() => { setActMenu(false); setConfirmDel(false); setTagPanel("remove"); }}>－ Remove tags</button>
+                  <button style={menuBtn} onClick={openColPanel}>🗂 Add to collection</button>
                   <div style={{ height: 1, background: "var(--line)", margin: "5px 0" }} />
                   <button style={{ ...menuBtn, color: "var(--red)", fontWeight: 700 }} onClick={() => { setActMenu(false); setTagPanel(null); setConfirmDel(true); }}>🗑 Delete selected</button>
                 </div>
@@ -223,6 +275,21 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                 {tagPanel === "add" ? "Add" : "Remove"}
               </button>
               <button onClick={() => { setTagPanel(null); setTagInput(""); }} style={{ background: "none", border: 0, color: "var(--muted)", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Huỷ</button>
+            </div>
+          )}
+
+          {/* v408 · Panel chọn collection */}
+          {colPanel && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", width: "100%", marginTop: 4 }}>
+              <select value={colPick} onChange={(e) => setColPick(e.target.value)} style={{ ...inp, width: "auto", flex: 1, minWidth: 200 }} autoFocus>
+                <option value="">{colList.length ? "— Select collection —" : "Loading collections…"}</option>
+                {colList.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+              </select>
+              <button disabled={!colPick || acting} onClick={doAddToCollection}
+                style={{ background: SB_BLUE, color: "#fff", border: 0, borderRadius: 10, padding: "8px 16px", fontWeight: 800, fontSize: 13, cursor: !colPick || acting ? "default" : "pointer", opacity: !colPick || acting ? 0.6 : 1 }}>
+                Add
+              </button>
+              <button onClick={() => setColPanel(false)} style={{ background: "none", border: 0, color: "var(--muted)", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Huỷ</button>
             </div>
           )}
 
@@ -263,10 +330,7 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                   <tr key={r.id} style={{ borderTop: "1px solid var(--line)", background: checked ? "#F3F7FF" : undefined }}>
                     {canEdit && <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={checked} onChange={() => toggleOne(r.id)} style={{ cursor: "pointer", width: 16, height: 16 }} /></td>}
                     <td style={{ padding: "10px 12px" }}>
-                      {r.thumb
-                        // eslint-disable-next-line @next/next/no-img-element
-                        ? <img src={r.thumb} alt="" width={46} height={46} style={{ width: 46, height: 46, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />
-                        : <div style={{ width: 46, height: 46, borderRadius: 8, background: "#EEF0F4" }} />}
+                      <ThumbZoom src={r.thumb} alt={r.title} size={46} radius={8} />
                     </td>
                     <td style={{ padding: "10px 12px", maxWidth: 340 }}>
                       <div
@@ -285,7 +349,15 @@ export default function ShopbaseProductsClient({ stores, sellers, canEdit }: { s
                     <td style={{ padding: "10px 12px", textAlign: "right", fontWeight: (r.orders ?? 0) > 0 ? 800 : 400, color: (r.orders ?? 0) > 0 ? "#14213D" : "var(--muted)" }}>{r.orders ?? 0}</td>
                     <td style={{ padding: "10px 12px", fontWeight: 700, whiteSpace: "nowrap" }}>{price(r)}</td>
                     <td style={{ padding: "10px 12px" }}>{statusChip(r.status)}</td>
-                    <td style={{ padding: "10px 12px" }}>{r.onlineStoreUrl ? <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" style={{ color: SB_BLUE, fontWeight: 700, textDecoration: "none" }}>Open ↗</a> : <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                    <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                      {r.onlineStoreUrl ? (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <a href={r.onlineStoreUrl} target="_blank" rel="noreferrer" style={{ color: SB_BLUE, fontWeight: 700, textDecoration: "none" }}>Open ↗</a>
+                          <button onClick={() => { navigator.clipboard?.writeText(r.onlineStoreUrl!); flash("✓ Link copied"); }} title="Copy product link"
+                            style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 7, width: 26, height: 26, cursor: "pointer", fontSize: 13, lineHeight: 1, color: "var(--muted)" }}>⧉</button>
+                        </span>
+                      ) : <span style={{ color: "var(--muted)" }}>—</span>}
+                    </td>
                   </tr>
                 );
               })}
