@@ -368,6 +368,20 @@ export const shopbaseProducts = pgTable("shopbase_products", {
   idxShopbaseProductsEtsy: index("idx_shopbase_products_etsy").on(t.etsyProductId),
 }));
 
+// v417 · SHOPBASE COLLECTION TAGS — ShopBase KHÔNG mở API collection cho private app (401),
+// nên collection chạy bằng TAG: mỗi "collection" trong FUSION = 1 tag; trên ShopBase tạo
+// SMART collection điều kiện "Product tag = <tag>". Gắn/gỡ sản phẩm = add/remove tag (write_products).
+export const shopbaseCollectionTags = pgTable("shopbase_collection_tags", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),
+  title: text("title").notNull(),                 // tên hiển thị (vd "Halloween")
+  tag: text("tag").notNull(),                     // tag thật gắn lên sản phẩm (vd "col-halloween")
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uqSbColTag: uniqueIndex("uq_sb_collection_tag").on(t.storeId, t.tag),
+}));
+
 // v405 · SHOPBASE TEMPLATES — preset options/variants/giá + collections cho flow Push Etsy/TikTok → ShopBase.
 // Bản rút gọn của shopify_templates (ShopBase REST không có taxonomy/publications/metafields).
 // collections: [{ id, title }] — id SỐ của custom collection ShopBase, áp bằng POST collects.json lúc Push.
