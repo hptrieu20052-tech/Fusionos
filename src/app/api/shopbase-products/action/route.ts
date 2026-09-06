@@ -137,16 +137,28 @@ export async function POST(req: NextRequest) {
           await db.delete(schema.shopbaseProducts).where(eq(schema.shopbaseProducts.id, r.id));
         } else if (action === "publish" || action === "unpublish") {
           const published = action === "publish";
-          // v407b · Gửi CẢ published lẫn published_at — một số bản ShopBase chỉ ăn published_at
-          // (mirror Shopify legacy). Đối chiếu response: published_at còn null sau khi publish = thất bại thật.
-          const resp = await shopbaseApi(cred!, `products/${r.pid}.json`, {
-            method: "PUT",
-            body: JSON.stringify({ product: { id: pid, published, published_at: published ? new Date().toISOString() : null } }),
-          });
-          const rp = (resp?.product ?? null) as Record<string, unknown> | null;
-          const liveAt = rp ? String(rp.published_at ?? "").trim() : "";
-          const ok = rp ? (published ? !!liveAt || rp.published === true : !liveAt || rp.published === false) : true;
-          if (!ok) throw new Error(`ShopBase accepted the update but published_at is still ${liveAt || "null"} — check the product in ShopBase admin`);
+          // v427 · Theo ĐÚNG docs ShopBase (rest-api-references): body CHỈ { id, published } —
+          // KHÔNG kèm published_at (kèm theo kiểu Shopify legacy có thể bị reset về null → no-op).
+          // Xác minh bằng GET đọc lại; nếu chưa ăn, thử lần 2 kèm published_at rồi mới báo lỗi.
+          const readState = async () => {
+            const chk = await shopbaseApi(cred!, `products/${r.pid}.json`);
+            const cp = (chk?.product ?? null) as Record<string, unknown> | null;
+            const liveAt = cp ? String(cp.published_at ?? "").replace(/^null$/, "").trim() : "";
+            const known = !!cp && ("published" in cp || "published_at" in cp);
+            return { cp, liveAt, known, isPub: cp ? (cp.published === true || !!liveAt) : false };
+          };
+          await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "PUT", body: JSON.stringify({ product: { id: pid, published } }) });
+          let st = await readState();
+          if (st.known && st.isPub !== published) {
+            await shopbaseApi(cred!, `products/${r.pid}.json`, {
+              method: "PUT",
+              body: JSON.stringify({ product: { id: pid, published, published_at: published ? new Date().toISOString() : null } }),
+            });
+            st = await readState();
+            if (st.known && st.isPub !== published) {
+              throw new Error(`ShopBase vẫn trả published=${String(st.cp?.published)} · published_at=${st.liveAt || "null"} sau 2 cách gửi — thử bật tay trong ShopBase admin xem sản phẩm có bị chặn điều kiện gì không`);
+            }
+          }
           await db.update(schema.shopbaseProducts).set({ status: published ? "ACTIVE" : "DRAFT", updatedAt: new Date() }).where(eq(schema.shopbaseProducts.id, r.id));
         } else {
           const next = action === "addTags" ? mergeTags(r.tags ?? "", tags) : stripTags(r.tags ?? "", tags);
