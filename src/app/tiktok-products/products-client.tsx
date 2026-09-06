@@ -27,7 +27,7 @@ const statusColor = (s: string | null) => {
   return { bg: "#EEF1F5", fg: "#5B6472" };
 };
 
-export default function TiktokProductsClient({ stores, sellers = [], initial, isAdmin, canManage = false }: { stores: Store[]; sellers?: Seller[]; initial: Row[]; isAdmin: boolean; canManage?: boolean }) {
+export default function TiktokProductsClient({ stores, sellers = [], initial, isAdmin, canManage = false, shopbaseStores = [] }: { stores: Store[]; sellers?: Seller[]; initial: Row[]; isAdmin: boolean; canManage?: boolean; shopbaseStores?: { id: string; name: string }[] }) {
   void isAdmin;
   const [rows, setRows] = useState<Row[]>(initial);
   const [kw, setKw] = useState("");
@@ -41,6 +41,37 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
   const [sortOrders, setSortOrders] = useState(false); // sắp xếp theo số đơn cao → thấp
   const [modal, setModal] = useState<{ id: string; mode: "edit" | "clone" } | null>(null);
   const confirm = useConfirm();
+
+  // v405 · Push to ShopBase — chọn listing (checkbox) → stage bản nháp sang Manage Products · ShopBase.
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [pushSbOpen, setPushSbOpen] = useState(false);
+  const [pushSbStore, setPushSbStore] = useState(shopbaseStores[0]?.id ?? "");
+  const [pushSbTemplate, setPushSbTemplate] = useState("");
+  const [sbTemplates, setSbTemplates] = useState<{ id: string; name: string; productType?: string | null }[]>([]);
+  const [pushing, setPushing] = useState(false);
+  useEffect(() => {
+    if (!pushSbStore) { setSbTemplates([]); return; }
+    fetch(`/api/shopbase-templates?storeId=${pushSbStore}`).then((r) => r.json())
+      .then((j) => { const t = j.ok ? j.templates : []; setSbTemplates(t); setPushSbTemplate((cur) => t.some((x: { id: string }) => x.id === cur) ? cur : (t.length === 1 ? t[0].id : "")); })
+      .catch(() => setSbTemplates([]));
+  }, [pushSbStore]);
+  const toggleSel = (id: string) => setSel((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const doPushShopbase = async () => {
+    if (!sel.size || !pushSbStore || !pushSbTemplate) return;
+    setPushSbOpen(false); setPushing(true); setMsg("Staging to ShopBase…");
+    try {
+      const j = await fetch("/api/shopbase-products/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "tiktok", ids: Array.from(sel), storeId: pushSbStore, templateId: pushSbTemplate }) }).then((r) => r.json());
+      if (j.ok || j.created) {
+        const fail = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
+        setMsg(`✓ Staged ${j.created}/${(j.results ?? []).length} for ${j.store} — finish them in Manage Products · ShopBase, then Push${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`);
+        setSel(new Set());
+      } else {
+        const first = (j.results ?? [])[0];
+        setMsg("✗ " + (j.error ?? first?.error ?? "Push failed"));
+      }
+    } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? e)); }
+    setPushing(false);
+  };
 
   const storeName = useMemo(() => new Map(stores.map((s) => [s.id, s.name])), [stores]);
   const storeSeller = useMemo(() => new Map(stores.map((s) => [s.id, s.sellerId])), [stores]);
@@ -163,6 +194,16 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
         </div>
       </div>
 
+      {canManage && shopbaseStores.length > 0 && sel.size > 0 && (
+        <div style={{ background: "#EEF3FF", border: "1px solid #CBD9FF", borderRadius: 12, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontWeight: 800, fontSize: 13.5, color: "#14213D" }}>{sel.size} selected</span>
+          <button onClick={() => setPushSbOpen(true)} disabled={pushing} style={{ background: "#2F6BFF", color: "#fff", border: 0, borderRadius: 10, padding: "8px 16px", fontWeight: 800, fontSize: 13, cursor: pushing ? "default" : "pointer", opacity: pushing ? 0.6 : 1 }}>
+            {pushing ? "Staging…" : "▲ Push to ShopBase"}
+          </button>
+          <button onClick={() => setSel(new Set())} style={{ background: "none", border: 0, color: "var(--muted)", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Clear</button>
+        </div>
+      )}
+
       <div style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)", margin: "0 4px 10px" }}>{filtered.length} products</div>
 
       {/* Table card */}
@@ -171,6 +212,19 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5, minWidth: 900 }}>
             <thead>
               <tr style={{ background: "#F7F9FC", textAlign: "left", color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase", letterSpacing: ".4px" }}>
+                {canManage && shopbaseStores.length > 0 && (
+                  <th style={{ ...th, width: 34 }}>
+                    <input type="checkbox"
+                      checked={paged.length > 0 && paged.every((r) => sel.has(r.id))}
+                      onChange={() => setSel((prev) => {
+                        const n = new Set(prev);
+                        const all = paged.every((r) => n.has(r.id));
+                        paged.forEach((r) => { if (all) n.delete(r.id); else n.add(r.id); });
+                        return n;
+                      })}
+                      style={{ cursor: "pointer", width: 16, height: 16 }} />
+                  </th>
+                )}
                 <th style={th}>Image</th>
                 <th style={th}>Title</th>
                 <th style={th}>Store / Seller</th>
@@ -187,7 +241,12 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
                 const sc = statusColor(r.status);
                 const sName = sellerName.get(storeSeller.get(r.storeId) ?? "") ?? null;
                 return (
-                  <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
+                  <tr key={r.id} style={{ borderTop: "1px solid var(--line)", background: sel.has(r.id) ? "#F3F7FF" : undefined }}>
+                    {canManage && shopbaseStores.length > 0 && (
+                      <td style={{ padding: "10px 12px" }}>
+                        <input type="checkbox" checked={sel.has(r.id)} onChange={() => toggleSel(r.id)} style={{ cursor: "pointer", width: 16, height: 16 }} />
+                      </td>
+                    )}
                     <td style={{ padding: "10px 12px" }}>
                       <ThumbZoom src={r.mainImageUrl || thumbs[r.id]} alt={r.title || ""} size={46} radius={8} />
                     </td>
@@ -236,7 +295,7 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
                 );
               })}
               {!filtered.length && (
-                <tr><td colSpan={canManage ? 9 : 8} style={{ padding: "40px 12px", textAlign: "center", color: "var(--muted)" }}>No products. Click &quot;Sync from TikTok&quot; to pull them in.</td></tr>
+                <tr><td colSpan={(canManage ? 9 : 8) + (canManage && shopbaseStores.length > 0 ? 1 : 0)} style={{ padding: "40px 12px", textAlign: "center", color: "var(--muted)" }}>No products. Click &quot;Sync from TikTok&quot; to pull them in.</td></tr>
               )}
             </tbody>
           </table>
@@ -253,6 +312,40 @@ export default function TiktokProductsClient({ stores, sellers = [], initial, is
       )}
 
       {canManage && <div style={{ fontSize: 11, color: "var(--muted)", margin: "10px 4px 0" }}>Bấm vào tiêu đề để mở Card Detail (sửa &amp; cập nhật thẳng lên TikTok) · Duplicate = nhân bản trong cùng shop (mặc định draft) · Deactivate = ngừng bán (bật lại được) · Delete = xoá listing trên TikTok (vĩnh viễn).</div>}
+
+      {/* v405 · Push to ShopBase modal — chọn store + template rồi stage bản nháp */}
+      {pushSbOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setPushSbOpen(false)}>
+          <div style={{ background: "#fff", width: 520, maxWidth: "94vw", borderRadius: 18, padding: 24, boxShadow: "0 24px 60px rgba(16,24,40,.24)" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>Push {sel.size} listing{sel.size === 1 ? "" : "s"} to ShopBase</div>
+              <button onClick={() => setPushSbOpen(false)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
+            </div>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>① Destination store</label>
+            <select value={pushSbStore} onChange={(e) => setPushSbStore(e.target.value)} style={{ ...inp, marginBottom: 14 }}>
+              {shopbaseStores.length === 0 && <option value="">(No ShopBase store)</option>}
+              {shopbaseStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>② Template</label>
+            <select value={pushSbTemplate} onChange={(e) => setPushSbTemplate(e.target.value)} style={{ ...inp, marginBottom: sbTemplates.length ? 16 : 8 }}>
+              <option value="">— Select a template —</option>
+              {sbTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.productType ? ` · ${t.productType}` : ""}</option>)}
+            </select>
+            {pushSbStore && sbTemplates.length === 0 && (
+              <div style={{ fontSize: 12, color: "#B42318", marginBottom: 16, padding: "10px 12px", background: "#FEF3F2", borderRadius: 10, border: "1px solid #FDA29B" }}>
+                This store has no template yet. Create one in <b>Manage Templates · ShopBase</b> first.
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, padding: "10px 12px", background: "#F8FAFF", borderRadius: 10, border: "1px solid #DCE6FB" }}>
+              Nothing is sent to ShopBase yet. Listings are staged as <b style={{ color: "#14213D" }}>DRAFT</b> in <b style={{ color: "#14213D" }}>Manage Products · ShopBase</b> — finish them there, then hit <b style={{ color: "#14213D" }}>Push to ShopBase</b> to create them live.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setPushSbOpen(false)} style={{ background: "#fff", color: "#14213D", border: "1px solid var(--line)", borderRadius: 11, padding: "9px 15px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+              <button onClick={doPushShopbase} disabled={!pushSbStore || !pushSbTemplate} style={{ background: "#2F6BFF", color: "#fff", border: 0, borderRadius: 11, padding: "9px 18px", fontSize: 13, fontWeight: 800, cursor: pushSbStore && pushSbTemplate ? "pointer" : "default", opacity: pushSbStore && pushSbTemplate ? 1 : .5 }}>Push now</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modal && canManage && (
         <TiktokEditModal

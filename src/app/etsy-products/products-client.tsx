@@ -58,7 +58,7 @@ const secTitle: React.CSSProperties = { fontWeight: 800, fontSize: 14.5, marginB
 const secSub: React.CSSProperties = { fontWeight: 500, fontSize: 11.5, color: "var(--muted)" };
 const ro: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontSize: 13, background: "#F7F8FA", color: "var(--ink)", lineHeight: 1.5, marginBottom: 14, boxSizing: "border-box" };
 
-export default function EtsyProductsClient({ stores, sellers, shopifyStores = [], canEdit, isAdmin = false }: { stores: Store[]; sellers: Seller[]; shopifyStores?: { id: string; name: string; sellerId: string | null }[]; canEdit: boolean; isAdmin?: boolean }) {
+export default function EtsyProductsClient({ stores, sellers, shopifyStores = [], shopbaseStores = [], canEdit, isAdmin = false }: { stores: Store[]; sellers: Seller[]; shopifyStores?: { id: string; name: string; sellerId: string | null }[]; shopbaseStores?: { id: string; name: string; sellerId: string | null }[]; canEdit: boolean; isAdmin?: boolean }) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   // v181: nhận ?q= từ URL — nút "Etsy" bên Manage Products · Shopify nhảy thẳng về listing gốc ở đây.
@@ -164,6 +164,37 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
       } else {
         const first = (j.results ?? [])[0];
         flash("✗ " + (j.error ?? first?.error ?? "Push failed") + (/read_products|write_products|access|scope|Not Found|401|403/i.test(j.error ?? first?.error ?? "") ? " — thêm scope read_products/write_products + Install lại app" : ""), false);
+      }
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+    setBusy(false);
+  };
+
+  // v405 · Push to ShopBase — stage bản nháp sang Manage Products · ShopBase (flow y hệt Shopify).
+  const [pushSbOpen, setPushSbOpen] = useState(false);
+  const [pushSbStore, setPushSbStore] = useState(shopbaseStores[0]?.id ?? "");
+  const [pushSbTemplate, setPushSbTemplate] = useState("");
+  const [sbTemplates, setSbTemplates] = useState<{ id: string; name: string; thumbUrl?: string | null; productType?: string | null }[]>([]);
+  useEffect(() => {
+    if (!pushSbStore) { setSbTemplates([]); return; }
+    fetch(`/api/shopbase-templates?storeId=${pushSbStore}`).then((r) => r.json())
+      .then((j) => { const t = j.ok ? j.templates : []; setSbTemplates(t); setPushSbTemplate((cur) => t.some((x: { id: string }) => x.id === cur) ? cur : (t.length === 1 ? t[0].id : "")); })
+      .catch(() => setSbTemplates([]));
+  }, [pushSbStore]);
+  const doPushShopbase = async () => {
+    if (!sel.size) return flash("✗ Select listings first", false);
+    if (!pushSbStore) return flash("✗ No ShopBase store — add one + configure API in Stores first", false);
+    if (!pushSbTemplate) return flash("✗ Select a template before pushing", false);
+    setPushSbOpen(false);
+    setBusy(true);
+    try {
+      const j = await fetch("/api/shopbase-products/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: "etsy", ids: Array.from(sel), storeId: pushSbStore, templateId: pushSbTemplate }) }).then((r) => r.json());
+      if (j.ok || j.created) {
+        const fail = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
+        flash(`✓ Staged ${j.created}/${(j.results ?? []).length} for ${j.store} — finish them in Manage Products · ShopBase, then Push${j.failed ? ` · ${j.failed} failed: ${fail[0]?.error ?? ""}` : ""}`, j.failed === 0);
+        load();
+      } else {
+        const first = (j.results ?? [])[0];
+        flash("✗ " + (j.error ?? first?.error ?? "Push failed"), false);
       }
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
@@ -604,6 +635,9 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
           {canEdit && shopifyStores.length > 0 && (
             <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: busy ? .6 : 1 }} onClick={() => setPushOpen(true)} title="Send the selected listings to Manage Products · Shopify as drafts — finish them there, then Push to create on Shopify"><IcShop /> Push to Shopify</button>
           )}
+          {canEdit && shopbaseStores.length > 0 && (
+            <button disabled={busy} style={{ ...pill("linear-gradient(135deg,#2F6BFF,#1F4FD6)", "#fff"), opacity: busy ? .6 : 1 }} onClick={() => setPushSbOpen(true)} title="Send the selected listings to Manage Products · ShopBase as drafts — finish them there, then Push to create on ShopBase"><IcShop /> Push to ShopBase</button>
+          )}
           {canEdit && <button disabled={busy} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }} onClick={doDelete}><IcTrash /> Delete</button>}
           <button style={{ ...ghost, padding: "9px 12px" }} onClick={() => setSel(new Set())}>Clear</button>
         </div>
@@ -830,6 +864,46 @@ export default function EtsyProductsClient({ stores, sellers, shopifyStores = []
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button style={ghost} disabled={busy} onClick={() => setPushOpen(false)}>Cancel</button>
               <button style={{ ...pill("linear-gradient(135deg,#5E8E3E,#4A7230)", "#fff"), opacity: pushStore && pushTemplate && !busy ? 1 : .5 }} disabled={busy || !pushStore || !pushTemplate} onClick={doPushShopify}>
+                {busy ? "Pushing…" : "Push now"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v405 · Push to ShopBase — chọn store + template ShopBase rồi stage bản nháp */}
+      {pushSbOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !busy && setPushSbOpen(false)}>
+          <div style={{ background: "#fff", width: 540, maxWidth: "94vw", maxHeight: "90vh", borderRadius: 18, padding: 24, overflowY: "auto", boxShadow: "0 24px 60px rgba(16,24,40,.24)", animation: "popIn .18s ease" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>Push {sel.size} listing{sel.size === 1 ? "" : "s"} to ShopBase</div>
+              <button onClick={() => setPushSbOpen(false)} style={{ border: "none", background: "#F3F4F6", borderRadius: 9, width: 30, height: 30, cursor: "pointer", fontSize: 16, color: "var(--muted)" }}>×</button>
+            </div>
+
+            <label style={lab}>① Destination store</label>
+            <select value={pushSbStore} onChange={(e) => setPushSbStore(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: 14 }}>
+              {shopbaseStores.length === 0 && <option value="">(No ShopBase store)</option>}
+              {shopbaseStores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+
+            <label style={lab}>② Template</label>
+            <select value={pushSbTemplate} onChange={(e) => setPushSbTemplate(e.target.value)} style={{ ...ctl, width: "100%", marginBottom: sbTemplates.length ? 18 : 8 }}>
+              <option value="">— Select a template —</option>
+              {sbTemplates.map((t) => <option key={t.id} value={t.id}>{t.name}{t.productType ? ` · ${t.productType}` : ""}</option>)}
+            </select>
+            {pushSbStore && sbTemplates.length === 0 && (
+              <div style={{ fontSize: 12, color: "#B42318", marginBottom: 16, padding: "10px 12px", background: "#FEF3F2", borderRadius: 10, border: "1px solid #FDA29B" }}>
+                This store has no template yet. Create one in <b>Manage Templates · ShopBase</b> first.
+              </div>
+            )}
+
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 16, padding: "10px 12px", background: "#F8FAFF", borderRadius: 10, border: "1px solid #DCE6FB" }}>
+              Nothing is sent to ShopBase yet. Listings are staged as <b style={{ color: "var(--ink)" }}>DRAFT</b> in <b style={{ color: "var(--ink)" }}>Manage Products · ShopBase</b> — finish them there, then hit <b style={{ color: "var(--ink)" }}>Push to ShopBase</b> to create them live.
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button style={ghost} disabled={busy} onClick={() => setPushSbOpen(false)}>Cancel</button>
+              <button style={{ ...pill("linear-gradient(135deg,#2F6BFF,#1F4FD6)", "#fff"), opacity: pushSbStore && pushSbTemplate && !busy ? 1 : .5 }} disabled={busy || !pushSbStore || !pushSbTemplate} onClick={doPushShopbase}>
                 {busy ? "Pushing…" : "Push now"}
               </button>
             </div>

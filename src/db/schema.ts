@@ -351,6 +351,11 @@ export const shopbaseProducts = pgTable("shopbase_products", {
   onlineStoreUrl: text("online_store_url"),
   totalInventory: integer("total_inventory"),
   dirty: boolean("dirty").notNull().default(false),        // có sửa local chưa push
+  // v405 · Stage từ sàn khác (flow Etsy→Shopify): shopbase_product_id = '' ⇒ BẢN NHÁP chưa lên
+  // ShopBase. Nguồn ghi vào 1 trong 2 cột dưới (chống stage trùng); template áp lúc Push (collections).
+  etsyProductId: uuid("etsy_product_id"),
+  tiktokProductId: uuid("tiktok_product_id"),
+  templateId: uuid("template_id"),
   syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
   pushedAt: timestamp("pushed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -358,6 +363,27 @@ export const shopbaseProducts = pgTable("shopbase_products", {
 }, (t) => ({
   idxShopbaseProductsStore: index("idx_shopbase_products_store").on(t.storeId),
   idxShopbaseProductsPid: index("idx_shopbase_products_pid").on(t.shopbaseProductId),
+  idxShopbaseProductsEtsy: index("idx_shopbase_products_etsy").on(t.etsyProductId),
+}));
+
+// v405 · SHOPBASE TEMPLATES — preset options/variants/giá + collections cho flow Push Etsy/TikTok → ShopBase.
+// Bản rút gọn của shopify_templates (ShopBase REST không có taxonomy/publications/metafields).
+// collections: [{ id, title }] — id SỐ của custom collection ShopBase, áp bằng POST collects.json lúc Push.
+export const shopbaseTemplates = pgTable("shopbase_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),          // store ShopBase (marketplace=shopbase)
+  name: text("name").notNull(),
+  thumbUrl: text("thumb_url"),
+  options: jsonb("options").notNull().default([]),   // [{ name, values: string[] }] — tối đa 3
+  variants: jsonb("variants").notNull().default([]), // [{ options: {Name:value}, price, compareAtPrice?, sku? }]
+  collections: jsonb("collections").notNull().default([]), // [{ id, title }]
+  status: text("status").notNull().default("DRAFT"),
+  productType: text("product_type"),
+  vendor: text("vendor"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  idxShopbaseTemplatesStore: index("idx_shopbase_templates_store").on(t.storeId),
 }));
 
 // ---------- AMAZON TEMPLATES (v286 · mỗi LOẠI sản phẩm 1 template customization Amazon) ----------

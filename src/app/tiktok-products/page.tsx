@@ -62,6 +62,12 @@ export default async function TiktokProductsPage() {
     ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, sellerIds))
     : [];
 
+  // v405 · Store SHOPBASE (đích để Push to ShopBase) — cùng scope seller.
+  const sbConds = [eq(schema.stores.marketplace, "shopbase")];
+  if (scopeIds) sbConds.push(inArray(schema.stores.sellerId, scopeIds));
+  const shopbaseStores = await db.select({ id: schema.stores.id, name: schema.stores.name })
+    .from(schema.stores).where(and(...sbConds));
+
   const isAdmin = session.role === "admin";
   const canManage = (await levelOf(session, "products")) >= 2; // Clone / Edit cần quyền full
   return <TiktokProductsClient
@@ -70,5 +76,6 @@ export default async function TiktokProductsPage() {
     initial={JSON.parse(JSON.stringify(rowsWithOrders))}
     isAdmin={isAdmin}
     canManage={canManage}
+    shopbaseStores={JSON.parse(JSON.stringify(shopbaseStores))}
   />;
 }

@@ -77,7 +77,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
   useEffect(() => {
     setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false); setHubGroup("");
-    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopify-feed-labels", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"];
+    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopify-feed-labels", "/shopbase-products", "/shopbase-templates", "/shopbase-collections", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"];
     setMobileHub(hubPaths.some((p) => path.startsWith(p)));
   }, [path]);
   useEffect(() => {
@@ -135,7 +135,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // đứng liền ngay sau Design Studio thay vì bị đẩy xuống sau các dropdown.
   const hubAnchor = links.some((l) => !l.more && l.href === "/videos") ? "/videos" : "/designs";
   const hasAnchor = links.some((l) => !l.more && l.href === hubAnchor);
-  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopify-feed-labels", "/shopbase-products", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
+  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopify-feed-labels", "/shopbase-products", "/shopbase-templates", "/shopbase-collections", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image", "/ai-video", "/prompts"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
@@ -199,6 +199,8 @@ export default function AppShell({ user, links, children, canProducts = false, c
       ] },
       { t: "group", key: "shopbase", label: "ShopBase", icon: <MarketplaceLogo mk="shopbase" size={16} />, children: [
         { href: "/shopbase-products", label: "Manage Products" },
+        { href: "/shopbase-templates", label: "Manage Templates" },
+        { href: "/shopbase-collections", label: "Manage Collections" },
       ] },
       { t: "group", key: "amazon", label: "Amazon", icon: <AmazonLogo size={16} />, children: [
         { href: "/amazon-products", label: "Manage Products" },
@@ -371,6 +373,8 @@ export default function AppShell({ user, links, children, canProducts = false, c
                 const hubItems = [
                   ...(canProducts ? [
                     { href: "/shopbase-products", icon: <MarketplaceLogo mk="shopbase" size={18} />, label: "Manage Products ShopBase" },
+                    { href: "/shopbase-templates", icon: <MarketplaceLogo mk="shopbase" size={18} />, label: "Manage Templates ShopBase" },
+                    { href: "/shopbase-collections", icon: <MarketplaceLogo mk="shopbase" size={18} />, label: "Manage Collections ShopBase" },
                     { href: "/amazon-products", icon: <AmazonLogo size={18} />, label: "Manage Products Amazon" },
                     { href: "/amazon-templates", icon: <AmazonLogo size={18} />, label: "Manage Templates Amazon" },
                     { href: "/tiktok-products", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Products Tiktok" },

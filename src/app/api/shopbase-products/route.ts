@@ -154,6 +154,15 @@ export async function PATCH(req: NextRequest) {
 
   const cred = (((row.cred ?? {}) as Record<string, unknown>).shopbase ?? null) as ShopBaseCred | null;
 
+  // v405 · BẢN NHÁP stage từ Etsy/TikTok (shopbase_product_id = '') → chỉ lưu local.
+  // Lên ShopBase bằng nút Push (POST /api/shopbase-products/push), không PUT được vì chưa có id.
+  if (!row.p.shopbaseProductId) {
+    await db.update(schema.shopbaseProducts).set({
+      title, bodyHtml, vendor, productType, tags, status: "DRAFT", options: newOpts, variants: newVars, images: mergedImgs, dirty: true, updatedAt: new Date(),
+    }).where(eq(schema.shopbaseProducts.id, id));
+    return NextResponse.json({ ok: true, warn: "Draft saved — use Push to ShopBase to create it on ShopBase" });
+  }
+
   // Chưa cấu hình API → chỉ lưu local, đánh dấu dirty.
   if (!shopbaseConfigured(cred)) {
     await db.update(schema.shopbaseProducts).set({

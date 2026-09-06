@@ -36,6 +36,12 @@ export default async function EtsyProductsPage() {
     : eq(schema.stores.marketplace, "shopify");
   const shopifyStores = await db.select({ id: schema.stores.id, name: schema.stores.name, sellerId: schema.stores.sellerId })
     .from(schema.stores).where(shopWhere).orderBy(asc(schema.stores.name));
+  // v405 · Store SHOPBASE (đích để Push to ShopBase) — cùng scope seller.
+  const sbWhere = scopeIds
+    ? and(eq(schema.stores.marketplace, "shopbase"), inArray(schema.stores.sellerId, scopeIds))
+    : eq(schema.stores.marketplace, "shopbase");
+  const shopbaseStores = await db.select({ id: schema.stores.id, name: schema.stores.name, sellerId: schema.stores.sellerId })
+    .from(schema.stores).where(sbWhere).orderBy(asc(schema.stores.name));
   // v185: chỉ admin được xoá listing đã stage/push sang Shopify (seller xoá là mất dấu link)
-  return <EtsyProductsClient stores={stores} sellers={sellers} shopifyStores={shopifyStores} canEdit={lvl >= 2} isAdmin={session.role === "admin"} />;
+  return <EtsyProductsClient stores={stores} sellers={sellers} shopifyStores={shopifyStores} shopbaseStores={shopbaseStores} canEdit={lvl >= 2} isAdmin={session.role === "admin"} />;
 }

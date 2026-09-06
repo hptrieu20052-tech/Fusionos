@@ -90,6 +90,20 @@ export async function POST(req: NextRequest) {
       const pidNum = Number(r.pid);
       const pid = Number.isFinite(pidNum) && String(pidNum) === r.pid ? pidNum : r.pid;
       try {
+        // v405 · BẢN NHÁP stage (pid = '') chưa có trên ShopBase → thao tác LOCAL, không gọi API.
+        if (!r.pid) {
+          if (action === "delete") {
+            await db.delete(schema.shopbaseProducts).where(eq(schema.shopbaseProducts.id, r.id));
+          } else if (action === "publish" || action === "unpublish") {
+            // Nháp không publish được — phải Push trước. unpublish = no-op (nháp sẵn DRAFT).
+            if (action === "publish") throw new Error("draft not on ShopBase yet — Push to ShopBase first");
+          } else {
+            const next = action === "addTags" ? mergeTags(r.tags ?? "", tags) : stripTags(r.tags ?? "", tags);
+            await db.update(schema.shopbaseProducts).set({ tags: next, updatedAt: new Date() }).where(eq(schema.shopbaseProducts.id, r.id));
+          }
+          done++;
+          continue;
+        }
         if (action === "delete") {
           await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "DELETE" });
           await db.delete(schema.shopbaseProducts).where(eq(schema.shopbaseProducts.id, r.id));
