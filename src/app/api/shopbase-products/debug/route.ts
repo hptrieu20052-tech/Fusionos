@@ -27,7 +27,13 @@ export async function GET(req: NextRequest) {
     if (!row) return NextResponse.json({ ok: false, error: "local product not found" }, { status: 404 });
     pid = row.pid; storeId = row.storeId;
   }
-  if (!pid || !/^[0-9a-f-]{36}$/i.test(storeId)) return NextResponse.json({ ok: false, error: "pass ?id=<local uuid> or ?pid=<shopbase id>&store=<store uuid>" }, { status: 400 });
+  // v429 · cho phép ?pid= một mình — tra store từ dòng local (dán số #ID trong Manage Products là đủ)
+  if (pid && !/^[0-9a-f-]{36}$/i.test(storeId)) {
+    const [row] = await db.select({ storeId: schema.shopbaseProducts.storeId })
+      .from(schema.shopbaseProducts).where(eq(schema.shopbaseProducts.shopbaseProductId, pid)).limit(1);
+    if (row) storeId = row.storeId;
+  }
+  if (!pid || !/^[0-9a-f-]{36}$/i.test(storeId)) return NextResponse.json({ ok: false, error: "pass ?id=<local uuid> or ?pid=<shopbase id>[&store=<store uuid>]" }, { status: 400 });
 
   const [store] = await db.select().from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
   const cred = ((store?.apiCredentials ?? {}) as Record<string, unknown>).shopbase as ShopBaseCred | undefined;
