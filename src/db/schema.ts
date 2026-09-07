@@ -382,6 +382,30 @@ export const shopbaseCollectionTags = pgTable("shopbase_collection_tags", {
   uqSbColTag: uniqueIndex("uq_sb_collection_tag").on(t.storeId, t.tag),
 }));
 
+// v438 · TIKTOK STATEMENTS — kho payout đồng bộ NỀN (cron /api/cron/tiktok-finance).
+// Trang Finance · TikTok đọc thẳng bảng này → vào là thấy số, không chờ gọi API TikTok.
+// Upsert theo (store_id, statement_id); status PROCESSING → PAID được cập nhật ở vòng sau.
+export const tiktokStatements = pgTable("tiktok_statements", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),
+  statementId: text("statement_id").notNull(),
+  statementTime: bigint("statement_time", { mode: "number" }).notNull().default(0),
+  currency: text("currency").notNull().default(""),
+  settlement: numeric("settlement", { precision: 14, scale: 2 }),
+  revenue: numeric("revenue", { precision: 14, scale: 2 }),
+  fee: numeric("fee", { precision: 14, scale: 2 }),
+  adjustment: numeric("adjustment", { precision: 14, scale: 2 }),
+  status: text("status").notNull().default(""),
+  paymentId: text("payment_id").notNull().default(""),
+  paidTime: bigint("paid_time", { mode: "number" }).notNull().default(0),
+  syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  uqTtStatement: uniqueIndex("uq_tt_statement").on(t.storeId, t.statementId),
+  idxTtStatementStore: index("idx_tt_statement_store").on(t.storeId),
+  idxTtStatementTime: index("idx_tt_statement_time").on(t.statementTime),
+}));
+
 // v405 · SHOPBASE TEMPLATES — preset options/variants/giá + collections cho flow Push Etsy/TikTok → ShopBase.
 // Bản rút gọn của shopify_templates (ShopBase REST không có taxonomy/publications/metafields).
 // collections: [{ id, title }] — id SỐ của custom collection ShopBase, áp bằng POST collects.json lúc Push.

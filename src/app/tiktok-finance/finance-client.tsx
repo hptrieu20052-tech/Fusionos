@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import DateRangePicker, { rangeToDates, type RangeValue } from "@/components/date-range";
 
 /**
@@ -31,6 +31,22 @@ export default function FinanceClient({ stores, sellers = [] }: { stores: Store[
   const [err, setErr] = useState("");
   const [storeErrs, setStoreErrs] = useState<{ store: string; error: string }[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);   // v437 · thời điểm load — giữ qua F5
+  const [lastSync, setLastSync] = useState<number>(0);             // v438 · mốc cron đồng bộ nền cũ nhất
+
+  // v437 · Khôi phục kết quả lần load gần nhất từ localStorage (F5 không mất số).
+  const CACHE_KEY = "ttfin.overview.v1";
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return;
+      const c = JSON.parse(raw);
+      if (Array.isArray(c?.rows)) { setRows(c.rows); setStoreErrs(c.errs ?? []); setLoadedAt(c.at ?? null); setLoaded(true); }
+    } catch { /* cache hỏng thì bỏ qua */ }
+  }, []);
+
+  // v438 · Dữ liệu giờ đọc từ DB (cron đồng bộ nền) → vào trang là tự load, không cần bấm.
+  useEffect(() => { load(); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = async () => {
     setLoading(true); setErr(""); setStoreErrs([]); setLoaded(false);
@@ -43,7 +59,12 @@ export default function FinanceClient({ stores, sellers = [] }: { stores: Store[
     if (to) qs.set("to", to);
     try {
       const j = await fetch(`/api/tiktok/finance/overview?${qs.toString()}`).then((r) => r.json());
-      if (j.ok) { setRows(j.statements); setStoreErrs(j.errors ?? []); setLoaded(true); }
+      if (j.ok) {
+        setRows(j.statements); setStoreErrs(j.errors ?? []); setLoaded(true);
+        setLastSync(Number(j.lastSyncAt ?? 0));
+        const at = Date.now(); setLoadedAt(at);
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ at, rows: j.statements, errs: j.errors ?? [] })); } catch { /* đầy quota thì thôi */ }
+      }
       else setErr(j.error || "Failed to load");
     } catch (e) { setErr(String((e as Error)?.message ?? e)); }
     setLoading(false);
@@ -111,6 +132,13 @@ export default function FinanceClient({ stores, sellers = [] }: { stores: Store[
         <button onClick={load} disabled={loading} style={{ ...sel, cursor: loading ? "default" : "pointer", fontWeight: 700, background: "var(--blue)", color: "#fff", border: 0, opacity: loading ? 0.6 : 1 }}>{loading ? "Loading…" : "Load payouts"}</button>
       </div>
 
+      {loaded && (
+        <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>
+          {lastSync > 0
+            ? <>Đồng bộ nền lúc <b>{new Date(lastSync).toLocaleString()}</b> (cron tự chạy 30–60 phút/lần — vào trang là thấy số mới).</>
+            : <span style={{ color: "#B7791F" }}>⚠ Cron đồng bộ chưa chạy lần nào — kiểm tra lịch gọi /api/cron/tiktok-finance.</span>}
+        </div>
+      )}
       {err && <div style={{ fontSize: 12.5, color: "var(--red)", marginBottom: 10 }}>✗ {err}{scopeHint && " — this needs the seller.finance.info scope. Add it in Partner Center and re-authorize the shop."}</div>}
       {storeErrs.map((e, i) => <div key={i} style={{ fontSize: 12, color: "#B7791F", marginBottom: 4 }}>⚠ {e.store}: {e.error}</div>)}
 

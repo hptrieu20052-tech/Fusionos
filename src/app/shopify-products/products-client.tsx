@@ -113,7 +113,7 @@ type ActKey =
   | "google_prep" | "feed_copy" | "feed_export"
   | "policy_ai" | "ai_collection" | "tags" | "collection" | "channels"
   | "active" | "draft" | "archive" | "delete"
-  | "pinterest" | "push_amazon";
+  | "pinterest" | "push_amazon" | "ads_kit";
 type ActionItem = { key: ActKey; label: string; danger?: boolean };
 type ActionGroup = { title: string; items: ActionItem[] };
 const ACTION_GROUPS: ActionGroup[] = [
@@ -146,6 +146,8 @@ const ACTION_GROUPS: ActionGroup[] = [
     title: "Channels",
     items: [
       { key: "pinterest", label: "Export Pinterest CSV…" },
+      // v439 · Bộ copy nhanh cho Meta Ads Manager: primary text + headline + link + ảnh từng sản phẩm.
+      { key: "ads_kit", label: "🎯 Meta ads kit (copy text + link + ảnh)…" },
     ],
   },
   {
@@ -248,6 +250,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   }, [imgZoom]);
   // Export Pinterest — file CSV nạp vào Pinterest (Settings → Import content). Không đụng Shopify.
   const [pinOpen, setPinOpen] = useState(false);
+  // v439 · Meta ads kit — text sinh sẵn (sửa được) cho từng sản phẩm đã chọn.
+  const [adsKitOpen, setAdsKitOpen] = useState(false);
+  const [kitTexts, setKitTexts] = useState<Record<string, { primary: string; headline: string }>>({});
+  const [kitCopied, setKitCopied] = useState("");
+  const kitCopy = (k: string, text: string) => { navigator.clipboard?.writeText(text); setKitCopied(k); setTimeout(() => setKitCopied((c) => (c === k ? "" : c)), 1200); };
   const [pinPerProduct, setPinPerProduct] = useState(1);
   const [pinPerFile, setPinPerFile] = useState(200);
   // v141 · Custom options — bộ ô cá nhân hoá RIÊNG của listing đang chọn (mô hình Etsy).
@@ -1152,6 +1159,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (!sel.size) return flash("✗ Select products first", false);
     // v289 · Kênh ngoài — chuyển từ nút riêng vào More actions.
     if (key === "pinterest") { setPinOpen(true); return; }
+    // v439 · Ads kit — sinh sẵn text/link/ảnh cho từng sản phẩm đã chọn, copy dán sang Ads Manager.
+    if (key === "ads_kit") {
+      const init: Record<string, { primary: string; headline: string }> = {};
+      for (const r of rows.filter((x) => sel.has(x.id))) {
+        const short = r.title.split(/[,|–-]/)[0].trim().slice(0, 70);
+        init[r.id] = {
+          primary: `${short} — starring YOUR child! 📖 Personalized with their name in minutes.\n✔ Printed in the USA  ✔ Free US shipping  ✔ 30-day guarantee`,
+          headline: "The Hero Is Your Child",
+        };
+      }
+      setKitTexts(init); setAdsKitOpen(true);
+      return;
+    }
     if (key === "push_amazon") { pushToAmazon(Array.from(sel)); return; }
     // Feed phụ — không đụng Shopify, không cần chọn gì thêm.
     if (key === "feed_copy") return doFeedCopy(Array.from(sel));
@@ -2167,6 +2187,60 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               <button disabled={busy} onClick={() => setPipeOpen(false)} style={{ ...pill("#EEF1F5", "#333"), padding: "8px 14px" }}>Cancel</button>
               <button disabled={busy || !Object.values(pipeSteps).some(Boolean)} onClick={runPipeline} style={{ ...pill("linear-gradient(135deg,#1F6F45,#0E4429)", "#fff"), padding: "8px 16px" }}>Start pipeline</button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* v439 · META ADS KIT — mỗi sản phẩm 1 khối: ảnh (click mở full để kéo/lưu), primary text +
+          headline sửa được, link sản phẩm; nút copy từng thứ. Dán thẳng sang Ads Manager. */}
+      {adsKitOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflowY: "auto" }} onClick={() => setAdsKitOpen(false)}>
+          <div style={{ ...card, width: 860, maxWidth: "97vw", padding: 22 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <b style={{ fontSize: 16 }}>🎯 Meta ads kit — {Object.keys(kitTexts).length} sản phẩm</b>
+              <button onClick={() => setAdsKitOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 14 }}>
+              Ảnh: click mở bản full → kéo thẳng vào Ads Manager hoặc Save về máy. Text sửa tại chỗ rồi bấm Copy. CTA dùng <b>Shop Now</b>.
+            </div>
+            {rows.filter((r) => kitTexts[r.id]).map((r, idx) => {
+              const t = kitTexts[r.id];
+              const adName = `Train-${String(idx + 1).padStart(2, "0")}-${r.title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
+              return (
+                <div key={r.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14, marginBottom: 12 }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", width: 200, flexShrink: 0 }}>
+                      {(r.imageUrls ?? (r.mainImage ? [r.mainImage] : [])).slice(0, 4).map((u, i) => (
+                        <a key={i} href={u} target="_blank" rel="noreferrer" title="Mở bản full — kéo vào Ads Manager hoặc Save">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={u} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: i === 0 ? "2px solid #7C5CFF" : "1px solid var(--line)" }} />
+                        </a>
+                      ))}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, fontSize: 12 }}>
+                        <span style={{ color: "var(--muted)" }}>Ad name:</span>
+                        <code style={{ background: "#F5F6F8", borderRadius: 6, padding: "2px 6px" }}>{adName}</code>
+                        <button onClick={() => kitCopy(r.id + ":n", adName)} style={{ ...ghost, padding: "3px 10px", fontSize: 11.5 }}>{kitCopied === r.id + ":n" ? "✓" : "Copy"}</button>
+                        <span style={{ flex: 1 }} />
+                        {r.onlineStoreUrl
+                          ? <button onClick={() => kitCopy(r.id + ":u", r.onlineStoreUrl!)} style={{ ...ghost, padding: "3px 10px", fontSize: 11.5 }}>{kitCopied === r.id + ":u" ? "✓ Link copied" : "Copy link sản phẩm"}</button>
+                          : <span style={{ color: "#B7791F" }}>chưa có link storefront — sync lại</span>}
+                      </div>
+                      <textarea value={t.primary} onChange={(e) => setKitTexts((m) => ({ ...m, [r.id]: { ...m[r.id], primary: e.target.value } }))} rows={3}
+                        style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontSize: 12.5, font: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
+                        <button onClick={() => kitCopy(r.id + ":p", t.primary)} style={{ ...ghost, padding: "4px 10px", fontSize: 11.5 }}>{kitCopied === r.id + ":p" ? "✓" : "Copy primary text"}</button>
+                        <input value={t.headline} onChange={(e) => setKitTexts((m) => ({ ...m, [r.id]: { ...m[r.id], headline: e.target.value } }))}
+                          style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
+                        <button onClick={() => kitCopy(r.id + ":h", t.headline)} style={{ ...ghost, padding: "4px 10px", fontSize: 11.5 }}>{kitCopied === r.id + ":h" ? "✓" : "Copy headline"}</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
