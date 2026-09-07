@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
     storeId: schema.shopbaseProducts.storeId,
     pid: schema.shopbaseProducts.shopbaseProductId,
     tags: schema.shopbaseProducts.tags,
+    createdBy: schema.shopbaseProducts.createdBy,
     sellerId: schema.stores.sellerId,
     marketplace: schema.stores.marketplace,
   }).from(schema.shopbaseProducts)
@@ -64,8 +65,15 @@ export async function POST(req: NextRequest) {
 
   // Phân quyền: seller chỉ thao tác sản phẩm thuộc store của mình.
   const scopeIds = await storeOwnerScopeIds(session);
-  const allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || !r.sellerId || scopeIds.includes(r.sellerId))); // sellerId NULL = store chung
-  if (!allowed.length) return NextResponse.json({ ok: false, error: "không có sản phẩm hợp lệ" }, { status: 400 });
+  let allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || !r.sellerId || scopeIds.includes(r.sellerId))); // sellerId NULL = store chung
+  // v435 · Store chung: seller CHỈ publish/tag/xoá listing MÌNH tạo — của admin/người khác thì không
+  // (Dup thì được: tạo bản copy của riêng mình, không đụng bản gốc).
+  const ownFailed: { id: string; error: string }[] = [];
+  if (session.role !== "admin" && action !== "duplicate") {
+    for (const r of allowed) if (r.createdBy !== session.sub) ownFailed.push({ id: r.id, error: "listing của người khác — chỉ người tạo hoặc admin thao tác được" });
+    allowed = allowed.filter((r) => r.createdBy === session.sub);
+  }
+  if (!allowed.length) return NextResponse.json(ownFailed.length ? { ok: true, action, done: 0, failed: ownFailed, total: ownFailed.length } : { ok: false, error: "không có sản phẩm hợp lệ" }, { status: ownFailed.length ? 200 : 400 });
 
   // v426 · duplicate — nhân bản LOCAL thành BẢN NHÁP staged (pid = ''): sửa thoải mái rồi Push
   // như listing mới. Không gọi ShopBase; bỏ id variant/image của bản gốc để Push tạo mới sạch.
@@ -181,5 +189,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, action, done, failed, total: allowed.length });
+  return NextResponse.json({ ok: true, action, done, failed: [...ownFailed, ...failed], total: allowed.length + ownFailed.length });
 }

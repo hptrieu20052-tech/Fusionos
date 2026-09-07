@@ -152,6 +152,12 @@ export async function PATCH(req: NextRequest) {
   const scopeIds = await storeOwnerScopeIds(session);
   if (scopeIds && row.sellerId && !scopeIds.includes(row.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
 
+  // v435 · Store chung: seller CHỈ sửa listing MÌNH tạo. Listing của admin/người khác (hoặc bản sync
+  // không rõ người tạo) → chỉ admin sửa. Seller vẫn Dup được để có bản của riêng mình.
+  if (session.role !== "admin" && row.p.createdBy !== session.sub) {
+    return NextResponse.json({ ok: false, error: "Listing này do người khác tạo — chỉ người tạo hoặc admin sửa được. Dùng Dup để tạo bản của bạn." }, { status: 403 });
+  }
+
   // Chuẩn hoá field từ client (giữ nguyên field không gửi).
   const title = typeof b.title === "string" ? b.title : row.p.title;
   const bodyHtml = typeof b.bodyHtml === "string" ? b.bodyHtml : (row.p.bodyHtml ?? "");

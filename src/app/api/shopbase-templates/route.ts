@@ -166,6 +166,8 @@ export async function GET(req: NextRequest) {
     ...r,
     creatorName: r.createdBy ? (byId.get(r.createdBy)?.name ?? "—") : null,
     creatorIsAdmin: r.createdBy ? byId.get(r.createdBy)?.role === "admin" : false,
+    // v435 · Store chung: seller DÙNG được mọi template nhưng chỉ SỬA/XOÁ template mình tạo; admin sửa tất.
+    canEdit: session.role === "admin" || (!!r.createdBy && r.createdBy === session.sub),
   })) });
 }
 
@@ -192,6 +194,10 @@ export async function PATCH(req: NextRequest) {
   if (!cur) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const allowed = await allowedStoreIds(session);
   if (!allowed.has(cur.storeId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v435 · seller chỉ sửa template MÌNH tạo — template của admin/người khác thì dùng thôi, không sửa.
+  if (session.role !== "admin" && cur.createdBy !== session.sub) {
+    return NextResponse.json({ ok: false, error: "Template này do người khác tạo — chỉ người tạo hoặc admin sửa được" }, { status: 403 });
+  }
   const [row] = await db.update(schema.shopbaseTemplates).set(payloadOf(b!)).where(eq(schema.shopbaseTemplates.id, id)).returning();
   return NextResponse.json({ ok: true, template: row });
 }
@@ -203,9 +209,10 @@ export async function DELETE(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 100);
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
-  const rows = await db.select({ id: schema.shopbaseTemplates.id, storeId: schema.shopbaseTemplates.storeId }).from(schema.shopbaseTemplates).where(inArray(schema.shopbaseTemplates.id, ids));
+  const rows = await db.select({ id: schema.shopbaseTemplates.id, storeId: schema.shopbaseTemplates.storeId, createdBy: schema.shopbaseTemplates.createdBy }).from(schema.shopbaseTemplates).where(inArray(schema.shopbaseTemplates.id, ids));
   const allowed = await allowedStoreIds(session);
-  const okIds = rows.filter((r) => allowed.has(r.storeId)).map((r) => r.id);
+  // v435 · seller chỉ xoá template MÌNH tạo; admin xoá tất.
+  const okIds = rows.filter((r) => allowed.has(r.storeId) && (session.role === "admin" || r.createdBy === session.sub)).map((r) => r.id);
   if (!okIds.length) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   await db.delete(schema.shopbaseTemplates).where(inArray(schema.shopbaseTemplates.id, okIds));
   return NextResponse.json({ ok: true, deleted: okIds.length });

@@ -37,8 +37,10 @@ export async function POST(req: NextRequest) {
     .where(inArray(schema.shopbaseProducts.id, ids));
 
   const scopeIds = await storeOwnerScopeIds(session);
-  const allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || !r.sellerId || scopeIds.includes(r.sellerId))); // sellerId NULL = store chung
-  if (!allowed.length) return NextResponse.json({ ok: false, error: "no valid products" }, { status: 400 });
+  let allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || !r.sellerId || scopeIds.includes(r.sellerId))); // sellerId NULL = store chung
+  // v435 · Store chung: seller chỉ Push bản nháp MÌNH tạo — của admin/người khác thì không.
+  if (session.role !== "admin") allowed = allowed.filter((r) => r.p.createdBy === session.sub);
+  if (!allowed.length) return NextResponse.json({ ok: false, error: "no valid products (chỉ Push được bản nháp bạn tạo)" }, { status: 400 });
 
   // Cache template theo id — lấy collections để áp sau khi tạo.
   const tplIds = Array.from(new Set(allowed.map((r) => r.p.templateId).filter(Boolean))) as string[];

@@ -31,7 +31,7 @@ type Draft = {
   returnWarranty: string;
 };
 type PQ = { type: "text" | "dropdown"; label: string; required: boolean; options: string[]; maxChars: number };
-type Tpl = Draft & { updatedAt?: string; creatorName?: string | null; creatorIsAdmin?: boolean };
+type Tpl = Draft & { updatedAt?: string; creatorName?: string | null; creatorIsAdmin?: boolean; canEdit?: boolean };   // v435 · canEdit=false → chỉ dùng, không sửa/xoá
 
 const SB_BLUE = "#2F6BFF";
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -277,12 +277,16 @@ export default function ShopbaseTemplatesClient({ stores }: { stores: Store[] })
                 {t.thumbUrl ? <img src={t.thumbUrl} alt="" width={52} height={52} style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0, background: "#F5F6F8" }} />
                   : <div style={{ width: 52, height: 52, borderRadius: 10, border: "1px dashed var(--line)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "var(--muted)", flexShrink: 0, background: "#FAFBFC" }}>🖼️</div>}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div onClick={() => editTpl(t)} title="Edit template" style={{ fontWeight: 700, fontSize: 14.5, color: SB_BLUE, cursor: "pointer", display: "inline-block" }}>{t.name}</div>
+                  {/* v435 · template người khác tạo: seller DÙNG được (chọn khi push) nhưng không sửa/xoá */}
+                  <div onClick={() => t.canEdit !== false && editTpl(t)} title={t.canEdit === false ? "Template của người khác — chỉ người tạo hoặc admin sửa được" : "Edit template"}
+                    style={{ fontWeight: 700, fontSize: 14.5, color: t.canEdit === false ? "var(--ink)" : SB_BLUE, cursor: t.canEdit === false ? "default" : "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    {t.name}{t.canEdit === false && <span title="Chỉ dùng — không sửa được" style={{ fontSize: 11 }}>🔒</span>}
+                  </div>
                   <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
                     {storeName(t.storeId)} · {(t.options ?? []).map((o) => `${o.name} (${o.values.length})`).join(" × ") || "no options"} · {(t.variants ?? []).length} variants · {(t.collections ?? []).length} collections · {t.status}{t.creatorName && <> · by <b style={{ color: t.creatorIsAdmin ? "#B7791F" : "var(--ink)" }}>{t.creatorName}{t.creatorIsAdmin ? " (admin)" : ""}</b></>}
                   </div>
                 </div>
-                <button onClick={() => del(t)} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }}>Delete</button>
+                {t.canEdit !== false && <button onClick={() => del(t)} style={{ ...ghost, color: "var(--red)", borderColor: "#F3C9C9" }}>Delete</button>}
               </div>
             ))}
           </div>}
