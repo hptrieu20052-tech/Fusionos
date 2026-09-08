@@ -266,6 +266,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitMode, setKitMode] = useState<"per_ad" | "single">("per_ad");
   const [kitBudget, setKitBudget] = useState("5");
   const [kitPixel, setKitPixel] = useState("");
+  // v442c · Campaign ID — importer của Meta khớp campaign theo ID, không theo tên. Có ID thì
+  // ad set chui vào campaign ĐANG CHẠY; bỏ trống thì file tạo campaign MỚI (kèm Objective).
+  const [kitCampId, setKitCampId] = useState("");
   const [kitBusy, setKitBusy] = useState(false);
   const kitAdName = (title: string, idx: number) =>
     `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
@@ -274,11 +277,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (!list.length || kitBusy) return;
     setKitBusy(true);
     try {
-      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel })); } catch { /* ignore */ }
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId })); } catch { /* ignore */ }
       const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline }));
       const res = await fetch("/api/shopify-products/meta-bulk", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel }),
+        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel, campaignId: kitCampId }),
       });
       if (!res.ok) { const j = await res.json().catch(() => null); flash("✗ " + (j?.error ?? `Export failed (${res.status})`), false); setKitBusy(false); return; }
       const blob = await res.blob();
@@ -1216,6 +1219,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         if (cfg.m === "per_ad" || cfg.m === "single") setKitMode(cfg.m);
         if (cfg.b) setKitBudget(String(cfg.b));
         if (cfg.x) setKitPixel(String(cfg.x));
+        if (cfg.ci) setKitCampId(String(cfg.ci));
       } catch { /* ignore */ }
       setAdsKitOpen(true);
       return;
@@ -2278,6 +2282,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   <input value={kitPixel} onChange={(e) => setKitPixel(e.target.value.replace(/\D/g, ""))} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
                 </label>
               )}
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 160 }}>Campaign ID (use existing)
+                <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new"
+                  style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
+              </label>
               <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
                 style={{ ...pill("#1D4ED8", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.6 : 1 }}>
                 {kitBusy ? "Exporting…" : "⬇ Meta import file (.zip)"}

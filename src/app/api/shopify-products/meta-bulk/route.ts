@@ -25,8 +25,9 @@ type Item = { id: string; adName: string; primary: string; headline: string };
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  const body = await req.json().catch(() => null) as { campaign?: string; adset?: string; items?: Item[]; mode?: string; budget?: number; pixel?: string } | null;
+  const body = await req.json().catch(() => null) as { campaign?: string; adset?: string; items?: Item[]; mode?: string; budget?: number; pixel?: string; campaignId?: string } | null;
   const campaign = (body?.campaign ?? "").trim();
+  const campaignId = String(body?.campaignId ?? "").replace(/\D/g, "");   // v442c · khớp campaign theo ID, không tạo mới
   const adset = (body?.adset ?? "").trim();
   const perAd = body?.mode === "per_ad";
   const budget = Math.max(1, Math.min(1000, Number(body?.budget) || 5));
@@ -45,9 +46,12 @@ export async function POST(req: NextRequest) {
   // Campaign/Ad Set khớp THEO TÊN với campaign & ad set đang có.
   // v442 · mode per_ad: thêm cột TẠO ad set mới (budget/trạng thái/US/tối ưu Purchase + pixel).
   const adsetCols = perAd
-    ? ["Ad Set Daily Budget", "Ad Set Run Status", "Countries", "Optimization Goal", "Billing Event", "Custom Event Type", ...(pixel ? ["Optimized Conversion Tracking Pixels"] : [])]
+    ? ["Ad Set Daily Budget", "Ad Set Run Status", "Countries", "Optimization Goal", "Billing Event", ...(pixel ? ["Optimized Conversion Tracking Pixels"] : [])]
     : [];
-  const header = ["Campaign Name", "Ad Set Name", ...adsetCols, "Ad Name", "Ad Status", "Creative Type", "Title", "Body", "Link Description", "Display Link", "Link", "Call to Action", "Image File Name"];
+  // Có Campaign ID → gắn vào campaign ĐANG CÓ (không tạo mới). Không có ID → file tự mang
+  // Objective/Buying Type để importer tạo campaign mới hợp lệ (Outcome Sales, Paused).
+  const campCols = campaignId ? ["Campaign ID"] : ["Campaign Status", "Campaign Objective", "Buying Type"];
+  const header = [...campCols, "Campaign Name", "Ad Set Name", ...adsetCols, "Ad Name", "Ad Status", "Creative Type", "Title", "Body", "Link Description", "Display Link", "Link", "Call to Action", "Image File Name"];
   const dataRows: string[][] = [header];
 
   const zip = new JSZip();
@@ -79,10 +83,11 @@ export async function POST(req: NextRequest) {
     // per_ad: mỗi ad 1 ad set mới "adset-NN" (Paused — bật tay sau khi review).
     const adsetName = perAd ? `${adset}-${String(rowIdx).padStart(2, "0")}` : adset;
     const adsetVals = perAd
-      ? [String(budget), "Paused", "US", "OFFSITE_CONVERSIONS", "IMPRESSIONS", "PURCHASE", ...(pixel ? [pixel] : [])]
+      ? [String(budget), "Paused", "US", "OFFSITE_CONVERSIONS", "IMPRESSIONS", ...(pixel ? [pixel] : [])]
       : [];
+    const campVals = campaignId ? [campaignId] : ["Paused", "Outcome Sales", "Auction"];
     dataRows.push([
-      campaign, adsetName, ...adsetVals, it.adName, "Paused", "Link Page Post Ad",
+      ...campVals, campaign, adsetName, ...adsetVals, it.adName, "Paused", "Link Page Post Ad",
       it.headline, it.primary,
       "✓ Printed in the USA  ✓ Free US shipping  ✓ 30-day guarantee",
       host, link, "SHOP_NOW", imgFile,
