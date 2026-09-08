@@ -53,9 +53,10 @@ export async function GET() {
   if (!c) return NextResponse.json({ ok: false, error: "Missing env: META_SYSTEM_TOKEN / META_AD_ACCOUNT_ID / META_PAGE_ID / META_PIXEL_ID (set in Vercel, then redeploy)" }, { status: 400 });
   try {
     const acc = await fb(`${c.account}?fields=name,currency,timezone_name,timezone_offset_hours_utc`, c.token);
-    const page = await fb(`${c.pageId}?fields=name`, c.token);
+    // Đọc tên page/pixel chỉ để hiển thị — thiếu quyền đọc KHÔNG chặn việc tạo ads, nên lỗi thì ghi chú thôi.
+    const page = await fb(`${c.pageId}?fields=name`, c.token).catch((e) => ({ name: `(cannot read page name: ${String((e as Error).message).slice(0, 120)})` }));
     const pixel = await fb(`${c.pixelId}?fields=name`, c.token).catch(() => ({ name: "(no pixel read access — ads vẫn tạo được)" }));
-    return NextResponse.json({ ok: true, account: { id: c.account, name: acc.name, currency: acc.currency, timezone: acc.timezone_name, utcOffset: acc.timezone_offset_hours_utc }, page: { id: c.pageId, name: page.name }, pixel: { id: c.pixelId, name: (pixel as { name?: string }).name } });
+    return NextResponse.json({ ok: true, account: { id: c.account, name: acc.name, currency: acc.currency, timezone: acc.timezone_name, utcOffset: acc.timezone_offset_hours_utc }, page: { id: c.pageId, name: (page as { name?: string }).name }, pixel: { id: c.pixelId, name: (pixel as { name?: string }).name } });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error).message) }, { status: 400 });
   }
