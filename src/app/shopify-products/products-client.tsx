@@ -280,6 +280,27 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitBusy, setKitBusy] = useState(false);
   const kitAdName = (title: string, idx: number) =>
     `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
+  // v445 · Push thẳng qua Marketing API — tạo campaign + ad sets + ads (tất cả PAUSED) trong 1 cú bấm.
+  const kitPush = async () => {
+    const list = rows.filter((r) => kitTexts[r.id]);
+    if (!list.length || kitBusy) return;
+    if (!confirm(`Create 1 campaign "${kitCampaign}" + ${list.length} ad sets ($${kitBudget}/day each) + ${list.length} ads on Meta (all PAUSED)?`)) return;
+    setKitBusy(true);
+    try {
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries })); } catch { /* ignore */ }
+      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "" }));
+      const j = await postJSON("/api/meta-ads/push", {
+        campaign: kitCampaign, adsetPrefix: kitAdset, budget: Number(kitBudget) || 5,
+        ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStart, items,
+      });
+      if (j.ok) {
+        const failed = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
+        flash(failed.length ? `⚠ Pushed ${j.created}/${j.total} ads — failed: ${failed.map((f: { adName: string; error?: string }) => `${f.adName} (${f.error})`).join("; ")}`.slice(0, 300) : `✓ Pushed ${j.created} ads to Meta (PAUSED) — review in Ads Manager, then turn on`, failed.length === 0);
+        setAdsKitOpen(false); load();
+      } else flash("✗ " + (j.error ?? "Push failed"), false);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Push failed"), false); }
+    setKitBusy(false);
+  };
   const kitExport = async () => {
     const list = rows.filter((r) => kitTexts[r.id]);
     if (!list.length || kitBusy) return;
@@ -2322,9 +2343,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 12, font: "inherit" }} />
                 </label>
               )}
+              <button onClick={kitPush} disabled={kitBusy || !kitCampaign.trim()}
+                style={{ ...pill("#16A34A", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() ? 0.6 : 1 }}>
+                {kitBusy ? "Working…" : "🚀 Push to Meta"}
+              </button>
               <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
-                style={{ ...pill("#1D4ED8", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.6 : 1 }}>
-                {kitBusy ? "Exporting…" : "⬇ Meta import file (.zip)"}
+                style={{ ...ghost, padding: "8px 14px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.6 : 1 }}>
+                {kitBusy ? "…" : "⬇ Import file (.zip)"}
               </button>
             </div>
             {rows.filter((r) => kitTexts[r.id]).map((r, idx) => {
