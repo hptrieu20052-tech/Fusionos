@@ -45,8 +45,10 @@ export async function POST(req: NextRequest) {
   // CSV bulk import — cột theo format export/import của Ads Manager. Ad ID để trống = TẠO MỚI,
   // Campaign/Ad Set khớp THEO TÊN với campaign & ad set đang có.
   // v442 · mode per_ad: thêm cột TẠO ad set mới (budget/trạng thái/US/tối ưu Purchase + pixel).
+  // v442d · Age Min/Max + Bid Strategy: 3 field importer bắt buộc mà bỏ trống sẽ chặn Publish
+  // (lỗi #1487842/#1487843/#2490487 — dò ra từ đợt First Birthday 09/2026).
   const adsetCols = perAd
-    ? ["Ad Set Daily Budget", "Ad Set Run Status", "Countries", "Optimization Goal", "Billing Event", ...(pixel ? ["Optimized Conversion Tracking Pixels"] : [])]
+    ? ["Ad Set Daily Budget", "Ad Set Run Status", "Countries", "Age Min", "Age Max", "Ad Set Bid Strategy", "Optimization Goal", "Billing Event", ...(pixel ? ["Optimized Conversion Tracking Pixels"] : [])]
     : [];
   // Có Campaign ID → gắn vào campaign ĐANG CÓ (không tạo mới). Không có ID → file tự mang
   // Objective/Buying Type để importer tạo campaign mới hợp lệ (Outcome Sales, Paused).
@@ -83,7 +85,7 @@ export async function POST(req: NextRequest) {
     // per_ad: mỗi ad 1 ad set mới "adset-NN" (Paused — bật tay sau khi review).
     const adsetName = perAd ? `${adset}-${String(rowIdx).padStart(2, "0")}` : adset;
     const adsetVals = perAd
-      ? [String(budget), "Paused", "US", "OFFSITE_CONVERSIONS", "IMPRESSIONS", ...(pixel ? [pixel] : [])]
+      ? [String(budget), "Paused", "US", "18", "65", "Lowest cost", "OFFSITE_CONVERSIONS", "IMPRESSIONS", ...(pixel ? [pixel] : [])]
       : [];
     const campVals = campaignId ? [campaignId] : ["Paused", "Outcome Sales", "Auction"];
     dataRows.push([
