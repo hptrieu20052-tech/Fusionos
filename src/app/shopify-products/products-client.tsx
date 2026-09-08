@@ -269,6 +269,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   // v442c · Campaign ID — importer của Meta khớp campaign theo ID, không theo tên. Có ID thì
   // ad set chui vào campaign ĐANG CHẠY; bỏ trống thì file tạo campaign MỚI (kèm Objective).
   const [kitCampId, setKitCampId] = useState("");
+  // v443 · target chỉnh được từ kit (áp cho các ad set mới ở mode per_ad).
+  const [kitAgeMin, setKitAgeMin] = useState("18");
+  const [kitAgeMax, setKitAgeMax] = useState("65");
+  const [kitCountries, setKitCountries] = useState("US");
+  // v443 · ảnh XUẤT cho từng sản phẩm — click thumbnail để chọn (mặc định ảnh đầu).
+  const [kitImg, setKitImg] = useState<Record<string, string>>({});
+  // v444 · giờ bắt đầu chạy (theo MÚI GIỜ AD ACCOUNT, vd PDT) — trống = chạy ngay khi bật.
+  const [kitStart, setKitStart] = useState("");
   const [kitBusy, setKitBusy] = useState(false);
   const kitAdName = (title: string, idx: number) =>
     `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
@@ -277,11 +285,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (!list.length || kitBusy) return;
     setKitBusy(true);
     try {
-      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId })); } catch { /* ignore */ }
-      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline }));
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries })); } catch { /* ignore */ }
+      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "" }));
       const res = await fetch("/api/shopify-products/meta-bulk", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel, campaignId: kitCampId }),
+        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel, campaignId: kitCampId, ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStart }),
       });
       if (!res.ok) { const j = await res.json().catch(() => null); flash("✗ " + (j?.error ?? `Export failed (${res.status})`), false); setKitBusy(false); return; }
       const blob = await res.blob();
@@ -1210,6 +1218,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         };
       }
       setKitTexts(init);
+      // Ảnh xuất mặc định = ảnh đầu của từng sản phẩm.
+      const imgInit: Record<string, string> = {};
+      for (const r of rows.filter((x) => sel.has(x.id))) imgInit[r.id] = r.imageUrls?.[0] ?? r.mainImage ?? "";
+      setKitImg(imgInit);
       // v441 · nhớ campaign/ad set/prefix của lần export trước.
       try {
         const cfg = JSON.parse(localStorage.getItem("adskit.cfg") ?? "{}");
@@ -1220,6 +1232,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         if (cfg.b) setKitBudget(String(cfg.b));
         if (cfg.x) setKitPixel(String(cfg.x));
         if (cfg.ci) setKitCampId(String(cfg.ci));
+        if (cfg.g1) setKitAgeMin(String(cfg.g1));
+        if (cfg.g2) setKitAgeMax(String(cfg.g2));
+        if (cfg.co) setKitCountries(String(cfg.co));
       } catch { /* ignore */ }
       setAdsKitOpen(true);
       return;
@@ -2286,6 +2301,27 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new"
                   style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
               </label>
+              {kitMode === "per_ad" && (
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 92 }}>Age
+                  <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <input value={kitAgeMin} onChange={(e) => setKitAgeMin(e.target.value.replace(/\D/g, ""))} style={{ width: 36, border: "1px solid var(--line)", borderRadius: 8, padding: "6px 6px", fontSize: 12.5, font: "inherit", textAlign: "center" }} />
+                    <span>–</span>
+                    <input value={kitAgeMax} onChange={(e) => setKitAgeMax(e.target.value.replace(/\D/g, ""))} style={{ width: 36, border: "1px solid var(--line)", borderRadius: 8, padding: "6px 6px", fontSize: 12.5, font: "inherit", textAlign: "center" }} />
+                  </span>
+                </label>
+              )}
+              {kitMode === "per_ad" && (
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 92 }}>Countries
+                  <input value={kitCountries} onChange={(e) => setKitCountries(e.target.value.toUpperCase())} placeholder="US"
+                    style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
+                </label>
+              )}
+              {kitMode === "per_ad" && (
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 185 }}>Start (ad account time zone)
+                  <input type="datetime-local" value={kitStart} onChange={(e) => setKitStart(e.target.value)}
+                    style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 12, font: "inherit" }} />
+                </label>
+              )}
               <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
                 style={{ ...pill("#1D4ED8", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.6 : 1 }}>
                 {kitBusy ? "Exporting…" : "⬇ Meta import file (.zip)"}
@@ -2300,12 +2336,20 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 <div key={r.id} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 14, marginBottom: 12 }}>
                   <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", width: 200, flexShrink: 0 }}>
-                      {(r.imageUrls ?? (r.mainImage ? [r.mainImage] : [])).slice(0, 4).map((u, i) => (
-                        <a key={i} href={u} target="_blank" rel="noreferrer">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={u} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, border: i === 0 ? "2px solid #7C5CFF" : "1px solid var(--line)" }} />
-                        </a>
-                      ))}
+                      {(r.imageUrls ?? (r.mainImage ? [r.mainImage] : [])).slice(0, 8).map((u, i) => {
+                        const picked = (kitImg[r.id] || "") === u;
+                        return (
+                          <span key={i} style={{ position: "relative", display: "inline-block" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={u} alt="" onClick={() => setKitImg((m) => ({ ...m, [r.id]: u }))}
+                              style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, cursor: "pointer", display: "block",
+                                border: picked ? "3px solid #16A34A" : "1px solid var(--line)", opacity: picked ? 1 : 0.75 }} />
+                            {picked && <span style={{ position: "absolute", top: 4, left: 4, background: "#16A34A", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>✓</span>}
+                            <a href={u} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                              style={{ position: "absolute", bottom: 4, right: 4, background: "rgba(10,14,20,.55)", color: "#fff", borderRadius: 6, fontSize: 10.5, padding: "1px 5px", textDecoration: "none" }}>↗</a>
+                          </span>
+                        );
+                      })}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

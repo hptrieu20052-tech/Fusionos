@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 type Img = { src: string; position?: number };
-type Item = { id: string; adName: string; primary: string; headline: string };
+type Item = { id: string; adName: string; primary: string; headline: string; imageUrl?: string };
 
 /**
  * v441 · POST /api/shopify-products/meta-bulk
@@ -25,13 +25,27 @@ type Item = { id: string; adName: string; primary: string; headline: string };
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  const body = await req.json().catch(() => null) as { campaign?: string; adset?: string; items?: Item[]; mode?: string; budget?: number; pixel?: string; campaignId?: string } | null;
+  const body = await req.json().catch(() => null) as { campaign?: string; adset?: string; items?: Item[]; mode?: string; budget?: number; pixel?: string; campaignId?: string; ageMin?: number; ageMax?: number; countries?: string; startTime?: string } | null;
   const campaign = (body?.campaign ?? "").trim();
   const campaignId = String(body?.campaignId ?? "").replace(/\D/g, "");   // v442c · khớp campaign theo ID, không tạo mới
   const adset = (body?.adset ?? "").trim();
   const perAd = body?.mode === "per_ad";
   const budget = Math.max(1, Math.min(1000, Number(body?.budget) || 5));
   const pixel = String(body?.pixel ?? "").replace(/\D/g, "");
+  // v443 · target chỉnh được từ kit: tuổi + quốc gia (mặc định 18-65, US).
+  const ageMin = String(Math.min(65, Math.max(13, Number(body?.ageMin) || 18)));
+  const ageMax = String(Math.min(65, Math.max(13, Number(body?.ageMax) || 65)));
+  const countries = String(body?.countries ?? "US").toUpperCase().replace(/[^A-Z,]/g, "") || "US";
+  // v444 · Giờ bắt đầu (múi giờ CỦA AD ACCOUNT, vd PDT) → cột "Ad Set Time Start" (MM/DD/YYYY hh:mm:ss AM/PM).
+  const startRaw = String(body?.startTime ?? "").trim();   // "YYYY-MM-DDTHH:mm" từ <input type=datetime-local>
+  let startCol = "";
+  const m = startRaw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (m) {
+    const h24 = Number(m[4]);
+    const ap = h24 >= 12 ? "PM" : "AM";
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    startCol = `${m[2]}/${m[3]}/${m[1]} ${String(h12).padStart(2, "0")}:${m[5]}:00 ${ap}`;
+  }
   const items = (body?.items ?? []).filter((i) => i && i.id && i.adName);
   if (!campaign || !adset || !items.length) return NextResponse.json({ ok: false, error: "campaign, adset and items are required" }, { status: 400 });
   if (items.length > 50) return NextResponse.json({ ok: false, error: "max 50 ads per export" }, { status: 400 });
@@ -48,7 +62,7 @@ export async function POST(req: NextRequest) {
   // v442d · Age Min/Max + Bid Strategy: 3 field importer bắt buộc mà bỏ trống sẽ chặn Publish
   // (lỗi #1487842/#1487843/#2490487 — dò ra từ đợt First Birthday 09/2026).
   const adsetCols = perAd
-    ? ["Ad Set Daily Budget", "Ad Set Run Status", "Countries", "Age Min", "Age Max", "Ad Set Bid Strategy", "Optimization Goal", "Billing Event", ...(pixel ? ["Optimized Conversion Tracking Pixels"] : [])]
+    ? ["Ad Set Daily Budget", "Ad Set Run Status", ...(startCol ? ["Ad Set Time Start"] : []), "Countries", "Age Min", "Age Max", "Ad Set Bid Strategy", "Optimization Goal", "Billing Event", ...(pixel ? ["Optimized Conversion Tracking Pixels", "Optimized Event"] : [])]
     : [];
   // Có Campaign ID → gắn vào campaign ĐANG CÓ (không tạo mới). Không có ID → file tự mang
   // Objective/Buying Type để importer tạo campaign mới hợp lệ (Outcome Sales, Paused).
@@ -66,7 +80,8 @@ export async function POST(req: NextRequest) {
     const link = (p.onlineStoreUrl ?? "").trim();
     if (!link) { skipped.push(it.adName + " (no storefront link)"); continue; }
     const imgs = (Array.isArray(p.images) ? p.images as Img[] : []).slice().sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
-    const src = imgs[0]?.src ?? "";
+    // v443 · ảnh do người dùng CHỌN trong kit (click thumbnail); fallback ảnh đầu.
+    const src = (it.imageUrl ?? "").trim() || (imgs[0]?.src ?? "");
     // Tên file ảnh = Ad Name (an toàn ký tự), đuôi lấy từ URL — CSV và file trong ZIP trùng nhau.
     let imgFile = "";
     if (src) {
@@ -85,7 +100,7 @@ export async function POST(req: NextRequest) {
     // per_ad: mỗi ad 1 ad set mới "adset-NN" (Paused — bật tay sau khi review).
     const adsetName = perAd ? `${adset}-${String(rowIdx).padStart(2, "0")}` : adset;
     const adsetVals = perAd
-      ? [String(budget), "Paused", "US", "18", "65", "Lowest cost", "OFFSITE_CONVERSIONS", "IMPRESSIONS", ...(pixel ? [pixel] : [])]
+      ? [String(budget), "Paused", ...(startCol ? [startCol] : []), countries, ageMin, ageMax, "Lowest cost", "OFFSITE_CONVERSIONS", "IMPRESSIONS", ...(pixel ? [pixel, "PURCHASE"] : [])]
       : [];
     const campVals = campaignId ? [campaignId] : ["Paused", "Outcome Sales", "Auction"];
     dataRows.push([
@@ -101,6 +116,13 @@ export async function POST(req: NextRequest) {
   // "Spreadsheet didn't contain any rows"; Excel thì ăn chắc. xlsx = zip chứa XML, dựng bằng jszip.
   zip.file("meta-ads-import.xlsx", await buildXlsx(dataRows));
   if (skipped.length) zip.file("SKIPPED.txt", skipped.join("\n"));
+  zip.file("CHECKLIST.txt", [
+    "AFTER IMPORT — 3 quick checks before Publish (Meta cannot set these via file):",
+    "1. Open the CAMPAIGN draft -> make sure 'Advantage+ catalog ads' = OFF (Meta may auto-enable it).",
+    "2. Open ONE ad -> Ad setup: untick 'Multi-advertiser ads' (repeat per ad if still ticked).",
+    "3. Advantage+ creative enhancements: keep everything OFF.",
+    "Then Publish -> turn ON campaign + ad sets. Never click 'Apply now' suggestions.",
+  ].join("\n"));
   const buf: Buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 
   // Đánh dấu ĐÃ CHẠY ADS cho các sản phẩm có mặt trong file.
