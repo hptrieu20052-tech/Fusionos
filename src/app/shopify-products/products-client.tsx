@@ -262,6 +262,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitCampaign, setKitCampaign] = useState("TEST-IMG-Talewix");
   const [kitAdset, setKitAdset] = useState("Train-Books-Test");
   const [kitPrefix, setKitPrefix] = useState("Train");
+  // v442 · per_ad (mặc định): mỗi ad 1 ad set mới với budget riêng — vòng sàng lọc công bằng.
+  const [kitMode, setKitMode] = useState<"per_ad" | "single">("per_ad");
+  const [kitBudget, setKitBudget] = useState("5");
+  const [kitPixel, setKitPixel] = useState("");
   const [kitBusy, setKitBusy] = useState(false);
   const kitAdName = (title: string, idx: number) =>
     `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
@@ -270,11 +274,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (!list.length || kitBusy) return;
     setKitBusy(true);
     try {
-      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix })); } catch { /* ignore */ }
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel })); } catch { /* ignore */ }
       const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline }));
       const res = await fetch("/api/shopify-products/meta-bulk", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items }),
+        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel }),
       });
       if (!res.ok) { const j = await res.json().catch(() => null); flash("✗ " + (j?.error ?? `Export failed (${res.status})`), false); setKitBusy(false); return; }
       const blob = await res.blob();
@@ -1209,6 +1213,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         if (cfg.c) setKitCampaign(cfg.c);
         if (cfg.a) setKitAdset(cfg.a);
         if (cfg.p) setKitPrefix(cfg.p);
+        if (cfg.m === "per_ad" || cfg.m === "single") setKitMode(cfg.m);
+        if (cfg.b) setKitBudget(String(cfg.b));
+        if (cfg.x) setKitPixel(String(cfg.x));
       } catch { /* ignore */ }
       setAdsKitOpen(true);
       return;
@@ -2246,15 +2253,31 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               <button onClick={() => setAdsKitOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, flex: 2, minWidth: 160 }}>Campaign
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, flex: 2, minWidth: 150 }}>Campaign
                 <input value={kitCampaign} onChange={(e) => setKitCampaign(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
               </label>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, flex: 2, minWidth: 160 }}>Ad set
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, flex: 2, minWidth: 150 }}>{kitMode === "per_ad" ? "Ad set name prefix" : "Ad set"}
                 <input value={kitAdset} onChange={(e) => setKitAdset(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
               </label>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 110 }}>Ad name prefix
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 96 }}>Ad name prefix
                 <input value={kitPrefix} onChange={(e) => setKitPrefix(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
               </label>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 168 }}>Structure
+                <select value={kitMode} onChange={(e) => setKitMode(e.target.value as "per_ad" | "single")} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", fontSize: 12.5, font: "inherit", background: "#fff" }}>
+                  <option value="per_ad">1 ad set per ad (new)</option>
+                  <option value="single">All in one ad set (existing)</option>
+                </select>
+              </label>
+              {kitMode === "per_ad" && (
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 80 }}>$ / day each
+                  <input value={kitBudget} onChange={(e) => setKitBudget(e.target.value.replace(/[^\d.]/g, ""))} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
+                </label>
+              )}
+              {kitMode === "per_ad" && (
+                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 150 }}>Pixel ID (optional)
+                  <input value={kitPixel} onChange={(e) => setKitPixel(e.target.value.replace(/\D/g, ""))} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
+                </label>
+              )}
               <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
                 style={{ ...pill("#1D4ED8", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.6 : 1 }}>
                 {kitBusy ? "Exporting…" : "⬇ Meta import file (.zip)"}

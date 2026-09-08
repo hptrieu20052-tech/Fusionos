@@ -13,18 +13,24 @@ type Item = { id: string; adName: string; primary: string; headline: string };
 
 /**
  * v441 · POST /api/shopify-products/meta-bulk
- * Body: { campaign, adset, items: [{ id, adName, primary, headline }] }
- * → Trả về ZIP: meta-ads-import.csv (đúng format bulk import của Ads Manager, 1 dòng = 1 ad,
- *   Ad Status = Paused) + ảnh chính từng sản phẩm đặt tên trùng "Image File Name" trong CSV.
+ * Body: { campaign, adset, items: [{ id, adName, primary, headline }], mode?, budget?, pixel? }
+ *  - mode "single" (mặc định): mọi ad vào CHUNG 1 ad set đã có sẵn (khớp theo tên `adset`).
+ *  - mode "per_ad" (v442 · vòng sàng lọc): MỖI ad 1 ad set MỚI `adset-NN`, kèm cột tạo ad set
+ *    (Daily Budget = `budget` $/ngày, Paused, US, tối ưu Purchase; `pixel` = Pixel ID nếu có).
+ *    Thiếu field nào Meta sẽ hỏi ở màn review import — điền 1 lần là xong.
+ * → Trả về ZIP: meta-ads-import.csv + ảnh chính từng sản phẩm đặt tên trùng "Image File Name".
  *   Import: Ads Manager → ⋯ → Import & Export → Import Ads in Bulk → kéo CSV + chọn ảnh cùng lúc.
  * Đồng thời SET shopify_products.ads_at = now() cho các sản phẩm export (badge ADS).
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  const body = await req.json().catch(() => null) as { campaign?: string; adset?: string; items?: Item[] } | null;
+  const body = await req.json().catch(() => null) as { campaign?: string; adset?: string; items?: Item[]; mode?: string; budget?: number; pixel?: string } | null;
   const campaign = (body?.campaign ?? "").trim();
   const adset = (body?.adset ?? "").trim();
+  const perAd = body?.mode === "per_ad";
+  const budget = Math.max(1, Math.min(1000, Number(body?.budget) || 5));
+  const pixel = String(body?.pixel ?? "").replace(/\D/g, "");
   const items = (body?.items ?? []).filter((i) => i && i.id && i.adName);
   if (!campaign || !adset || !items.length) return NextResponse.json({ ok: false, error: "campaign, adset and items are required" }, { status: 400 });
   if (items.length > 50) return NextResponse.json({ ok: false, error: "max 50 ads per export" }, { status: 400 });
@@ -38,12 +44,17 @@ export async function POST(req: NextRequest) {
   // CSV bulk import — cột theo format export/import của Ads Manager. Ad ID để trống = TẠO MỚI,
   // Campaign/Ad Set khớp THEO TÊN với campaign & ad set đang có.
   const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const header = ["Campaign Name", "Ad Set Name", "Ad Name", "Ad Status", "Creative Type", "Title", "Body", "Link Description", "Display Link", "Link", "Call to Action", "Image File Name"];
+  // v442 · mode per_ad: thêm cột TẠO ad set mới (budget/trạng thái/US/tối ưu Purchase + pixel).
+  const adsetCols = perAd
+    ? ["Ad Set Daily Budget", "Ad Set Run Status", "Countries", "Optimization Goal", "Billing Event", "Custom Event Type", ...(pixel ? ["Optimized Conversion Tracking Pixels"] : [])]
+    : [];
+  const header = ["Campaign Name", "Ad Set Name", ...adsetCols, "Ad Name", "Ad Status", "Creative Type", "Title", "Body", "Link Description", "Display Link", "Link", "Call to Action", "Image File Name"];
   const lines: string[] = [header.map(esc).join(",")];
 
   const zip = new JSZip();
   const usedNames = new Set<string>();
   const skipped: string[] = [];
+  let rowIdx = 0;
   for (const it of items) {
     const p = byId.get(it.id);
     if (!p) { skipped.push(it.adName + " (not found)"); continue; }
@@ -65,8 +76,14 @@ export async function POST(req: NextRequest) {
       } catch { /* ảnh lỗi → dòng vẫn xuất, user gắn ảnh tay */ }
     }
     const host = link.replace(/^https?:\/\//, "").split("/")[0];
+    rowIdx++;
+    // per_ad: mỗi ad 1 ad set mới "adset-NN" (Paused — bật tay sau khi review).
+    const adsetName = perAd ? `${adset}-${String(rowIdx).padStart(2, "0")}` : adset;
+    const adsetVals = perAd
+      ? [String(budget), "Paused", "US", "OFFSITE_CONVERSIONS", "IMPRESSIONS", "PURCHASE", ...(pixel ? [pixel] : [])]
+      : [];
     lines.push([
-      campaign, adset, it.adName, "Paused", "Link Page Post Ad",
+      campaign, adsetName, ...adsetVals, it.adName, "Paused", "Link Page Post Ad",
       it.headline, it.primary,
       "✓ Printed in the USA  ✓ Free US shipping  ✓ 30-day guarantee",
       host, link, "SHOP_NOW", imgFile,
