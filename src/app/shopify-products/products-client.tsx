@@ -281,10 +281,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const kitAdName = (title: string, idx: number) =>
     `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
   // v445 · Push thẳng qua Marketing API — tạo campaign + ad sets + ads (tất cả PAUSED) trong 1 cú bấm.
+  // Xác nhận bằng BẤM 2 LẦN (không dùng confirm() — app override thành modal async, code chạy trước khi bấm OK).
+  const [kitArm, setKitArm] = useState(false);
   const kitPush = async () => {
     const list = rows.filter((r) => kitTexts[r.id]);
     if (!list.length || kitBusy) return;
-    if (!confirm(`Create 1 campaign "${kitCampaign}" + ${list.length} ad sets ($${kitBudget}/day each) + ${list.length} ads on Meta (all PAUSED)?`)) return;
+    if (!kitArm) { setKitArm(true); setTimeout(() => setKitArm(false), 4000); return; }
+    setKitArm(false);
     setKitBusy(true);
     try {
       try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries })); } catch { /* ignore */ }
@@ -2345,8 +2348,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 </label>
               )}
               <button onClick={kitPush} disabled={kitBusy || !kitCampaign.trim()}
-                style={{ ...pill("#16A34A", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() ? 0.6 : 1 }}>
-                {kitBusy ? "Working…" : "🚀 Push to Meta"}
+                style={{ ...pill(kitArm ? "#B45309" : "#16A34A", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() ? 0.6 : 1 }}>
+                {kitBusy ? "Working…" : kitArm ? "⚠ Click again to confirm" : "🚀 Push to Meta"}
               </button>
               <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
                 style={{ ...ghost, padding: "8px 14px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.6 : 1 }}>
