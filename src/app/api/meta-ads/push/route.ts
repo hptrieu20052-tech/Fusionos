@@ -101,6 +101,8 @@ export async function POST(req: NextRequest) {
   try {
     const camp = await fb(`${c.account}/campaigns`, c.token, {
       name: campaign, objective: "OUTCOME_SALES", status: "PAUSED", buying_type: "AUCTION", special_ad_categories: [],
+      // ABO thuần: không campaign budget, KHÔNG cho ad set chia sẻ budget (test phải sạch, mỗi mẫu đúng $X của nó).
+      is_adset_budget_sharing_enabled: false,
     });
     campaignId = String(camp.id);
   } catch (e) {
