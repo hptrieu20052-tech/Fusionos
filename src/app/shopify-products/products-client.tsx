@@ -1636,7 +1636,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         </div>
       )}
 
-      {msg && <div style={{ marginBottom: 12, fontSize: 13, fontWeight: 600, padding: "10px 14px", borderRadius: 12, background: msg.ok ? "#EAF7F0" : "#FDECEC", color: msg.ok ? "#158A57" : "#C0392B", border: `1px solid ${msg.ok ? "#C7EAD8" : "#F5CFCF"}` }}>{msg.text}</div>}
+      {/* v445b · flash = toast nổi (zIndex trên mọi modal) — trước đây inline đầu trang, mở modal là bị che. */}
+      {msg && <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 6000, maxWidth: "min(720px, 92vw)", fontSize: 13, fontWeight: 600, padding: "12px 18px", borderRadius: 12, boxShadow: "0 6px 24px rgba(16,24,40,.18)", background: msg.ok ? "#EAF7F0" : "#FDECEC", color: msg.ok ? "#158A57" : "#C0392B", border: `1px solid ${msg.ok ? "#C7EAD8" : "#F5CFCF"}` }}>{msg.text}</div>}
 
       {/* Sản phẩm AI viết hỏng + LÝ DO THẬT — không đoán mò nữa. Retry chỉ chạy lại đúng mấy con này. */}
       {/* v187: khung này dùng chung cho 2 loại nội dung — LỖI thật (đỏ) và KẾT QUẢ policy audit (vàng).
