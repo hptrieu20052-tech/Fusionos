@@ -56,6 +56,9 @@ const card: React.CSSProperties = { background: "#fff", border: "1px solid var(-
 const ctl: React.CSSProperties = { border: "1px solid var(--line)", borderRadius: 12, padding: "10px 13px", fontSize: 13.5, font: "inherit", background: "#fff", outline: "none" };
 const pill = (bg: string, fg: string): React.CSSProperties => ({ display: "inline-flex", alignItems: "center", gap: 7, border: "none", background: bg, color: fg, borderRadius: 12, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" });
 const ghost: React.CSSProperties = { ...pill("#fff", "var(--ink)"), border: "1px solid var(--line)" };
+// v446 · Meta Ads Kit form styles — panel xám kiểu Ads Manager, label uppercase nhỏ, input đồng bộ.
+const kitLab: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase", color: "#5B6472", marginBottom: 6, display: "block", whiteSpace: "nowrap" };
+const kitIn: React.CSSProperties = { width: "100%", boxSizing: "border-box", background: "#fff", border: "1px solid #DDE1E7", borderRadius: 10, padding: "9px 12px", fontSize: 13, font: "inherit", outline: "none" };
 const lab: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 };
 const linkBtn = (c: string): React.CSSProperties => ({ border: "none", background: "none", padding: 0, cursor: "pointer", color: c, fontWeight: 700, fontSize: 12.5 });
 const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
@@ -275,8 +278,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitCountries, setKitCountries] = useState("US");
   // v443 · ảnh XUẤT cho từng sản phẩm — click thumbnail để chọn (mặc định ảnh đầu).
   const [kitImg, setKitImg] = useState<Record<string, string>>({});
-  // v444 · giờ bắt đầu chạy (theo MÚI GIỜ AD ACCOUNT, vd PDT) — trống = chạy ngay khi bật.
-  const [kitStart, setKitStart] = useState("");
+  // v444/v446 · giờ bắt đầu (MÚI GIỜ AD ACCOUNT, vd PDT) — 2 ô date + time kiểu Ads Manager; trống = chạy ngay khi bật.
+  const [kitStartDate, setKitStartDate] = useState("");
+  const [kitStartTime, setKitStartTime] = useState("");
+  const kitStartCombined = kitStartDate && kitStartTime ? `${kitStartDate}T${kitStartTime}` : "";
   const [kitBusy, setKitBusy] = useState(false);
   const kitAdName = (title: string, idx: number) =>
     `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
@@ -290,11 +295,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     setKitArm(false);
     setKitBusy(true);
     try {
-      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries })); } catch { /* ignore */ }
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries, st: kitStartTime })); } catch { /* ignore */ }
       const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "" }));
       const j = await postJSON("/api/meta-ads/push", {
         campaign: kitCampaign, adsetPrefix: kitAdset, budget: Number(kitBudget) || 5,
-        ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStart, items,
+        ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStartCombined, items,
       });
       if (j.ok) {
         const failed = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
@@ -309,11 +314,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (!list.length || kitBusy) return;
     setKitBusy(true);
     try {
-      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries })); } catch { /* ignore */ }
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries, st: kitStartTime })); } catch { /* ignore */ }
       const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "" }));
       const res = await fetch("/api/shopify-products/meta-bulk", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel, campaignId: kitCampId, ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStart }),
+        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel, campaignId: kitCampId, ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStartCombined }),
       });
       if (!res.ok) { const j = await res.json().catch(() => null); flash("✗ " + (j?.error ?? `Export failed (${res.status})`), false); setKitBusy(false); return; }
       const blob = await res.blob();
@@ -1259,6 +1264,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         if (cfg.g1) setKitAgeMin(String(cfg.g1));
         if (cfg.g2) setKitAgeMax(String(cfg.g2));
         if (cfg.co) setKitCountries(String(cfg.co));
+        if (cfg.st) setKitStartTime(String(cfg.st));
       } catch { /* ignore */ }
       setAdsKitOpen(true);
       return;
@@ -2296,65 +2302,71 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               <b style={{ fontSize: 16 }}>🎯 Meta Ads Kit — {Object.keys(kitTexts).length} products</b>
               <button onClick={() => setAdsKitOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, flex: 2, minWidth: 150 }}>Campaign
-                <input value={kitCampaign} onChange={(e) => setKitCampaign(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
-              </label>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, flex: 2, minWidth: 150 }}>{kitMode === "per_ad" ? "Ad set name prefix" : "Ad set"}
-                <input value={kitAdset} onChange={(e) => setKitAdset(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
-              </label>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 96 }}>Ad name prefix
-                <input value={kitPrefix} onChange={(e) => setKitPrefix(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
-              </label>
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 168 }}>Structure
-                <select value={kitMode} onChange={(e) => setKitMode(e.target.value as "per_ad" | "single")} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", fontSize: 12.5, font: "inherit", background: "#fff" }}>
-                  <option value="per_ad">1 ad set per ad (new)</option>
-                  <option value="single">All in one ad set (existing)</option>
-                </select>
-              </label>
-              {kitMode === "per_ad" && (
-                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 80 }}>$ / day each
-                  <input value={kitBudget} onChange={(e) => setKitBudget(e.target.value.replace(/[^\d.]/g, ""))} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
-                </label>
-              )}
-              {kitMode === "per_ad" && (
-                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 150 }}>Pixel ID (optional)
-                  <input value={kitPixel} onChange={(e) => setKitPixel(e.target.value.replace(/\D/g, ""))} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
-                </label>
-              )}
-              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 160 }}>Campaign ID (use existing)
-                <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new"
-                  style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
-              </label>
-              {kitMode === "per_ad" && (
-                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 92 }}>Age
-                  <span style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                    <input value={kitAgeMin} onChange={(e) => setKitAgeMin(e.target.value.replace(/\D/g, ""))} style={{ width: 36, border: "1px solid var(--line)", borderRadius: 8, padding: "6px 6px", fontSize: 12.5, font: "inherit", textAlign: "center" }} />
-                    <span>–</span>
-                    <input value={kitAgeMax} onChange={(e) => setKitAgeMax(e.target.value.replace(/\D/g, ""))} style={{ width: 36, border: "1px solid var(--line)", borderRadius: 8, padding: "6px 6px", fontSize: 12.5, font: "inherit", textAlign: "center" }} />
-                  </span>
-                </label>
-              )}
-              {kitMode === "per_ad" && (
-                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 92 }}>Countries
-                  <input value={kitCountries} onChange={(e) => setKitCountries(e.target.value.toUpperCase())} placeholder="US"
-                    style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
-                </label>
-              )}
-              {kitMode === "per_ad" && (
-                <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 185 }}>Start (ad account time zone)
-                  <input type="datetime-local" value={kitStart} onChange={(e) => setKitStart(e.target.value)}
-                    style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 12, font: "inherit" }} />
-                </label>
-              )}
-              <button onClick={kitPush} disabled={kitBusy || !kitCampaign.trim()}
-                style={{ ...pill(kitArm ? "#B45309" : "#16A34A", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() ? 0.6 : 1 }}>
-                {kitBusy ? "Working…" : kitArm ? "⚠ Click again to confirm" : "🚀 Push to Meta"}
-              </button>
-              <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
-                style={{ ...ghost, padding: "8px 14px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.6 : 1 }}>
-                {kitBusy ? "…" : "⬇ Import file (.zip)"}
-              </button>
+            {/* v446 · Config panel — style đồng bộ kiểu Ads Manager. */}
+            <div style={{ background: "#F6F7F9", border: "1px solid #E6E9EE", borderRadius: 16, padding: 16, marginBottom: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.1fr 1.5fr", gap: 12, marginBottom: 12 }}>
+                <div><span style={kitLab}>Campaign</span>
+                  <input value={kitCampaign} onChange={(e) => setKitCampaign(e.target.value)} style={kitIn} /></div>
+                <div><span style={kitLab}>{kitMode === "per_ad" ? "Ad set name prefix" : "Ad set"}</span>
+                  <input value={kitAdset} onChange={(e) => setKitAdset(e.target.value)} style={kitIn} /></div>
+                <div><span style={kitLab}>Ad name prefix</span>
+                  <input value={kitPrefix} onChange={(e) => setKitPrefix(e.target.value)} style={kitIn} /></div>
+                <div><span style={kitLab}>Structure</span>
+                  <select value={kitMode} onChange={(e) => setKitMode(e.target.value as "per_ad" | "single")} style={{ ...kitIn, padding: "9px 8px" }}>
+                    <option value="per_ad">1 ad set per ad (new)</option>
+                    <option value="single">All in one ad set (existing)</option>
+                  </select></div>
+              </div>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                {kitMode === "per_ad" && (
+                  <div style={{ width: 86 }}><span style={kitLab}>$ / day each</span>
+                    <input value={kitBudget} onChange={(e) => setKitBudget(e.target.value.replace(/[^\d.]/g, ""))} style={{ ...kitIn, textAlign: "center" }} /></div>
+                )}
+                {kitMode === "per_ad" && (
+                  <div style={{ width: 150 }}><span style={kitLab}>Pixel ID</span>
+                    <input value={kitPixel} onChange={(e) => setKitPixel(e.target.value.replace(/\D/g, ""))} style={kitIn} /></div>
+                )}
+                <div style={{ width: 160 }}><span style={kitLab}>Campaign ID</span>
+                  <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new" style={kitIn} /></div>
+                {kitMode === "per_ad" && (
+                  <div style={{ width: 118 }}><span style={kitLab}>Age</span>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input value={kitAgeMin} onChange={(e) => setKitAgeMin(e.target.value.replace(/\D/g, ""))} style={{ ...kitIn, width: 50, textAlign: "center", padding: "9px 4px" }} />
+                      <span style={{ color: "var(--muted)" }}>–</span>
+                      <input value={kitAgeMax} onChange={(e) => setKitAgeMax(e.target.value.replace(/\D/g, ""))} style={{ ...kitIn, width: 50, textAlign: "center", padding: "9px 4px" }} />
+                    </div></div>
+                )}
+                {kitMode === "per_ad" && (
+                  <div style={{ width: 90 }}><span style={kitLab}>Countries</span>
+                    <input value={kitCountries} onChange={(e) => setKitCountries(e.target.value.toUpperCase())} placeholder="US" style={{ ...kitIn, textAlign: "center" }} /></div>
+                )}
+                {kitMode === "per_ad" && (
+                  <div><span style={kitLab}>Start date · ad account time zone</span>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#EEF0F3", borderRadius: 10, padding: "0 12px" }}>
+                        <span style={{ fontSize: 13 }}>🗓</span>
+                        <input type="date" value={kitStartDate} onChange={(e) => setKitStartDate(e.target.value)}
+                          style={{ border: "none", background: "transparent", font: "inherit", fontSize: 13, padding: "9px 0", outline: "none", width: 118 }} />
+                      </span>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#EEF0F3", borderRadius: 10, padding: "0 12px" }}>
+                        <span style={{ fontSize: 13 }}>🕐</span>
+                        <input type="time" value={kitStartTime} onChange={(e) => setKitStartTime(e.target.value)}
+                          style={{ border: "none", background: "transparent", font: "inherit", fontSize: 13, padding: "9px 0", outline: "none", width: 78 }} />
+                      </span>
+                    </div></div>
+                )}
+                <span style={{ flex: 1 }} />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
+                    style={{ ...ghost, padding: "9px 15px", fontSize: 12.5, borderRadius: 10, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.55 : 1 }}>
+                    {kitBusy ? "…" : "⬇ Import file"}
+                  </button>
+                  <button onClick={kitPush} disabled={kitBusy || !kitCampaign.trim()}
+                    style={{ ...pill(kitArm ? "#B45309" : "#16A34A", "#fff"), padding: "9px 18px", fontSize: 12.5, borderRadius: 10, opacity: kitBusy || !kitCampaign.trim() ? 0.55 : 1 }}>
+                    {kitBusy ? "Working…" : kitArm ? "⚠ Click again to confirm" : "🚀 Push to Meta"}
+                  </button>
+                </div>
+              </div>
             </div>
             {rows.filter((r) => kitTexts[r.id]).map((r, idx) => {
               const t = kitTexts[r.id];
