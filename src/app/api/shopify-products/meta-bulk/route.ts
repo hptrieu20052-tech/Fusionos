@@ -43,13 +43,12 @@ export async function POST(req: NextRequest) {
 
   // CSV bulk import — cột theo format export/import của Ads Manager. Ad ID để trống = TẠO MỚI,
   // Campaign/Ad Set khớp THEO TÊN với campaign & ad set đang có.
-  const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   // v442 · mode per_ad: thêm cột TẠO ad set mới (budget/trạng thái/US/tối ưu Purchase + pixel).
   const adsetCols = perAd
     ? ["Ad Set Daily Budget", "Ad Set Run Status", "Countries", "Optimization Goal", "Billing Event", "Custom Event Type", ...(pixel ? ["Optimized Conversion Tracking Pixels"] : [])]
     : [];
   const header = ["Campaign Name", "Ad Set Name", ...adsetCols, "Ad Name", "Ad Status", "Creative Type", "Title", "Body", "Link Description", "Display Link", "Link", "Call to Action", "Image File Name"];
-  const lines: string[] = [header.map(esc).join(",")];
+  const dataRows: string[][] = [header];
 
   const zip = new JSZip();
   const usedNames = new Set<string>();
@@ -82,17 +81,18 @@ export async function POST(req: NextRequest) {
     const adsetVals = perAd
       ? [String(budget), "Paused", "US", "OFFSITE_CONVERSIONS", "IMPRESSIONS", "PURCHASE", ...(pixel ? [pixel] : [])]
       : [];
-    lines.push([
+    dataRows.push([
       campaign, adsetName, ...adsetVals, it.adName, "Paused", "Link Page Post Ad",
       it.headline, it.primary,
       "✓ Printed in the USA  ✓ Free US shipping  ✓ 30-day guarantee",
       host, link, "SHOP_NOW", imgFile,
-    ].map(esc).join(","));
+    ]);
   }
-  if (lines.length < 2) return NextResponse.json({ ok: false, error: "nothing to export: " + skipped.join("; ") }, { status: 400 });
+  if (dataRows.length < 2) return NextResponse.json({ ok: false, error: "nothing to export: " + skipped.join("; ") }, { status: 400 });
 
-  // BOM để Excel/Meta đọc UTF-8 (emoji trong primary text) chuẩn.
-  zip.file("meta-ads-import.csv", "\uFEFF" + lines.join("\r\n"));
+  // v442b · Xuất .XLSX thay vì CSV — importer của Meta parse CSV có xuống dòng trong ô bị lỗi
+  // "Spreadsheet didn't contain any rows"; Excel thì ăn chắc. xlsx = zip chứa XML, dựng bằng jszip.
+  zip.file("meta-ads-import.xlsx", await buildXlsx(dataRows));
   if (skipped.length) zip.file("SKIPPED.txt", skipped.join("\n"));
   const buf: Buffer = await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 
@@ -105,4 +105,20 @@ export async function POST(req: NextRequest) {
       "Content-Disposition": `attachment; filename="meta-ads-${new Date().toISOString().slice(0, 10)}.zip"`,
     },
   });
+}
+
+// v442b · Dựng file .xlsx tối giản (SpreadsheetML, inline strings — giữ được emoji + xuống dòng).
+async function buildXlsx(rows: string[][]): Promise<Buffer> {
+  const xmlEsc = (v: string) => String(v ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+  const colL = (n: number) => { let s = ""; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  const body = rows.map((r, ri) =>
+    `<row r="${ri + 1}">` + r.map((v, ci) =>
+      `<c r="${colL(ci)}${ri + 1}" t="inlineStr"><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`).join("") + "</row>").join("");
+  const x = new JSZip();
+  x.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>`);
+  x.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`);
+  x.file("xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Ads" sheetId="1" r:id="rId1"/></sheets></workbook>`);
+  x.file("xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>`);
+  x.file("xl/worksheets/sheet1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`);
+  return x.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 }
