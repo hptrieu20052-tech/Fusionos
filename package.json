@@ -18,6 +18,7 @@
     "drizzle-orm": "^0.36.4",
     "imapflow": "^1.7.8",
     "jose": "^6.2.3",
+    "jszip": "^3.10.1",
     "mailparser": "^3.9.20",
     "next": "14.2.5",
     "nodemailer": "^9.1.1",

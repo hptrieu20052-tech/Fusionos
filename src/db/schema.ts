@@ -319,6 +319,9 @@ export const shopifyProducts = pgTable("shopify_products", {
   // Lần cuối AI Optimize viết lại listing này. null = CHƯA chạy AI bao giờ.
   // Dùng cho cột "AI" + filter "Not optimized yet" — khỏi chạy lại (và trả tiền lại) con đã xong.
   aiAt: timestamp("ai_at", { withTimezone: true }),
+  // v441 · Đã chạy Meta ads chưa — set khi export Meta bulk file từ Meta Ads Kit.
+  // null = chưa từng chạy. Badge "ADS" trên Manage Products. Cần MIGRATION_v441_ads_at.sql
+  adsAt: timestamp("ads_at", { withTimezone: true }),
   syncedAt: timestamp("synced_at", { withTimezone: true }).defaultNow(),
   pushedAt: timestamp("pushed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

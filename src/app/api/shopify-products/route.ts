@@ -129,6 +129,8 @@ export async function GET(req: NextRequest) {
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,
       templateId: tpl?.id ?? null, templateName: tpl?.name ?? "", templatePinned: !!pinned, templateHasFacts: tplHasFacts,
       syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt, aiAt: r.p.aiAt,
+      // v441 · đã chạy Meta ads (badge ADS)
+      adsAt: r.p.adsAt,
       // v177 · Policy scan: risk + tóm tắt hit (chỉ chuỗi ngắn, không chở nguyên mảng cho nhẹ bảng).
       policyRisk: r.p.policyRisk ?? null,
       policyCheckedAt: r.p.policyCheckedAt,

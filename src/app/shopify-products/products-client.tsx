@@ -31,6 +31,8 @@ type Row = {
   etsyListing: { id: string; title: string; store: string; seller: string } | null;
   // v286: đã đẩy sang Manage Products Amazon chưa (badge AMZ).
   amz: boolean;
+  // v441: đã chạy Meta ads chưa (badge ADS — set khi export Meta bulk file từ Meta Ads Kit).
+  adsAt: string | null;
   // v381: số đơn đã bán của listing.
   orders: number;
 };
@@ -255,6 +257,37 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitTexts, setKitTexts] = useState<Record<string, { primary: string; headline: string }>>({});
   const [kitCopied, setKitCopied] = useState("");
   const kitCopy = (k: string, text: string) => { navigator.clipboard?.writeText(text); setKitCopied(k); setTimeout(() => setKitCopied((c) => (c === k ? "" : c)), 1200); };
+  // v441 · Meta bulk export — campaign/ad set/prefix nhớ qua localStorage; export ZIP (CSV + ảnh)
+  // để Import Ads in Bulk trong Ads Manager, đồng thời đánh dấu ADS cho các sản phẩm.
+  const [kitCampaign, setKitCampaign] = useState("TEST-IMG-Talewix");
+  const [kitAdset, setKitAdset] = useState("Train-Books-Test");
+  const [kitPrefix, setKitPrefix] = useState("Train");
+  const [kitBusy, setKitBusy] = useState(false);
+  const kitAdName = (title: string, idx: number) =>
+    `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
+  const kitExport = async () => {
+    const list = rows.filter((r) => kitTexts[r.id]);
+    if (!list.length || kitBusy) return;
+    setKitBusy(true);
+    try {
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix })); } catch { /* ignore */ }
+      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline }));
+      const res = await fetch("/api/shopify-products/meta-bulk", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items }),
+      });
+      if (!res.ok) { const j = await res.json().catch(() => null); flash("✗ " + (j?.error ?? `Export failed (${res.status})`), false); setKitBusy(false); return; }
+      const blob = await res.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `meta-ads-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      flash(`✓ Exported ${items.length} ads — products marked as ADS`, true);
+      load();
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Export failed"), false); }
+    setKitBusy(false);
+  };
   const [pinPerProduct, setPinPerProduct] = useState(1);
   const [pinPerFile, setPinPerFile] = useState(200);
   // v141 · Custom options — bộ ô cá nhân hoá RIÊNG của listing đang chọn (mô hình Etsy).
@@ -1169,7 +1202,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
           headline: "The Hero Is Your Child",
         };
       }
-      setKitTexts(init); setAdsKitOpen(true);
+      setKitTexts(init);
+      // v441 · nhớ campaign/ad set/prefix của lần export trước.
+      try {
+        const cfg = JSON.parse(localStorage.getItem("adskit.cfg") ?? "{}");
+        if (cfg.c) setKitCampaign(cfg.c);
+        if (cfg.a) setKitAdset(cfg.a);
+        if (cfg.p) setKitPrefix(cfg.p);
+      } catch { /* ignore */ }
+      setAdsKitOpen(true);
       return;
     }
     if (key === "push_amazon") { pushToAmazon(Array.from(sel)); return; }
@@ -1709,6 +1750,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     {r.amz && (
                       <span title="Pushed to Manage Products Amazon — finish the Amazon copy there" style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#FFF0DB", color: "#B5661A", marginLeft: 4 }}>AMZ</span>
                     )}
+                    {/* v441: đã chạy Meta ads (đánh dấu khi export Meta bulk file). */}
+                    {r.adsAt && (
+                      <span title={`Meta ads exported ${new Date(r.adsAt).toLocaleString()}`} style={{ fontSize: 10.5, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#E7F0FF", color: "#1D4ED8", marginLeft: 4 }}>📣 ADS</span>
+                    )}
                     {/* v179c: chip policy audit — hiện CẢ 3 trạng thái để nhìn phát biết đã check hay chưa.
                         Không có chip nào = CHƯA audit. */}
                     {r.policyRisk === "high" && (
@@ -2196,13 +2241,28 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       {adsKitOpen && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.45)", zIndex: 3000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "4vh 16px", overflowY: "auto" }} onClick={() => setAdsKitOpen(false)}>
           <div style={{ ...card, width: 860, maxWidth: "97vw", padding: 22 }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
               <b style={{ fontSize: 16 }}>🎯 Meta Ads Kit — {Object.keys(kitTexts).length} products</b>
               <button onClick={() => setAdsKitOpen(false)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
             </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, flex: 2, minWidth: 160 }}>Campaign
+                <input value={kitCampaign} onChange={(e) => setKitCampaign(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
+              </label>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, flex: 2, minWidth: 160 }}>Ad set
+                <input value={kitAdset} onChange={(e) => setKitAdset(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
+              </label>
+              <label style={{ fontSize: 11, color: "var(--muted)", display: "flex", flexDirection: "column", gap: 3, width: 110 }}>Ad name prefix
+                <input value={kitPrefix} onChange={(e) => setKitPrefix(e.target.value)} style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit" }} />
+              </label>
+              <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
+                style={{ ...pill("#1D4ED8", "#fff"), padding: "8px 16px", fontSize: 12.5, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.6 : 1 }}>
+                {kitBusy ? "Exporting…" : "⬇ Meta import file (.zip)"}
+              </button>
+            </div>
             {rows.filter((r) => kitTexts[r.id]).map((r, idx) => {
               const t = kitTexts[r.id];
-              const adName = `Train-${String(idx + 1).padStart(2, "0")}-${r.title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
+              const adName = kitAdName(r.title, idx);
               const hit = (k: string) => kitCopied === r.id + k;
               const flash = (k: string) => (hit(k) ? { borderColor: "#16A34A", boxShadow: "0 0 0 2px rgba(22,163,74,.2)", background: "#F0FDF4" } : {});
               return (
@@ -2217,7 +2277,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       ))}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.title}</div>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.adsAt && <span title={`Meta ads exported ${new Date(r.adsAt).toLocaleString()}`} style={{ fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 999, background: "#E7F0FF", color: "#1D4ED8", marginRight: 6, verticalAlign: "middle" }}>📣 ADS</span>}
+                        {r.title}
+                      </div>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, fontSize: 12, minWidth: 0 }}>
                         <code onClick={() => kitCopy(r.id + ":n", adName)} title="Click to copy"
                           style={{ background: "#F5F6F8", border: "1px solid var(--line)", borderRadius: 6, padding: "3px 8px", cursor: "pointer", ...flash(":n") }}>
