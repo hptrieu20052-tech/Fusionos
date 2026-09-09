@@ -116,7 +116,8 @@ export default function AdsCenterClient() {
       const g = byCamp.get(a.campId) ?? { name: a.campaign, ads: [] };
       g.ads.push(a); byCamp.set(a.campId, g);
     }
-    for (const g of Array.from(byCamp.values())) g.ads.sort((x: Agg, y: Agg) => y.spend - x.spend);
+    // v454 · sắp theo AD SET (nhóm) rồi spend — render sẽ chèn hàng tiêu đề mỗi khi đổi ad set.
+    for (const g of Array.from(byCamp.values())) g.ads.sort((x: Agg, y: Agg) => x.adset.localeCompare(y.adset) || y.spend - x.spend);
     return Array.from(byCamp.entries()).sort((x, y) => y[1].ads.reduce((s, a) => s + a.spend, 0) - x[1].ads.reduce((s, a) => s + a.spend, 0));
   }, [rows]);
 
@@ -250,9 +251,24 @@ export default function AdsCenterClient() {
                   <th style={th}>ATC</th><th style={th}>$/ATC</th><th style={th}>Purch</th><th style={th}>CPA</th><th style={th}>Revenue</th><th style={th}>ROAS</th>
                 </tr></thead>
                 <tbody>
-                  {ads.map((a) => (
+                  {ads.map((a, ai) => (<>
+                    {/* v454 · hàng AD SET — hiện khi bắt đầu nhóm mới, kèm subtotal của cả set. */}
+                    {(ai === 0 || ads[ai - 1].adset !== a.adset) && (() => {
+                      const grp = ads.filter((x) => x.adset === a.adset);
+                      const gs = grp.reduce((s2, x) => ({ spend: s2.spend + x.spend, atc: s2.atc + x.atc, pur: s2.pur + x.pur, rev: s2.rev + x.rev }), { spend: 0, atc: 0, pur: 0, rev: 0 });
+                      return (
+                        <tr key={"set-" + a.adset} style={{ background: "#F7F9FC", borderBottom: "1px solid #EDF0F4" }}>
+                          <td colSpan={12} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 800, color: "#5B6472" }}>
+                            ▪ {a.adset || "(no ad set)"}
+                            <span style={{ fontWeight: 600, marginLeft: 8, color: "var(--muted)" }}>
+                              {grp.length} ad{grp.length > 1 ? "s" : ""} · {money(gs.spend)} · {gs.atc} ATC · {gs.pur} purch{gs.spend ? ` · ROAS ${(gs.rev / gs.spend).toFixed(2)}` : ""}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })()}
                     <tr key={a.ad} style={{ borderBottom: "1px solid #F1F3F6" }}>
-                      <td style={{ ...td, textAlign: "left", maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis" }} title={`${a.adset} › ${a.ad}`}>{a.ad}</td>
+                      <td style={{ ...td, textAlign: "left", maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis", paddingLeft: 22 }} title={`${a.adset} › ${a.ad}`}>{a.ad}</td>
                       <td style={{ ...td, fontWeight: 700 }}>{money(a.spend)}</td>
                       <td style={td}>{num(a.imp)}</td>
                       <td style={td}>{num(a.lc)}</td>
@@ -265,7 +281,7 @@ export default function AdsCenterClient() {
                       <td style={td}>{money(a.rev)}</td>
                       <td style={{ ...td, fontWeight: 800, color: a.spend && a.rev / a.spend >= 1.5 ? "#1F6F45" : a.spend && a.rev > 0 ? "#B7791F" : "inherit" }}>{a.spend ? (a.rev / a.spend).toFixed(2) : "—"}</td>
                     </tr>
-                  ))}
+                  </>))}
                 </tbody>
               </table>
             </div>
