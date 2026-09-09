@@ -230,6 +230,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [prepFilter, setPrepFilter] = useState<"" | "sku" | "alt" | "done">(""); // v127
   const [riskFilter, setRiskFilter] = useState<"" | "high" | "medium" | "clean" | "unchecked">(""); // v177
   const [videoFilter, setVideoFilter] = useState<"" | "has" | "no">(""); // listing có / không có video
+  const [adsFilter, setAdsFilter] = useState<"" | "ran" | "not">("");    // v456 · đã / chưa chạy Meta ads (ads_at)
   const [sortOrders, setSortOrders] = useState(false); // v381 · sắp xếp theo SỐ ĐƠN giảm dần (top seller)
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
@@ -443,20 +444,21 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     (!prepFilter || (prepFilter === "sku" ? r.skuDone < r.skuTotal : prepFilter === "alt" ? r.altDone < r.altTotal : r.skuDone >= r.skuTotal && r.altDone >= r.altTotal)) &&
     (!riskFilter || (riskFilter === "unchecked" ? !r.policyRisk : r.policyRisk === riskFilter)) &&
     (!videoFilter || (videoFilter === "has" ? r.videoCode != null : r.videoCode == null)) &&
+    (!adsFilter || (adsFilter === "ran" ? !!r.adsAt : !r.adsAt)) &&
     (!pidFilter || r.id === pidFilter) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "") + " " + (r.id ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, pidFilter, stores]);
+  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, adsFilter, pidFilter, stores]);
   // v381 · Sắp xếp theo SỐ ĐƠN giảm dần khi bật (top seller → tối ưu trước). Tắt → giữ thứ tự server.
   const sorted = useMemo(() => sortOrders ? [...filtered].sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0)) : filtered, [filtered, sortOrders]);
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, sortOrders, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, adsFilter, sortOrders, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => sorted.slice((pageC - 1) * pageSize, pageC * pageSize), [sorted, pageC, pageSize]);
   // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
   const selDone = useMemo(() => rows.filter((r) => sel.has(r.id) && r.aiAt).length, [rows, sel]);
   const selTodo = useMemo(() => rows.filter((r) => sel.has(r.id) && !r.aiAt).length, [rows, sel]);
   const selDirty = useMemo(() => rows.filter((r) => sel.has(r.id) && r.dirty).length, [rows, sel]);
-  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter || riskFilter || videoFilter || pidFilter);
+  const anyFilter = !!(kw.trim() || sellerFilter || storeFilter || typeFilter || categoryFilter || collectionFilter || statusFilter || aiFilter || feedFilter || prepFilter || riskFilter || videoFilter || adsFilter || pidFilter);
   const clearFilters = () => { setKw(""); setSellerFilter(""); setStoreFilter(""); setTypeFilter(""); setCollectionFilter(""); setCategoryFilter(""); setStatusFilter(""); setAiFilter(""); setFeedFilter(""); setPrepFilter(""); setRiskFilter(""); setVideoFilter(""); setPidFilter(""); };
   const allChecked = paged.length > 0 && paged.every((r) => sel.has(r.id));
   const toggleAll = () => { const n = new Set(sel); if (allChecked) paged.forEach((r) => n.delete(r.id)); else paged.forEach((r) => n.add(r.id)); setSel(n); };
@@ -1597,6 +1599,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <option value="has">Has video</option>
             <option value="no">No video</option>
           </select>
+          {/* v456 · lọc theo Meta ads — "not" = chưa từng export/push ads kit (không có 📣 ADS) */}
+          <select value={adsFilter} onChange={(e) => setAdsFilter(e.target.value as "" | "ran" | "not")} title="Meta ads status — pick 'Not advertised yet' to find the next batch for the Ads Kit" style={fsel(!!adsFilter, "#1D4ED8", "#BFD3F5", "#F2F7FF")}>
+            <option value="">Ads: all</option>
+            <option value="not">Not advertised yet</option>
+            <option value="ran">📣 Advertised</option>
+          </select>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
@@ -2402,7 +2410,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#EEF0F3", borderRadius: 10, padding: "0 12px" }}>
                         <span style={{ fontSize: 13 }}>🕐</span>
                         <input type="time" value={kitStartTime} onChange={(e) => setKitStartTime(e.target.value)}
-                          style={{ border: "none", background: "transparent", font: "inherit", fontSize: 13, padding: "9px 0", outline: "none", width: 78 }} />
+                          style={{ border: "none", background: "transparent", font: "inherit", fontSize: 13, padding: "9px 0", outline: "none", width: 110 }} />
                       </span>
                     </div>
                     {/* v455 · chip chọn nhanh — không phải mò date picker; ✕ ASAP = chạy ngay khi Meta duyệt xong. */}
