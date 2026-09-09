@@ -412,6 +412,32 @@ export const tiktokStatements = pgTable("tiktok_statements", {
 // v405 · SHOPBASE TEMPLATES — preset options/variants/giá + collections cho flow Push Etsy/TikTok → ShopBase.
 // Bản rút gọn của shopify_templates (ShopBase REST không có taxonomy/publications/metafields).
 // collections: [{ id, title }] — id SỐ của custom collection ShopBase, áp bằng POST collects.json lúc Push.
+// v449 · Meta Ads insights — số liệu ads theo NGÀY x AD, cron /api/cron/meta-insights đồng bộ
+// từ Marketing API (cửa sổ 28 ngày, upsert). Nguồn cho trang /meta-ads + AI phân tích.
+// Cần MIGRATION_v449_meta_insights.sql
+export const metaInsights = pgTable("meta_insights", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  day: text("day").notNull(),                    // YYYY-MM-DD (theo múi giờ ad account)
+  campaignId: text("campaign_id").notNull(),
+  campaignName: text("campaign_name"),
+  adsetId: text("adset_id").notNull(),
+  adsetName: text("adset_name"),
+  adId: text("ad_id").notNull(),
+  adName: text("ad_name"),
+  spend: numeric("spend", { precision: 12, scale: 2 }),
+  impressions: integer("impressions"),
+  clicks: integer("clicks"),                     // mọi click
+  linkClicks: integer("link_clicks"),            // click ra website
+  atc: integer("atc"),                           // add to cart
+  purchases: integer("purchases"),
+  revenue: numeric("revenue", { precision: 12, scale: 2 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => ({
+  uqMetaInsight: uniqueIndex("uq_meta_insight").on(t.day, t.adId),
+  idxMetaInsightDay: index("idx_meta_insight_day").on(t.day),
+  idxMetaInsightCamp: index("idx_meta_insight_camp").on(t.campaignId),
+}));
+
 export const shopbaseTemplates = pgTable("shopbase_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   storeId: uuid("store_id").notNull(),          // store ShopBase (marketplace=shopbase)

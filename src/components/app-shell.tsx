@@ -77,7 +77,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // Tự mở nhóm Seller Hub nếu đang ở 1 trang thuộc nhóm.
   useEffect(() => {
     setMobileOpen(false); setUserOpen(false); setProdOpen(false); setMoreOpen(false); setAiOpen(false); setHubGroup("");
-    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopify-feed-labels", "/shopbase-products", "/shopbase-templates", "/shopbase-collections", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"];
+    const hubPaths = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopify-feed-labels", "/shopbase-products", "/shopbase-templates", "/shopbase-collections", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance", "/meta-ads"];
     setMobileHub(hubPaths.some((p) => path.startsWith(p)));
   }, [path]);
   useEffect(() => {
@@ -135,7 +135,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
   // đứng liền ngay sau Design Studio thay vì bị đẩy xuống sau các dropdown.
   const hubAnchor = links.some((l) => !l.more && l.href === "/videos") ? "/videos" : "/designs";
   const hasAnchor = links.some((l) => !l.more && l.href === hubAnchor);
-  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopify-feed-labels", "/shopbase-products", "/shopbase-templates", "/shopbase-collections", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance"].some((h) => path.startsWith(h));
+  const hubActive = ["/etsy-products", "/shopify-products", "/shopify-templates", "/shopify-feed-labels", "/shopbase-products", "/shopbase-templates", "/shopbase-collections", "/amazon-products", "/amazon-templates", "/tiktok-products", "/tiktok-templates", "/support", "/support-email", "/marketing", "/tiktok-finance", "/meta-ads"].some((h) => path.startsWith(h));
   // Dropdown "AI Agent" (admin-only, beta) — ngay sau Design Studio. Gen Book (Book Studio) + Gen Image.
   const aiActive = ["/books", "/ai-image", "/ai-video", "/prompts"].some((h) => path.startsWith(h));
   const isAdminUser = user.role === "admin";
@@ -214,6 +214,11 @@ export default function AppShell({ user, links, children, canProducts = false, c
         ...(canMarketing ? [{ href: "/marketing", label: "Marketing" }] : []),
         ...(canFinanceTiktok ? [{ href: "/tiktok-finance", label: "Finance" }] : []),
       ],
+    }] as HubNode[] : []),
+    // v449 · Meta Ads Center — số liệu ads + AI phân tích (admin).
+    ...(user.role === "admin" ? [{
+      t: "link", href: "/meta-ads", label: "Meta Ads",
+      icon: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg>,
     }] as HubNode[] : []),
     ...(canProducts ? [{
       t: "link", href: "/stats/products", label: "Product Sales",
