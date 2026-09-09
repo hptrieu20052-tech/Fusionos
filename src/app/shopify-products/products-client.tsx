@@ -59,6 +59,11 @@ const ghost: React.CSSProperties = { ...pill("#fff", "var(--ink)"), border: "1px
 // v446 · Meta Ads Kit form styles — panel xám kiểu Ads Manager, label uppercase nhỏ, input đồng bộ.
 const kitLab: React.CSSProperties = { fontSize: 10.5, fontWeight: 800, letterSpacing: .4, textTransform: "uppercase", color: "#5B6472", marginBottom: 6, display: "block", whiteSpace: "nowrap" };
 const kitIn: React.CSSProperties = { width: "100%", boxSizing: "border-box", background: "#fff", border: "1px solid #DDE1E7", borderRadius: 10, padding: "9px 12px", fontSize: 13, font: "inherit", outline: "none" };
+// v455 · chip chọn nhanh ngày/giờ start trong Ads Kit.
+const kitChip = (on: boolean): React.CSSProperties => ({
+  border: `1px solid ${on ? "#16A34A" : "#DDE1E7"}`, background: on ? "#DCFCE7" : "#fff", color: on ? "#166534" : "#39414E",
+  borderRadius: 999, padding: "3px 9px", fontSize: 11.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+});
 const lab: React.CSSProperties = { display: "block", fontSize: 12, fontWeight: 700, color: "var(--muted)", marginBottom: 6 };
 const linkBtn = (c: string): React.CSSProperties => ({ border: "none", background: "none", padding: 0, cursor: "pointer", color: c, fontWeight: 700, fontSize: 12.5 });
 const money = (n: number | null) => n == null ? "—" : "$" + n.toFixed(2);
@@ -260,6 +265,45 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitTexts, setKitTexts] = useState<Record<string, { primary: string; headline: string }>>({});
   const [kitCopied, setKitCopied] = useState("");
   const kitCopy = (k: string, text: string) => { navigator.clipboard?.writeText(text); setKitCopied(k); setTimeout(() => setKitCopied((c) => (c === k ? "" : c)), 1200); };
+  // v455 · sửa primary/headline là nhớ luôn theo sản phẩm (localStorage) — mở lại kit không mất bản đã sửa.
+  const saveKitText = (id: string, patch: { primary?: string; headline?: string }) => {
+    setKitTexts((m) => ({ ...m, [id]: { ...m[id], ...patch } }));
+    try {
+      const all = JSON.parse(localStorage.getItem("adskit.texts") ?? "{}");
+      const cur = all[id] ?? {};
+      if (patch.primary !== undefined) cur.p = patch.primary;
+      if (patch.headline !== undefined) cur.h = patch.headline;
+      all[id] = cur;
+      localStorage.setItem("adskit.texts", JSON.stringify(all));
+    } catch { /* ignore */ }
+  };
+  // v455 · AI viết primary/headline (model chọn ở kit) — kết quả đổ vào ô sửa + nhớ localStorage.
+  const [kitAi, setKitAi] = useState<Set<string>>(new Set());
+  const kitAiGen = async (ids: string[]) => {
+    if (!ids.length || kitAi.size) return;
+    setKitAi(new Set(ids));
+    let done = 0, fail = 0;
+    try {
+      for (let i = 0; i < ids.length; i += 8) {
+        const batch = ids.slice(i, i + 8);
+        const j = await postJSON("/api/shopify-products/ads-copy", { ids: batch, model: aiModel || undefined });
+        for (const r of (j.results ?? []) as { id: string; ok: boolean; primary?: string; headline?: string }[]) {
+          if (r.ok && r.primary && r.headline) { saveKitText(r.id, { primary: r.primary, headline: r.headline }); done++; }
+          else fail++;
+        }
+        setKitAi(new Set(ids.slice(i + 8)));
+      }
+      flash(fail ? `⚠ AI copy: ${done} done · ${fail} failed — bấm lại để thử tiếp` : `✓ AI copy written for ${done} product(s)`, !fail);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? "AI copy error"), false); }
+    setKitAi(new Set());
+  };
+  const kitDefaultText = (title: string) => {
+    const short = title.split(/[,|–-]/)[0].trim().slice(0, 70);
+    return {
+      primary: `${short} — starring YOUR child! 📖 Personalized with their name in minutes.\n✔ Printed in the USA  ✔ Free US shipping  ✔ 30-day guarantee`,
+      headline: "The Hero Is Your Child",
+    };
+  };
   // v441 · Meta bulk export — campaign/ad set/prefix nhớ qua localStorage; export ZIP (CSV + ảnh)
   // để Import Ads in Bulk trong Ads Manager, đồng thời đánh dấu ADS cho các sản phẩm.
   const [kitCampaign, setKitCampaign] = useState("TEST-IMG-Talewix");
@@ -281,7 +325,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   // v444/v446 · giờ bắt đầu (MÚI GIỜ AD ACCOUNT, vd PDT) — 2 ô date + time kiểu Ads Manager; trống = chạy ngay khi bật.
   const [kitStartDate, setKitStartDate] = useState("");
   const [kitStartTime, setKitStartTime] = useState("");
-  const kitStartCombined = kitStartDate && kitStartTime ? `${kitStartDate}T${kitStartTime}` : "";
+  // v455 · chỉ chọn ngày cũng chạy được (giờ mặc định 00:00); bỏ trống cả hai = chạy ngay khi duyệt xong.
+  const kitStartCombined = kitStartDate ? `${kitStartDate}T${kitStartTime || "00:00"}` : "";
+  const kitDatePlus = (d: number) => {
+    const t = new Date(Date.now() + d * 86400000);
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  };
   const [kitBusy, setKitBusy] = useState(false);
   const kitAdName = (title: string, idx: number) =>
     `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
@@ -1241,12 +1290,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     // v439 · Ads kit — sinh sẵn text/link/ảnh cho từng sản phẩm đã chọn, copy dán sang Ads Manager.
     if (key === "ads_kit") {
       const init: Record<string, { primary: string; headline: string }> = {};
+      // v455 · ưu tiên bản text đã sửa lần trước (localStorage), chưa sửa mới dùng text tự sinh.
+      let savedT: Record<string, { p?: string; h?: string }> = {};
+      try { savedT = JSON.parse(localStorage.getItem("adskit.texts") ?? "{}"); } catch { /* ignore */ }
       for (const r of rows.filter((x) => sel.has(x.id))) {
-        const short = r.title.split(/[,|–-]/)[0].trim().slice(0, 70);
-        init[r.id] = {
-          primary: `${short} — starring YOUR child! 📖 Personalized with their name in minutes.\n✔ Printed in the USA  ✔ Free US shipping  ✔ 30-day guarantee`,
-          headline: "The Hero Is Your Child",
-        };
+        const d = kitDefaultText(r.title);
+        init[r.id] = { primary: savedT[r.id]?.p ?? d.primary, headline: savedT[r.id]?.h ?? d.headline };
       }
       setKitTexts(init);
       // Ảnh xuất mặc định = ảnh đầu của từng sản phẩm.
@@ -2355,10 +2404,30 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         <input type="time" value={kitStartTime} onChange={(e) => setKitStartTime(e.target.value)}
                           style={{ border: "none", background: "transparent", font: "inherit", fontSize: 13, padding: "9px 0", outline: "none", width: 78 }} />
                       </span>
+                    </div>
+                    {/* v455 · chip chọn nhanh — không phải mò date picker; ✕ ASAP = chạy ngay khi Meta duyệt xong. */}
+                    <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+                      <button onClick={() => { setKitStartDate(""); setKitStartTime(""); }} style={kitChip(!kitStartDate)}>⚡ ASAP</button>
+                      <button onClick={() => setKitStartDate(kitDatePlus(0))} style={kitChip(!!kitStartDate && kitStartDate === kitDatePlus(0))}>Today</button>
+                      <button onClick={() => setKitStartDate(kitDatePlus(1))} style={kitChip(kitStartDate === kitDatePlus(1))}>Tomorrow</button>
+                      {(["00:00", "08:00", "20:00"] as const).map((tm) => (
+                        <button key={tm} onClick={() => { setKitStartTime(tm); if (!kitStartDate) setKitStartDate(kitDatePlus(0)); }}
+                          style={kitChip(!!kitStartDate && kitStartTime === tm)}>{tm}</button>
+                      ))}
                     </div></div>
                 )}
                 <span style={{ flex: 1 }} />
                 <div style={{ display: "flex", gap: 8 }}>
+                  {/* v455 · AI viết text quảng cáo cho cả lô — model chọn ngay đây (dùng chung model của trang). */}
+                  <select value={aiModel} onChange={(e) => setAiModel(e.target.value)} title="AI model"
+                    style={{ ...kitIn, width: 150, padding: "8px 8px", fontSize: 12 }}>
+                    <option value="">Model: default</option>
+                    {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  </select>
+                  <button onClick={() => kitAiGen(Object.keys(kitTexts))} disabled={!!kitAi.size || kitBusy}
+                    style={{ ...ghost, padding: "9px 15px", fontSize: 12.5, borderRadius: 10, opacity: kitAi.size || kitBusy ? 0.55 : 1 }}>
+                    {kitAi.size ? `✨ Writing… (${kitAi.size})` : "✨ AI copy"}
+                  </button>
                   <button onClick={kitExport} disabled={kitBusy || !kitCampaign.trim() || !kitAdset.trim()}
                     style={{ ...ghost, padding: "9px 15px", fontSize: 12.5, borderRadius: 10, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.55 : 1 }}>
                     {kitBusy ? "…" : "⬇ Import file"}
@@ -2412,12 +2481,25 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                             </span>
                           : <span style={{ color: "var(--muted)" }}>No link</span>}
                       </div>
-                      <textarea value={t.primary} title="Click to copy" onClick={() => kitCopy(r.id + ":p", t.primary)}
-                        onChange={(e) => setKitTexts((m) => ({ ...m, [r.id]: { ...m[r.id], primary: e.target.value } }))} rows={3}
-                        style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontSize: 12.5, font: "inherit", resize: "vertical", boxSizing: "border-box", cursor: "pointer", ...flash(":p") }} />
-                      <input value={t.headline} title="Click to copy" onClick={() => kitCopy(r.id + ":h", t.headline)}
-                        onChange={(e) => setKitTexts((m) => ({ ...m, [r.id]: { ...m[r.id], headline: e.target.value } }))}
-                        style={{ width: "100%", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit", marginTop: 6, boxSizing: "border-box", cursor: "pointer", ...flash(":h") }} />
+                      {/* v455 · ô sửa tự do (nhớ theo sản phẩm) + nút copy riêng — click vào ô không copy nữa. */}
+                      <div style={{ display: "flex", gap: 6, alignItems: "stretch" }}>
+                        <textarea value={t.primary} placeholder="Primary text" rows={3}
+                          onChange={(e) => saveKitText(r.id, { primary: e.target.value })}
+                          style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 8, padding: "8px 10px", fontSize: 12.5, font: "inherit", resize: "vertical", boxSizing: "border-box", ...flash(":p") }} />
+                        <button onClick={() => kitCopy(r.id + ":p", t.primary)} title="Copy primary text"
+                          style={{ width: 34, border: "1px solid var(--line)", borderRadius: 8, background: hit(":p") ? "#DCFCE7" : "#fff", cursor: "pointer", fontSize: 13 }}>{hit(":p") ? "✓" : "📋"}</button>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                        <input value={t.headline} placeholder="Headline"
+                          onChange={(e) => saveKitText(r.id, { headline: e.target.value })}
+                          style={{ flex: 1, border: "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12.5, font: "inherit", boxSizing: "border-box", ...flash(":h") }} />
+                        <button onClick={() => kitCopy(r.id + ":h", t.headline)} title="Copy headline"
+                          style={{ width: 34, border: "1px solid var(--line)", borderRadius: 8, background: hit(":h") ? "#DCFCE7" : "#fff", cursor: "pointer", fontSize: 13 }}>{hit(":h") ? "✓" : "📋"}</button>
+                        <button onClick={() => kitAiGen([r.id])} disabled={kitAi.has(r.id)} title="AI write this ad's copy (uses the selected model)"
+                          style={{ width: 34, border: "1px solid var(--line)", borderRadius: 8, background: kitAi.has(r.id) ? "#FEF3C7" : "#fff", cursor: "pointer", fontSize: 13 }}>{kitAi.has(r.id) ? "…" : "✨"}</button>
+                        <button onClick={() => saveKitText(r.id, kitDefaultText(r.title))} title="Reset to auto-generated text"
+                          style={{ width: 34, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", cursor: "pointer", fontSize: 13, color: "var(--muted)" }}>↺</button>
+                      </div>
                     </div>
                   </div>
                 </div>
