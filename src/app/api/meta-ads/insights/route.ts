@@ -48,11 +48,11 @@ export async function POST(req: NextRequest) {
   if (!rows.length) return NextResponse.json({ ok: false, error: "No data in range — run the sync first" }, { status: 400 });
 
   const d3 = new Date(new Date(to + "T00:00:00Z").getTime() - 2 * 86400000).toISOString().slice(0, 10);
-  const idByKey = new Map<string, { adId: string; adsetId: string }>();
+  const idByKey = new Map<string, { adId: string; adsetId: string; campId: string }>();
   const byAd = new Map<string, Agg & { _imp3: number; _lc3: number }>();
   for (const r of rows) {
     const k = r.adId;
-    idByKey.set(k, { adId: r.adId, adsetId: r.adsetId });
+    idByKey.set(k, { adId: r.adId, adsetId: r.adsetId, campId: r.campaignId });
     const a = byAd.get(k) ?? {
       ad: r.adName ?? r.adId, adset: r.adsetName ?? "", campaign: r.campaignName ?? "", days: 0,
       spend: 0, impressions: 0, linkClicks: 0, atc: 0, purchases: 0, revenue: 0,
@@ -74,8 +74,12 @@ export async function POST(req: NextRequest) {
   })).sort((x, y) => y.spend - x.spend);
 
   const idByName = new Map(Array.from(byAd.entries()).map(([id, a]) => [a.ad, idByKey.get(id)!]));
+  // v452 · trạng thái campaign — AI không đề xuất pause/budget cho ad thuộc campaign đã TẮT.
+  const campRows = await db.select().from(schema.metaCampaigns).catch(() => []);
+  const campStatus = new Map(campRows.map((c) => [c.campaignId, c.status ?? ""]));
   const table = aggs.map((a) => ({
     campaign: a.campaign, adset: a.adset, ad: a.ad,
+    campaignStatus: campStatus.get(idByName.get(a.ad)?.campId ?? "") || "UNKNOWN",
     adId: idByName.get(a.ad)?.adId ?? "", adsetId: idByName.get(a.ad)?.adsetId ?? "", days: a.days,
     spend: +a.spend.toFixed(2), impressions: a.impressions, linkClicks: a.linkClicks,
     ctrLinkPct: a.ctr, ctrLink3dPct: a.ctr3, cpcLink: a.cpc,
@@ -90,6 +94,7 @@ export async function POST(req: NextRequest) {
     "- CTR link tốt ≥ 1.5-2%; cost/ATC tốt < $8-10; CPA hoà vốn quanh $20-25; ROAS mục tiêu ≥ 1.5.",
     "- ctrLink3dPct tụt >30% so với ctrLinkPct = dấu hiệu creative fatigue.",
     "- Đề xuất phải THẬN TRỌNG: pause khi đủ bằng chứng (tiêu ≥ ~1 AOV mà 0 purchase và tín hiệu sớm xấu); tăng budget tối đa +20%/lần; đừng đụng ad đang có CPA tốt.",
+    "- Ad có campaignStatus KHÁC ACTIVE = campaign đã tắt: chỉ dùng làm dữ liệu tham khảo, TUYỆT ĐỐI không đề xuất pause/raise/lower cho các ad này (đề xuất là thừa).",
     'Trả JSON đúng schema: {"summary": string (3-6 câu tiếng Việt, tổng quan), "winners": string[], "losers": string[], "actions": [{"ad": string, "adId": string (copy NGUYÊN VĂN từ bảng), "adsetId": string (copy NGUYÊN VĂN), "action": "keep"|"pause"|"raise_budget"|"lower_budget"|"new_creative"|"watch", "reason": string (1-2 câu tiếng Việt)}], "nextTest": string (1-3 câu gợi ý test tiếp)}',
   ].join("\n");
   const user = `Khoảng ${from} → ${to}. Bảng số liệu từng ad (đã cộng dồn):\n${JSON.stringify(table)}`;
