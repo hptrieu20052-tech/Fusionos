@@ -96,7 +96,8 @@ export async function POST(req: NextRequest) {
     .from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.id, items.map((i) => i.id)));
   const byId = new Map(prods.map((p) => [p.id, p]));
 
-  const results: { adName: string; ok: boolean; error?: string }[] = [];
+  const results: { adName: string; ok: boolean; error?: string; opts?: string }[] = [];
+  let lifecycleAll = true;   // v447 · existing_customer_budget_percentage được nhận cho mọi ad set?
   let campaignId = "";
   try {
     const camp = await fb(`${c.account}/campaigns`, c.token, {
@@ -131,7 +132,7 @@ export async function POST(req: NextRequest) {
       if (!hash) throw new Error("no image hash returned");
 
       // 2) ad set — $X/ngày, Purchase trên pixel, broad, PAUSED (+ start_time nếu có)
-      const adset = await fb(`${c.account}/adsets`, c.token, {
+      const adsetBase = {
         name: `${adsetPrefix}-${String(idx).padStart(2, "0")}`,
         campaign_id: campaignId, status: "PAUSED",
         daily_budget: Math.round(budget * 100),
@@ -140,7 +141,11 @@ export async function POST(req: NextRequest) {
         promoted_object: { pixel_id: c.pixelId, custom_event_type: "PURCHASE" },
         targeting: { geo_locations: { countries }, age_min: ageMin, age_max: ageMax },
         ...(startIso ? { start_time: startIso } : {}),
-      });
+      };
+      // v447 · lifecycle "Get conversions from all audiences": không giới hạn ngân sách khách cũ (100%).
+      let adset: Record<string, unknown>;
+      try { adset = await fb(`${c.account}/adsets`, c.token, { ...adsetBase, existing_customer_budget_percentage: 100 }); }
+      catch { lifecycleAll = false; adset = await fb(`${c.account}/adsets`, c.token, adsetBase); }
 
       // 3) creative — tắt enhancements + multi-advertiser (best-effort: API version cũ/mới khác field)
       const story = {
@@ -152,28 +157,41 @@ export async function POST(req: NextRequest) {
           image_hash: hash,
         },
       };
-      let creative: Record<string, unknown>;
-      try {
-        creative = await fb(`${c.account}/adcreatives`, c.token, {
-          name: it.adName, object_story_spec: story,
-          contextual_multi_ads: { enroll_status: "OPT_OUT" },
-          degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } },
-        });
-      } catch {
-        creative = await fb(`${c.account}/adcreatives`, c.token, { name: it.adName, object_story_spec: story });
+      // v447 · thử lần lượt các tổ hợp opt-out (Meta đổi field theo version) — nhớ lại tổ hợp nào ăn.
+      const variants: { label: string; extra: Record<string, unknown> }[] = [
+        { label: "multiOff+enhOff", extra: { contextual_multi_ads: { enroll_status: "OPT_OUT" }, degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } } } },
+        { label: "multiOff", extra: { contextual_multi_ads: { enroll_status: "OPT_OUT" } } },
+        { label: "enhOff", extra: { degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } } } },
+        { label: "default", extra: {} },
+      ];
+      let creative: Record<string, unknown> | null = null;
+      let applied = "default";
+      let lastErr: unknown = null;
+      for (const v of variants) {
+        try { creative = await fb(`${c.account}/adcreatives`, c.token, { name: it.adName, object_story_spec: story, ...v.extra }); applied = v.label; break; }
+        catch (e) { lastErr = e; }
       }
+      if (!creative) throw lastErr;
 
       // 4) ad — PAUSED, bật tay sau khi liếc preview
       await fb(`${c.account}/ads`, c.token, {
         name: it.adName, adset_id: String(adset.id), creative: { creative_id: String(creative.id) }, status: "PAUSED",
       });
       okIds.push(it.id);
-      results.push({ adName: it.adName, ok: true });
+      results.push({ adName: it.adName, ok: true, opts: applied });
     } catch (e) {
       results.push({ adName: it.adName, ok: false, error: String((e as Error).message).slice(0, 200) });
     }
   }
 
   if (okIds.length) await db.update(schema.shopifyProducts).set({ adsAt: sql`now()` }).where(inArray(schema.shopifyProducts.id, okIds));
-  return NextResponse.json({ ok: true, campaignId, created: okIds.length, total: items.length, results });
+
+  // v447 · liệt kê TRUNG THỰC những gì API không đặt được — client hiện trong toast.
+  const manual: string[] = [];
+  const okResults = results.filter((r) => r.ok);
+  if (okResults.some((r) => !String(r.opts ?? "").includes("multiOff"))) manual.push("untick Multi-advertiser ads (per ad)");
+  if (okResults.some((r) => !String(r.opts ?? "").includes("enhOff"))) manual.push("check Advantage+ enhancements = Off (per ad)");
+  if (!lifecycleAll) manual.push("set Lifecycle = all audiences (per ad set)");
+  manual.push("Personalized destinations: turn Shop off (per ad — Meta has no API switch)");
+  return NextResponse.json({ ok: true, campaignId, created: okIds.length, total: items.length, results, manual });
 }

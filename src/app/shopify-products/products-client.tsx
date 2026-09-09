@@ -303,7 +303,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       });
       if (j.ok) {
         const failed = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
-        flash(failed.length ? `⚠ Pushed ${j.created}/${j.total} ads — failed: ${failed.map((f: { adName: string; error?: string }) => `${f.adName} (${f.error})`).join("; ")}`.slice(0, 300) : `✓ Pushed ${j.created} ads to Meta (PAUSED) — review in Ads Manager, then turn on`, failed.length === 0);
+        // v447 · server trả danh sách việc còn phải chỉnh tay trong Ads Manager (nếu có) — hiện thẳng trong toast.
+        const manual = (j.manual ?? []).length ? ` · Manual: ${(j.manual as string[]).join("; ")}` : "";
+        flash(failed.length ? `⚠ Pushed ${j.created}/${j.total} ads — failed: ${failed.map((f: { adName: string; error?: string }) => `${f.adName} (${f.error})`).join("; ")}`.slice(0, 300) : `✓ Pushed ${j.created} ads to Meta (PAUSED)${manual}`.slice(0, 400), failed.length === 0);
         setAdsKitOpen(false); load();
       } else flash("✗ " + (j.error ?? "Push failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Push failed"), false); }

@@ -32,6 +32,9 @@ const sideGroups = (t: (k: string) => string): { group: string; sides: string[] 
   { group: "Wall Calendars", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`), "back_cover"] },
   // Wall Calendars (Blank): bìa trước → (tháng + lưới) x12 → bìa sau. Dùng lại tên mặt đã có, chỉ thêm grid_01..12.
   { group: "Wall Calendars (Blank)", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, `grid_${pad2(i + 1)}`]).flat(), "back_cover"] },
+  // v448 · Desktop Calendar (Blank) — theo editor Printify: Front cover + 12 tháng (mỗi tháng 1 trang
+  // design NGUYÊN KHỔ ngang, lưới lịch designer tự vẽ trong design), KHÔNG có bìa sau. Dùng lại kind sẵn có.
+  { group: "Desktop Calendar (Blank)", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`)] },
   { group: t("dz.photoBookHard"), sides: ["book_cover", ...bookPages] },
   // Đơn thêu: 1 vị trí = ảnh design (mặt ở nhóm trên) + file máy thêu .dst/.emb ở nhóm này.
   { group: "Embroidery (.DST)", sides: [...EMB_KINDS] },
