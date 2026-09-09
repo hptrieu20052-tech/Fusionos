@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
 
 /**
  * v449 · Meta Ads Center — đọc bảng meta_insights (cron đồng bộ nền), gộp theo campaign → ad,
@@ -26,7 +27,8 @@ const ACTION_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
 };
 
 export default function AdsCenterClient() {
-  const [days, setDays] = useState(14);
+  // v453 · DateRangePicker chung của FUSION (preset + lịch chọn khoảng, giống Ads Manager).
+  const [dr, setDr] = useState<RangeValue>({ range: "7d" });
   const [rows, setRows] = useState<Row[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
   // v451 · trạng thái campaign + filter + thu gọn từng campaign (nhớ localStorage).
@@ -66,17 +68,17 @@ export default function AdsCenterClient() {
     setApplyBusy(-1);
   };
 
-  const from = useMemo(() => new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10), [days]);
+  const { from, to } = useMemo(() => rangeToDates(dr), [dr]);
 
   const load = useCallback(async () => {
     setBusy(true); setErr("");
     try {
-      const j = await fetch(`/api/meta-ads/insights?from=${from}`).then((r) => r.json());
+      const j = await fetch(`/api/meta-ads/insights?from=${from}&to=${to}`).then((r) => r.json());
       if (j.ok) { setRows(j.rows ?? []); setLastSync(j.lastSyncAt); setCampStatus(j.campaignStatus ?? {}); }
       else setErr(j.error ?? "Load failed");
     } catch (e) { setErr(String((e as Error).message)); }
     setBusy(false);
-  }, [from]);
+  }, [from, to]);
   useEffect(() => { load(); }, [load]);
 
   const syncNow = async () => {
@@ -92,7 +94,7 @@ export default function AdsCenterClient() {
   const analyze = async () => {
     setAiBusy(true); setErr(""); setAi(null);
     try {
-      const j = await fetch("/api/meta-ads/insights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, model: aiModel || undefined }) }).then((r) => r.json());
+      const j = await fetch("/api/meta-ads/insights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, to, model: aiModel || undefined }) }).then((r) => r.json());
       if (j.ok) setAi(j.ai as Ai); else setErr(j.error ?? "Analyze failed");
     } catch (e) { setErr(String((e as Error).message)); }
     setAiBusy(false);
@@ -132,11 +134,7 @@ export default function AdsCenterClient() {
       {/* Header */}
       <div style={{ ...card, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <b style={{ fontSize: 17 }}>📣 Meta Ads Center</b>
-        <select value={days} onChange={(e) => setDays(Number(e.target.value))} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "7px 10px", fontSize: 13, background: "#fff" }}>
-          <option value={7}>Last 7 days</option>
-          <option value={14}>Last 14 days</option>
-          <option value={28}>Last 28 days</option>
-        </select>
+        <DateRangePicker value={dr} onChange={setDr} />
         {/* v451 · lọc campaign theo trạng thái thật từ Meta */}
         <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
           {(["all", "active", "inactive"] as const).map((f) => (
