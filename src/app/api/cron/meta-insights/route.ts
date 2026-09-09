@@ -89,5 +89,20 @@ async function run(req: NextRequest) {
     url = j.paging?.next ?? "";
     if (Date.now() - started > 100000) break;   // ngân sách thời gian
   }
-  return NextResponse.json({ ok: true, upserts, since, until, tookMs: Date.now() - started });
+
+  // v451 · Trạng thái campaign (ACTIVE/PAUSED...) — cho filter Active/Inactive ở Ads Center.
+  let campaigns = 0;
+  try {
+    const cr = await fetch(`${G}/${act}/campaigns?fields=id,name,effective_status&limit=200`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000) });
+    const cj = await cr.json().catch(() => ({}));
+    const list = (cj.data ?? []) as { id: string; name?: string; effective_status?: string }[];
+    for (const cmp of list) {
+      if (!cmp.id) continue;
+      await db.insert(schema.metaCampaigns).values({ campaignId: cmp.id, name: cmp.name ?? "", status: cmp.effective_status ?? "", updatedAt: new Date() })
+        .onConflictDoUpdate({ target: schema.metaCampaigns.campaignId, set: { name: sql`excluded.name`, status: sql`excluded.status`, updatedAt: sql`now()` } });
+      campaigns++;
+    }
+  } catch { /* trạng thái là phụ — lỗi không chặn insights */ }
+
+  return NextResponse.json({ ok: true, upserts, campaigns, since, until, tookMs: Date.now() - started });
 }

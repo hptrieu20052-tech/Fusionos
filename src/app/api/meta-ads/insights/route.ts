@@ -23,7 +23,9 @@ export async function GET(req: NextRequest) {
     .where(and(gte(schema.metaInsights.day, from), lte(schema.metaInsights.day, to)))
     .orderBy(schema.metaInsights.day);
   const [m] = await db.select({ t: sql<string>`max(updated_at)` }).from(schema.metaInsights);
-  return NextResponse.json({ ok: true, rows, from, to, lastSyncAt: m?.t ?? null });
+  // v451 · map trạng thái campaign cho filter Active/Inactive (bảng có thể chưa migrate → rỗng êm).
+  const statuses = await db.select().from(schema.metaCampaigns).catch(() => []);
+  return NextResponse.json({ ok: true, rows, from, to, lastSyncAt: m?.t ?? null, campaignStatus: Object.fromEntries(statuses.map((c) => [c.campaignId, c.status ?? ""])) });
 }
 
 // ---- Tín hiệu tính bằng CODE (AI chỉ nhận định, không làm số học) ----
@@ -37,7 +39,8 @@ type Agg = {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  const body = await req.json().catch(() => ({})) as { from?: string; to?: string };
+  const body = await req.json().catch(() => ({})) as { from?: string; to?: string; model?: string };
+  const model = String(body.model ?? "").trim() || undefined;   // v450b · model chọn từ UI (trống = default server)
   const to = (body.to ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
   const from = (body.from ?? new Date(Date.now() - 13 * 86400000).toISOString().slice(0, 10)).slice(0, 10);
   const rows = await db.select().from(schema.metaInsights)
@@ -45,9 +48,11 @@ export async function POST(req: NextRequest) {
   if (!rows.length) return NextResponse.json({ ok: false, error: "No data in range — run the sync first" }, { status: 400 });
 
   const d3 = new Date(new Date(to + "T00:00:00Z").getTime() - 2 * 86400000).toISOString().slice(0, 10);
+  const idByKey = new Map<string, { adId: string; adsetId: string }>();
   const byAd = new Map<string, Agg & { _imp3: number; _lc3: number }>();
   for (const r of rows) {
     const k = r.adId;
+    idByKey.set(k, { adId: r.adId, adsetId: r.adsetId });
     const a = byAd.get(k) ?? {
       ad: r.adName ?? r.adId, adset: r.adsetName ?? "", campaign: r.campaignName ?? "", days: 0,
       spend: 0, impressions: 0, linkClicks: 0, atc: 0, purchases: 0, revenue: 0,
@@ -68,8 +73,10 @@ export async function POST(req: NextRequest) {
     ctr3: a._imp3 ? +(100 * a._lc3 / a._imp3).toFixed(2) : 0,
   })).sort((x, y) => y.spend - x.spend);
 
+  const idByName = new Map(Array.from(byAd.entries()).map(([id, a]) => [a.ad, idByKey.get(id)!]));
   const table = aggs.map((a) => ({
-    campaign: a.campaign, adset: a.adset, ad: a.ad, days: a.days,
+    campaign: a.campaign, adset: a.adset, ad: a.ad,
+    adId: idByName.get(a.ad)?.adId ?? "", adsetId: idByName.get(a.ad)?.adsetId ?? "", days: a.days,
     spend: +a.spend.toFixed(2), impressions: a.impressions, linkClicks: a.linkClicks,
     ctrLinkPct: a.ctr, ctrLink3dPct: a.ctr3, cpcLink: a.cpc,
     atc: a.atc, costPerAtc: a.costAtc, purchases: a.purchases, cpa: a.cpa,
@@ -83,12 +90,12 @@ export async function POST(req: NextRequest) {
     "- CTR link tốt ≥ 1.5-2%; cost/ATC tốt < $8-10; CPA hoà vốn quanh $20-25; ROAS mục tiêu ≥ 1.5.",
     "- ctrLink3dPct tụt >30% so với ctrLinkPct = dấu hiệu creative fatigue.",
     "- Đề xuất phải THẬN TRỌNG: pause khi đủ bằng chứng (tiêu ≥ ~1 AOV mà 0 purchase và tín hiệu sớm xấu); tăng budget tối đa +20%/lần; đừng đụng ad đang có CPA tốt.",
-    'Trả JSON đúng schema: {"summary": string (3-6 câu tiếng Việt, tổng quan), "winners": string[], "losers": string[], "actions": [{"ad": string, "action": "keep"|"pause"|"raise_budget"|"lower_budget"|"new_creative"|"watch", "reason": string (1-2 câu tiếng Việt)}], "nextTest": string (1-3 câu gợi ý test tiếp)}',
+    'Trả JSON đúng schema: {"summary": string (3-6 câu tiếng Việt, tổng quan), "winners": string[], "losers": string[], "actions": [{"ad": string, "adId": string (copy NGUYÊN VĂN từ bảng), "adsetId": string (copy NGUYÊN VĂN), "action": "keep"|"pause"|"raise_budget"|"lower_budget"|"new_creative"|"watch", "reason": string (1-2 câu tiếng Việt)}], "nextTest": string (1-3 câu gợi ý test tiếp)}',
   ].join("\n");
   const user = `Khoảng ${from} → ${to}. Bảng số liệu từng ad (đã cộng dồn):\n${JSON.stringify(table)}`;
 
   try {
-    const out = await orChatJSON<Record<string, unknown>>(system, user, { maxTokens: 2200, temperature: 0.3, timeoutMs: 50000, reasoning: "low" });
+    const out = await orChatJSON<Record<string, unknown>>(system, user, { model, maxTokens: 2200, temperature: 0.3, timeoutMs: 50000, reasoning: "low" });
     return NextResponse.json({ ok: true, from, to, table, ai: out });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error).message).slice(0, 300) }, { status: 400 });

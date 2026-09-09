@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSession } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
 import { sql } from "drizzle-orm";
 import { getValidCfg, readEtsyCfg, fetchReceipts, normalizeReceipt } from "@/lib/etsy";
@@ -31,7 +32,12 @@ async function tick(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? "";
   const key = req.nextUrl.searchParams.get("key") ?? "";
   const isVercelCron = !!req.headers.get("x-vercel-cron");
-  const ok = isVercelCron || (secret && (auth === `Bearer ${secret}` || key === secret));
+  let ok = isVercelCron || !!(secret && (auth === `Bearer ${secret}` || key === secret));
+  if (!ok) {
+    // v450b · cho admin mở thẳng URL từ trình duyệt để kiểm tra (giống cron tiktok-finance/meta-insights).
+    const session = await getSession();
+    ok = !!session && session.role === "admin";
+  }
   if (!ok) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
 
   const started = Date.now();

@@ -438,6 +438,15 @@ export const metaInsights = pgTable("meta_insights", {
   idxMetaInsightCamp: index("idx_meta_insight_camp").on(t.campaignId),
 }));
 
+// v451 · Trạng thái campaign Meta (ACTIVE/PAUSED...) — cron meta-insights cập nhật kèm mỗi vòng.
+// Cần MIGRATION_v451_meta_campaigns.sql
+export const metaCampaigns = pgTable("meta_campaigns", {
+  campaignId: text("campaign_id").primaryKey(),
+  name: text("name"),
+  status: text("status"),                        // effective_status từ Meta
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
 export const shopbaseTemplates = pgTable("shopbase_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   storeId: uuid("store_id").notNull(),          // store ShopBase (marketplace=shopbase)
