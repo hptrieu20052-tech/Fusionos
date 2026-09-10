@@ -18,11 +18,12 @@ const card: React.CSSProperties = { background: "#fff", border: "1px solid var(-
 const money = (n: number) => "$" + n.toFixed(2);
 const num = (n: number) => n.toLocaleString();
 // v457 · công tắc bật/tắt (arm 2 bước: bấm 1 = Confirm? màu cam, bấm 2 = thực thi).
-function Toggle({ on, armed, busy, onClick, title }: { on: boolean; armed: boolean; busy: boolean; onClick: () => void; title?: string }) {
+function Toggle({ on, armed, busy, onClick, title, dim }: { on: boolean; armed: boolean; busy: boolean; onClick: () => void; title?: string; dim?: boolean }) {
   return (
-    <button onClick={(e) => { e.stopPropagation(); onClick(); }} disabled={busy} title={title ?? (on ? "Đang ON — bấm 2 lần để tắt" : "Đang OFF — bấm 2 lần để bật")}
+    <button onClick={(e) => { e.stopPropagation(); onClick(); }} disabled={busy}
+      title={title ?? (dim ? "Tầng cha đang OFF — mục này KHÔNG chạy dù công tắc riêng vẫn bật" : on ? "Đang ON — bấm 2 lần để tắt" : "Đang OFF — bấm 2 lần để bật")}
       style={{ border: "none", cursor: "pointer", borderRadius: 999, padding: 0, width: 34, height: 18, position: "relative", flexShrink: 0, verticalAlign: "middle",
-        background: armed ? "#F59E0B" : on ? "#16A34A" : "#CBD5E1", transition: "background .15s", opacity: busy ? .55 : 1 }}>
+        background: armed ? "#F59E0B" : on ? "#16A34A" : "#CBD5E1", transition: "background .15s", opacity: busy ? .55 : dim ? .45 : 1 }}>
       <span style={{ position: "absolute", top: 2, left: armed ? 10 : on ? 18 : 2, width: 14, height: 14, borderRadius: 999, background: "#fff", transition: "left .15s", boxShadow: "0 1px 2px rgba(0,0,0,.25)" }} />
     </button>
   );
@@ -81,8 +82,8 @@ export default function AdsCenterClient() {
 
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
   // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
-  type AdEnt = { status: string; thumb?: string | null; img?: string | null };
-  type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; budget: number }>; ads: Record<string, AdEnt> };
+  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null };
+  type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; eff?: string; budget: number }>; ads: Record<string, AdEnt> };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
     try {
@@ -339,6 +340,7 @@ export default function AdsCenterClient() {
                               {/* v457 · bật/tắt ad set */}
                               {ent?.adsets[a.adsetId] && (
                                 <Toggle on={ent.adsets[a.adsetId].status === "ACTIVE"} armed={ctlArm === "adset:" + a.adsetId} busy={ctlBusy === "adset:" + a.adsetId}
+                                  dim={ent.adsets[a.adsetId].status === "ACTIVE" && ent.adsets[a.adsetId].eff === "CAMPAIGN_PAUSED"}
                                   onClick={() => toggleStatus("adset", a.adsetId)} />
                               )}
                               <span>▪ {a.adset || "(no ad set)"}</span>
@@ -373,10 +375,19 @@ export default function AdsCenterClient() {
                       <td style={{ ...td, textAlign: "left", maxWidth: 360, paddingLeft: 22 }} title={`${a.adset} › ${a.ad}`}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: "100%" }}>
                           {/* v457 · bật/tắt từng ad */}
-                          {ent && ent.ads[a.adId] !== undefined && (
-                            <Toggle on={ent.ads[a.adId]?.status === "ACTIVE"} armed={ctlArm === "ad:" + a.adId} busy={ctlBusy === "ad:" + a.adId}
-                              onClick={() => toggleStatus("ad", a.adId)} />
-                          )}
+                          {ent && ent.ads[a.adId] !== undefined && (() => {
+                            // v463 · công tắc riêng của ad vẫn ACTIVE nhưng TẦNG CHA tắt → hiện mờ + nhãn ⏸
+                            const ad = ent.ads[a.adId]!;
+                            const offByParent = ad.status === "ACTIVE" && (ad.eff === "ADSET_PAUSED" || ad.eff === "CAMPAIGN_PAUSED");
+                            return (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0, opacity: offByParent ? 0.45 : 1 }}
+                                title={offByParent ? (ad.eff === "ADSET_PAUSED" ? "Ad set đang OFF — ad này KHÔNG chạy dù công tắc riêng vẫn bật" : "Campaign đang OFF — ad này KHÔNG chạy dù công tắc riêng vẫn bật") : undefined}>
+                                <Toggle on={ad.status === "ACTIVE"} armed={ctlArm === "ad:" + a.adId} busy={ctlBusy === "ad:" + a.adId}
+                                  onClick={() => toggleStatus("ad", a.adId)} />
+                                {offByParent && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#8A93A6", background: "#EEF1F5", borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>⏸ {ad.eff === "ADSET_PAUSED" ? "theo set" : "theo camp"}</span>}
+                              </span>
+                            );
+                          })()}
                           {/* v462 · thumbnail creative — click phóng to để biết đang nhìn MẪU nào */}
                           {ent?.ads[a.adId]?.thumb && (
                             /* eslint-disable-next-line @next/next/no-img-element */

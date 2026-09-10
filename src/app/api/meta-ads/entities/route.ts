@@ -38,16 +38,17 @@ export async function GET() {
   try {
     const [camps, adsets, ads] = await Promise.all([
       fbList(`${G}/${act}/campaigns?fields=id,status&limit=200`, token),
-      fbList(`${G}/${act}/adsets?fields=id,status,daily_budget&limit=200`, token),
-      fbList(`${G}/${act}/ads?fields=id,status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url}&limit=300`, token),
+      fbList(`${G}/${act}/adsets?fields=id,status,effective_status,daily_budget&limit=200`, token),
+      fbList(`${G}/${act}/ads?fields=id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url}&limit=300`, token),
     ]);
     return NextResponse.json({
       ok: true,
       camp: Object.fromEntries(camps.map((c) => [String(c.id), String(c.status ?? "")])),
-      adsets: Object.fromEntries(adsets.map((s) => [String(s.id), { status: String(s.status ?? ""), budget: (Number(s.daily_budget) || 0) / 100 }])),
+      adsets: Object.fromEntries(adsets.map((s) => [String(s.id), { status: String(s.status ?? ""), eff: String(s.effective_status ?? ""), budget: (Number(s.daily_budget) || 0) / 100 }])),
       ads: Object.fromEntries(ads.map((a) => {
         const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string };
-        return [String(a.id), { status: String(a.status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null }];
+        // eff = trạng thái HIỆU LỰC (ADSET_PAUSED/CAMPAIGN_PAUSED khi tầng cha tắt) — UI dựng nhãn "tắt theo set".
+        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null }];
       })),
     });
   } catch (e) {
