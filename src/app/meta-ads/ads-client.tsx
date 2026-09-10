@@ -17,6 +17,17 @@ type Ai = { summary?: string; winners?: string[]; losers?: string[]; actions?: A
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
 const money = (n: number) => "$" + n.toFixed(2);
 const num = (n: number) => n.toLocaleString();
+// v457 · công tắc bật/tắt (arm 2 bước: bấm 1 = Confirm? màu cam, bấm 2 = thực thi).
+function Toggle({ on, armed, busy, onClick, title }: { on: boolean; armed: boolean; busy: boolean; onClick: () => void; title?: string }) {
+  return (
+    <button onClick={(e) => { e.stopPropagation(); onClick(); }} disabled={busy} title={title ?? (on ? "Đang ON — bấm 2 lần để tắt" : "Đang OFF — bấm 2 lần để bật")}
+      style={{ border: "none", cursor: "pointer", borderRadius: 999, padding: 0, width: 34, height: 18, position: "relative", flexShrink: 0, verticalAlign: "middle",
+        background: armed ? "#F59E0B" : on ? "#16A34A" : "#CBD5E1", transition: "background .15s", opacity: busy ? .55 : 1 }}>
+      <span style={{ position: "absolute", top: 2, left: armed ? 10 : on ? 18 : 2, width: 14, height: 14, borderRadius: 999, background: "#fff", transition: "left .15s", boxShadow: "0 1px 2px rgba(0,0,0,.25)" }} />
+    </button>
+  );
+}
+
 const ACTION_STYLE: Record<string, { bg: string; fg: string; label: string }> = {
   keep: { bg: "#E9F7EF", fg: "#1F6F45", label: "KEEP" },
   raise_budget: { bg: "#E7F0FF", fg: "#1D4ED8", label: "RAISE $" },
@@ -62,10 +73,61 @@ export default function AdsCenterClient() {
     setArmIdx(-1); setApplyBusy(i);
     try {
       const j = await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: a.action, adId: a.adId, adsetId: a.adsetId }) }).then((r) => r.json());
-      if (j.ok) setApplied((m) => ({ ...m, [i]: j.did ?? "done" }));
+      if (j.ok) { setApplied((m) => ({ ...m, [i]: j.did ?? "done" })); loadEnt(); }  // v457 · refresh toggle/budget sau khi AI apply
       else setErr(j.error ?? "Apply failed");
     } catch (e) { setErr(String((e as Error).message)); }
     setApplyBusy(-1);
+  };
+
+  // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
+  type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; budget: number }>; ads: Record<string, string> };
+  const [ent, setEnt] = useState<Ent | null>(null);
+  const loadEnt = useCallback(async () => {
+    try {
+      const j = await fetch("/api/meta-ads/entities").then((r) => r.json());
+      if (j.ok) setEnt({ camp: j.camp ?? {}, adsets: j.adsets ?? {}, ads: j.ads ?? {} });
+    } catch { /* điều khiển là phụ — lỗi không chặn bảng số */ }
+  }, []);
+  useEffect(() => { loadEnt(); }, [loadEnt]);
+
+  const [ctlArm, setCtlArm] = useState("");
+  const [ctlBusy, setCtlBusy] = useState("");
+  // Mọi hành động điều khiển đều arm 2 bước (giống Approve) — chống bấm nhầm bật/tắt tiền thật.
+  const ctl = async (key: string, payload: Record<string, unknown>, after: () => void) => {
+    if (ctlBusy) return;
+    if (ctlArm !== key) { setCtlArm(key); setTimeout(() => setCtlArm((c) => (c === key ? "" : c)), 4000); return; }
+    setCtlArm(""); setCtlBusy(key); setErr("");
+    try {
+      const j = await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+      if (j.ok) after(); else setErr(j.error ?? "Action failed");
+    } catch (e) { setErr(String((e as Error).message)); }
+    setCtlBusy("");
+  };
+  const toggleStatus = (level: "camp" | "adset" | "ad", id: string) => {
+    if (!ent) return;
+    const cur = level === "camp" ? ent.camp[id] : level === "adset" ? ent.adsets[id]?.status : ent.ads[id];
+    const next = cur === "ACTIVE" ? "PAUSED" : "ACTIVE";
+    ctl(level + ":" + id, { action: "set_status", id, status: next }, () => {
+      setEnt((e) => {
+        if (!e) return e;
+        if (level === "camp") return { ...e, camp: { ...e.camp, [id]: next } };
+        if (level === "adset") return { ...e, adsets: { ...e.adsets, [id]: { ...e.adsets[id], status: next } } };
+        return { ...e, ads: { ...e.ads, [id]: next } };
+      });
+    });
+  };
+  // Sửa budget ad set: bấm ✎ → nhập số → ✓ (không cần arm — gõ số đã là hành động chủ đích).
+  const [budEdit, setBudEdit] = useState<{ id: string; val: string } | null>(null);
+  const saveBudget = async (adsetId: string) => {
+    const dollars = Number(budEdit?.val);
+    if (!isFinite(dollars) || dollars <= 0) { setErr("Budget phải là số > 0"); return; }
+    setCtlBusy("bud:" + adsetId); setErr("");
+    try {
+      const j = await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_budget", adsetId, budget: dollars }) }).then((r) => r.json());
+      if (j.ok) { setEnt((e) => e ? { ...e, adsets: { ...e.adsets, [adsetId]: { ...e.adsets[adsetId], budget: dollars } } } : e); setBudEdit(null); }
+      else setErr(j.error ?? "Set budget failed");
+    } catch (e) { setErr(String((e as Error).message)); }
+    setCtlBusy("");
   };
 
   const { from, to } = useMemo(() => rangeToDates(dr), [dr]);
@@ -102,11 +164,11 @@ export default function AdsCenterClient() {
 
   // Gộp theo campaign → ad
   const grouped = useMemo(() => {
-    type Agg = { campId: string; campaign: string; ad: string; adset: string; spend: number; imp: number; lc: number; atc: number; pur: number; rev: number };
+    type Agg = { campId: string; campaign: string; ad: string; adId: string; adset: string; adsetId: string; spend: number; imp: number; lc: number; atc: number; pur: number; rev: number };
     const m = new Map<string, Agg>();
     for (const r of rows) {
       const k = r.adId;
-      const a = m.get(k) ?? { campId: r.campaignId, campaign: r.campaignName ?? "—", ad: r.adName ?? r.adId, adset: r.adsetName ?? "", spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 };
+      const a = m.get(k) ?? { campId: r.campaignId, campaign: r.campaignName ?? "—", ad: r.adName ?? r.adId, adId: r.adId, adset: r.adsetName ?? "", adsetId: r.adsetId, spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 };
       a.spend += Number(r.spend) || 0; a.imp += r.impressions ?? 0; a.lc += r.linkClicks ?? 0;
       a.atc += r.atc ?? 0; a.pur += r.purchases ?? 0; a.rev += Number(r.revenue) || 0;
       m.set(k, a);
@@ -234,6 +296,11 @@ export default function AdsCenterClient() {
             <div onClick={() => toggleCamp(campId, isCollapsed)}
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px 6px", cursor: "pointer", userSelect: "none" }}>
               <span style={{ fontSize: 11, color: "var(--muted)", transform: isCollapsed ? "rotate(-90deg)" : "none", transition: "transform .12s", width: 12, display: "inline-block" }}>▼</span>
+              {/* v457 · bật/tắt campaign ngay tại đây (arm 2 bước) */}
+              {ent && ent.camp[campId] !== undefined && (
+                <Toggle on={ent.camp[campId] === "ACTIVE"} armed={ctlArm === "camp:" + campId} busy={ctlBusy === "camp:" + campId}
+                  onClick={() => toggleStatus("camp", campId)} />
+              )}
               <b style={{ fontSize: 14 }}>{g.name}</b>
               {status && (
                 <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, letterSpacing: ".3px",
@@ -259,16 +326,51 @@ export default function AdsCenterClient() {
                       return (
                         <tr key={"set-" + a.adset} style={{ background: "#F7F9FC", borderBottom: "1px solid #EDF0F4" }}>
                           <td colSpan={12} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 800, color: "#5B6472" }}>
-                            ▪ {a.adset || "(no ad set)"}
-                            <span style={{ fontWeight: 600, marginLeft: 8, color: "var(--muted)" }}>
-                              {grp.length} ad{grp.length > 1 ? "s" : ""} · {money(gs.spend)} · {gs.atc} ATC · {gs.pur} purch{gs.spend ? ` · ROAS ${(gs.rev / gs.spend).toFixed(2)}` : ""}
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                              {/* v457 · bật/tắt ad set */}
+                              {ent?.adsets[a.adsetId] && (
+                                <Toggle on={ent.adsets[a.adsetId].status === "ACTIVE"} armed={ctlArm === "adset:" + a.adsetId} busy={ctlBusy === "adset:" + a.adsetId}
+                                  onClick={() => toggleStatus("adset", a.adsetId)} />
+                              )}
+                              <span>▪ {a.adset || "(no ad set)"}</span>
+                              {/* v457 · budget/ngày — bấm ✎ để sửa, Enter hoặc ✓ để lưu */}
+                              {ent?.adsets[a.adsetId] && (budEdit?.id === a.adsetId ? (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                  <span>$</span>
+                                  <input autoFocus value={budEdit.val} onChange={(e) => setBudEdit({ id: a.adsetId, val: e.target.value.replace(/[^0-9.]/g, "") })}
+                                    onKeyDown={(e) => { if (e.key === "Enter") saveBudget(a.adsetId); if (e.key === "Escape") setBudEdit(null); }}
+                                    style={{ width: 56, border: "1px solid #C9D2DE", borderRadius: 6, padding: "2px 6px", fontSize: 11.5, font: "inherit", outline: "none" }} />
+                                  <button onClick={() => saveBudget(a.adsetId)} disabled={ctlBusy === "bud:" + a.adsetId}
+                                    style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>
+                                    {ctlBusy === "bud:" + a.adsetId ? "…" : "✓"}
+                                  </button>
+                                  <button onClick={() => setBudEdit(null)} style={{ border: "none", background: "transparent", color: "var(--muted)", fontSize: 11, cursor: "pointer" }}>✕</button>
+                                </span>
+                              ) : (
+                                <span onClick={() => setBudEdit({ id: a.adsetId, val: String(ent.adsets[a.adsetId].budget || "") })} title="Sửa daily budget của ad set"
+                                  style={{ cursor: "pointer", color: "#1D4ED8", background: "#EDF3FF", borderRadius: 999, padding: "1px 8px", fontWeight: 700 }}>
+                                  {ent.adsets[a.adsetId].budget ? `$${ent.adsets[a.adsetId].budget}/day` : "CBO"} ✎
+                                </span>
+                              ))}
+                              <span style={{ fontWeight: 600, color: "var(--muted)" }}>
+                                {grp.length} ad{grp.length > 1 ? "s" : ""} · {money(gs.spend)} · {gs.atc} ATC · {gs.pur} purch{gs.spend ? ` · ROAS ${(gs.rev / gs.spend).toFixed(2)}` : ""}
+                              </span>
                             </span>
                           </td>
                         </tr>
                       );
                     })()}
                     <tr key={a.ad} style={{ borderBottom: "1px solid #F1F3F6" }}>
-                      <td style={{ ...td, textAlign: "left", maxWidth: 340, overflow: "hidden", textOverflow: "ellipsis", paddingLeft: 22 }} title={`${a.adset} › ${a.ad}`}>{a.ad}</td>
+                      <td style={{ ...td, textAlign: "left", maxWidth: 360, paddingLeft: 22 }} title={`${a.adset} › ${a.ad}`}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: "100%" }}>
+                          {/* v457 · bật/tắt từng ad */}
+                          {ent && ent.ads[a.adId] !== undefined && (
+                            <Toggle on={ent.ads[a.adId] === "ACTIVE"} armed={ctlArm === "ad:" + a.adId} busy={ctlBusy === "ad:" + a.adId}
+                              onClick={() => toggleStatus("ad", a.adId)} />
+                          )}
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.ad}</span>
+                        </span>
+                      </td>
                       <td style={{ ...td, fontWeight: 700 }}>{money(a.spend)}</td>
                       <td style={td}>{num(a.imp)}</td>
                       <td style={td}>{num(a.lc)}</td>
