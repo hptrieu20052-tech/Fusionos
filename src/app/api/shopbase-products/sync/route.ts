@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { shopbaseConfigured, touchShopBaseSync, type ShopBaseCred } from "@/lib/shopbase";
 import { fetchAllShopbaseProducts } from "@/lib/shopbase-products";
 
@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
   if (!store) return NextResponse.json({ ok: false, error: "store not found" }, { status: 404 });
   if (store.marketplace !== "shopbase") return NextResponse.json({ ok: false, error: "not a ShopBase store" }, { status: 400 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && store.sellerId && !scopeIds.includes(store.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && !((store.sellerId && scopeIds.includes(store.sellerId)) || shared.includes(store.id))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // v459: store không chủ → cần được share (bỏ quy tắc store chung)
 
   const cred = ((store.apiCredentials ?? {}) as Record<string, unknown>).shopbase as ShopBaseCred | undefined;
   if (!shopbaseConfigured(cred ?? null)) {

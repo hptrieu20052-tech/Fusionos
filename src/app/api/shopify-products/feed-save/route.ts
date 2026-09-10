@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -28,12 +28,15 @@ export async function POST(req: NextRequest) {
   const id = String(b?.id ?? "").trim();
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
-  const [r] = await db.select({ storeSeller: schema.stores.sellerId })
+  const [r] = await db.select({ storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
   if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && (!r.storeSeller || !scopeIds.includes(r.storeSeller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId)))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v459 · store share: chỉ xem.
+  if (session.role !== "admin" && scopeIds && r.storeSeller !== session.sub) return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem" }, { status: 403 });
 
   const ft = plain(b?.feedTitle).slice(0, 150);
   const fd = plain(b?.feedDescription).slice(0, 5000);

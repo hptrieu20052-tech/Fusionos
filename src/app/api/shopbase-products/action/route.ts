@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { shopbaseApi, shopbaseConfigured, type ShopBaseCred } from "@/lib/shopbase";
 
 export const dynamic = "force-dynamic";
@@ -65,7 +65,8 @@ export async function POST(req: NextRequest) {
 
   // Phân quyền: seller chỉ thao tác sản phẩm thuộc store của mình.
   const scopeIds = await storeOwnerScopeIds(session);
-  let allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || !r.sellerId || scopeIds.includes(r.sellerId))); // sellerId NULL = store chung
+  const shared = await sharedStoreIds(scopeIds);
+  let allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || (r.sellerId && scopeIds.includes(r.sellerId)) || shared.includes(r.storeId))); // v459: store không chủ → cần được share (bỏ quy tắc store chung)
   // v435 · Store chung: seller CHỈ publish/tag/xoá listing MÌNH tạo — của admin/người khác thì không
   // (Dup thì được: tạo bản copy của riêng mình, không đụng bản gốc).
   const ownFailed: { id: string; error: string }[] = [];

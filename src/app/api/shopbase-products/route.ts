@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { desc, eq, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds, adminUserIds } from "@/lib/scope";
 import { shopbaseApi, shopbaseConfigured, storefrontUrl, type ShopBaseCred } from "@/lib/shopbase";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ export async function GET(req: NextRequest) {
   if ((await levelOf(session, "products")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const scopeIds = await storeOwnerScopeIds(session);
+  const shared = await sharedStoreIds(scopeIds);
   const id = req.nextUrl.searchParams.get("id");
 
   // ── Chi tiết 1 sản phẩm ─────────────────────────────────────────────
@@ -36,7 +37,12 @@ export async function GET(req: NextRequest) {
       .leftJoin(schema.stores, eq(schema.stores.id, schema.shopbaseProducts.storeId))
       .where(eq(schema.shopbaseProducts.id, id)).limit(1);
     if (!row || row.marketplace !== "shopbase") return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-    if (scopeIds && row.sellerId && !scopeIds.includes(row.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
+    if (scopeIds && !((row.sellerId && scopeIds.includes(row.sellerId)) || shared.includes(row.p.storeId ?? ""))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    // v459 · "của ai người đó thấy": seller chỉ mở listing MÌNH tạo hoặc do ADMIN tạo/sync.
+    if (session.role !== "admin" && scopeIds && row.sellerId !== session.sub && row.p.createdBy && row.p.createdBy !== session.sub) {
+      const admins = await adminUserIds();
+      if (!admins.includes(row.p.createdBy)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    } // v459: store không chủ → cần được share (bỏ quy tắc store chung)
     const p = row.p;
     return NextResponse.json({ ok: true, product: {
       id: p.id, shopbaseProductId: p.shopbaseProductId, handle: p.handle ?? "",
@@ -64,7 +70,12 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(schema.shopbaseProducts.updatedAt));
 
   // v411 · store ShopBase có sellerId NULL = store CHUNG → mọi user có quyền products đều thấy.
-  const scoped = scopeIds ? rows.filter((r) => !r.sellerId || scopeIds.includes(r.sellerId)) : rows;
+  let scoped = scopeIds ? rows.filter((r) => (r.sellerId && scopeIds.includes(r.sellerId)) || shared.includes(r.p.storeId ?? "")) : rows;
+  // v459 · store share: seller chỉ THẤY listing mình tạo + listing do admin tạo/sync (createdBy trống = sync).
+  if (session.role !== "admin" && scopeIds) {
+    const admins = await adminUserIds();
+    scoped = scoped.filter((r) => r.sellerId === session.sub || !r.p.createdBy || r.p.createdBy === session.sub || admins.includes(r.p.createdBy));
+  }
 
   // v411 · Store chung nhiều seller: gắn công NGƯỜI TẠO (created_by) + tên template đã dùng.
   const creatorIds = Array.from(new Set(scoped.map((r) => r.p.createdBy).filter(Boolean))) as string[];
@@ -150,7 +161,8 @@ export async function PATCH(req: NextRequest) {
   if (!row || row.marketplace !== "shopbase") return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
 
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && row.sellerId && !scopeIds.includes(row.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && !((row.sellerId && scopeIds.includes(row.sellerId)) || shared.includes(row.p.storeId ?? ""))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // v459: store không chủ → cần được share (bỏ quy tắc store chung)
 
   // v435 · Store chung: seller CHỈ sửa listing MÌNH tạo. Listing của admin/người khác (hoặc bản sync
   // không rõ người tạo) → chỉ admin sửa. Seller vẫn Dup được để có bản của riêng mình.

@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { shopifyGraphQL, shopHost, type ShopifyCred } from "@/lib/shopify";
 
 export const dynamic = "force-dynamic";
@@ -20,11 +20,12 @@ export async function GET(req: NextRequest) {
   if (!/^[0-9a-f-]{36}$/i.test(storeId)) return NextResponse.json({ ok: false, error: "storeId required" }, { status: 400 });
   if (!q) return NextResponse.json({ ok: true, categories: [] });
 
-  const [store] = await db.select({ cred: schema.stores.apiCredentials, seller: schema.stores.sellerId, mk: schema.stores.marketplace })
+  const [store] = await db.select({ cred: schema.stores.apiCredentials, seller: schema.stores.sellerId, sStoreId: schema.stores.id, mk: schema.stores.marketplace })
     .from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
   if (!store) return NextResponse.json({ ok: false, error: "store not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && (!store.seller || !scopeIds.includes(store.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && !((store.seller && scopeIds.includes(store.seller)) || shared.includes(storeId))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const cred = (store.cred ?? {}) as ShopifyCred;
   if (store.mk !== "shopify" || !shopHost(cred) || !(cred.adminToken || (cred.clientId && cred.clientSecret)))
     return NextResponse.json({ ok: false, error: "store chưa cấu hình Shopify API" }, { status: 400 });

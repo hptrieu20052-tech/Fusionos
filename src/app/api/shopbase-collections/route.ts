@@ -33,7 +33,7 @@ async function checkStore(storeId: string, session: NonNullable<Awaited<ReturnTy
     .from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
   if (!store || store.marketplace !== "shopbase") return { error: "not a ShopBase store" };
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && store.sellerId && !scopeIds.includes(store.sellerId)) return { error: "forbidden" }; // sellerId NULL = store chung
+  if (scopeIds && store.sellerId && !scopeIds.includes(store.sellerId)) return { error: "forbidden" }; // v459: store không chủ → cần được share (bỏ quy tắc store chung)
   return { store };
 }
 

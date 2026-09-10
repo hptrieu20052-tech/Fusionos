@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,8 @@ export async function GET(req: NextRequest) {
     .where(eq(schema.shopbaseProducts.id, productId)).limit(1);
   if (!row || row.mk !== "shopbase") return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && row.sellerId && !scopeIds.includes(row.sellerId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // sellerId NULL = store chung
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && !((row.sellerId && scopeIds.includes(row.sellerId)) || shared.includes(row.p.storeId ?? ""))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 }); // v459: store không chủ → cần được share (bỏ quy tắc store chung)
 
   const p = row.p;
   const options = ((Array.isArray(p.options) ? p.options : []) as { name?: string; values?: string[] }[])

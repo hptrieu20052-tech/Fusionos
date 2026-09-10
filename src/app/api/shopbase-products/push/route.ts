@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { shopbaseApi, shopbaseConfigured, shopbaseHost, type ShopBaseCred } from "@/lib/shopbase";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +37,8 @@ export async function POST(req: NextRequest) {
     .where(inArray(schema.shopbaseProducts.id, ids));
 
   const scopeIds = await storeOwnerScopeIds(session);
-  let allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || !r.sellerId || scopeIds.includes(r.sellerId))); // sellerId NULL = store chung
+  const shared = await sharedStoreIds(scopeIds);
+  let allowed = rows.filter((r) => r.marketplace === "shopbase" && (!scopeIds || (r.sellerId && scopeIds.includes(r.sellerId)) || shared.includes(r.p.storeId ?? ""))); // v459: store không chủ → cần được share (bỏ quy tắc store chung)
   // v435 · Store chung: seller chỉ Push bản nháp MÌNH tạo — của admin/người khác thì không.
   if (session.role !== "admin") allowed = allowed.filter((r) => r.p.createdBy === session.sub);
   if (!allowed.length) return NextResponse.json({ ok: false, error: "no valid products (chỉ Push được bản nháp bạn tạo)" }, { status: 400 });

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { db, schema } from "@/lib/db";
-import { desc, eq, and, inArray, sql } from "drizzle-orm";
+import { desc, eq, and, or, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { scopeOwnerIds } from "@/lib/scope";
+import { scopeOwnerIds, sharedStoreIds } from "@/lib/scope";
 import { DEFAULT_FEE_PCT } from "@/lib/fee";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +18,11 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const scopeIds = await scopeOwnerIds(session, "stores");
   const parts = [];
-  // Phạm vi own/team: chỉ store thuộc seller trong phạm vi (store chưa gán seller cũng bị ẩn)
-  if (scopeIds) parts.push(inArray(schema.stores.sellerId, scopeIds));
+  // Phạm vi own/team: store thuộc seller trong phạm vi HOẶC store được SHARE (v458, Shopify/ShopBase).
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds) parts.push(shared.length
+    ? or(inArray(schema.stores.sellerId, scopeIds), inArray(schema.stores.id, shared))!
+    : inArray(schema.stores.sellerId, scopeIds));
   else if (sp.get("sellerId")) parts.push(eq(schema.stores.sellerId, sp.get("sellerId")!));
   if (sp.get("marketplace")) parts.push(eq(schema.stores.marketplace, sp.get("marketplace") as never));
   const where = parts.length ? and(...parts) : undefined;
@@ -41,6 +44,11 @@ export async function GET(req: NextRequest) {
     FROM orders WHERE store_id IS NOT NULL GROUP BY store_id`);
   const cmap = new Map((counts.rows as { store_id: string; c30: number; c7: number; rev30: string; last_order: string }[]).map((r) => [r.store_id, r]));
 
+  // v458 · thành viên được share của từng store (render chip trong modal edit)
+  const memRows = await db.select().from(schema.storeMembers).catch(() => [] as { storeId: string; userId: string }[]);
+  const memMap = new Map<string, string[]>();
+  for (const m of memRows) memMap.set(m.storeId, [...(memMap.get(m.storeId) ?? []), m.userId]);
+
   const sellers = await db.select({ id: schema.users.id, name: schema.users.fullName })
     .from(schema.users)
     .where(scopeIds ? and(eq(schema.users.role, "seller"), inArray(schema.users.id, scopeIds)) : eq(schema.users.role, "seller"));
@@ -60,6 +68,7 @@ export async function GET(req: NextRequest) {
       const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k) && k !== "spapi" && k !== "shopbase");
       return {
         ...r.s,
+        memberIds: memMap.get(r.s.id) ?? [],
         apiCredentials: undefined,
         hasCredentials: shownKeys.length > 0,
         credentialKeys: shownKeys,

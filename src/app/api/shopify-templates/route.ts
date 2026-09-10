@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray, desc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds, adminUserIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -64,9 +64,10 @@ function clampCountries(v: unknown): Record<string, [number, number]> {
 // Store nào user được phép thao tác (Shopify + trong scope)?
 async function allowedStoreIds(session: Awaited<ReturnType<typeof getSession>>): Promise<Set<string>> {
   const scopeIds = await storeOwnerScopeIds(session!);
-  const stores = await db.select({ id: schema.stores.id, seller: schema.stores.sellerId, mk: schema.stores.marketplace }).from(schema.stores);
+  const shared = await sharedStoreIds(scopeIds);
+  const stores = await db.select({ id: schema.stores.id, seller: schema.stores.sellerId, sStoreId: schema.stores.id, mk: schema.stores.marketplace }).from(schema.stores);
   const ok = new Set<string>();
-  for (const s of stores) if (s.mk === "shopify" && (!scopeIds || (s.seller && scopeIds.includes(s.seller)))) ok.add(s.id);
+  for (const s of stores) if (s.mk === "shopify" && (!scopeIds || (s.seller && scopeIds.includes(s.seller)) || shared.includes(s.id))) ok.add(s.id);
   return ok;
 }
 
@@ -172,8 +173,20 @@ export async function GET(req: NextRequest) {
   const allowed = await allowedStoreIds(session);
   const storeId = req.nextUrl.searchParams.get("storeId") ?? "";
   const rows = await db.select().from(schema.shopifyTemplates).orderBy(desc(schema.shopifyTemplates.updatedAt));
-  const out = rows.filter((r) => allowed.has(r.storeId) && (!storeId || r.storeId === storeId));
-  return NextResponse.json({ ok: true, templates: out });
+  let out = rows.filter((r) => allowed.has(r.storeId) && (!storeId || r.storeId === storeId));
+  // v459 · "của ai người đó thấy": seller thấy template MÌNH tạo + template do ADMIN tạo (createdBy trống = admin cũ).
+  const admins = await adminUserIds();
+  if (session.role !== "admin") out = out.filter((r) => !r.createdBy || r.createdBy === session.sub || admins.includes(r.createdBy));
+  const creatorIds = Array.from(new Set(out.map((r) => r.createdBy).filter(Boolean))) as string[];
+  const creators = creatorIds.length
+    ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, creatorIds))
+    : [];
+  const byId = new Map(creators.map((c) => [c.id, c.name]));
+  return NextResponse.json({ ok: true, templates: out.map((r) => ({
+    ...r,
+    creatorName: r.createdBy ? (byId.get(r.createdBy) ?? "—") : null,
+    canEdit: session.role === "admin" || (!!r.createdBy && r.createdBy === session.sub),
+  })) });
 }
 
 // POST create
@@ -184,7 +197,7 @@ export async function POST(req: NextRequest) {
   const storeId = String(b?.storeId ?? "");
   const allowed = await allowedStoreIds(session);
   if (!allowed.has(storeId)) return NextResponse.json({ ok: false, error: "store not allowed" }, { status: 403 });
-  const [row] = await db.insert(schema.shopifyTemplates).values({ storeId, ...payloadOf(b!) }).returning();
+  const [row] = await db.insert(schema.shopifyTemplates).values({ storeId, ...payloadOf(b!), createdBy: session.sub }).returning();
   return NextResponse.json({ ok: true, template: row });
 }
 
@@ -199,6 +212,10 @@ export async function PATCH(req: NextRequest) {
   if (!cur) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const allowed = await allowedStoreIds(session);
   if (!allowed.has(cur.storeId)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v459 · seller chỉ sửa template MÌNH tạo — template admin thì dùng thôi, không sửa.
+  if (session.role !== "admin" && cur.createdBy !== session.sub) {
+    return NextResponse.json({ ok: false, error: "Template này do admin/người khác tạo — chỉ người tạo hoặc admin sửa được" }, { status: 403 });
+  }
   const [row] = await db.update(schema.shopifyTemplates).set(payloadOf(b!)).where(eq(schema.shopifyTemplates.id, id)).returning();
   return NextResponse.json({ ok: true, template: row });
 }
@@ -210,9 +227,10 @@ export async function DELETE(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 100);
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
-  const rows = await db.select({ id: schema.shopifyTemplates.id, storeId: schema.shopifyTemplates.storeId }).from(schema.shopifyTemplates).where(inArray(schema.shopifyTemplates.id, ids));
+  const rows = await db.select({ id: schema.shopifyTemplates.id, storeId: schema.shopifyTemplates.storeId, createdBy: schema.shopifyTemplates.createdBy }).from(schema.shopifyTemplates).where(inArray(schema.shopifyTemplates.id, ids));
   const allowed = await allowedStoreIds(session);
-  const okIds = rows.filter((r) => allowed.has(r.storeId)).map((r) => r.id);
+  // v459 · seller chỉ xoá template MÌNH tạo; admin xoá tất.
+  const okIds = rows.filter((r) => allowed.has(r.storeId) && (session.role === "admin" || r.createdBy === session.sub)).map((r) => r.id);
   if (!okIds.length) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   await db.delete(schema.shopifyTemplates).where(inArray(schema.shopifyTemplates.id, okIds));
   return NextResponse.json({ ok: true, deleted: okIds.length });

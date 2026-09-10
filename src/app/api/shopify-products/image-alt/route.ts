@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { shopHost, shopifyGraphQL, type ShopifyCred } from "@/lib/shopify";
 import { orChatJSON } from "@/lib/ai/openrouter";
 import { getPrompt } from "@/lib/ai/prompt-store";
@@ -66,12 +66,17 @@ export async function POST(req: NextRequest) {
     id: schema.shopifyProducts.id, gid: schema.shopifyProducts.shopifyProductId, title: schema.shopifyProducts.title,
     productType: schema.shopifyProducts.productType, seoTitle: schema.shopifyProducts.seoTitle, tags: schema.shopifyProducts.tags,
     images: schema.shopifyProducts.images, storeId: schema.shopifyProducts.storeId,
-    cred: schema.stores.apiCredentials, seller: schema.stores.sellerId, mk: schema.stores.marketplace,
+    cred: schema.stores.apiCredentials, seller: schema.stores.sellerId, sStoreId: schema.stores.id, mk: schema.stores.marketplace,
   }).from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
   if (!rows.length) return NextResponse.json({ ok: false, error: "không tìm thấy sản phẩm" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v459 · store SHARE: chỉ xem — thao tác ghi chỉ khi là store CỦA MÌNH (admin/manager không giới hạn).
+  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub)) {
+    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem — chỉ sửa được listing store của bạn" }, { status: 403 });
+  }
 
   type Res = { id: string; title: string; ok: boolean; written?: number; skipped?: number; error?: string };
 

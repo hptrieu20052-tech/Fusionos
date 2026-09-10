@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { shopHost, type ShopifyCred } from "@/lib/shopify";
 import { fetchAllShopifyProducts } from "@/lib/shopify-products";
 
@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
   const [store] = await db.select().from(schema.stores).where(eq(schema.stores.id, storeId)).limit(1);
   if (!store || store.marketplace !== "shopify") return NextResponse.json({ ok: false, error: "not a Shopify store" }, { status: 400 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && (!store.sellerId || !scopeIds.includes(store.sellerId))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && !((store.sellerId && scopeIds.includes(store.sellerId)) || shared.includes(store.id))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const cred = (store.apiCredentials ?? {}) as ShopifyCred;
   if (!shopHost(cred) || !(cred.adminToken || (cred.clientId && cred.clientSecret))) {

@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { titleKey } from "@/lib/title-key";
 import { readTtCfg, ttGetProductDetail, ttGetValidCfg } from "@/lib/tiktok-shop";
 
@@ -169,8 +169,9 @@ export async function POST(req: NextRequest) {
 
   // Scope: seller chỉ stage từ listing của mình VÀ tới store của mình.
   const scopeIds = await storeOwnerScopeIds(session);
+  const shared = await sharedStoreIds(scopeIds);
   // v411 · store ShopBase có sellerId NULL = store CHUNG — mọi seller đều stage vào được.
-  if (scopeIds && store.sellerId && !scopeIds.includes(store.sellerId)) {
+  if (scopeIds && !((store.sellerId && scopeIds.includes(store.sellerId)) || shared.includes(store.id))) {
     return NextResponse.json({ ok: false, error: "forbidden: target store not in your scope" }, { status: 403 });
   }
 
@@ -227,11 +228,11 @@ export async function POST(req: NextRequest) {
 
   // ── Nguồn ETSY ─────────────────────────────────────────────────────────
   if (source === "etsy") {
-    const rows = await db.select({ p: schema.etsyProducts, storeSeller: schema.stores.sellerId })
+    const rows = await db.select({ p: schema.etsyProducts, storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id })
       .from(schema.etsyProducts)
       .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
       .where(inArray(schema.etsyProducts.id, ids));
-    if (scopeIds && rows.some((r) => !r.storeSeller || !scopeIds.includes(r.storeSeller))) {
+    if (scopeIds && rows.some((r) => !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId))))) {
       return NextResponse.json({ ok: false, error: "forbidden: some listings are not in your stores" }, { status: 403 });
     }
     for (const { p } of rows) {
@@ -280,11 +281,11 @@ export async function POST(req: NextRequest) {
 
   // ── Nguồn TIKTOK ───────────────────────────────────────────────────────
   if (source === "tiktok") {
-    const rows = await db.select({ p: schema.tiktokProducts, storeSeller: schema.stores.sellerId, srcCred: schema.stores.apiCredentials })
+    const rows = await db.select({ p: schema.tiktokProducts, storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id, srcCred: schema.stores.apiCredentials })
       .from(schema.tiktokProducts)
       .leftJoin(schema.stores, eq(schema.stores.id, schema.tiktokProducts.storeId))
       .where(inArray(schema.tiktokProducts.id, ids));
-    if (scopeIds && rows.some((r) => !r.storeSeller || !scopeIds.includes(r.storeSeller))) {
+    if (scopeIds && rows.some((r) => !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId))))) {
       return NextResponse.json({ ok: false, error: "forbidden: some listings are not in your stores" }, { status: 403 });
     }
     // Cache cfg TikTok theo store nguồn — Get Product Detail lấy description + full ảnh.

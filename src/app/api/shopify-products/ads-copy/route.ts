@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { orChatJSON } from "@/lib/ai/openrouter";
 import { getPrompt } from "@/lib/ai/prompt-store";
 
@@ -41,12 +41,13 @@ export async function POST(req: NextRequest) {
     id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, title: schema.shopifyProducts.title,
     tags: schema.shopifyProducts.tags, productType: schema.shopifyProducts.productType,
     images: schema.shopifyProducts.images, templateId: schema.shopifyProducts.templateId,
-    seller: schema.stores.sellerId,
+    seller: schema.stores.sellerId, sStoreId: schema.stores.id,
   }).from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
   if (!rows.length) return NextResponse.json({ ok: false, error: "không tìm thấy sản phẩm" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   // Facts từ template (Product Details) — nguồn sự thật cho dòng trust (ship/guarantee).
   const tpls = await db.select().from(schema.shopifyTemplates);

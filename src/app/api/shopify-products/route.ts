@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, desc, or, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -16,11 +16,12 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 1) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const scopeIds = await storeOwnerScopeIds(session);
+  const shared = await sharedStoreIds(scopeIds);
   const id = req.nextUrl.searchParams.get("id");
 
   if (id) {
     const [r] = await db.select({
-      p: schema.shopifyProducts, storeName: schema.stores.name, storeSeller: schema.stores.sellerId,
+      p: schema.shopifyProducts, storeName: schema.stores.name, storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id,
       videoCode: schema.productVideos.videoCode, videoTitle: schema.productVideos.title, videoThumbUrl: schema.productVideos.thumbUrl,
     })
       .from(schema.shopifyProducts)
@@ -28,12 +29,12 @@ export async function GET(req: NextRequest) {
       .leftJoin(schema.productVideos, eq(schema.productVideos.id, schema.shopifyProducts.videoId))
       .where(eq(schema.shopifyProducts.id, id)).limit(1);
     if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
-    if (scopeIds && (!r.storeSeller || !scopeIds.includes(r.storeSeller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    if (scopeIds && !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId)))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
     return NextResponse.json({ ok: true, product: { ...r.p, storeName: r.storeName, videoCode: r.videoCode, videoTitle: r.videoTitle, videoThumbUrl: r.videoThumbUrl } });
   }
 
   const rows = await db.select({
-    p: schema.shopifyProducts, storeName: schema.stores.name, sellerName: schema.users.fullName, storeSeller: schema.stores.sellerId,
+    p: schema.shopifyProducts, storeName: schema.stores.name, sellerName: schema.users.fullName, storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id,
     videoCode: schema.productVideos.videoCode, videoThumbUrl: schema.productVideos.thumbUrl,
   })
     .from(schema.shopifyProducts)
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
     .leftJoin(schema.productVideos, eq(schema.productVideos.id, schema.shopifyProducts.videoId))
     .orderBy(desc(schema.shopifyProducts.updatedAt));
 
-  const scoped = scopeIds ? rows.filter((r) => r.storeSeller && scopeIds.includes(r.storeSeller)) : rows;
+  const scoped = scopeIds ? rows.filter((r) => (r.storeSeller && scopeIds.includes(r.storeSeller)) || shared.includes(r.p.storeId ?? "")) : rows;
 
   // v181 · Listing Etsy GỐC của từng sản phẩm (để nút "Etsy" nhảy về Manage Products · Etsy):
   //   - flow mới (v172): shopify_products.etsy_product_id
@@ -180,12 +181,15 @@ export async function PATCH(req: NextRequest) {
   const id = String(b?.id ?? "").trim();
   if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
-  const [r] = await db.select({ storeSeller: schema.stores.sellerId })
+  const [r] = await db.select({ storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
   if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && (!r.storeSeller || !scopeIds.includes(r.storeSeller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId)))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v459 · store share: chỉ xem — sửa chỉ khi là store CỦA MÌNH.
+  if (session.role !== "admin" && scopeIds && r.storeSeller !== session.sub) return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem" }, { status: 403 });
 
   const patch: Record<string, unknown> = { dirty: true, updatedAt: new Date() };
   if (typeof b.title === "string" && b.title.trim()) patch.title = b.title.trim();
@@ -212,11 +216,14 @@ export async function DELETE(req: NextRequest) {
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x)));
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
   const scopeIds = await storeOwnerScopeIds(session);
+  const shared = await sharedStoreIds(scopeIds);
   if (scopeIds) {
-    const rows = await db.select({ id: schema.shopifyProducts.id, seller: schema.stores.sellerId })
+    const rows = await db.select({ id: schema.shopifyProducts.id, seller: schema.stores.sellerId, sStoreId: schema.stores.id })
       .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
       .where(inArray(schema.shopifyProducts.id, ids));
-    if (rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    if (rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    // v459 · store share: không xoá listing store người khác.
+    if (session.role !== "admin" && rows.some((r) => r.seller !== session.sub)) return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem" }, { status: 403 });
   }
   await db.delete(schema.shopifyProducts).where(inArray(schema.shopifyProducts.id, ids));
   return NextResponse.json({ ok: true, deleted: ids.length });

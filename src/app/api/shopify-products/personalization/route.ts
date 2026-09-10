@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { payloadOf, type PQ } from "@/lib/personalization";
 
 export const dynamic = "force-dynamic";
@@ -52,13 +52,18 @@ export async function POST(req: NextRequest) {
   const rows = await db.select({
     id: schema.shopifyProducts.id, title: schema.shopifyProducts.title, storeId: schema.shopifyProducts.storeId,
     productType: schema.shopifyProducts.productType, templateId: schema.shopifyProducts.templateId,
-    pers: schema.shopifyProducts.personalization, seller: schema.stores.sellerId,
+    pers: schema.shopifyProducts.personalization, seller: schema.stores.sellerId, sStoreId: schema.stores.id,
     gid: schema.shopifyProducts.shopifyProductId,
   }).from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
   if (!rows.length) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v459 · store SHARE: chỉ xem — thao tác ghi chỉ khi là store CỦA MÌNH (admin/manager không giới hạn).
+  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub)) {
+    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem — chỉ sửa được listing store của bạn" }, { status: 403 });
+  }
 
   if (action === "read") {
     // Mở modal lên là thấy đúng cái listing ĐANG dùng, để sửa tiếp chứ không phải gõ lại từ đầu.

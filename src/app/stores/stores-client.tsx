@@ -9,6 +9,7 @@ import { IconSettings, IconTrash, IconLink, IconPuzzle, IconRefresh, IconKey, Ic
 type Store = {
   id: string; name: string; marketplace: string; connectMethod: string; status: string;
   sellerName: string | null; sellerId: string | null; note: string | null; storeUrl: string | null;
+  memberIds?: string[];   // v458 · seller được share store (Shopify/ShopBase)
   shop?: { live: boolean; checkFailed: boolean; sales: number | null; rating: number | null; reviews: number | null; listings: number | null; age: string | null; status: number | null; checkedAt: string } | null;
   // feeRate = % phí sàn ƯỚC TÍNH của shop (Etsy & TikTok mặc định 6.5) — sàn không trả phí theo đơn qua API
   currency: string; fxRate: string; feeRate?: string; ingestToken?: string | null; health?: { fxConvertedAt?: string; fxConvertedRate?: number; feeBackfilledAt?: string; feeBackfilledPct?: number } | null;
@@ -249,6 +250,10 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const confirm = useConfirm();
   const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "", currency: store.currency ?? "USD", fxRate: store.fxRate ?? "1", feeRate: store.feeRate ?? "6.5" });
   const [cred, setCred] = useState<Record<string, string>>({});
+  // v458 · SHARE STORE (chỉ Shopify/ShopBase): danh sách seller được thấy + dùng store này.
+  const canShare = !isSeller && (store.marketplace === "shopify" || store.marketplace === "shopbase");
+  const [members, setMembers] = useState<string[]>(store.memberIds ?? []);
+  const [memPick, setMemPick] = useState("");
   const [busy, setBusy] = useState(false);
   const [health, setHealth] = useState<{ ok: boolean; message: string } | null>(null);
   const [tok, setTok] = useState(store.ingestToken ?? "");
@@ -421,6 +426,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const save = async () => {
     setBusy(true);
     const body: Record<string, unknown> = { ...f };
+    if (canShare) body.memberIds = members;   // v458
     if (Object.keys(cred).length) body.credentials = cred;
     try {
       const r = await fetch(`/api/stores/${store.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -472,6 +478,29 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
         <L label={t("st.status")}><select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={inp}><option value="active">Active</option><option value="warning">Warning</option><option value="suspended">Suspended</option><option value="pending">Pending</option></select></L>
         {!isSeller && <L label="Seller"><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       </div>
+      {/* v458 · Share store cho nhiều seller cùng thấy + dùng (chỉ Shopify/ShopBase; lưu khi bấm Save) */}
+      {canShare && (
+        <L label="Sellers with access (share store)">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+            {members.map((id) => {
+              const nm = sellers.find((x) => x.id === id)?.name ?? id.slice(0, 8);
+              return (
+                <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "#EDF3FF", color: "#1D4ED8", borderRadius: 999, padding: "3px 6px 3px 10px", fontSize: 12, fontWeight: 700 }}>
+                  {nm}
+                  <button onClick={() => setMembers((m) => m.filter((x) => x !== id))} title="Remove access"
+                    style={{ border: "none", background: "#DBE7FF", color: "#1D4ED8", borderRadius: 999, width: 16, height: 16, lineHeight: "14px", fontSize: 11, cursor: "pointer", padding: 0 }}>×</button>
+                </span>
+              );
+            })}
+            {!members.length && <span style={{ fontSize: 12, color: "var(--muted)" }}>Chỉ chủ store (Seller ở trên) và admin thấy store này</span>}
+            <select value={memPick} onChange={(e) => { const v = e.target.value; if (v && !members.includes(v)) setMembers((m) => [...m, v]); setMemPick(""); }}
+              style={{ ...inp, width: "auto", minWidth: 140, padding: "5px 8px", fontSize: 12 }}>
+              <option value="">+ Add seller…</option>
+              {sellers.filter((x) => !members.includes(x.id) && x.id !== f.sellerId).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </div>
+        </L>
+      )}
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
         <L label={t("st.shopCurrency")}><select value={f.currency} onChange={(e) => { const cur = e.target.value; setF({ ...f, currency: cur, fxRate: cur === "USD" ? "1" : (Number(f.fxRate) <= 1 ? String(FX_DEFAULT[cur] ?? "") : f.fxRate) }); }} style={inp}>{CURRENCIES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>

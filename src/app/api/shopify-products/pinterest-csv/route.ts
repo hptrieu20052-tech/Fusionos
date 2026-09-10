@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -73,13 +73,14 @@ export async function POST(req: NextRequest) {
     url: schema.shopifyProducts.onlineStoreUrl,
     storeUrl: schema.stores.storeUrl,
     storeName: schema.stores.name,
-    seller: schema.stores.sellerId,
+    seller: schema.stores.sellerId, sStoreId: schema.stores.id,
   }).from(schema.shopifyProducts)
     .leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
 
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) {
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 

@@ -68,6 +68,14 @@ export const stores = pgTable("stores", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_stores_seller").on(t.sellerId)]);
 
+// v458 · Seller được SHARE store (chỉ dùng cho Shopify/ShopBase): thấy + dùng store dù không phải chủ.
+// Chủ store (stores.seller_id) vẫn là 1 người; bảng này là danh sách người được cấp thêm quyền.
+export const storeMembers = pgTable("store_members", {
+  storeId: uuid("store_id").notNull().references(() => stores.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [uniqueIndex("uq_store_members").on(t.storeId, t.userId), index("idx_store_members_user").on(t.userId)]);
+
 // ---------- ORDERS ----------
 export const orders = pgTable("orders", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -579,6 +587,7 @@ export const shopifyTemplates = pgTable("shopify_templates", {
   productType: text("product_type"),            // vd "Personalized"
   vendor: text("vendor"),                       // vd "Talewix"
   themeTemplate: text("theme_template"),        // templateSuffix (Theme template, "" = Default product)
+  createdBy: uuid("created_by"),                // v459 · người tạo — seller chỉ thấy/sửa template mình tạo; admin thấy hết
   // category: { id: gid://shopify/TaxonomyCategory/..., name } — Shopify Standard Product Taxonomy
   category: jsonb("category"),
   // categoryMetafields: [{ namespace, key, type, value, label, valueLabel }] — Book cover type/Genre/Language/Target audience

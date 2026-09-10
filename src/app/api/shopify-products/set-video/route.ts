@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, asc, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { shopHost, type ShopifyCred } from "@/lib/shopify";
 import { pushVideoToShopify } from "@/lib/shopify-video";
 
@@ -31,14 +31,18 @@ export async function POST(req: NextRequest) {
 
   // Listing phải thuộc store trong phạm vi của seller.
   const [prod] = await db.select({
-    id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, seller: schema.stores.sellerId,
+    id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, seller: schema.stores.sellerId, sStoreId: schema.stores.id,
     gid: schema.shopifyProducts.shopifyProductId, title: schema.shopifyProducts.title, cred: schema.stores.apiCredentials,
   })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
   if (!prod) return NextResponse.json({ ok: false, error: "listing not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && (!prod.seller || !scopeIds.includes(prod.seller))) {
+  const shared = await sharedStoreIds(scopeIds);
+  if (session.role !== "admin" && scopeIds && prod.seller !== session.sub) {
+    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem" }, { status: 403 });
+  }
+  if (scopeIds && !((prod.seller && scopeIds.includes(prod.seller)) || (prod.sStoreId && shared.includes(prod.sStoreId)))) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   }
 

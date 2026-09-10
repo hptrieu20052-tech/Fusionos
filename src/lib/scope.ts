@@ -1,5 +1,5 @@
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { Session } from "@/lib/auth";
 import { hasRestriction } from "@/lib/rbac";
 
@@ -62,6 +62,28 @@ export async function storeOwnerScopeIds(session: Session): Promise<string[] | n
   if (ids) return ids;                                    // đã có giới hạn own/team theo cấu hình
   if (session.role === "seller") return [session.sub];    // seller chưa cấu hình → CHỈ store mình
   return null;                                            // admin / role khác → all
+}
+
+/**
+ * v458 · Store ids được SHARE THÊM (bảng store_members) cho các user trong phạm vi ownerIds.
+ * Dùng kèm storeOwnerScopeIds: store hợp lệ khi CHỦ store ∈ scope HOẶC store.id ∈ shared.
+ * ownerIds null (all) → [] (không cần). Bảng chưa migrate → [] êm.
+ */
+export async function sharedStoreIds(ownerIds: string[] | null): Promise<string[]> {
+  if (!ownerIds || !ownerIds.length) return [];
+  const rows = await db.select({ storeId: schema.storeMembers.storeId }).from(schema.storeMembers)
+    .where(inArray(schema.storeMembers.userId, ownerIds)).catch(() => [] as { storeId: string }[]);
+  return Array.from(new Set(rows.map((r) => r.storeId)));
+}
+
+// v459 · id các ADMIN (cache 30s) — listing/template do admin tạo (hoặc không rõ người tạo)
+// thì mọi seller trong store đều THẤY (nhưng không sửa); của seller nào thì chỉ seller đó thấy.
+let acache: { at: number; ids: string[] } | null = null;
+export async function adminUserIds(): Promise<string[]> {
+  if (acache && Date.now() - acache.at < 30_000) return acache.ids;
+  const rows = await db.select({ id: schema.users.id }).from(schema.users).where(eq(schema.users.role, "admin")).catch(() => [] as { id: string }[]);
+  acache = { at: Date.now(), ids: rows.map((r) => r.id) };
+  return acache.ids;
 }
 
 /** Chủ sở hữu ownerId có nằm trong phạm vi của user không (dùng cho check quyền theo từng đơn/design). */

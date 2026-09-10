@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { db, schema } from "@/lib/db";
-import { eq, and, ne, sql } from "drizzle-orm";
+import { eq, and, ne, sql, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 
@@ -97,6 +97,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
       else merged[k] = String(v);
     }
     patch.apiCredentials = merged;
+  }
+
+  // v458 · SHARE STORE cho nhiều seller (chỉ Shopify/ShopBase; admin/manager đổi, seller không).
+  if (!isSeller && Array.isArray(b.memberIds)) {
+    const [st] = await db.select({ mk: schema.stores.marketplace }).from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
+    if (st && (st.mk === "shopify" || st.mk === "shopbase")) {
+      const ids = Array.from(new Set((b.memberIds as unknown[]).map(String).filter((x) => /^[0-9a-f-]{36}$/i.test(x))));
+      const valid = ids.length
+        ? (await db.select({ id: schema.users.id }).from(schema.users).where(inArray(schema.users.id, ids))).map((u) => u.id)
+        : [];
+      await db.delete(schema.storeMembers).where(eq(schema.storeMembers.storeId, params.id));
+      if (valid.length) await db.insert(schema.storeMembers).values(valid.map((userId) => ({ storeId: params.id, userId })));
+    }
   }
 
   // BÀN GIAO SHOP — cả 3 lệnh trong 1 transaction, đứt giữa chừng thì rollback sạch.

@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds, adminUserIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -83,9 +83,10 @@ function clampCountries(v: unknown): Record<string, [number, number]> {
 // Store nào user được phép thao tác (ShopBase + trong scope)?
 async function allowedStoreIds(session: Awaited<ReturnType<typeof getSession>>): Promise<Set<string>> {
   const scopeIds = await storeOwnerScopeIds(session!);
-  const stores = await db.select({ id: schema.stores.id, seller: schema.stores.sellerId, mk: schema.stores.marketplace }).from(schema.stores);
+  const shared = await sharedStoreIds(scopeIds);
+  const stores = await db.select({ id: schema.stores.id, seller: schema.stores.sellerId, sStoreId: schema.stores.id, mk: schema.stores.marketplace }).from(schema.stores);
   const ok = new Set<string>();
-  for (const s of stores) if (s.mk === "shopbase" && (!scopeIds || !s.seller || scopeIds.includes(s.seller))) ok.add(s.id); // seller NULL = store chung
+  for (const s of stores) if (s.mk === "shopbase" && (!scopeIds || (s.seller && scopeIds.includes(s.seller)) || shared.includes(s.id))) ok.add(s.id); // v459: cần share
   return ok;
 }
 
@@ -155,7 +156,12 @@ export async function GET(req: NextRequest) {
   const allowed = await allowedStoreIds(session);
   const storeId = req.nextUrl.searchParams.get("storeId") ?? "";
   const rows = await db.select().from(schema.shopbaseTemplates).orderBy(desc(schema.shopbaseTemplates.updatedAt));
-  const out = rows.filter((r) => allowed.has(r.storeId) && (!storeId || r.storeId === storeId));
+  let out = rows.filter((r) => allowed.has(r.storeId) && (!storeId || r.storeId === storeId));
+  // v459 · "của ai người đó thấy": seller thấy template MÌNH tạo + template do ADMIN tạo.
+  if (session.role !== "admin") {
+    const admins = await adminUserIds();
+    out = out.filter((r) => !r.createdBy || r.createdBy === session.sub || admins.includes(r.createdBy));
+  }
   // v411 · kèm tên + role người tạo (store chung: template của mọi người trong store đều dùng được).
   const creatorIds = Array.from(new Set(out.map((r) => r.createdBy).filter(Boolean))) as string[];
   const creators = creatorIds.length

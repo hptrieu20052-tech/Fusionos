@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -21,12 +21,17 @@ export async function POST(req: NextRequest) {
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x))).slice(0, 500);
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });
 
-  const rows = await db.select({ id: schema.shopifyProducts.id, variants: schema.shopifyProducts.variants, seller: schema.stores.sellerId })
+  const rows = await db.select({ id: schema.shopifyProducts.id, variants: schema.shopifyProducts.variants, seller: schema.stores.sellerId, sStoreId: schema.stores.id })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
   if (!rows.length) return NextResponse.json({ ok: false, error: "no products" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && rows.some((r) => !r.seller || !scopeIds.includes(r.seller))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const shared = await sharedStoreIds(scopeIds);
+  if (scopeIds && rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v459 · store SHARE: chỉ xem — thao tác ghi chỉ khi là store CỦA MÌNH (admin/manager không giới hạn).
+  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub)) {
+    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem — chỉ sửa được listing store của bạn" }, { status: 403 });
+  }
 
   const prices = (b?.prices && typeof b.prices === "object") ? b.prices as Record<string, unknown> : null;
 
