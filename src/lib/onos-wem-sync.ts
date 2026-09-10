@@ -94,6 +94,7 @@ async function applyUpdate(ffo: OpenFfo, upd: {
       .where(eq(schema.fulfillmentOrders.id, ffo.id));
     await db.update(schema.orders).set({ status: "cancel" as never, updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
     await refundOrderCost(ffo.orderId, "Refund cost — cancelled at supplier (poll)");
+    await syncOrderFromFf(ffo.orderId, "cancelled"); // v460: lan cancel + refund sang đơn anh em bị GỘP chung lần đẩy
     return true;
   }
 

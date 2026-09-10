@@ -1,5 +1,52 @@
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray, like, sql } from "drizzle-orm";
+import { and, eq, inArray, like, or, sql } from "drizzle-orm";
+
+// ---------- v460 · GỘP ĐẨY (merge fulfillment) ----------
+// 1 bản ghi fulfillment có thể gánh item của NHIỀU đơn FUSION (đơn Shopify tách CLONE theo seller,
+// fulfiller đẩy chung 1 lần cho supplier để tiết kiệm ship). merged_order_ids = các đơn anh em bị gộp.
+// Mọi helper trạng thái/chi phí dưới đây phải nhìn cả bản ghi "phủ" đơn (orderId trùng HOẶC bị gộp vào).
+
+/** Điều kiện SQL: bản ghi đẩy PHỦ đơn này (chính chủ hoặc bị gộp vào). */
+const coveringFf = (orderId: string) => or(
+  eq(schema.fulfillmentOrders.orderId, orderId),
+  sql`${schema.fulfillmentOrders.mergedOrderIds} @> ${JSON.stringify([orderId])}::jsonb`,
+);
+
+/** Đơn chính + mọi đơn bị gộp trong các bản ghi đẩy CỦA đơn chính. */
+async function mergedFamily(orderId: string): Promise<string[]> {
+  const ids = new Set([orderId]);
+  try {
+    const ffs = await db.select({ merged: schema.fulfillmentOrders.mergedOrderIds })
+      .from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, orderId));
+    for (const f of ffs) if (Array.isArray(f.merged)) for (const x of f.merged as unknown[]) { const v = String(x); if (v) ids.add(v); }
+  } catch { /* best-effort */ }
+  return Array.from(ids);
+}
+
+/**
+ * Phần chi phí của 1 đơn trong 1 bản ghi đẩy.
+ * Bản thường → đơn chính chịu 100%. Bản GỘP → chia theo cost mapping (base+ship) của line từng đơn
+ * (trùng cách chia lúc push); mapping thiếu/đổi giá → fallback chia theo SỐ LINE.
+ */
+async function ffShareOf(orderId: string, ffo: { orderId: string; cost: string | null; lines: unknown; mergedOrderIds: unknown }): Promise<number> {
+  const total = Number(ffo.cost ?? 0);
+  const merged = Array.isArray(ffo.mergedOrderIds) && (ffo.mergedOrderIds as unknown[]).length > 0;
+  if (!merged) return ffo.orderId === orderId ? total : 0;
+  const lines = (Array.isArray(ffo.lines) ? ffo.lines : []) as { mappingId?: string; qty?: number; fromOrderId?: string }[];
+  if (!lines.length) return ffo.orderId === orderId ? total : 0;
+  const mine = lines.filter((l) => (l.fromOrderId ?? ffo.orderId) === orderId);
+  if (!mine.length) return 0;
+  const mapIds = Array.from(new Set(lines.map((l) => l.mappingId).filter(Boolean))) as string[];
+  const maps = mapIds.length
+    ? await db.select({ id: schema.skuMappings.id, baseCost: schema.skuMappings.baseCost, shipCost: schema.skuMappings.shipCost })
+        .from(schema.skuMappings).where(inArray(schema.skuMappings.id, mapIds))
+    : [];
+  const unit = new Map(maps.map((m) => [m.id, Number(m.baseCost) + Number(m.shipCost)]));
+  const w = (ls: typeof lines) => ls.reduce((a, l) => a + (unit.get(l.mappingId ?? "") ?? 0) * (Number(l.qty) || 1), 0);
+  const tw = w(lines);
+  const ratio = tw > 0 ? w(mine) / tw : mine.length / lines.length;
+  return Math.round(total * ratio * 100) / 100;
+}
 
 // Khi đơn có tracking (webhook fulfiller trả về / nhập tay / import) → tự chuyển sang "shipped".
 // Chỉ nâng từ các trạng thái trước đó; KHÔNG đụng đơn đã shipped/delivered/trash/cancel.
@@ -7,15 +54,18 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 // (1 bản ghi = hành vi cũ; tránh đơn 2 nhà mới ship nửa đã báo khách "đã giao hết").
 export async function markShippedOnTracking(orderId: string) {
   try {
-    const ffs = await db.select({ tn: schema.fulfillmentOrders.trackingNumber })
-      .from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, orderId));
-    if (ffs.length > 1 && ffs.some((f) => !f.tn)) return; // còn nhà chưa trả tracking → chưa Shipped
-    await db.update(schema.orders)
-      .set({ status: "shipped" })
-      .where(and(
-        eq(schema.orders.id, orderId),
-        inArray(schema.orders.status, ["new", "created", "in_production", "has_issues"] as never),
-      ));
+    // v460: xét cả đơn anh em bị GỘP vào bản ghi đẩy của đơn này; mỗi đơn kiểm theo bản ghi PHỦ nó.
+    for (const id of await mergedFamily(orderId)) {
+      const ffs = await db.select({ tn: schema.fulfillmentOrders.trackingNumber })
+        .from(schema.fulfillmentOrders).where(coveringFf(id));
+      if (ffs.length > 1 && ffs.some((f) => !f.tn)) continue; // còn nhà chưa trả tracking → chưa Shipped
+      await db.update(schema.orders)
+        .set({ status: "shipped" })
+        .where(and(
+          eq(schema.orders.id, id),
+          inArray(schema.orders.status, ["new", "created", "in_production", "has_issues"] as never),
+        ));
+    }
   } catch {
     // best-effort: không làm hỏng luồng webhook/nhập tracking nếu lỗi
   }
@@ -42,9 +92,11 @@ export async function syncOrderFromFf(orderId: string, ffStatus: string) {
   const m = map[ffStatus];
   if (!m) return;
   try {
+    // v460: trạng thái nhà in lan sang CẢ đơn anh em bị gộp chung lần đẩy (cùng 1 kiện hàng thật).
+    const ids = await mergedFamily(orderId);
     await db.update(schema.orders).set({ status: m.target as never })
-      .where(and(eq(schema.orders.id, orderId), inArray(schema.orders.status, m.prev as never)));
-    if (ffStatus === "cancelled") await refundOrderCost(orderId, "Refund cost — cancelled by fulfiller");
+      .where(and(inArray(schema.orders.id, ids), inArray(schema.orders.status, m.prev as never)));
+    if (ffStatus === "cancelled") for (const id of ids) await refundOrderCost(id, "Refund cost — cancelled by fulfiller");
   } catch { /* best-effort */ }
 }
 
@@ -84,9 +136,24 @@ export async function refundOrderCost(orderId: string, note: string) {
  */
 export async function rebalanceOrderCost(orderId: string, note = "Cost adjustment — rebalance"): Promise<boolean> {
   try {
-    const ffos = await db.select({ cost: schema.fulfillmentOrders.cost, status: schema.fulfillmentOrders.status })
-      .from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, orderId));
-    const target = -ffos.filter((r) => r.status !== "cancelled").reduce((a, r) => a + Number(r.cost ?? 0), 0);
+    // v460: cost thật đổi (webhook/poll) → cân lại sổ cho CẢ cụm đơn gộp, mỗi đơn đúng PHẦN của mình.
+    const fam = await mergedFamily(orderId);
+    let any = false;
+    for (const id of fam) any = (await rebalanceOne(id, note)) || any;
+    return any;
+  } catch { return false; }
+}
+
+async function rebalanceOne(orderId: string, note: string): Promise<boolean> {
+  try {
+    const ffos = await db.select({
+      cost: schema.fulfillmentOrders.cost, status: schema.fulfillmentOrders.status,
+      orderId: schema.fulfillmentOrders.orderId, lines: schema.fulfillmentOrders.lines,
+      mergedOrderIds: schema.fulfillmentOrders.mergedOrderIds,
+    }).from(schema.fulfillmentOrders).where(coveringFf(orderId));
+    let target = 0;
+    for (const r of ffos.filter((r) => r.status !== "cancelled")) target -= await ffShareOf(orderId, r);
+    target = Math.round(target * 100) / 100;
     const cur = Number(((await db.execute(sql`
       SELECT coalesce(sum(amount),0)::numeric s FROM transactions WHERE order_id = ${orderId}::uuid AND type = 'base_cost'
     `)).rows[0] as { s: string }).s);
@@ -133,6 +200,11 @@ export async function cancelAtPrinters(orderId: string): Promise<string[]> {
     for (const ffo of ffos) {
       if (!ffo.externalFfId || ffo.externalFfId.startsWith("SIM-")) continue;
       if (["cancelled", "delivered"].includes(ffo.status)) continue;
+      // v460 · bản ghi GỘP nhiều đơn: kiện supplier còn item của ĐƠN KHÁC → không tự huỷ nguyên kiện.
+      if (Array.isArray(ffo.mergedOrderIds) && (ffo.mergedOrderIds as unknown[]).length) {
+        notes.push(`${ffo.externalFfId}: lần đẩy GỘP nhiều đơn — không tự huỷ ở supplier (còn item đơn khác), cần xử lý tay`);
+        continue;
+      }
       const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, ffo.fulfillerId)).limit(1);
       const name = (ff?.name ?? "").toLowerCase();
       const c = (ff?.credentials ?? {}) as Record<string, string>;

@@ -104,7 +104,10 @@ export async function POST(req: NextRequest) {
   // Cập nhật bút toán base_cost = giá THẬT (thay giá ước tính lúc đẩy)
   if (hasCost) {
     const total = (baseC + shipC + taxC) / 100;
-    await db.update(schema.transactions).set({ amount: (-total).toFixed(2) }).where(and(
+    // v460 · bản ghi GỘP nhiều đơn: KHÔNG set thẳng full total vào từng dòng (mỗi đơn chỉ chịu PHẦN
+    // của mình) — để rebalanceOrderCost bên dưới chia lại theo tỷ lệ line.
+    const isMergedFfo = Array.isArray(ffo.mergedOrderIds) && (ffo.mergedOrderIds as unknown[]).length > 0;
+    if (!isMergedFfo) await db.update(schema.transactions).set({ amount: (-total).toFixed(2) }).where(and(
       eq(schema.transactions.orderId, ffo.orderId),
       eq(schema.transactions.type, "base_cost"),
       like(schema.transactions.note, `%${printifyOrderId}%`),

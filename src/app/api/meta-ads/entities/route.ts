@@ -8,7 +8,8 @@ export const maxDuration = 60;
  * v457 · GET /api/meta-ads/entities — trạng thái CẤU HÌNH (status) + daily budget THẬT từ Meta,
  * cho toggle bật/tắt và ô sửa budget ở Ads Center. Đọc trực tiếp Graph API (không cache DB —
  * đây là dữ liệu điều khiển, phải là số thật tại thời điểm bấm).
- * Trả: { camp: {id: status}, adsets: {id: {status, budget(USD)}}, ads: {id: status} }
+ * Trả: { camp: {id: status}, adsets: {id: {status, budget(USD)}}, ads: {id: {status, thumb, img}} }
+ * v462 · ads kèm THUMBNAIL creative (thumb 512px để zoom xem mẫu nào; img = ảnh gốc nếu là ảnh tĩnh).
  */
 const V = "v23.0";
 const G = `https://graph.facebook.com/${V}`;
@@ -38,13 +39,16 @@ export async function GET() {
     const [camps, adsets, ads] = await Promise.all([
       fbList(`${G}/${act}/campaigns?fields=id,status&limit=200`, token),
       fbList(`${G}/${act}/adsets?fields=id,status,daily_budget&limit=200`, token),
-      fbList(`${G}/${act}/ads?fields=id,status&limit=300`, token),
+      fbList(`${G}/${act}/ads?fields=id,status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url}&limit=300`, token),
     ]);
     return NextResponse.json({
       ok: true,
       camp: Object.fromEntries(camps.map((c) => [String(c.id), String(c.status ?? "")])),
       adsets: Object.fromEntries(adsets.map((s) => [String(s.id), { status: String(s.status ?? ""), budget: (Number(s.daily_budget) || 0) / 100 }])),
-      ads: Object.fromEntries(ads.map((a) => [String(a.id), String(a.status ?? "")])),
+      ads: Object.fromEntries(ads.map((a) => {
+        const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string };
+        return [String(a.id), { status: String(a.status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null }];
+      })),
     });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error).message) }, { status: 400 });

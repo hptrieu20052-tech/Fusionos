@@ -677,8 +677,12 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   baseCost: numeric("base_cost", { precision: 12, scale: 2 }),
   shipCost: numeric("ship_cost", { precision: 12, scale: 2 }),
   extraFee: numeric("extra_fee", { precision: 12, scale: 2 }).default("0"),
-  // Dòng đã đẩy: [{ product, variant, sku, qty }] — để hiện lại Variant/Qty của mỗi lần đẩy
+  // Dòng đã đẩy: [{ product, variant, sku, qty, itemId?, mappingId?, fromOrderId? }] — để hiện lại Variant/Qty của mỗi lần đẩy
   lines: jsonb("lines"),
+  // v460 · GỘP ĐẨY: id các đơn ANH EM (cùng khách, tách CLONE theo seller) có item nằm trong lần đẩy này.
+  // null/[] = đẩy thường. Có giá trị = 1 cú đẩy supplier gánh item của nhiều đơn FUSION (tiết kiệm ship);
+  // seller mỗi bên vẫn chỉ thấy đơn + line của mình (route detail lọc lines theo fromOrderId).
+  mergedOrderIds: jsonb("merged_order_ids"),
   // Chi phí theo từng event webhook (idempotent): { base, ship, fees: { [eventId]: amount } }
   costEvents: jsonb("cost_events").notNull().default({}),
   trackingNumber: text("tracking_number"),

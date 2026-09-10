@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, or } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { getAdapter, type PushLine } from "@/lib/fulfillers";
@@ -44,10 +44,41 @@ async function handlePush(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "missing recipient address — edit Shipping Info first" }, { status: 400 });
   }
 
+  // ---- v460 · GỘP ĐẨY đơn anh em (cùng khách Shopify, đã tách CLONE theo seller) ----
+  // Phía Shopify chỉ có 1 đơn THẬT — các bản -CLONE-n là nội bộ FUSION. Fulfiller đẩy 1 lần
+  // gánh item của nhiều đơn con để tiết kiệm phí ship; seller mỗi bên vẫn thấy đơn mình như cũ.
+  const baseExt = (e: string) => e.replace(/-CLONE-\d+$/, "");
+  const mergeIds: string[] = Array.from(new Set(
+    (Array.isArray(b.mergeOrderIds) ? (b.mergeOrderIds as unknown[]) : [])
+      .map((x) => String(x)).filter((x) => x && x !== order.id),
+  ));
+  let siblings: (typeof order)[] = [];
+  if (mergeIds.length) {
+    // Gộp CHỈ đi với chế độ lines (chọn tay từng item) — chế độ auto-SKU cũ không biết item của ai.
+    if (!Array.isArray(b.lines) || !b.lines.length) {
+      return NextResponse.json({ ok: false, error: "merge push requires explicit lines (select items manually)" }, { status: 400 });
+    }
+    siblings = await db.select().from(schema.orders).where(inArray(schema.orders.id, mergeIds));
+    if (siblings.length !== mergeIds.length) {
+      return NextResponse.json({ ok: false, error: "merge order not found" }, { status: 404 });
+    }
+    for (const sb of siblings) {
+      // Anh em = cùng đơn gốc (externalId bỏ đuôi -CLONE-n) + cùng store → chắc chắn cùng khách/địa chỉ.
+      if (baseExt(sb.externalId) !== baseExt(order.externalId) || sb.storeId !== order.storeId) {
+        return NextResponse.json({ ok: false, error: `order ${sb.externalId} is not a sibling of ${order.externalId} (same customer order) — cannot merge` }, { status: 400 });
+      }
+      if (!["new", "has_issues", "created"].includes(sb.status)) {
+        return NextResponse.json({ ok: false, error: `sibling order ${sb.externalId} is in ${sb.status} status — cannot merge` }, { status: 409 });
+      }
+    }
+  }
+  const allOrders = [order, ...siblings];
+  const allIds = allOrders.map((o) => o.id);
+
   const [ff] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.fulfillerId)).limit(1);
   if (!ff) return NextResponse.json({ ok: false, error: "fulfiller not found" }, { status: 404 });
 
-  const items = await db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, order.id));
+  const items = await db.select().from(schema.orderItems).where(inArray(schema.orderItems.orderId, allIds));
 
   // Map design URL (front/back/sleeve/hood) theo designId — cho adapter cần artwork (Merchize...)
   const designIds = Array.from(new Set(items.map((i) => i.designId).filter(Boolean))) as string[];
@@ -93,14 +124,24 @@ async function handlePush(req: NextRequest) {
   let shipSum = 0;
   let lineNote = "";
   const pushLines: PushLine[] = [];
-  // Lưu kèm itemId + mappingId để card đơn ĐÃ ĐẨY dựng lại được panel review (chỉ đọc)
-  const pushedLines: { itemId: string; mappingId: string; product: string; variant: string | null; sku: string; qty: number }[] = [];
-  // Item đã nằm trong bản ghi fulfill trước đó (đơn tách nhiều nhà in) — cấm đẩy ĐÚP.
-  const priorFf = await db.select({ id: schema.fulfillmentOrders.id, lines: schema.fulfillmentOrders.lines })
-    .from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, order.id));
+  // Lưu kèm itemId + mappingId + fromOrderId để card đơn ĐÃ ĐẨY dựng lại panel review + lọc line theo đơn (gộp đẩy)
+  const pushedLines: { itemId: string; mappingId: string; product: string; variant: string | null; sku: string; qty: number; fromOrderId: string }[] = [];
+  // Item đã nằm trong bản ghi fulfill trước đó — cấm đẩy ĐÚP. v460: quét cả bản ghi GỘP của đơn khác
+  // có chứa đơn này/anh em (orderId khác nhưng merged_order_ids trỏ vào) — không thì đẩy trùng được.
+  const priorFfRaw = await db.select({
+    id: schema.fulfillmentOrders.id, orderId: schema.fulfillmentOrders.orderId,
+    lines: schema.fulfillmentOrders.lines, mergedOrderIds: schema.fulfillmentOrders.mergedOrderIds,
+  }).from(schema.fulfillmentOrders)
+    .where(or(inArray(schema.fulfillmentOrders.orderId, allIds), isNotNull(schema.fulfillmentOrders.mergedOrderIds)));
+  const priorFf = priorFfRaw.filter((p) =>
+    allIds.includes(p.orderId) ||
+    (Array.isArray(p.mergedOrderIds) && (p.mergedOrderIds as unknown[]).some((x) => allIds.includes(String(x)))));
   const alreadyPushed = new Set(
     priorFf.flatMap((p) => Array.isArray(p.lines) ? (p.lines as { itemId?: string }[]).map((l) => l.itemId).filter(Boolean) as string[] : []),
   );
+  // Phân bổ chi phí theo đơn khi gộp: cost mapping + số line của từng đơn góp vào lần đẩy này.
+  const perOrderMapped: Record<string, number> = {};
+  const perOrderParts: Record<string, string[]> = {};
 
   if (Array.isArray(b.lines) && b.lines.length) {
     // PUSH TỪNG PHẦN: không bắt đủ mọi item — đơn 2 item có thể đẩy 2 nhà in khác nhau, mỗi đợt một phần.
@@ -133,9 +174,11 @@ async function handlePush(req: NextRequest) {
       baseSum += Number(m.baseCost) * qty;
       shipSum += Number(m.shipCost) * qty;
       cost += (Number(m.baseCost) + Number(m.shipCost)) * qty;
+      perOrderMapped[it.orderId] = (perOrderMapped[it.orderId] ?? 0) + (Number(m.baseCost) + Number(m.shipCost)) * qty;
+      (perOrderParts[it.orderId] ??= []).push(`${m.fulfillerSku}×${qty}`);
       parts.push(`${m.fulfillerSku}×${qty}`);
       pushLines.push({ fulfillerSku: m.fulfillerSku, qty, ...enrich(it, m) });
-      pushedLines.push({ itemId: it.id, mappingId: m.id, product: it.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty });
+      pushedLines.push({ itemId: it.id, mappingId: m.id, product: it.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty, fromOrderId: it.orderId });
     }
     lineNote = " · " + parts.join(", ");
   } else {
@@ -162,7 +205,7 @@ async function handlePush(req: NextRequest) {
       baseSum += Number(m.baseCost) * i.qty;
       shipSum += Number(m.shipCost) * i.qty;
       pushLines.push({ fulfillerSku: m.fulfillerSku, qty: i.qty, ...enrich(i, m) });
-      pushedLines.push({ itemId: i.id, mappingId: m.id, product: i.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty: i.qty });
+      pushedLines.push({ itemId: i.id, mappingId: m.id, product: i.productTitle, variant: m.variant ?? null, sku: m.fulfillerSku, qty: i.qty, fromOrderId: i.orderId });
     }
     cost = baseSum + shipSum;
   }
@@ -186,7 +229,8 @@ async function handlePush(req: NextRequest) {
   if (!orderLabel) {
     const [st] = order.storeId ? await db.select({ name: schema.stores.name }).from(schema.stores).where(eq(schema.stores.id, order.storeId)).limit(1) : [];
     const shop = (st?.name ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-    orderLabel = `${shop}-${order.externalId}`;
+    // Gộp đẩy → nhãn theo số đơn GỐC (bỏ -CLONE-n): supplier chỉ thấy 1 đơn của 1 khách.
+    orderLabel = `${shop}-${mergeIds.length ? baseExt(order.externalId) : order.externalId}`;
   }
 
   // --- CHỈ đơn Ship-by-TikTok: BẮT BUỘC có nhãn TikTok mới cho đẩy (không có → chặn, tránh supplier ship thiếu nhãn). ---
@@ -218,7 +262,7 @@ async function handlePush(req: NextRequest) {
     pushRes = await adapter.push({
       fulfiller: { id: ff.id, name: ff.name, apiEndpoint: ff.apiEndpoint, credentials: ffCreds },
       order: {
-        externalId: order.externalId, orderLabel,
+        externalId: mergeIds.length ? baseExt(order.externalId) : order.externalId, orderLabel,
         buyerFirst: order.buyerFirst, buyerLast: order.buyerLast,
         addr1: order.addr1, addr2: order.addr2, city: order.city,
         state: order.state, zip: order.zip, country: order.country,
@@ -247,9 +291,13 @@ async function handlePush(req: NextRequest) {
     // Chi tiết phí ngay từ lúc đẩy — card đơn tách riêng dòng thuế thay vì cục "Tax/fee"
     costEvents: { base: finalBase, ship: finalShip, tax: finalTax },
     lines: pushedLines,
+    mergedOrderIds: mergeIds.length ? mergeIds : null,
   }).returning();
 
-  await db.update(schema.orders).set({ status: "created", updatedAt: new Date() }).where(eq(schema.orders.id, order.id));
+  // Đơn nào GÓP item vào lần đẩy này → chuyển "created" (gộp đẩy: cả anh em cùng chuyển).
+  const contributingIds = Array.from(new Set(pushedLines.map((l) => l.fromOrderId)));
+  await db.update(schema.orders).set({ status: "created", updatedAt: new Date() })
+    .where(inArray(schema.orders.id, contributingIds.length ? contributingIds : [order.id]));
 
   // Tự đăng ký webhook Printify LẦN ĐẦU (idempotent) — khỏi terminal/curl. Cờ lưu trong credentials.
   if (!pushRes.simulated && ff.name.toLowerCase().includes("printify")) {
@@ -268,18 +316,38 @@ async function handlePush(req: NextRequest) {
     }
   }
 
-  // Ghi chi phí vào sổ (âm) — trang Tài chính SUM là ra
-  await db.insert(schema.transactions).values({
-    type: "base_cost", amount: (-finalCost).toFixed(2),
-    // GHI CÔNG THEO CHỦ SHOP LÚC ĐƠN VỀ, không phải chủ shop hiện tại.
-    // Sau bàn giao, người mới đẩy đơn CŨ lên nhà in: doanh thu đơn đó vẫn thuộc seller cũ
-    // (orders.seller_at_order) nên cost phải nằm cùng chỗ. Ghi theo seller_id hiện tại =
-    // seller cũ lãi ảo (có rev, không cost) + seller mới lỗ ảo (có cost, không rev).
-    orderId: order.id, storeId: order.storeId, sellerId: order.sellerAtOrder ?? order.sellerId,
-    note: `${ff.name} · ${externalFfId}${lineNote}`,
-    // Chi phí ghi theo NGÀY KÉO ĐƠN VỀ (ordered_at) — trùng mốc doanh thu.
-    occurredAt: (order.orderedAt ? new Date(order.orderedAt) : new Date()).toISOString().slice(0, 10),
-  });
+  // Ghi chi phí vào sổ (âm) — trang Tài chính SUM là ra.
+  // GHI CÔNG THEO CHỦ SHOP LÚC ĐƠN VỀ (seller_at_order), không phải chủ shop hiện tại — sau bàn giao
+  // doanh thu đơn cũ vẫn thuộc seller cũ nên cost phải nằm cùng chỗ.
+  // v460 · GỘP ĐẨY: chia finalCost cho TỪNG đơn góp item — mỗi seller gánh đúng phần cost của mình.
+  // Tỷ lệ chia theo cost mapping (base+ship) của line từng đơn; fallback chia theo số line.
+  if (mergeIds.length) {
+    const totalMapped = contributingIds.reduce((a, oid) => a + (perOrderMapped[oid] ?? 0), 0);
+    const lineCount = (oid: string) => pushedLines.filter((l) => l.fromOrderId === oid).length;
+    let remaining = Math.round(finalCost * 100);
+    const txRows = contributingIds.map((oid, i) => {
+      const o = allOrders.find((x) => x.id === oid)!;
+      const ratio = totalMapped > 0 ? (perOrderMapped[oid] ?? 0) / totalMapped : lineCount(oid) / Math.max(1, pushedLines.length);
+      const cents = i === contributingIds.length - 1 ? remaining : Math.round(finalCost * 100 * ratio);
+      remaining -= cents;
+      const partNote = (perOrderParts[oid] ?? []).join(", ");
+      return {
+        type: "base_cost" as const, amount: (-cents / 100).toFixed(2),
+        orderId: o.id, storeId: o.storeId, sellerId: o.sellerAtOrder ?? o.sellerId,
+        note: `${ff.name} · ${externalFfId} · gộp ${contributingIds.length} đơn #${baseExt(order.externalId)}${partNote ? " · " + partNote : ""}`,
+        occurredAt: (o.orderedAt ? new Date(o.orderedAt) : new Date()).toISOString().slice(0, 10),
+      };
+    });
+    await db.insert(schema.transactions).values(txRows);
+  } else {
+    await db.insert(schema.transactions).values({
+      type: "base_cost", amount: (-finalCost).toFixed(2),
+      orderId: order.id, storeId: order.storeId, sellerId: order.sellerAtOrder ?? order.sellerId,
+      note: `${ff.name} · ${externalFfId}${lineNote}`,
+      // Chi phí ghi theo NGÀY KÉO ĐƠN VỀ (ordered_at) — trùng mốc doanh thu.
+      occurredAt: (order.orderedAt ? new Date(order.orderedAt) : new Date()).toISOString().slice(0, 10),
+    });
+  }
 
   // v156 · trả nguyên response của fulfiller về client để in ra Console (F12). Toast quá ngắn nên mỗi
   // vòng chỉ moi được một mẩu ⇒ tốn một lần ĐẨY ĐƠN THẬT cho mỗi mẩu. Dump hết một lần cho xong.

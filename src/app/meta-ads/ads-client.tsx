@@ -80,12 +80,19 @@ export default function AdsCenterClient() {
   };
 
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
-  type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; budget: number }>; ads: Record<string, string> };
+  // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
+  type AdEnt = { status: string; thumb?: string | null; img?: string | null };
+  type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; budget: number }>; ads: Record<string, AdEnt> };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
     try {
       const j = await fetch("/api/meta-ads/entities").then((r) => r.json());
-      if (j.ok) setEnt({ camp: j.camp ?? {}, adsets: j.adsets ?? {}, ads: j.ads ?? {} });
+      if (j.ok) {
+        // Chịu được cả shape cũ (id → status string) lẫn mới (id → {status, thumb, img}) — an toàn lúc deploy lệch nhịp.
+        const ads: Record<string, AdEnt> = {};
+        for (const [k, v] of Object.entries((j.ads ?? {}) as Record<string, unknown>)) ads[k] = typeof v === "string" ? { status: v } : (v as AdEnt);
+        setEnt({ camp: j.camp ?? {}, adsets: j.adsets ?? {}, ads });
+      }
     } catch { /* điều khiển là phụ — lỗi không chặn bảng số */ }
   }, []);
   useEffect(() => { loadEnt(); }, [loadEnt]);
@@ -105,17 +112,19 @@ export default function AdsCenterClient() {
   };
   const toggleStatus = (level: "camp" | "adset" | "ad", id: string) => {
     if (!ent) return;
-    const cur = level === "camp" ? ent.camp[id] : level === "adset" ? ent.adsets[id]?.status : ent.ads[id];
+    const cur = level === "camp" ? ent.camp[id] : level === "adset" ? ent.adsets[id]?.status : ent.ads[id]?.status;
     const next = cur === "ACTIVE" ? "PAUSED" : "ACTIVE";
     ctl(level + ":" + id, { action: "set_status", id, status: next }, () => {
       setEnt((e) => {
         if (!e) return e;
         if (level === "camp") return { ...e, camp: { ...e.camp, [id]: next } };
         if (level === "adset") return { ...e, adsets: { ...e.adsets, [id]: { ...e.adsets[id], status: next } } };
-        return { ...e, ads: { ...e.ads, [id]: next } };
+        return { ...e, ads: { ...e.ads, [id]: { ...e.ads[id], status: next } } };
       });
     });
   };
+  // v462 · lightbox phóng to creative — click ảnh nhỏ trong bảng.
+  const [zoom, setZoom] = useState("");
   // Sửa budget ad set: bấm ✎ → nhập số → ✓ (không cần arm — gõ số đã là hành động chủ đích).
   const [budEdit, setBudEdit] = useState<{ id: string; val: string } | null>(null);
   const saveBudget = async (adsetId: string) => {
@@ -365,8 +374,16 @@ export default function AdsCenterClient() {
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: "100%" }}>
                           {/* v457 · bật/tắt từng ad */}
                           {ent && ent.ads[a.adId] !== undefined && (
-                            <Toggle on={ent.ads[a.adId] === "ACTIVE"} armed={ctlArm === "ad:" + a.adId} busy={ctlBusy === "ad:" + a.adId}
+                            <Toggle on={ent.ads[a.adId]?.status === "ACTIVE"} armed={ctlArm === "ad:" + a.adId} busy={ctlBusy === "ad:" + a.adId}
                               onClick={() => toggleStatus("ad", a.adId)} />
+                          )}
+                          {/* v462 · thumbnail creative — click phóng to để biết đang nhìn MẪU nào */}
+                          {ent?.ads[a.adId]?.thumb && (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={ent.ads[a.adId]!.thumb!} alt="" loading="lazy"
+                              onClick={(e) => { e.stopPropagation(); setZoom(ent.ads[a.adId]?.img || ent.ads[a.adId]?.thumb || ""); }}
+                              title="Xem lớn creative"
+                              style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9" }} />
                           )}
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.ad}</span>
                         </span>
@@ -390,6 +407,13 @@ export default function AdsCenterClient() {
           </div>
         );
       })}
+      {/* v462 · overlay xem lớn creative — click nền hoặc ảnh để đóng */}
+      {zoom && (
+        <div onClick={() => setZoom("")} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(16,20,28,.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 30, cursor: "zoom-out" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoom} alt="" style={{ maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,.45)", background: "#fff" }} />
+        </div>
+      )}
     </div>
   );
 }

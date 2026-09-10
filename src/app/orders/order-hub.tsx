@@ -92,9 +92,9 @@ type Order = {
 };
 type DetailItem = Item & { mappings: Record<string, { fulfillerSku: string; unitCost: number }> };
 type Variant = { id: string; fulfillerSku: string; internalSku: string; unitCost: number; style: string; provider: string; color: string; size: string; variant: string };
-type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; nonPod?: boolean; gsheet?: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean };
+type Detail = { storeName?: string | null; order: Order & Record<string, unknown>; items: DetailItem[]; fulfillerOptions: { fulfillerId: string; name: string; mapped: boolean; nonPod?: boolean; gsheet?: boolean; estCost: number | null }[]; catalog: Record<string, Variant[]>; ffOrders?: FfOrder[]; hideProfit?: boolean; siblings?: { id: string; externalId: string; status: string; items: DetailItem[] }[] };
 type Opt = { id: string; name: string; marketplace?: string };
-type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; feeBreakdown?: { importTax: number; items: { kind: string; amount: number }[] } | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number }[] | null; shopifyTrackingPushedAt?: string | null; shopifyPushError?: string | null; shopifyPushAttempts?: number | null };
+type FfOrder = { id: string; fulfillerId?: string; fulfillerName: string; status: string; pushedAt?: string | null; trackingNumber: string | null; trackingCarrier: string | null; trackingUrl: string | null; supplierOrderUrl: string | null; externalFfId: string | null; cost: string | null; baseCost: string | null; shipCost: string | null; extraFee: string | null; feeBreakdown?: { importTax: number; items: { kind: string; amount: number }[] } | null; lines?: { itemId?: string; mappingId?: string; product: string; variant: string | null; sku: string; qty: number; fromOrderId?: string }[] | null; merged?: boolean; mergedFrom?: boolean; shopifyTrackingPushedAt?: string | null; shopifyPushError?: string | null; shopifyPushAttempts?: number | null };
 
 const STATUS_COLORS: Record<string, string> = {
   new: "#1D5FAE", created: "#D9935B", in_production: "#4F9E93", shipped: "#8FAF5C",
@@ -1070,6 +1070,14 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
   for (const f of detail?.ffOrders ?? []) for (const l of f.lines ?? []) if (l.itemId) pushedBy.set(l.itemId, f.fulfillerName);
   // Tick chọn item đẩy ĐỢT NÀY (mặc định chọn) — bỏ tick item sẽ đẩy nhà khác ở đợt sau.
   const [pick, setPick] = useState<Record<string, boolean>>({});
+  // v460 · GỘP ĐẨY: đơn ANH EM cùng khách (Shopify tách -CLONE-n theo seller) còn item chưa đẩy.
+  // Bật gộp → item của đơn anh em hiện thêm ở panel, đẩy CHUNG 1 lần supplier (tiết kiệm ship);
+  // seller mỗi bên vẫn chỉ thấy đơn + line của mình (server lọc theo fromOrderId).
+  const [mergeOn, setMergeOn] = useState(false);
+  const siblings = detail?.siblings ?? [];
+  const mergeItems: (DetailItem & { _sibOrderId: string; _sibExt: string })[] = mergeOn
+    ? siblings.flatMap((sb) => sb.items.map((it) => ({ ...it, _sibOrderId: sb.id, _sibExt: sb.externalId })))
+    : [];
   // Đơn "created" nhưng còn item CHƯA đẩy → vẫn cho chọn nhà in đẩy tiếp phần còn lại.
   const canCreate = canCreateBase || (o.status === "created" && !!detail && o.items.some((it) => !pushedBy.has(it.id)));
   const [busy, setBusy] = useState(false);
@@ -1144,14 +1152,22 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
       const match = cat.find((v) => v.internalSku === it.internal_sku);
       init[it.id] = { mappingId: match?.id ?? "", qty: it.qty, unitCost: match?.unitCost };
     }
+    // v460 · item của đơn anh em (gộp đẩy) cũng auto-điền variant theo internal_sku
+    for (const sb of detail.siblings ?? []) for (const it of sb.items) {
+      const match = cat.find((v) => v.internalSku === it.internal_sku);
+      init[it.id] = { mappingId: match?.id ?? "", qty: it.qty, unitCost: match?.unitCost };
+    }
     setLines(init);
   };
   // CHỈ item qty ≥ 1 + được tick + CHƯA đẩy mới thuộc đợt push này (qty 0 = đã tách sang đơn khác).
   const selItems = detail ? detail.items.filter((it) => (it.qty ?? 0) >= 1 && !pushedBy.has(it.id) && (pick[it.id] ?? true)) : [];
-  const complete = !!ffSel && !!detail && selItems.length > 0 && (!selFfIsGsheet || !!gsheetTab) &&
-    selItems.every((it) => lines[it.id]?.mappingId && lines[it.id]?.qty >= 1);
+  // v460 · item anh em được tick (server đã loại item đã đẩy) — đẩy CHUNG đợt này
+  const selSibItems = mergeItems.filter((it) => pick[it.id] ?? true);
+  const selAll = [...selItems, ...selSibItems];
+  const complete = !!ffSel && !!detail && selAll.length > 0 && (!selFfIsGsheet || !!gsheetTab) &&
+    selAll.every((it) => lines[it.id]?.mappingId && lines[it.id]?.qty >= 1);
   const estCost = complete && detail
-    ? selItems.reduce((tot, it) => { const l = lines[it.id]; const uc = l.unitCost ?? variants.find((x) => x.id === l.mappingId)?.unitCost ?? 0; return tot + uc * l.qty; }, 0)
+    ? selAll.reduce((tot, it) => { const l = lines[it.id]; const uc = l.unitCost ?? variants.find((x) => x.id === l.mappingId)?.unitCost ?? 0; return tot + uc * l.qty; }, 0)
     : null;
   // Printway: gọi calculate-price lấy GIÁ THẬT (mapping không có giá) — debounce, huỷ khi đổi lựa chọn
   const [pwEst, setPwEst] = useState<number | null>(null);
@@ -1161,7 +1177,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
     if (!complete || !detail || !isPwFf) return;
     const payload = {
       fulfillerId: ffSel, country: ship.country, state: ship.state,
-      lines: selItems.map((it) => ({ mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })),
+      lines: selAll.map((it) => ({ mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })),
     };
     const ctl = new AbortController();
     const tm = setTimeout(() => {
@@ -1170,7 +1186,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
     }, 700);
     return () => { clearTimeout(tm); ctl.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [complete, isPwFf, ffSel, JSON.stringify(lines), ship.country, ship.state]);
+  }, [complete, isPwFf, ffSel, mergeOn, JSON.stringify(lines), ship.country, ship.state]);
 
   const createOrder = async () => {
     if (!complete || !detail) return;
@@ -1179,7 +1195,13 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
       const s1 = await fetch(`/api/orders/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ship) }).then((r) => r.json());
       if (!s1.ok) { setBusy(false); return flash("✗ " + (s1.error ?? "")); }
     }
-    const body = { orderId: o.id, fulfillerId: ffSel, gsheetTab: gsheetTab || undefined, lines: selItems.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })) };
+    // v460 · gộp đẩy: gửi kèm id các đơn anh em có item trong đợt này — server ghi 1 bản ghi đẩy chung
+    const mergeOrderIds = Array.from(new Set(selSibItems.map((it) => it._sibOrderId)));
+    const body = {
+      orderId: o.id, fulfillerId: ffSel, gsheetTab: gsheetTab || undefined,
+      lines: selAll.map((it) => ({ itemId: it.id, mappingId: lines[it.id].mappingId, qty: lines[it.id]?.qty || it.qty })),
+      ...(mergeOrderIds.length ? { mergeOrderIds } : {}),
+    };
     // 5xx/non-JSON (Cloudflare 502, Vercel rollout...) → retry 1 lần sau 2.5s.
     // An toàn: adapter Printway check đơn đã tồn tại theo order_name trước khi tạo → không double.
     const doPush = () => fetch("/api/fulfillment/push", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -1319,6 +1341,7 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
                         <span className="o2-track-h" style={{ margin: 0 }}>{f.fulfillerName || t("o.fulfilledBy")}</span>
                         <span style={{ background: FF_STATUS_COLORS[f.status] ?? "#8A93A6", color: "#fff", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800, textTransform: "uppercase" }}>{f.status}</span>
                         {f.externalFfId?.startsWith("SIM-") && <span title={t("o.simPushLabel")} style={{ background: "#FBECEC", color: "var(--red)", borderRadius: 6, padding: "1px 7px", fontSize: 10.5, fontWeight: 800 }}>{t("o.notSentBadge")}</span>}
+                        {f.merged && <span title="Lần đẩy này GỘP item của nhiều đơn cùng khách — Total cost là của CẢ cụm (sổ đã chia đúng phần từng đơn)" style={{ background: "#F0EAFB", color: "#5B3FA8", borderRadius: 6, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>🧩 GỘP ĐƠN</span>}
                         {f.supplierOrderUrl && (
                           <a href={f.supplierOrderUrl} target="_blank" rel="noreferrer" className="o2-ff-link">
                             <IconTruck width={12} height={12} /> {t("o.viewSupplierOrder")} ↗
@@ -1535,6 +1558,33 @@ function OrderCard({ o, canEdit, canPushFf, isAdmin, isSeller = false, canDuplic
           setPushSel={canPushFf && !!detail && canCreate && !!ffSel && !itemPushed && o.items.filter((x) => !pushedBy.has(x.id)).length > 1 ? (v) => setPick({ ...pick, [it.id]: v }) : undefined}
           pushedTo={pushedBy.get(it.id) ?? null} />;
       })}
+      {/* v460 · GỘP ĐẨY: banner đơn cùng khách + item của đơn anh em */}
+      {canPushFf && detail && canCreate && siblings.length > 0 && (
+        <div style={{ margin: "10px 0 2px", padding: "9px 12px", background: "#F5F1FC", border: "1px dashed #B9A7E0", borderRadius: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <label style={{ display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer", fontSize: 12.5, fontWeight: 800, color: "#5B3FA8" }}>
+            <input type="checkbox" checked={mergeOn} onChange={(e) => setMergeOn(e.target.checked)} style={{ width: 15, height: 15, accentColor: "#7C5CD4", cursor: "pointer" }} />
+            🧩 Gộp đẩy chung đơn cùng khách: {siblings.map((sb) => `#${sb.externalId}`).join(", ")}
+          </label>
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>
+            1 lần đẩy supplier cho cả cụm → tiết kiệm phí ship · seller mỗi bên vẫn thấy đơn của mình như cũ
+          </span>
+        </div>
+      )}
+      {mergeOn && canPushFf && detail && canCreate && siblings.map((sb) => (
+        <div key={sb.id} style={{ border: "1px dashed #B9A7E0", borderRadius: 12, padding: "2px 10px 8px", margin: "8px 0", background: "#FBFAFE" }}>
+          <div style={{ fontSize: 11.5, fontWeight: 800, color: "#5B3FA8", padding: "8px 2px 2px" }}>🧩 #{sb.externalId} · đơn cùng khách — đẩy chung đợt này</div>
+          {sb.items.map((it) => (
+            <ItemRow key={it.id} it={it} onSaved={loadDetail} flash={flash} canEdit={false}
+              showPicker={!!ffSel}
+              fulfillerId={ffSel} pickerSeed={variants}
+              line={lines[it.id] ?? { mappingId: "", qty: it.qty }}
+              setLine={(v) => setLines({ ...lines, [it.id]: v })}
+              pushSel={pick[it.id] ?? true}
+              setPushSel={(v) => setPick({ ...pick, [it.id]: v })}
+              pushedTo={null} />
+          ))}
+        </div>
+      ))}
       {canPushFf && detail && canCreate && ffSel && selFfIsGsheet && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12.5, color: "var(--muted)" }}>Google Sheet tab:</span>

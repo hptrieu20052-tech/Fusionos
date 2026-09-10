@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, like } from "drizzle-orm";
+import { and, eq, inArray, like, or, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { hasAction } from "@/lib/actions";
@@ -51,10 +51,14 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
     }
   }
 
-  // Hoàn sổ: xoá bút toán base_cost có note chứa external_ff_id của bản ghi này
+  // v460 · bản ghi GỘP nhiều đơn → mọi bước hoàn sổ/reset trạng thái phải chạy cho CẢ cụm.
+  const involved = Array.from(new Set([ffo.orderId,
+    ...(Array.isArray(ffo.mergedOrderIds) ? (ffo.mergedOrderIds as unknown[]).map(String).filter(Boolean) : [])]));
+
+  // Hoàn sổ: xoá bút toán base_cost có note chứa external_ff_id của bản ghi này (mỗi đơn 1 dòng khi gộp)
   if (ffo.externalFfId) {
     await db.delete(schema.transactions).where(and(
-      eq(schema.transactions.orderId, ffo.orderId),
+      inArray(schema.transactions.orderId, involved),
       eq(schema.transactions.type, "base_cost"),
       like(schema.transactions.note, `%${ffo.externalFfId}%`),
     ));
@@ -63,16 +67,24 @@ export async function DELETE(_req: NextRequest, { params }: { params: { id: stri
 
   // CÂN LẠI SỔ: dòng hoàn tiền (refundOrderCost) có note "Refund cost — …" nên KHÔNG bị xoá ở
   // bước trên → nếu bỏ qua, nó nằm lại một mình và làm cost ÂM. Rebalance xoá/điều chỉnh cho khớp
-  // với các bản ghi đẩy còn lại.
-  const rebalanced = await rebalanceOrderCost(ffo.orderId, "Cost adjustment — rebalanced after push removed");
+  // với các bản ghi đẩy còn lại. (Chạy SAU khi xoá để nhìn đúng phần còn lại; từng đơn trong cụm.)
+  let rebalanced = false;
+  for (const oid of involved) rebalanced = (await rebalanceOrderCost(oid, "Cost adjustment — rebalanced after push removed")) || rebalanced;
 
-  // Còn bản ghi đẩy nào cho đơn này không? Không → đưa đơn về "new"
-  const [rest] = await db.select({ id: schema.fulfillmentOrders.id }).from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, ffo.orderId)).limit(1);
-  if (!rest) {
-    const [ord] = await db.select({ status: schema.orders.status }).from(schema.orders).where(eq(schema.orders.id, ffo.orderId)).limit(1);
+  // Còn bản ghi đẩy nào PHỦ từng đơn không (chính chủ hoặc bị gộp trong bản khác)? Không → về "new"
+  let anyReverted = false;
+  for (const oid of involved) {
+    const [rest] = await db.select({ id: schema.fulfillmentOrders.id }).from(schema.fulfillmentOrders)
+      .where(or(
+        eq(schema.fulfillmentOrders.orderId, oid),
+        sql`${schema.fulfillmentOrders.mergedOrderIds} @> ${JSON.stringify([oid])}::jsonb`,
+      )).limit(1);
+    if (rest) continue;
+    const [ord] = await db.select({ status: schema.orders.status }).from(schema.orders).where(eq(schema.orders.id, oid)).limit(1);
     if (ord && ["created", "in_production", "shipped", "delivered"].includes(ord.status)) {
-      await db.update(schema.orders).set({ status: "new", updatedAt: new Date() }).where(eq(schema.orders.id, ffo.orderId));
+      await db.update(schema.orders).set({ status: "new", updatedAt: new Date() }).where(eq(schema.orders.id, oid));
+      anyReverted = true;
     }
   }
-  return NextResponse.json({ ok: true, revertedToNew: !rest, rebalanced, remote });
+  return NextResponse.json({ ok: true, revertedToNew: anyReverted, rebalanced, remote });
 }
