@@ -8,7 +8,9 @@ import { jwtVerify } from "jose";
 // /api/feed: Googlebot của Merchant Center KHÔNG có cookie session → middleware trả 401 →
 // Merchant Center hiện đúng chữ "Authentication failed". Route tự chặn bằng FEED_FETCH_KEY
 // (thiếu/sai khoá là 404), nên mở public ở tầng middleware là an toàn.
-const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/api/ping", "/api/cron", "/journey/", "/api/tiktokshops/auth", "/api/tiktok/oauth/callback", "/api/feed/"];
+// /api/studio/public: wizard "Create Your Own" trên talewix.com — khách KHÔNG có session FUSION.
+// Route tự bảo vệ: settings.enabled + CORS theo origin + rate limit theo IP (v484).
+const PUBLIC = ["/login", "/api/auth/login", "/api/ingest", "/api/webhooks", "/api/ping", "/api/cron", "/journey/", "/api/tiktokshops/auth", "/api/tiktok/oauth/callback", "/api/feed/", "/api/studio/public"];
 
 // Domain chính thức của app. Đặt env CANONICAL_HOST để đổi mà không sửa code.
 const CANONICAL_HOST = process.env.CANONICAL_HOST || "os.fusiondn.com";
