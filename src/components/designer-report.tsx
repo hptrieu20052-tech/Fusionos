@@ -71,7 +71,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
         {designers.map((s, si) => (
           <span key={si} style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 10, height: 10, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block" }} />
-            <b>{s.name}</b> {s.designs} <span style={{ color: "var(--muted)" }}>({s.salesOrders} {tr("rep.ordersWord")})</span>
+            <b>{s.name}</b> {s.designs} <span style={{ color: "var(--muted)" }}>({s.salesOrders} {tr("rep.saleWord")})</span>
           </span>
         ))}
       </div>
@@ -146,7 +146,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
           position: "fixed", left: Math.min(tip.x + 14, typeof window !== "undefined" ? window.innerWidth - 240 : tip.x), top: tip.y + 10, zIndex: 50,
           background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(17,24,39,.12)", padding: "10px 14px", minWidth: 200, pointerEvents: "none",
         }}>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "d" ? "design" : tr("rep.ordersWord")}</div>
+          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "d" ? "design" : tr("rep.saleWord")}</div>
           {designers.map((s, si) => {
             const v = s.daily[tip.bi][metric];
             return v ? (

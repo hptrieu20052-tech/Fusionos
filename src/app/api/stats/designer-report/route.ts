@@ -57,16 +57,18 @@ export async function GET(req: NextRequest) {
         GROUP BY 1
       `)
     : { rows: [] as { pid: string; n: number }[] };
-  // 2. Sale phát sinh trong kỳ từ design của người đó × bucket
-  //    CHỈ tính khi đơn ĐÃ CREATE (đẩy đơn) trở đi — đơn còn NEW (chưa Create) chưa tính.
+  // 2. Sale trong kỳ = SỐ DÒNG order_item có design của người đó (mỗi item/design được assign = 1 sale),
+  //    theo o.ordered_at — GIỐNG cơ sở với Seller/Orders/Dashboard: chỉ bỏ cancel/trash, GỒM cả đơn NEW.
+  //    → 1 order có 2 item khác design của cùng 1 người vẫn tính 2 (KHÔNG gộp về 1 như count(DISTINCT order)).
+  //    Không phụ thuộc thời gian upload/assign design — chỉ tính theo đơn phát sinh trong khoảng.
   const sales = await db.execute(sql`
     SELECT ${sql.raw(bucket("o.ordered_at"))} AS bucket, min(${sql.raw(bucketOrd("o.ordered_at"))}) AS ord,
            d.${sql.raw(PC)} AS pid,
-           count(DISTINCT o.id)::int AS orders, coalesce(sum(oi.qty * oi.unit_price),0)::numeric AS revenue
+           count(*)::int AS orders, coalesce(sum(oi.qty * oi.unit_price),0)::numeric AS revenue
     FROM order_items oi
     JOIN designs d ON d.id = oi.design_id AND d.${sql.raw(PC)} IS NOT NULL
     JOIN orders o ON o.id = oi.order_id
-    WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('new','cancel','trash')${inD}
+    WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('cancel','trash')${inD}
     GROUP BY 1, d.${sql.raw(PC)} ORDER BY ord
   `);
   // 3. Điểm review trong kỳ theo người
