@@ -27,10 +27,16 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
   const [loading, setLoading] = useState(false);
   const isContent = by === "content";
 
+  // v468 · Chống hiển thị dữ liệu SAI KỲ: khi đổi range, request CŨ (đang bay) không được ghi đè
+  // kết quả của request MỚI (ignore-guard). Trước đây thiếu guard nên đổi "This month" mà bảng vẫn
+  // đứng ở kỳ cũ nếu request cũ về sau. Deps đủ [by, range, from, to] → luôn fetch lại khi đổi kỳ.
   useEffect(() => {
+    let ignore = false;
     setLoading(true);
     fetch(`/api/stats/designer-report?by=${by}&range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
-      .then((j) => { if (j.ok) setData(j); }).finally(() => setLoading(false));
+      .then((j) => { if (ignore) return; if (j.ok) setData(j); })
+      .finally(() => { if (!ignore) setLoading(false); });
+    return () => { ignore = true; };
   }, [by, range, from, to]);
 
   // Cột bar cuộn ngang trong panel → tự nhảy tới NGÀY MỚI NHẤT (mép phải) mỗi khi đổi dữ liệu/metric
@@ -54,7 +60,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
           ? <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{title ?? "Creator Report"}</span>
           : <a href="/stats/designers" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Designer Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>}
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-          {([["d", "Design"], ["s", "Sale"]] as const).map(([k, label]) => (
+          {([["d", "Design"], ["s", "Item sale"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
               padding: "6px 12px", fontSize: 12.5, border: "none", cursor: "pointer",
               background: metric === k ? "var(--blue-soft)" : "#fff", color: metric === k ? "var(--blue)" : "var(--muted)", fontWeight: 600,
@@ -109,7 +115,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
                   <th style={{ textAlign: "left", padding: "3px 4px" }}>#  {isContent ? "Creator" : "Designer"}</th>
                   <th style={{ padding: "3px 4px" }}>Design</th>
                   {isContent && <th style={{ padding: "3px 4px" }}>Video</th>}
-                  <th style={{ padding: "3px 4px" }}>Sale</th>
+                  <th style={{ padding: "3px 4px" }}>Item sale</th>
                   {!hideMoney && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>Revenue</th>}
                   <th className="rep-col-opt" style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>
                   <th style={{ padding: "3px 4px" }}>KPI</th>
