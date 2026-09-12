@@ -1,0 +1,96 @@
+TALEWIX - NEGATIVE LISTS v4 FINAL
+Catalog da xac nhan: books - puzzle - toy/game - banner/sign - pillow - coloring/activity books - routine charts.
+Khong ban digital/printable. Khong ban hang tieng Tay Ban Nha.
+Rut tu 25.140 search terms / $352.68 cua 4 camp cu. Kiem chung: chan ~$44 (13%), mat 0 conversion.
+======================================================================
+
+LIST 1 - 'JUNK' - gan cho MOI campaign (phrase match):
+
+"free"
+"printable"
+"pdf"
+"template"
+"svg"
+"clipart"
+"video"
+"videos"
+"youtube"
+"song"
+"songs"
+"lyrics"
+"read aloud"
+"read online"
+"audiobook"
+"cartoon"
+"cartoons"
+"movie"
+"netflix"
+"episode"
+"library"
+"app"
+"how to"
+"what is"
+"near me"
+"diy"
+"para"
+"ninos"
+"niños"
+"cuentos"
+"libros"
+"caricaturas"
+"planetas"
+"de la"
+"solar system"
+"planets for kids"
+"dinosaurs for kids"
+"dinosaur facts"
+"storytime"
+"story time"
+"monster trucks for toddlers"
+"space facts"
+"discount code"
+"coupon"
+"costume"
+"makeup"
+"wholesale"
+"bulk"
+
+======================================================================
+LIST 2 - 'INTENT' - CHI gan cho camp Shopping-Catcher (KHONG gan camp khac):
+
+"personalized"
+"personalised"
+"custom"
+"customized"
+"customised"
+"name"
+"monogrammed"
+"monogram"
+"keepsake"
+"baptism"
+"christening"
+"gift"
+"gifts"
+"photo"
+"puzzle"
+"puzzles"
+"pillow"
+"pillows"
+"banner"
+"banners"
+"sign"
+"signs"
+"routine chart"
+"coloring book"
+"activity book"
+
+======================================================================
+NGUYEN TAC DA AP DUNG (de sau nay tu bao tri):
+1. JUNK chi chua rac CHAC CHAN 100%%. Tu nao dinh dang den bat ky san pham nao
+   (coloring, worksheet, toys, game, banner, baby shower, ideas, first day of school,
+   classroom, chart...) -> KHONG chan.
+2. Query borderline (baby shower ideas, toys for toddlers...) KHONG can chan:
+   no khong chua tu INTENT nen nam lai o camp Catcher bid $0.08-0.10 - tra gia beo.
+3. Query san pham (personalized/puzzle/banner/sign/pillow/chart...) bi LIST INTENT
+   chan o Catcher -> roi xuong camp Shopping-Intent bid $0.40 - tra gia xung dang.
+4. Moi tuan mo Search terms: rac chac chan moi -> them JUNK; tu san pham moi -> them INTENT.

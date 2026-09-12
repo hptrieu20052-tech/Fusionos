@@ -186,8 +186,14 @@ export async function PATCH(req: NextRequest) {
   const optsClean = newOpts.map((o) => ({ name: (o.name || "").trim(), values: (o.values ?? []).map((v) => String(v).trim()).filter(Boolean) })).filter((o) => o.name && o.values.length);
 
   const inImgs = (Array.isArray(b.images) ? b.images : null) as Img[] | null;
-  const mergedImgs: Img[] = (inImgs ?? (Array.isArray(row.p.images) ? row.p.images : []) as Img[])
+  const curImgs = (Array.isArray(row.p.images) ? row.p.images : []) as Img[];
+  const mergedImgs: Img[] = (inImgs ?? curImgs)
     .map((im, i) => ({ id: im.id, src: im.src, altText: im.altText ?? "", position: i + 1 }));
+  // v483 · Ảnh user XÓA trong modal = ảnh có id đang nằm trên ShopBase nhưng không còn trong danh sách gửi lên.
+  // ShopBase PUT products/{id} KHÔNG xoá ảnh bị thiếu khỏi mảng images (chỉ thêm/sắp xếp — khác Shopify),
+  // nên phải DELETE tường minh từng ảnh (làm bên dưới, sau PUT).
+  const keptIds = new Set(mergedImgs.map((im) => String(im.id ?? "")).filter(Boolean));
+  const removedImgIds = curImgs.map((im) => String(im.id ?? "")).filter((x) => x && !keptIds.has(x));
 
   const cred = (((row.cred ?? {}) as Record<string, unknown>).shopbase ?? null) as ShopBaseCred | null;
 
@@ -205,7 +211,7 @@ export async function PATCH(req: NextRequest) {
     await db.update(schema.shopbaseProducts).set({
       title, bodyHtml, vendor, productType, tags, status, options: newOpts, variants: newVars, images: mergedImgs, dirty: true, updatedAt: new Date(),
     }).where(eq(schema.shopbaseProducts.id, id));
-    return NextResponse.json({ ok: true, warn: "store chưa cấu hình API — đã lưu local, CHƯA đẩy lên ShopBase" });
+    return NextResponse.json({ ok: true, warn: "store API not configured — saved locally, NOT pushed to ShopBase" });
   }
 
   // Đẩy lên ShopBase (REST mirror Shopify).
@@ -228,8 +234,33 @@ export async function PATCH(req: NextRequest) {
   };
   if (optsClean.length) product.options = optsClean.map((o) => ({ name: o.name }));
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   try {
-    const resp = await shopbaseApi(cred!, `products/${row.p.shopbaseProductId}.json`, { method: "PUT", body: JSON.stringify({ product }) });
+    let resp = await shopbaseApi(cred!, `products/${row.p.shopbaseProductId}.json`, { method: "PUT", body: JSON.stringify({ product }) });
+
+    // v483 · Xoá tường minh ảnh bị bỏ. Sau đó GET lại để verify + lấy state chuẩn
+    // (đợi pipeline async của ShopBase ổn định — bài học v480 với tags).
+    if (removedImgIds.length) {
+      await sleep(1000);
+      for (const iid of removedImgIds) {
+        try {
+          await shopbaseApi(cred!, `products/${row.p.shopbaseProductId}/images/${iid}.json`, { method: "DELETE" });
+        } catch (e1) {
+          const m = String((e1 as Error)?.message ?? e1);
+          if (!/HTTP 404/.test(m)) {
+            // Endpoint dự phòng (một số API clone dùng path phẳng).
+            try { await shopbaseApi(cred!, `product_images/${iid}.json`, { method: "DELETE" }); } catch { /* verify bên dưới sẽ bắt */ }
+          }
+        }
+      }
+      await sleep(1200);
+      resp = await shopbaseApi(cred!, `products/${row.p.shopbaseProductId}.json`);
+      const live = ((resp?.product ?? {}) as Record<string, unknown>);
+      const liveIds = new Set((Array.isArray(live.images) ? live.images : []).map((im) => String((im as Record<string, unknown>).id ?? "")));
+      const stuck = removedImgIds.filter((x) => liveIds.has(x));
+      if (stuck.length) throw new Error(`ShopBase refused to delete ${stuck.length} image(s) — remove them in ShopBase admin, then Sync`);
+    }
+
     // Lấy lại data chuẩn từ ShopBase để đồng bộ id ảnh/variant mới.
     const rp = (resp?.product ?? null) as Record<string, unknown> | null;
     let finalVars = newVars, finalImgs = mergedImgs;
@@ -259,6 +290,6 @@ export async function PATCH(req: NextRequest) {
       title, bodyHtml, vendor, productType, tags, status, options: newOpts, variants: newVars, images: mergedImgs, dirty: true, updatedAt: new Date(),
     }).where(eq(schema.shopbaseProducts.id, id));
     const err = String((e as Error)?.message ?? e).slice(0, 200);
-    return NextResponse.json({ ok: false, error: "Đã lưu local nhưng ShopBase update lỗi: " + err });
+    return NextResponse.json({ ok: false, error: "Saved locally, but ShopBase update failed: " + err });
   }
 }
