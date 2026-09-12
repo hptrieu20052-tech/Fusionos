@@ -49,13 +49,16 @@ export async function GET(req: NextRequest) {
   //      theo o.ordered_at — cùng cơ sở Seller/Orders/Dashboard: chỉ bỏ cancel/trash, GỒM cả đơn NEW.
   //      1 order có 2 item khác design của cùng 1 người vẫn tính 2. Không phụ thuộc thời gian upload/assign.
   //  (4) Điểm review trong kỳ theo người.
+  // v478 · KHÔNG loại design CHƯA GÁN người nữa (bỏ "PC IS NOT NULL") — gom vào dòng "(chưa gán)"
+  //        để tổng Design khớp với Design Studio (trước lệch: Studio đếm tất, report chỉ đếm đã gán).
+  //        Với scope team/own thì inD (IN danh sách uuid) tự loại NULL → không lộ design team khác.
   const [dz, vidCounts, sales, scores] = await Promise.all([
     db.execute(sql`
       SELECT ${sql.raw(bucket("d.created_at"))} AS bucket, min(${sql.raw(bucketOrd("d.created_at"))}) AS ord,
-             d.${sql.raw(PC)} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
+             d.${sql.raw(PC)} AS pid, coalesce(u.full_name,'(Unassigned)') AS name,
              count(*)::int AS c, coalesce(sum(d.points),0)::int AS pts
       FROM designs d LEFT JOIN users u ON u.id = d.${sql.raw(PC)}
-      WHERE ${sql.raw(cond("d.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
+      WHERE ${sql.raw(cond("d.created_at"))}${inD}
       GROUP BY 1, d.${sql.raw(PC)}, u.full_name ORDER BY ord
     `),
     by === "content"
@@ -71,7 +74,7 @@ export async function GET(req: NextRequest) {
              d.${sql.raw(PC)} AS pid,
              count(*)::int AS orders, coalesce(sum(oi.qty * oi.unit_price),0)::numeric AS revenue
       FROM order_items oi
-      JOIN designs d ON d.id = oi.design_id AND d.${sql.raw(PC)} IS NOT NULL
+      JOIN designs d ON d.id = oi.design_id
       JOIN orders o ON o.id = oi.order_id
       WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('cancel','trash')${inD}
       GROUP BY 1, d.${sql.raw(PC)} ORDER BY ord
@@ -79,13 +82,15 @@ export async function GET(req: NextRequest) {
     db.execute(sql`
       SELECT d.${sql.raw(PC)} AS pid, avg(r.total_score)::numeric(4,2) AS score, count(*)::int AS reviews
       FROM design_reviews r JOIN designs d ON d.id = r.design_id
-      WHERE ${sql.raw(cond("r.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
+      WHERE ${sql.raw(cond("r.created_at"))}${inD}
       GROUP BY 1
     `),
   ]);
 
-  type DzRow = { bucket: string; ord: string; pid: string; name: string; c: number; pts: number };
-  type SaleRow = { bucket: string; ord: string; pid: string; orders: number; revenue: string };
+  type DzRow = { bucket: string; ord: string; pid: string | null; name: string; c: number; pts: number };
+  type SaleRow = { bucket: string; ord: string; pid: string | null; orders: number; revenue: string };
+  // v478 · pid=null (design chưa gán người) → gom về 1 dòng "(chưa gán)" (khoá "unassigned").
+  const pk = (id: string | null) => id ?? "unassigned";
   const dzRows = dz.rows as DzRow[];
   const saleRows = sales.rows as SaleRow[];
 
@@ -100,14 +105,14 @@ export async function GET(req: NextRequest) {
     if (!dmap.has(id)) dmap.set(id, { id, name: name ?? "", designs: 0, videos: 0, points: 0, salesOrders: 0, salesRevenue: 0, avgScore: 0, reviews: 0, daily: buckets.map(() => ({ d: 0, s: 0 })) });
     return dmap.get(id)!;
   };
-  for (const r of dzRows) { const x = ensure(r.pid, r.name); x.name = r.name; x.designs += r.c; x.points += r.pts; x.daily[bIdx.get(r.bucket)!].d = r.c; }
-  for (const r of saleRows) { const x = ensure(r.pid); x.salesOrders += r.orders; x.salesRevenue += Number(r.revenue); x.daily[bIdx.get(r.bucket)!].s = r.orders; }
-  for (const r of scores.rows as { pid: string; score: string; reviews: number }[]) {
-    const x = dmap.get(r.pid); if (x) { x.avgScore = Number(r.score); x.reviews = r.reviews; }
+  for (const r of dzRows) { const x = ensure(pk(r.pid), r.name); x.name = r.name; x.designs += r.c; x.points += r.pts; x.daily[bIdx.get(r.bucket)!].d = r.c; }
+  for (const r of saleRows) { const x = ensure(pk(r.pid), r.pid == null ? "(Unassigned)" : undefined); x.salesOrders += r.orders; x.salesRevenue += Number(r.revenue); x.daily[bIdx.get(r.bucket)!].s = r.orders; }
+  for (const r of scores.rows as { pid: string | null; score: string; reviews: number }[]) {
+    const x = dmap.get(pk(r.pid)); if (x) { x.avgScore = Number(r.score); x.reviews = r.reviews; }
   }
   for (const r of vidCounts.rows as { pid: string; n: number }[]) { ensure(r.pid).videos += r.n; }
-  // Bổ sung tên cho người chỉ có sale (không có design mới trong kỳ)
-  const missing = Array.from(dmap.values()).filter((x) => !x.name).map((x) => x.id);
+  // Bổ sung tên cho người chỉ có sale (không có design mới trong kỳ) — bỏ qua khoá "(chưa gán)" (không phải uuid)
+  const missing = Array.from(dmap.values()).filter((x) => !x.name && x.id !== "unassigned").map((x) => x.id);
   if (missing.length) {
     // v475 · FIX lỗi "malformed array literal" / "cannot cast type record to uuid[]": KHÔNG nhúng mảng JS
     // thẳng vào sql`ANY(${arr}::uuid[])` (drizzle bung thành ($1,$2) = record). Dùng IN (...) như inD.

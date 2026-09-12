@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const r = await db.execute(sql`
     SELECT ${sql.raw(bucketExpr)} AS bucket, min(${sql.raw(bucketOrd)}) AS ord,
-           o.seller_at_order AS seller_id, coalesce(u.full_name,'(chưa gán)') AS name,
+           o.seller_at_order AS seller_id, coalesce(u.full_name,'(Unassigned)') AS name,
            count(*)::int AS o, coalesce(sum(oi.qty),0)::int AS i
     FROM orders o
     LEFT JOIN users u ON u.id = o.seller_at_order

@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   const r = await db.execute(sql`
     SELECT ${sql.raw(bucketExpr)} AS bucket, min(${sql.raw(bucketOrd)}) AS ord,
-           coalesce(u.team,'(chưa gán team)') AS team,
+           coalesce(u.team,'(No team)') AS team,
            count(*)::int AS o, coalesce(sum(oi.qty),0)::int AS i, coalesce(sum(o.total),0)::numeric AS r
     FROM orders o
     LEFT JOIN users u ON u.id = o.seller_at_order
@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
   // Thành viên đóng góp trong kỳ theo team
   const mem = await db.execute(sql`
-    SELECT coalesce(u.team,'(chưa gán team)') AS team, u.full_name AS name, u.role,
+    SELECT coalesce(u.team,'(No team)') AS team, u.full_name AS name, u.role,
            count(o.id)::int AS orders, coalesce(sum(o.total),0)::numeric AS revenue
     FROM orders o JOIN users u ON u.id = o.seller_at_order
     WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')${inO}

@@ -19,6 +19,8 @@ const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(un
 // v476 · TẠM ẨN cột Score + KPI + dòng chú thích công thức (yêu cầu 2026-09-12 — "về sau cần bổ sung").
 // Khi muốn hiện lại: đổi thành true (API vẫn trả đủ avgScore/kpi, không đụng backend).
 const SHOW_KPI = false;
+// v477 · TẠM ẨN Revenue (cột trong bảng + số $ trên header) — bật lại: đổi true.
+const SHOW_REVENUE = false;
 
 // by="designer" → gom theo người thiết kế. by="content" → gom theo ô Creator của design (role content).
 // Dùng chung một component: cùng API, chỉ khác tham số `by` và nhãn cột đầu.
@@ -41,7 +43,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
     setData(null);
     fetch(`/api/stats/designer-report?by=${by}&range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
       .then((j) => { if (ignore) return; if (j.ok) setData(j); else setErr(String(j.error ?? "unknown")); })
-      .catch(() => { if (!ignore) setErr("không nhận được phản hồi (function timeout — thường do query quá lâu)"); })
+      .catch(() => { if (!ignore) setErr("no response from server (function timeout — query took too long)"); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
   }, [by, range, from, to]);
@@ -53,7 +55,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
     if (el) el.scrollLeft = el.scrollWidth;
   }, [data, metric]);
 
-  if (err && !data) return <div className="card" style={{ padding: 24, color: "var(--red)", fontSize: 13 }}>Không tải được báo cáo — lỗi: <b>{err}</b></div>;
+  if (err && !data) return <div className="card" style={{ padding: 24, color: "var(--red)", fontSize: 13 }}>Failed to load report — error: <b>{err}</b></div>;
   if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingDesigner")}</div>;
 
   const { buckets, designers, totals } = data;
@@ -76,7 +78,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
           ))}
         </div>
         <div style={{ marginLeft: "auto", fontWeight: 700, fontSize: 14 }}>
-          {totals.designs.toLocaleString()} design{isContent ? ` · ${(totals.videos ?? 0).toLocaleString()} video` : ""} · {totals.salesOrders.toLocaleString()} {tr("rep.genOrdersUnit")}{!hideMoney && <> · <span style={{ color: "var(--green)" }}>{money(totals.salesRevenue)}</span></>}
+          {totals.designs.toLocaleString()} design{isContent ? ` · ${(totals.videos ?? 0).toLocaleString()} video` : ""} · {totals.salesOrders.toLocaleString()} {tr("rep.genOrdersUnit")}{SHOW_REVENUE && !hideMoney && <> · <span style={{ color: "var(--green)" }}>{money(totals.salesRevenue)}</span></>}
         </div>
       </div>
 
@@ -123,7 +125,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
                   <th style={{ padding: "3px 4px" }}>Design</th>
                   {isContent && <th style={{ padding: "3px 4px" }}>Video</th>}
                   <th style={{ padding: "3px 4px" }}>Item sale</th>
-                  {!hideMoney && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>Revenue</th>}
+                  {SHOW_REVENUE && !hideMoney && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>Revenue</th>}
                   {SHOW_KPI && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>}
                   {SHOW_KPI && <th style={{ padding: "3px 4px" }}>KPI</th>}
                 </tr>
@@ -139,7 +141,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
                     <td style={{ padding: "5px 4px" }}><b>{s.designs}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.points}{tr("rep.ptSuffix")})</span></td>
                     {isContent && <td style={{ padding: "5px 4px", fontWeight: 700, color: "#4338CA" }}>{s.videos ?? 0}</td>}
                     <td style={{ padding: "5px 4px" }}>{s.salesOrders}</td>
-                    {!hideMoney && <td className="rep-col-opt" style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
+                    {SHOW_REVENUE && !hideMoney && <td className="rep-col-opt" style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
                     {SHOW_KPI && <td className="rep-col-opt" style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>}
                     {SHOW_KPI && <td style={{ padding: "5px 4px" }}>
                       <span style={{ background: si === 0 ? "var(--blue)" : "var(--blue-soft)", color: si === 0 ? "#fff" : "var(--blue)", borderRadius: 8, padding: "2px 8px", fontWeight: 800 }}>{s.kpi.toFixed(1)}</span>
