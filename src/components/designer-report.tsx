@@ -121,7 +121,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "right" }}>
-                  <th style={{ textAlign: "left", padding: "3px 4px" }}>#  {isContent ? "Creator" : "Designer"}</th>
+                  <th style={{ textAlign: "left", padding: "3px 4px" }}># {isContent ? "Creator" : "Designer"}</th>
                   <th style={{ padding: "3px 4px" }}>Design</th>
                   {isContent && <th style={{ padding: "3px 4px" }}>Video</th>}
                   <th style={{ padding: "3px 4px" }}>Item sale</th>
@@ -131,23 +131,28 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
                 </tr>
               </thead>
               <tbody>
-                {designers.map((s, si) => (
-                  <tr key={si} style={{ borderTop: "1px solid var(--line)", textAlign: "right" }}>
-                    <td style={{ textAlign: "left", padding: "5px 4px", whiteSpace: "nowrap" }}>
-                      <span style={{ fontWeight: 800, color: si < 3 ? "var(--blue)" : "var(--muted)", marginRight: 6 }}>{si + 1}</span>
-                      <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block", marginRight: 5 }} />
-                      <b style={{ fontWeight: si < 3 ? 700 : 500 }}>{s.name}</b>
+                {designers.map((s, si) => {
+                  const un = s.id === "unassigned"; // v481 · dòng "(Unassigned)" hiển thị mờ, không tranh hạng
+                  return (
+                  <tr key={si} style={{ borderTop: "1px solid var(--line)", textAlign: "right", color: un ? "var(--muted)" : undefined }}>
+                    <td style={{ textAlign: "left", padding: "6px 4px", maxWidth: 170, overflow: "hidden" }}>
+                      <div style={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
+                        <span style={{ fontWeight: 800, color: !un && si < 3 ? "var(--blue)" : "var(--muted)", marginRight: 6 }}>{un ? "—" : si + 1}</span>
+                        <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block", marginRight: 5 }} />
+                        <b style={{ fontWeight: !un && si < 3 ? 700 : 500, fontStyle: un ? "italic" : undefined }}>{s.name}</b>
+                      </div>
                     </td>
-                    <td style={{ padding: "5px 4px" }}><b>{s.designs}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.points}{tr("rep.ptSuffix")})</span></td>
-                    {isContent && <td style={{ padding: "5px 4px", fontWeight: 700, color: "#4338CA" }}>{s.videos ?? 0}</td>}
-                    <td style={{ padding: "5px 4px" }}>{s.salesOrders}</td>
+                    <td style={{ padding: "6px 4px" }}><b>{s.designs.toLocaleString()}</b>{SHOW_KPI && <> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.points}{tr("rep.ptSuffix")})</span></>}</td>
+                    {isContent && <td style={{ padding: "6px 4px", fontWeight: 700, color: "#4338CA" }}>{s.videos ?? 0}</td>}
+                    <td style={{ padding: "6px 4px" }}>{s.salesOrders.toLocaleString()}</td>
                     {SHOW_REVENUE && !hideMoney && <td className="rep-col-opt" style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
                     {SHOW_KPI && <td className="rep-col-opt" style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>}
                     {SHOW_KPI && <td style={{ padding: "5px 4px" }}>
                       <span style={{ background: si === 0 ? "var(--blue)" : "var(--blue-soft)", color: si === 0 ? "#fff" : "var(--blue)", borderRadius: 8, padding: "2px 8px", fontWeight: 800 }}>{s.kpi.toFixed(1)}</span>
                     </td>}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

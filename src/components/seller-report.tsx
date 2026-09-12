@@ -139,7 +139,7 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
                   const pct = tot ? (v / tot) * 100 : 0;
                   return (
                     <tr key={si} style={{ borderTop: "1px solid var(--line)", textAlign: "right" }}>
-                      <td style={{ textAlign: "left", padding: "5px 4px", maxWidth: 150, overflow: "hidden" }}>
+                      <td style={{ textAlign: "left", padding: "6px 4px", maxWidth: 150, overflow: "hidden" }}>
                         <div style={{ whiteSpace: "nowrap", textOverflow: "ellipsis", overflow: "hidden" }}>
                           <span style={{ fontWeight: 800, color: si < 3 ? "var(--blue)" : "var(--muted)", marginRight: 6 }}>{si + 1}</span>
                           <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[si % PALETTE.length], display: "inline-block", marginRight: 5 }} />
@@ -151,16 +151,16 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: "5px 4px", whiteSpace: "nowrap" }}><b>{s.orders.toLocaleString()}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.items.toLocaleString()})</span></td>
+                      <td style={{ padding: "6px 4px", whiteSpace: "nowrap" }}><b>{s.orders.toLocaleString()}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.items.toLocaleString()})</span></td>
                       {SHOW_MONEY_COLS && data.showMoney ? (
                         <>
-                          <td style={{ padding: "5px 4px" }}>{usd(s.revenue)}</td>
-                          <td style={{ padding: "5px 4px", color: "var(--muted)" }}>{usd(s.fee)}</td>
-                          <td style={{ padding: "5px 4px", color: (s.cost ?? 0) > 0 ? "var(--red)" : "var(--muted)" }}>{usd(s.cost)}</td>
-                          {!data.hideProfit && <td style={{ padding: "5px 4px", color: (s.profit ?? 0) >= 0 ? "var(--green)" : "var(--red)", fontWeight: 600 }}>{usd(s.profit)}</td>}
+                          <td style={{ padding: "6px 4px" }}>{usd(s.revenue)}</td>
+                          <td style={{ padding: "6px 4px", color: "var(--muted)" }}>{usd(s.fee)}</td>
+                          <td style={{ padding: "6px 4px", color: (s.cost ?? 0) > 0 ? "var(--red)" : "var(--muted)" }}>{usd(s.cost)}</td>
+                          {!data.hideProfit && <td style={{ padding: "6px 4px", color: (s.profit ?? 0) >= 0 ? "var(--green)" : "var(--red)", fontWeight: 600 }}>{usd(s.profit)}</td>}
                         </>
                       ) : (
-                        <td style={{ padding: "5px 4px", color: "var(--muted)", fontSize: 11.5 }}>{pct.toFixed(1)}%</td>
+                        <td style={{ padding: "6px 4px", color: "var(--muted)", fontSize: 11.5 }}>{pct.toFixed(1)}%</td>
                       )}
                     </tr>
                   );

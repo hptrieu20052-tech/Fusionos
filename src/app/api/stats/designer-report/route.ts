@@ -128,7 +128,13 @@ export async function GET(req: NextRequest) {
     ...x,
     salesRevenue: Number(x.salesRevenue.toFixed(2)),
     kpi: Number(((x.points / maxPts) * 10 * 0.4 + (x.avgScore || 5) * 0.3 + (x.salesOrders / maxBiz) * 10 * 0.3).toFixed(1)),
-  })).sort((a, b) => b.kpi - a.kpi);
+  })).sort((a, b) => {
+    // v481 · KPI đang ẩn trên UI → xếp theo SỐ DESIGN (tie-break: item sale) cho trực quan;
+    //        "(Unassigned)" luôn nằm CUỐI bảng (không phải người, không tranh hạng).
+    const ua = a.id === "unassigned", ub = b.id === "unassigned";
+    if (ua !== ub) return ua ? 1 : -1;
+    return (b.designs - a.designs) || (b.salesOrders - a.salesOrders);
+  });
 
   const totals = {
     designs: designers.reduce((a, x) => a + x.designs, 0),
