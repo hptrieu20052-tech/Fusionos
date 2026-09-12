@@ -25,18 +25,19 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState(false);
   const isContent = by === "content";
 
-  // v469 · Chống hiển thị dữ liệu SAI KỲ (bug: đổi "This month" nhưng bảng vẫn đứng ở 30 ngày cũ,
-  // hay gặp ở admin/designer/support vì query nặng hơn nên response cũ về SAU response mới).
-  //  1) Đổi range → XOÁ data cũ ngay (setData(null)) → hiện "đang tải", tuyệt đối không show số kỳ cũ.
-  //  2) ignore-guard: response của request CŨ (đang bay) không được ghi đè kết quả request MỚI.
+  // v469/v471 · Đổi range → xoá data cũ ngay (không show số kỳ cũ) + ignore-guard chống response cũ ghi đè.
+  //  + Nếu request LỖI/timeout thì báo lỗi (setErr) thay vì kẹt "Loading" vô hạn (data=null mãi).
   useEffect(() => {
     let ignore = false;
     setLoading(true);
+    setErr(false);
     setData(null);
     fetch(`/api/stats/designer-report?by=${by}&range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
-      .then((j) => { if (ignore) return; if (j.ok) setData(j); })
+      .then((j) => { if (ignore) return; if (j.ok) setData(j); else setErr(true); })
+      .catch(() => { if (!ignore) setErr(true); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
   }, [by, range, from, to]);
@@ -48,6 +49,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
     if (el) el.scrollLeft = el.scrollWidth;
   }, [data, metric]);
 
+  if (err && !data) return <div className="card" style={{ padding: 24, color: "var(--red)" }}>Không tải được báo cáo (có thể do dữ liệu lớn/quá thời gian). Thử lại hoặc thu hẹp khoảng thời gian.</div>;
   if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingDesigner")}</div>;
 
   const { buckets, designers, totals } = data;
@@ -61,8 +63,6 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
         {isContent
           ? <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{title ?? "Creator Report"}</span>
           : <a href="/stats/designers" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Designer Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>}
-        {/* DEBUG v470 · hiện range component nhận được — gỡ sau khi chẩn đoán xong */}
-        <span style={{ fontSize: 11, fontWeight: 800, color: "#e11d48", background: "#fee2e2", padding: "2px 8px", borderRadius: 6 }}>range={range || "(trống)"}</span>
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
           {([["d", "Design"], ["s", "Item sale"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{

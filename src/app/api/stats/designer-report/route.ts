@@ -39,45 +39,49 @@ export async function GET(req: NextRequest) {
   const vPid = sql`coalesce(v.creator_id, v.uploaded_by)`;
   const inV = scopeIds ? sql` AND ${vPid} IN (${sql.join(scopeIds.map((x) => sql`${x}::uuid`), sql`, `)})` : sql``;
 
-  // 1. Design tạo trong kỳ theo người × bucket (kèm points cho KPI). Sale tính từ chính design này.
-  const dz = await db.execute(sql`
-    SELECT ${sql.raw(bucket("d.created_at"))} AS bucket, min(${sql.raw(bucketOrd("d.created_at"))}) AS ord,
-           d.${sql.raw(PC)} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
-           count(*)::int AS c, coalesce(sum(d.points),0)::int AS pts
-    FROM designs d LEFT JOIN users u ON u.id = d.${sql.raw(PC)}
-    WHERE ${sql.raw(cond("d.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
-    GROUP BY 1, d.${sql.raw(PC)}, u.full_name ORDER BY ord
-  `);
-  // v210e · Creator: thêm SỐ VIDEO trong kỳ (cột riêng trong bảng, KHÔNG thay Design). Sale vẫn từ design.
-  const vidCounts = by === "content"
-    ? await db.execute(sql`
-        SELECT ${vPid} AS pid, count(*)::int AS n
-        FROM product_videos v
-        WHERE ${sql.raw(cond("v.created_at"))} AND ${vPid} IS NOT NULL${inV}
-        GROUP BY 1
-      `)
-    : { rows: [] as { pid: string; n: number }[] };
-  // 2. Sale trong kỳ = SỐ DÒNG order_item có design của người đó (mỗi item/design được assign = 1 sale),
-  //    theo o.ordered_at — GIỐNG cơ sở với Seller/Orders/Dashboard: chỉ bỏ cancel/trash, GỒM cả đơn NEW.
-  //    → 1 order có 2 item khác design của cùng 1 người vẫn tính 2 (KHÔNG gộp về 1 như count(DISTINCT order)).
-  //    Không phụ thuộc thời gian upload/assign design — chỉ tính theo đơn phát sinh trong khoảng.
-  const sales = await db.execute(sql`
-    SELECT ${sql.raw(bucket("o.ordered_at"))} AS bucket, min(${sql.raw(bucketOrd("o.ordered_at"))}) AS ord,
-           d.${sql.raw(PC)} AS pid,
-           count(*)::int AS orders, coalesce(sum(oi.qty * oi.unit_price),0)::numeric AS revenue
-    FROM order_items oi
-    JOIN designs d ON d.id = oi.design_id AND d.${sql.raw(PC)} IS NOT NULL
-    JOIN orders o ON o.id = oi.order_id
-    WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('cancel','trash')${inD}
-    GROUP BY 1, d.${sql.raw(PC)} ORDER BY ord
-  `);
-  // 3. Điểm review trong kỳ theo người
-  const scores = await db.execute(sql`
-    SELECT d.${sql.raw(PC)} AS pid, avg(r.total_score)::numeric(4,2) AS score, count(*)::int AS reviews
-    FROM design_reviews r JOIN designs d ON d.id = r.design_id
-    WHERE ${sql.raw(cond("r.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
-    GROUP BY 1
-  `);
+  // v471 · 4 query CHẠY SONG SONG (Promise.all) thay vì tuần tự — trước đây await lần lượt nên tổng
+  //        thời gian = cộng dồn, với scope rộng (admin/all) dễ vượt timeout serverless → request treo →
+  //        UI kẹt "Loading". Song song → tổng ≈ query lâu nhất, giảm mạnh nguy cơ timeout.
+  //  (1) Design tạo trong kỳ theo người × bucket (kèm points cho KPI).
+  //  (2) [by=content] SỐ VIDEO trong kỳ (cột riêng, KHÔNG thay Design).
+  //  (3) Sale trong kỳ = SỐ DÒNG order_item có design của người đó (mỗi item/design được assign = 1 sale),
+  //      theo o.ordered_at — cùng cơ sở Seller/Orders/Dashboard: chỉ bỏ cancel/trash, GỒM cả đơn NEW.
+  //      1 order có 2 item khác design của cùng 1 người vẫn tính 2. Không phụ thuộc thời gian upload/assign.
+  //  (4) Điểm review trong kỳ theo người.
+  const [dz, vidCounts, sales, scores] = await Promise.all([
+    db.execute(sql`
+      SELECT ${sql.raw(bucket("d.created_at"))} AS bucket, min(${sql.raw(bucketOrd("d.created_at"))}) AS ord,
+             d.${sql.raw(PC)} AS pid, coalesce(u.full_name,'(chưa gán)') AS name,
+             count(*)::int AS c, coalesce(sum(d.points),0)::int AS pts
+      FROM designs d LEFT JOIN users u ON u.id = d.${sql.raw(PC)}
+      WHERE ${sql.raw(cond("d.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
+      GROUP BY 1, d.${sql.raw(PC)}, u.full_name ORDER BY ord
+    `),
+    by === "content"
+      ? db.execute(sql`
+          SELECT ${vPid} AS pid, count(*)::int AS n
+          FROM product_videos v
+          WHERE ${sql.raw(cond("v.created_at"))} AND ${vPid} IS NOT NULL${inV}
+          GROUP BY 1
+        `)
+      : Promise.resolve({ rows: [] as { pid: string; n: number }[] }),
+    db.execute(sql`
+      SELECT ${sql.raw(bucket("o.ordered_at"))} AS bucket, min(${sql.raw(bucketOrd("o.ordered_at"))}) AS ord,
+             d.${sql.raw(PC)} AS pid,
+             count(*)::int AS orders, coalesce(sum(oi.qty * oi.unit_price),0)::numeric AS revenue
+      FROM order_items oi
+      JOIN designs d ON d.id = oi.design_id AND d.${sql.raw(PC)} IS NOT NULL
+      JOIN orders o ON o.id = oi.order_id
+      WHERE ${sql.raw(cond("o.ordered_at"))} AND o.status NOT IN ('cancel','trash')${inD}
+      GROUP BY 1, d.${sql.raw(PC)} ORDER BY ord
+    `),
+    db.execute(sql`
+      SELECT d.${sql.raw(PC)} AS pid, avg(r.total_score)::numeric(4,2) AS score, count(*)::int AS reviews
+      FROM design_reviews r JOIN designs d ON d.id = r.design_id
+      WHERE ${sql.raw(cond("r.created_at"))} AND d.${sql.raw(PC)} IS NOT NULL${inD}
+      GROUP BY 1
+    `),
+  ]);
 
   type DzRow = { bucket: string; ord: string; pid: string; name: string; c: number; pts: number };
   type SaleRow = { bucket: string; ord: string; pid: string; orders: number; revenue: string };
