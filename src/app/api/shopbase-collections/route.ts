@@ -71,12 +71,17 @@ export async function GET(req: NextRequest) {
     .orderBy(asc(schema.shopbaseCollectionTags.createdAt));
   const countByTag = new Map<string, number>();
   for (const p of prods) for (const t of tagList(p.tags)) countByTag.set(t, (countByTag.get(t) ?? 0) + 1);
+  // v465 · Link collection cho KHÁCH: ShopBase handle = slug của TÊN collection (không phải tag).
+  // vd "Music" → https://<domain>/collections/music. Dựng từ domain bán hàng (stores.store_url).
+  const dom = String(ctx.store.storeUrl ?? "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, "").toLowerCase();
+  const colUrl = (title: string) => (dom && dom.includes(".")) ? `https://${dom}/collections/${slugTag(title)}` : null;
   return NextResponse.json({
     ok: true,
     mode: "tags",
     collections: rows.map((r) => ({
       id: r.id, title: r.title, tag: r.tag, kind: "custom" as const,
       count: countByTag.get(r.tag.toLowerCase()) ?? 0,
+      url: colUrl(r.title),
     })),
   });
 }

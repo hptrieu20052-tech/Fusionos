@@ -11,7 +11,7 @@ import { ShopbaseLogo } from "@/components/shopbase-logo";
  * "Product tag is equal to <tag>" — tạo 1 lần, sau đó mọi thứ điều khiển từ FUSION.
  */
 type Store = { id: string; name: string };
-type Col = { id: string; title: string; tag: string; count: number };
+type Col = { id: string; title: string; tag: string; count: number; url?: string | null };
 type ColProduct = { localId: string; productId: string; title: string; status: string; thumb: string | null; onlineStoreUrl: string | null };
 type LocalRow = { id: string; storeId: string; shopbaseProductId: string; title: string; thumb: string | null; status: string; tags?: string };
 
@@ -203,6 +203,14 @@ export default function ShopbaseCollectionsClient({ stores, canEdit }: { stores:
                 <div style={{ fontWeight: 900, fontSize: 16, color: "#14213D" }}>{active.title} <span style={{ color: "var(--muted)", fontWeight: 600, fontSize: 13 }}>({items.length})</span></div>
                 <span onClick={() => { navigator.clipboard?.writeText(active.tag); flash("✓ Tag copied"); }} title="Click to copy tag"
                   style={{ background: "#EEF3FF", color: SB_BLUE, borderRadius: 999, padding: "3px 12px", fontSize: 11.5, fontWeight: 800, fontFamily: "monospace", cursor: "copy" }}>{active.tag} ⧉</span>
+                {active.url && (
+                  <>
+                    <a href={active.url} target="_blank" rel="noreferrer" title="Open collection on storefront"
+                      style={{ color: SB_BLUE, fontWeight: 700, fontSize: 12, textDecoration: "none" }}>Open ↗</a>
+                    <span onClick={() => { navigator.clipboard?.writeText(active.url!); flash("✓ Collection link copied"); }} title={active.url}
+                      style={{ background: "#EAF6EC", color: "#217A3B", borderRadius: 999, padding: "3px 12px", fontSize: 11.5, fontWeight: 800, cursor: "copy" }}>🔗 Copy link</span>
+                  </>
+                )}
                 <div style={{ marginLeft: "auto" }}>
                   {canEdit && <button onClick={openPick} disabled={busy || itemsLoading} style={{ ...btn(SB_BLUE, "#fff"), opacity: busy ? .6 : 1 }}>+ Add products</button>}
                 </div>
