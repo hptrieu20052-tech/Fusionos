@@ -27,12 +27,14 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
   const [loading, setLoading] = useState(false);
   const isContent = by === "content";
 
-  // v468 · Chống hiển thị dữ liệu SAI KỲ: khi đổi range, request CŨ (đang bay) không được ghi đè
-  // kết quả của request MỚI (ignore-guard). Trước đây thiếu guard nên đổi "This month" mà bảng vẫn
-  // đứng ở kỳ cũ nếu request cũ về sau. Deps đủ [by, range, from, to] → luôn fetch lại khi đổi kỳ.
+  // v469 · Chống hiển thị dữ liệu SAI KỲ (bug: đổi "This month" nhưng bảng vẫn đứng ở 30 ngày cũ,
+  // hay gặp ở admin/designer/support vì query nặng hơn nên response cũ về SAU response mới).
+  //  1) Đổi range → XOÁ data cũ ngay (setData(null)) → hiện "đang tải", tuyệt đối không show số kỳ cũ.
+  //  2) ignore-guard: response của request CŨ (đang bay) không được ghi đè kết quả request MỚI.
   useEffect(() => {
     let ignore = false;
     setLoading(true);
+    setData(null);
     fetch(`/api/stats/designer-report?by=${by}&range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
       .then((j) => { if (ignore) return; if (j.ok) setData(j); })
       .finally(() => { if (!ignore) setLoading(false); });
