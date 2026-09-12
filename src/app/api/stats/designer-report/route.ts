@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const okVideos = (await levelOf(session, "videos")) >= 1;
   // Creator (videos) xem được cả Designer report lẫn Creator report của team.
   if (!(okDesigns || okVideos)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  try { // v472 · bắt lỗi DB/timeout và trả NGUYÊN VĂN về client để hiển thị (chẩn đoán report lỗi với scope rộng)
   const PC = by === "content" ? "creator_id" : "designer_id"; // cột gom nhóm
   const range = sp.get("range") ?? "this_month";
   const from = sp.get("from"), to = sp.get("to");
@@ -133,4 +134,8 @@ export async function GET(req: NextRequest) {
   const designersOut = showMoney ? designers : designers.map((x) => ({ ...x, salesRevenue: 0 }));
   const totalsOut = showMoney ? totals : { ...totals, salesRevenue: 0 };
   return NextResponse.json({ ok: true, range, by, buckets, designers: designersOut, totals: totalsOut });
+  } catch (e) {
+    console.error("designer-report error:", e);
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e) });
+  }
 }

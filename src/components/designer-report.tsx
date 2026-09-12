@@ -25,19 +25,19 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const isContent = by === "content";
 
   // v469/v471 · Đổi range → xoá data cũ ngay (không show số kỳ cũ) + ignore-guard chống response cũ ghi đè.
-  //  + Nếu request LỖI/timeout thì báo lỗi (setErr) thay vì kẹt "Loading" vô hạn (data=null mãi).
+  //  + v472: request LỖI thì hiện NGUYÊN VĂN lỗi server (chẩn đoán), không kẹt "Loading" vô hạn.
   useEffect(() => {
     let ignore = false;
     setLoading(true);
-    setErr(false);
+    setErr(null);
     setData(null);
     fetch(`/api/stats/designer-report?by=${by}&range=${range}${from ? `&from=${from}` : ""}${to ? `&to=${to}` : ""}`).then((r) => r.json())
-      .then((j) => { if (ignore) return; if (j.ok) setData(j); else setErr(true); })
-      .catch(() => { if (!ignore) setErr(true); })
+      .then((j) => { if (ignore) return; if (j.ok) setData(j); else setErr(String(j.error ?? "unknown")); })
+      .catch(() => { if (!ignore) setErr("không nhận được phản hồi (function timeout — thường do query quá lâu)"); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
   }, [by, range, from, to]);
@@ -49,7 +49,7 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
     if (el) el.scrollLeft = el.scrollWidth;
   }, [data, metric]);
 
-  if (err && !data) return <div className="card" style={{ padding: 24, color: "var(--red)" }}>Không tải được báo cáo (có thể do dữ liệu lớn/quá thời gian). Thử lại hoặc thu hẹp khoảng thời gian.</div>;
+  if (err && !data) return <div className="card" style={{ padding: 24, color: "var(--red)", fontSize: 13 }}>Không tải được báo cáo — lỗi: <b>{err}</b></div>;
   if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingDesigner")}</div>;
 
   const { buckets, designers, totals } = data;

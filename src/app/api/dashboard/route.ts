@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
   const [cur] = (await db.execute(sql`
     SELECT count(*)::int o, coalesce(sum(o.total),0)::numeric r,
       coalesce((SELECT sum(oi.qty) FROM order_items oi JOIN orders o2 ON o2.id=oi.order_id
-        WHERE ${sql.raw(cond.replace("o.ordered_at","o2.ordered_at"))} AND o2.status NOT IN ('cancel','trash')${ownItems}),0)::int items
+        WHERE ${sql.raw(cond.split("o.ordered_at").join("o2.ordered_at"))} AND o2.status NOT IN ('cancel','trash')${ownItems}),0)::int items
     FROM orders o WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')${own}
   `)).rows as { o: number; r: string; items: number }[];
 
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
       coalesce((SELECT -sum(t.amount) FROM transactions t
         JOIN orders o2 ON o2.id = t.order_id
         WHERE t.type IN ('base_cost','shipping','ads','sample')
-          AND ${sql.raw(cond.replace("o.ordered_at","o2.ordered_at"))}
+          AND ${sql.raw(cond.split("o.ordered_at").join("o2.ordered_at"))}
           AND o2.status NOT IN ('cancel','trash')${own2}),0) AS cost
     FROM orders o WHERE ${sql.raw(cond)} AND o.status NOT IN ('cancel','trash')${own}
   `)).rows as { revenue: string; fee: string; fee_est: string; cost: string }[];

@@ -4,25 +4,29 @@
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// v473 · Điều kiện viết dạng SO SÁNH THẲNG TRÊN CỘT (sargable) — KHÔNG bọc cột trong ::date hay
+// date_trunc() nữa: dạng bọc hàm làm Postgres không dùng được index trên cột thời gian và dễ
+// chọn plan sai (khoảng GẦN ĐÂY chạy cực chậm/timeout trong khi khoảng cũ vẫn nhanh).
+// Ranh giới ngày GIỮ NGUYÊN ngữ nghĩa cũ (theo timezone session — Supabase là UTC).
 export function rangeCond(col: string, range: string, from?: string | null, to?: string | null): string {
   switch (range) {
-    case "today": return `${col}::date = CURRENT_DATE`;
-    case "yesterday": return `${col}::date = CURRENT_DATE - 1`;
-    case "3d": return `${col}::date >= CURRENT_DATE - 2`;
-    case "7d": return `${col}::date >= CURRENT_DATE - 6`;
-    case "30d": return `${col}::date >= CURRENT_DATE - 29`;
-    case "this_month": return `date_trunc('month', ${col}) = date_trunc('month', CURRENT_DATE)`;
-    case "last_month": return `date_trunc('month', ${col}) = date_trunc('month', CURRENT_DATE) - interval '1 month'`;
-    case "this_year": return `date_trunc('year', ${col}) = date_trunc('year', CURRENT_DATE)`;
+    case "today": return `(${col} >= CURRENT_DATE AND ${col} < CURRENT_DATE + 1)`;
+    case "yesterday": return `(${col} >= CURRENT_DATE - 1 AND ${col} < CURRENT_DATE)`;
+    case "3d": return `${col} >= CURRENT_DATE - 2`;
+    case "7d": return `${col} >= CURRENT_DATE - 6`;
+    case "30d": return `${col} >= CURRENT_DATE - 29`;
+    case "this_month": return `(${col} >= date_trunc('month', CURRENT_DATE) AND ${col} < date_trunc('month', CURRENT_DATE) + interval '1 month')`;
+    case "last_month": return `(${col} >= date_trunc('month', CURRENT_DATE) - interval '1 month' AND ${col} < date_trunc('month', CURRENT_DATE))`;
+    case "this_year": return `(${col} >= date_trunc('year', CURRENT_DATE) AND ${col} < date_trunc('year', CURRENT_DATE) + interval '1 year')`;
     case "custom": {
       const f = from && DATE_RE.test(from) ? from : null;
       const t = to && DATE_RE.test(to) ? to : null;
-      if (f && t) return `${col}::date BETWEEN '${f}' AND '${t}'`;
-      if (f) return `${col}::date >= '${f}'`;
-      if (t) return `${col}::date <= '${t}'`;
-      return `${col}::date >= CURRENT_DATE - 6`;
+      if (f && t) return `(${col} >= '${f}' AND ${col} < '${t}'::date + 1)`;
+      if (f) return `${col} >= '${f}'`;
+      if (t) return `${col} < '${t}'::date + 1`;
+      return `${col} >= CURRENT_DATE - 6`;
     }
-    default: return `${col}::date >= CURRENT_DATE - 6`;
+    default: return `${col} >= CURRENT_DATE - 6`;
   }
 }
 
