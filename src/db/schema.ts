@@ -1067,3 +1067,45 @@ export const supportEmailMessages = pgTable("support_email_messages", {
   uniqueIndex("uq_sup_email_msgs_mid").on(t.messageId),
   index("idx_sup_email_msgs_folder").on(t.folder),
 ]);
+
+// ---------- STUDIO — "Create Your Own" wizard cho KHÁCH trên talewix.com (v484) ----------
+// Khách chọn template sách → điền tên + upload ảnh mặt → AI gen COVER preview (model do admin
+// chọn trong Settings) → bắt email → add to cart Shopify kèm properties. Bảng previews vừa là
+// rate-limit (đếm theo IP/ngày) vừa là kho LEAD (email + preview đã gen) cho remarketing.
+export const studioTemplates = pgTable("studio_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  thumbUrl: text("thumb_url").notNull().default(""),        // ảnh hiển thị trong wizard (cover gốc)
+  baseImageUrl: text("base_image_url").notNull().default(""), // ảnh template làm reference cho AI (thường = thumb)
+  variantId: text("variant_id").notNull().default(""),      // Shopify variant id để add to cart
+  price: text("price").notNull().default(""),               // hiển thị, vd "$29.95"
+  promptExtra: text("prompt_extra").notNull().default(""),  // dặn thêm riêng cho template (nối vào prompt chung)
+  active: boolean("active").notNull().default(true),
+  sort: integer("sort").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const studioPreviews = pgTable("studio_previews", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  templateId: uuid("template_id").references(() => studioTemplates.id),
+  childName: text("child_name").notNull().default(""),
+  email: text("email").notNull().default(""),               // bắt sau khi gen (Save your preview)
+  previewKey: text("preview_key").notNull().default(""),    // key storage ảnh preview (đã watermark)
+  model: text("model").notNull().default(""),
+  cost: numeric("cost").notNull().default("0"),
+  ip: text("ip").notNull().default(""),
+  status: text("status").notNull().default("done"),         // done | error
+  error: text("error").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_studio_previews_ip").on(t.ip, t.createdAt),
+  index("idx_studio_previews_created").on(t.createdAt),
+]);
+
+// Settings 1 dòng (id='default'): { enabled, model, dailyLimitIp, dailyLimitGlobal, watermark, origins[], prompt, aspectRatio }
+export const studioSettings = pgTable("studio_settings", {
+  id: text("id").primaryKey().default("default"),
+  value: jsonb("value").notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
