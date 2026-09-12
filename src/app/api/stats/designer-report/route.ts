@@ -109,7 +109,9 @@ export async function GET(req: NextRequest) {
   // Bổ sung tên cho người chỉ có sale (không có design mới trong kỳ)
   const missing = Array.from(dmap.values()).filter((x) => !x.name).map((x) => x.id);
   if (missing.length) {
-    const names = await db.execute(sql`SELECT id, full_name FROM users WHERE id = ANY(${missing}::uuid[])`);
+    // v475 · FIX lỗi "malformed array literal" / "cannot cast type record to uuid[]": KHÔNG nhúng mảng JS
+    // thẳng vào sql`ANY(${arr}::uuid[])` (drizzle bung thành ($1,$2) = record). Dùng IN (...) như inD.
+    const names = await db.execute(sql`SELECT id, full_name FROM users WHERE id IN (${sql.join(missing.map((x) => sql`${x}::uuid`), sql`, `)})`);
     for (const n of names.rows as { id: string; full_name: string }[]) { const x = dmap.get(n.id); if (x) x.name = n.full_name; }
   }
 
