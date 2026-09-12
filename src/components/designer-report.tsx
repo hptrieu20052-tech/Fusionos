@@ -61,6 +61,8 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
         {isContent
           ? <span style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{title ?? "Creator Report"}</span>
           : <a href="/stats/designers" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Designer Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>}
+        {/* DEBUG v470 · hiện range component nhận được — gỡ sau khi chẩn đoán xong */}
+        <span style={{ fontSize: 11, fontWeight: 800, color: "#e11d48", background: "#fee2e2", padding: "2px 8px", borderRadius: 6 }}>range={range || "(trống)"}</span>
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
           {([["d", "Design"], ["s", "Item sale"]] as const).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
