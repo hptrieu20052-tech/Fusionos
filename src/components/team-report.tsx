@@ -70,10 +70,9 @@ export default function TeamReport({ range, from, to, title }: RangeProps) {
           })}
         </div>
 
-        {/* Donut + xếp hạng team thu gọn bên phải */}
+        {/* v474 · Bỏ donut — dành trọn cột phải cho xếp hạng team */}
         <div className="rep-side">
-          <Donut teams={teams} metric={metric} total={metric === "r" ? totals.revenue : totals.orders} />
-          <div style={{ marginTop: 12 }}>
+          <div>
             {teams.map((t, ti) => (
               <div key={ti} style={{ borderTop: "1px solid var(--line)", padding: "8px 0" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
@@ -112,39 +111,5 @@ export default function TeamReport({ range, from, to, title }: RangeProps) {
         </div>
       )}
     </div>
-  );
-}
-
-function Donut({ teams, metric, total }: { teams: Team[]; metric: "r" | "o"; total: number }) {
-  const { t: tr } = useLang();
-  const [hov, setHov] = useState<number | null>(null);
-  const R = 70, r = 44, C = 100;
-  let acc = 0;
-  const val = (t: Team) => (metric === "r" ? t.revenue : t.orders);
-  const arcs = teams.map((t, ti) => {
-    const v = val(t);
-    const frac = total ? v / total : 0;
-    const a0 = acc * 2 * Math.PI - Math.PI / 2; acc += frac;
-    const a1 = acc * 2 * Math.PI - Math.PI / 2;
-    const large = frac > 0.5 ? 1 : 0;
-    const p = (a: number, rad: number) => `${C + rad * Math.cos(a)},${C + rad * Math.sin(a)}`;
-    return { ti, v, frac, d: `M ${p(a0, R)} A ${R} ${R} 0 ${large} 1 ${p(a1, R)} L ${p(a1, r)} A ${r} ${r} 0 ${large} 0 ${p(a0, r)} Z` };
-  });
-  const show = hov !== null ? teams[hov] : null;
-  const showV = show ? val(show) : total;
-  const fmt = (n: number) => metric === "r" ? money(n) : n.toLocaleString();
-  return (
-    <svg viewBox="0 0 200 200" style={{ width: "100%", maxWidth: 210, display: "block", margin: "0 auto" }}>
-      {arcs.map((a) => a.frac > 0 && (
-        <path key={a.ti} d={a.d} fill={PALETTE[a.ti % PALETTE.length]}
-          opacity={hov === null || hov === a.ti ? 1 : 0.25}
-          style={{ cursor: "pointer", transition: "opacity .15s" }}
-          onMouseEnter={() => setHov(a.ti)} onMouseLeave={() => setHov(null)} />
-      ))}
-      <text x="100" y="94" textAnchor="middle" style={{ fontSize: 20, fontWeight: 800, fill: "var(--ink)" }}>{fmt(showV)}</text>
-      <text x="100" y="114" textAnchor="middle" style={{ fontSize: 11, fill: "var(--muted)" }}>
-        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "r" ? tr("rep.totalRevenue") : tr("rep.totalOrders")}
-      </text>
-    </svg>
   );
 }

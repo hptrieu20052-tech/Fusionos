@@ -109,10 +109,9 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
           })}
         </div>
 
-        {/* Donut + bảng xếp hạng KPI */}
+        {/* v474 · Bỏ donut — dành trọn cột phải cho bảng xếp hạng KPI (hiện được nhiều dòng hơn) */}
         <div className="rep-side">
-          <Donut designers={designers} metric={metric} total={metric === "d" ? totals.designs : totals.salesOrders} />
-          <div className="rep-rank" style={{ marginTop: 12, maxHeight: 240, overflowY: "auto" }}>
+          <div className="rep-rank" style={{ maxHeight: 480, overflowY: "auto" }}>
             <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--muted)", textAlign: "right" }}>
@@ -169,38 +168,5 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
         </div>
       )}
     </div>
-  );
-}
-
-function Donut({ designers, metric, total }: { designers: Designer[]; metric: "d" | "s"; total: number }) {
-  const { t: tr } = useLang();
-  const [hov, setHov] = useState<number | null>(null);
-  const R = 70, r = 44, C = 100;
-  let acc = 0;
-  const val = (s: Designer) => (metric === "d" ? s.designs : s.salesOrders);
-  const arcs = designers.map((s, si) => {
-    const v = val(s);
-    const frac = total ? v / total : 0;
-    const a0 = acc * 2 * Math.PI - Math.PI / 2; acc += frac;
-    const a1 = acc * 2 * Math.PI - Math.PI / 2;
-    const large = frac > 0.5 ? 1 : 0;
-    const p = (a: number, rad: number) => `${C + rad * Math.cos(a)},${C + rad * Math.sin(a)}`;
-    return { si, v, frac, d: `M ${p(a0, R)} A ${R} ${R} 0 ${large} 1 ${p(a1, R)} L ${p(a1, r)} A ${r} ${r} 0 ${large} 0 ${p(a0, r)} Z` };
-  });
-  const show = hov !== null ? designers[hov] : null;
-  const showV = show ? val(show) : total;
-  return (
-    <svg viewBox="0 0 200 200" style={{ width: "100%", maxWidth: 190, display: "block", margin: "0 auto" }}>
-      {arcs.map((a) => a.frac > 0 && (
-        <path key={a.si} d={a.d} fill={PALETTE[a.si % PALETTE.length]}
-          opacity={hov === null || hov === a.si ? 1 : 0.25}
-          style={{ cursor: "pointer", transition: "opacity .15s" }}
-          onMouseEnter={() => setHov(a.si)} onMouseLeave={() => setHov(null)} />
-      ))}
-      <text x="100" y="94" textAnchor="middle" style={{ fontSize: 22, fontWeight: 800, fill: "var(--ink)" }}>{showV.toLocaleString()}</text>
-      <text x="100" y="114" textAnchor="middle" style={{ fontSize: 11, fill: "var(--muted)" }}>
-        {show ? `${show.name} · ${((showV / (total || 1)) * 100).toFixed(1)}%` : metric === "d" ? tr("rep.totalDesigns") : tr("rep.totalGenOrders")}
-      </text>
-    </svg>
   );
 }
