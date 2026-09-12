@@ -1,121 +1,272 @@
 {% comment %}
-  v484 · CREATE YOUR OWN — wizard cá nhân hoá sách trên talewix.com (chạy cùng FUSION Studio).
+  v490 · CREATE YOUR OWN — flow 4 bước GIỐNG WonderWraps, tone màu Talewix:
+    1. Lưới sách → "Personalize Now"
+    2. TRANG CHI TIẾT (ảnh to + mô tả + bullets) → nút "Personalize my book" cuộn xuống
+       khu "Start Personalizing" (TIPS + upload avatar tròn + Language + Name + Age) → "Preview Book"
+    3. Màn MY BOOK: Choose cover options + email + preview mờ "bring your story to life" → kết quả → Continue
 
-  CÀI ĐẶT (1 lần):
-    1. Shopify admin → Online Store → Themes → Edit code → Templates → Add a new template
-       → chọn "page", đặt suffix: create-your-own, loại Liquid → dán TOÀN BỘ file này vào.
-    2. Online Store → Pages → Add page: Title "Create Your Own", Template: page.create-your-own → Save.
-    3. Navigation → main menu → thêm item "Create Your Own ✨" → link tới page vừa tạo.
-    4. Trong FUSION → Seller Hub → Shopify → Create Your Own: bật Enable + thêm template + chọn model.
-  Link chọn sẵn template (giống Printerval): /pages/create-your-own?template=<template_id>
+  CÀI ĐẶT: dán toàn bộ file này ĐÈ vào templates/page.create-your-own.liquid → Save.
+  Link chọn sẵn template: /pages/create-your-own?template=<template_id>
+  YÊU CẦU: FUSION v490+ (migration v488 + v490).
 {% endcomment %}
 
 <div id="cyo-app">
+  <!-- Bộ icon line (kiểu Feather) — hiện đại, KHÔNG emoji. Dùng: <svg class="ic"><use href="#ic-..."/></svg> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="ic-smile" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></symbol>
+    <symbol id="ic-noeat" viewBox="0 0 24 24"><path d="M6 3v8"/><path d="M4 3v4a2 2 0 0 0 4 0V3"/><path d="M6 13v8"/><path d="M17 3c2 0 3 2.2 3 5v5h-3z"/><path d="M17 13v8"/></symbol>
+    <symbol id="ic-glasses" viewBox="0 0 24 24"><circle cx="7" cy="14" r="3.4"/><circle cx="17" cy="14" r="3.4"/><path d="M10.4 14h3.2"/><path d="M3.6 12 2 7"/><path d="M20.4 12 22 7"/></symbol>
+    <symbol id="ic-angle" viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></symbol>
+    <symbol id="ic-camera" viewBox="0 0 24 24"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></symbol>
+    <symbol id="ic-book" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+    <symbol id="ic-box" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></symbol>
+    <symbol id="ic-truck" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="1"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></symbol>
+    <symbol id="ic-eye" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="ic-check" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></symbol>
+    <symbol id="ic-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="ic-up" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></symbol>
+  </svg>
   <style>
-    #cyo-app { max-width: 980px; margin: 0 auto; padding: 24px 16px 60px; font-family: inherit; }
+    .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+    :root { --cyo-orange: #f68b1e; --cyo-brown: #b06a30; --cyo-ink: #2d2a26; --cyo-muted: #8a8f98; --cyo-cream: #fdf8f1; --cyo-line: #f0e6d8; }
+    #cyo-app { max-width: 1080px; margin: 0 auto; padding: 28px 16px 70px; font-family: inherit; color: var(--cyo-ink); }
     #cyo-app * { box-sizing: border-box; }
-    .cyo-head { text-align: center; margin-bottom: 26px; }
-    .cyo-head h1 { font-size: 30px; margin: 0 0 8px; }
-    .cyo-head p { color: #666; margin: 0; font-size: 15px; }
-    .cyo-steps { display: flex; justify-content: center; gap: 6px; margin: 18px 0 26px; flex-wrap: wrap; }
-    .cyo-step { font-size: 12.5px; font-weight: 700; padding: 6px 14px; border-radius: 99px; background: #f4f4f4; color: #999; }
-    .cyo-step.on { background: #f68b1e; color: #fff; }
-    .cyo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
-    .cyo-card { border: 2px solid #eee; border-radius: 14px; padding: 10px; cursor: pointer; text-align: center; transition: border-color .15s; background: #fff; }
-    .cyo-card:hover { border-color: #f6b26e; }
-    .cyo-card.sel { border-color: #f68b1e; box-shadow: 0 0 0 3px rgba(246,139,30,.15); }
-    .cyo-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 10px; }
-    .cyo-card .t { font-weight: 700; font-size: 13.5px; margin: 8px 0 2px; }
-    .cyo-card .p { color: #f68b1e; font-weight: 800; font-size: 13px; }
-    .cyo-panel { background: #fff; border: 1px solid #eee; border-radius: 16px; padding: 22px; max-width: 560px; margin: 0 auto; }
-    .cyo-lbl { display: block; font-weight: 700; font-size: 13.5px; margin: 16px 0 6px; }
-    .cyo-inp { width: 100%; padding: 12px 14px; border: 1px solid #ddd; border-radius: 10px; font-size: 15px; }
-    .cyo-drop { border: 2px dashed #ddd; border-radius: 12px; padding: 26px; text-align: center; cursor: pointer; color: #888; font-size: 14px; transition: border-color .15s; }
-    .cyo-drop:hover { border-color: #f68b1e; }
-    .cyo-drop img { max-width: 130px; border-radius: 10px; display: block; margin: 0 auto 8px; }
-    .cyo-btn { display: inline-block; background: #f68b1e; color: #fff !important; border: 0; border-radius: 12px; padding: 14px 30px; font-size: 15.5px; font-weight: 800; cursor: pointer; text-decoration: none; }
-    .cyo-btn[disabled] { opacity: .5; cursor: not-allowed; }
-    .cyo-btn.alt { background: #14213D; }
-    .cyo-note { font-size: 12.5px; color: #999; margin-top: 10px; }
+    .cyo-head { text-align: center; margin-bottom: 10px; }
+    .cyo-head h1 { font-size: 34px; margin: 0 0 10px; color: var(--cyo-brown); font-weight: 800; }
+    .cyo-head p { color: var(--cyo-muted); margin: 0; font-size: 15.5px; }
+    .cyo-steps { display: flex; justify-content: center; gap: 8px; margin: 20px 0 30px; flex-wrap: wrap; }
+    .cyo-step { font-size: 12.5px; font-weight: 700; padding: 7px 16px; border-radius: 99px; background: #f4efe6; color: #b9b2a6; }
+    .cyo-step.on { background: var(--cyo-orange); color: #fff; box-shadow: 0 4px 14px rgba(246,139,30,.3); }
+    .cyo-btn { display: inline-block; background: var(--cyo-orange); color: #fff !important; border: 0; border-radius: 99px; padding: 15px 34px; font-size: 15.5px; font-weight: 700; cursor: pointer; text-decoration: none; box-shadow: 0 6px 18px rgba(246,139,30,.28); }
+    .cyo-btn[disabled] { opacity: .45; cursor: not-allowed; box-shadow: none; }
+    .cyo-btn.alt { background: var(--cyo-ink); box-shadow: none; }
+    .cyo-btn.big { width: 100%; text-align: center; }
+    .cyo-note { font-size: 12.5px; color: var(--cyo-muted); margin-top: 10px; }
     .cyo-err { background: #fdecec; color: #c0392b; border-radius: 10px; padding: 10px 14px; font-size: 13.5px; margin-top: 12px; display: none; }
-    .cyo-gen { text-align: center; padding: 30px 10px; }
-    .cyo-bar { height: 8px; background: #f4f4f4; border-radius: 99px; overflow: hidden; margin: 18px auto 8px; max-width: 380px; }
-    .cyo-bar i { display: block; height: 100%; width: 0%; background: #f68b1e; border-radius: 99px; transition: width .8s ease; }
-    .cyo-preview img { width: 100%; max-width: 440px; border-radius: 14px; border: 1px solid #eee; display: block; margin: 0 auto 16px; }
-    .cyo-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+    .cyo-back { font-size: 13px; color: var(--cyo-muted); display: inline-block; margin-top: 14px; }
     .cyo-actions { text-align: center; margin-top: 22px; }
-    @media (max-width: 560px) { .cyo-head h1 { font-size: 24px; } .cyo-panel { padding: 16px; } }
+    .cyo-inp { width: 100%; padding: 13px 16px; border: 1px solid #e4dccd; border-radius: 14px; font-size: 15px; background: #fff; }
+    .cyo-lbl { display: block; font-weight: 800; font-size: 13.5px; margin: 14px 0 6px; }
+
+    /* ── STEP 1 · lưới sách ─────────────────────────────────────── */
+    .cyo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 26px; }
+    .cyo-card { cursor: pointer; text-align: center; transition: transform .15s, box-shadow .15s; background: #fff; border-radius: 18px; padding: 14px 14px 18px; box-shadow: 0 6px 22px rgba(45,42,38,.08); }
+    .cyo-card:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(45,42,38,.13); }
+    .cyo-card .imgwrap { border-radius: 12px; overflow: hidden; }
+    .cyo-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .cyo-card .t { font-weight: 700; font-size: 15.5px; margin: 13px 0 5px; line-height: 1.4; }
+    .cyo-card .p { font-size: 14px; color: var(--cyo-muted); margin-bottom: 12px; }
+    .cyo-card .p b { color: var(--cyo-orange); font-size: 16.5px; font-weight: 800; }
+    .cyo-card .go { display: inline-block; border: 1.5px solid var(--cyo-orange); color: var(--cyo-orange); border-radius: 99px; padding: 10px 24px; font-size: 13.5px; font-weight: 700; background: #fff; }
+    .cyo-card:hover .go { background: var(--cyo-orange); color: #fff; }
+    .cyo-trust { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-top: 42px; color: var(--cyo-muted); font-size: 13px; font-weight: 700; }
+    .cyo-trust span { display: flex; align-items: center; gap: 7px; }
+
+    /* ── STEP 2 · CHI TIẾT SÁCH + Start Personalizing ───────────── */
+    .cyo-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; margin-bottom: 34px; }
+    .cyo-detail .dimg { border-radius: 18px; box-shadow: 0 10px 30px rgba(45,42,38,.12); overflow: hidden; background: #fff; padding: 14px; }
+    .cyo-detail .dimg img { width: 100%; display: block; border-radius: 12px; }
+    .cyo-detail h2 { font-size: 30px; margin: 0 0 12px; font-weight: 800; line-height: 1.25; color: var(--cyo-brown); }
+    .cyo-detail .dprice { font-size: 15px; color: var(--cyo-muted); margin: 14px 0 18px; }
+    .cyo-detail .dprice b { color: var(--cyo-orange); font-size: 24px; font-weight: 800; }
+    .cyo-detail .ddesc { color: #555; font-size: 15px; line-height: 1.7; margin-bottom: 18px; }
+    .cyo-bullets { list-style: none; padding: 0; margin: 0 0 22px; }
+    .cyo-bullets li { display: flex; gap: 9px; align-items: flex-start; font-size: 14.5px; margin-bottom: 9px; }
+    .cyo-faq { border-top: 1px solid var(--cyo-line); }
+    .cyo-faq details { border-bottom: 1px solid var(--cyo-line); }
+    .cyo-faq summary { cursor: pointer; font-weight: 800; font-size: 14.5px; padding: 13px 2px; list-style: none; display: flex; justify-content: space-between; }
+    .cyo-faq summary::after { content: "▾"; color: var(--cyo-muted); }
+    .cyo-faq p { margin: 0 0 14px; font-size: 13.5px; color: #666; line-height: 1.65; }
+    .cyo-wrap2 { background: var(--cyo-cream); border-radius: 22px; padding: 34px 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 34px; align-items: start; }
+    .cyo-left h2 { font-size: 30px; margin: 0 0 10px; font-weight: 800; color: var(--cyo-brown); }
+    .cyo-left .sub { color: var(--cyo-muted); font-size: 15px; line-height: 1.6; margin-bottom: 26px; }
+    .cyo-flow3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; text-align: center; }
+    .cyo-flow3 .f { font-size: 12px; font-weight: 700; color: var(--cyo-muted); line-height: 1.4; }
+    .cyo-flow3 .c { width: 74px; height: 74px; margin: 0 auto 8px; border-radius: 50%; border: 2px dashed #e4d5bd; display: flex; align-items: center; justify-content: center; font-size: 30px; background: #fff; position: relative; }
+    .cyo-flow3 .n { position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); background: var(--cyo-orange); color: #fff; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; line-height: 20px; font-weight: 900; }
+    .cyo-tips { background: #fff; border: 1px solid var(--cyo-line); border-radius: 18px; padding: 20px; }
+    .cyo-tips .tt { text-align: center; font-weight: 800; letter-spacing: 3px; font-size: 13px; margin-bottom: 14px; }
+    .cyo-tipsrow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; margin-bottom: 18px; }
+    .cyo-tip .c { width: 58px; height: 58px; margin: 0 auto 6px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 26px; position: relative; background: #faf4ea; }
+    .cyo-tip.ok .c { border: 2.5px solid #2e9e5b; } .cyo-tip.no .c { border: 2.5px solid #d9534f; }
+    .cyo-tip .m { position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 11px; line-height: 18px; font-weight: 900; }
+    .cyo-tip.ok .m { background: #2e9e5b; } .cyo-tip.no .m { background: #d9534f; }
+    .cyo-tip .d { font-size: 11px; color: var(--cyo-muted); font-weight: 700; line-height: 1.35; }
+    .cyo-upload { display: block; width: 100%; background: var(--cyo-orange); color: #fff; border: 0; border-radius: 99px; padding: 16px; font-size: 16.5px; font-weight: 800; cursor: pointer; text-align: center; box-shadow: 0 6px 18px rgba(246,139,30,.35); }
+    .cyo-drophint { text-align: center; font-size: 12.5px; color: var(--cyo-muted); font-weight: 700; margin-top: 8px; }
+    .cyo-avatar { position: relative; width: 128px; margin: 0 auto; display: none; }
+    .cyo-avatar img { width: 128px; height: 128px; border-radius: 50%; object-fit: cover; border: 3px solid #fff; box-shadow: 0 6px 18px rgba(45,42,38,.2); cursor: pointer; }
+    .cyo-avatar .x { position: absolute; top: 0; right: 0; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 1px solid var(--cyo-line); font-size: 13px; font-weight: 900; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+    .cyo-priv { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--cyo-muted); margin-top: 14px; line-height: 1.5; }
+
+    /* ── STEP 3 · MY BOOK ────────────────────────────────────────── */
+    .cyo-mb-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+    .cyo-mb-head h2 { font-size: 26px; margin: 0 0 4px; font-weight: 800; }
+    .cyo-mb-sub { color: var(--cyo-muted); font-size: 14px; font-weight: 600; }
+    .cyo-box { background: #fff; border: 1px solid var(--cyo-line); border-radius: 18px; padding: 22px; margin-bottom: 16px; }
+    .cyo-box h3 { margin: 0 0 16px; font-size: 19px; font-weight: 800; }
+    .cyo-covers { display: flex; gap: 16px; flex-wrap: wrap; }
+    .cyo-cover { position: relative; display: flex; gap: 14px; align-items: center; border: 2px solid var(--cyo-line); border-radius: 16px; padding: 14px 18px 14px 14px; cursor: pointer; min-width: 260px; flex: 0 1 320px; background: #fff; transition: border-color .15s; }
+    .cyo-cover:hover { border-color: #f6b26e; }
+    .cyo-cover.sel { border-color: var(--cyo-orange); background: #fff8f0; box-shadow: 0 0 0 3px rgba(246,139,30,.12); }
+    .cyo-cover img { width: 84px; height: 84px; border-radius: 10px; object-fit: cover; }
+    .cyo-cover .vt { font-weight: 800; font-size: 15.5px; margin-bottom: 3px; }
+    .cyo-cover .vp { color: var(--cyo-orange); font-weight: 800; font-size: 16px; margin-top: 6px; }
+    .cyo-cover .tick { position: absolute; top: -9px; left: -9px; width: 24px; height: 24px; border-radius: 50%; background: var(--cyo-orange); color: #fff; font-size: 13px; line-height: 24px; text-align: center; font-weight: 900; display: none; }
+    .cyo-cover.sel .tick { display: block; }
+    .cyo-cover .best { position: absolute; top: -11px; right: 14px; background: #e8474b; color: #fff; font-size: 10.5px; font-weight: 900; letter-spacing: .5px; padding: 4px 10px; border-radius: 7px; }
+    .cyo-emailrow { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
+    .cyo-emailrow .et { flex: 1 1 260px; font-size: 14.5px; line-height: 1.5; }
+    .cyo-emailrow .ef { display: flex; gap: 8px; flex: 1 1 300px; }
+    .cyo-stagewrap { position: relative; max-width: 560px; margin: 0 auto; }
+    .cyo-stagewrap img { width: 100%; border-radius: 14px; box-shadow: 0 10px 30px rgba(45,42,38,.14); display: block; }
+    .cyo-stagewrap img.blur { filter: blur(14px) saturate(.9); }
+    .cyo-genover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; padding: 20px; }
+    .cyo-genover .gt { font-size: 19px; font-weight: 800; color: #fff; text-shadow: 0 2px 14px rgba(0,0,0,.45); }
+    .cyo-bar { height: 8px; background: rgba(255,255,255,.45); border-radius: 99px; overflow: hidden; width: 70%; max-width: 320px; }
+    .cyo-bar i { display: block; height: 100%; width: 0%; background: var(--cyo-orange); border-radius: 99px; transition: width .8s ease; }
+    .cyo-genover .ge { font-size: 12px; color: #fff; font-weight: 700; text-shadow: 0 1px 8px rgba(0,0,0,.4); }
+
+    @media (max-width: 760px) {
+      .cyo-detail, .cyo-wrap2 { grid-template-columns: 1fr; }
+      .cyo-wrap2 { padding: 22px 16px; }
+      .cyo-head h1 { font-size: 26px; }
+      .cyo-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px; }
+      .cyo-card .t { font-size: 14px; }
+      .cyo-cover { flex: 1 1 100%; }
+    }
   </style>
 
   <div class="cyo-head">
     <h1>Create Your Own Storybook</h1>
-    <p>Pick a book, add your child's name and photo — see their cover in about a minute. Free, no card needed.</p>
+    <p>Make your child the hero of their favorite story — see their cover in about a minute. Free, no card needed.</p>
     <div class="cyo-steps">
       <span class="cyo-step" data-step="1">1 · Choose a book</span>
       <span class="cyo-step" data-step="2">2 · Personalize</span>
-      <span class="cyo-step" data-step="3">3 · Your preview</span>
+      <span class="cyo-step" data-step="3">3 · Your book</span>
     </div>
   </div>
 
-  <!-- STEP 1: chọn template -->
+  <!-- STEP 1: lưới sách -->
   <div id="cyo-s1">
-    <div class="cyo-grid" id="cyo-templates"><div style="color:#999">Loading books…</div></div>
+    <div class="cyo-grid" id="cyo-templates"><div style="color:var(--cyo-muted)">Loading books…</div></div>
+    <div class="cyo-trust">
+      <span><svg class="ic" style="width:17px;height:17px"><use href="#ic-truck"/></svg> Free US shipping</span>
+      <span><svg class="ic" style="width:17px;height:17px"><use href="#ic-eye"/></svg> Review &amp; approve before we print</span>
+      <span><svg class="ic" style="width:17px;height:17px"><use href="#ic-lock"/></svg> Secure checkout</span>
+    </div>
   </div>
 
-  <!-- STEP 2: tên + ảnh -->
+  <!-- STEP 2: CHI TIẾT SÁCH + Start Personalizing (kiểu product page WonderWraps) -->
   <div id="cyo-s2" style="display:none">
-    <div class="cyo-panel">
-      <div id="cyo-chosen" style="display:flex;align-items:center;gap:12px"></div>
-      <label class="cyo-lbl">Child's name (as it appears on the cover)</label>
-      <input class="cyo-inp" id="cyo-name" maxlength="40" placeholder="e.g. James" autocomplete="off">
-      <label class="cyo-lbl">Child's age <span style="font-weight:400;color:#999">(optional — helps us personalize the story)</span></label>
-      <select class="cyo-inp" id="cyo-age">
-        <option value="">— select age —</option>
-        <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
-        <option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
-      </select>
-      <label class="cyo-lbl">Child's photo (one clear face photo)</label>
-      <div class="cyo-drop" id="cyo-drop">
-        <span id="cyo-drop-empty">📷 Click to upload a photo<br><span style="font-size:12px;color:#aaa">Best results: clear, front-facing, good light — no sunglasses, no side angles</span></span>
-        <span id="cyo-drop-full" style="display:none"></span>
+    <div class="cyo-detail">
+      <div class="dimg"><img id="cyo-d-img" alt=""></div>
+      <div>
+        <h2 id="cyo-d-title"></h2>
+        <div class="ddesc" id="cyo-d-desc" style="display:none"></div>
+        <ul class="cyo-bullets">
+          <li id="cyo-d-ages" style="display:none"><svg class="ic" style="width:19px;height:19px;margin-top:1px"><use href="#ic-smile"/></svg> <span></span></li>
+          <li id="cyo-d-pages" style="display:none"><svg class="ic" style="width:19px;height:19px;margin-top:1px"><use href="#ic-book"/></svg> <span></span></li>
+          <li><svg class="ic" style="width:19px;height:19px;margin-top:1px"><use href="#ic-eye"/></svg> <span><b>Preview</b> available before ordering — free, no card needed</span></li>
+          <li><svg class="ic" style="width:19px;height:19px;margin-top:1px;color:#2e9e5b"><use href="#ic-check"/></svg> <span>You'll <b>review &amp; approve</b> your book before we print</span></li>
+        </ul>
+        <div class="dprice">From <b id="cyo-d-price"></b></div>
+        <button class="cyo-btn big" id="cyo-d-start">Personalize my book</button>
+        <div class="cyo-faq" style="margin-top:22px">
+          <details><summary>How is the book personalized for my child?</summary><p>Upload one clear photo and enter your child's name — we redraw the main character with your child's face in the book's art style, and print their name on the cover. You'll see a free preview before ordering.</p></details>
+          <details><summary>What if I need changes after ordering?</summary><p>After your order, you review and approve the book before we print. Changes at that stage are free.</p></details>
+        </div>
+        <a href="#" id="cyo-back1" class="cyo-back">← Choose a different book</a>
       </div>
-      <input type="file" id="cyo-file" accept="image/*" style="display:none">
-      <div class="cyo-note">🔒 Your child's photo is used only to create this preview — it is never stored on our servers or shown to anyone else.</div>
-      <div class="cyo-err" id="cyo-err2"></div>
-      <div class="cyo-actions">
-        <button class="cyo-btn" id="cyo-gen-btn" disabled>Create my free preview →</button><br>
-        <a href="#" id="cyo-back1" style="font-size:13px;color:#999;display:inline-block;margin-top:12px">← Choose a different book</a>
+    </div>
+
+    <!-- Start Personalizing -->
+    <div class="cyo-wrap2" id="cyo-start">
+      <div class="cyo-left">
+        <h2>Start Personalizing</h2>
+        <div class="sub">Personalize the storybook with your child's photo. Preview the cover, place your order, and we'll print and deliver it to your home.</div>
+        <div class="cyo-flow3">
+          <div><div class="c"><svg class="ic" style="width:28px;height:28px;color:var(--cyo-brown)"><use href="#ic-camera"/></svg><span class="n">1</span></div><div class="f">Upload Child's Picture</div></div>
+          <div><div class="c"><svg class="ic" style="width:28px;height:28px;color:var(--cyo-brown)"><use href="#ic-book"/></svg><span class="n">2</span></div><div class="f">Preview Book and Order</div></div>
+          <div><div class="c"><svg class="ic" style="width:28px;height:28px;color:var(--cyo-brown)"><use href="#ic-box"/></svg><span class="n">3</span></div><div class="f">Premium Print, Delivered to Your Door</div></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="cyo-tips">
+          <div class="tt">T I P S</div>
+          <div class="cyo-tipsrow">
+            <div class="cyo-tip ok"><div class="c"><svg class="ic" style="width:24px;height:24px;color:#2e9e5b"><use href="#ic-smile"/></svg><span class="m">✓</span></div><div class="d">Clear front-facing photo</div></div>
+            <div class="cyo-tip no"><div class="c"><svg class="ic" style="width:24px;height:24px;color:#c46a66"><use href="#ic-noeat"/></svg><span class="m">✕</span></div><div class="d">No eating or covered face</div></div>
+            <div class="cyo-tip no"><div class="c"><svg class="ic" style="width:24px;height:24px;color:#c46a66"><use href="#ic-glasses"/></svg><span class="m">✕</span></div><div class="d">No hats or sunglasses</div></div>
+            <div class="cyo-tip no"><div class="c"><svg class="ic" style="width:24px;height:24px;color:#c46a66"><use href="#ic-angle"/></svg><span class="m">✕</span></div><div class="d">No far away or side angle</div></div>
+          </div>
+          <button class="cyo-upload" id="cyo-drop" type="button">Child's Photo <svg class="ic" style="width:19px;height:19px;vertical-align:-4px;margin-left:6px"><use href="#ic-up"/></svg></button>
+          <div class="cyo-drophint" id="cyo-drophint">drop a photo or click the button</div>
+          <div class="cyo-avatar" id="cyo-avatar"><img id="cyo-avatar-img" alt=""><button class="x" id="cyo-avatar-x" type="button">✕</button></div>
+          <input type="file" id="cyo-file" accept="image/*" style="display:none">
+          <label class="cyo-lbl">Book Language</label>
+          <select class="cyo-inp" id="cyo-lang"><option>English</option></select>
+          <div style="display:grid;grid-template-columns:1fr 130px;gap:10px">
+            <div><label class="cyo-lbl">Child's Name</label><input class="cyo-inp" id="cyo-name" maxlength="40" placeholder="e.g. James" autocomplete="off"></div>
+            <div><label class="cyo-lbl">Child's Age</label>
+              <select class="cyo-inp" id="cyo-age"><option value="">—</option>
+                <option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
+                <option>7</option><option>8</option><option>9</option><option>10</option><option>11</option><option>12</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div class="cyo-err" id="cyo-err2"></div>
+        <div class="cyo-actions">
+          <button class="cyo-btn big" id="cyo-gen-btn" disabled>Preview Book</button>
+          <div class="cyo-priv" style="justify-content:center"><svg class="ic" style="width:17px;height:17px;margin-top:2px"><use href="#ic-lock"/></svg> <span><b>Private and secure, no third-party data use.</b> Your images and information stay protected.</span></div>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- STEP 3a: đang gen -->
+  <!-- STEP 3: MY BOOK -->
   <div id="cyo-s3" style="display:none">
-    <div class="cyo-panel cyo-gen">
-      <h2 style="margin:0 0 6px" id="cyo-gen-title">Creating the cover…</h2>
-      <p style="color:#888;font-size:14px;margin:0">Usually 30–60 seconds. Please keep this page open.</p>
-      <div class="cyo-bar"><i id="cyo-bar-i"></i></div>
-      <div style="font-size:12.5px;color:#aaa" id="cyo-elapsed">0s</div>
+    <div class="cyo-mb-head">
+      <div>
+        <h2 id="cyo-mb-title"></h2>
+        <div class="cyo-mb-sub" id="cyo-mb-sub"></div>
+      </div>
+      <button class="cyo-btn alt" id="cyo-change" style="padding:11px 22px;font-size:13.5px">Change ▾</button>
     </div>
-  </div>
 
-  <!-- STEP 3b: preview -->
-  <div id="cyo-s4" style="display:none">
-    <div class="cyo-panel cyo-preview">
-      <h2 style="text-align:center;margin:0 0 14px">Here's the preview! 🎉</h2>
-      <img id="cyo-result" alt="Your personalized cover preview">
-      <div class="cyo-row" style="margin-bottom:14px">
-        <input class="cyo-inp" id="cyo-email" type="email" placeholder="Email — we'll save this preview for you" style="flex:1;min-width:200px">
-        <button class="cyo-btn alt" id="cyo-save-btn" style="padding:12px 18px;font-size:13.5px">Save it</button>
-      </div>
-      <div class="cyo-note" id="cyo-save-note" style="text-align:center;display:none">✓ Saved — check your inbox soon.</div>
-      <div class="cyo-err" id="cyo-err4"></div>
-      <div class="cyo-actions">
-        <button class="cyo-btn" id="cyo-cart-btn">Order the printed book <span id="cyo-cart-price"></span> →</button><br>
-        <a href="#" id="cyo-retry" style="font-size:13px;color:#999;display:inline-block;margin-top:12px">↻ Try a different photo or book</a>
-      </div>
-      <div class="cyo-note" style="text-align:center">The watermark is removed on the printed book. You'll review and approve your book before we print — changes are free at that stage.</div>
+    <div class="cyo-box" id="cyo-covers-box" style="display:none">
+      <h3>Choose cover options</h3>
+      <div class="cyo-covers" id="cyo-covers"></div>
     </div>
+
+    <div class="cyo-box cyo-emailrow">
+      <div class="et"><b>Want us to save this preview?</b> Enter your email, and we'll send it your way!</div>
+      <div class="ef">
+        <input class="cyo-inp" id="cyo-email" type="email" placeholder="Email Address">
+        <button class="cyo-btn alt" id="cyo-save-btn" style="padding:12px 20px;font-size:13.5px">Save</button>
+      </div>
+      <div class="cyo-note" id="cyo-save-note" style="display:none;flex-basis:100%">✓ Saved — we'll keep this preview for you.</div>
+    </div>
+
+    <div class="cyo-box">
+      <div class="cyo-stagewrap">
+        <img id="cyo-result" alt="Your personalized cover">
+        <div class="cyo-genover" id="cyo-genover">
+          <div class="gt">Just a moment while we bring your story to life…</div>
+          <div class="cyo-bar"><i id="cyo-bar-i"></i></div>
+          <div class="ge" id="cyo-elapsed">0s · usually 30–60 seconds</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="cyo-err" id="cyo-err4"></div>
+    <div class="cyo-actions">
+      <button class="cyo-btn" id="cyo-cart-btn" disabled>Continue — Order <span id="cyo-cart-price"></span> →</button><br>
+      <a href="#" id="cyo-retry" class="cyo-back">↻ Try a different photo</a>
+    </div>
+    <div class="cyo-note" style="text-align:center">The watermark is removed on the printed book. You'll review and approve your book before we print — changes are free at that stage.</div>
   </div>
 </div>
 
@@ -124,49 +275,63 @@
   // ⚙️ CHỈNH 1 DÒNG NÀY nếu domain FUSION thay đổi:
   var API = "https://os.fusiondn.com/api/studio/public";
 
-  var S = { templates: [], tpl: null, photo: "", previewId: "", previewUrl: "", timer: null, t0: 0 };
+  var S = { templates: [], tpl: null, photo: "", previewId: "", previewUrl: "", timer: null, t0: 0, chosenVariant: "", pendingEmail: "" };
   var $ = function (id) { return document.getElementById(id); };
   function show(step) {
-    ["cyo-s1", "cyo-s2", "cyo-s3", "cyo-s4"].forEach(function (id, i) { $(id).style.display = (i === step - 1) ? "" : "none"; });
-    var on = step >= 4 ? 3 : step;
-    document.querySelectorAll(".cyo-step").forEach(function (el) { el.classList.toggle("on", Number(el.dataset.step) <= on); });
+    ["cyo-s1", "cyo-s2", "cyo-s3"].forEach(function (id, i) { $(id).style.display = (i === step - 1) ? "" : "none"; });
+    document.querySelectorAll(".cyo-step").forEach(function (el) { el.classList.toggle("on", Number(el.dataset.step) <= step); });
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   function err(id, m) { var el = $(id); el.textContent = m || ""; el.style.display = m ? "" : "none"; }
 
-  // ── STEP 1: load templates (?template=<id> → chọn sẵn kiểu Printerval) ──
+  // ── STEP 1: load templates (?template=<id> → mở thẳng chi tiết) ──
   fetch(API).then(function (r) { return r.json(); }).then(function (j) {
     var box = $("cyo-templates");
-    if (!j.ok || !j.templates || !j.templates.length) { box.innerHTML = '<div style="color:#999">Our studio is temporarily unavailable — please check back soon.</div>'; return; }
+    if (!j.ok || !j.templates || !j.templates.length) { box.innerHTML = '<div style="color:var(--cyo-muted)">Our studio is temporarily unavailable — please check back soon.</div>'; return; }
     S.templates = j.templates;
     box.innerHTML = "";
     j.templates.forEach(function (t) {
       var d = document.createElement("div");
       d.className = "cyo-card"; d.dataset.id = t.id;
-      d.innerHTML = '<img src="' + t.thumbUrl + '" alt="" loading="lazy"><div class="t"></div><div class="p"></div>';
+      d.innerHTML = '<div class="imgwrap"><img src="' + t.thumbUrl + '" alt="" loading="lazy"></div><div class="t"></div><div class="p">From <b></b></div><span class="go">Personalize Now</span>';
       d.querySelector(".t").textContent = t.title;
-      d.querySelector(".p").textContent = t.price || "";
+      d.querySelector(".p b").textContent = t.price || "";
       d.addEventListener("click", function () { pick(t); });
       box.appendChild(d);
     });
     var pre = new URLSearchParams(location.search).get("template");
     if (pre) { var m = j.templates.filter(function (t) { return t.id === pre; })[0]; if (m) pick(m); }
-  }).catch(function () { $("cyo-templates").innerHTML = '<div style="color:#999">Could not load — please refresh.</div>'; });
+  }).catch(function () { $("cyo-templates").innerHTML = '<div style="color:var(--cyo-muted)">Could not load — please refresh.</div>'; });
 
+  // ── STEP 2: trang chi tiết + Start Personalizing ──
   function pick(t) {
-    S.tpl = t;
-    document.querySelectorAll(".cyo-card").forEach(function (el) { el.classList.toggle("sel", el.dataset.id === t.id); });
-    $("cyo-chosen").innerHTML = '<img src="' + t.thumbUrl + '" style="width:56px;height:56px;border-radius:10px;object-fit:cover"><div><b></b><div style="color:#f68b1e;font-weight:800;font-size:13px"></div></div>';
-    $("cyo-chosen").querySelector("b").textContent = t.title;
-    $("cyo-chosen").querySelector("div > div").textContent = t.price || "";
-    $("cyo-cart-price").textContent = t.price ? "· " + t.price : "";
+    S.tpl = t; S.chosenVariant = t.variantId;
+    $("cyo-d-img").src = t.thumbUrl;
+    $("cyo-d-title").textContent = t.title;
+    $("cyo-d-price").textContent = t.price || "";
+    var de = $("cyo-d-desc");
+    if (t.description && t.description.trim()) { de.textContent = t.description; de.style.display = ""; } else de.style.display = "none";
+    var ag = $("cyo-d-ages");
+    if (t.ageRange) { ag.querySelector("span").innerHTML = "Perfect for kids ages <b>" + t.ageRange + "</b> years old"; ag.style.display = "flex"; } else ag.style.display = "none";
+    var pg = $("cyo-d-pages");
+    if (t.pages) { pg.querySelector("span").innerHTML = "<b>" + t.pages + "</b> beautifully illustrated pages"; pg.style.display = "flex"; } else pg.style.display = "none";
     show(2); check();
     try { history.replaceState(null, "", location.pathname + "?template=" + t.id); } catch (e) {}
   }
+  $("cyo-d-start").addEventListener("click", function () {
+    $("cyo-start").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
   $("cyo-back1").addEventListener("click", function (e) { e.preventDefault(); show(1); });
 
-  // ── STEP 2: ảnh (downscale client-side ≤1024px JPEG để payload nhẹ) ──
+  // Ảnh: upload → avatar tròn có nút ✕ (kiểu WonderWraps). Bấm avatar = đổi ảnh.
   $("cyo-drop").addEventListener("click", function () { $("cyo-file").click(); });
+  $("cyo-avatar-img").addEventListener("click", function () { $("cyo-file").click(); });
+  $("cyo-avatar-x").addEventListener("click", function () {
+    S.photo = ""; $("cyo-file").value = "";
+    $("cyo-avatar").style.display = "none";
+    $("cyo-drop").style.display = ""; $("cyo-drophint").style.display = "";
+    check();
+  });
   $("cyo-file").addEventListener("change", function () {
     var f = this.files && this.files[0]; if (!f) return;
     var img = new Image();
@@ -175,8 +340,9 @@
       var c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(h * k);
       c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
       S.photo = c.toDataURL("image/jpeg", 0.87);
-      $("cyo-drop-empty").style.display = "none";
-      var full = $("cyo-drop-full"); full.style.display = ""; full.innerHTML = '<img src="' + S.photo + '"><span style="font-size:13px">✓ Photo added — click to change</span>';
+      $("cyo-avatar-img").src = S.photo;
+      $("cyo-avatar").style.display = "block";
+      $("cyo-drop").style.display = "none"; $("cyo-drophint").style.display = "none";
       check();
     };
     img.onerror = function () { err("cyo-err2", "Could not read that image — please try another photo."); };
@@ -185,16 +351,57 @@
   $("cyo-name").addEventListener("input", check);
   function check() { $("cyo-gen-btn").disabled = !(S.tpl && S.photo && $("cyo-name").value.trim()); }
 
-  // ── STEP 3: generate ──
+  // ── MY BOOK ──
+  function variantOf(id) {
+    var vars = (S.tpl && S.tpl.variants || []).filter(function (v) { return v && v.id; });
+    return vars.filter(function (x) { return x.id === id; })[0] || { id: S.tpl ? S.tpl.variantId : "", title: "", price: S.tpl ? S.tpl.price : "" };
+  }
+  function syncPrice() {
+    var v = variantOf(S.chosenVariant);
+    $("cyo-cart-price").textContent = v.price ? "· " + v.price : "";
+  }
+  function buildMyBook() {
+    var name = $("cyo-name").value.trim(), age = $("cyo-age").value;
+    $("cyo-mb-title").textContent = S.tpl.title;
+    $("cyo-mb-sub").textContent = "First Name: " + name + (age ? " | Age: " + age : "");
+    var vars = (S.tpl.variants || []).filter(function (v) { return v && v.id; });
+    var box = $("cyo-covers-box"), list = $("cyo-covers");
+    if (vars.length > 1) {
+      list.innerHTML = "";
+      vars.forEach(function (v, i) {
+        var d = document.createElement("div");
+        d.className = "cyo-cover" + (v.id === S.chosenVariant ? " sel" : "");
+        d.dataset.vid = v.id;
+        d.innerHTML = '<span class="tick">✓</span>' + (v.id === S.tpl.variantId ? '<span class="best">BEST CHOICE</span>' : "") +
+          '<img src="' + S.tpl.thumbUrl + '" alt=""><div><div class="vt"></div><div class="vp"></div></div>';
+        d.querySelector(".vt").textContent = v.title || ("Option " + (i + 1));
+        d.querySelector(".vp").textContent = v.price || "";
+        d.addEventListener("click", function () {
+          S.chosenVariant = v.id;
+          list.querySelectorAll(".cyo-cover").forEach(function (el) { el.classList.toggle("sel", el.dataset.vid === v.id); });
+          syncPrice();
+        });
+        list.appendChild(d);
+      });
+      box.style.display = "";
+    } else { box.style.display = "none"; }
+    syncPrice();
+  }
+  $("cyo-change").addEventListener("click", function () { clearInterval(S.timer); show(2); });
+  $("cyo-retry").addEventListener("click", function (e) { e.preventDefault(); clearInterval(S.timer); show(2); });
+
+  // ── PREVIEW BOOK → My Book, preview mờ trong lúc gen ──
   $("cyo-gen-btn").addEventListener("click", function () {
-    err("cyo-err2", "");
+    err("cyo-err2", ""); err("cyo-err4", "");
+    buildMyBook();
+    var img = $("cyo-result");
+    img.src = S.tpl.thumbUrl; img.className = "blur";
+    $("cyo-genover").style.display = ""; $("cyo-cart-btn").disabled = true;
     show(3); S.t0 = Date.now();
-    var bar = $("cyo-bar-i"), stages = ["Reading the photo…", "Painting the artwork…", "Adding the name…", "Final touches…"];
     S.timer = setInterval(function () {
       var s = Math.round((Date.now() - S.t0) / 1000);
-      $("cyo-elapsed").textContent = s + "s";
-      bar.style.width = Math.min(94, s * 1.6) + "%";
-      $("cyo-gen-title").textContent = stages[Math.min(stages.length - 1, Math.floor(s / 18))];
+      $("cyo-elapsed").textContent = s + "s · usually 30–60 seconds";
+      $("cyo-bar-i").style.width = Math.min(94, s * 1.6) + "%";
     }, 900);
     fetch(API + "/generate", {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -203,33 +410,43 @@
       clearInterval(S.timer);
       if (!j.ok) { show(2); err("cyo-err2", j.error || "Generation failed — please try again."); return; }
       S.previewId = j.previewId; S.previewUrl = j.url;
-      $("cyo-result").src = j.url; show(4);
+      img.src = j.url; img.className = "";
+      $("cyo-genover").style.display = "none";
+      $("cyo-cart-btn").disabled = false;
+      if (S.pendingEmail) sendLead(S.pendingEmail);
     }).catch(function () { clearInterval(S.timer); show(2); err("cyo-err2", "Network error — please try again."); });
   });
 
-  // ── STEP 4: save email + add to cart ──
+  // ── EMAIL (nhập được trong lúc gen — xếp hàng gửi khi xong) ──
+  function sendLead(email) {
+    fetch(API + "/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ previewId: S.previewId, email: email }) })
+      .then(function (r) { return r.json(); }).then(function (j) {
+        if (j.ok) { $("cyo-save-note").style.display = ""; S.pendingEmail = ""; }
+        else err("cyo-err4", j.error || "Could not save.");
+      }).catch(function () { err("cyo-err4", "Network error."); });
+  }
   $("cyo-save-btn").addEventListener("click", function () {
     err("cyo-err4", "");
     var email = $("cyo-email").value.trim();
     if (!email) { err("cyo-err4", "Please enter your email."); return; }
-    fetch(API + "/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ previewId: S.previewId, email: email }) })
-      .then(function (r) { return r.json(); }).then(function (j) {
-        if (j.ok) { $("cyo-save-note").style.display = ""; } else err("cyo-err4", j.error || "Could not save.");
-      }).catch(function () { err("cyo-err4", "Network error."); });
+    if (!S.previewId) { S.pendingEmail = email; $("cyo-save-note").style.display = ""; return; }
+    sendLead(email);
   });
+
+  // ── ORDER ──
   $("cyo-cart-btn").addEventListener("click", function () {
     err("cyo-err4", "");
-    if (!S.tpl.variantId) { err("cyo-err4", "This book is not available for online ordering yet — please contact us."); return; }
+    var vid = S.chosenVariant || (S.tpl && S.tpl.variantId);
+    if (!vid) { err("cyo-err4", "This book is not available for online ordering yet — please contact us."); return; }
     var props = { "Child's Name": $("cyo-name").value.trim(), "_Studio Preview": S.previewUrl, "_Studio Preview Id": S.previewId };
     if ($("cyo-age").value) props["Child's Age"] = $("cyo-age").value;
     fetch("/cart/add.js", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: Number(S.tpl.variantId), quantity: 1, properties: props }),
+      body: JSON.stringify({ id: Number(vid), quantity: 1, properties: props }),
     }).then(function (r) { return r.json(); }).then(function (j) {
       if (j && (j.id || (j.items && j.items.length))) location.href = "/cart";
       else err("cyo-err4", (j && j.description) || "Could not add to cart.");
     }).catch(function () { err("cyo-err4", "Could not add to cart — please try again."); });
   });
-  $("cyo-retry").addEventListener("click", function (e) { e.preventDefault(); show(2); });
 })();
 </script>

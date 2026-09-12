@@ -18,6 +18,9 @@ export async function GET(req: NextRequest) {
       id: schema.studioTemplates.id, title: schema.studioTemplates.title,
       thumbUrl: schema.studioTemplates.thumbUrl, price: schema.studioTemplates.price,
       variantId: schema.studioTemplates.variantId,
+      variants: schema.studioTemplates.variants, // v488 · khách chọn size/paper trong wizard
+      description: schema.studioTemplates.description, ageRange: schema.studioTemplates.ageRange,
+      pages: schema.studioTemplates.pages,       // v490 · trang chi tiết trong wizard
     }).from(schema.studioTemplates)
       .where(eq(schema.studioTemplates.active, true))
       .orderBy(asc(schema.studioTemplates.sort), asc(schema.studioTemplates.createdAt));

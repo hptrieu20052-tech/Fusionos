@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, asc, desc, eq, ilike } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { getStudioSettings, saveStudioSettings, defaultStudioSettings, type StudioSettings } from "@/lib/studio";
 import { fileUrl } from "@/lib/storage";
@@ -34,8 +34,11 @@ export async function GET(req: NextRequest) {
       id: schema.shopifyProducts.id, title: schema.shopifyProducts.title,
       images: schema.shopifyProducts.images, variants: schema.shopifyProducts.variants,
       status: schema.shopifyProducts.status, url: schema.shopifyProducts.onlineStoreUrl,
+      bodyHtml: schema.shopifyProducts.bodyHtml, // v490 · auto-fill description cho trang chi tiết wizard
     }).from(schema.shopifyProducts)
-      .where(and(ilike(schema.shopifyProducts.title, `%${q}%`), eq(schema.shopifyProducts.status, "ACTIVE")))
+      // v491 · nhận cả UNLISTED — bản "Photo Edition" cố tình để Unlisted (mua được qua wizard,
+      // ẩn khỏi search/collection của store) nên không được lọc mất khỏi picker.
+      .where(and(ilike(schema.shopifyProducts.title, `%${q}%`), inArray(schema.shopifyProducts.status, ["ACTIVE", "UNLISTED"])))
       .orderBy(desc(schema.shopifyProducts.updatedAt)).limit(20);
     const products = rows.map((r) => {
       const imgs = (Array.isArray(r.images) ? r.images : []) as Img[];
@@ -44,7 +47,8 @@ export async function GET(req: NextRequest) {
         id: String(v?.id ?? "").replace(/\D/g, ""),         // GID → id số cho /cart/add.js
         title: String(v?.title ?? "Default"), price: String(v?.price ?? ""),
       })).filter((v) => v.id);
-      return { id: r.id, title: r.title, thumb, url: r.url, variants: vars };
+      const desc = String(r.bodyHtml ?? "").replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim().slice(0, 400);
+      return { id: r.id, title: r.title, thumb, url: r.url, variants: vars, desc };
     });
     return NextResponse.json({ ok: true, products });
   }
@@ -88,8 +92,15 @@ export async function PATCH(req: NextRequest) {
   }
 }
 
-type TplBody = { id?: string; title?: string; thumbUrl?: string; baseImageUrl?: string; variantId?: string; price?: string; promptExtra?: string; active?: boolean; sort?: number };
+type TplVariant = { id?: string; title?: string; price?: string };
+type TplBody = { id?: string; title?: string; thumbUrl?: string; baseImageUrl?: string; variantId?: string; price?: string; promptExtra?: string; active?: boolean; sort?: number; variants?: TplVariant[]; description?: string; ageRange?: string; pages?: string };
 function tplFields(t: TplBody) {
+  // v488 · variants: danh sách size/paper cho khách chọn trong wizard (picker tự nạp khi chọn sản phẩm).
+  const variants = (Array.isArray(t.variants) ? t.variants : []).map((v) => ({
+    id: String(v?.id ?? "").replace(/\D/g, ""),
+    title: String(v?.title ?? "").trim().slice(0, 120),
+    price: String(v?.price ?? "").trim().slice(0, 20),
+  })).filter((v) => v.id).slice(0, 30);
   return {
     title: String(t.title ?? "").trim().slice(0, 200),
     thumbUrl: String(t.thumbUrl ?? "").trim(),
@@ -99,6 +110,10 @@ function tplFields(t: TplBody) {
     promptExtra: String(t.promptExtra ?? "").slice(0, 2000),
     active: t.active !== false,
     sort: Number(t.sort) || 0,
+    variants,
+    description: String(t.description ?? "").slice(0, 2000),
+    ageRange: String(t.ageRange ?? "").trim().slice(0, 40),
+    pages: String(t.pages ?? "").trim().slice(0, 10),
   };
 }
 

@@ -1080,6 +1080,13 @@ export const studioTemplates = pgTable("studio_templates", {
   variantId: text("variant_id").notNull().default(""),      // Shopify variant id để add to cart
   price: text("price").notNull().default(""),               // hiển thị, vd "$29.95"
   promptExtra: text("prompt_extra").notNull().default(""),  // dặn thêm riêng cho template (nối vào prompt chung)
+  // v488 · Danh sách variants của sản phẩm (id số, title, price) — picker tự lưu khi chọn.
+  // Wizard cho khách đổi size/paper ở màn preview; variantId ở trên là variant MẶC ĐỊNH.
+  variants: jsonb("variants").notNull().default([]),
+  // v490 · Trang chi tiết trong wizard (kiểu WonderWraps): mô tả + range tuổi + số trang.
+  description: text("description").notNull().default(""),
+  ageRange: text("age_range").notNull().default(""),
+  pages: text("pages").notNull().default(""),
   active: boolean("active").notNull().default(true),
   sort: integer("sort").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
