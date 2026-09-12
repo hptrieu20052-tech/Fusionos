@@ -47,9 +47,9 @@ export async function POST(req: NextRequest) {
   const tags = tagList(String(b?.tags ?? ""));
 
   if (!ACTIONS.has(action)) return NextResponse.json({ ok: false, error: "hành động không hợp lệ" }, { status: 400 });
-  if (!ids.length) return NextResponse.json({ ok: false, error: "chưa chọn sản phẩm" }, { status: 400 });
-  if (ids.length > MAX_IDS) return NextResponse.json({ ok: false, error: `chọn tối đa ${MAX_IDS} sản phẩm/lần` }, { status: 400 });
-  if ((action === "addTags" || action === "removeTags") && !tags.length) return NextResponse.json({ ok: false, error: "chưa nhập tag" }, { status: 400 });
+  if (!ids.length) return NextResponse.json({ ok: false, error: "no products selected" }, { status: 400 });
+  if (ids.length > MAX_IDS) return NextResponse.json({ ok: false, error: `select at most ${MAX_IDS} products per batch` }, { status: 400 });
+  if ((action === "addTags" || action === "removeTags") && !tags.length) return NextResponse.json({ ok: false, error: "tags required" }, { status: 400 });
 
   const rows = await db.select({
     id: schema.shopbaseProducts.id,
@@ -194,15 +194,27 @@ export async function POST(req: NextRequest) {
           const ok = (live: Set<string>) => action === "addTags"
             ? wanted.every((t) => live.has(t))          // add: mọi tag phải CÓ mặt
             : wanted.every((t) => !live.has(t));         // remove: mọi tag phải VẮNG mặt
-          // Lần 1: tags dạng chuỗi (Shopify-style)
+          const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+          // v480 · Lần 1: PUT tối giản, tags dạng CHUỖI (Go struct của ShopBase khai báo tags string —
+          // dạng MẢNG bị 400 "cannot unmarshal array ... of type string" nên BỎ hẳn cách array cũ).
           await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "PUT", body: JSON.stringify({ product: { id: pid, tags: next } }) });
+          // ShopBase xử lý update qua transform (tên struct "TransformRequestUpdateProduct") → có thể
+          // GHI TRỄ. Chờ rồi mới đọc lại, tránh false-negative do đọc bản cũ.
+          await sleep(1200);
           let live = await readLiveTags();
           if (!ok(live)) {
-            // Lần 2: tags dạng MẢNG (ShopBase quirk)
-            await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "PUT", body: JSON.stringify({ product: { id: pid, tags: tagList(next) } }) });
+            // v480 · Lần 2: PUT kèm field "mồi" — publish (v427/v430) từng chỉ ăn khi gửi kèm
+            // product_availability. Echo nguyên giá trị hiện tại (title/availability/published), chỉ đổi tags.
+            const cur = await shopbaseApi(cred!, `products/${r.pid}.json`);
+            const cp2 = (cur?.product ?? {}) as Record<string, unknown>;
+            await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "PUT", body: JSON.stringify({ product: {
+              id: pid, title: cp2.title, tags: next,
+              product_availability: cp2.product_availability, published: cp2.published,
+            } }) });
+            await sleep(1500);
             live = await readLiveTags();
             if (!ok(live)) {
-              throw new Error(`ShopBase nhận request nhưng tag KHÔNG được lưu (tag live hiện tại: "${Array.from(live).join(", ") || "(trống)"}") — định dạng field 'tags' có thể khác, báo lại để dò tiếp`);
+              throw new Error(`ShopBase accepted the request but the tag was NOT saved (live tags now: "${Array.from(live).join(", ") || "(empty)"}") — 'tags' may not be updatable via this private-app API; report back for further probing`);
             }
           }
           // Local phản ánh ĐÚNG trạng thái live đã xác minh.
