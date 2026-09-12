@@ -179,8 +179,33 @@ export async function POST(req: NextRequest) {
           }
           await db.update(schema.shopbaseProducts).set({ status: published ? "ACTIVE" : "DRAFT", updatedAt: new Date() }).where(eq(schema.shopbaseProducts.id, r.id));
         } else {
+          // v465 · GẮN/GỠ TAG có XÁC MINH. ShopBase từng trả 200 nhưng KHÔNG lưu field (xem publish
+          // v427/v430) → trước đây FUSION ghi local trong khi live không có tag ⇒ smart collection rỗng.
+          // Nay: PUT → GET đọc lại → chưa dính thì thử dạng MẢNG → vẫn không thì BÁO LỖI, không ghi local.
           const next = action === "addTags" ? mergeTags(r.tags ?? "", tags) : stripTags(r.tags ?? "", tags);
+          const readLiveTags = async (): Promise<Set<string>> => {
+            const chk = await shopbaseApi(cred!, `products/${r.pid}.json`);
+            const cp = (chk?.product ?? null) as Record<string, unknown> | null;
+            const raw = cp?.tags;
+            const arr = Array.isArray(raw) ? raw.map((x) => String(x)) : String(raw ?? "").split(",");
+            return new Set(arr.map((t) => t.trim().toLowerCase()).filter(Boolean));
+          };
+          const wanted = tags.map((t) => t.toLowerCase());
+          const ok = (live: Set<string>) => action === "addTags"
+            ? wanted.every((t) => live.has(t))          // add: mọi tag phải CÓ mặt
+            : wanted.every((t) => !live.has(t));         // remove: mọi tag phải VẮNG mặt
+          // Lần 1: tags dạng chuỗi (Shopify-style)
           await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "PUT", body: JSON.stringify({ product: { id: pid, tags: next } }) });
+          let live = await readLiveTags();
+          if (!ok(live)) {
+            // Lần 2: tags dạng MẢNG (ShopBase quirk)
+            await shopbaseApi(cred!, `products/${r.pid}.json`, { method: "PUT", body: JSON.stringify({ product: { id: pid, tags: tagList(next) } }) });
+            live = await readLiveTags();
+            if (!ok(live)) {
+              throw new Error(`ShopBase nhận request nhưng tag KHÔNG được lưu (tag live hiện tại: "${Array.from(live).join(", ") || "(trống)"}") — định dạng field 'tags' có thể khác, báo lại để dò tiếp`);
+            }
+          }
+          // Local phản ánh ĐÚNG trạng thái live đã xác minh.
           await db.update(schema.shopbaseProducts).set({ tags: next, updatedAt: new Date() }).where(eq(schema.shopbaseProducts.id, r.id));
         }
         done++;
