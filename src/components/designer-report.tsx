@@ -16,6 +16,10 @@ const PALETTE = [
 ];
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+// v476 · TẠM ẨN cột Score + KPI + dòng chú thích công thức (yêu cầu 2026-09-12 — "về sau cần bổ sung").
+// Khi muốn hiện lại: đổi thành true (API vẫn trả đủ avgScore/kpi, không đụng backend).
+const SHOW_KPI = false;
+
 // by="designer" → gom theo người thiết kế. by="content" → gom theo ô Creator của design (role content).
 // Dùng chung một component: cùng API, chỉ khác tham số `by` và nhãn cột đầu.
 type RangeProps = { range: string; from?: string; to?: string; hideMoney?: boolean; title?: string; by?: "designer" | "content" };
@@ -120,8 +124,8 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
                   {isContent && <th style={{ padding: "3px 4px" }}>Video</th>}
                   <th style={{ padding: "3px 4px" }}>Item sale</th>
                   {!hideMoney && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>Revenue</th>}
-                  <th className="rep-col-opt" style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>
-                  <th style={{ padding: "3px 4px" }}>KPI</th>
+                  {SHOW_KPI && <th className="rep-col-opt" style={{ padding: "3px 4px" }}>{tr("rep.score")}</th>}
+                  {SHOW_KPI && <th style={{ padding: "3px 4px" }}>KPI</th>}
                 </tr>
               </thead>
               <tbody>
@@ -136,16 +140,16 @@ export default function DesignerReport({ range, from, to, hideMoney, title, by =
                     {isContent && <td style={{ padding: "5px 4px", fontWeight: 700, color: "#4338CA" }}>{s.videos ?? 0}</td>}
                     <td style={{ padding: "5px 4px" }}>{s.salesOrders}</td>
                     {!hideMoney && <td className="rep-col-opt" style={{ padding: "5px 4px", color: "var(--green)", fontWeight: 600 }}>{money(s.salesRevenue)}</td>}
-                    <td className="rep-col-opt" style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>
-                    <td style={{ padding: "5px 4px" }}>
+                    {SHOW_KPI && <td className="rep-col-opt" style={{ padding: "5px 4px" }}>{s.avgScore ? s.avgScore.toFixed(1) : <span style={{ color: "var(--muted)" }}>—</span>}</td>}
+                    {SHOW_KPI && <td style={{ padding: "5px 4px" }}>
                       <span style={{ background: si === 0 ? "var(--blue)" : "var(--blue-soft)", color: si === 0 ? "#fff" : "var(--blue)", borderRadius: 8, padding: "2px 8px", fontWeight: 800 }}>{s.kpi.toFixed(1)}</span>
-                    </td>
+                    </td>}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 6 }}>{tr("rep.kpiFormula")}</div>
+          {SHOW_KPI && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 6 }}>{tr("rep.kpiFormula")}</div>}
         </div>
       </div>
 

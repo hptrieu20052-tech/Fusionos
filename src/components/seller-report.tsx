@@ -10,6 +10,10 @@ const cents = (n: number) => Math.round(n * 100) / 100;
 const usd = (n: number | null | undefined) => n == null ? "—" : (n < 0 ? "-$" : "$") + cents(Math.abs(n)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const MK: Record<string, string> = { etsy: "Etsy", tiktok: "TikTok", amazon: "Amazon", other: "Other" };
 
+// v476 · TẠM ẨN các cột tiền (Revenue/Fee/Fulfillment cost/Profit) trong bảng xếp hạng trên Dashboard —
+// xem tiền ở trang View details. Muốn hiện lại: đổi thành true (API vẫn trả đủ, không đụng backend).
+const SHOW_MONEY_COLS = false;
+
 // Bảng màu cố định theo thứ tự xếp hạng — đủ 24 seller, lặp lại nếu nhiều hơn
 const PALETTE = [
   "#1D5FAE", "#E0A45E", "#D583AB", "#5FAE87", "#9D89D4", "#CE7B7B", "#5FA8BC", "#9FB56B",
@@ -116,7 +120,7 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
                 <tr style={{ color: "var(--muted)", textAlign: "right" }}>
                   <th style={{ textAlign: "left", padding: "3px 4px" }}># Seller</th>
                   <th style={{ padding: "3px 4px" }}>Orders</th>
-                  {data.showMoney ? (
+                  {SHOW_MONEY_COLS && data.showMoney ? (
                     <>
                       <th style={{ padding: "3px 4px" }}>Revenue</th>
                       <th style={{ padding: "3px 4px" }} title={Number(data.money?.feeEst ?? 0) > 0 ? "Estimated marketplace fee (store % × total) — marketplaces only settle the real fee 7–30 days later" : undefined}>{Number(data.money?.feeEst ?? 0) > 0 ? "Fee (est.)" : "Fee"}</th>
@@ -148,7 +152,7 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
                         )}
                       </td>
                       <td style={{ padding: "5px 4px", whiteSpace: "nowrap" }}><b>{s.orders.toLocaleString()}</b> <span style={{ color: "var(--muted)", fontSize: 11 }}>({s.items.toLocaleString()})</span></td>
-                      {data.showMoney ? (
+                      {SHOW_MONEY_COLS && data.showMoney ? (
                         <>
                           <td style={{ padding: "5px 4px" }}>{usd(s.revenue)}</td>
                           <td style={{ padding: "5px 4px", color: "var(--muted)" }}>{usd(s.fee)}</td>
