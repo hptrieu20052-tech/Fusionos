@@ -27,6 +27,14 @@ Redraw the cover so the MAIN CHARACTER has this child's face — clearly recogni
 Replace the personalized name in the title with "{name}", matching the original font style, size, colour and placement exactly. All words correctly spelled.
 Keep everything else identical to the template. Output the flat cover artwork only, full-bleed — no book mockup, no hands, no watermark, no extra text.`;
 
+// v492 · Prompt gen BÌA SAU (template bật genBack): giữ nguyên art, thay mặt nhân vật nếu có, KHÔNG thêm chữ.
+export const STUDIO_BACK_PROMPT = `You are given TWO reference images.
+IMAGE 1 is the original BACK cover artwork of a personalized children's book. Treat it as the EXACT base template: keep its composition, art style, colours, background and every decorative element.
+IMAGE 2 is a photo of a real child.
+If the main character appears in this back cover, redraw them with this child's face — clearly recognizable, in the SAME art style and lighting (painted into the artwork, never a pasted photo). If no character appears, reproduce the artwork faithfully.
+Do NOT add any names, text or elements that are not already in the template. All existing text must stay identical and correctly spelled.
+Output the flat back-cover artwork only, full-bleed — no book mockup, no hands, no watermark.`;
+
 export function defaultStudioSettings(): StudioSettings {
   return {
     enabled: false,

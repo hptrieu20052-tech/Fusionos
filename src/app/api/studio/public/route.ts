@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
       variants: schema.studioTemplates.variants, // v488 · khách chọn size/paper trong wizard
       description: schema.studioTemplates.description, ageRange: schema.studioTemplates.ageRange,
       pages: schema.studioTemplates.pages,       // v490 · trang chi tiết trong wizard
+      backImageUrl: schema.studioTemplates.backImageUrl, // v492 · bìa sau cho sách 3D (fallback khi không gen)
     }).from(schema.studioTemplates)
       .where(eq(schema.studioTemplates.active, true))
       .orderBy(asc(schema.studioTemplates.sort), asc(schema.studioTemplates.createdAt));

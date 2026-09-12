@@ -4,7 +4,7 @@ import { and, eq, gte, sql } from "drizzle-orm";
 import { orGenerateImage } from "@/lib/ai/openrouter";
 import { seedreamEdit } from "@/lib/ai/fal";
 import { writeFile, fileUrl } from "@/lib/storage";
-import { getStudioSettings, corsJson, corsHeaders, clientIp, watermarkImage } from "@/lib/studio";
+import { getStudioSettings, corsJson, corsHeaders, clientIp, watermarkImage, STUDIO_BACK_PROMPT } from "@/lib/studio";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -59,14 +59,22 @@ export async function POST(req: NextRequest) {
 
   // ── Gen ảnh: prompt chung (settings) + dặn riêng template; refs = [cover template, ảnh mặt] ──
   const prompt = st.prompt.split("{name}").join(name) + (tpl.promptExtra?.trim() ? `\n\n${tpl.promptExtra.trim()}` : "");
-  const refs = [tpl.baseImageUrl, photo];
+  const gen = (pr: string, baseImg: string) =>
+    st.model.startsWith("fal-ai/")
+      ? seedreamEdit(pr, [baseImg, photo], { ...(ratioToSize(st.aspectRatio) ? { imageSize: ratioToSize(st.aspectRatio)! } : {}) })
+      : orGenerateImage(pr, [baseImg, photo], { outputFormat: "png", model: st.model, aspectRatio: st.aspectRatio });
 
-  let b64 = "", cost = 0, errMsg = "";
+  // v492 · Bìa sau: template bật genBack + có ảnh bìa sau gốc → gen SONG SONG với bìa trước
+  // (Promise.all — không cộng thời gian chờ). Bìa sau lỗi thì vẫn trả bìa trước (không chặn khách).
+  const wantBack = !!(tpl.genBack && tpl.backImageUrl);
+  let b64 = "", backB64 = "", cost = 0, errMsg = "";
   try {
-    const out = st.model.startsWith("fal-ai/")
-      ? await seedreamEdit(prompt, refs, { ...(ratioToSize(st.aspectRatio) ? { imageSize: ratioToSize(st.aspectRatio)! } : {}) })
-      : await orGenerateImage(prompt, refs, { outputFormat: "png", model: st.model, aspectRatio: st.aspectRatio });
-    b64 = out.b64; cost = out.cost;
+    const [front, back] = await Promise.all([
+      gen(prompt, tpl.baseImageUrl),
+      wantBack ? gen(STUDIO_BACK_PROMPT, tpl.backImageUrl).catch(() => null) : Promise.resolve(null),
+    ]);
+    b64 = front.b64; cost = front.cost;
+    if (back) { backB64 = back.b64; cost += back.cost; }
   } catch (e) {
     errMsg = String((e as Error)?.message ?? e).slice(0, 300);
   }
@@ -88,8 +96,14 @@ export async function POST(req: NextRequest) {
     }).returning({ id: schema.studioPreviews.id });
     const key = `studio/preview-${row.id}.png`;
     await writeFile(key, marked, "image/png");
-    await db.update(schema.studioPreviews).set({ previewKey: key }).where(eq(schema.studioPreviews.id, row.id));
-    return J({ ok: true, previewId: row.id, url: fileUrl(key) });
+    let backKey = "";
+    if (backB64) {
+      const markedBack = await watermarkImage(Buffer.from(backB64, "base64"), st.watermark);
+      backKey = `studio/preview-${row.id}-back.png`;
+      await writeFile(backKey, markedBack, "image/png");
+    }
+    await db.update(schema.studioPreviews).set({ previewKey: key, previewBackKey: backKey }).where(eq(schema.studioPreviews.id, row.id));
+    return J({ ok: true, previewId: row.id, url: fileUrl(key), backUrl: backKey ? fileUrl(backKey) : null });
   } catch (e) {
     return J({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) }, 500);
   }

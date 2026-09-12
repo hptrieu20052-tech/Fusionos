@@ -93,7 +93,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 type TplVariant = { id?: string; title?: string; price?: string };
-type TplBody = { id?: string; title?: string; thumbUrl?: string; baseImageUrl?: string; variantId?: string; price?: string; promptExtra?: string; active?: boolean; sort?: number; variants?: TplVariant[]; description?: string; ageRange?: string; pages?: string };
+type TplBody = { id?: string; title?: string; thumbUrl?: string; baseImageUrl?: string; variantId?: string; price?: string; promptExtra?: string; active?: boolean; sort?: number; variants?: TplVariant[]; description?: string; ageRange?: string; pages?: string; backImageUrl?: string; genBack?: boolean };
 function tplFields(t: TplBody) {
   // v488 · variants: danh sách size/paper cho khách chọn trong wizard (picker tự nạp khi chọn sản phẩm).
   const variants = (Array.isArray(t.variants) ? t.variants : []).map((v) => ({
@@ -114,6 +114,8 @@ function tplFields(t: TplBody) {
     description: String(t.description ?? "").slice(0, 2000),
     ageRange: String(t.ageRange ?? "").trim().slice(0, 40),
     pages: String(t.pages ?? "").trim().slice(0, 10),
+    backImageUrl: String(t.backImageUrl ?? "").trim(),
+    genBack: t.genBack === true,
   };
 }
 

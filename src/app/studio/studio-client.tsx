@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
  * v484 · Studio "Create Your Own" — trang admin cấu hình wizard khách trên talewix.com.
@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 
 type Settings = { enabled: boolean; model: string; aspectRatio: string; dailyLimitIp: number; dailyLimitGlobal: number; watermark: string; origins: string[]; prompt: string };
 type TplVariant = { id: string; title: string; price: string };
-type Tpl = { id: string; title: string; thumbUrl: string; baseImageUrl: string; variantId: string; price: string; promptExtra: string; active: boolean; sort: number; variants: TplVariant[]; description: string; ageRange: string; pages: string };
+type Tpl = { id: string; title: string; thumbUrl: string; baseImageUrl: string; variantId: string; price: string; promptExtra: string; active: boolean; sort: number; variants: TplVariant[]; description: string; ageRange: string; pages: string; backImageUrl: string; genBack: boolean };
 type Lead = { id: string; templateId: string | null; childName: string; email: string; previewUrl: string | null; model: string; cost: string; ip: string; status: string; error: string; createdAt: string };
 type Model = { id: string; name: string };
 type PickProduct = { id: string; title: string; thumb: string; url: string | null; variants: { id: string; title: string; price: string }[]; desc?: string };
@@ -21,7 +21,41 @@ const lbl: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, color: "var(
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 14, padding: 16, marginBottom: 14 };
 const btn = (bg: string): React.CSSProperties => ({ background: bg, color: "#fff", border: 0, borderRadius: 11, padding: "10px 20px", fontWeight: 800, fontSize: 13.5, cursor: "pointer" });
 
-const EMPTY_TPL: Tpl = { id: "", title: "", thumbUrl: "", baseImageUrl: "", variantId: "", price: "", promptExtra: "", active: true, sort: 0, variants: [], description: "", ageRange: "", pages: "" };
+const EMPTY_TPL: Tpl = { id: "", title: "", thumbUrl: "", baseImageUrl: "", variantId: "", price: "", promptExtra: "", active: true, sort: 0, variants: [], description: "", ageRange: "", pages: "", backImageUrl: "", genBack: false };
+
+/** v493 · Nút Upload ảnh từ máy: nén client-side (≤1600px JPEG) → POST /api/studio/admin/upload → trả URL R2. */
+function UploadBtn({ onDone, onError }: { onDone: (url: string) => void; onError: (m: string) => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const handle = (f: File) => {
+    const img = new Image();
+    img.onload = async () => {
+      const mx = 1600, k = Math.min(1, mx / Math.max(img.width, img.height));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
+      const dataUrl = c.toDataURL("image/jpeg", 0.92);
+      setBusy(true);
+      try {
+        const j = await fetch("/api/studio/admin/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }) }).then((r) => r.json());
+        if (j.ok) onDone(j.url); else onError(j.error || "Upload failed");
+      } catch (e) { onError(String((e as Error)?.message ?? e)); }
+      setBusy(false);
+    };
+    img.onerror = () => onError("Could not read that image");
+    img.src = URL.createObjectURL(f);
+  };
+  return (
+    <>
+      <button type="button" onClick={() => ref.current?.click()} disabled={busy}
+        style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", opacity: busy ? 0.6 : 1 }}>
+        {busy ? "Uploading…" : "⤒ Upload"}
+      </button>
+      <input ref={ref} type="file" accept="image/*" style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handle(f); e.target.value = ""; }} />
+    </>
+  );
+}
 
 export default function StudioClient() {
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -154,11 +188,13 @@ export default function StudioClient() {
               </label>
             </div>
             <div>
-              <span style={lbl}>Image model</span>
+              <span style={lbl}>Image model ({models.length} image-capable)</span>
               <select value={S.model} onChange={(e) => setSettings({ ...S, model: e.target.value })} style={inp}>
                 {!models.some((m) => m.id === S.model) && <option value={S.model}>{S.model}</option>}
                 {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
+              <input value={S.model} onChange={(e) => setSettings({ ...S, model: e.target.value })} placeholder="…or type any OpenRouter model slug" style={{ ...inp, marginTop: 6, fontFamily: "monospace", fontSize: 12 }} />
+              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 4 }}>Only image-output models work here — chat models (GPT-6 Astra…) can&apos;t draw.</div>
             </div>
             <div>
               <span style={lbl}>Aspect ratio</span>
@@ -249,8 +285,31 @@ export default function StudioClient() {
                 <div><span style={lbl}>Shopify variant ID (add to cart)</span><input value={edit.variantId} onChange={(e) => setEdit({ ...edit, variantId: e.target.value })} placeholder="4512345678901" style={inp} /></div>
                 <div><span style={lbl}>Sort</span><input type="number" value={edit.sort} onChange={(e) => setEdit({ ...edit, sort: Number(e.target.value) || 0 })} style={inp} /></div>
               </div>
-              <div style={{ marginBottom: 12 }}><span style={lbl}>Thumb URL (wizard grid)</span><input value={edit.thumbUrl} onChange={(e) => setEdit({ ...edit, thumbUrl: e.target.value, baseImageUrl: edit.baseImageUrl || e.target.value })} placeholder="https://cdn.shopify.com/…/cover.jpg" style={inp} /></div>
-              <div style={{ marginBottom: 12 }}><span style={lbl}>Base cover URL (AI reference — the original cover art, defaults to thumb)</span><input value={edit.baseImageUrl} onChange={(e) => setEdit({ ...edit, baseImageUrl: e.target.value })} style={inp} /></div>
+              <div style={{ marginBottom: 12 }}>
+                <span style={lbl}>Thumb URL (wizard grid)</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={edit.thumbUrl} onChange={(e) => setEdit({ ...edit, thumbUrl: e.target.value, baseImageUrl: edit.baseImageUrl || e.target.value })} placeholder="https://cdn.shopify.com/…/cover.jpg" style={inp} />
+                  <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, thumbUrl: u, baseImageUrl: p.baseImageUrl || u })} onError={(m) => setMsg("✗ " + m)} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <span style={lbl}>Base cover URL (AI reference — the original cover art, defaults to thumb)</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={edit.baseImageUrl} onChange={(e) => setEdit({ ...edit, baseImageUrl: e.target.value })} style={inp} />
+                  <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, baseImageUrl: u })} onError={(m) => setMsg("✗ " + m)} />
+                </div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <span style={lbl}>Back cover URL (optional — shown on the 3D book preview)</span>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input value={edit.backImageUrl} onChange={(e) => setEdit({ ...edit, backImageUrl: e.target.value })} placeholder="https://cdn.shopify.com/…/back.jpg" style={inp} />
+                  <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, backImageUrl: u })} onError={(m) => setMsg("✗ " + m)} />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, marginTop: 6, cursor: "pointer", color: "var(--muted)" }}>
+                  <input type="checkbox" checked={edit.genBack} onChange={(e) => setEdit({ ...edit, genBack: e.target.checked })} style={{ width: 15, height: 15 }} />
+                  AI-personalize the back cover too (2× generation cost — leave OFF unless the character appears on the back)
+                </label>
+              </div>
               <div style={{ marginBottom: 12 }}><span style={lbl}>Description (shown on the wizard detail view)</span><textarea value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} rows={3} style={{ ...inp, resize: "vertical" }} /></div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 12 }}>
                 <div><span style={lbl}>Age range (e.g. 2 to 8)</span><input value={edit.ageRange} onChange={(e) => setEdit({ ...edit, ageRange: e.target.value })} placeholder="2 to 8" style={inp} /></div>

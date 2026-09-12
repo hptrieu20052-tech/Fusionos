@@ -1087,6 +1087,10 @@ export const studioTemplates = pgTable("studio_templates", {
   description: text("description").notNull().default(""),
   ageRange: text("age_range").notNull().default(""),
   pages: text("pages").notNull().default(""),
+  // v492 · Bìa SAU cho preview sách 3D. backImageUrl = artwork bìa sau gốc;
+  // genBack = true → AI gen cả bìa sau theo mặt bé (2× phí gen, chạy song song với bìa trước).
+  backImageUrl: text("back_image_url").notNull().default(""),
+  genBack: boolean("gen_back").notNull().default(false),
   active: boolean("active").notNull().default(true),
   sort: integer("sort").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1099,6 +1103,7 @@ export const studioPreviews = pgTable("studio_previews", {
   childName: text("child_name").notNull().default(""),
   email: text("email").notNull().default(""),               // bắt sau khi gen (Save your preview)
   previewKey: text("preview_key").notNull().default(""),    // key storage ảnh preview (đã watermark)
+  previewBackKey: text("preview_back_key").notNull().default(""), // v492 · bìa sau gen (nếu template bật genBack)
   model: text("model").notNull().default(""),
   cost: numeric("cost").notNull().default("0"),
   ip: text("ip").notNull().default(""),
