@@ -28,16 +28,16 @@
   </svg>
   <style>
     .ic { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
-    :root { --cyo-orange: #f68b1e; --cyo-brown: #b06a30; --cyo-ink: #2d2a26; --cyo-muted: #8a8f98; --cyo-cream: #fdf8f1; --cyo-line: #f0e6d8; }
+    :root { --cyo-orange: #b06a30; --cyo-brown: #1f1c18; --cyo-ink: #2d2a26; --cyo-muted: #8a8f98; --cyo-cream: #fdf8f1; --cyo-line: #f0e6d8; }
     #cyo-app { max-width: 1080px; margin: 0 auto; padding: 28px 16px 70px; font-family: inherit; color: var(--cyo-ink); }
     #cyo-app * { box-sizing: border-box; }
     .cyo-head { text-align: center; margin-bottom: 10px; }
-    .cyo-head h1 { font-size: 34px; margin: 0 0 10px; color: var(--cyo-brown); font-weight: 800; }
+    .cyo-head h1 { font-size: 32px; margin: 0 0 10px; color: var(--cyo-brown); font-weight: 700; letter-spacing: -.3px; }
     .cyo-head p { color: var(--cyo-muted); margin: 0; font-size: 15.5px; }
     .cyo-steps { display: flex; justify-content: center; gap: 8px; margin: 20px 0 30px; flex-wrap: wrap; }
-    .cyo-step { font-size: 12.5px; font-weight: 700; padding: 7px 16px; border-radius: 99px; background: #f4efe6; color: #b9b2a6; }
-    .cyo-step.on { background: var(--cyo-orange); color: #fff; box-shadow: 0 4px 14px rgba(246,139,30,.3); }
-    .cyo-btn { display: inline-block; background: var(--cyo-orange); color: #fff !important; border: 0; border-radius: 99px; padding: 15px 34px; font-size: 15.5px; font-weight: 700; cursor: pointer; text-decoration: none; box-shadow: 0 6px 18px rgba(246,139,30,.28); }
+    .cyo-step { font-size: 12.5px; font-weight: 600; padding: 7px 16px; border-radius: 99px; background: #f4efe6; color: #b9b2a6; }
+    .cyo-step.on { background: var(--cyo-orange); color: #fff; box-shadow: 0 4px 14px rgba(176,106,48,.3); }
+    .cyo-btn { display: inline-block; background: var(--cyo-orange); color: #fff !important; border: 0; border-radius: 99px; padding: 15px 34px; font-size: 15.5px; font-weight: 600; cursor: pointer; text-decoration: none; box-shadow: 0 6px 18px rgba(176,106,48,.28); }
     .cyo-btn[disabled] { opacity: .45; cursor: not-allowed; box-shadow: none; }
     .cyo-btn.alt { background: var(--cyo-ink); box-shadow: none; }
     .cyo-btn.big { width: 100%; text-align: center; }
@@ -45,8 +45,17 @@
     .cyo-err { background: #fdecec; color: #c0392b; border-radius: 10px; padding: 10px 14px; font-size: 13.5px; margin-top: 12px; display: none; }
     .cyo-back { font-size: 13px; color: var(--cyo-muted); display: inline-block; margin-top: 14px; }
     .cyo-actions { text-align: center; margin-top: 22px; }
-    .cyo-inp { width: 100%; padding: 13px 16px; border: 1px solid #e4dccd; border-radius: 14px; font-size: 15px; background: #fff; }
-    .cyo-lbl { display: block; font-weight: 800; font-size: 13.5px; margin: 14px 0 6px; }
+    #cyo-app .cyo-inp {
+      width: 100%; padding: 12px 16px !important; border: 1px solid #e4dccd !important; border-radius: 14px;
+      font-size: 15px !important; background: #fff; box-sizing: border-box;
+      height: auto !important; min-height: 50px; line-height: 1.4 !important; color: var(--cyo-ink);
+    }
+    #cyo-app select.cyo-inp {
+      -webkit-appearance: none; appearance: none; padding-right: 40px !important;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238a8f98' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 16px center;
+    }
+    .cyo-lbl { display: block; font-weight: 700; font-size: 13.5px; margin: 14px 0 6px; }
 
     /* ── STEP 1 · lưới sách ─────────────────────────────────────── */
     .cyo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 26px; }
@@ -54,79 +63,106 @@
     .cyo-card:hover { transform: translateY(-3px); box-shadow: 0 10px 28px rgba(45,42,38,.13); }
     .cyo-card .imgwrap { border-radius: 12px; overflow: hidden; }
     .cyo-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
-    .cyo-card .t { font-weight: 700; font-size: 15.5px; margin: 13px 0 5px; line-height: 1.4; }
+    .cyo-card .t { font-weight: 600; font-size: 15.5px; margin: 13px 0 5px; line-height: 1.4; }
     .cyo-card .p { font-size: 14px; color: var(--cyo-muted); margin-bottom: 12px; }
-    .cyo-card .p b { color: var(--cyo-orange); font-size: 16.5px; font-weight: 800; }
-    .cyo-card .go { display: inline-block; border: 1.5px solid var(--cyo-orange); color: var(--cyo-orange); border-radius: 99px; padding: 10px 24px; font-size: 13.5px; font-weight: 700; background: #fff; }
+    .cyo-card .p b { color: var(--cyo-orange); font-size: 16.5px; font-weight: 700; }
+    .cyo-card .go { display: inline-block; border: 1.5px solid var(--cyo-orange); color: var(--cyo-orange); border-radius: 99px; padding: 10px 24px; font-size: 13.5px; font-weight: 600; background: #fff; }
     .cyo-card:hover .go { background: var(--cyo-orange); color: #fff; }
-    .cyo-trust { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-top: 42px; color: var(--cyo-muted); font-size: 13px; font-weight: 700; }
+    .cyo-trust { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; margin-top: 42px; color: var(--cyo-muted); font-size: 13px; font-weight: 600; }
     .cyo-trust span { display: flex; align-items: center; gap: 7px; }
 
     /* ── STEP 2 · CHI TIẾT SÁCH + Start Personalizing ───────────── */
     .cyo-detail { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; margin-bottom: 34px; }
     .cyo-detail .dimg { border-radius: 18px; box-shadow: 0 10px 30px rgba(45,42,38,.12); overflow: hidden; background: #fff; padding: 14px; }
     .cyo-detail .dimg img { width: 100%; display: block; border-radius: 12px; }
-    .cyo-detail h2 { font-size: 30px; margin: 0 0 12px; font-weight: 800; line-height: 1.25; color: var(--cyo-brown); }
+    .cyo-detail h2 { font-size: 30px; margin: 0 0 12px; font-weight: 700; line-height: 1.25; color: var(--cyo-brown); }
     .cyo-detail .dprice { font-size: 15px; color: var(--cyo-muted); margin: 14px 0 18px; }
-    .cyo-detail .dprice b { color: var(--cyo-orange); font-size: 24px; font-weight: 800; }
+    .cyo-detail .dprice b { color: var(--cyo-orange); font-size: 24px; font-weight: 700; }
     .cyo-detail .ddesc { color: #555; font-size: 15px; line-height: 1.7; margin-bottom: 18px; }
     .cyo-bullets { list-style: none; padding: 0; margin: 0 0 22px; }
     .cyo-bullets li { display: flex; gap: 9px; align-items: flex-start; font-size: 14.5px; margin-bottom: 9px; }
     .cyo-faq { border-top: 1px solid var(--cyo-line); }
     .cyo-faq details { border-bottom: 1px solid var(--cyo-line); }
-    .cyo-faq summary { cursor: pointer; font-weight: 800; font-size: 14.5px; padding: 13px 2px; list-style: none; display: flex; justify-content: space-between; }
+    .cyo-faq summary { cursor: pointer; font-weight: 700; font-size: 14.5px; padding: 13px 2px; list-style: none; display: flex; justify-content: space-between; }
     .cyo-faq summary::after { content: "▾"; color: var(--cyo-muted); }
     .cyo-faq p { margin: 0 0 14px; font-size: 13.5px; color: #666; line-height: 1.65; }
     .cyo-wrap2 { background: var(--cyo-cream); border-radius: 22px; padding: 34px 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 34px; align-items: start; }
-    .cyo-left h2 { font-size: 30px; margin: 0 0 10px; font-weight: 800; color: var(--cyo-brown); }
+    .cyo-left h2 { font-size: 30px; margin: 0 0 10px; font-weight: 700; color: var(--cyo-brown); }
     .cyo-left .sub { color: var(--cyo-muted); font-size: 15px; line-height: 1.6; margin-bottom: 26px; }
     .cyo-flow3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; text-align: center; }
-    .cyo-flow3 .f { font-size: 12px; font-weight: 700; color: var(--cyo-muted); line-height: 1.4; }
+    .cyo-flow3 .f { font-size: 12px; font-weight: 600; color: var(--cyo-muted); line-height: 1.4; }
     .cyo-flow3 .c { width: 84px; height: 84px; margin: 0 auto 8px; border-radius: 50%; border: 2px dashed #e4d5bd; display: flex; align-items: center; justify-content: center; background: #fff; position: relative; padding: 3px; }
-    .cyo-flow3 .n { position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); background: var(--cyo-orange); color: #fff; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; line-height: 20px; font-weight: 900; }
+    .cyo-flow3 .n { position: absolute; bottom: -6px; left: 50%; transform: translateX(-50%); background: var(--cyo-orange); color: #fff; width: 20px; height: 20px; border-radius: 50%; font-size: 11px; line-height: 20px; font-weight: 800; }
     .cyo-tips { background: #fff; border: 1px solid var(--cyo-line); border-radius: 18px; padding: 20px; }
-    .cyo-tips .tt { text-align: center; font-weight: 800; letter-spacing: 3px; font-size: 13px; margin-bottom: 14px; }
+    .cyo-tips .tt { text-align: center; font-weight: 700; letter-spacing: 3px; font-size: 13px; margin-bottom: 14px; }
     .cyo-tipsrow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; text-align: center; margin-bottom: 18px; }
     .cyo-tip .c { width: 62px; height: 62px; margin: 0 auto 6px; border-radius: 50%; display: flex; align-items: center; justify-content: center; position: relative; background: #faf4ea; }
     .cyo-tip .c img, .cyo-flow3 .c img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; display: block; }
     .cyo-tip.ok .c { border: 2.5px solid #2e9e5b; } .cyo-tip.no .c { border: 2.5px solid #d9534f; }
-    .cyo-tip .m { position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 11px; line-height: 18px; font-weight: 900; }
+    .cyo-tip .m { position: absolute; top: -4px; right: -4px; width: 18px; height: 18px; border-radius: 50%; color: #fff; font-size: 11px; line-height: 18px; font-weight: 800; }
     .cyo-tip.ok .m { background: #2e9e5b; } .cyo-tip.no .m { background: #d9534f; }
-    .cyo-tip .d { font-size: 11px; color: var(--cyo-muted); font-weight: 700; line-height: 1.35; }
-    .cyo-upload { display: block; width: 100%; background: var(--cyo-orange); color: #fff; border: 0; border-radius: 99px; padding: 16px; font-size: 16.5px; font-weight: 800; cursor: pointer; text-align: center; box-shadow: 0 6px 18px rgba(246,139,30,.35); }
-    .cyo-drophint { text-align: center; font-size: 12.5px; color: var(--cyo-muted); font-weight: 700; margin-top: 8px; }
+    .cyo-tip .d { font-size: 11px; color: var(--cyo-muted); font-weight: 600; line-height: 1.35; }
+    .cyo-upload { display: block; width: 100%; background: var(--cyo-orange); color: #fff; border: 0; border-radius: 99px; padding: 16px; font-size: 16.5px; font-weight: 700; cursor: pointer; text-align: center; box-shadow: 0 6px 18px rgba(176,106,48,.35); }
+    .cyo-drophint { text-align: center; font-size: 12.5px; color: var(--cyo-muted); font-weight: 600; margin-top: 8px; }
     .cyo-avatar { position: relative; width: 128px; margin: 0 auto; display: none; }
     .cyo-avatar img { width: 128px; height: 128px; border-radius: 50%; object-fit: cover; border: 3px solid #fff; box-shadow: 0 6px 18px rgba(45,42,38,.2); cursor: pointer; }
-    .cyo-avatar .x { position: absolute; top: 0; right: 0; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 1px solid var(--cyo-line); font-size: 13px; font-weight: 900; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+    .cyo-avatar .x { position: absolute; top: 0; right: 0; width: 28px; height: 28px; border-radius: 50%; background: #fff; border: 1px solid var(--cyo-line); font-size: 13px !important; font-weight: 800; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.12); display: flex; align-items: center; justify-content: center; line-height: 1 !important; color: #5a544c; padding: 0; }
     .cyo-priv { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; color: var(--cyo-muted); margin-top: 14px; line-height: 1.5; }
+    .cyo-fmt-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; margin-top: 10px; border: 1.5px solid var(--cyo-line); background: #fff; border-radius: 99px; padding: 11px 18px; font-size: 13px; font-weight: 600; color: var(--cyo-ink); cursor: pointer; }
+    .cyo-fmt-btn:hover { border-color: var(--cyo-orange); color: var(--cyo-orange); }
+    .cyo-fmt-pop { position: relative; margin-top: 10px; background: #fff; border: 1px solid var(--cyo-line); border-radius: 14px; padding: 16px 40px 16px 16px; box-shadow: 0 10px 26px rgba(45,42,38,.12); }
+    .cyo-fmt-pop .note { display: flex; gap: 8px; font-size: 12.5px; color: #555; line-height: 1.5; margin-bottom: 12px; }
+    .cyo-fmt-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; }
+    .cyo-fmt-grid .it { display: flex; gap: 8px; align-items: flex-start; }
+    .cyo-fmt-grid .k { font-size: 11px; color: var(--cyo-muted); font-weight: 600; }
+    .cyo-fmt-grid .v { font-size: 12.5px; font-weight: 700; }
+    .cyo-fmt-x { position: absolute; top: 8px; right: 10px; border: 0; background: none; font-size: 15px; color: var(--cyo-muted); cursor: pointer; }
 
     /* ── STEP 3 · MY BOOK ────────────────────────────────────────── */
     .cyo-mb-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
-    .cyo-mb-head h2 { font-size: 26px; margin: 0 0 4px; font-weight: 800; }
+    .cyo-mb-head h2 { font-size: 26px; margin: 0 0 4px; font-weight: 700; }
     .cyo-mb-sub { color: var(--cyo-muted); font-size: 14px; font-weight: 600; }
     .cyo-box { background: #fff; border: 1px solid var(--cyo-line); border-radius: 18px; padding: 22px; margin-bottom: 16px; }
-    .cyo-box h3 { margin: 0 0 16px; font-size: 19px; font-weight: 800; }
+    .cyo-box h3 { margin: 0 0 16px; font-size: 19px; font-weight: 700; }
     .cyo-covers { display: flex; gap: 16px; flex-wrap: wrap; }
     .cyo-cover { position: relative; display: flex; gap: 14px; align-items: center; border: 2px solid var(--cyo-line); border-radius: 16px; padding: 14px 18px 14px 14px; cursor: pointer; min-width: 260px; flex: 0 1 320px; background: #fff; transition: border-color .15s; }
     .cyo-cover:hover { border-color: #f6b26e; }
-    .cyo-cover.sel { border-color: var(--cyo-orange); background: #fff8f0; box-shadow: 0 0 0 3px rgba(246,139,30,.12); }
+    .cyo-cover.sel { border-color: var(--cyo-orange); background: #fff8f0; box-shadow: 0 0 0 3px rgba(176,106,48,.12); }
     .cyo-cover img { width: 84px; height: 84px; border-radius: 10px; object-fit: cover; }
-    .cyo-cover .vt { font-weight: 800; font-size: 15.5px; margin-bottom: 3px; }
-    .cyo-cover .vp { color: var(--cyo-orange); font-weight: 800; font-size: 16px; margin-top: 6px; }
-    .cyo-cover .tick { position: absolute; top: -9px; left: -9px; width: 24px; height: 24px; border-radius: 50%; background: var(--cyo-orange); color: #fff; font-size: 13px; line-height: 24px; text-align: center; font-weight: 900; display: none; }
+    .cyo-cover .vt { font-weight: 700; font-size: 15.5px; margin-bottom: 3px; }
+    .cyo-cover .vp { color: var(--cyo-orange); font-weight: 700; font-size: 16px; margin-top: 6px; }
+    .cyo-cover .tick { position: absolute; top: -9px; left: -9px; width: 24px; height: 24px; border-radius: 50%; background: var(--cyo-orange); color: #fff; font-size: 13px; line-height: 24px; text-align: center; font-weight: 800; display: none; }
     .cyo-cover.sel .tick { display: block; }
-    .cyo-cover .best { position: absolute; top: -11px; right: 14px; background: #e8474b; color: #fff; font-size: 10.5px; font-weight: 900; letter-spacing: .5px; padding: 4px 10px; border-radius: 7px; }
+    .cyo-cover .best { position: absolute; top: -11px; right: 14px; background: linear-gradient(90deg, #c07a35, #9c5f2a); color: #fff; font-size: 10.5px; font-weight: 800; letter-spacing: .5px; padding: 4px 10px; border-radius: 7px; }
     .cyo-emailrow { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; }
     .cyo-emailrow .et { flex: 1 1 260px; font-size: 14.5px; line-height: 1.5; }
     .cyo-emailrow .ef { display: flex; gap: 8px; flex: 1 1 300px; }
-    .cyo-stagewrap { position: relative; max-width: 560px; margin: 0 auto; }
-    .cyo-stagewrap img { width: 100%; border-radius: 14px; box-shadow: 0 10px 30px rgba(45,42,38,.14); display: block; }
-    .cyo-stagewrap img.blur { filter: blur(14px) saturate(.9); }
-    .cyo-genover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; padding: 20px; }
-    .cyo-genover .gt { font-size: 19px; font-weight: 800; color: #fff; text-shadow: 0 2px 14px rgba(0,0,0,.45); }
+    /* v492 · SÁCH 3D: bìa trước gen + gáy + cạnh giấy + mặt sau, bấm lật được */
+    .b3d { width: 340px; height: 340px; margin: 18px auto 6px; perspective: 1500px; }
+    .b3d-book { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transform: rotateY(-24deg); transition: transform .9s cubic-bezier(.3,.7,.3,1); }
+    .b3d-book.showback { transform: rotateY(156deg); }
+    .b3d .f { position: absolute; inset: 0; backface-visibility: hidden; }
+    .b3d .f img, .b3d .f .imgblur { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .b3d .f.front { transform: translateZ(14px); border-radius: 3px 10px 10px 3px; overflow: hidden; background: #f6efe3; box-shadow: 0 22px 44px rgba(45,42,38,.28); }
+    .b3d .f.back { transform: rotateY(180deg) translateZ(14px); border-radius: 3px 10px 10px 3px; overflow: hidden; background: #f6efe3; display: flex; align-items: center; justify-content: center; color: #cbbfa8; font-weight: 700; }
+    .b3d .f.spine { width: 28px; height: 100%; left: 50%; margin-left: -14px; transform: rotateY(-90deg) translateZ(170px); background: linear-gradient(180deg, #9c5f2a, #6f451c); border-radius: 2px; }
+    .b3d .f.pages { width: 28px; height: 100%; left: 50%; margin-left: -14px; transform: rotateY(90deg) translateZ(170px); background: repeating-linear-gradient(90deg, #fffdf8 0 2px, #ece4d4 2px 3px); }
+    .b3d-shadow { width: 300px; height: 24px; margin: -8px auto 0; background: radial-gradient(ellipse at center, rgba(45,42,38,.22), transparent 68%); }
+    .b3d-toggle { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+    .b3d-toggle button { border: 1.5px solid var(--cyo-line); background: #fff; border-radius: 99px; padding: 8px 20px; font-size: 12.5px; font-weight: 600; color: var(--cyo-muted); cursor: pointer; }
+    .b3d-toggle button.on { border-color: var(--cyo-orange); color: var(--cyo-orange); background: #fff8f0; }
+    img.blur, .blur img { filter: blur(14px) saturate(.9); }
+    .cyo-genover { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; padding: 20px; z-index: 2; }
+    @media (max-width: 480px) {
+      .b3d { width: 260px; height: 260px; }
+      .b3d .f.spine { transform: rotateY(-90deg) translateZ(130px); }
+      .b3d .f.pages { transform: rotateY(90deg) translateZ(130px); }
+      .b3d-shadow { width: 230px; }
+    }
+    .cyo-genover .gt { font-size: 19px; font-weight: 700; color: #fff; text-shadow: 0 2px 14px rgba(0,0,0,.45); }
     .cyo-bar { height: 8px; background: rgba(255,255,255,.45); border-radius: 99px; overflow: hidden; width: 70%; max-width: 320px; }
     .cyo-bar i { display: block; height: 100%; width: 0%; background: var(--cyo-orange); border-radius: 99px; transition: width .8s ease; }
-    .cyo-genover .ge { font-size: 12px; color: #fff; font-weight: 700; text-shadow: 0 1px 8px rgba(0,0,0,.4); }
+    .cyo-genover .ge { font-size: 12px; color: #fff; font-weight: 600; text-shadow: 0 1px 8px rgba(0,0,0,.4); }
 
     @media (max-width: 760px) {
       .cyo-detail, .cyo-wrap2 { grid-template-columns: 1fr; }
@@ -205,6 +241,17 @@
           <button class="cyo-upload" id="cyo-drop" type="button">Child's Photo <svg class="ic" style="width:19px;height:19px;vertical-align:-4px;margin-left:6px"><use href="#ic-up"/></svg></button>
           <div class="cyo-drophint" id="cyo-drophint">drop a photo or click the button</div>
           <div class="cyo-avatar" id="cyo-avatar"><img id="cyo-avatar-img" alt=""><button class="x" id="cyo-avatar-x" type="button">✕</button></div>
+          <button type="button" class="cyo-fmt-btn" id="cyo-fmt-btn">✦ Photo Formats &amp; Dimensions Info</button>
+          <div class="cyo-fmt-pop" id="cyo-fmt-pop" style="display:none">
+            <button type="button" class="cyo-fmt-x" id="cyo-fmt-x">✕</button>
+            <div class="note"><svg class="ic" style="width:16px;height:16px;margin-top:1px"><use href="#ic-lock"/></svg><span>Your child's photo is kept <b>private and secure</b> — used only to create your preview and print your book.</span></div>
+            <div class="cyo-fmt-grid">
+              <div class="it"><svg class="ic" style="width:16px;height:16px;color:#2e9e5b;margin-top:2px"><use href="#ic-check"/></svg><div><div class="k">Format</div><div class="v">JPG, PNG</div></div></div>
+              <div class="it"><svg class="ic" style="width:16px;height:16px;color:#2e9e5b;margin-top:2px"><use href="#ic-check"/></svg><div><div class="k">Min. resolution</div><div class="v">400 × 400 pixels</div></div></div>
+              <div class="it"><svg class="ic" style="width:16px;height:16px;color:#2e9e5b;margin-top:2px"><use href="#ic-check"/></svg><div><div class="k">Max. size</div><div class="v">10MB</div></div></div>
+              <div class="it"><svg class="ic" style="width:16px;height:16px;color:#2e9e5b;margin-top:2px"><use href="#ic-check"/></svg><div><div class="k">Max. resolution</div><div class="v">6000 × 6000 pixels</div></div></div>
+            </div>
+          </div>
           <input type="file" id="cyo-file" accept="image/*" style="display:none">
           <label class="cyo-lbl">Book Language</label>
           <select class="cyo-inp" id="cyo-lang"><option>English</option></select>
@@ -243,7 +290,7 @@
     </div>
 
     <div class="cyo-box cyo-emailrow">
-      <div class="et"><b>Want us to save this preview?</b> Enter your email, and we'll send it your way!</div>
+      <div class="et"><b>Want us to save this preview?</b> Enter your email and we'll keep it saved for you.</div>
       <div class="ef">
         <input class="cyo-inp" id="cyo-email" type="email" placeholder="Email Address">
         <button class="cyo-btn alt" id="cyo-save-btn" style="padding:12px 20px;font-size:13.5px">Save</button>
@@ -252,13 +299,23 @@
     </div>
 
     <div class="cyo-box">
-      <div class="cyo-stagewrap">
-        <img id="cyo-result" alt="Your personalized cover">
-        <div class="cyo-genover" id="cyo-genover">
-          <div class="gt">Just a moment while we bring your story to life…</div>
-          <div class="cyo-bar"><i id="cyo-bar-i"></i></div>
-          <div class="ge" id="cyo-elapsed">0s · usually 30–60 seconds</div>
+      <div class="b3d"><div class="b3d-book" id="cyo-book">
+        <div class="f front">
+          <img id="cyo-result" alt="Your personalized cover">
+          <div class="cyo-genover" id="cyo-genover">
+            <div class="gt">Just a moment while we bring your story to life…</div>
+            <div class="cyo-bar"><i id="cyo-bar-i"></i></div>
+            <div class="ge" id="cyo-elapsed">0s · usually 30–60 seconds</div>
+          </div>
         </div>
+        <div class="f back"><img id="cyo-back" alt="" style="display:none"><span id="cyo-back-empty">TALEWIX</span></div>
+        <div class="f spine"></div>
+        <div class="f pages"></div>
+      </div></div>
+      <div class="b3d-shadow"></div>
+      <div class="b3d-toggle" id="cyo-toggle" style="display:none">
+        <button type="button" id="cyo-face-f" class="on">Front cover</button>
+        <button type="button" id="cyo-face-b">Back cover</button>
       </div>
     </div>
 
@@ -276,7 +333,7 @@
   // ⚙️ CHỈNH 1 DÒNG NÀY nếu domain FUSION thay đổi:
   var API = "https://os.fusiondn.com/api/studio/public";
 
-  var S = { templates: [], tpl: null, photo: "", previewId: "", previewUrl: "", timer: null, t0: 0, chosenVariant: "", pendingEmail: "" };
+  var S = { templates: [], tpl: null, photo: "", previewId: "", previewUrl: "", photoUrl: "", timer: null, t0: 0, chosenVariant: "", pendingEmail: "" };
   var $ = function (id) { return document.getElementById(id); };
   function show(step) {
     ["cyo-s1", "cyo-s2", "cyo-s3"].forEach(function (id, i) { $(id).style.display = (i === step - 1) ? "" : "none"; });
@@ -327,6 +384,11 @@
   // Ảnh: upload → avatar tròn có nút ✕ (kiểu WonderWraps). Bấm avatar = đổi ảnh.
   $("cyo-drop").addEventListener("click", function () { $("cyo-file").click(); });
   $("cyo-avatar-img").addEventListener("click", function () { $("cyo-file").click(); });
+  $("cyo-fmt-btn").addEventListener("click", function () {
+    var pop = $("cyo-fmt-pop");
+    pop.style.display = pop.style.display === "none" ? "" : "none";
+  });
+  $("cyo-fmt-x").addEventListener("click", function () { $("cyo-fmt-pop").style.display = "none"; });
   $("cyo-avatar-x").addEventListener("click", function () {
     S.photo = ""; $("cyo-file").value = "";
     $("cyo-avatar").style.display = "none";
@@ -388,6 +450,12 @@
     } else { box.style.display = "none"; }
     syncPrice();
   }
+  $("cyo-face-f").addEventListener("click", function () {
+    $("cyo-book").classList.remove("showback"); this.classList.add("on"); $("cyo-face-b").classList.remove("on");
+  });
+  $("cyo-face-b").addEventListener("click", function () {
+    $("cyo-book").classList.add("showback"); this.classList.add("on"); $("cyo-face-f").classList.remove("on");
+  });
   $("cyo-change").addEventListener("click", function () { clearInterval(S.timer); show(2); });
   $("cyo-retry").addEventListener("click", function (e) { e.preventDefault(); clearInterval(S.timer); show(2); });
 
@@ -397,6 +465,12 @@
     buildMyBook();
     var img = $("cyo-result");
     img.src = S.tpl.thumbUrl; img.className = "blur";
+    // Bìa sau: ảnh gốc template (không gen — genBack tắt thì thôi); không có thì hiện nền trơn.
+    var bimg = $("cyo-back");
+    if (S.tpl.backImageUrl) { bimg.src = S.tpl.backImageUrl; bimg.style.display = ""; $("cyo-back-empty").style.display = "none"; $("cyo-toggle").style.display = ""; }
+    else { bimg.style.display = "none"; $("cyo-back-empty").style.display = ""; $("cyo-toggle").style.display = "none"; }
+    $("cyo-book").classList.remove("showback");
+    $("cyo-face-f").classList.add("on"); $("cyo-face-b").classList.remove("on");
     $("cyo-genover").style.display = ""; $("cyo-cart-btn").disabled = true;
     show(3); S.t0 = Date.now();
     S.timer = setInterval(function () {
@@ -410,11 +484,23 @@
     }).then(function (r) { return r.json(); }).then(function (j) {
       clearInterval(S.timer);
       if (!j.ok) { show(2); err("cyo-err2", j.error || "Generation failed — please try again."); return; }
-      S.previewId = j.previewId; S.previewUrl = j.url;
-      img.src = j.url; img.className = "";
-      $("cyo-genover").style.display = "none";
-      $("cyo-cart-btn").disabled = false;
-      if (S.pendingEmail) sendLead(S.pendingEmail);
+      S.previewId = j.previewId; S.previewUrl = j.url; S.photoUrl = j.photoUrl || "";
+      // PRELOAD ảnh final rồi mới hoán đổi — không thì blur bị gỡ trước khi ảnh tải xong,
+      // khách thấy bìa template hiện rõ vài giây rồi mới nhảy sang bản final.
+      var done = false;
+      var reveal = function () {
+        if (done) return; done = true;
+        img.src = j.url; img.className = "";
+        if (j.backUrl) { var bb = $("cyo-back"); bb.src = j.backUrl; bb.style.display = ""; $("cyo-back-empty").style.display = "none"; $("cyo-toggle").style.display = ""; }
+        $("cyo-genover").style.display = "none";
+        $("cyo-cart-btn").disabled = false;
+        if (S.pendingEmail) sendLead(S.pendingEmail);
+      };
+      var pre = new Image();
+      pre.onload = reveal;
+      pre.onerror = reveal;             // ảnh lỗi tải → vẫn mở khoá flow
+      pre.src = j.url;
+      setTimeout(reveal, 15000);        // mạng chậm quá 15s → mở luôn, không giam khách
     }).catch(function () { clearInterval(S.timer); show(2); err("cyo-err2", "Network error — please try again."); });
   });
 
@@ -440,6 +526,7 @@
     var vid = S.chosenVariant || (S.tpl && S.tpl.variantId);
     if (!vid) { err("cyo-err4", "This book is not available for online ordering yet — please contact us."); return; }
     var props = { "Child's Name": $("cyo-name").value.trim(), "_Studio Preview": S.previewUrl, "_Studio Preview Id": S.previewId };
+    if (S.photoUrl) props["_Child Photo"] = S.photoUrl;   // ảnh gốc cho designer (ẩn với khách — dấu _)
     if ($("cyo-age").value) props["Child's Age"] = $("cyo-age").value;
     fetch("/cart/add.js", {
       method: "POST", headers: { "Content-Type": "application/json" },

@@ -1104,6 +1104,7 @@ export const studioPreviews = pgTable("studio_previews", {
   email: text("email").notNull().default(""),               // bắt sau khi gen (Save your preview)
   previewKey: text("preview_key").notNull().default(""),    // key storage ảnh preview (đã watermark)
   previewBackKey: text("preview_back_key").notNull().default(""), // v492 · bìa sau gen (nếu template bật genBack)
+  photoKey: text("photo_key").notNull().default(""),         // v494 · ẢNH GỐC khách upload — designer cần để làm ruột sách
   model: text("model").notNull().default(""),
   cost: numeric("cost").notNull().default("0"),
   ip: text("ip").notNull().default(""),

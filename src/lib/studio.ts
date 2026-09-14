@@ -24,7 +24,7 @@ export const STUDIO_DEFAULT_PROMPT = `You are given TWO reference images.
 IMAGE 1 is the original cover artwork of a personalized children's book. Treat it as the EXACT base template: keep its composition, art style, colours, background, decorative elements and title lettering style.
 IMAGE 2 is a photo of a real child.
 Redraw the cover so the MAIN CHARACTER has this child's face — clearly recognizable (same face shape, hair colour, hairstyle, skin tone), but REDRAWN in the SAME art style, colours and lighting as the template. It must look painted into the artwork, never like a pasted photo.
-Replace the personalized name in the title with "{name}", matching the original font style, size, colour and placement exactly. All words correctly spelled.
+The title contains a personalized FIRST NAME (the leading decorated word — e.g. "Kate" in "Kate becomes a Mermaid"). Replace ONLY that name word with "{name}", matching the original font style, size, colour and placement exactly. Every other word of the title must stay EXACTLY unchanged. All words correctly spelled.
 Keep everything else identical to the template. Output the flat cover artwork only, full-bleed — no book mockup, no hands, no watermark, no extra text.`;
 
 // v492 · Prompt gen BÌA SAU (template bật genBack): giữ nguyên art, thay mặt nhân vật nếu có, KHÔNG thêm chữ.
@@ -95,23 +95,21 @@ export function clientIp(req: NextRequest): string {
   return (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || req.headers.get("x-real-ip") || "unknown";
 }
 
-/** Đóng watermark chéo mờ lên preview (chống dùng chùa ảnh gen). text rỗng → giữ nguyên. */
+/**
+ * Đóng watermark chéo mờ lên preview. v494: dùng PNG NHÚNG SẴN (studio-watermark.ts) thay vì SVG text —
+ * Vercel lambda không có font nên sharp render chữ SVG ra RỖNG (lỗi im lặng, đây là lý do preview
+ * trước đó không thấy watermark). Setting watermark giờ đóng vai công tắc: rỗng = tắt.
+ */
 export async function watermarkImage(buf: Buffer, text: string): Promise<Buffer> {
   if (!text.trim()) return buf;
   try {
+    const { WATERMARK_PNG_B64 } = await import("@/lib/studio-watermark");
     const sharp = (await import("sharp")).default;
     sharp.cache(false);
     const meta = await sharp(buf).metadata();
     const w = meta.width ?? 1024, h = meta.height ?? 1024;
-    const fs = Math.round(Math.max(w, h) / 18);
-    const esc = text.replace(/&/g, "&amp;").replace(/</g, "&lt;");
-    const svg = Buffer.from(
-      `<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
-        <text x="50%" y="52%" text-anchor="middle" transform="rotate(-24 ${w / 2} ${h / 2})"
-          font-family="Arial, sans-serif" font-weight="bold" font-size="${fs}"
-          fill="#ffffff" fill-opacity="0.32" stroke="#000000" stroke-opacity="0.12" stroke-width="2">${esc}</text>
-      </svg>`,
-    );
-    return await sharp(buf).composite([{ input: svg }]).png().toBuffer();
+    const wm = await sharp(Buffer.from(WATERMARK_PNG_B64, "base64"))
+      .resize({ width: w, height: h, fit: "inside" }).png().toBuffer();
+    return await sharp(buf).composite([{ input: wm, gravity: "centre" }]).png().toBuffer();
   } catch { return buf; } // watermark lỗi → trả ảnh gốc, không chặn flow
 }

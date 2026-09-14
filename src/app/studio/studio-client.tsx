@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Settings = { enabled: boolean; model: string; aspectRatio: string; dailyLimitIp: number; dailyLimitGlobal: number; watermark: string; origins: string[]; prompt: string };
 type TplVariant = { id: string; title: string; price: string };
 type Tpl = { id: string; title: string; thumbUrl: string; baseImageUrl: string; variantId: string; price: string; promptExtra: string; active: boolean; sort: number; variants: TplVariant[]; description: string; ageRange: string; pages: string; backImageUrl: string; genBack: boolean };
-type Lead = { id: string; templateId: string | null; childName: string; email: string; previewUrl: string | null; model: string; cost: string; ip: string; status: string; error: string; createdAt: string };
+type Lead = { id: string; templateId: string | null; childName: string; email: string; previewUrl: string | null; photoUrl: string | null; model: string; cost: string; ip: string; status: string; error: string; createdAt: string };
 type Model = { id: string; name: string };
 type PickProduct = { id: string; title: string; thumb: string; url: string | null; variants: { id: string; title: string; price: string }[]; desc?: string };
 
@@ -338,7 +338,7 @@ export default function StudioClient() {
                 <thead>
                   <tr style={{ textAlign: "left", color: "var(--muted)", textTransform: "uppercase", fontSize: 11 }}>
                     <th style={{ padding: "6px 8px" }}>Time</th><th style={{ padding: "6px 8px" }}>Child</th><th style={{ padding: "6px 8px" }}>Email</th>
-                    <th style={{ padding: "6px 8px" }}>Template</th><th style={{ padding: "6px 8px" }}>Preview</th><th style={{ padding: "6px 8px" }}>Status</th>
+                    <th style={{ padding: "6px 8px" }}>Template</th><th style={{ padding: "6px 8px" }}>Preview</th><th style={{ padding: "6px 8px" }}>Photo</th><th style={{ padding: "6px 8px" }}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -349,6 +349,7 @@ export default function StudioClient() {
                       <td style={{ padding: "7px 8px" }}>{l.email || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                       <td style={{ padding: "7px 8px" }}>{templates.find((t) => t.id === l.templateId)?.title ?? "—"}</td>
                       <td style={{ padding: "7px 8px" }}>{l.previewUrl ? <a href={l.previewUrl} target="_blank" rel="noreferrer" style={{ color: "#f68b1e", fontWeight: 700 }}>view</a> : "—"}</td>
+                      <td style={{ padding: "7px 8px" }}>{l.photoUrl ? <a href={l.photoUrl} target="_blank" rel="noreferrer" style={{ color: "#f68b1e", fontWeight: 700 }}>photo</a> : "—"}</td>
                       <td style={{ padding: "7px 8px" }}>{l.status === "done" ? "✓" : <span title={l.error} style={{ color: "var(--red)" }}>✗</span>}</td>
                     </tr>
                   ))}

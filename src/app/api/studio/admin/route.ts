@@ -61,12 +61,13 @@ export async function GET(req: NextRequest) {
     const rows = await db.select({
       id: schema.studioPreviews.id, templateId: schema.studioPreviews.templateId,
       childName: schema.studioPreviews.childName, email: schema.studioPreviews.email,
-      previewKey: schema.studioPreviews.previewKey, model: schema.studioPreviews.model,
+      previewKey: schema.studioPreviews.previewKey, photoKey: schema.studioPreviews.photoKey,
+      model: schema.studioPreviews.model,
       cost: schema.studioPreviews.cost, ip: schema.studioPreviews.ip,
       status: schema.studioPreviews.status, error: schema.studioPreviews.error,
       createdAt: schema.studioPreviews.createdAt,
     }).from(schema.studioPreviews).orderBy(desc(schema.studioPreviews.createdAt)).limit(100);
-    leads = rows.map((r) => ({ ...r, previewUrl: r.previewKey ? fileUrl(r.previewKey) : null }));
+    leads = rows.map((r) => ({ ...r, previewUrl: r.previewKey ? fileUrl(r.previewKey) : null, photoUrl: r.photoKey ? fileUrl(r.photoKey) : null }));
   } catch { /* bảng chưa migrate → trả rỗng, UI hiện hướng dẫn chạy SQL */ }
   return NextResponse.json({ ok: true, settings, defaults: defaultStudioSettings(), templates, leads });
 }

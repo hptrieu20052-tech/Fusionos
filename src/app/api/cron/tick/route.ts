@@ -8,6 +8,7 @@ import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/li
 import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
 import { pushTiktokTrackingForOrder } from "@/lib/tiktok-tracking";
 import { pushShopifyTrackingForOrder } from "@/lib/shopify";
+import { shopbaseConfigured, fetchShopBaseOrders, normalizeShopBaseOrder, touchShopBaseSync, type ShopBaseCred } from "@/lib/shopbase";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
@@ -81,6 +82,29 @@ async function tick(req: NextRequest) {
       tiktok.push({ store: st.name, ok: true, received: orders.length, ...r });
     } catch (e) {
       tiktok.push({ store: st.name, ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) });
+    }
+  }
+
+  // ---- 1b2. ShopBase: kéo đơn mới cho MỌI store đã cấu hình (v495) ----
+  // Trước đây đơn ShopBase CHỈ về khi bấm tay "Sync orders" ở Stores — quên bấm là đơn không
+  // bao giờ vào FUSION. Giờ cron tự kéo như Etsy/TikTok: cửa sổ từ lastSyncAt - 1 ngày
+  // (overlap bắt đơn sửa), chưa sync lần nào thì lấy 60 ngày. Dedup theo (shopbase, external_id).
+  const shopbase: { store: string; ok: boolean; received?: number; created?: number; updated?: number; skipped?: number; error?: string }[] = [];
+  for (const st of stores) {
+    const cred = (((st.c ?? {}) as Record<string, unknown>).shopbase ?? null) as ShopBaseCred | null;
+    if (!shopbaseConfigured(cred)) continue; // store không phải ShopBase / chưa cấu hình → bỏ qua êm
+    if (Date.now() > deadline) { shopbase.push({ store: st.name, ok: false, error: "skipped (time budget)" }); continue; }
+    try {
+      const base = cred!.lastSyncAt ? new Date(cred!.lastSyncAt).getTime() - 86400_000 : Date.now() - 60 * 86400_000;
+      const raw = await fetchShopBaseOrders(cred!, { createdMin: new Date(base).toISOString(), maxPages: 4 });
+      const orders = raw.map(normalizeShopBaseOrder).filter((o) => o.externalId);
+      const r = orders.length
+        ? await insertEtsyOrders({ id: st.id, sellerId: st.sellerId, fx: st.fx, name: st.name }, orders, "api", "shopbase")
+        : { created: 0, updated: 0, skipped: 0, errors: [] as string[] };
+      await touchShopBaseSync(st.id);
+      shopbase.push({ store: st.name, ok: true, received: orders.length, created: r.created, updated: r.updated, skipped: r.skipped });
+    } catch (e) {
+      shopbase.push({ store: st.name, ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) });
     }
   }
 
@@ -208,7 +232,7 @@ async function tick(req: NextRequest) {
   }
   const { printway, printify, onosWem, supportMail } = results;
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem, supportMail };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, shopbase, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem, supportMail };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }

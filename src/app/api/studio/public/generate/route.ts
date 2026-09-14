@@ -102,8 +102,18 @@ export async function POST(req: NextRequest) {
       backKey = `studio/preview-${row.id}-back.png`;
       await writeFile(backKey, markedBack, "image/png");
     }
-    await db.update(schema.studioPreviews).set({ previewKey: key, previewBackKey: backKey }).where(eq(schema.studioPreviews.id, row.id));
-    return J({ ok: true, previewId: row.id, url: fileUrl(key), backUrl: backKey ? fileUrl(backKey) : null });
+    // v494 · LƯU ẢNH GỐC của khách — designer cần khi sản xuất ruột sách. URL đi kèm order
+    // (property ẩn _Child Photo) + hiện trong tab Leads.
+    let photoKey = "";
+    try {
+      const pb = Buffer.from(photo.split(",")[1] ?? "", "base64");
+      if (pb.length) {
+        photoKey = `studio/photo-${row.id}.jpg`;
+        await writeFile(photoKey, pb, "image/jpeg");
+      }
+    } catch { /* ảnh gốc lỗi → vẫn trả preview */ }
+    await db.update(schema.studioPreviews).set({ previewKey: key, previewBackKey: backKey, photoKey }).where(eq(schema.studioPreviews.id, row.id));
+    return J({ ok: true, previewId: row.id, url: fileUrl(key), backUrl: backKey ? fileUrl(backKey) : null, photoUrl: photoKey ? fileUrl(photoKey) : null });
   } catch (e) {
     return J({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) }, 500);
   }
