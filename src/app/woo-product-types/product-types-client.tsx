@@ -21,9 +21,9 @@ async function compressImage(file: File): Promise<string> {
 }
 
 type StoreOpt = { id: string; name: string };
-type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[] };
+type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[]; shipping?: string };
 // Dạng edit trong form: size/màu tách thành cặp field cho dễ nhập.
-type FormStyle = { name: string; image: string; sizes: { n: string; p: string }[]; colors: { n: string; hex: string }[]; front: boolean; back: boolean };
+type FormStyle = { name: string; image: string; sizes: { n: string; p: string }[]; colors: { n: string; hex: string }[]; front: boolean; back: boolean; ship: string };
 
 const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
 const btnPri: React.CSSProperties = { background: "var(--ink)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
@@ -37,6 +37,7 @@ function toForm(s: Style): FormStyle {
     colors: (s.colors ?? []).map((x) => { const [n, hex] = x.split("|"); return { n: n ?? "", hex: (hex ?? "#cccccc").trim() }; }),
     front: (s.designs ?? []).includes("front") || !(s.designs ?? []).length,
     back: (s.designs ?? []).includes("back") || !(s.designs ?? []).length,
+    ship: s.shipping ?? "",
   };
 }
 function fromForm(f: FormStyle): Style {
@@ -46,6 +47,7 @@ function fromForm(f: FormStyle): Style {
     sizes: f.sizes.filter((s) => s.n.trim() && s.p.trim()).map((s) => `${s.n.trim()}-${s.p.trim()}`),
     colors: f.colors.filter((c) => c.n.trim()).map((c) => `${c.n.trim()}|${(c.hex || "#cccccc").trim()}`),
     designs: [...(f.front ? ["front"] : []), ...(f.back ? ["back"] : [])].length ? [...(f.front ? ["front"] : []), ...(f.back ? ["back"] : [])] : ["front"],
+    ...(f.ship.trim() ? { shipping: f.ship.trim() } : {}),
   };
 }
 
@@ -54,6 +56,8 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
   const store = stores.find((s) => s.id === storeId);
   const [styles, setStyles] = useState<Style[]>([]);
   const [needBridge, setNeedBridge] = useState(false);
+  const [bridgeOld, setBridgeOld] = useState(false);   // v510 · bridge 1.0 chưa hỗ trợ shipping
+  const [defShip, setDefShip] = useState("");          // v510 · shipping mặc định (sản phẩm mọi style)
   const [canEditTypes, setCanEditTypes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -64,7 +68,11 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
     setBusy(true);
     const j = await fetch(`/api/woo-product-types?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setBusy(false);
-    if (j.ok) { setStyles(j.styles ?? []); setNeedBridge(!!j.needBridge); setCanEditTypes(!!j.canEditTypes); }
+    if (j.ok) {
+      setStyles(j.styles ?? []); setNeedBridge(!!j.needBridge); setCanEditTypes(!!j.canEditTypes);
+      setDefShip(typeof j.defaultShipping === "string" ? j.defaultShipping : "");
+      setBridgeOld(!j.needBridge && j.defaultShipping == null);
+    }
     else flash("✗ " + (j.error ?? "Error"));
   }, []);
   useEffect(() => { load(storeId); }, [storeId, load]);
@@ -91,14 +99,14 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
     setSaving(false);
   };
 
-  const openNew = () => { setEditIndex(-1); setForm({ name: "", image: "", sizes: [{ n: "One Size", p: "" }], colors: [], front: true, back: false }); };
+  const openNew = () => { setEditIndex(-1); setForm({ name: "", image: "", sizes: [{ n: "One Size", p: "" }], colors: [], front: true, back: false, ship: "" }); };
   const openEdit = (i: number) => { setEditIndex(i); setForm(toForm(styles[i])); };
   // Dup: khởi tạo style mới copy từ style có sẵn (đổi tên rồi lưu).
   const openDup = (i: number) => { setEditIndex(-1); setForm({ ...toForm(styles[i]), name: styles[i].styles + " (Copy)" }); };
 
   const persist = async (next: Style[], okMsg: string) => {
     setSaving(true);
-    const j = await fetch("/api/woo-product-types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, styles: next }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch("/api/woo-product-types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, styles: next, defaultShipping: defShip }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setSaving(false);
     if (j.ok) { flash(okMsg); setForm(null); setStyles(next); }
     else flash("✗ " + (j.error ?? "Error"));
@@ -153,6 +161,24 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
         Changes here write straight to the store&apos;s plugin (with automatic backups). When listing a product in <b>Manage Products</b>, pick which types that product sells — the product page then shows only those.
       </div>
 
+      {bridgeOld && (
+        <div className="panel" style={{ background: "#FFF3D6", border: "1px solid #EAD28A", padding: "12px 16px", fontSize: 13, lineHeight: 1.6 }}>
+          Store đang chạy <b>WCP Fusion Bridge 1.0</b> — cập nhật lên <b>1.1</b> (upload <b>wcp-fusion-bridge-1.1.zip</b> trong WP admin → Plugins, đè lên bản cũ) để dùng tab <b>Shipping &amp; Delivery theo từng Product Type</b>. Các tính năng khác vẫn chạy bình thường.
+        </div>
+      )}
+
+      {/* v510 · Shipping mặc định — cho sản phẩm KHÔNG giới hạn type (hiện tất cả style) */}
+      {editable && !needBridge && !bridgeOld && (
+        <div className="panel" style={{ padding: "14px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <b style={{ fontSize: 13.5 }}>🚚 Default Shipping &amp; Delivery</b>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>shown on products with NO type ticked (all-styles products, e.g. áo 2D) — per-type shipping below overrides this</span>
+            <button onClick={() => persist(styles, "✓ Default shipping saved")} disabled={saving || busy} style={{ ...btnBlue, marginLeft: "auto", padding: "7px 14px", fontSize: 12 }}>{saving ? "Saving…" : "Save default"}</button>
+          </div>
+          <textarea value={defShip} onChange={(e) => setDefShip(e.target.value)} rows={4} placeholder={"<p><strong>PROCESSING TIME</strong><br/>2–4 business days…</p>\n<p><strong>SHIPPING</strong><br/>US 5–10 · CA/UK/DE/AU 10–15 · Rest of world 10–20 business days</p>"} style={{ ...inp, resize: "vertical", fontFamily: "inherit", marginTop: 10 }} />
+        </div>
+      )}
+
       {needBridge && (
         <div className="panel" style={{ background: "#FFF3D6", border: "1px solid #EAD28A", padding: "14px 18px", fontSize: 13, lineHeight: 1.6 }}>
           <b>One-time setup:</b> this store doesn&apos;t have the <b>WCP Fusion Bridge</b> plugin yet, so FUSION can&apos;t read/write its product types.
@@ -182,7 +208,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
                       {s.image ? <img src={s.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "👕"}
                     </div>
                   </td>
-                  <td style={td}><b>{s.styles}</b></td>
+                  <td style={td}><b>{s.styles}</b>{s.shipping ? <span title="Has its own Shipping & Delivery tab" style={{ marginLeft: 6, fontSize: 12 }}>🚚</span> : null}</td>
                   <td style={td}>
                     <div style={{ fontSize: 12.5 }}>{s.sizes.length} sizes · {prices.length ? (lo === hi ? `$${lo}` : `$${lo} – $${hi}`) : "—"}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{s.sizes.map((x) => x.slice(0, x.lastIndexOf("-"))).join(", ").slice(0, 60)}</div>
@@ -262,6 +288,9 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
               ))}
             </div>
             <button type="button" onClick={() => setForm({ ...form, colors: [...form.colors, { n: "", hex: "#000000" }] })} style={{ ...btnGhost, padding: "6px 14px", fontSize: 12, marginTop: 8 }}>+ Add color</button>
+
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", margin: "16px 0 6px" }}>Shipping &amp; Delivery for this type (HTML — shows as a tab on product pages selling this type; empty = use store default)</div>
+            <textarea value={form.ship} onChange={(e) => setForm({ ...form, ship: e.target.value })} rows={4} placeholder={"<p><strong>PROCESSING TIME</strong><br/>Calendars: 3–5 business days…</p>"} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }} />
 
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", margin: "16px 0 6px" }}>Print sides buyers can choose designs for</div>
             <div style={{ display: "flex", gap: 16 }}>

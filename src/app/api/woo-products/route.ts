@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
     }
     const r = await wooApiFull(st.cred, `products?${qs}`);
     const list = (Array.isArray(r.data) ? r.data : []) as Record<string, unknown>[];
-    let products = list.map(slimProduct).map((p) => ({ ...p, editable: true, creator: "" }));
+    let products = list.map(slimProduct).map((p) => ({ ...p, editable: true, creator: "", tplName: "" }));
     // v503 · "Của ai người đó thấy" (mirror v459 ShopBase) + v504 · hiện TÊN người tạo trong cột Seller.
     if (products.length) {
       try {
@@ -118,13 +118,19 @@ export async function GET(req: NextRequest) {
         const names = userIds.length
           ? new Map((await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, userIds))).map((u) => [u.id, u.name ?? ""]))
           : new Map<string, string>();
+        // v511 · tên template đã dùng khi tạo → dòng "tpl: …" trong cột Store/Seller (như ShopBase).
+        const tplIds = Array.from(new Set(owners.map((o) => o.templateId).filter((x): x is string => !!x)));
+        const tplNames = tplIds.length
+          ? new Map((await db.select({ id: schema.wooTemplates.id, name: schema.wooTemplates.name }).from(schema.wooTemplates).where(inArray(schema.wooTemplates.id, tplIds))).map((t) => [t.id, t.name]))
+          : new Map<string, string>();
+        const tplByProduct = new Map(owners.filter((o) => o.templateId).map((o) => [o.productId, tplNames.get(o.templateId as string) ?? ""]));
         if (st.scoped) {
           const admins = await adminUserIds();
           products = products.filter((p) => { const o = ownerMap.get(p.id); return !o || o === session.sub || admins.includes(o); });
         }
         products = products.map((p) => {
           const o = ownerMap.get(p.id);
-          return { ...p, editable: st.scoped ? o === session.sub : true, creator: (o && names.get(o)) || "" };
+          return { ...p, editable: st.scoped ? o === session.sub : true, creator: (o && names.get(o)) || "", tplName: tplByProduct.get(p.id) || "" };
         });
       } catch { /* bảng chưa migrate → giữ nguyên */ }
     }

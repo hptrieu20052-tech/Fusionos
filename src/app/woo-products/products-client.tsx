@@ -11,7 +11,7 @@ type StoreOpt = { id: string; name: string; sellerId: string | null; sellerName:
 type Cat = { id: number; name: string; parent: number; count: number; slug: string };
 type Tpl = { id: string; name: string; title: string | null; description: string | null; price: string | null; salePrice: string | null; categoryIds: number[]; tags: string | null; status: string; thumb?: string | null; wcpStyles?: string[] };
 type Prod = {
-  id: number; name: string; sku: string; status: string; editable?: boolean; creator?: string;
+  id: number; name: string; sku: string; status: string; editable?: boolean; creator?: string; tplName?: string;
   price: string; regularPrice: string; salePrice: string;
   permalink: string; thumb: string;
   images: { id: number; src: string }[];
@@ -342,11 +342,13 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                 </td>
                 <td style={td}>
                   <div onClick={() => canEdit && p.editable !== false && openEdit(p)} style={{ fontWeight: 700, color: "var(--blue)", cursor: canEdit && p.editable !== false ? "pointer" : "default", lineHeight: 1.4 }}>{p.name}</div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.images.length} images{p.sku ? ` · ${p.sku}` : ""} · #{p.id}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.images.length} images{p.sku ? ` · ${p.sku}` : ""}</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>#{p.id}</div>
                 </td>
                 <td style={td}>
                   <div style={{ fontWeight: 700 }}>{store?.name ?? "—"}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{p.creator || store?.sellerName || "—"}</div>
+                  {p.tplName ? <div style={{ fontSize: 11, color: "var(--muted)" }}>tpl: {p.tplName}</div> : null}
                 </td>
                 <td style={td}>
                   <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>{p.categories.map((c) => c.name).join(", ") || "—"}</div>
@@ -359,10 +361,10 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                   <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 10px", borderRadius: 99, background: p.status === "publish" ? "var(--green-soft)" : "#FFF3D6", color: p.status === "publish" ? "#2E7D46" : "#8A6D1A", textTransform: "uppercase" }}>{p.status === "publish" ? "Active" : p.status}</span>
                 </td>
                 <td style={td}>
-                  <span style={{ display: "inline-flex", gap: 6 }}>
-                    {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" title="View on store" style={{ ...btnGhost, padding: "5px 10px", fontSize: 12, textDecoration: "none" }}>👁</a>}
-                    {canEdit && p.editable !== false && <button onClick={() => openEdit(p)} title="Edit" style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }}>✎</button>}
-                    {canEdit && <button onClick={() => openDup(p)} title="Duplicate as draft" style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }}>Dup</button>}
+                  <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+                    {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" title="View on store" style={{ width: 32, height: 32, borderRadius: 99, border: "1px solid #CBD9FF", background: "#EEF6FF", color: "var(--blue)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, textDecoration: "none" }}>👁</a>}
+                    {canEdit && p.editable !== false && <button onClick={() => openEdit(p)} title="Edit" style={{ width: 32, height: 32, borderRadius: 99, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>✎</button>}
+                    {canEdit && <button onClick={() => openDup(p)} title="Duplicate as draft" style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}>Dup</button>}
                   </span>
                 </td>
               </tr>

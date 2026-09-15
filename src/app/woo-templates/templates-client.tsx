@@ -23,6 +23,7 @@ function L({ label, children }: { label: string; children: React.ReactNode }) {
 
 export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreOpt[]; canEdit: boolean }) {
   const [storeId, setStoreId] = useState(stores[0]?.id ?? "");
+  const store = stores.find((x) => x.id === storeId);
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [ptypes, setPtypes] = useState<string[]>([]); // v507 · Product Types trên store (từ plugin)
@@ -49,7 +50,6 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
   const parents = cats.filter((c) => c.parent === 0);
   const catLabel = (c: Cat) => (c.parent ? `— ${c.name}` : c.name);
   const sortedCats = [...parents.map((p) => [p, ...cats.filter((c) => c.parent === p.id)]).flat()];
-  const catName = (id: number) => cats.find((c) => c.id === id)?.name ?? `#${id}`;
 
   // ── Editor modal (v507 · bố cục theo ShopBase: thumbnail + name/status + types) ──
   const empty = { id: "", name: "", title: "", description: "", price: "", salePrice: "", categoryIds: [] as number[], tags: "", status: "publish", thumb: "", wcpStyles: [] as string[] };
@@ -79,8 +79,6 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
     if (j.ok) { flash("✓ Template deleted"); setTpls((l) => l.filter((x) => x.id !== t.id)); } else flash("✗ " + (j.error ?? "Error"));
   };
 
-  const th: React.CSSProperties = { textAlign: "left", fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: 0.5, textTransform: "uppercase", padding: "10px 12px", borderBottom: "1px solid var(--line)" };
-  const td: React.CSSProperties = { padding: "12px", borderBottom: "1px solid var(--line)", verticalAlign: "middle", fontSize: 13 };
 
   if (!stores.length) {
     return <div className="panel empty">No WooCommerce store yet — create one in <b>Stores</b> first.</div>;
@@ -91,9 +89,12 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
       {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 300, background: msg.startsWith("✓") ? "#1E7A3E" : msg.startsWith("⚠") ? "#8A6D1A" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
 
       <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-          <MarketplaceLogo mk="woocommerce" size={34} />
-          <b style={{ fontSize: 19 }}>Manage Templates · <span style={{ color: "#7F54B3" }}>WooCommerce</span></b>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+          <MarketplaceLogo mk="woocommerce" size={40} />
+          <span>
+            <b style={{ fontSize: 19, display: "block", lineHeight: 1.2 }}>Manage Templates · <span style={{ color: "#7F54B3" }}>WooCommerce</span></b>
+            <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 600 }}>{tpls.length} templates</span>
+          </span>
         </span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {canEdit && <button onClick={openNew} style={btnPri}>+ New template</button>}
@@ -106,50 +107,35 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
 
       {needSql && <div className="panel" style={{ padding: "12px 16px", background: "#FFF3D6", border: "1px solid #EAD28A", fontSize: 13 }}>Run <b>MIGRATION_v502_woo_templates.sql</b> then <b>MIGRATION_v507_woo_template_upgrade.sql</b> on Supabase — the templates table/columns are missing.</div>}
 
-      <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
-        <div style={{ padding: "12px 16px 0", fontSize: 13, fontWeight: 800 }}>{tpls.length} templates</div>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
-          <thead><tr>
-            <th style={{ ...th, width: 64 }}>Thumb</th>
-            <th style={th}>Name</th>
-            <th style={th}>Title pattern</th>
-            <th style={{ ...th, width: 170 }}>Product types</th>
-            <th style={{ ...th, width: 180 }}>Categories</th>
-            <th style={{ ...th, width: 100 }}>Price</th>
-            <th style={{ ...th, width: 85 }}>Status</th>
-            <th style={{ ...th, width: 175 }}>Actions</th>
-          </tr></thead>
-          <tbody>
-            {tpls.map((t) => (
-              <tr key={t.id}>
-                <td style={td}>
-                  <div style={{ width: 46, height: 46, borderRadius: 10, overflow: "hidden", background: "#F1F3F8", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 17 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {t.thumb ? <img src={t.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🖼"}
-                  </div>
-                </td>
-                <td style={{ ...td, fontWeight: 800, color: "var(--blue)", cursor: canEdit ? "pointer" : "default" }} onClick={() => canEdit && openEdit(t)}>{t.name}</td>
-                <td style={td}><div style={{ fontSize: 12.5, lineHeight: 1.4 }}>{(t.title ?? "—").slice(0, 70)}{(t.title ?? "").length > 70 ? "…" : ""}</div></td>
-                <td style={td}><div style={{ fontSize: 11.5, lineHeight: 1.5 }}>{t.wcpStyles?.length ? t.wcpStyles.join(", ") : <span style={{ color: "var(--muted)" }}>All styles</span>}</div></td>
-                <td style={td}><div style={{ fontSize: 11.5, lineHeight: 1.5 }}>{t.categoryIds.length ? t.categoryIds.map(catName).join(", ") : "—"}</div></td>
-                <td style={{ ...td, fontWeight: 800 }}>{t.price ? `$${t.price}` : "—"}{t.salePrice ? <span style={{ color: "var(--muted)", fontWeight: 600 }}> / ${t.salePrice}</span> : null}</td>
-                <td style={td}>
-                  <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 10px", borderRadius: 99, background: t.status === "publish" ? "var(--green-soft)" : "#FFF3D6", color: t.status === "publish" ? "#2E7D46" : "#8A6D1A", textTransform: "uppercase" }}>{t.status}</span>
-                </td>
-                <td style={td}>
-                  {canEdit && (
-                    <span style={{ display: "inline-flex", gap: 6 }}>
-                      <button onClick={() => openEdit(t)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>✎ Edit</button>
-                      <button onClick={() => openDup(t)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>Dup</button>
-                      <button onClick={() => del(t)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, color: "var(--red)" }}>Delete</button>
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {!tpls.length && !busy && !needSql && <tr><td colSpan={8} style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 30 }}>No templates yet — create one with <b>+ New template</b>, or from Manage Products via <b>Save as template</b>.</td></tr>}
-          </tbody>
-        </table>
+      {/* v511 · Danh sách template dạng CARD theo khuôn ShopBase */}
+      <div style={{ display: "grid", gap: 12 }}>
+        {tpls.map((t) => (
+          <div key={t.id} className="panel" style={{ display: "flex", gap: 16, alignItems: "center", padding: "14px 18px" }}>
+            <div style={{ width: 72, height: 72, borderRadius: 12, overflow: "hidden", background: "#F1F3F8", border: "1px solid var(--line)", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 24, flexShrink: 0 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {t.thumb ? <img src={t.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "\ud83d\uddbc"}
+            </div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div onClick={() => canEdit && openEdit(t)} style={{ color: "var(--blue)", fontWeight: 800, fontSize: 16.5, cursor: canEdit ? "pointer" : "default", lineHeight: 1.3 }}>{t.name}</div>
+              <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
+                {store?.name ?? "—"} · {t.wcpStyles?.length ? `Types (${t.wcpStyles.length}): ${t.wcpStyles.join(", ").slice(0, 60)}${t.wcpStyles.join(", ").length > 60 ? "…" : ""}` : "All styles"} · ${t.price ?? "—"}{t.salePrice ? ` / sale $${t.salePrice}` : ""} · {t.categoryIds.length} categories ·{" "}
+                <span style={{ fontWeight: 800, color: t.status === "publish" ? "#2E7D46" : "#8A6D1A" }}>{t.status === "publish" ? "ACTIVE" : "DRAFT"}</span>
+              </div>
+              {t.title ? <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{t.title.slice(0, 90)}{t.title.length > 90 ? "…" : ""}</div> : null}
+            </div>
+            {canEdit && (
+              <span style={{ display: "inline-flex", gap: 8, flexShrink: 0 }}>
+                <button onClick={() => openDup(t)} style={{ ...btnGhost, padding: "8px 16px", fontSize: 12.5 }}>Dup</button>
+                <button onClick={() => del(t)} style={{ ...btnGhost, padding: "8px 16px", fontSize: 12.5, color: "var(--red)", borderColor: "#F3C2C0" }}>Delete</button>
+              </span>
+            )}
+          </div>
+        ))}
+        {!tpls.length && !busy && !needSql && (
+          <div className="panel" style={{ textAlign: "center", color: "var(--muted)", padding: 30, fontSize: 13 }}>
+            No templates yet — create one with <b>+ New template</b>, or from Manage Products via <b>Save as template</b>.
+          </div>
+        )}
         {busy && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: 14 }}>Loading…</div>}
       </div>
 
