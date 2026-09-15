@@ -4,8 +4,21 @@
  * ngay từ FUSION: thêm loại sản phẩm mới (Pajama, Calendar, Book…), sửa size + giá, màu, mockup —
  * không cần vào WP admin hay sửa code. Ghi qua plugin cầu nối wcp-fusion-bridge (backup tự động).
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
+
+// v509 · Nén ảnh phía client trước khi upload (max cạnh 1200px — thumbnail mockup không cần lớn).
+async function compressImage(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const max = 1200, ratio = Math.min(1, max / Math.max(img.width, img.height));
+    const w = Math.round(img.width * ratio), h = Math.round(img.height * ratio);
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    c.getContext("2d")!.drawImage(img, 0, 0, w, h);
+    return c.toDataURL(file.type === "image/png" ? "image/png" : "image/jpeg", 0.85);
+  } finally { URL.revokeObjectURL(url); }
+}
 
 type StoreOpt = { id: string; name: string };
 type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[] };
@@ -62,6 +75,21 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
   const [form, setForm] = useState<FormStyle | null>(null);
   const [editIndex, setEditIndex] = useState(-1); // -1 = new
   const [saving, setSaving] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // v509 · Upload mockup từ máy → /api/woo-products/upload (nén client, storage FUSION trả URL).
+  const uploadMockup = async (files: FileList | null) => {
+    const f0 = files?.[0];
+    if (!f0 || !form) return;
+    setSaving(true);
+    try {
+      const dataUrl = await compressImage(f0);
+      const j = await fetch("/api/woo-products/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataUrl }) }).then((r) => r.json());
+      if (j.ok && j.url) { setForm((f) => (f ? { ...f, image: j.url } : f)); flash("✓ Mockup uploaded"); }
+      else flash("✗ " + (j.error ?? "upload error"));
+    } catch { flash("✗ upload error"); }
+    setSaving(false);
+  };
 
   const openNew = () => { setEditIndex(-1); setForm({ name: "", image: "", sizes: [{ n: "One Size", p: "" }], colors: [], front: true, back: false }); };
   const openEdit = (i: number) => { setEditIndex(i); setForm(toForm(styles[i])); };
@@ -196,8 +224,18 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Pajama Set / Desk Calendar / Story Book…" style={inp} />
               </label>
               <label style={{ display: "block", marginBottom: 10 }}>
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>Mockup image URL (optional)</div>
-                <input value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} placeholder="https://…/pajama-mockup.jpg" style={inp} />
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>Mockup thumbnail (upload or paste a URL)</div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <button type="button" onClick={() => fileRef.current?.click()} disabled={saving}
+                    style={{ width: 44, height: 44, borderRadius: 10, border: form.image ? "1px solid var(--line)" : "1.5px dashed var(--line)", background: "#F8F9FC", padding: 0, overflow: "hidden", cursor: "pointer", color: "var(--muted)", fontSize: 18, flexShrink: 0, display: "grid", placeItems: "center" }}
+                    title="Upload mockup image">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {form.image ? <img src={form.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "+"}
+                  </button>
+                  <input value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} placeholder="Click + to upload, or paste https://…" style={inp} />
+                  {form.image && <button type="button" onClick={() => setForm({ ...form, image: "" })} style={{ ...btnGhost, padding: "7px 10px", fontSize: 12, flexShrink: 0 }}>✕</button>}
+                  <input ref={fileRef} type="file" accept="image/*" hidden onChange={(e) => { uploadMockup(e.target.files); e.target.value = ""; }} />
+                </div>
               </label>
             </div>
 
