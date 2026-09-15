@@ -2,7 +2,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { db, schema } from "@/lib/db";
 import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import WooProductsClient from "./products-client";
 
 export const dynamic = "force-dynamic";
@@ -15,8 +15,13 @@ export default async function WooProductsPage() {
 
   // CHỈ store WOOCOMMERCE; seller chỉ thấy store của mình.
   const scopeIds = await storeOwnerScopeIds(session);
+  const shared = await sharedStoreIds(scopeIds);      // v498 · store được SHARE (store_members) cũng thấy
   const where = scopeIds
-    ? and(eq(schema.stores.marketplace, "woocommerce"), or(isNull(schema.stores.sellerId), inArray(schema.stores.sellerId, scopeIds)))
+    ? and(eq(schema.stores.marketplace, "woocommerce"), or(
+        isNull(schema.stores.sellerId),
+        inArray(schema.stores.sellerId, scopeIds),
+        ...(shared.length ? [inArray(schema.stores.id, shared)] : []),
+      ))
     : eq(schema.stores.marketplace, "woocommerce");   // sellerId NULL = store chung
   const stores = await db.select({
     id: schema.stores.id, name: schema.stores.name,

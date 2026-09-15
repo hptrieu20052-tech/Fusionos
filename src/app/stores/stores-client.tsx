@@ -257,7 +257,7 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
   const [f, setF] = useState({ name: store.name, sellerId: store.sellerId ?? "", status: store.status, connectMethod: store.connectMethod, note: store.note ?? "", storeUrl: store.storeUrl ?? "", currency: store.currency ?? "USD", fxRate: store.fxRate ?? "1", feeRate: store.feeRate ?? "6.5" });
   const [cred, setCred] = useState<Record<string, string>>({});
   // v458 · SHARE STORE (chỉ Shopify/ShopBase): danh sách seller được thấy + dùng store này.
-  const canShare = !isSeller && (store.marketplace === "shopify" || store.marketplace === "shopbase");
+  const canShare = !isSeller && (store.marketplace === "shopify" || store.marketplace === "shopbase" || store.marketplace === "woocommerce"); // v498 · Woo share được cho nhiều seller
   const [members, setMembers] = useState<string[]>(store.memberIds ?? []);
   const [memPick, setMemPick] = useState("");
   const [busy, setBusy] = useState(false);

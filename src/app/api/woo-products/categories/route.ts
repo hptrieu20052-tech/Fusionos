@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
 import { wooApi, wooConfigured, type WooCred } from "@/lib/woocommerce";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +20,10 @@ async function wooCred(session: NonNullable<Awaited<ReturnType<typeof getSession
   if (!s) return { error: "store not found", status: 404 };
   if (s.marketplace !== "woocommerce") return { error: "not a WooCommerce store", status: 400 };
   const scopeIds = await storeOwnerScopeIds(session);
-  if (scopeIds && !(s.sellerId && scopeIds.includes(s.sellerId))) return { error: "forbidden", status: 403 };
+  if (scopeIds && !(s.sellerId && scopeIds.includes(s.sellerId))) {
+    const shared = await sharedStoreIds(scopeIds);    // v498 · store share (store_members) cũng dùng được
+    if (!shared.includes(s.id)) return { error: "forbidden", status: 403 };
+  }
   const cred = (((s.apiCredentials ?? {}) as Record<string, unknown>).woocommerce ?? {}) as WooCred;
   if (!wooConfigured(cred)) return { error: "Store chưa cấu hình WooCommerce API.", status: 400 };
   return cred;

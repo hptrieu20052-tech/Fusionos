@@ -18,12 +18,14 @@ export function MarketplaceLogo({ mk, size = 22 }: { mk: string; size?: number }
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={hit.src} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, verticalAlign: "middle", borderRadius: round }} />;
   }
-  // WooCommerce: bong bóng tím Woo + chữ "W" (vẽ inline, không cần file ảnh)
+  // WooCommerce: tile tím + bong bóng thoại trắng chữ "Woo" (theo brand mark Woo, vẽ inline)
   if (m.includes("woocommerce") || m.includes("woo")) {
     return (
       <svg viewBox="0 0 48 48" width={size} height={size} style={{ width: size, height: size, display: "block", flexShrink: 0, verticalAlign: "middle" }}>
         <rect width="48" height="48" rx="11" fill="#7F54B3" />
-        <text x="24" y="32" textAnchor="middle" fontFamily="Arial, sans-serif" fontWeight="bold" fontSize="22" fill="#fff">W</text>
+        <rect x="7" y="13" width="34" height="18" rx="7" fill="#fff" />
+        <path d="M15 30 v7 l7 -7 z" fill="#fff" />
+        <text x="24" y="27.5" textAnchor="middle" fontFamily="Arial, sans-serif" fontWeight="bold" fontSize="12.5" fill="#7F54B3">Woo</text>
       </svg>
     );
   }
