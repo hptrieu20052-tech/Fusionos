@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds, adminUserIds } from "@/lib/scope";
 import { wooApi, wooApiFull, wooConfigured, type WooCred } from "@/lib/woocommerce";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export const maxDuration = 60;
  * Seller chỉ thấy/sửa store của mình (storeOwnerScopeIds).
  */
 
-type StoreRow = { id: string; name: string; sellerId: string | null; cred: WooCred };
+type StoreRow = { id: string; name: string; sellerId: string | null; cred: WooCred; scoped: boolean };
 
 async function wooStore(session: NonNullable<Awaited<ReturnType<typeof getSession>>>, storeId: string): Promise<StoreRow | { error: string; status: number }> {
   if (!/^[0-9a-f-]{36}$/i.test(storeId)) return { error: "missing storeId", status: 400 };
@@ -32,7 +32,7 @@ async function wooStore(session: NonNullable<Awaited<ReturnType<typeof getSessio
   }
   const cred = (((s.apiCredentials ?? {}) as Record<string, unknown>).woocommerce ?? {}) as WooCred;
   if (!wooConfigured(cred)) return { error: "Store chưa cấu hình WooCommerce API — vào Stores nhập Store URL + Consumer key/secret.", status: 400 };
-  return { id: s.id, name: s.name, sellerId: s.sellerId, cred };
+  return { id: s.id, name: s.name, sellerId: s.sellerId, cred, scoped: !!scopeIds };
 }
 
 const strv = (v: unknown) => (v == null ? "" : String(v)).trim();
@@ -88,7 +88,21 @@ export async function GET(req: NextRequest) {
     if (catId) qs.set("category", catId);
     const r = await wooApiFull(st.cred, `products?${qs}`);
     const list = (Array.isArray(r.data) ? r.data : []) as Record<string, unknown>[];
-    const products = list.map(slimProduct);
+    let products = list.map(slimProduct).map((p) => ({ ...p, editable: true }));
+    // v503 · "Của ai người đó thấy" (mirror v459 ShopBase): seller trong store share chỉ thấy
+    // sản phẩm MÌNH tạo qua FUSION + sản phẩm của admin/import (thấy, không sửa). Owner lấy từ
+    // bảng woo_product_owners; không có dòng = coi như admin tạo/sync.
+    if (st.scoped && products.length) {
+      try {
+        const owners = await db.select().from(schema.wooProductOwners)
+          .where(and(eq(schema.wooProductOwners.storeId, st.id), inArray(schema.wooProductOwners.productId, products.map((p) => p.id))));
+        const ownerMap = new Map(owners.map((o) => [o.productId, o.createdBy]));
+        const admins = await adminUserIds();
+        products = products
+          .filter((p) => { const o = ownerMap.get(p.id); return !o || o === session.sub || admins.includes(o); })
+          .map((p) => { const o = ownerMap.get(p.id); return { ...p, editable: o === session.sub }; });
+      } catch { /* bảng chưa migrate → không lọc (mọi seller thấy hết như trước) */ }
+    }
     return NextResponse.json({ ok: true, products, total: r.total, totalPages: r.totalPages, page });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
@@ -124,7 +138,10 @@ export async function POST(req: NextRequest) {
   if (!strv(p.name)) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
   try {
     const created = (await wooApi(st.cred, "products", { method: "POST", body: JSON.stringify(wooBody(p)) })) as Record<string, unknown>;
-    return NextResponse.json({ ok: true, product: slimProduct(created) });
+    const slim = slimProduct(created);
+    // v503 · ghi chủ sở hữu — nền tảng cho "của ai người đó thấy" trong store share.
+    try { await db.insert(schema.wooProductOwners).values({ storeId: st.id, productId: slim.id, createdBy: session.sub }).onConflictDoNothing(); } catch { /* chưa migrate → bỏ qua */ }
+    return NextResponse.json({ ok: true, product: slim });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }
@@ -141,6 +158,14 @@ export async function PUT(req: NextRequest) {
 
   const productId = String(b?.productId ?? "").replace(/\D/g, "");
   if (!productId) return NextResponse.json({ ok: false, error: "missing productId" }, { status: 400 });
+  // v503 · seller trong scope chỉ SỬA sản phẩm mình tạo (đồ admin/import: thấy nhưng không sửa).
+  if (st.scoped) {
+    try {
+      const [o] = await db.select().from(schema.wooProductOwners)
+        .where(and(eq(schema.wooProductOwners.storeId, st.id), eq(schema.wooProductOwners.productId, Number(productId)))).limit(1);
+      if (!o || o.createdBy !== session.sub) return NextResponse.json({ ok: false, error: "This product wasn't created by you — only your own listings can be edited." }, { status: 403 });
+    } catch { /* chưa migrate → giữ hành vi cũ */ }
+  }
   try {
     const updated = (await wooApi(st.cred, `products/${productId}`, { method: "PUT", body: JSON.stringify(wooBody((b?.product ?? {}) as InProduct)) })) as Record<string, unknown>;
     return NextResponse.json({ ok: true, product: slimProduct(updated) });
@@ -161,8 +186,18 @@ export async function PATCH(req: NextRequest) {
 
   const status = String(b?.status ?? "");
   if (!["publish", "draft"].includes(status)) return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
-  const ids = (Array.isArray(b?.ids) ? b.ids : []).map((x: unknown) => Number(x)).filter((n: number) => n > 0).slice(0, 50);
+  let ids = (Array.isArray(b?.ids) ? b.ids : []).map((x: unknown) => Number(x)).filter((n: number) => n > 0).slice(0, 50);
   if (!ids.length) return NextResponse.json({ ok: false, error: "no products selected" }, { status: 400 });
+  // v503 · scoped seller: bulk chỉ áp lên sản phẩm MÌNH tạo.
+  if (st.scoped) {
+    try {
+      const owners = await db.select().from(schema.wooProductOwners)
+        .where(and(eq(schema.wooProductOwners.storeId, st.id), inArray(schema.wooProductOwners.productId, ids)));
+      const mine = new Set(owners.filter((o) => o.createdBy === session.sub).map((o) => o.productId));
+      ids = ids.filter((id: number) => mine.has(id));
+      if (!ids.length) return NextResponse.json({ ok: false, error: "None of the selected products were created by you." }, { status: 403 });
+    } catch { /* chưa migrate → giữ hành vi cũ */ }
+  }
   try {
     await wooApi(st.cred, "products/batch", { method: "POST", body: JSON.stringify({ update: ids.map((id: number) => ({ id, status })) }) });
     return NextResponse.json({ ok: true, updated: ids.length });

@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, uuid, text, integer, bigint, boolean, numeric,
+  pgTable, pgEnum, primaryKey, uuid, text, integer, bigint, boolean, numeric,
   timestamp, date, jsonb, serial, uniqueIndex, index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -455,6 +455,17 @@ export const metaCampaigns = pgTable("meta_campaigns", {
   status: text("status"),                        // effective_status từ Meta
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
+
+// v503 · Chủ sở hữu sản phẩm Woo (mirror quy tắc v459 ShopBase cho store share):
+// sản phẩm tạo qua FUSION ghi created_by; không có dòng = coi như admin tạo/sync.
+export const wooProductOwners = pgTable("woo_product_owners", {
+  storeId: uuid("store_id").notNull(),
+  productId: bigint("product_id", { mode: "number" }).notNull(),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.storeId, t.productId] }),
+]);
 
 // v502 · Template WooCommerce — nhẹ hơn ShopBase: variants/shipping do plugin trên store lo,
 // template chỉ giữ khung listing (title mẫu, description chuẩn, giá, categories, tags, status).

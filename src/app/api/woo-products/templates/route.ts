@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { asc, eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds, adminUserIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +28,10 @@ async function checkStore(session: NonNullable<Awaited<ReturnType<typeof getSess
   }
   return true;
 }
+/** v503 · seller bị scope → true (áp quy tắc "của ai người đó thấy" cho template). */
+async function isScoped(session: NonNullable<Awaited<ReturnType<typeof getSession>>>): Promise<boolean> {
+  return !!(await storeOwnerScopeIds(session));
+}
 
 type TplBody = { id?: string; name?: string; title?: string; description?: string; price?: string; salePrice?: string; categoryIds?: number[]; tags?: string; status?: string };
 function tplFields(t: TplBody) {
@@ -51,8 +55,13 @@ export async function GET(req: NextRequest) {
   const chk = await checkStore(session, storeId);
   if (chk !== true) return NextResponse.json({ ok: false, error: chk.error }, { status: chk.status });
   try {
-    const templates = await db.select().from(schema.wooTemplates)
+    let templates = await db.select().from(schema.wooTemplates)
       .where(eq(schema.wooTemplates.storeId, storeId)).orderBy(asc(schema.wooTemplates.name));
+    // v503 · mirror v459: seller thấy template MÌNH tạo + của admin (dùng được, không sửa/xoá).
+    if (await isScoped(session)) {
+      const admins = await adminUserIds();
+      templates = templates.filter((t) => !t.createdBy || t.createdBy === session.sub || admins.includes(t.createdBy));
+    }
     return NextResponse.json({ ok: true, templates });
   } catch {
     // Bảng chưa migrate → trả rỗng kèm cờ để UI hiện hướng dẫn chạy SQL.
@@ -91,6 +100,10 @@ export async function PUT(req: NextRequest) {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
   const f = tplFields(t);
   if (!f.name) return NextResponse.json({ ok: false, error: "template name required" }, { status: 400 });
+  if (await isScoped(session)) {
+    const [row] = await db.select({ createdBy: schema.wooTemplates.createdBy }).from(schema.wooTemplates).where(eq(schema.wooTemplates.id, id)).limit(1);
+    if (!row || row.createdBy !== session.sub) return NextResponse.json({ ok: false, error: "Only your own templates can be edited." }, { status: 403 });
+  }
   try {
     await db.update(schema.wooTemplates).set({ ...f, updatedAt: new Date() }).where(eq(schema.wooTemplates.id, id));
     return NextResponse.json({ ok: true });
@@ -108,6 +121,10 @@ export async function DELETE(req: NextRequest) {
   if (chk !== true) return NextResponse.json({ ok: false, error: chk.error }, { status: chk.status });
   const id = String(req.nextUrl.searchParams.get("id") ?? "");
   if (!/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ ok: false, error: "invalid id" }, { status: 400 });
+  if (await isScoped(session)) {
+    const [row] = await db.select({ createdBy: schema.wooTemplates.createdBy }).from(schema.wooTemplates).where(eq(schema.wooTemplates.id, id)).limit(1);
+    if (!row || row.createdBy !== session.sub) return NextResponse.json({ ok: false, error: "Only your own templates can be deleted." }, { status: 403 });
+  }
   try {
     await db.delete(schema.wooTemplates).where(eq(schema.wooTemplates.id, id));
     return NextResponse.json({ ok: true });
