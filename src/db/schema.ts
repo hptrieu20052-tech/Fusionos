@@ -456,6 +456,26 @@ export const metaCampaigns = pgTable("meta_campaigns", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
+// v502 · Template WooCommerce — nhẹ hơn ShopBase: variants/shipping do plugin trên store lo,
+// template chỉ giữ khung listing (title mẫu, description chuẩn, giá, categories, tags, status).
+export const wooTemplates = pgTable("woo_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  storeId: uuid("store_id").notNull(),          // store WooCommerce (marketplace=woocommerce)
+  name: text("name").notNull(),
+  title: text("title"),
+  description: text("description"),
+  price: text("price"),
+  salePrice: text("sale_price"),
+  categoryIds: jsonb("category_ids").notNull().default([]),  // [Woo category id]
+  tags: text("tags"),                            // "a, b, c"
+  status: text("status").notNull().default("publish"),
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("idx_woo_templates_store").on(t.storeId),
+]);
+
 export const shopbaseTemplates = pgTable("shopbase_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   storeId: uuid("store_id").notNull(),          // store ShopBase (marketplace=shopbase)

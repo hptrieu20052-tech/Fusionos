@@ -7,6 +7,7 @@ const MK_LOGOS: { match: (m: string) => boolean; src: string }[] = [
   { match: (m) => m.includes("amazon"), src: "/marketplaces/amazon.png" },
   { match: (m) => m.includes("etsy"), src: "/marketplaces/etsy.png" },
   { match: (m) => m.includes("shopbase"), src: SHOPBASE_LOGO_SRC }, // logo chính thức ShopBase (inline)
+  { match: (m) => m.includes("woocommerce") || m === "woo", src: "/marketplaces/woocommerce.png" }, // logo chính thức Woo — tải từ woocommerce.com/brand-assets, lưu public/marketplaces/woocommerce.png
   { match: (m) => m.includes("shopify"), src: "/marketplaces/shopify.png" }, // logo gốc Shopify
 ];
 

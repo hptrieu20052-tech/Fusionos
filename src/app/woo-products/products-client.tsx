@@ -9,6 +9,7 @@ import { MarketplaceLogo } from "@/components/marketplace-logo";
 
 type StoreOpt = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Cat = { id: number; name: string; parent: number; count: number; slug: string };
+type Tpl = { id: string; name: string; title: string | null; description: string | null; price: string | null; salePrice: string | null; categoryIds: number[]; tags: string | null; status: string };
 type Prod = {
   id: number; name: string; sku: string; status: string;
   price: string; regularPrice: string; salePrice: string;
@@ -46,10 +47,14 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
   const [products, setProducts] = useState<Prod[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [search, setSearch] = useState("");
-  const [fStatus, setFStatus] = useState("");     // "" = all
-  const [fCat, setFCat] = useState(0);            // 0 = all
+  const [fStatus, setFStatus] = useState("");     // "" = all (lọc server-side)
+  const [fCat, setFCat] = useState(0);            // 0 = all (lọc server-side)
   const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [sel, setSel] = useState<Set<number>>(new Set());
+  const [tpls, setTpls] = useState<Tpl[]>([]);
+  const [tplNeedSql, setTplNeedSql] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 4000); };
@@ -58,23 +63,47 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
     if (!sid) return;
     const j = await fetch(`/api/woo-products/categories?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
     if (j.ok) setCats(j.categories ?? []);
+    const t = await fetch(`/api/woo-products/templates?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
+    if (t.ok) { setTpls((t.templates ?? []).map((x: Tpl) => ({ ...x, categoryIds: Array.isArray(x.categoryIds) ? x.categoryIds : [] }))); setTplNeedSql(!!t.needMigration); }
   }, []);
 
-  const loadProducts = useCallback(async (sid: string, q: string, pg: number, append: boolean) => {
+  const loadProducts = useCallback(async (sid: string, q: string, pg: number, status: string, cat: number) => {
     if (!sid) return;
     setBusy(true);
-    const j = await fetch(`/api/woo-products?storeId=${sid}&search=${encodeURIComponent(q)}&page=${pg}`).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    const j = await fetch(`/api/woo-products?storeId=${sid}&search=${encodeURIComponent(q)}&page=${pg}&status=${status}&category=${cat || ""}`).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setBusy(false);
-    if (j.ok) { setProducts((prev) => (append ? [...prev, ...(j.products ?? [])] : (j.products ?? []))); setHasMore(!!j.hasMore); }
+    if (j.ok) { setProducts(j.products ?? []); setTotal(Number(j.total) || 0); setTotalPages(Math.max(1, Number(j.totalPages) || 1)); setSel(new Set()); }
     else flash("✗ " + (j.error ?? "Error"));
   }, []);
 
-  useEffect(() => { if (storeId) { setPage(1); loadProducts(storeId, "", 1, false); loadCats(storeId); } }, [storeId, loadProducts, loadCats]);
+  useEffect(() => { if (storeId) { setPage(1); loadProducts(storeId, "", 1, "", 0); loadCats(storeId); } }, [storeId, loadProducts, loadCats]);
 
-  const doSearch = () => { setPage(1); loadProducts(storeId, search, 1, false); };
+  const goto = (pg: number) => { const n = Math.min(Math.max(pg, 1), totalPages); setPage(n); loadProducts(storeId, search, n, fStatus, fCat); };
+  const doSearch = () => { setPage(1); loadProducts(storeId, search, 1, fStatus, fCat); };
+  const shown = products;
 
-  // Lọc client-side theo status + category (dữ liệu đã live theo trang).
-  const shown = products.filter((p) => (!fStatus || p.status === fStatus) && (!fCat || p.categories.some((c) => c.id === fCat)));
+  // ── Bulk chọn nhiều + đổi status hàng loạt (Woo products/batch) ──
+  const toggleSel = (id: number) => setSel((s0) => { const n = new Set(s0); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = () => setSel((s0) => (s0.size === shown.length ? new Set<number>() : new Set(shown.map((p) => p.id))));
+  const bulkStatus = async (status: "publish" | "draft") => {
+    if (!sel.size) return;
+    setBusy(true);
+    const j = await fetch("/api/woo-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, ids: Array.from(sel), status }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setBusy(false);
+    if (j.ok) { flash(`✓ ${j.updated} products → ${status}`); loadProducts(storeId, search, page, fStatus, fCat); }
+    else flash("✗ " + (j.error ?? "Error"));
+  };
+  // Export CSV: dòng đã tick (không tick gì = cả trang đang hiện)
+  const exportCsv = () => {
+    const rows = (sel.size ? shown.filter((p) => sel.has(p.id)) : shown);
+    const esc = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = ["ID,Title,SKU,Price,Sale price,Status,Categories,Tags,Orders,Link",
+      ...rows.map((p) => [p.id, esc(p.name), esc(p.sku), p.regularPrice || p.price, p.salePrice, p.status, esc(p.categories.map((c) => c.name).join(" | ")), esc(p.tags.join(" | ")), p.totalSales, esc(p.permalink)].join(","))].join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8" }));
+    a.download = `woo-products-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  };
 
   // ── New / Edit product modal ─────────────────────────────────────────────
   const empty = { id: 0, name: "", description: "", regularPrice: "", salePrice: "", sku: "", status: "publish", categoryIds: [] as number[], tags: "", images: [] as string[] };
@@ -135,8 +164,43 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
       ? await fetch("/api/woo-products", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, productId: form.id, product }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }))
       : await fetch("/api/woo-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, product }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setSaving(false);
-    if (j.ok) { flash(form.id ? "✓ Product updated" : "✓ Product created on the store"); setForm(null); loadProducts(storeId, search, 1, false); loadCats(storeId); }
+    if (j.ok) { flash(form.id ? "✓ Product updated" : "✓ Product created on the store"); setForm(null); loadProducts(storeId, search, page, fStatus, fCat); loadCats(storeId); }
     else flash("✗ " + (j.error ?? "Error"));
+  };
+
+  // ── Templates (v502): khung listing — Apply vào form, Save form thành template, quản lý CRUD ──
+  const [tplOpen, setTplOpen] = useState(false);
+  const applyTpl = (id: string) => {
+    const t = tpls.find((x) => x.id === id);
+    if (!t || !form) return;
+    setForm({
+      ...form,
+      name: t.title ?? form.name,
+      description: t.description ?? form.description,
+      regularPrice: t.price ?? form.regularPrice,
+      salePrice: t.salePrice ?? "",
+      status: t.status === "draft" ? "draft" : "publish",
+      categoryIds: t.categoryIds.length ? [...t.categoryIds] : form.categoryIds,
+      tags: t.tags ?? form.tags,
+    });
+    flash("✓ Template applied — now set the title, images and design-specific bits");
+  };
+  const saveAsTpl = async () => {
+    if (!form) return;
+    const name = window.prompt("Template name:", form.name.slice(0, 60));
+    if (!name?.trim()) return;
+    setSaving(true);
+    const j = await fetch("/api/woo-products/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, template: {
+      name: name.trim(), title: form.name, description: form.description, price: form.regularPrice,
+      salePrice: form.salePrice, categoryIds: form.categoryIds, tags: form.tags, status: form.status,
+    } }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setSaving(false);
+    if (j.ok) { flash("✓ Saved as template"); loadCats(storeId); } else flash("✗ " + (j.error ?? "Error"));
+  };
+  const delTpl = async (id: string) => {
+    if (!window.confirm("Delete this template?")) return;
+    const j = await fetch(`/api/woo-products/templates?storeId=${storeId}&id=${id}`, { method: "DELETE" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    if (j.ok) { flash("✓ Template deleted"); setTpls((l) => l.filter((t) => t.id !== id)); } else flash("✗ " + (j.error ?? "Error"));
   };
 
   // ── New category ─────────────────────────────────────────────────────────
@@ -176,10 +240,12 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
         <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {canEdit && <button onClick={openNew} style={btnPri}>+ New product</button>}
           {canEdit && <button onClick={() => setCatOpen(true)} style={btnGhost}>+ New category</button>}
+          <button onClick={() => setTplOpen(true)} style={btnGhost}>Templates ({tpls.length})</button>
+          <button onClick={exportCsv} style={btnGhost}>↓ Export CSV</button>
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: 190 }}>
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
-          <button onClick={() => { loadProducts(storeId, search, 1, false); loadCats(storeId); }} style={btnBlue}>⟳ Refresh</button>
+          <button onClick={() => { setPage(1); loadProducts(storeId, search, 1, fStatus, fCat); loadCats(storeId); }} style={btnBlue}>⟳ Refresh</button>
         </span>
       </div>
 
@@ -187,13 +253,13 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
       <div className="panel" style={{ padding: "14px 16px", display: "grid", gap: 10 }}>
         <input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} placeholder="Search title / SKU" style={inp} />
         <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 10 }}>
-          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} style={inp}>
+          <select value={fStatus} onChange={(e) => { setFStatus(e.target.value); setPage(1); loadProducts(storeId, search, 1, e.target.value, fCat); }} style={inp}>
             <option value="">All status</option>
             <option value="publish">Publish</option>
             <option value="draft">Draft</option>
             <option value="pending">Pending</option>
           </select>
-          <select value={fCat} onChange={(e) => setFCat(Number(e.target.value))} style={inp}>
+          <select value={fCat} onChange={(e) => { const v = Number(e.target.value); setFCat(v); setPage(1); loadProducts(storeId, search, 1, fStatus, v); }} style={inp}>
             <option value={0}>All categories</option>
             {sortedCats.map((c) => <option key={c.id} value={c.id}>{catLabel(c)} ({c.count})</option>)}
           </select>
@@ -204,20 +270,34 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
 
       {/* ── Table (khuôn ShopBase) ── */}
       <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
-        <div style={{ padding: "12px 16px 0", fontSize: 13, fontWeight: 800 }}>{shown.length} products{fStatus || fCat ? " (filtered)" : ""}</div>
+        <div style={{ padding: "12px 16px 0", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <b style={{ fontSize: 13 }}>{total} products</b>
+          {sel.size > 0 && canEdit && (
+            <span style={{ display: "inline-flex", gap: 8, alignItems: "center", background: "#EEF3FF", border: "1px solid #CBD9FF", borderRadius: 10, padding: "5px 10px" }}>
+              <b style={{ fontSize: 12 }}>{sel.size} selected</b>
+              <button onClick={() => bulkStatus("publish")} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Set Active</button>
+              <button onClick={() => bulkStatus("draft")} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Set Draft</button>
+              <button onClick={exportCsv} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Export</button>
+            </span>
+          )}
+          <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Page {page} / {totalPages}</span>
+        </div>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
           <thead><tr>
+            <th style={{ ...th, width: 36 }}><input type="checkbox" checked={shown.length > 0 && sel.size === shown.length} onChange={toggleAll} /></th>
             <th style={{ ...th, width: 70 }}>Image</th>
             <th style={th}>Title</th>
             <th style={{ ...th, width: 170 }}>Store / Seller</th>
             <th style={{ ...th, width: 190 }}>Categories</th>
+            <th style={{ ...th, width: 70 }}>Orders</th>
             <th style={{ ...th, width: 110 }}>Price</th>
             <th style={{ ...th, width: 90 }}>Status</th>
             <th style={{ ...th, width: 130 }}>Link</th>
           </tr></thead>
           <tbody>
             {shown.map((p) => (
-              <tr key={p.id}>
+              <tr key={p.id} style={sel.has(p.id) ? { background: "#F6F9FF" } : undefined}>
+                <td style={td}><input type="checkbox" checked={sel.has(p.id)} onChange={() => toggleSel(p.id)} /></td>
                 <td style={td}>
                   <div style={{ width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "#F1F3F8" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -235,6 +315,7 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
                 <td style={td}>
                   <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>{p.categories.map((c) => c.name).join(", ") || "—"}</div>
                 </td>
+                <td style={{ ...td, textAlign: "left", fontWeight: 700 }}>{p.totalSales}</td>
                 <td style={{ ...td, fontWeight: 800 }}>
                   {p.salePrice ? <><s style={{ color: "var(--muted)", fontWeight: 600 }}>${p.regularPrice}</s> ${p.salePrice}</> : `$${p.price || p.regularPrice || "—"}`}
                 </td>
@@ -250,16 +331,59 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
                 </td>
               </tr>
             ))}
-            {!shown.length && !busy && <tr><td colSpan={7} style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 30 }}>No products</td></tr>}
+            {!shown.length && !busy && <tr><td colSpan={9} style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 30 }}>No products</td></tr>}
           </tbody>
         </table>
         {busy && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: 14 }}>Loading…</div>}
-        {hasMore && !busy && (
-          <div style={{ textAlign: "center", padding: 14 }}>
-            <button onClick={() => { const n = page + 1; setPage(n); loadProducts(storeId, search, n, true); }} style={btnGhost}>Load more</button>
+        {totalPages > 1 && (
+          <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 8, padding: 14 }}>
+            <button onClick={() => goto(page - 1)} disabled={page <= 1 || busy} style={{ ...btnGhost, opacity: page <= 1 ? 0.4 : 1 }}>‹ Prev</button>
+            {Array.from({ length: totalPages }, (_, i) => i + 1).filter((n) => n === 1 || n === totalPages || Math.abs(n - page) <= 2).map((n, i, arr) => (
+              <span key={n} style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
+                {i > 0 && arr[i - 1] !== n - 1 && <span style={{ color: "var(--muted)" }}>…</span>}
+                <button onClick={() => goto(n)} disabled={busy} style={{ ...btnGhost, padding: "7px 13px", ...(n === page ? { background: "var(--blue)", color: "#fff", borderColor: "var(--blue)" } : {}) }}>{n}</button>
+              </span>
+            ))}
+            <button onClick={() => goto(page + 1)} disabled={page >= totalPages || busy} style={{ ...btnGhost, opacity: page >= totalPages ? 0.4 : 1 }}>Next ›</button>
           </div>
         )}
       </div>
+
+      {/* Templates modal (v502) */}
+      {tplOpen && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 16 }} onClick={() => setTplOpen(false)}>
+          <div className="panel" style={{ width: 640, maxWidth: "100%", padding: 18, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <b style={{ fontSize: 15 }}>Templates · {store?.name}</b>
+            {tplNeedSql && <div style={{ fontSize: 12, background: "#FFF3D6", border: "1px solid #EAD28A", borderRadius: 10, padding: "8px 12px", margin: "10px 0" }}>Run <b>MIGRATION_v502_woo_templates.sql</b> on Supabase first — the templates table doesn&apos;t exist yet.</div>}
+            <div style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 12px", lineHeight: 1.5 }}>
+              A template is a listing preset: title pattern, standard description, price, categories, tags, default status. Create one by opening any product (or a blank New product form), filling the fields, then <b>Save as template</b>. When listing, pick <b>Apply template…</b> and only change the title, images and design-specific bits.
+            </div>
+            {tpls.length ? (
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <tbody>
+                  {tpls.map((t) => (
+                    <tr key={t.id}>
+                      <td style={{ padding: "9px 6px", borderBottom: "1px solid var(--line)" }}>
+                        <b style={{ fontSize: 13 }}>{t.name}</b>
+                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                          {(t.title ?? "—").slice(0, 60)}{(t.title ?? "").length > 60 ? "…" : ""} · ${t.price ?? "—"} · {t.status} · {t.categoryIds.length} categories
+                        </div>
+                      </td>
+                      <td style={{ padding: "9px 6px", borderBottom: "1px solid var(--line)", textAlign: "right", whiteSpace: "nowrap" }}>
+                        {canEdit && <button onClick={() => { setTplOpen(false); setForm({ id: 0, name: t.title ?? "", description: t.description ?? "", regularPrice: t.price ?? "", salePrice: t.salePrice ?? "", sku: "", status: t.status === "draft" ? "draft" : "publish", categoryIds: [...t.categoryIds], tags: t.tags ?? "", images: [] }); }} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>New product</button>}
+                        {canEdit && <button onClick={() => delTpl(t.id)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, marginLeft: 6, color: "var(--red)" }}>Delete</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : !tplNeedSql && <div style={{ fontSize: 13, color: "var(--muted)" }}>No templates yet.</div>}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+              <button onClick={() => setTplOpen(false)} style={btnGhost}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* New category modal */}
       {catOpen && (
@@ -287,7 +411,16 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
       {form && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 16, overflowY: "auto" }} onClick={() => !saving && setForm(null)}>
           <div className="panel" style={{ width: 720, maxWidth: "100%", padding: 18, maxHeight: "92vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
-            <b style={{ fontSize: 15 }}>{form.id ? "Edit product" : "New product"}</b>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <b style={{ fontSize: 15 }}>{form.id ? "Edit product" : "New product"}</b>
+              {tpls.length > 0 && (
+                <select defaultValue="" onChange={(e) => { if (e.target.value) applyTpl(e.target.value); e.target.value = ""; }} style={{ ...inp, width: 230, marginLeft: "auto" }}>
+                  <option value="">Apply template…</option>
+                  {tpls.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                </select>
+              )}
+              {canEdit && <button type="button" onClick={saveAsTpl} disabled={saving} style={{ ...btnGhost, padding: "7px 13px", fontSize: 12, ...(tpls.length ? {} : { marginLeft: "auto" }) }}>Save as template</button>}
+            </div>
             <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px", marginTop: 12 }}>
               <div style={{ gridColumn: "1 / -1" }}>
                 <L label="Title"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Personalized Pumpkin Patch Crew Shirt…" style={inp} /></L>
