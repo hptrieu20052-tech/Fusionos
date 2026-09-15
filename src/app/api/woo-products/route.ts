@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
-import { wooApi, wooConfigured, type WooCred } from "@/lib/woocommerce";
+import { wooApi, wooApiFull, wooConfigured, type WooCred } from "@/lib/woocommerce";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -54,7 +54,7 @@ function slimProduct(p: Record<string, unknown>) {
     permalink: strv(p.permalink),
     thumb: strv(imgs[0]?.src),
     images: imgs.map((i) => ({ id: Number(i.id) || 0, src: strv(i.src) })),
-    categories: cats.map((c) => ({ id: Number(c.id) || 0, name: deent(strv(c.name)) })),
+    categories: cats.filter((c) => strv(c.slug ?? c.name).toLowerCase() !== "uncategorized" && deent(strv(c.name)) !== "Uncategorized").map((c) => ({ id: Number(c.id) || 0, name: deent(strv(c.name)) })),
     description: strv(p.description),
     tags: ((Array.isArray(p.tags) ? p.tags : []) as Record<string, unknown>[]).map((t) => strv(t.name)).filter(Boolean),
     totalSales: Number(p.total_sales) || 0,
@@ -77,13 +77,19 @@ export async function GET(req: NextRequest) {
       const p = (await wooApi(st.cred, `products/${productId}`)) as Record<string, unknown>;
       return NextResponse.json({ ok: true, product: slimProduct(p) });
     }
-    const page = Math.min(Math.max(Number(q.get("page")) || 1, 1), 50);
-    const qs = new URLSearchParams({ per_page: "40", page: String(page), orderby: "date", order: "desc", status: "any" });
+    // v501 · phân trang 20/trang như ShopBase; status lọc SERVER-SIDE để tổng số đúng theo filter.
+    const page = Math.min(Math.max(Number(q.get("page")) || 1, 1), 500);
+    const status = strv(q.get("status"));
+    const qs = new URLSearchParams({ per_page: "20", page: String(page), orderby: "date", order: "desc" });
+    qs.set("status", ["publish", "draft", "pending", "private"].includes(status) ? status : "any");
     const search = strv(q.get("search"));
     if (search) qs.set("search", search);
-    const list = (await wooApi(st.cred, `products?${qs}`)) as Record<string, unknown>[];
-    const products = (Array.isArray(list) ? list : []).map(slimProduct);
-    return NextResponse.json({ ok: true, products, hasMore: products.length === 40 });
+    const catId = String(q.get("category") ?? "").replace(/\D/g, "");
+    if (catId) qs.set("category", catId);
+    const r = await wooApiFull(st.cred, `products?${qs}`);
+    const list = (Array.isArray(r.data) ? r.data : []) as Record<string, unknown>[];
+    const products = list.map(slimProduct);
+    return NextResponse.json({ ok: true, products, total: r.total, totalPages: r.totalPages, page });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }
@@ -138,6 +144,28 @@ export async function PUT(req: NextRequest) {
   try {
     const updated = (await wooApi(st.cred, `products/${productId}`, { method: "PUT", body: JSON.stringify(wooBody((b?.product ?? {}) as InProduct)) })) as Record<string, unknown>;
     return NextResponse.json({ ok: true, product: slimProduct(updated) });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
+  }
+}
+
+/** v501 · PATCH { storeId, ids[], status } — bulk đổi trạng thái (Woo products/batch, tối đa 50/lần). */
+export async function PATCH(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  if ((await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+
+  const b = await req.json().catch(() => null);
+  const st = await wooStore(session, String(b?.storeId ?? ""));
+  if ("error" in st) return NextResponse.json({ ok: false, error: st.error }, { status: st.status });
+
+  const status = String(b?.status ?? "");
+  if (!["publish", "draft"].includes(status)) return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
+  const ids = (Array.isArray(b?.ids) ? b.ids : []).map((x: unknown) => Number(x)).filter((n: number) => n > 0).slice(0, 50);
+  if (!ids.length) return NextResponse.json({ ok: false, error: "no products selected" }, { status: 400 });
+  try {
+    await wooApi(st.cred, "products/batch", { method: "POST", body: JSON.stringify({ update: ids.map((id: number) => ({ id, status })) }) });
+    return NextResponse.json({ ok: true, updated: ids.length });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }

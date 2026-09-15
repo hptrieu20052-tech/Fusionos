@@ -27,6 +27,11 @@ export function wooConfigured(cred: WooCred | null | undefined): boolean {
 
 /** Gọi Woo REST API. Basic auth trước, 401/403 → thử lại bằng query param (host strip header). */
 export async function wooApi(cred: WooCred, path: string, init: RequestInit = {}): Promise<unknown> {
+  return (await wooApiFull(cred, path, init)).data;
+}
+
+/** v501 · Như wooApi nhưng trả kèm tổng số bản ghi (header X-WP-Total/X-WP-TotalPages) — cho phân trang. */
+export async function wooApiFull(cred: WooCred, path: string, init: RequestInit = {}): Promise<{ data: unknown; total: number; totalPages: number }> {
   const base = wooBaseUrl(cred);
   if (!base) throw new Error("WooCommerce store chưa cấu hình Store URL");
   const ck = String(cred.consumerKey ?? "").trim(), cs = String(cred.consumerSecret ?? "").trim();
@@ -54,7 +59,13 @@ export async function wooApi(cred: WooCred, path: string, init: RequestInit = {}
     ({ res, text } = await call(`${url}${qs}consumer_key=${encodeURIComponent(ck)}&consumer_secret=${encodeURIComponent(cs)}`, false));
   }
   if (!res.ok) throw new Error(`WooCommerce HTTP ${res.status}: ${text.slice(0, 300)}`);
-  try { return text ? JSON.parse(text) : {}; } catch { throw new Error("WooCommerce: phản hồi không phải JSON — kiểm tra Store URL (đúng site WordPress?)"); }
+  try {
+    return {
+      data: text ? JSON.parse(text) : {},
+      total: Number(res.headers.get("x-wp-total")) || 0,
+      totalPages: Number(res.headers.get("x-wp-totalpages")) || 0,
+    };
+  } catch { throw new Error("WooCommerce: phản hồi không phải JSON — kiểm tra Store URL (đúng site WordPress?)"); }
 }
 
 // ── Config helpers (đọc/ghi apiCredentials.woocommerce — mirror pattern shopbase) ───────────────
