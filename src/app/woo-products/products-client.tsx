@@ -142,17 +142,6 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     if (j.ok) { flash(`\u2713 ${j.deleted} product(s) moved to Trash${ids.length > 20 ? " (max 20 per click)" : ""}`); loadProducts(storeId, search, page, fStatus, fCat, fSeller, fTpl); }
     else flash("\u2717 " + (j.error ?? "Error"));
   };
-  const renameCat = async (c: Cat) => {
-    const name = window.prompt("New category name:", c.name);
-    if (!name?.trim() || name.trim() === c.name) return;
-    const j = await fetch("/api/woo-products/categories", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, id: c.id, name: name.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) { flash("\u2713 Category renamed"); loadCats(storeId); } else flash("\u2717 " + (j.error ?? "Error"));
-  };
-  const delCat = async (c: Cat) => {
-    if (!window.confirm(`Delete category "${c.name}"?\nProducts are NOT deleted \u2014 they just leave this category.`)) return;
-    const j = await fetch(`/api/woo-products/categories?storeId=${storeId}&id=${c.id}`, { method: "DELETE" }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    if (j.ok) { flash("\u2713 Category deleted"); loadCats(storeId); loadProducts(storeId, search, page, fStatus, fCat, fSeller, fTpl); } else flash("\u2717 " + (j.error ?? "Error"));
-  };
 
   // ── New / Edit product modal ─────────────────────────────────────────────
   const empty = { id: 0, name: "", description: "", regularPrice: "", salePrice: "", sku: "", status: "publish", categoryIds: [] as number[], tags: "", images: [] as string[], tplId: "", wcpStyles: [] as string[] };
@@ -258,18 +247,6 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     if (j.ok) { flash("✓ Template deleted"); setTpls((l) => l.filter((t) => t.id !== id)); } else flash("✗ " + (j.error ?? "Error"));
   };
 
-  // ── New category ─────────────────────────────────────────────────────────
-  const [catOpen, setCatOpen] = useState(false);
-  const [catName, setCatName] = useState("");
-  const [catParent, setCatParent] = useState(0);
-  const addCat = async () => {
-    if (!catName.trim()) return;
-    setSaving(true);
-    const j = await fetch("/api/woo-products/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, name: catName.trim(), parentId: catParent }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
-    setSaving(false);
-    if (j.ok) { flash(j.warn ? "⚠ " + j.warn : "✓ Category created"); setCatName(""); setCatParent(0); setCatOpen(false); loadCats(storeId); }
-    else flash("✗ " + (j.error ?? "Error"));
-  };
 
   const parents = cats.filter((c) => c.parent === 0);
   const catLabel = (c: Cat) => (c.parent ? `— ${c.name}` : c.name);
@@ -294,7 +271,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
         </span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {canEdit && <button onClick={openNew} style={btnPri}>+ New product</button>}
-          {canEdit && <button onClick={() => setCatOpen(true)} style={btnGhost}>Categories</button>}
+          <a href="/woo-categories" style={{ ...btnGhost, textDecoration: "none", display: "inline-flex", alignItems: "center" }}>Categories</a>
           <button onClick={() => setTplOpen(true)} style={btnGhost}>Templates ({tpls.length})</button>
           <button onClick={exportCsv} style={btnGhost}>↓ Export CSV</button>
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: 190 }}>
@@ -516,41 +493,6 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
             <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
               <button onClick={() => setTplOpen(false)} style={btnGhost}>Close</button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* New category modal */}
-      {catOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.55)", zIndex: 200, overflowY: "auto", padding: "36px 16px" }} onClick={() => setCatOpen(false)}>
-          <div className="panel" style={{ width: 420, maxWidth: "100%", padding: 18, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)" }} onClick={(e) => e.stopPropagation()}>
-            <b style={{ fontSize: 15 }}>Categories</b>
-            <div style={{ marginTop: 12 }}>
-              <L label="Name"><input value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="e.g. Christmas" style={inp} /></L>
-              <L label="Parent (optional — leave for a top-level category)">
-                <select value={catParent} onChange={(e) => setCatParent(Number(e.target.value))} style={inp}>
-                  <option value={0}>— none (top level) —</option>
-                  {parents.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </L>
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
-              <button onClick={() => setCatOpen(false)} style={btnGhost}>Close</button>
-              <button onClick={addCat} disabled={saving} style={btnBlue}>{saving ? "Creating…" : "Create category"}</button>
-            </div>
-            {/* v518 · danh sách category đang có — đổi tên / xoá (seller: chỉ category của mình) */}
-            {sortedCats.length > 0 && (
-              <div style={{ marginTop: 14, borderTop: "1px solid var(--line)", paddingTop: 10, maxHeight: 300, overflowY: "auto" }}>
-                {sortedCats.map((c) => (
-                  <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid #F1F3F8" }}>
-                    <span style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{catLabel(c)} <span style={{ color: "var(--muted)", fontSize: 11.5 }}>({c.count})</span></span>
-                    {canEdit && <button onClick={() => renameCat(c)} title="Rename" style={{ ...btnGhost, padding: "3px 10px", fontSize: 12 }}>✎</button>}
-                    {canEdit && <button onClick={() => delCat(c)} title="Delete category (products stay)" style={{ ...btnGhost, padding: "3px 10px", fontSize: 12, color: "var(--red)" }}>✕</button>}
-                  </div>
-                ))}
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>Deleting a category never deletes its products — they only leave the category.</div>
-              </div>
-            )}
           </div>
         </div>
       )}
