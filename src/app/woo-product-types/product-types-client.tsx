@@ -21,7 +21,7 @@ async function compressImage(file: File): Promise<string> {
 }
 
 type StoreOpt = { id: string; name: string };
-type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[]; shipping?: string };
+type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[]; shipping?: string; mine?: boolean; ownerName?: string | null };
 // Dạng edit trong form: size/màu tách thành cặp field cho dễ nhập.
 type FormStyle = { name: string; image: string; sizes: { n: string; p: string }[]; colors: { n: string; hex: string }[]; front: boolean; back: boolean; ship: string };
 
@@ -58,7 +58,9 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
   const [needBridge, setNeedBridge] = useState(false);
   const [bridgeOld, setBridgeOld] = useState(false);   // v510 · bridge 1.0 chưa hỗ trợ shipping
   const [defShip, setDefShip] = useState("");          // v510 · shipping mặc định (sản phẩm mọi style)
-  const [canEditTypes, setCanEditTypes] = useState(false);
+  const [canEditTypes, setCanEditTypes] = useState(false); // admin (không scope): toàn quyền + default shipping
+  const [canCreate, setCanCreate] = useState(false);        // v512 · seller được tạo type RIÊNG của mình
+  const [typesNeedSql, setTypesNeedSql] = useState(false);  // v512 · bảng woo_type_owners chưa migrate
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 5000); };
@@ -70,6 +72,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
     setBusy(false);
     if (j.ok) {
       setStyles(j.styles ?? []); setNeedBridge(!!j.needBridge); setCanEditTypes(!!j.canEditTypes);
+      setCanCreate(!!j.canCreate); setTypesNeedSql(!!j.typesNeedSql);
       setDefShip(typeof j.defaultShipping === "string" ? j.defaultShipping : "");
       setBridgeOld(!j.needBridge && j.defaultShipping == null);
     }
@@ -77,7 +80,9 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
   }, []);
   useEffect(() => { load(storeId); }, [storeId, load]);
 
-  const editable = canEdit && canEditTypes;
+  const manageAll = canEdit && canEditTypes;                 // admin
+  const canAdd = canEdit && (canEditTypes || canCreate);     // ai được bấm + New / Dup
+  const rowEditable = (s0: Style) => canEdit && s0.mine !== false; // đồ mình (admin: tất cả)
 
   // ── Editor modal ──
   const [form, setForm] = useState<FormStyle | null>(null);
@@ -148,7 +153,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
           <b style={{ fontSize: 19 }}>Product Types · <span style={{ color: "#7F54B3" }}>WooCommerce</span></b>
         </span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          {editable && !needBridge && <button onClick={openNew} style={btnPri}>+ New product type</button>}
+          {canAdd && !needBridge && <button onClick={openNew} style={btnPri}>+ New product type</button>}
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: 190 }}>
             {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
@@ -161,6 +166,12 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
         Changes here write straight to the store&apos;s plugin (with automatic backups). When listing a product in <b>Manage Products</b>, pick which types that product sells — the product page then shows only those.
       </div>
 
+      {typesNeedSql && (
+        <div className="panel" style={{ background: "#FFF3D6", border: "1px solid #EAD28A", padding: "12px 16px", fontSize: 13, lineHeight: 1.6 }}>
+          Seller-created product types are off until the admin runs <b>MIGRATION_v512_woo_type_owners.sql</b> on Supabase — for now this page is read-only for sellers.
+        </div>
+      )}
+
       {bridgeOld && (
         <div className="panel" style={{ background: "#FFF3D6", border: "1px solid #EAD28A", padding: "12px 16px", fontSize: 13, lineHeight: 1.6 }}>
           Store đang chạy <b>WCP Fusion Bridge 1.0</b> — cập nhật lên <b>1.1</b> (upload <b>wcp-fusion-bridge-1.1.zip</b> trong WP admin → Plugins, đè lên bản cũ) để dùng tab <b>Shipping &amp; Delivery theo từng Product Type</b>. Các tính năng khác vẫn chạy bình thường.
@@ -168,7 +179,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
       )}
 
       {/* v510 · Shipping mặc định — cho sản phẩm KHÔNG giới hạn type (hiện tất cả style) */}
-      {editable && !needBridge && !bridgeOld && (
+      {manageAll && !needBridge && !bridgeOld && (
         <div className="panel" style={{ padding: "14px 16px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <b style={{ fontSize: 13.5 }}>🚚 Default Shipping &amp; Delivery</b>
@@ -194,7 +205,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
             <th style={{ ...th, width: 230 }}>Sizes · price</th>
             <th style={{ ...th, width: 90 }}>Colors</th>
             <th style={{ ...th, width: 110 }}>Print sides</th>
-            {editable && <th style={{ ...th, width: 170 }}>Actions</th>}
+            {canAdd && <th style={{ ...th, width: 170 }}>Actions</th>}
           </tr></thead>
           <tbody>
             {styles.map((s, i) => {
@@ -208,7 +219,9 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
                       {s.image ? <img src={s.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "👕"}
                     </div>
                   </td>
-                  <td style={td}><b>{s.styles}</b>{s.shipping ? <span title="Has its own Shipping & Delivery tab" style={{ marginLeft: 6, fontSize: 12 }}>🚚</span> : null}</td>
+                  <td style={td}><b>{s.styles}</b>{s.shipping ? <span title="Has its own Shipping & Delivery tab" style={{ marginLeft: 6, fontSize: 12 }}>🚚</span> : null}
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{s.ownerName ? `by ${s.ownerName}` : "by Admin"}{!rowEditable(s) && canAdd ? " · read-only" : ""}</div>
+                  </td>
                   <td style={td}>
                     <div style={{ fontSize: 12.5 }}>{s.sizes.length} sizes · {prices.length ? (lo === hi ? `$${lo}` : `$${lo} – $${hi}`) : "—"}</div>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{s.sizes.map((x) => x.slice(0, x.lastIndexOf("-"))).join(", ").slice(0, 60)}</div>
@@ -221,19 +234,19 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
                     </span>
                   </td>
                   <td style={td}><span style={{ fontSize: 12 }}>{(s.designs ?? []).join(" + ") || "front"}</span></td>
-                  {editable && (
+                  {canAdd && (
                     <td style={td}>
                       <span style={{ display: "inline-flex", gap: 6 }}>
-                        <button onClick={() => openEdit(i)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>✎ Edit</button>
+                        {rowEditable(s) && <button onClick={() => openEdit(i)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>✎ Edit</button>}
                         <button onClick={() => openDup(i)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>Dup</button>
-                        <button onClick={() => del(i)} disabled={saving} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, color: "var(--red)" }}>Del</button>
+                        {rowEditable(s) && <button onClick={() => del(i)} disabled={saving} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, color: "var(--red)" }}>Del</button>}
                       </span>
                     </td>
                   )}
                 </tr>
               );
             })}
-            {!styles.length && !busy && !needBridge && <tr><td colSpan={editable ? 6 : 5} style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 30 }}>No product types yet</td></tr>}
+            {!styles.length && !busy && !needBridge && <tr><td colSpan={canAdd ? 6 : 5} style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 30 }}>No product types yet</td></tr>}
           </tbody>
         </table>
         {busy && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: 14 }}>Loading…</div>}

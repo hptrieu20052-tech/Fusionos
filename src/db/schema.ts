@@ -468,6 +468,29 @@ export const wooProductOwners = pgTable("woo_product_owners", {
   primaryKey({ columns: [t.storeId, t.productId] }),
 ]);
 
+// v512 · Chủ sở hữu Product Type (style trong products.json trên store Woo).
+// Style KHÔNG có dòng = của admin → mọi seller thấy + dùng được nhưng không sửa/xoá.
+// Style có dòng = của seller đó → chỉ seller đó (và admin) thấy; seller toàn quyền đồ mình.
+export const wooTypeOwners = pgTable("woo_type_owners", {
+  storeId: uuid("store_id").notNull(),
+  styleName: text("style_name").notNull(),       // khớp theo TÊN style (key của products.json)
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.storeId, t.styleName] }),
+]);
+
+// v513 · Chủ sở hữu category Woo — như wooTypeOwners: không có dòng = của admin (dùng chung);
+// có dòng = category riêng của seller đó (seller khác không thấy trong FUSION).
+export const wooCategoryOwners = pgTable("woo_category_owners", {
+  storeId: uuid("store_id").notNull(),
+  categoryId: bigint("category_id", { mode: "number" }).notNull(),  // Woo category id
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  primaryKey({ columns: [t.storeId, t.categoryId] }),
+]);
+
 // v502 · Template WooCommerce — nhẹ hơn ShopBase: variants/shipping do plugin trên store lo,
 // template chỉ giữ khung listing (title mẫu, description chuẩn, giá, categories, tags, status).
 export const wooTemplates = pgTable("woo_templates", {

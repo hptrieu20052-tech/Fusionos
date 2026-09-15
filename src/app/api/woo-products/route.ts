@@ -227,13 +227,16 @@ export async function PATCH(req: NextRequest) {
   if ("error" in st) return NextResponse.json({ ok: false, error: st.error }, { status: st.status });
 
   const status = String(b?.status ?? "");
-  const set = (b?.set ?? {}) as { regularPrice?: string; salePrice?: string; description?: string; descriptionMode?: string };
+  const set = (b?.set ?? {}) as { regularPrice?: string; salePrice?: string; description?: string; descriptionMode?: string; wcpStyles?: string[] };
   const regularPrice = strv(set.regularPrice);
   const salePrice = strv(set.salePrice);
   const description = String(set.description ?? "");
   const descMode = set.descriptionMode === "append" ? "append" : "replace";
+  // v512 · bulk gán Product Types (meta _wcp_selected_styles) — fix "thêm type mới là áp vào listing cũ":
+  // gán tường minh cho hàng cũ thì type mới thêm sau không lọt vào picker của chúng nữa.
+  const wcpStyles = Array.isArray(set.wcpStyles) ? set.wcpStyles.map((x) => strv(x)).filter(Boolean).slice(0, 50) : null;
   const hasStatus = ["publish", "draft"].includes(status);
-  const hasSet = !!(regularPrice || salePrice || description.trim());
+  const hasSet = !!(regularPrice || salePrice || description.trim() || wcpStyles !== null);
   if (!hasStatus && !hasSet) return NextResponse.json({ ok: false, error: "nothing to update" }, { status: 400 });
   if (regularPrice && !(Number(regularPrice) > 0)) return NextResponse.json({ ok: false, error: "invalid price" }, { status: 400 });
   if (salePrice && salePrice !== "0" && !(Number(salePrice) > 0)) return NextResponse.json({ ok: false, error: "invalid sale price" }, { status: 400 });
@@ -267,6 +270,7 @@ export async function PATCH(req: NextRequest) {
       if (description.trim()) {
         u.description = descMode === "append" ? `${curDesc.get(id) ?? ""}\n${description}`.trim() : description;
       }
+      if (wcpStyles !== null) u.meta_data = [{ key: "_wcp_selected_styles", value: wcpStyles }]; // [] = hiện tất cả
       return u;
     });
     await wooApi(st.cred, "products/batch", { method: "POST", body: JSON.stringify({ update }) });

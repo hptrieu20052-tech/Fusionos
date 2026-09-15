@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
@@ -10,13 +10,15 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * /api/woo-product-types — Product Types (styles) của Woo Custom Pro trên store (v505).
- * Đọc/ghi TRỰC TIẾP file data/products.json trên store qua plugin cầu nối wcp-fusion-bridge
- * (namespace wc-fusion/v1, auth = đúng cặp Consumer key/secret store đã nhập).
- *   GET  ?storeId=            — danh sách style { styles, image, sizes[], colors[], designs[] }
- *   POST { storeId, styles }  — ghi đè TOÀN BỘ danh sách (FUSION luôn gửi list đầy đủ)
- * Ghi (POST) chỉ cho admin/manager KHÔNG bị scope — seller được share store chỉ ĐỌC để chọn
- * Product Type khi list; sửa khung style là việc của chủ hệ thống.
+ * /api/woo-product-types — Product Types (styles) của Woo Custom Pro trên store (v505, quyền v512).
+ * Đọc/ghi products.json trên store qua plugin cầu nối wcp-fusion-bridge (wc-fusion/v1).
+ *
+ * v512 · PHÂN QUYỀN "của ai người đó thấy" (bảng woo_type_owners, khớp theo TÊN style):
+ *   - Style KHÔNG có dòng owner = của ADMIN → mọi seller THẤY + DÙNG, không sửa/xoá được.
+ *   - Style có dòng owner = của seller đó → chỉ seller đó (và admin) thấy; seller toàn quyền.
+ *   - Seller lưu (POST) → server MERGE: giữ nguyên style của seller khác, chặn mọi thay đổi
+ *     lên style admin (so sánh nội dung), chỉ áp add/sửa/xoá lên style của chính seller.
+ *   - Admin (không scope): toàn quyền cả danh sách + default shipping; dọn dòng owner mồ côi.
  */
 
 type StoreRow = { id: string; cred: WooCred; scoped: boolean };
@@ -37,6 +39,7 @@ async function wooStore(session: NonNullable<Awaited<ReturnType<typeof getSessio
 }
 
 const strv = (v: unknown) => (v == null ? "" : String(v)).trim();
+const lower = (v: unknown) => strv(v).toLowerCase();
 
 /** Style đúng cấu trúc products.json plugin đang đọc. */
 type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[]; shipping?: string };
@@ -62,12 +65,32 @@ function cleanStyles(input: unknown): Style[] | { error: string } {
     let designs = (Array.isArray(s.designs) ? s.designs : []).map((x) => strv(x)).filter(Boolean).slice(0, 10);
     if (!designs.length) designs = ["front", "back"];
     const entry: Style = { styles: name, image: strv(s.image).slice(0, 500), sizes, colors, designs };
-    // v510 · khối Shipping & Delivery riêng của type (HTML) — bridge 1.1 render thành tab trên store.
     const ship = String(s.shipping ?? "").trim().slice(0, 20000);
     if (ship) entry.shipping = ship;
     out.push(entry);
   }
   return out;
+}
+
+/** Chuẩn hoá 1 style (kể cả bản thô từ bridge) để SO SÁNH nội dung — chặn seller sửa lén đồ admin. */
+function canon(s: Record<string, unknown>): string {
+  const d = (Array.isArray(s.designs) ? s.designs : []).map(strv).filter(Boolean);
+  return JSON.stringify({
+    n: strv(s.styles),
+    i: strv(s.image),
+    sz: (Array.isArray(s.sizes) ? s.sizes : []).map(strv).filter(Boolean),
+    c: (Array.isArray(s.colors) ? s.colors : []).map(strv).filter(Boolean),
+    d: d.length ? d : ["front", "back"], // khớp default của cleanStyles — tránh chặn oan
+    sh: strv(s.shipping),
+  });
+}
+
+/** Đọc bảng owner của store. null = bảng chưa migrate. */
+async function typeOwners(storeId: string): Promise<{ styleName: string; createdBy: string | null }[] | null> {
+  try {
+    return await db.select({ styleName: schema.wooTypeOwners.styleName, createdBy: schema.wooTypeOwners.createdBy })
+      .from(schema.wooTypeOwners).where(eq(schema.wooTypeOwners.storeId, storeId));
+  } catch { return null; }
 }
 
 export async function GET(req: NextRequest) {
@@ -78,17 +101,38 @@ export async function GET(req: NextRequest) {
   if ("error" in st) return NextResponse.json({ ok: false, error: st.error }, { status: st.status });
   try {
     const j = (await wooBridgeApi(st.cred, "product-types")) as { styles?: unknown; default_shipping?: unknown; bridge_version?: unknown };
-    const styles = Array.isArray(j?.styles) ? j.styles : [];
-    // v510 · bridge 1.1 trả kèm default_shipping; bridge 1.0 không có → UI nhắc cập nhật plugin.
+    let styles = (Array.isArray(j?.styles) ? j.styles : []) as Record<string, unknown>[];
+
+    // v512 · quyền theo người tạo. Bảng chưa migrate → mọi style coi như của admin (đọc-only cho seller).
+    const owners = await typeOwners(st.id);
+    const ownerMap = new Map((owners ?? []).map((o) => [o.styleName.toLowerCase(), o.createdBy]));
+    if (st.scoped) {
+      styles = styles.filter((s) => {
+        const o = ownerMap.get(lower(s.styles));
+        return o == null || o === session.sub;   // của admin hoặc của chính mình
+      });
+    }
+    // Tên người tạo (hiện "by …" — admin để trống).
+    const uids = Array.from(new Set((owners ?? []).map((o) => o.createdBy).filter((x): x is string => !!x)));
+    const names = uids.length
+      ? new Map((await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, uids))).map((u) => [u.id, u.name ?? ""]))
+      : new Map<string, string>();
+    const out = styles.map((s) => {
+      const o = ownerMap.get(lower(s.styles)) ?? null;
+      return { ...s, mine: !st.scoped || o === session.sub, ownerName: o ? (names.get(o) || "seller") : null };
+    });
+
     return NextResponse.json({
-      ok: true, styles, canEditTypes: !st.scoped,
+      ok: true, styles: out,
+      canEditTypes: !st.scoped,                       // admin: default shipping + toàn quyền
+      canCreate: !st.scoped || owners !== null,       // seller tạo type riêng khi đã migrate v512
+      typesNeedSql: st.scoped && owners === null,
       defaultShipping: typeof j?.default_shipping === "string" ? j.default_shipping : null,
       bridgeVersion: typeof j?.bridge_version === "string" ? j.bridge_version : "1.0.0",
     });
   } catch (e) {
     const msg = String((e as Error)?.message ?? e);
-    // Chưa cài bridge → trả cờ riêng để UI hiện hướng dẫn cài (không phải lỗi đỏ).
-    if (/Fusion Bridge/i.test(msg)) return NextResponse.json({ ok: true, styles: [], needBridge: true, canEditTypes: !st.scoped });
+    if (/Fusion Bridge/i.test(msg)) return NextResponse.json({ ok: true, styles: [], needBridge: true, canEditTypes: !st.scoped, canCreate: false });
     return NextResponse.json({ ok: false, error: msg.slice(0, 300) }, { status: 200 });
   }
 }
@@ -100,16 +144,81 @@ export async function POST(req: NextRequest) {
   const b = await req.json().catch(() => null);
   const st = await wooStore(session, String(b?.storeId ?? ""));
   if ("error" in st) return NextResponse.json({ ok: false, error: st.error }, { status: st.status });
-  // Seller trong scope (kể cả được share store): chỉ đọc — khung style do admin/manager quản.
-  if (st.scoped) return NextResponse.json({ ok: false, error: "Only admins/managers can edit Product Types." }, { status: 403 });
-  const styles = cleanStyles(b?.styles);
-  if ("error" in styles) return NextResponse.json({ ok: false, error: styles.error }, { status: 400 });
+  const submitted = cleanStyles(b?.styles);
+  if ("error" in submitted) return NextResponse.json({ ok: false, error: submitted.error }, { status: 400 });
+
   try {
-    const payload: Record<string, unknown> = { styles };
-    // v510 · default shipping (sản phẩm không giới hạn type) — chỉ gửi khi client có đưa lên.
-    if (typeof b?.defaultShipping === "string") payload.default_shipping = String(b.defaultShipping).slice(0, 20000);
-    await wooBridgeApi(st.cred, "product-types", { method: "POST", body: JSON.stringify(payload) });
-    return NextResponse.json({ ok: true, count: styles.length });
+    if (!st.scoped) {
+      // ── ADMIN: ghi đè cả danh sách + default shipping, rồi dọn dòng owner của style đã mất ──
+      const payload: Record<string, unknown> = { styles: submitted };
+      if (typeof b?.defaultShipping === "string") payload.default_shipping = String(b.defaultShipping).slice(0, 20000);
+      await wooBridgeApi(st.cred, "product-types", { method: "POST", body: JSON.stringify(payload) });
+      try {
+        const keep = new Set(submitted.map((s) => s.styles.toLowerCase()));
+        const rows = await db.select({ styleName: schema.wooTypeOwners.styleName }).from(schema.wooTypeOwners).where(eq(schema.wooTypeOwners.storeId, st.id));
+        for (const r of rows) {
+          if (!keep.has(r.styleName.toLowerCase())) {
+            await db.delete(schema.wooTypeOwners).where(and(eq(schema.wooTypeOwners.storeId, st.id), eq(schema.wooTypeOwners.styleName, r.styleName)));
+          }
+        }
+      } catch { /* bảng chưa migrate → bỏ qua */ }
+      return NextResponse.json({ ok: true, count: submitted.length });
+    }
+
+    // ── SELLER (scoped): MERGE an toàn — không đụng được style admin / seller khác ──
+    const owners = await typeOwners(st.id);
+    if (owners === null) return NextResponse.json({ ok: false, error: "Run MIGRATION_v512_woo_type_owners.sql on Supabase first — seller-owned product types need it." }, { status: 400 });
+    const ownerMap = new Map(owners.map((o) => [o.styleName.toLowerCase(), o]));
+
+    const cur = (await wooBridgeApi(st.cred, "product-types")) as { styles?: unknown };
+    const current = (Array.isArray(cur?.styles) ? cur.styles : []) as Record<string, unknown>[];
+    const curByName = new Map(current.map((s) => [lower(s.styles), s]));
+    const subByName = new Map(submitted.map((s) => [s.styles.toLowerCase(), s]));
+    const ownerOf = (name: string) => ownerMap.get(name.toLowerCase())?.createdBy ?? null;
+
+    // 1) Style gửi lên: tên trùng đồ seller khác → chặn; đồ admin → nội dung phải Y NGUYÊN.
+    for (const s of submitted) {
+      const o = ownerOf(s.styles);
+      if (o != null && o !== session.sub) return NextResponse.json({ ok: false, error: `Style name "${s.styles}" belongs to another seller — pick a different name.` }, { status: 403 });
+      const curS = curByName.get(s.styles.toLowerCase());
+      if (curS && o == null && canon(curS) !== canon(s as unknown as Record<string, unknown>)) {
+        return NextResponse.json({ ok: false, error: `"${s.styles}" is an admin product type — only admins can edit it.` }, { status: 403 });
+      }
+    }
+    // 2) Xoá: style admin bắt buộc còn nguyên trong danh sách gửi lên.
+    for (const [key, curS] of curByName) {
+      if (ownerOf(key) == null && !subByName.has(key)) {
+        return NextResponse.json({ ok: false, error: `"${strv(curS.styles)}" is an admin product type — only admins can delete it.` }, { status: 403 });
+      }
+    }
+    // 3) Ghép danh sách cuối: giữ thứ tự cũ; đồ seller khác giữ nguyên; đồ mình theo bản gửi; thêm mới vào cuối.
+    const merged: unknown[] = [];
+    const used = new Set<string>();
+    for (const curS of current) {
+      const key = lower(curS.styles);
+      const o = ownerOf(key);
+      if (o != null && o !== session.sub) { merged.push(curS); continue; }        // của seller khác — không đụng
+      const sub = subByName.get(key);
+      if (o == null) { merged.push(sub ?? curS); if (sub) used.add(key); }        // của admin — đã kiểm tra y nguyên
+      else if (sub) { merged.push(sub); used.add(key); }                          // của mình — bản mới (thiếu = xoá)
+    }
+    for (const s of submitted) if (!used.has(s.styles.toLowerCase())) merged.push(s); // type mới của seller
+    if (!merged.length) return NextResponse.json({ ok: false, error: "the store needs at least one product type" }, { status: 400 });
+
+    await wooBridgeApi(st.cred, "product-types", { method: "POST", body: JSON.stringify({ styles: merged }) }); // seller KHÔNG đổi default shipping
+
+    // 4) Cập nhật bảng owner: thêm dòng cho type mới của seller, xoá dòng type mình đã bỏ.
+    for (const s of submitted) {
+      if (!curByName.has(s.styles.toLowerCase())) {
+        try { await db.insert(schema.wooTypeOwners).values({ storeId: st.id, styleName: s.styles, createdBy: session.sub }).onConflictDoNothing(); } catch { /* ignore */ }
+      }
+    }
+    for (const o of owners) {
+      if (o.createdBy === session.sub && curByName.has(o.styleName.toLowerCase()) && !subByName.has(o.styleName.toLowerCase())) {
+        try { await db.delete(schema.wooTypeOwners).where(and(eq(schema.wooTypeOwners.storeId, st.id), eq(schema.wooTypeOwners.styleName, o.styleName))); } catch { /* ignore */ }
+      }
+    }
+    return NextResponse.json({ ok: true, count: merged.length });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }

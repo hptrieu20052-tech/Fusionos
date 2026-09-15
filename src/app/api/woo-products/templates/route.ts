@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds, sharedStoreIds, adminUserIds } from "@/lib/scope";
@@ -65,11 +65,22 @@ export async function GET(req: NextRequest) {
     let templates = await db.select().from(schema.wooTemplates)
       .where(eq(schema.wooTemplates.storeId, storeId)).orderBy(asc(schema.wooTemplates.name));
     // v503 · mirror v459: seller thấy template MÌNH tạo + của admin (dùng được, không sửa/xoá).
-    if (await isScoped(session)) {
+    const scoped = await isScoped(session);
+    if (scoped) {
       const admins = await adminUserIds();
       templates = templates.filter((t) => !t.createdBy || t.createdBy === session.sub || admins.includes(t.createdBy));
     }
-    return NextResponse.json({ ok: true, templates });
+    // v512 · gắn cờ editable + tên người tạo để UI ẩn nút Edit/Delete trên đồ admin (seller Dup/dùng được).
+    const uids = Array.from(new Set(templates.map((t) => t.createdBy).filter((x): x is string => !!x)));
+    const names = uids.length
+      ? new Map((await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, uids))).map((u) => [u.id, u.name ?? ""]))
+      : new Map<string, string>();
+    const out = templates.map((t) => ({
+      ...t,
+      editable: !scoped || t.createdBy === session.sub,
+      creator: t.createdBy ? (names.get(t.createdBy) || "") : "",
+    }));
+    return NextResponse.json({ ok: true, templates: out });
   } catch {
     // Bảng chưa migrate → trả rỗng kèm cờ để UI hiện hướng dẫn chạy SQL.
     return NextResponse.json({ ok: true, templates: [], needMigration: true });

@@ -9,7 +9,7 @@ import { MarketplaceLogo } from "@/components/marketplace-logo";
 
 type StoreOpt = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Cat = { id: number; name: string; parent: number; count: number; slug: string };
-type Tpl = { id: string; name: string; title: string | null; description: string | null; price: string | null; salePrice: string | null; categoryIds: number[]; tags: string | null; status: string; thumb?: string | null; wcpStyles?: string[] };
+type Tpl = { id: string; name: string; title: string | null; description: string | null; price: string | null; salePrice: string | null; categoryIds: number[]; tags: string | null; status: string; thumb?: string | null; wcpStyles?: string[]; editable?: boolean; creator?: string };
 type Prod = {
   id: number; name: string; sku: string; status: string; editable?: boolean; creator?: string; tplName?: string;
   price: string; regularPrice: string; salePrice: string;
@@ -101,15 +101,16 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     else flash("✗ " + (j.error ?? "Error"));
   };
   // v508 · Bulk edit giá / description cho các dòng đã tick (để trống = giữ nguyên).
-  const emptyBulk = { regularPrice: "", salePrice: "", description: "", descriptionMode: "replace" };
+  const emptyBulk = { regularPrice: "", salePrice: "", description: "", descriptionMode: "replace", setTypes: false, wcpStyles: [] as string[] };
   const [bulk, setBulk] = useState<typeof emptyBulk | null>(null);
   const bulkApply = async () => {
     if (!bulk || !sel.size) return;
-    if (!bulk.regularPrice.trim() && !bulk.salePrice.trim() && !bulk.description.trim()) { flash("✗ Fill at least one field (blank = keep current)"); return; }
+    if (!bulk.regularPrice.trim() && !bulk.salePrice.trim() && !bulk.description.trim() && !bulk.setTypes) { flash("✗ Fill at least one field (blank = keep current)"); return; }
     setSaving(true);
     const j = await fetch("/api/woo-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, ids: Array.from(sel), set: {
       regularPrice: bulk.regularPrice.trim(), salePrice: bulk.salePrice.trim(),
       description: bulk.description, descriptionMode: bulk.descriptionMode,
+      ...(bulk.setTypes ? { wcpStyles: bulk.wcpStyles } : {}), // v512 · gán Product Types hàng loạt
     } }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setSaving(false);
     if (j.ok) { flash(`✓ ${j.updated} products updated`); setBulk(null); loadProducts(storeId, search, page, fStatus, fCat, fSeller, fTpl); }
@@ -240,7 +241,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     setSaving(true);
     const j = await fetch("/api/woo-products/categories", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, name: catName.trim(), parentId: catParent }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setSaving(false);
-    if (j.ok) { flash("✓ Category created"); setCatName(""); setCatParent(0); setCatOpen(false); loadCats(storeId); }
+    if (j.ok) { flash(j.warn ? "⚠ " + j.warn : "✓ Category created"); setCatName(""); setCatParent(0); setCatOpen(false); loadCats(storeId); }
     else flash("✗ " + (j.error ?? "Error"));
   };
 
@@ -412,6 +413,29 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                 </L>
               </div>
             </div>
+            {ptypes.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ display: "inline-flex", gap: 8, alignItems: "center", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                  <input type="checkbox" checked={bulk.setTypes} onChange={(e) => setBulk({ ...bulk, setTypes: e.target.checked })} />
+                  Set product types for the selected products
+                </label>
+                {bulk.setTypes && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    {ptypes.map((t) => {
+                      const on = bulk.wcpStyles.includes(t);
+                      return (
+                        <button key={t} type="button"
+                          onClick={() => setBulk({ ...bulk, wcpStyles: on ? bulk.wcpStyles.filter((x) => x !== t) : [...bulk.wcpStyles, t] })}
+                          style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? "1px solid #7F54B3" : "1px solid var(--line)", background: on ? "#7F54B3" : "#fff", color: on ? "#fff" : "var(--ink)" }}>
+                          {t}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {bulk.setTypes && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>Ticked types REPLACE each product&apos;s current selection. None ticked = show ALL styles. Tip: tick the 9 apparel types on old listings so newly added types (Calendar, Pajama…) never leak into their pickers.</div>}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button onClick={() => setBulk(null)} disabled={saving} style={btnGhost}>Cancel</button>
               <button onClick={bulkApply} disabled={saving} style={btnBlue}>{saving ? "Applying…" : `Apply to ${sel.size} products`}</button>
@@ -453,7 +477,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                       </td>
                       <td style={{ padding: "9px 6px", borderBottom: "1px solid var(--line)", textAlign: "right", whiteSpace: "nowrap" }}>
                         {canEdit && <button onClick={() => { setTplOpen(false); setForm({ id: 0, name: t.title ?? "", description: t.description ?? "", regularPrice: t.price ?? "", salePrice: t.salePrice ?? "", sku: "", status: t.status === "draft" ? "draft" : "publish", categoryIds: [...t.categoryIds], tags: t.tags ?? "", images: [], tplId: t.id, wcpStyles: Array.isArray(t.wcpStyles) ? [...t.wcpStyles] : [] }); }} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>New product</button>}
-                        {canEdit && <button onClick={() => delTpl(t.id)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, marginLeft: 6, color: "var(--red)" }}>Delete</button>}
+                        {canEdit && t.editable !== false && <button onClick={() => delTpl(t.id)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, marginLeft: 6, color: "var(--red)" }}>Delete</button>}
                       </td>
                     </tr>
                   ))}
