@@ -73,12 +73,14 @@ export async function GET(req: NextRequest) {
       count: Number(c.count) || 0,
       slug: strv(c.slug),
     })).filter((c) => c.slug !== "uncategorized");
-    // v513 · "của ai người đó thấy": category không có chủ = của admin (ai cũng thấy);
-    // có chủ = riêng seller đó — seller khác không thấy trong FUSION. Admin thấy tất.
+    // v517 · Seller CHỈ thấy category MÌNH tạo — category admin (cây collection công khai của store)
+    // bị ẨN hẳn với seller để không ai gắn hàng vào collection ngoài site tuỳ tiện. Muốn hàng seller
+    // vào collection công khai → admin gắn qua TEMPLATE (categoryIds trong template vẫn áp dù seller
+    // không thấy chip). Admin thấy tất. Bảng chưa migrate → giữ hành vi cũ (thấy hết) để không vỡ trang.
     let out = categories;
     const owners = await catOwners(ctx.id);
     if (ctx.scoped && owners) {
-      out = categories.filter((c) => { const o = owners.get(c.id); return o == null || o === session.sub; });
+      out = categories.filter((c) => owners.get(c.id) === session.sub);
     }
     // Nhãn người tạo cho admin xem (và để UI có thể hiển thị "by …" nếu muốn).
     if (owners && owners.size) {

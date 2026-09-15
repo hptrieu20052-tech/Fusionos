@@ -547,6 +547,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
               </div>
               <div style={{ gridColumn: "1 / -1" }}>
                 <L label="Categories">
+                  {!sortedCats.length && <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>No categories of your own yet — create one with <b>+ New category</b>. The store&apos;s public collections are managed by admin and applied automatically via templates.</div>}
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {sortedCats.map((c) => {
                       const on = form.categoryIds.includes(c.id);
