@@ -205,7 +205,12 @@ export async function PUT(req: NextRequest) {
   }
 }
 
-/** v501 · PATCH { storeId, ids[], status } — bulk đổi trạng thái (Woo products/batch, tối đa 50/lần). */
+/**
+ * v501 · PATCH { storeId, ids[], status } — bulk đổi trạng thái.
+ * v508 · PATCH { storeId, ids[], set:{ regularPrice?, salePrice?, description?, descriptionMode? } }
+ *        — BULK EDIT giá/description (Woo products/batch, tối đa 50/lần).
+ *        salePrice "0" = xoá sale · descriptionMode "append" = nối thêm vào description hiện tại.
+ */
 export async function PATCH(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -216,7 +221,17 @@ export async function PATCH(req: NextRequest) {
   if ("error" in st) return NextResponse.json({ ok: false, error: st.error }, { status: st.status });
 
   const status = String(b?.status ?? "");
-  if (!["publish", "draft"].includes(status)) return NextResponse.json({ ok: false, error: "invalid status" }, { status: 400 });
+  const set = (b?.set ?? {}) as { regularPrice?: string; salePrice?: string; description?: string; descriptionMode?: string };
+  const regularPrice = strv(set.regularPrice);
+  const salePrice = strv(set.salePrice);
+  const description = String(set.description ?? "");
+  const descMode = set.descriptionMode === "append" ? "append" : "replace";
+  const hasStatus = ["publish", "draft"].includes(status);
+  const hasSet = !!(regularPrice || salePrice || description.trim());
+  if (!hasStatus && !hasSet) return NextResponse.json({ ok: false, error: "nothing to update" }, { status: 400 });
+  if (regularPrice && !(Number(regularPrice) > 0)) return NextResponse.json({ ok: false, error: "invalid price" }, { status: 400 });
+  if (salePrice && salePrice !== "0" && !(Number(salePrice) > 0)) return NextResponse.json({ ok: false, error: "invalid sale price" }, { status: 400 });
+
   let ids = (Array.isArray(b?.ids) ? b.ids : []).map((x: unknown) => Number(x)).filter((n: number) => n > 0).slice(0, 50);
   if (!ids.length) return NextResponse.json({ ok: false, error: "no products selected" }, { status: 400 });
   // v503 · scoped seller: bulk chỉ áp lên sản phẩm MÌNH tạo.
@@ -230,7 +245,25 @@ export async function PATCH(req: NextRequest) {
     } catch { /* chưa migrate → giữ hành vi cũ */ }
   }
   try {
-    await wooApi(st.cred, "products/batch", { method: "POST", body: JSON.stringify({ update: ids.map((id: number) => ({ id, status })) }) });
+    // Append description → cần description hiện tại: lấy 1 phát qua include=ids.
+    const curDesc = new Map<number, string>();
+    if (description.trim() && descMode === "append") {
+      const j = await wooApi(st.cred, `products?include=${ids.join(",")}&per_page=${ids.length}`);
+      for (const p of (Array.isArray(j) ? j : []) as Record<string, unknown>[]) {
+        curDesc.set(Number(p.id) || 0, strv(p.description));
+      }
+    }
+    const update = ids.map((id: number) => {
+      const u: Record<string, unknown> = { id };
+      if (hasStatus) u.status = status;
+      if (regularPrice) u.regular_price = regularPrice;
+      if (salePrice) u.sale_price = salePrice === "0" ? "" : salePrice; // "0" = bỏ sale
+      if (description.trim()) {
+        u.description = descMode === "append" ? `${curDesc.get(id) ?? ""}\n${description}`.trim() : description;
+      }
+      return u;
+    });
+    await wooApi(st.cred, "products/batch", { method: "POST", body: JSON.stringify({ update }) });
     return NextResponse.json({ ok: true, updated: ids.length });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });

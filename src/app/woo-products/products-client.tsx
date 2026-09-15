@@ -100,6 +100,21 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     if (j.ok) { flash(`✓ ${j.updated} products → ${status}`); loadProducts(storeId, search, page, fStatus, fCat, fSeller, fTpl); }
     else flash("✗ " + (j.error ?? "Error"));
   };
+  // v508 · Bulk edit giá / description cho các dòng đã tick (để trống = giữ nguyên).
+  const emptyBulk = { regularPrice: "", salePrice: "", description: "", descriptionMode: "replace" };
+  const [bulk, setBulk] = useState<typeof emptyBulk | null>(null);
+  const bulkApply = async () => {
+    if (!bulk || !sel.size) return;
+    if (!bulk.regularPrice.trim() && !bulk.salePrice.trim() && !bulk.description.trim()) { flash("✗ Fill at least one field (blank = keep current)"); return; }
+    setSaving(true);
+    const j = await fetch("/api/woo-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, ids: Array.from(sel), set: {
+      regularPrice: bulk.regularPrice.trim(), salePrice: bulk.salePrice.trim(),
+      description: bulk.description, descriptionMode: bulk.descriptionMode,
+    } }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setSaving(false);
+    if (j.ok) { flash(`✓ ${j.updated} products updated`); setBulk(null); loadProducts(storeId, search, page, fStatus, fCat, fSeller, fTpl); }
+    else flash("✗ " + (j.error ?? "Error"));
+  };
   // Export CSV: dòng đã tick (không tick gì = cả trang đang hiện)
   const exportCsv = () => {
     const rows = (sel.size ? shown.filter((p) => sel.has(p.id)) : shown);
@@ -297,6 +312,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
               <b style={{ fontSize: 12 }}>{sel.size} selected</b>
               <button onClick={() => bulkStatus("publish")} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Set Active</button>
               <button onClick={() => bulkStatus("draft")} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Set Draft</button>
+              <button onClick={() => setBulk({ ...emptyBulk })} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12, borderColor: "var(--blue)", color: "var(--blue)" }}>✎ Bulk edit</button>
               <button onClick={exportCsv} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Export</button>
             </span>
           )}
@@ -368,6 +384,42 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
           </div>
         )}
       </div>
+
+      {/* v508 · Bulk edit modal — giá / description cho các dòng đã tick */}
+      {bulk && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.55)", zIndex: 200, overflowY: "auto", padding: "36px 16px" }} onClick={() => !saving && setBulk(null)}>
+          <div className="panel" style={{ width: 560, maxWidth: "100%", padding: 20, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)" }} onClick={(e) => e.stopPropagation()}>
+            <b style={{ fontSize: 15 }}>Bulk edit · {sel.size} products</b>
+            <div style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 12px", lineHeight: 1.5 }}>
+              Blank field = keep the current value. Applies only to the ticked rows — sellers can only bulk-edit their own listings.
+            </div>
+            <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+              <L label="Price ($ — blank = keep)"><input value={bulk.regularPrice} onChange={(e) => setBulk({ ...bulk, regularPrice: e.target.value })} placeholder="24.99" style={inp} /></L>
+              <L label="Sale price ($ — blank = keep, 0 = remove sale)"><input value={bulk.salePrice} onChange={(e) => setBulk({ ...bulk, salePrice: e.target.value })} placeholder="" style={inp} /></L>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <L label="Description (HTML allowed — blank = keep)">
+                  <textarea value={bulk.description} onChange={(e) => setBulk({ ...bulk, description: e.target.value })} rows={7} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }} />
+                </L>
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <L label="Description mode">
+                  <select value={bulk.descriptionMode} onChange={(e) => setBulk({ ...bulk, descriptionMode: e.target.value })} style={inp}>
+                    <option value="replace">Replace — overwrite the whole description</option>
+                    <option value="append">Append — add this to the END of each current description</option>
+                  </select>
+                </L>
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+              <button onClick={() => setBulk(null)} disabled={saving} style={btnGhost}>Cancel</button>
+              <button onClick={bulkApply} disabled={saving} style={btnBlue}>{saving ? "Applying…" : `Apply to ${sel.size} products`}</button>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, lineHeight: 1.5 }}>
+              Note: the price shown on the storefront comes from <b>Product Types</b> (per-size prices) — change it there once to update every product of that type. This bulk edit sets the products&apos; own base price / description data.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Templates modal (v502) */}
       {tplOpen && (
