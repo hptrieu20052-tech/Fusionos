@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { buildTypeChips, chipOn, toggleChip, type TypeChip } from "@/lib/woo-type-chips";
 
 type StoreOpt = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Cat = { id: number; name: string; parent: number; count: number; slug: string };
@@ -26,7 +27,7 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
   const store = stores.find((x) => x.id === storeId);
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
-  const [ptypes, setPtypes] = useState<string[]>([]); // v507 · Product Types trên store (từ plugin)
+  const [ptypes, setPtypes] = useState<TypeChip[]>([]); // v507/v522 · chip Product Type (gộp theo Group)
   const [needSql, setNeedSql] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -43,7 +44,7 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
     setBusy(false);
     if (t.ok) { setTpls((t.templates ?? []).map((x: Tpl) => ({ ...x, categoryIds: Array.isArray(x.categoryIds) ? x.categoryIds : [], wcpStyles: Array.isArray(x.wcpStyles) ? x.wcpStyles : [] }))); setNeedSql(!!t.needMigration); }
     if (c.ok) setCats(c.categories ?? []);
-    setPtypes(pt.ok ? (pt.styles ?? []).map((s: { styles?: string }) => String(s.styles ?? "")).filter(Boolean) : []);
+    setPtypes(pt.ok ? buildTypeChips(pt.styles ?? []) : []);
   }, []);
   useEffect(() => { load(storeId); }, [storeId, load]);
 
@@ -185,12 +186,12 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
                   <L label="Product types (v507 — Apply template auto-ticks these; none = ALL styles show)">
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {ptypes.map((t) => {
-                        const on = form.wcpStyles.includes(t);
+                        const on = chipOn(t, form.wcpStyles);
                         return (
-                          <button key={t} type="button"
-                            onClick={() => setForm({ ...form, wcpStyles: on ? form.wcpStyles.filter((x) => x !== t) : [...form.wcpStyles, t] })}
+                          <button key={t.label} type="button" title={t.grouped ? t.styles.join(" · ") : undefined}
+                            onClick={() => setForm({ ...form, wcpStyles: toggleChip(t, form.wcpStyles) })}
                             style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? "1px solid #7F54B3" : "1px solid var(--line)", background: on ? "#7F54B3" : "#fff", color: on ? "#fff" : "var(--ink)" }}>
-                            {t}
+                            {t.label}{t.grouped ? ` (${t.styles.length})` : ""}
                           </button>
                         );
                       })}

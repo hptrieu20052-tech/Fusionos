@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
+import { buildTypeChips, chipOn, toggleChip, type TypeChip } from "@/lib/woo-type-chips";
 
 type StoreOpt = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Cat = { id: number; name: string; parent: number; count: number; slug: string };
@@ -58,7 +59,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [tplNeedSql, setTplNeedSql] = useState(false);
-  const [ptypes, setPtypes] = useState<string[]>([]); // v505 · tên các Product Type (style) trên store
+  const [ptypes, setPtypes] = useState<TypeChip[]>([]); // v505/v522 · chip Product Type (đã gộp theo Group)
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 4000); };
@@ -71,7 +72,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     if (t.ok) { setTpls((t.templates ?? []).map((x: Tpl) => ({ ...x, categoryIds: Array.isArray(x.categoryIds) ? x.categoryIds : [], wcpStyles: Array.isArray(x.wcpStyles) ? x.wcpStyles : [] }))); setTplNeedSql(!!t.needMigration); }
     // v505 · Product Types từ plugin trên store — để chọn khi list (pajama/calendar/book…).
     const pt = await fetch(`/api/woo-product-types?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
-    setPtypes(pt.ok ? (pt.styles ?? []).map((s: { styles?: string }) => String(s.styles ?? "")).filter(Boolean) : []);
+    setPtypes(pt.ok ? buildTypeChips(pt.styles ?? []) : []);
   }, []);
 
   const loadProducts = useCallback(async (sid: string, q: string, pg: number, status: string, cat: number, seller = "", tpl = "") => {
@@ -450,12 +451,12 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                 {bulk.setTypes && (
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                     {ptypes.map((t) => {
-                      const on = bulk.wcpStyles.includes(t);
+                      const on = chipOn(t, bulk.wcpStyles);
                       return (
-                        <button key={t} type="button"
-                          onClick={() => setBulk({ ...bulk, wcpStyles: on ? bulk.wcpStyles.filter((x) => x !== t) : [...bulk.wcpStyles, t] })}
+                        <button key={t.label} type="button" title={t.grouped ? t.styles.join(" · ") : undefined}
+                          onClick={() => setBulk({ ...bulk, wcpStyles: toggleChip(t, bulk.wcpStyles) })}
                           style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? "1px solid #7F54B3" : "1px solid var(--line)", background: on ? "#7F54B3" : "#fff", color: on ? "#fff" : "var(--ink)" }}>
-                          {t}
+                          {t.label}{t.grouped ? ` (${t.styles.length})` : ""}
                         </button>
                       );
                     })}
@@ -608,12 +609,12 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                   <L label="Product types this listing sells (none ticked = ALL styles show on the product page)">
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                       {ptypes.map((t) => {
-                        const on = form.wcpStyles.includes(t);
+                        const on = chipOn(t, form.wcpStyles);
                         return (
-                          <button key={t} type="button"
-                            onClick={() => setForm({ ...form, wcpStyles: on ? form.wcpStyles.filter((x) => x !== t) : [...form.wcpStyles, t] })}
+                          <button key={t.label} type="button" title={t.grouped ? t.styles.join(" · ") : undefined}
+                            onClick={() => setForm({ ...form, wcpStyles: toggleChip(t, form.wcpStyles) })}
                             style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? "1px solid #7F54B3" : "1px solid var(--line)", background: on ? "#7F54B3" : "#fff", color: on ? "#fff" : "var(--ink)" }}>
-                            {t}
+                            {t.label}{t.grouped ? ` (${t.styles.length})` : ""}
                           </button>
                         );
                       })}

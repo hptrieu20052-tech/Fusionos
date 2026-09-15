@@ -42,7 +42,7 @@ const strv = (v: unknown) => (v == null ? "" : String(v)).trim();
 const lower = (v: unknown) => strv(v).toLowerCase();
 
 /** Style đúng cấu trúc products.json plugin đang đọc. */
-type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[]; shipping?: string };
+type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[]; shipping?: string; group?: string };
 function cleanStyles(input: unknown): Style[] | { error: string } {
   if (!Array.isArray(input) || !input.length) return { error: "styles list is empty" };
   if (input.length > 200) return { error: "too many styles (max 200)" };
@@ -74,6 +74,9 @@ function cleanStyles(input: unknown): Style[] | { error: string } {
     const entry: Style = { styles: name, image: strv(s.image).slice(0, 500), sizes, colors, designs };
     const ship = String(s.shipping ?? "").trim().slice(0, 20000);
     if (ship) entry.shipping = ship;
+    // v522 · group — gộp nhiều style thành 1 chip khi list (bridge 1.2 lưu vào products.json).
+    const grp = strv(s.group).slice(0, 80);
+    if (grp) entry.group = grp;
     out.push(entry);
   }
   return out;
@@ -89,6 +92,7 @@ function canon(s: Record<string, unknown>): string {
     c: (Array.isArray(s.colors) ? s.colors : []).map(strv).filter(Boolean),
     d: d.length ? d : ["front", "back"], // khớp default của cleanStyles — tránh chặn oan
     sh: strv(s.shipping),
+    g: strv(s.group), // v522 · group cũng bất khả xâm phạm trên style admin
   });
 }
 

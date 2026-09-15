@@ -21,9 +21,9 @@ async function compressImage(file: File): Promise<string> {
 }
 
 type StoreOpt = { id: string; name: string };
-type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[]; shipping?: string; mine?: boolean; ownerName?: string | null };
+type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[]; shipping?: string; group?: string; mine?: boolean; ownerName?: string | null };
 // Dạng edit trong form: size/màu tách thành cặp field cho dễ nhập.
-type FormStyle = { name: string; image: string; sizes: { n: string; p: string }[]; colors: { n: string; hex: string }[]; front: boolean; back: boolean; ship: string };
+type FormStyle = { name: string; image: string; sizes: { n: string; p: string }[]; colors: { n: string; hex: string }[]; front: boolean; back: boolean; ship: string; grp: string };
 
 const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
 const btnPri: React.CSSProperties = { background: "var(--ink)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
@@ -38,6 +38,7 @@ function toForm(s: Style): FormStyle {
     front: (s.designs ?? []).includes("front") || !(s.designs ?? []).length,
     back: (s.designs ?? []).includes("back") || !(s.designs ?? []).length,
     ship: s.shipping ?? "",
+    grp: s.group ?? "",
   };
 }
 function fromForm(f: FormStyle): Style {
@@ -49,6 +50,7 @@ function fromForm(f: FormStyle): Style {
     colors: f.colors.filter((c) => c.n.trim()).map((c) => `${c.n.trim()}|${(c.hex || "#cccccc").trim()}`),
     designs: [...(f.front ? ["front"] : []), ...(f.back ? ["back"] : [])].length ? [...(f.front ? ["front"] : []), ...(f.back ? ["back"] : [])] : ["front"],
     ...(f.ship.trim() ? { shipping: f.ship.trim() } : {}),
+    ...(f.grp.trim() ? { group: f.grp.trim() } : {}),
   };
 }
 
@@ -105,7 +107,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
     setSaving(false);
   };
 
-  const openNew = () => { setEditIndex(-1); setForm({ name: "", image: "", sizes: [{ n: "One Size", p: "" }], colors: [], front: true, back: false, ship: "" }); };
+  const openNew = () => { setEditIndex(-1); setForm({ name: "", image: "", sizes: [{ n: "One Size", p: "" }], colors: [], front: true, back: false, ship: "", grp: "" }); };
   const openEdit = (i: number) => { setEditIndex(i); setForm(toForm(styles[i])); };
   // Dup: khởi tạo style mới copy từ style có sẵn (đổi tên rồi lưu).
   const openDup = (i: number) => { setEditIndex(-1); setForm({ ...toForm(styles[i]), name: styles[i].styles + " (Copy)" }); };
@@ -215,7 +217,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
                       {s.image ? <img src={s.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "👕"}
                     </div>
                   </td>
-                  <td style={td}><b>{s.styles}</b>{s.shipping ? <span title="Has its own Shipping & Delivery tab" style={{ marginLeft: 6, fontSize: 12 }}>🚚</span> : null}
+                  <td style={td}><b>{s.styles}</b>{s.group ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 99, background: "#F0E9FA", color: "#7F54B3" }}>{s.group}</span> : null}{s.shipping ? <span title="Has its own Shipping & Delivery tab" style={{ marginLeft: 6, fontSize: 12 }}>🚚</span> : null}
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{s.ownerName ? `by ${s.ownerName}` : "by Admin"}{!rowEditable(s) && canAdd ? " · read-only" : ""}</div>
                   </td>
                   <td style={td}>
@@ -274,6 +276,10 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
               </label>
             </div>
 
+            <label style={{ display: "block", marginBottom: 10 }}>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>Group (optional — types cùng Group gộp thành 1 chip khi list; khách vẫn thấy từng style riêng ngoài site)</div>
+              <input value={form.grp} onChange={(e) => setForm({ ...form, grp: e.target.value })} placeholder={"Men's Pajama"} style={inp} />
+            </label>
             <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", margin: "4px 0 6px" }}>Sizes &amp; prices ($) — for one-size items use &quot;One Size&quot;. Don&apos;t use &quot;-&quot; in size names (auto-converted to &quot;–&quot;)</div>
             <div style={{ display: "grid", gap: 6 }}>
               {form.sizes.map((s, i) => (
