@@ -36,20 +36,25 @@ async function wooStore(session: NonNullable<Awaited<ReturnType<typeof getSessio
 }
 
 const strv = (v: unknown) => (v == null ? "" : String(v)).trim();
+// Woo trả tên kèm HTML entity ("Back to School &amp; Teacher") → decode khi đọc.
+const deent = (s: string) => s
+  .replace(/&amp;/g, "&").replace(/&#0?38;/g, "&")
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+  .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&#8217;/g, "\u2019").replace(/&nbsp;/g, " ");
 
 function slimProduct(p: Record<string, unknown>) {
   const imgs = (Array.isArray(p.images) ? p.images : []) as Record<string, unknown>[];
   const cats = (Array.isArray(p.categories) ? p.categories : []) as Record<string, unknown>[];
   return {
     id: Number(p.id) || 0,
-    name: strv(p.name),
+    name: deent(strv(p.name)),
     sku: strv(p.sku),
     status: strv(p.status),                       // publish | draft | pending | private
     price: strv(p.price), regularPrice: strv(p.regular_price), salePrice: strv(p.sale_price),
     permalink: strv(p.permalink),
     thumb: strv(imgs[0]?.src),
     images: imgs.map((i) => ({ id: Number(i.id) || 0, src: strv(i.src) })),
-    categories: cats.map((c) => ({ id: Number(c.id) || 0, name: strv(c.name) })),
+    categories: cats.map((c) => ({ id: Number(c.id) || 0, name: deent(strv(c.name)) })),
     description: strv(p.description),
     tags: ((Array.isArray(p.tags) ? p.tags : []) as Record<string, unknown>[]).map((t) => strv(t.name)).filter(Boolean),
     totalSales: Number(p.total_sales) || 0,

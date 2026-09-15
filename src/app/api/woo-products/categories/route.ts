@@ -30,6 +30,11 @@ async function wooCred(session: NonNullable<Awaited<ReturnType<typeof getSession
 }
 
 const strv = (v: unknown) => (v == null ? "" : String(v)).trim();
+// Woo trả tên kèm HTML entity ("Back to School &amp; Teacher") → decode khi đọc.
+const deent = (s: string) => s
+  .replace(/&amp;/g, "&").replace(/&#0?38;/g, "&")
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+  .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&#8217;/g, "\u2019").replace(/&nbsp;/g, " ");
 
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -50,7 +55,7 @@ export async function GET(req: NextRequest) {
     }
     const categories = all.map((c) => ({
       id: Number(c.id) || 0,
-      name: strv(c.name),
+      name: deent(strv(c.name)),
       parent: Number(c.parent) || 0,
       count: Number(c.count) || 0,
       slug: strv(c.slug),
@@ -78,7 +83,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       body: JSON.stringify({ name, ...(parentId > 0 ? { parent: parentId } : {}) }),
     })) as Record<string, unknown>;
-    return NextResponse.json({ ok: true, category: { id: Number(c.id) || 0, name: strv(c.name), parent: Number(c.parent) || 0, count: 0, slug: strv(c.slug) } });
+    return NextResponse.json({ ok: true, category: { id: Number(c.id) || 0, name: deent(strv(c.name)), parent: Number(c.parent) || 0, count: 0, slug: strv(c.slug) } });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }

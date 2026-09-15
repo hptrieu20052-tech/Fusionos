@@ -1,13 +1,11 @@
 "use client";
 /**
- * MANAGE PRODUCTS WOOCOMMERCE (v497) — seller tự list sản phẩm mới, tạo category,
- * sửa sản phẩm TRỰC TIẾP từ FUSION. Đọc/ghi sống qua Woo REST (không bảng sync riêng).
- *
- * Lưu ý store dùng Woo Custom Pro (Sorawix): sản phẩm là SIMPLE product — style/size/màu
- * do plugin render từ products.json, nên listing từ FUSION chỉ cần title + ảnh + giá gốc
- * + description + category là đủ lên kệ.
+ * MANAGE PRODUCTS WOOCOMMERCE (v497, redesign v499 theo khuôn ShopBase) — seller tự list
+ * sản phẩm, tạo category, sửa sản phẩm TRỰC TIẾP từ FUSION. Đọc/ghi sống qua Woo REST
+ * (không bảng sync riêng — không cần nút Sync).
  */
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MarketplaceLogo } from "@/components/marketplace-logo";
 
 type StoreOpt = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Cat = { id: number; name: string; parent: number; count: number; slug: string };
@@ -21,8 +19,9 @@ type Prod = {
 };
 
 const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
-const btnPri: React.CSSProperties = { background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "9px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
-const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer" };
+const btnPri: React.CSSProperties = { background: "var(--ink)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+const btnBlue: React.CSSProperties = { background: "var(--blue)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" };
 
 function L({ label, children }: { label: string; children: React.ReactNode }) {
   return <label style={{ display: "block", marginBottom: 10 }}><div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>{label}</div>{children}</label>;
@@ -43,9 +42,12 @@ async function compressImage(file: File): Promise<string> {
 
 export default function WooProductsClient({ stores, canEdit }: { stores: StoreOpt[]; canEdit: boolean }) {
   const [storeId, setStoreId] = useState(stores[0]?.id ?? "");
+  const store = stores.find((s) => s.id === storeId);
   const [products, setProducts] = useState<Prod[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
   const [search, setSearch] = useState("");
+  const [fStatus, setFStatus] = useState("");     // "" = all
+  const [fCat, setFCat] = useState(0);            // 0 = all
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -71,6 +73,9 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
 
   const doSearch = () => { setPage(1); loadProducts(storeId, search, 1, false); };
 
+  // Lọc client-side theo status + category (dữ liệu đã live theo trang).
+  const shown = products.filter((p) => (!fStatus || p.status === fStatus) && (!fCat || p.categories.some((c) => c.id === fCat)));
+
   // ── New / Edit product modal ─────────────────────────────────────────────
   const empty = { id: 0, name: "", description: "", regularPrice: "", salePrice: "", sku: "", status: "publish", categoryIds: [] as number[], tags: "", images: [] as string[] };
   const [form, setForm] = useState<typeof empty | null>(null);
@@ -91,6 +96,11 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
       tags: d.tags.join(", "),
       images: d.images.map((i) => i.src),
     });
+  };
+  // Dup: mở form NEW với data copy từ sản phẩm (id=0 → tạo mới), title thêm "(Copy)".
+  const openDup = async (p: Prod) => {
+    await openEdit(p);
+    setForm((f) => (f ? { ...f, id: 0, sku: "", name: f.name + " (Copy)", status: "draft" } : f));
   };
 
   const addImages = async (files: FileList | null) => {
@@ -146,6 +156,9 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
   const catLabel = (c: Cat) => (c.parent ? `— ${c.name}` : c.name);
   const sortedCats = [...parents.map((p) => [p, ...cats.filter((c) => c.parent === p.id)]).flat()];
 
+  const th: React.CSSProperties = { textAlign: "left", fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: 0.5, textTransform: "uppercase", padding: "10px 12px", borderBottom: "1px solid var(--line)" };
+  const td: React.CSSProperties = { padding: "12px", borderBottom: "1px solid var(--line)", verticalAlign: "middle", fontSize: 13 };
+
   if (!stores.length) {
     return <div className="panel empty">No WooCommerce store yet — create one in <b>Stores</b> (marketplace: WooCommerce), enter the REST API keys, then come back here.</div>;
   }
@@ -154,50 +167,99 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
     <div style={{ display: "grid", gap: 14 }}>
       {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 60, background: msg.startsWith("✓") ? "#1E7A3E" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
 
-      {/* Toolbar */}
-      <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "12px 14px" }}>
-        <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: 220 }}>
-          {stores.map((s) => <option key={s.id} value={s.id}>{s.name}{s.sellerName ? ` · ${s.sellerName}` : ""}</option>)}
-        </select>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} placeholder="Search products…" style={{ ...inp, width: 260 }} />
-        <button onClick={doSearch} style={btnGhost}>Search</button>
-        <span style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
-          {canEdit && <button onClick={() => setCatOpen(true)} style={btnGhost}>+ New category</button>}
+      {/* ── Header (khuôn ShopBase) ── */}
+      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+          <MarketplaceLogo mk="woocommerce" size={34} />
+          <b style={{ fontSize: 19 }}>Manage Products · <span style={{ color: "#7F54B3" }}>WooCommerce</span></b>
+        </span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {canEdit && <button onClick={openNew} style={btnPri}>+ New product</button>}
+          {canEdit && <button onClick={() => setCatOpen(true)} style={btnGhost}>+ New category</button>}
+          <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: 190 }}>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <button onClick={() => { loadProducts(storeId, search, 1, false); loadCats(storeId); }} style={btnBlue}>⟳ Refresh</button>
         </span>
       </div>
 
-      {/* Categories strip */}
-      <div className="panel" style={{ padding: "10px 14px", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <b style={{ fontSize: 12.5, marginRight: 4 }}>Categories:</b>
-        {sortedCats.length ? sortedCats.map((c) => (
-          <span key={c.id} style={{ fontSize: 11.5, fontWeight: 700, background: c.parent ? "#F1F3F8" : "#EEF3FF", border: "1px solid var(--line)", borderRadius: 99, padding: "3px 10px" }}>
-            {catLabel(c)} <span style={{ color: "var(--muted)", fontWeight: 600 }}>({c.count})</span>
-          </span>
-        )) : <span style={{ fontSize: 12, color: "var(--muted)" }}>none yet</span>}
+      {/* ── Search + filter (khuôn ShopBase) ── */}
+      <div className="panel" style={{ padding: "14px 16px", display: "grid", gap: 10 }}>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} onKeyDown={(e) => e.key === "Enter" && doSearch()} placeholder="Search title / SKU" style={inp} />
+        <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 10 }}>
+          <select value={fStatus} onChange={(e) => setFStatus(e.target.value)} style={inp}>
+            <option value="">All status</option>
+            <option value="publish">Publish</option>
+            <option value="draft">Draft</option>
+            <option value="pending">Pending</option>
+          </select>
+          <select value={fCat} onChange={(e) => setFCat(Number(e.target.value))} style={inp}>
+            <option value={0}>All categories</option>
+            {sortedCats.map((c) => <option key={c.id} value={c.id}>{catLabel(c)} ({c.count})</option>)}
+          </select>
+          <div />
+          <button onClick={doSearch} style={btnGhost}>Search</button>
+        </div>
       </div>
 
-      {/* Product grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
-        {products.map((p) => (
-          <div key={p.id} className="panel" style={{ padding: 10, cursor: canEdit ? "pointer" : "default" }} onClick={() => canEdit && openEdit(p)}>
-            <div style={{ aspectRatio: "1", borderRadius: 10, overflow: "hidden", background: "#F1F3F8", marginBottom: 8 }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              {p.thumb ? <img src={p.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
-            </div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, lineHeight: 1.35, height: 50, overflow: "hidden" }}>{p.name}</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-              <b style={{ fontSize: 13.5 }}>${p.price || p.regularPrice || "—"}</b>
-              <span style={{ fontSize: 10.5, fontWeight: 800, padding: "2px 8px", borderRadius: 99, background: p.status === "publish" ? "var(--green-soft)" : "#FFF3D6", color: p.status === "publish" ? "#2E7D46" : "#8A6D1A" }}>{p.status}</span>
-              {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700, color: "var(--blue)" }}>View ↗</a>}
-            </div>
+      {/* ── Table (khuôn ShopBase) ── */}
+      <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
+        <div style={{ padding: "12px 16px 0", fontSize: 13, fontWeight: 800 }}>{shown.length} products{fStatus || fCat ? " (filtered)" : ""}</div>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 860 }}>
+          <thead><tr>
+            <th style={{ ...th, width: 70 }}>Image</th>
+            <th style={th}>Title</th>
+            <th style={{ ...th, width: 170 }}>Store / Seller</th>
+            <th style={{ ...th, width: 190 }}>Categories</th>
+            <th style={{ ...th, width: 110 }}>Price</th>
+            <th style={{ ...th, width: 90 }}>Status</th>
+            <th style={{ ...th, width: 130 }}>Link</th>
+          </tr></thead>
+          <tbody>
+            {shown.map((p) => (
+              <tr key={p.id}>
+                <td style={td}>
+                  <div style={{ width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "#F1F3F8" }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {p.thumb ? <img src={p.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
+                  </div>
+                </td>
+                <td style={td}>
+                  <div onClick={() => canEdit && openEdit(p)} style={{ fontWeight: 700, color: "var(--blue)", cursor: canEdit ? "pointer" : "default", lineHeight: 1.4 }}>{p.name}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.images.length} images{p.sku ? ` · ${p.sku}` : ""} · #{p.id}</div>
+                </td>
+                <td style={td}>
+                  <div style={{ fontWeight: 700 }}>{store?.name ?? "—"}</div>
+                  <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{store?.sellerName ?? "—"}</div>
+                </td>
+                <td style={td}>
+                  <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>{p.categories.map((c) => c.name).join(", ") || "—"}</div>
+                </td>
+                <td style={{ ...td, fontWeight: 800 }}>
+                  {p.salePrice ? <><s style={{ color: "var(--muted)", fontWeight: 600 }}>${p.regularPrice}</s> ${p.salePrice}</> : `$${p.price || p.regularPrice || "—"}`}
+                </td>
+                <td style={td}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 10px", borderRadius: 99, background: p.status === "publish" ? "var(--green-soft)" : "#FFF3D6", color: p.status === "publish" ? "#2E7D46" : "#8A6D1A", textTransform: "uppercase" }}>{p.status === "publish" ? "Active" : p.status}</span>
+                </td>
+                <td style={td}>
+                  <span style={{ display: "inline-flex", gap: 6 }}>
+                    {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" title="View on store" style={{ ...btnGhost, padding: "5px 10px", fontSize: 12, textDecoration: "none" }}>👁</a>}
+                    {canEdit && <button onClick={() => openEdit(p)} title="Edit" style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }}>✎</button>}
+                    {canEdit && <button onClick={() => openDup(p)} title="Duplicate as draft" style={{ ...btnGhost, padding: "5px 10px", fontSize: 12 }}>Dup</button>}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {!shown.length && !busy && <tr><td colSpan={7} style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 30 }}>No products</td></tr>}
+          </tbody>
+        </table>
+        {busy && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: 14 }}>Loading…</div>}
+        {hasMore && !busy && (
+          <div style={{ textAlign: "center", padding: 14 }}>
+            <button onClick={() => { const n = page + 1; setPage(n); loadProducts(storeId, search, n, true); }} style={btnGhost}>Load more</button>
           </div>
-        ))}
+        )}
       </div>
-      {busy && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Loading…</div>}
-      {hasMore && !busy && (
-        <button onClick={() => { const n = page + 1; setPage(n); loadProducts(storeId, search, n, true); }} style={{ ...btnGhost, justifySelf: "center" }}>Load more</button>
-      )}
 
       {/* New category modal */}
       {catOpen && (
@@ -215,7 +277,7 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 }}>
               <button onClick={() => setCatOpen(false)} style={btnGhost}>Cancel</button>
-              <button onClick={addCat} disabled={saving} style={btnPri}>{saving ? "Creating…" : "Create category"}</button>
+              <button onClick={addCat} disabled={saving} style={btnBlue}>{saving ? "Creating…" : "Create category"}</button>
             </div>
           </div>
         </div>
@@ -283,7 +345,7 @@ export default function WooProductsClient({ stores, canEdit }: { stores: StoreOp
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button onClick={() => setForm(null)} disabled={saving} style={btnGhost}>Cancel</button>
-              <button onClick={save} disabled={saving} style={btnPri}>{saving ? "Saving…" : form.id ? "Save changes" : "Create product"}</button>
+              <button onClick={save} disabled={saving} style={btnBlue}>{saving ? "Saving…" : form.id ? "Save changes" : "Create product"}</button>
             </div>
             {!form.id && (
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, lineHeight: 1.5 }}>
