@@ -18,6 +18,15 @@ export function MarketplaceLogo({ mk, size = 22 }: { mk: string; size?: number }
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={hit.src} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, verticalAlign: "middle", borderRadius: round }} />;
   }
+  // WooCommerce: bong bóng tím Woo + chữ "W" (vẽ inline, không cần file ảnh)
+  if (m.includes("woocommerce") || m.includes("woo")) {
+    return (
+      <svg viewBox="0 0 48 48" width={size} height={size} style={{ width: size, height: size, display: "block", flexShrink: 0, verticalAlign: "middle" }}>
+        <rect width="48" height="48" rx="11" fill="#7F54B3" />
+        <text x="24" y="32" textAnchor="middle" fontFamily="Arial, sans-serif" fontWeight="bold" fontSize="22" fill="#fff">W</text>
+      </svg>
+    );
+  }
   // Shopify: túi mua sắm xanh Shopify + chữ "S" (vẽ inline, không cần file ảnh)
   if (m.includes("shopify")) {
     return (

@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
       const live = (c?.c7 ?? 0) > 0;
       const cred = (r.s.apiCredentials ?? {}) as Record<string, string>;
       const SHOPIFY_KEYS = ["shopDomain", "clientId", "clientSecret", "adminToken", "webhookSecret"];
-      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k) && k !== "spapi" && k !== "shopbase");
+      const shownKeys = Object.keys(cred).filter((k) => !k.startsWith("etsy_") && !k.startsWith("tiktok_") && !SHOPIFY_KEYS.includes(k) && k !== "spapi" && k !== "shopbase" && k !== "woocommerce");
       return {
         ...r.s,
         memberIds: memMap.get(r.s.id) ?? [],
@@ -114,6 +114,15 @@ export async function GET(req: NextRequest) {
             subdomain: sb.subdomain || "",
             hasApp: !!(sb.subdomain && sb.apiKey && sb.password),
             lastSyncAt: sb.lastSyncAt || null,
+          };
+        })(),
+        // WooCommerce (REST API key) — cấu hình lưu ở cred.woocommerce. Chỉ trả field không bí mật.
+        woocommerce: (() => {
+          const wc = ((cred as Record<string, unknown>).woocommerce ?? {}) as Record<string, string>;
+          return {
+            storeUrl: wc.storeUrl || "",
+            hasKeys: !!(wc.storeUrl && wc.consumerKey && wc.consumerSecret),
+            lastSyncAt: wc.lastSyncAt || null,
           };
         })(),
         sellerName: r.sellerName,

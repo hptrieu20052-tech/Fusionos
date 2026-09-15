@@ -9,6 +9,7 @@ import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
 import { pushTiktokTrackingForOrder } from "@/lib/tiktok-tracking";
 import { pushShopifyTrackingForOrder } from "@/lib/shopify";
 import { shopbaseConfigured, fetchShopBaseOrders, normalizeShopBaseOrder, touchShopBaseSync, type ShopBaseCred } from "@/lib/shopbase";
+import { wooConfigured, fetchWooOrders, normalizeWooOrder, touchWooSync, type WooCred } from "@/lib/woocommerce";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
@@ -105,6 +106,28 @@ async function tick(req: NextRequest) {
       shopbase.push({ store: st.name, ok: true, received: orders.length, created: r.created, updated: r.updated, skipped: r.skipped });
     } catch (e) {
       shopbase.push({ store: st.name, ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) });
+    }
+  }
+
+  // ---- 1b3. WooCommerce: kéo đơn mới cho MỌI store đã cấu hình (v496) ----
+  // Cùng khuôn ShopBase: cửa sổ từ lastSyncAt - 1 ngày (overlap bắt đơn sửa), chưa sync thì 60 ngày.
+  // Dedup theo (woocommerce, external_id). Store chưa cấu hình → bỏ qua êm.
+  const woocommerce: { store: string; ok: boolean; received?: number; created?: number; updated?: number; skipped?: number; error?: string }[] = [];
+  for (const st of stores) {
+    const cred = (((st.c ?? {}) as Record<string, unknown>).woocommerce ?? null) as WooCred | null;
+    if (!wooConfigured(cred)) continue;
+    if (Date.now() > deadline) { woocommerce.push({ store: st.name, ok: false, error: "skipped (time budget)" }); continue; }
+    try {
+      const base = cred!.lastSyncAt ? new Date(cred!.lastSyncAt).getTime() - 86400_000 : Date.now() - 60 * 86400_000;
+      const raw = await fetchWooOrders(cred!, { after: new Date(base).toISOString(), maxPages: 4 });
+      const orders = raw.map(normalizeWooOrder).filter((o) => o.externalId);
+      const r = orders.length
+        ? await insertEtsyOrders({ id: st.id, sellerId: st.sellerId, fx: st.fx, name: st.name }, orders, "api", "woocommerce")
+        : { created: 0, updated: 0, skipped: 0, errors: [] as string[] };
+      await touchWooSync(st.id);
+      woocommerce.push({ store: st.name, ok: true, received: orders.length, created: r.created, updated: r.updated, skipped: r.skipped });
+    } catch (e) {
+      woocommerce.push({ store: st.name, ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) });
     }
   }
 
@@ -232,7 +255,7 @@ async function tick(req: NextRequest) {
   }
   const { printway, printify, onosWem, supportMail } = results;
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, shopbase, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem, supportMail };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, shopbase, woocommerce, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem, supportMail };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }

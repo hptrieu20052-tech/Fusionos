@@ -19,15 +19,16 @@ type Store = {
   tiktok?: { hasApp: boolean; appKey: string; authLink: string; connected: boolean; shopId: string; shopName: string };
   shopify?: { shopDomain: string; hasApp: boolean; clientId: string };
   shopbase?: { subdomain: string; hasApp: boolean; lastSyncAt: string | null };
+  woocommerce?: { storeUrl: string; hasKeys: boolean; lastSyncAt: string | null };
   amazon?: { region: string; marketplaceId: string; sellerId: string; lwaClientId: string; hasSecret: boolean; hasRefresh: boolean; configured: boolean; lastSyncAt: string | null };
 };
 type Opt = { id: string; name: string };
 
-const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["shopify", "Shopify"], ["shopbase", "ShopBase"], ["other", "Other"]];
+const MKS: [string, string][] = [["tiktok", "TikTok Shop"], ["amazon", "Amazon"], ["etsy", "Etsy"], ["shopify", "Shopify"], ["shopbase", "ShopBase"], ["woocommerce", "WooCommerce"], ["other", "Other"]];
 const CONNECT: [string, string][] = [["extension", "Chrome Extension"], ["api", "API"], ["excel", "Excel Import"]];
 const CURRENCIES: [string, string][] = [["USD", "USD ($)"], ["VND", "VND (₫)"], ["EUR", "EUR (€)"], ["GBP", "GBP (£)"], ["AUD", "AUD"], ["CAD", "CAD"], ["JPY", "JPY (¥)"]];
 const FX_DEFAULT: Record<string, number> = { VND: 25400, EUR: 0.92, GBP: 0.79, AUD: 1.5, CAD: 1.36, JPY: 157 };
-const MK_COLOR: Record<string, string> = { tiktok: "#25242A", amazon: "#FF9900", etsy: "#F1641E", shopify: "#5E8E3E", shopbase: "#2F6BFF", other: "#66788E" };
+const MK_COLOR: Record<string, string> = { tiktok: "#25242A", amazon: "#FF9900", etsy: "#F1641E", shopify: "#5E8E3E", shopbase: "#2F6BFF", woocommerce: "#7F54B3", other: "#66788E" };
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 // Field credentials theo từng sàn
 const CRED_FIELDS: Record<string, [string, string][]> = {
@@ -211,7 +212,7 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
     <Modal title={t("st.addStoreNew")} close={close}>
       <L label={t("st.storeName")}><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="VD: gymwear.us" style={inp} /></L>
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => { const mk = e.target.value; setF({ ...f, marketplace: mk, connectMethod: (mk === "shopify" || mk === "shopbase") ? "api" : f.connectMethod }); }} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
+        <L label={t("st.marketplace")}><select value={f.marketplace} onChange={(e) => { const mk = e.target.value; setF({ ...f, marketplace: mk, connectMethod: (mk === "shopify" || mk === "shopbase" || mk === "woocommerce") ? "api" : f.connectMethod }); }} style={inp}>{MKS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></L>
       </div>
       {!isSeller && <L label={t("st.seller")}><select value={f.sellerId} onChange={(e) => setF({ ...f, sellerId: e.target.value })} style={inp}><option value="">—</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></L>}
       <L label={t("st.linkShop")}><input value={f.storeUrl} onChange={(e) => setF({ ...f, storeUrl: e.target.value })} placeholder="https://shop.tiktok.com/@yourshop" style={inp} /></L>
@@ -230,6 +231,11 @@ function AddStoreModal({ sellers, isSeller, close, reload, flash }: { sellers: O
       {f.marketplace === "shopbase" && (
         <div style={{ fontSize: 12, color: "var(--muted)", background: "#EEF3FF", border: "1px solid #CBD9FF", borderRadius: 10, padding: "8px 12px", margin: "2px 0 4px", lineHeight: 1.55 }}>
           Create the store first, then open its <b>Settings</b> to enter the ShopBase <b>Subdomain</b> ({"{store}"}.onshopbase.com), private-app <b>API key</b> and <b>Password</b>, check the connection, then <b>Sync orders</b>. Orders flow into the same stats as Shopify.
+        </div>
+      )}
+      {f.marketplace === "woocommerce" && (
+        <div style={{ fontSize: 12, color: "var(--muted)", background: "#F4EFFB", border: "1px solid #DCCDF2", borderRadius: 10, padding: "8px 12px", margin: "2px 0 4px", lineHeight: 1.55 }}>
+          Create the store first, then open its <b>Settings</b> to enter the <b>Store URL</b> and a WooCommerce REST API <b>Consumer key/secret</b> (WooCommerce → Settings → Advanced → REST API → Add key, permission <b>Read</b>), check the connection, then <b>Sync orders</b>. Orders also auto-sync every cron tick.
         </div>
       )}
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -392,6 +398,37 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     setSbBusy(false);
     if (j.ok) { setSbCheck({ ok: true, text: `Synced ${j.fetched ?? 0} fetched · ${j.created ?? 0} new · ${j.updated ?? 0} updated` }); flash(`✓ ShopBase orders synced (${j.created ?? 0} new)`); reload(); }
     else { setSbCheck({ ok: false, text: j.error ?? "Error" }); flash("✗ " + (j.error ?? "Error")); }
+  };
+
+  // ===== WooCommerce (REST API key). Config lưu ở store.api_credentials.woocommerce =====
+  const [wcUrl, setWcUrl] = useState(store.woocommerce?.storeUrl ?? "");
+  const [wcKey, setWcKey] = useState("");
+  const [wcSecret, setWcSecret] = useState("");
+  const [wcBusy, setWcBusy] = useState(false);
+  const [wcSaved, setWcSaved] = useState(store.woocommerce?.hasKeys ?? false);
+  const [wcCheck, setWcCheck] = useState<{ ok: boolean; text: string } | null>(null);
+  const saveWoo = async () => {
+    if (!wcUrl.trim() || (!wcKey.trim() && !store.woocommerce?.hasKeys) || (!wcSecret.trim() && !store.woocommerce?.hasKeys)) {
+      flash("✗ Enter Store URL + Consumer key + Consumer secret"); return;
+    }
+    setWcBusy(true);
+    const j = await fetch("/api/woocommerce/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id, storeUrl: wcUrl.trim(), consumerKey: wcKey.trim(), consumerSecret: wcSecret.trim() }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setWcBusy(false);
+    if (j.ok) { flash("✓ WooCommerce saved — now Check connection"); setWcSaved(true); setWcKey(""); setWcSecret(""); reload(); } else flash("✗ " + (j.error ?? "Error"));
+  };
+  const checkWoo = async () => {
+    setWcBusy(true); setWcCheck(null);
+    const j = await fetch("/api/woocommerce/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setWcBusy(false);
+    if (j.ok) { setWcCheck({ ok: true, text: `${j.shopName || "site"} · ${j.domain || ""}` }); flash("✓ Connected: " + (j.shopName || j.domain)); }
+    else { setWcCheck({ ok: false, text: j.error ?? "Error" }); flash("✗ " + (j.error ?? "Error")); }
+  };
+  const syncWoo = async () => {
+    setWcBusy(true);
+    const j = await fetch("/api/woocommerce/sync-orders", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId: store.id }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setWcBusy(false);
+    if (j.ok) { setWcCheck({ ok: true, text: `Synced ${j.fetched ?? 0} fetched · ${j.created ?? 0} new · ${j.updated ?? 0} updated` }); flash(`✓ WooCommerce orders synced (${j.created ?? 0} new)`); reload(); }
+    else { setWcCheck({ ok: false, text: j.error ?? "Error" }); flash("✗ " + (j.error ?? "Error")); }
   };
 
   // ===== Amazon SP-API (LWA — không cần AWS IAM/SigV4). Config lưu ở store.api_credentials.spapi =====
@@ -666,6 +703,40 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
           </div>
           <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
             Flow: <b>Save</b> → <b>Check connection</b> → <b>Sync orders</b>. Orders land in the same tables as Shopify, so Product Sales &amp; Video performance include ShopBase automatically. Secrets are stored server-side — leave blank to keep the saved value.
+          </div>
+        </div>
+      )}
+
+      {store.marketplace === "woocommerce" && (
+        <div style={{ border: "1px solid #DCCDF2", background: "#F4EFFB", borderRadius: 12, padding: "12px 14px", marginTop: 8 }}>
+          <b style={{ fontSize: 13.5, display: "inline-flex", alignItems: "center", gap: 6 }}><IconKey width={15} height={15} /> WooCommerce REST API</b>
+          <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "4px 0 10px", lineHeight: 1.5 }}>
+            In WordPress admin → <b>WooCommerce → Settings → Advanced → REST API → Add key</b>, permission <b>Read</b>, then copy the <b>Consumer key + secret</b> here.
+          </div>
+          <L label="Store URL (e.g. https://sorawix.com)">
+            <input value={wcUrl} onChange={(e) => setWcUrl(e.target.value)} placeholder="https://sorawix.com" style={inp} autoComplete="off" data-lpignore="true" data-1p-ignore />
+          </L>
+          <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <L label="Consumer key"><input value={wcKey} onChange={(e) => setWcKey(e.target.value)} placeholder={store.woocommerce?.hasKeys ? "••• (saved, leave blank to keep)" : "ck_…"} style={inp} autoComplete="off" data-lpignore="true" data-1p-ignore /></L>
+            <L label="Consumer secret"><input type="password" value={wcSecret} onChange={(e) => setWcSecret(e.target.value)} placeholder={store.woocommerce?.hasKeys ? "••• (saved, blank = keep)" : "cs_…"} style={inp} autoComplete="new-password" data-lpignore="true" data-1p-ignore data-form-type="other" /></L>
+          </div>
+          {wcCheck && (
+            <div style={{ fontSize: 12, padding: "7px 11px", borderRadius: 9, margin: "2px 0 8px", background: wcCheck.ok ? "var(--green-soft)" : "var(--red-soft)", color: wcCheck.ok ? "#2E7D46" : "var(--red)", fontWeight: 600 }}>
+              {wcCheck.ok ? "✓ " : "✗ "}{wcCheck.text}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+            <button onClick={saveWoo} disabled={wcBusy} style={{ ...btnGhost, fontSize: 12.5 }}>Save</button>
+            <button onClick={checkWoo} disabled={wcBusy || !(store.woocommerce?.hasKeys || wcSaved)} style={{ background: "var(--blue)", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.woocommerce?.hasKeys || wcSaved) ? "pointer" : "default", opacity: (store.woocommerce?.hasKeys || wcSaved) ? 1 : 0.5 }}>Check connection</button>
+            <button onClick={syncWoo} disabled={wcBusy || !(store.woocommerce?.hasKeys || wcSaved)} style={{ background: "#7F54B3", color: "#fff", border: 0, borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 12.5, cursor: (store.woocommerce?.hasKeys || wcSaved) ? "pointer" : "default", opacity: (store.woocommerce?.hasKeys || wcSaved) ? 1 : 0.5 }}>Sync orders</button>
+            <span style={{ marginLeft: "auto", fontSize: 11.5, fontWeight: 700 }}>
+              {(store.woocommerce?.hasKeys || wcSaved)
+                ? <span style={{ color: "#2E7D46" }}><IconKey width={11} height={11} style={{ verticalAlign: "-1px" }} /> Configured{store.woocommerce?.lastSyncAt ? " · synced " + new Date(store.woocommerce.lastSyncAt).toLocaleDateString() : ""}</span>
+                : <span style={{ color: "var(--muted)" }}>Not configured</span>}
+            </span>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
+            Flow: <b>Save</b> → <b>Check connection</b> → <b>Sync orders</b>. After that the cron pulls new orders automatically every tick — no manual sync needed. Personalization the buyer enters (names, photo links) lands in each order line. Secrets are stored server-side — leave blank to keep the saved value.
           </div>
         </div>
       )}

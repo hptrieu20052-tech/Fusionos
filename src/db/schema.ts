@@ -7,7 +7,8 @@ import { sql } from "drizzle-orm";
 // ---------- ENUMS ----------
 export const roleEnum = pgEnum("user_role", ["admin", "seller", "designer", "support", "content", "hiring"]);
 export const userStatusEnum = pgEnum("user_status", ["active", "pending", "leave", "disabled"]);
-export const marketplaceEnum = pgEnum("marketplace", ["tiktok", "amazon", "etsy", "shopify", "shopbase", "other"]);
+// v496 · thêm "woocommerce" — cần chạy MIGRATION_v496_woocommerce.sql (ALTER TYPE ADD VALUE) trước khi dùng.
+export const marketplaceEnum = pgEnum("marketplace", ["tiktok", "amazon", "etsy", "shopify", "shopbase", "woocommerce", "other"]);
 export const connectMethodEnum = pgEnum("connect_method", ["api", "extension", "excel"]);
 export const storeStatusEnum = pgEnum("store_status", ["active", "warning", "suspended", "pending"]);
 export const orderStatusEnum = pgEnum("order_status", [

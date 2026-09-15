@@ -1,0 +1,327 @@
+[
+    {
+        "styles": "Comfort Colors Tee",
+        "image": "",
+        "sizes": [
+            "S-24.99",
+            "M-24.99",
+            "L-24.99",
+            "XL-24.99",
+            "2XL-26.99",
+            "3XL-28.99",
+            "4XL-30.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    },
+    {
+        "styles": "Gildan Unisex Tee",
+        "image": "",
+        "sizes": [
+            "S-18.99",
+            "M-18.99",
+            "L-18.99",
+            "XL-18.99",
+            "2XL-20.99",
+            "3XL-22.99",
+            "4XL-24.99",
+            "5XL-27.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    },
+    {
+        "styles": "Sweatshirt",
+        "image": "/wp-content/uploads/mockups/Unisex-Sweatshirt-min.jpeg",
+        "sizes": [
+            "S-31.99",
+            "M-31.99",
+            "L-31.99",
+            "XL-31.99",
+            "2XL-33.99",
+            "3XL-35.99",
+            "4XL-37.99",
+            "5XL-40.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    },
+    {
+        "styles": "Hoodie",
+        "image": "/wp-content/uploads/mockups/Unisex-Hoodie-min.jpeg",
+        "sizes": [
+            "S-34.99",
+            "M-35.99",
+            "L-36.99",
+            "XL-37.99",
+            "2XL-37.99",
+            "3XL-38.99",
+            "4XL-38.99",
+            "5XL-39.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    },
+    {
+        "styles": "Long Sleeve Tee",
+        "image": "",
+        "sizes": [
+            "S-29.99",
+            "M-29.99",
+            "L-29.99",
+            "XL-29.99",
+            "2XL-31.99",
+            "3XL-33.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    },
+    {
+        "styles": "Youth TShirt",
+        "image": "",
+        "sizes": [
+            "XS-17.99",
+            "S-17.99",
+            "M-17.99",
+            "L-17.99",
+            "XL-17.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    },
+    {
+        "styles": "Toddler TShirt",
+        "image": "",
+        "sizes": [
+            "2T-16.99",
+            "3T-16.99",
+            "4T-16.99",
+            "5/6T-16.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    },
+    {
+        "styles": "Baby Onesie",
+        "image": "",
+        "sizes": [
+            "0-3M-16.99",
+            "6M-16.99",
+            "12M-16.99",
+            "18M-16.99",
+            "24M-16.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    },
+    {
+        "styles": "Youth Sweatshirt",
+        "image": "",
+        "sizes": [
+            "S-26.99",
+            "M-26.99",
+            "L-26.99",
+            "XL-26.99"
+        ],
+        "colors": [
+            "Ivory/Natural/Sand|#EDE6D6",
+            "Pepper/Charcoal|#4A4A48",
+            "Moss/Military Green|#7D8F69",
+            "Blue Spruce/Forest|#2F5D50",
+            "Chambray/Light Blue|#BDD6E6",
+            "Blossom/Light Pink|#F4C2C9",
+            "Brick/Maroon|#8E3B34",
+            "Yam/Orange|#C36F4E",
+            "Blue Jean/Indigo|#7A94AD",
+            "Dark Heather|#5C6278",
+            "Black|#000000",
+            "White|#ffffff",
+            "Red|#cc0000",
+            "Navy|#0f142a",
+            "Orchid|#B784C7",
+            "Ash|#B2BEB5",
+            "Sport Grey|#97999B",
+            "Other Colors/Note me|#D9D9D9"
+        ],
+        "designs": [
+            "front",
+            "back"
+        ]
+    }
+]
