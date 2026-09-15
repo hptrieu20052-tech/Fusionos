@@ -162,11 +162,6 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
         </span>
       </div>
 
-      <div className="panel" style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, padding: "12px 16px" }}>
-        Product types are the <b>styles</b> the store&apos;s picker shows (T-shirt, Hoodie, Pajama Set, Calendar, Book…), each with its own sizes + prices and colors.
-        Changes here write straight to the store&apos;s plugin (with automatic backups). When listing a product in <b>Manage Products</b>, pick which types that product sells — the product page then shows only those.
-      </div>
-
       {typesNeedSql && (
         <div className="panel" style={{ background: "#FFF3D6", border: "1px solid #EAD28A", padding: "12px 16px", fontSize: 13, lineHeight: 1.6 }}>
           Seller-created product types are off until the admin runs <b>MIGRATION_v512_woo_type_owners.sql</b> on Supabase — for now this page is read-only for sellers.

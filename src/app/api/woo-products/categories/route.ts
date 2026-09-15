@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
@@ -122,6 +122,57 @@ export async function POST(req: NextRequest) {
       catch { warn = "Category created as SHARED — run MIGRATION_v513_woo_category_owners.sql on Supabase to enable seller-private categories."; }
     }
     return NextResponse.json({ ok: true, category: { id: cid, name: deent(strv(c.name)), parent: Number(c.parent) || 0, count: 0, slug: strv(c.slug) }, ...(warn ? { warn } : {}) });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
+  }
+}
+
+/** v518 · Quyền sửa/xoá 1 category: admin = mọi category; seller = CHỈ category mình tạo. */
+async function catGuard(ctx: StoreCtx, sub: string, cid: number): Promise<string | null> {
+  if (!ctx.scoped) return null;
+  const owners = await catOwners(ctx.id);
+  if (!owners) return "Run MIGRATION_v513_woo_category_owners.sql on Supabase first.";
+  if (owners.get(cid) !== sub) return "This category isn't yours — only your own categories can be changed.";
+  return null;
+}
+
+/** v518 · PUT { storeId, id, name } — đổi tên category. */
+export async function PUT(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  if ((await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const b = await req.json().catch(() => null);
+  const ctx = await wooCred(session, String(b?.storeId ?? ""));
+  if ("error" in ctx) return NextResponse.json({ ok: false, error: ctx.error }, { status: ctx.status });
+  const cid = Number(b?.id) || 0;
+  const name = strv(b?.name).slice(0, 120);
+  if (!cid || !name) return NextResponse.json({ ok: false, error: "id + name required" }, { status: 400 });
+  const err = await catGuard(ctx, session.sub, cid);
+  if (err) return NextResponse.json({ ok: false, error: err }, { status: 403 });
+  try {
+    await wooApi(ctx.cred, `products/categories/${cid}`, { method: "PUT", body: JSON.stringify({ name }) });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
+  }
+}
+
+/** v518 · DELETE ?storeId=&id= — xoá category (sản phẩm KHÔNG bị xoá, chỉ rời khỏi category). */
+export async function DELETE(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  if ((await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const ctx = await wooCred(session, String(req.nextUrl.searchParams.get("storeId") ?? ""));
+  if ("error" in ctx) return NextResponse.json({ ok: false, error: ctx.error }, { status: ctx.status });
+  const cid = Number(req.nextUrl.searchParams.get("id")) || 0;
+  if (!cid) return NextResponse.json({ ok: false, error: "missing id" }, { status: 400 });
+  const err = await catGuard(ctx, session.sub, cid);
+  if (err) return NextResponse.json({ ok: false, error: err }, { status: 403 });
+  try {
+    // Woo bắt buộc force=true với taxonomy (không có trash cho category).
+    await wooApi(ctx.cred, `products/categories/${cid}?force=true`, { method: "DELETE" });
+    try { await db.delete(schema.wooCategoryOwners).where(and(eq(schema.wooCategoryOwners.storeId, ctx.id), eq(schema.wooCategoryOwners.categoryId, cid))); } catch { /* bảng chưa migrate */ }
+    return NextResponse.json({ ok: true });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }

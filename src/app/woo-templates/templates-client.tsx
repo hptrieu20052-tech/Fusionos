@@ -173,8 +173,8 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
               <div style={{ gridColumn: "1 / -1" }}>
                 <L label="Title pattern (pre-fills the product title)"><input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Personalized … Wall Calendar 2027, …" style={inp} /></L>
               </div>
-              <L label="Price ($)"><input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="24.99" style={inp} /></L>
-              <L label="Sale price ($ — optional)"><input value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} style={inp} /></L>
+              <L label="Price ($ — nên = giá size thấp nhất của type)"><input value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="24.99" style={inp} /></L>
+              <div />
               <div style={{ gridColumn: "1 / -1" }}>
                 <L label="Description (HTML allowed — leave empty to write per product)">
                   <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={7} style={{ ...inp, resize: "vertical", fontFamily: "inherit" }} />
@@ -199,7 +199,7 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
                 </div>
               )}
               <div style={{ gridColumn: "1 / -1" }}>
-                <L label="Categories">
+                <L label="Categories (public collections — sellers can't see or pick these; applied automatically when they use this template)">
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                     {sortedCats.map((c) => {
                       const on = form.categoryIds.includes(c.id);
@@ -214,16 +214,10 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
                   </div>
                 </L>
               </div>
-              <div style={{ gridColumn: "1 / -1" }}>
-                <L label="Tags (comma separated)"><input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="wall calendar, 2027, gift" style={inp} /></L>
-              </div>
             </div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button onClick={() => setForm(null)} disabled={saving} style={btnGhost}>Cancel</button>
               <button onClick={save} disabled={saving} style={btnBlue}>{saving ? "Saving…" : form.id ? "Save changes" : "Create template"}</button>
-            </div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, lineHeight: 1.5 }}>
-              Variants (size/màu/giá theo size) do <b>Product Types</b> + plugin trên store quản — template chỉ cần chọn đúng type, không nhập lại bảng size như ShopBase.
             </div>
           </div>
         </div>

@@ -279,3 +279,34 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }
 }
+
+/**
+ * v518 · DELETE ?storeId=&ids=1,2,3 — chuyển sản phẩm vào THÙNG RÁC WordPress (không xoá vĩnh viễn,
+ * khôi phục được trong WP admin → Products → Trash). Tối đa 20 id/lần. Seller scoped: chỉ đồ mình tạo.
+ */
+export async function DELETE(req: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  if ((await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  const q = req.nextUrl.searchParams;
+  const st = await wooStore(session, String(q.get("storeId") ?? ""));
+  if ("error" in st) return NextResponse.json({ ok: false, error: st.error }, { status: st.status });
+  let ids = String(q.get("ids") ?? "").split(",").map((x) => Number(x)).filter((n) => n > 0).slice(0, 20);
+  if (!ids.length) return NextResponse.json({ ok: false, error: "no products selected" }, { status: 400 });
+  if (st.scoped) {
+    try {
+      const owners = await db.select().from(schema.wooProductOwners)
+        .where(and(eq(schema.wooProductOwners.storeId, st.id), inArray(schema.wooProductOwners.productId, ids)));
+      const mine = new Set(owners.filter((o) => o.createdBy === session.sub).map((o) => o.productId));
+      ids = ids.filter((id) => mine.has(id));
+      if (!ids.length) return NextResponse.json({ ok: false, error: "None of the selected products were created by you." }, { status: 403 });
+    } catch { /* chưa migrate → giữ hành vi cũ */ }
+  }
+  let deleted = 0;
+  const errors: string[] = [];
+  for (const id of ids) {
+    try { await wooApi(st.cred, `products/${id}`, { method: "DELETE" }); deleted++; } // không force → vào Trash
+    catch (e) { errors.push(`#${id}: ${String((e as Error)?.message ?? e).slice(0, 80)}`); }
+  }
+  return NextResponse.json({ ok: deleted > 0 || !errors.length, deleted, errors: errors.slice(0, 5) });
+}
