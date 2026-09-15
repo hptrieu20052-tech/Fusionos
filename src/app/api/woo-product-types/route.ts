@@ -193,7 +193,8 @@ export async function POST(req: NextRequest) {
       }
     }
     // 2) Xoá: style admin bắt buộc còn nguyên trong danh sách gửi lên.
-    for (const [key, curS] of curByName) {
+    // (Array.from vì tsconfig target thấp — for..of trực tiếp trên Map không build được trên Vercel)
+    for (const [key, curS] of Array.from(curByName.entries())) {
       if (ownerOf(key) == null && !subByName.has(key)) {
         return NextResponse.json({ ok: false, error: `"${strv(curS.styles)}" is an admin product type — only admins can delete it.` }, { status: 403 });
       }
