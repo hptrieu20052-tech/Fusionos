@@ -388,7 +388,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                         </div>
                       </td>
                       <td style={{ padding: "9px 6px", borderBottom: "1px solid var(--line)", textAlign: "right", whiteSpace: "nowrap" }}>
-                        {canEdit && <button onClick={() => { setTplOpen(false); setForm({ id: 0, name: t.title ?? "", description: t.description ?? "", regularPrice: t.price ?? "", salePrice: t.salePrice ?? "", sku: "", status: t.status === "draft" ? "draft" : "publish", categoryIds: [...t.categoryIds], tags: t.tags ?? "", images: [], tplId: t.id }); }} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>New product</button>}
+                        {canEdit && <button onClick={() => { setTplOpen(false); setForm({ id: 0, name: t.title ?? "", description: t.description ?? "", regularPrice: t.price ?? "", salePrice: t.salePrice ?? "", sku: "", status: t.status === "draft" ? "draft" : "publish", categoryIds: [...t.categoryIds], tags: t.tags ?? "", images: [], tplId: t.id, wcpStyles: [] }); }} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>New product</button>}
                         {canEdit && <button onClick={() => delTpl(t.id)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, marginLeft: 6, color: "var(--red)" }}>Delete</button>}
                       </td>
                     </tr>
