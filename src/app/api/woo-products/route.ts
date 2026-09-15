@@ -161,6 +161,29 @@ function wooBody(p: InProduct): Record<string, unknown> {
   return body;
 }
 
+/**
+ * v524 · WP tự gán CATEGORY MẶC ĐỊNH (đang là Best Seller) cho mọi sản phẩm về 0 category —
+ * đó là lý do "gỡ Best Seller báo Saved mà không mất". Fix tận gốc: KHÔNG BAO GIỜ gửi
+ * categories rỗng — khi rỗng, gán category "Uncategorized" (tự tạo nếu store chưa có;
+ * FUSION đang ẩn slug này ở mọi nơi nên coi như không category).
+ */
+async function fallbackCatId(cred: WooCred): Promise<number | null> {
+  try {
+    const found = (await wooApi(cred, "products/categories?slug=uncategorized")) as Record<string, unknown>[];
+    if (Array.isArray(found) && found[0] && Number(found[0].id) > 0) return Number(found[0].id);
+    const made = (await wooApi(cred, "products/categories", { method: "POST", body: JSON.stringify({ name: "Uncategorized", slug: "uncategorized" }) })) as Record<string, unknown>;
+    return Number(made?.id) > 0 ? Number(made.id) : null;
+  } catch { return null; }
+}
+/** Áp fallback vào body trước khi gửi Woo. */
+async function guardEmptyCategories(cred: WooCred, body: Record<string, unknown>): Promise<void> {
+  if (Array.isArray(body.categories) && body.categories.length === 0) {
+    const fid = await fallbackCatId(cred);
+    if (fid) body.categories = [{ id: fid }];
+    else delete body.categories; // không tạo được → thà giữ nguyên category cũ còn hơn để WP gán default
+  }
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
@@ -173,7 +196,9 @@ export async function POST(req: NextRequest) {
   const p = (b?.product ?? {}) as InProduct;
   if (!strv(p.name)) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
   try {
-    const created = (await wooApi(st.cred, "products", { method: "POST", body: JSON.stringify(wooBody(p)) })) as Record<string, unknown>;
+    const createBody = wooBody(p);
+    await guardEmptyCategories(st.cred, createBody);
+    const created = (await wooApi(st.cred, "products", { method: "POST", body: JSON.stringify(createBody) })) as Record<string, unknown>;
     const slim = slimProduct(created);
     // v503 · ghi chủ sở hữu — nền tảng cho "của ai người đó thấy" trong store share.
     const tplId = /^[0-9a-f-]{36}$/i.test(String(b?.templateId ?? "")) ? String(b.templateId) : null;
@@ -204,7 +229,9 @@ export async function PUT(req: NextRequest) {
     } catch { /* chưa migrate → giữ hành vi cũ */ }
   }
   try {
-    const updated = (await wooApi(st.cred, `products/${productId}`, { method: "PUT", body: JSON.stringify(wooBody((b?.product ?? {}) as InProduct)) })) as Record<string, unknown>;
+    const updateBody = wooBody((b?.product ?? {}) as InProduct);
+    await guardEmptyCategories(st.cred, updateBody);
+    const updated = (await wooApi(st.cred, `products/${productId}`, { method: "PUT", body: JSON.stringify(updateBody) })) as Record<string, unknown>;
     return NextResponse.json({ ok: true, product: slimProduct(updated) });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
