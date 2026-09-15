@@ -1,5 +1,5 @@
 import {
-  pgTable, pgEnum, primaryKey, uuid, text, integer, bigint, boolean, numeric,
+  pgTable, pgEnum, uuid, text, integer, bigint, boolean, numeric,
   timestamp, date, jsonb, serial, uniqueIndex, index,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
