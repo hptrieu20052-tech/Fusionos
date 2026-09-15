@@ -462,6 +462,7 @@ export const wooProductOwners = pgTable("woo_product_owners", {
   storeId: uuid("store_id").notNull(),
   productId: bigint("product_id", { mode: "number" }).notNull(),
   createdBy: uuid("created_by"),
+  templateId: uuid("template_id"),   // v504 · template dùng khi tạo (lọc theo template)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   primaryKey({ columns: [t.storeId, t.productId] }),

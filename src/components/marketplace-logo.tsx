@@ -1,4 +1,5 @@
 import { SHOPBASE_LOGO_SRC } from "@/components/shopbase-logo";
+import { WOO_LOGO_SRC } from "@/components/woo-logo";
 
 // Logo sàn TMĐT (ảnh thật). Không khớp → icon shop chung.
 // LƯU Ý: khớp "shopbase" TRƯỚC "shopify" vì "shopbase".includes("shop") — nhưng ta match cả cụm nên an toàn.
@@ -7,7 +8,7 @@ const MK_LOGOS: { match: (m: string) => boolean; src: string }[] = [
   { match: (m) => m.includes("amazon"), src: "/marketplaces/amazon.png" },
   { match: (m) => m.includes("etsy"), src: "/marketplaces/etsy.png" },
   { match: (m) => m.includes("shopbase"), src: SHOPBASE_LOGO_SRC }, // logo chính thức ShopBase (inline)
-  { match: (m) => m.includes("woocommerce") || m === "woo", src: "/marketplaces/woocommerce.png" }, // logo chính thức Woo — tải từ woocommerce.com/brand-assets, lưu public/marketplaces/woocommerce.png
+  { match: (m) => m.includes("woocommerce") || m === "woo", src: WOO_LOGO_SRC }, // v504 · logo Woo nhúng (data URI) — không cần file public/
   { match: (m) => m.includes("shopify"), src: "/marketplaces/shopify.png" }, // logo gốc Shopify
 ];
 
@@ -15,7 +16,7 @@ export function MarketplaceLogo({ mk, size = 22 }: { mk: string; size?: number }
   const m = (mk ?? "").toLowerCase();
   const hit = MK_LOGOS.find((l) => l.match(m));
   if (hit) {
-    const round = hit.src === SHOPBASE_LOGO_SRC ? size * 0.22 : 0;
+    const round = (hit.src === SHOPBASE_LOGO_SRC || hit.src === WOO_LOGO_SRC) ? size * 0.22 : 0;
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={hit.src} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, verticalAlign: "middle", borderRadius: round }} />;
   }

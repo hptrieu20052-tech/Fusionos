@@ -86,22 +86,42 @@ export async function GET(req: NextRequest) {
     if (search) qs.set("search", search);
     const catId = String(q.get("category") ?? "").replace(/\D/g, "");
     if (catId) qs.set("category", catId);
+    // v504 · lọc theo SELLER (người tạo) / TEMPLATE: tra bảng woo_product_owners → Woo `include=ids`.
+    const fSeller = String(q.get("seller") ?? "");
+    const fTemplate = String(q.get("template") ?? "");
+    if (/^[0-9a-f-]{36}$/i.test(fSeller) || /^[0-9a-f-]{36}$/i.test(fTemplate)) {
+      try {
+        const conds = [eq(schema.wooProductOwners.storeId, st.id)];
+        if (/^[0-9a-f-]{36}$/i.test(fSeller)) conds.push(eq(schema.wooProductOwners.createdBy, fSeller));
+        if (/^[0-9a-f-]{36}$/i.test(fTemplate)) conds.push(eq(schema.wooProductOwners.templateId, fTemplate));
+        const rows = await db.select({ pid: schema.wooProductOwners.productId }).from(schema.wooProductOwners).where(and(...conds));
+        const ids = rows.map((x) => x.pid).slice(0, 100);
+        if (!ids.length) return NextResponse.json({ ok: true, products: [], total: 0, totalPages: 1, page: 1 });
+        qs.set("include", ids.join(","));
+      } catch { /* chưa migrate → bỏ qua filter */ }
+    }
     const r = await wooApiFull(st.cred, `products?${qs}`);
     const list = (Array.isArray(r.data) ? r.data : []) as Record<string, unknown>[];
-    let products = list.map(slimProduct).map((p) => ({ ...p, editable: true }));
-    // v503 · "Của ai người đó thấy" (mirror v459 ShopBase): seller trong store share chỉ thấy
-    // sản phẩm MÌNH tạo qua FUSION + sản phẩm của admin/import (thấy, không sửa). Owner lấy từ
-    // bảng woo_product_owners; không có dòng = coi như admin tạo/sync.
-    if (st.scoped && products.length) {
+    let products = list.map(slimProduct).map((p) => ({ ...p, editable: true, creator: "" }));
+    // v503 · "Của ai người đó thấy" (mirror v459 ShopBase) + v504 · hiện TÊN người tạo trong cột Seller.
+    if (products.length) {
       try {
         const owners = await db.select().from(schema.wooProductOwners)
           .where(and(eq(schema.wooProductOwners.storeId, st.id), inArray(schema.wooProductOwners.productId, products.map((p) => p.id))));
         const ownerMap = new Map(owners.map((o) => [o.productId, o.createdBy]));
-        const admins = await adminUserIds();
-        products = products
-          .filter((p) => { const o = ownerMap.get(p.id); return !o || o === session.sub || admins.includes(o); })
-          .map((p) => { const o = ownerMap.get(p.id); return { ...p, editable: o === session.sub }; });
-      } catch { /* bảng chưa migrate → không lọc (mọi seller thấy hết như trước) */ }
+        const userIds = Array.from(new Set(owners.map((o) => o.createdBy).filter((x): x is string => !!x)));
+        const names = userIds.length
+          ? new Map((await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, userIds))).map((u) => [u.id, u.name ?? ""]))
+          : new Map<string, string>();
+        if (st.scoped) {
+          const admins = await adminUserIds();
+          products = products.filter((p) => { const o = ownerMap.get(p.id); return !o || o === session.sub || admins.includes(o); });
+        }
+        products = products.map((p) => {
+          const o = ownerMap.get(p.id);
+          return { ...p, editable: st.scoped ? o === session.sub : true, creator: (o && names.get(o)) || "" };
+        });
+      } catch { /* bảng chưa migrate → giữ nguyên */ }
     }
     return NextResponse.json({ ok: true, products, total: r.total, totalPages: r.totalPages, page });
   } catch (e) {
@@ -140,7 +160,8 @@ export async function POST(req: NextRequest) {
     const created = (await wooApi(st.cred, "products", { method: "POST", body: JSON.stringify(wooBody(p)) })) as Record<string, unknown>;
     const slim = slimProduct(created);
     // v503 · ghi chủ sở hữu — nền tảng cho "của ai người đó thấy" trong store share.
-    try { await db.insert(schema.wooProductOwners).values({ storeId: st.id, productId: slim.id, createdBy: session.sub }).onConflictDoNothing(); } catch { /* chưa migrate → bỏ qua */ }
+    const tplId = /^[0-9a-f-]{36}$/i.test(String(b?.templateId ?? "")) ? String(b.templateId) : null;
+    try { await db.insert(schema.wooProductOwners).values({ storeId: st.id, productId: slim.id, createdBy: session.sub, templateId: tplId }).onConflictDoNothing(); } catch { /* chưa migrate → bỏ qua */ }
     return NextResponse.json({ ok: true, product: slim });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
