@@ -293,7 +293,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
         </span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {canEdit && <button onClick={openNew} style={btnPri}>+ New product</button>}
-          {canEdit && <button onClick={() => setCatOpen(true)} style={btnGhost}>+ New category</button>}
+          {canEdit && <button onClick={() => setCatOpen(true)} style={btnGhost}>Categories</button>}
           <button onClick={() => setTplOpen(true)} style={btnGhost}>Templates ({tpls.length})</button>
           <button onClick={exportCsv} style={btnGhost}>↓ Export CSV</button>
           <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: 190 }}>
