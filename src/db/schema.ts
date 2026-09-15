@@ -481,6 +481,8 @@ export const wooTemplates = pgTable("woo_templates", {
   categoryIds: jsonb("category_ids").notNull().default([]),  // [Woo category id]
   tags: text("tags"),                            // "a, b, c"
   status: text("status").notNull().default("publish"),
+  thumb: text("thumb"),                          // v507 · URL ảnh mockup đại diện (như ShopBase)
+  wcpStyles: jsonb("wcp_styles").notNull().default([]),      // v507 · [tên Product Type] — Apply tự tick
   createdBy: uuid("created_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

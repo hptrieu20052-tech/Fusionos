@@ -9,7 +9,7 @@ import { MarketplaceLogo } from "@/components/marketplace-logo";
 
 type StoreOpt = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Cat = { id: number; name: string; parent: number; count: number; slug: string };
-type Tpl = { id: string; name: string; title: string | null; description: string | null; price: string | null; salePrice: string | null; categoryIds: number[]; tags: string | null; status: string };
+type Tpl = { id: string; name: string; title: string | null; description: string | null; price: string | null; salePrice: string | null; categoryIds: number[]; tags: string | null; status: string; thumb?: string | null; wcpStyles?: string[] };
 type Prod = {
   id: number; name: string; sku: string; status: string; editable?: boolean; creator?: string;
   price: string; regularPrice: string; salePrice: string;
@@ -68,7 +68,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     const j = await fetch(`/api/woo-products/categories?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
     if (j.ok) setCats(j.categories ?? []);
     const t = await fetch(`/api/woo-products/templates?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
-    if (t.ok) { setTpls((t.templates ?? []).map((x: Tpl) => ({ ...x, categoryIds: Array.isArray(x.categoryIds) ? x.categoryIds : [] }))); setTplNeedSql(!!t.needMigration); }
+    if (t.ok) { setTpls((t.templates ?? []).map((x: Tpl) => ({ ...x, categoryIds: Array.isArray(x.categoryIds) ? x.categoryIds : [], wcpStyles: Array.isArray(x.wcpStyles) ? x.wcpStyles : [] }))); setTplNeedSql(!!t.needMigration); }
     // v505 · Product Types từ plugin trên store — để chọn khi list (pajama/calendar/book…).
     const pt = await fetch(`/api/woo-product-types?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
     setPtypes(pt.ok ? (pt.styles ?? []).map((s: { styles?: string }) => String(s.styles ?? "")).filter(Boolean) : []);
@@ -193,6 +193,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
       categoryIds: t.categoryIds.length ? [...t.categoryIds] : form.categoryIds,
       tags: t.tags ?? form.tags,
       tplId: t.id,
+      wcpStyles: t.wcpStyles?.length ? [...t.wcpStyles] : form.wcpStyles, // v507 · template mang theo Product Types
     });
     flash("✓ Template applied — now set the title, images and design-specific bits");
   };
@@ -204,6 +205,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     const j = await fetch("/api/woo-products/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, template: {
       name: name.trim(), title: form.name, description: form.description, price: form.regularPrice,
       salePrice: form.salePrice, categoryIds: form.categoryIds, tags: form.tags, status: form.status,
+      thumb: form.images[0] ?? "", wcpStyles: form.wcpStyles, // v507 · mang cả mockup + Product Types vào template
     } }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setSaving(false);
     if (j.ok) { flash("✓ Saved as template"); loadCats(storeId); } else flash("✗ " + (j.error ?? "Error"));
@@ -382,13 +384,21 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                   {tpls.map((t) => (
                     <tr key={t.id}>
                       <td style={{ padding: "9px 6px", borderBottom: "1px solid var(--line)" }}>
-                        <b style={{ fontSize: 13 }}>{t.name}</b>
-                        <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
-                          {(t.title ?? "—").slice(0, 60)}{(t.title ?? "").length > 60 ? "…" : ""} · ${t.price ?? "—"} · {t.status} · {t.categoryIds.length} categories
-                        </div>
+                        <span style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                          <span style={{ width: 40, height: 40, borderRadius: 8, overflow: "hidden", background: "#F1F3F8", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 15, flexShrink: 0 }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            {t.thumb ? <img src={t.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "🖼"}
+                          </span>
+                          <span>
+                            <b style={{ fontSize: 13 }}>{t.name}</b>
+                            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                              {(t.title ?? "—").slice(0, 50)}{(t.title ?? "").length > 50 ? "…" : ""} · ${t.price ?? "—"} · {t.status} · {t.wcpStyles?.length ? t.wcpStyles.join(", ").slice(0, 40) : "All styles"}
+                            </div>
+                          </span>
+                        </span>
                       </td>
                       <td style={{ padding: "9px 6px", borderBottom: "1px solid var(--line)", textAlign: "right", whiteSpace: "nowrap" }}>
-                        {canEdit && <button onClick={() => { setTplOpen(false); setForm({ id: 0, name: t.title ?? "", description: t.description ?? "", regularPrice: t.price ?? "", salePrice: t.salePrice ?? "", sku: "", status: t.status === "draft" ? "draft" : "publish", categoryIds: [...t.categoryIds], tags: t.tags ?? "", images: [], tplId: t.id, wcpStyles: [] }); }} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>New product</button>}
+                        {canEdit && <button onClick={() => { setTplOpen(false); setForm({ id: 0, name: t.title ?? "", description: t.description ?? "", regularPrice: t.price ?? "", salePrice: t.salePrice ?? "", sku: "", status: t.status === "draft" ? "draft" : "publish", categoryIds: [...t.categoryIds], tags: t.tags ?? "", images: [], tplId: t.id, wcpStyles: Array.isArray(t.wcpStyles) ? [...t.wcpStyles] : [] }); }} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>New product</button>}
                         {canEdit && <button onClick={() => delTpl(t.id)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, marginLeft: 6, color: "var(--red)" }}>Delete</button>}
                       </td>
                     </tr>

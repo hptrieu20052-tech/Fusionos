@@ -33,7 +33,7 @@ async function isScoped(session: NonNullable<Awaited<ReturnType<typeof getSessio
   return !!(await storeOwnerScopeIds(session));
 }
 
-type TplBody = { id?: string; name?: string; title?: string; description?: string; price?: string; salePrice?: string; categoryIds?: number[]; tags?: string; status?: string };
+type TplBody = { id?: string; name?: string; title?: string; description?: string; price?: string; salePrice?: string; categoryIds?: number[]; tags?: string; status?: string; thumb?: string; wcpStyles?: string[] };
 function tplFields(t: TplBody) {
   return {
     name: String(t.name ?? "").trim().slice(0, 120),
@@ -44,7 +44,14 @@ function tplFields(t: TplBody) {
     categoryIds: (Array.isArray(t.categoryIds) ? t.categoryIds : []).map(Number).filter((n) => n > 0).slice(0, 20),
     tags: String(t.tags ?? "").trim().slice(0, 500) || null,
     status: ["publish", "draft"].includes(String(t.status)) ? String(t.status) : "publish",
+    // v507 · như ShopBase: ảnh mockup đại diện + Product Types gắn vào template (Apply tự tick).
+    thumb: String(t.thumb ?? "").trim().slice(0, 800) || null,
+    wcpStyles: (Array.isArray(t.wcpStyles) ? t.wcpStyles : []).map((s) => String(s ?? "").trim()).filter(Boolean).slice(0, 50),
   };
+}
+/** Cột v507 chưa migrate → thử lại không kèm thumb/wcpStyles để không chặn người dùng cũ. */
+function isMissingColumn(e: unknown): boolean {
+  return /wcp_styles|thumb|column/i.test(String((e as Error)?.message ?? e));
 }
 
 export async function GET(req: NextRequest) {
@@ -83,6 +90,14 @@ export async function POST(req: NextRequest) {
     const [row] = await db.insert(schema.wooTemplates).values({ ...f, storeId, createdBy: session.sub }).returning();
     return NextResponse.json({ ok: true, template: row });
   } catch (e) {
+    if (isMissingColumn(e)) {
+      // Chưa chạy MIGRATION_v507 → lưu phần cũ, báo nhẹ để user chạy SQL.
+      try {
+        const legacy = { name: f.name, title: f.title, description: f.description, price: f.price, salePrice: f.salePrice, categoryIds: f.categoryIds, tags: f.tags, status: f.status };
+        const [row] = await db.insert(schema.wooTemplates).values({ ...legacy, storeId, createdBy: session.sub }).returning();
+        return NextResponse.json({ ok: true, template: row, warn: "Saved without thumbnail/product types — run MIGRATION_v507_woo_template_upgrade.sql on Supabase to enable them." });
+      } catch { /* rơi xuống lỗi gốc */ }
+    }
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
 }
@@ -108,6 +123,13 @@ export async function PUT(req: NextRequest) {
     await db.update(schema.wooTemplates).set({ ...f, updatedAt: new Date() }).where(eq(schema.wooTemplates.id, id));
     return NextResponse.json({ ok: true });
   } catch (e) {
+    if (isMissingColumn(e)) {
+      try {
+        const legacy = { name: f.name, title: f.title, description: f.description, price: f.price, salePrice: f.salePrice, categoryIds: f.categoryIds, tags: f.tags, status: f.status };
+        await db.update(schema.wooTemplates).set({ ...legacy, updatedAt: new Date() }).where(eq(schema.wooTemplates.id, id));
+        return NextResponse.json({ ok: true, warn: "Saved without thumbnail/product types — run MIGRATION_v507_woo_template_upgrade.sql on Supabase to enable them." });
+      } catch { /* rơi xuống lỗi gốc */ }
+    }
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
 }
