@@ -45,6 +45,10 @@ const deent = (s: string) => s
 function slimProduct(p: Record<string, unknown>) {
   const imgs = (Array.isArray(p.images) ? p.images : []) as Record<string, unknown>[];
   const cats = (Array.isArray(p.categories) ? p.categories : []) as Record<string, unknown>[];
+  // v505 · meta _wcp_selected_styles của Woo Custom Pro = product này bán những Product Type nào.
+  const meta = (Array.isArray(p.meta_data) ? p.meta_data : []) as Record<string, unknown>[];
+  const wcpRaw = meta.find((m) => strv(m.key) === "_wcp_selected_styles")?.value;
+  const wcpStyles = (Array.isArray(wcpRaw) ? wcpRaw : []).map((x) => strv(x)).filter(Boolean);
   return {
     id: Number(p.id) || 0,
     name: deent(strv(p.name)),
@@ -59,6 +63,7 @@ function slimProduct(p: Record<string, unknown>) {
     tags: ((Array.isArray(p.tags) ? p.tags : []) as Record<string, unknown>[]).map((t) => strv(t.name)).filter(Boolean),
     totalSales: Number(p.total_sales) || 0,
     dateCreated: strv(p.date_created),
+    wcpStyles, // [] = hiện tất cả style (mặc định plugin)
   };
 }
 
@@ -130,7 +135,7 @@ export async function GET(req: NextRequest) {
 }
 
 // Body sản phẩm gửi lên Woo — chỉ nhận field cho phép, không forward mù.
-type InProduct = { name?: string; description?: string; regularPrice?: string; salePrice?: string; sku?: string; status?: string; categoryIds?: number[]; tags?: string[]; images?: string[] };
+type InProduct = { name?: string; description?: string; regularPrice?: string; salePrice?: string; sku?: string; status?: string; categoryIds?: number[]; tags?: string[]; images?: string[]; wcpStyles?: string[] };
 function wooBody(p: InProduct): Record<string, unknown> {
   const body: Record<string, unknown> = { type: "simple" };
   if (p.name != null) body.name = strv(p.name).slice(0, 300);
@@ -142,6 +147,11 @@ function wooBody(p: InProduct): Record<string, unknown> {
   if (Array.isArray(p.categoryIds)) body.categories = p.categoryIds.map((id) => ({ id: Number(id) })).filter((c) => c.id > 0).slice(0, 20);
   if (Array.isArray(p.tags)) body.tags = p.tags.map((t) => ({ name: strv(t).slice(0, 80) })).filter((t) => t.name).slice(0, 30);
   if (Array.isArray(p.images)) body.images = p.images.map((src) => ({ src: strv(src) })).filter((i) => /^https?:\/\//i.test(i.src)).slice(0, 12);
+  // v505 · Product Types: ghi meta _wcp_selected_styles → Woo Custom Pro chỉ hiện các style này
+  // trên trang sản phẩm (mảng rỗng = hiện tất cả — đúng hành vi mặc định của plugin).
+  if (Array.isArray(p.wcpStyles)) {
+    body.meta_data = [{ key: "_wcp_selected_styles", value: p.wcpStyles.map((s) => strv(s)).filter(Boolean).slice(0, 50) }];
+  }
   return body;
 }
 

@@ -1,0 +1,246 @@
+"use client";
+/**
+ * PRODUCT TYPES · WOOCOMMERCE (v505) — quản lý style của Woo Custom Pro (products.json trên store)
+ * ngay từ FUSION: thêm loại sản phẩm mới (Pajama, Calendar, Book…), sửa size + giá, màu, mockup —
+ * không cần vào WP admin hay sửa code. Ghi qua plugin cầu nối wcp-fusion-bridge (backup tự động).
+ */
+import { useCallback, useEffect, useState } from "react";
+import { MarketplaceLogo } from "@/components/marketplace-logo";
+
+type StoreOpt = { id: string; name: string };
+type Style = { styles: string; image: string; sizes: string[]; colors: string[]; designs: string[] };
+// Dạng edit trong form: size/màu tách thành cặp field cho dễ nhập.
+type FormStyle = { name: string; image: string; sizes: { n: string; p: string }[]; colors: { n: string; hex: string }[]; front: boolean; back: boolean };
+
+const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
+const btnPri: React.CSSProperties = { background: "var(--ink)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+const btnBlue: React.CSSProperties = { background: "var(--blue)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" };
+
+function toForm(s: Style): FormStyle {
+  return {
+    name: s.styles, image: s.image ?? "",
+    sizes: (s.sizes ?? []).map((x) => { const i = x.lastIndexOf("-"); return i > 0 ? { n: x.slice(0, i), p: x.slice(i + 1) } : { n: x, p: "" }; }),
+    colors: (s.colors ?? []).map((x) => { const [n, hex] = x.split("|"); return { n: n ?? "", hex: (hex ?? "#cccccc").trim() }; }),
+    front: (s.designs ?? []).includes("front") || !(s.designs ?? []).length,
+    back: (s.designs ?? []).includes("back") || !(s.designs ?? []).length,
+  };
+}
+function fromForm(f: FormStyle): Style {
+  return {
+    styles: f.name.trim(),
+    image: f.image.trim(),
+    sizes: f.sizes.filter((s) => s.n.trim() && s.p.trim()).map((s) => `${s.n.trim()}-${s.p.trim()}`),
+    colors: f.colors.filter((c) => c.n.trim()).map((c) => `${c.n.trim()}|${(c.hex || "#cccccc").trim()}`),
+    designs: [...(f.front ? ["front"] : []), ...(f.back ? ["back"] : [])].length ? [...(f.front ? ["front"] : []), ...(f.back ? ["back"] : [])] : ["front"],
+  };
+}
+
+export default function WooProductTypesClient({ stores, canEdit }: { stores: StoreOpt[]; canEdit: boolean }) {
+  const [storeId, setStoreId] = useState(stores[0]?.id ?? "");
+  const store = stores.find((s) => s.id === storeId);
+  const [styles, setStyles] = useState<Style[]>([]);
+  const [needBridge, setNeedBridge] = useState(false);
+  const [canEditTypes, setCanEditTypes] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 5000); };
+
+  const load = useCallback(async (sid: string) => {
+    if (!sid) return;
+    setBusy(true);
+    const j = await fetch(`/api/woo-product-types?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setBusy(false);
+    if (j.ok) { setStyles(j.styles ?? []); setNeedBridge(!!j.needBridge); setCanEditTypes(!!j.canEditTypes); }
+    else flash("✗ " + (j.error ?? "Error"));
+  }, []);
+  useEffect(() => { load(storeId); }, [storeId, load]);
+
+  const editable = canEdit && canEditTypes;
+
+  // ── Editor modal ──
+  const [form, setForm] = useState<FormStyle | null>(null);
+  const [editIndex, setEditIndex] = useState(-1); // -1 = new
+  const [saving, setSaving] = useState(false);
+
+  const openNew = () => { setEditIndex(-1); setForm({ name: "", image: "", sizes: [{ n: "One Size", p: "" }], colors: [], front: true, back: false }); };
+  const openEdit = (i: number) => { setEditIndex(i); setForm(toForm(styles[i])); };
+  // Dup: khởi tạo style mới copy từ style có sẵn (đổi tên rồi lưu).
+  const openDup = (i: number) => { setEditIndex(-1); setForm({ ...toForm(styles[i]), name: styles[i].styles + " (Copy)" }); };
+
+  const persist = async (next: Style[], okMsg: string) => {
+    setSaving(true);
+    const j = await fetch("/api/woo-product-types", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, styles: next }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
+    setSaving(false);
+    if (j.ok) { flash(okMsg); setForm(null); setStyles(next); }
+    else flash("✗ " + (j.error ?? "Error"));
+  };
+  const save = async () => {
+    if (!form) return;
+    const s = fromForm(form);
+    if (!s.styles) { flash("✗ Enter a style name"); return; }
+    if (!s.sizes.length) { flash("✗ Add at least one size with a price"); return; }
+    const dup = styles.findIndex((x) => x.styles.toLowerCase() === s.styles.toLowerCase());
+    if (dup !== -1 && dup !== editIndex) { flash(`✗ A style named "${s.styles}" already exists`); return; }
+    const next = [...styles];
+    if (editIndex >= 0) next[editIndex] = s; else next.push(s);
+    await persist(next, editIndex >= 0 ? "✓ Style updated on the store" : "✓ New product type added to the store");
+  };
+  const del = async (i: number) => {
+    if (styles.length <= 1) { flash("✗ Can't delete the last style — the plugin needs at least one"); return; }
+    if (!window.confirm(`Delete style "${styles[i].styles}"? Products limited to only this style will fall back to showing ALL styles.`)) return;
+    await persist(styles.filter((_, x) => x !== i), "✓ Style deleted");
+  };
+
+  const setSize = (i: number, k: "n" | "p", v: string) => setForm((f) => f ? { ...f, sizes: f.sizes.map((s, x) => x === i ? { ...s, [k]: v } : s) } : f);
+  const setColor = (i: number, k: "n" | "hex", v: string) => setForm((f) => f ? { ...f, colors: f.colors.map((c, x) => x === i ? { ...c, [k]: v } : c) } : f);
+
+  const th: React.CSSProperties = { textAlign: "left", fontSize: 11, fontWeight: 800, color: "var(--muted)", letterSpacing: 0.5, textTransform: "uppercase", padding: "10px 12px", borderBottom: "1px solid var(--line)" };
+  const td: React.CSSProperties = { padding: "12px", borderBottom: "1px solid var(--line)", verticalAlign: "middle", fontSize: 13 };
+
+  if (!stores.length) {
+    return <div className="panel empty">No WooCommerce store yet — create one in <b>Stores</b> (marketplace: WooCommerce), enter the REST API keys, then come back here.</div>;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: 14, maxWidth: 1100, margin: "0 auto", width: "100%" }}>
+      {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 60, background: msg.startsWith("✓") ? "#1E7A3E" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
+
+      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+          <MarketplaceLogo mk="woocommerce" size={34} />
+          <b style={{ fontSize: 19 }}>Product Types · <span style={{ color: "#7F54B3" }}>WooCommerce</span></b>
+        </span>
+        <span style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {editable && !needBridge && <button onClick={openNew} style={btnPri}>+ New product type</button>}
+          <select value={storeId} onChange={(e) => setStoreId(e.target.value)} style={{ ...inp, width: 190 }}>
+            {stores.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <button onClick={() => load(storeId)} style={btnBlue}>⟳ Refresh</button>
+        </span>
+      </div>
+
+      <div className="panel" style={{ fontSize: 12.5, color: "var(--muted)", lineHeight: 1.6, padding: "12px 16px" }}>
+        Product types are the <b>styles</b> the store&apos;s picker shows (T-shirt, Hoodie, Pajama Set, Calendar, Book…), each with its own sizes + prices and colors.
+        Changes here write straight to the store&apos;s plugin (with automatic backups). When listing a product in <b>Manage Products</b>, pick which types that product sells — the product page then shows only those.
+      </div>
+
+      {needBridge && (
+        <div className="panel" style={{ background: "#FFF3D6", border: "1px solid #EAD28A", padding: "14px 18px", fontSize: 13, lineHeight: 1.6 }}>
+          <b>One-time setup:</b> this store doesn&apos;t have the <b>WCP Fusion Bridge</b> plugin yet, so FUSION can&apos;t read/write its product types.
+          Install <b>wcp-fusion-bridge.zip</b> in the store&apos;s WP admin → <b>Plugins → Add New → Upload Plugin → Activate</b>, then hit Refresh. No settings needed — it uses the same API keys already entered in FUSION.
+        </div>
+      )}
+
+      <div className="panel" style={{ padding: 0, overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+          <thead><tr>
+            <th style={{ ...th, width: 64 }}>Mockup</th>
+            <th style={th}>Style name</th>
+            <th style={{ ...th, width: 230 }}>Sizes · price</th>
+            <th style={{ ...th, width: 90 }}>Colors</th>
+            <th style={{ ...th, width: 110 }}>Print sides</th>
+            {editable && <th style={{ ...th, width: 170 }}>Actions</th>}
+          </tr></thead>
+          <tbody>
+            {styles.map((s, i) => {
+              const prices = s.sizes.map((x) => Number(x.slice(x.lastIndexOf("-") + 1))).filter((n) => n > 0);
+              const lo = Math.min(...prices), hi = Math.max(...prices);
+              return (
+                <tr key={s.styles + i}>
+                  <td style={td}>
+                    <div style={{ width: 46, height: 46, borderRadius: 10, overflow: "hidden", background: "#F1F3F8", display: "grid", placeItems: "center", color: "var(--muted)", fontSize: 18 }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {s.image ? <img src={s.image} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "👕"}
+                    </div>
+                  </td>
+                  <td style={td}><b>{s.styles}</b></td>
+                  <td style={td}>
+                    <div style={{ fontSize: 12.5 }}>{s.sizes.length} sizes · {prices.length ? (lo === hi ? `$${lo}` : `$${lo} – $${hi}`) : "—"}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{s.sizes.map((x) => x.slice(0, x.lastIndexOf("-"))).join(", ").slice(0, 60)}</div>
+                  </td>
+                  <td style={td}>
+                    <span style={{ display: "inline-flex", gap: 2, alignItems: "center" }}>
+                      {s.colors.slice(0, 6).map((c, x) => <span key={x} title={c.split("|")[0]} style={{ width: 13, height: 13, borderRadius: 99, background: c.split("|")[1] || "#ccc", border: "1px solid rgba(0,0,0,.15)" }} />)}
+                      {s.colors.length > 6 && <span style={{ fontSize: 11, color: "var(--muted)", marginLeft: 3 }}>+{s.colors.length - 6}</span>}
+                      {!s.colors.length && <span style={{ fontSize: 12, color: "var(--muted)" }}>—</span>}
+                    </span>
+                  </td>
+                  <td style={td}><span style={{ fontSize: 12 }}>{(s.designs ?? []).join(" + ") || "front"}</span></td>
+                  {editable && (
+                    <td style={td}>
+                      <span style={{ display: "inline-flex", gap: 6 }}>
+                        <button onClick={() => openEdit(i)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>✎ Edit</button>
+                        <button onClick={() => openDup(i)} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12 }}>Dup</button>
+                        <button onClick={() => del(i)} disabled={saving} style={{ ...btnGhost, padding: "5px 12px", fontSize: 12, color: "var(--red)" }}>Del</button>
+                      </span>
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+            {!styles.length && !busy && !needBridge && <tr><td colSpan={editable ? 6 : 5} style={{ ...td, textAlign: "center", color: "var(--muted)", padding: 30 }}>No product types yet</td></tr>}
+          </tbody>
+        </table>
+        {busy && <div style={{ textAlign: "center", color: "var(--muted)", fontSize: 13, padding: 14 }}>Loading…</div>}
+      </div>
+
+      {/* Editor modal */}
+      {form && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 16, overflowY: "auto" }} onClick={() => !saving && setForm(null)}>
+          <div className="panel" style={{ width: 680, maxWidth: "100%", padding: 18, maxHeight: "92vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+            <b style={{ fontSize: 15 }}>{editIndex >= 0 ? `Edit style · ${styles[editIndex]?.styles}` : "New product type"}</b>
+            <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px", marginTop: 12 }}>
+              <label style={{ display: "block", marginBottom: 10 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>Style name (shown to buyers)</div>
+                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Pajama Set / Desk Calendar / Story Book…" style={inp} />
+              </label>
+              <label style={{ display: "block", marginBottom: 10 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 4 }}>Mockup image URL (optional)</div>
+                <input value={form.image} onChange={(e) => setForm({ ...form, image: e.target.value })} placeholder="https://…/pajama-mockup.jpg" style={inp} />
+              </label>
+            </div>
+
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", margin: "4px 0 6px" }}>Sizes &amp; prices ($) — for one-size items use &quot;One Size&quot;</div>
+            <div style={{ display: "grid", gap: 6 }}>
+              {form.sizes.map((s, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 130px 34px", gap: 8, alignItems: "center" }}>
+                  <input value={s.n} onChange={(e) => setSize(i, "n", e.target.value)} placeholder="Size name (S, 2XL, One Size…)" style={inp} />
+                  <input value={s.p} onChange={(e) => setSize(i, "p", e.target.value.replace(/[^\d.]/g, ""))} placeholder="18.99" style={inp} />
+                  <button type="button" onClick={() => setForm({ ...form, sizes: form.sizes.filter((_, x) => x !== i) })} style={{ ...btnGhost, padding: "7px 0", fontSize: 13 }}>✕</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={() => setForm({ ...form, sizes: [...form.sizes, { n: "", p: "" }] })} style={{ ...btnGhost, padding: "6px 14px", fontSize: 12, marginTop: 8 }}>+ Add size</button>
+
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", margin: "16px 0 6px" }}>Colors (optional — leave empty for products without color choice, e.g. calendars/books)</div>
+            <div style={{ display: "grid", gap: 6 }}>
+              {form.colors.map((c, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 52px 34px", gap: 8, alignItems: "center" }}>
+                  <input value={c.n} onChange={(e) => setColor(i, "n", e.target.value)} placeholder="Color name (Black, Navy…)" style={inp} />
+                  <input type="color" value={/^#[0-9a-f]{6}$/i.test(c.hex) ? c.hex : "#cccccc"} onChange={(e) => setColor(i, "hex", e.target.value)} style={{ width: 52, height: 38, padding: 2, border: "1px solid var(--line)", borderRadius: 10, background: "#fff", cursor: "pointer" }} />
+                  <button type="button" onClick={() => setForm({ ...form, colors: form.colors.filter((_, x) => x !== i) })} style={{ ...btnGhost, padding: "7px 0", fontSize: 13 }}>✕</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={() => setForm({ ...form, colors: [...form.colors, { n: "", hex: "#000000" }] })} style={{ ...btnGhost, padding: "6px 14px", fontSize: 12, marginTop: 8 }}>+ Add color</button>
+
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", margin: "16px 0 6px" }}>Print sides buyers can choose designs for</div>
+            <div style={{ display: "flex", gap: 16 }}>
+              <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" checked={form.front} onChange={(e) => setForm({ ...form, front: e.target.checked })} /> Front</label>
+              <label style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 13 }}><input type="checkbox" checked={form.back} onChange={(e) => setForm({ ...form, back: e.target.checked })} /> Back</label>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button onClick={() => setForm(null)} disabled={saving} style={btnGhost}>Cancel</button>
+              <button onClick={save} disabled={saving} style={btnBlue}>{saving ? "Saving…" : editIndex >= 0 ? "Save changes" : "Add product type"}</button>
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 10, lineHeight: 1.5 }}>
+              Saved straight to <b>{store?.name}</b> — the store keeps automatic backups of the last 10 versions.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

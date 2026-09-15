@@ -68,6 +68,44 @@ export async function wooApiFull(cred: WooCred, path: string, init: RequestInit 
   } catch { throw new Error("WooCommerce: phản hồi không phải JSON — kiểm tra Store URL (đúng site WordPress?)"); }
 }
 
+/**
+ * v505 · Gọi REST của plugin cầu nối wcp-fusion-bridge trên store (namespace wc-fusion/v1 —
+ * bắt đầu bằng "wc-" nên WooCommerce áp key auth y như wc/v3). Dùng cho màn Product Types.
+ */
+export async function wooBridgeApi(cred: WooCred, path: string, init: RequestInit = {}): Promise<unknown> {
+  const base = wooBaseUrl(cred);
+  if (!base) throw new Error("WooCommerce store chưa cấu hình Store URL");
+  const ck = String(cred.consumerKey ?? "").trim(), cs = String(cred.consumerSecret ?? "").trim();
+  if (!ck || !cs) throw new Error("WooCommerce store chưa nhập Consumer key + secret");
+  const url = `${base}/wp-json/wc-fusion/v1/${path.replace(/^\/+/, "")}`;
+  const call = async (u: string, withBasic: boolean) => {
+    const res = await fetch(u, {
+      ...init,
+      headers: {
+        ...(withBasic ? { Authorization: `Basic ${Buffer.from(`${ck}:${cs}`).toString("base64")}` } : {}),
+        "Content-Type": "application/json", Accept: "application/json",
+        ...(init.headers ?? {}),
+      },
+      signal: AbortSignal.timeout(20000),
+    });
+    const text = await res.text();
+    return { res, text };
+  };
+  let { res, text } = await call(url, true);
+  if (res.status === 401 || res.status === 403) {
+    const qs = url.includes("?") ? "&" : "?";
+    ({ res, text } = await call(`${url}${qs}consumer_key=${encodeURIComponent(ck)}&consumer_secret=${encodeURIComponent(cs)}`, false));
+  }
+  if (res.status === 404) throw new Error("Store chưa cài plugin WCP Fusion Bridge — upload wcp-fusion-bridge.zip trong WP admin → Plugins → Add New rồi Activate.");
+  if (!res.ok) {
+    let msg = text.slice(0, 300);
+    try { const j = JSON.parse(text); if (j?.message) msg = String(j.message); } catch { /* giữ raw */ }
+    throw new Error(`Bridge HTTP ${res.status}: ${msg}`);
+  }
+  try { return text ? JSON.parse(text) : {}; }
+  catch { throw new Error("Bridge: phản hồi không phải JSON — kiểm tra Store URL"); }
+}
+
 // ── Config helpers (đọc/ghi apiCredentials.woocommerce — mirror pattern shopbase) ───────────────
 export async function getWooCred(storeId?: string): Promise<{ storeId: string; cred: WooCred } | null> {
   const rows = await db.select({ id: schema.stores.id, cred: schema.stores.apiCredentials }).from(schema.stores)

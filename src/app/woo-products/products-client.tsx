@@ -17,6 +17,7 @@ type Prod = {
   images: { id: number; src: string }[];
   categories: { id: number; name: string }[];
   description: string; tags: string[]; totalSales: number; dateCreated: string;
+  wcpStyles?: string[]; // v505 · Product Types (meta _wcp_selected_styles) — [] = all styles
 };
 
 const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
@@ -57,6 +58,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [tpls, setTpls] = useState<Tpl[]>([]);
   const [tplNeedSql, setTplNeedSql] = useState(false);
+  const [ptypes, setPtypes] = useState<string[]>([]); // v505 · tên các Product Type (style) trên store
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 4000); };
@@ -67,6 +69,9 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     if (j.ok) setCats(j.categories ?? []);
     const t = await fetch(`/api/woo-products/templates?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
     if (t.ok) { setTpls((t.templates ?? []).map((x: Tpl) => ({ ...x, categoryIds: Array.isArray(x.categoryIds) ? x.categoryIds : [] }))); setTplNeedSql(!!t.needMigration); }
+    // v505 · Product Types từ plugin trên store — để chọn khi list (pajama/calendar/book…).
+    const pt = await fetch(`/api/woo-product-types?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
+    setPtypes(pt.ok ? (pt.styles ?? []).map((s: { styles?: string }) => String(s.styles ?? "")).filter(Boolean) : []);
   }, []);
 
   const loadProducts = useCallback(async (sid: string, q: string, pg: number, status: string, cat: number, seller = "", tpl = "") => {
@@ -108,7 +113,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
   };
 
   // ── New / Edit product modal ─────────────────────────────────────────────
-  const empty = { id: 0, name: "", description: "", regularPrice: "", salePrice: "", sku: "", status: "publish", categoryIds: [] as number[], tags: "", images: [] as string[], tplId: "" };
+  const empty = { id: 0, name: "", description: "", regularPrice: "", salePrice: "", sku: "", status: "publish", categoryIds: [] as number[], tags: "", images: [] as string[], tplId: "", wcpStyles: [] as string[] };
   const [form, setForm] = useState<typeof empty | null>(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -127,6 +132,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
       tags: d.tags.join(", "),
       images: d.images.map((i) => i.src),
       tplId: "",
+      wcpStyles: Array.isArray(d.wcpStyles) ? [...d.wcpStyles] : [],
     });
   };
   // Dup: mở form NEW với data copy từ sản phẩm (id=0 → tạo mới), title thêm "(Copy)".
@@ -162,6 +168,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
       categoryIds: form.categoryIds,
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
       images: form.images,
+      wcpStyles: form.wcpStyles,
     };
     const j = form.id
       ? await fetch("/api/woo-products", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, productId: form.id, product }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }))
@@ -466,6 +473,24 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                   </div>
                 </L>
               </div>
+              {ptypes.length > 0 && (
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <L label="Product types this listing sells (none ticked = ALL styles show on the product page)">
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {ptypes.map((t) => {
+                        const on = form.wcpStyles.includes(t);
+                        return (
+                          <button key={t} type="button"
+                            onClick={() => setForm({ ...form, wcpStyles: on ? form.wcpStyles.filter((x) => x !== t) : [...form.wcpStyles, t] })}
+                            style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? "1px solid #7F54B3" : "1px solid var(--line)", background: on ? "#7F54B3" : "#fff", color: on ? "#fff" : "var(--ink)" }}>
+                            {t}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </L>
+                </div>
+              )}
               <div style={{ gridColumn: "1 / -1" }}>
                 <L label="Tags (comma separated — optional)"><input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="halloween, family matching" style={inp} /></L>
               </div>
