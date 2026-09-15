@@ -240,7 +240,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
 
   return (
     <div style={{ display: "grid", gap: 14, maxWidth: 1440, margin: "0 auto", width: "100%" }}>
-      {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 60, background: msg.startsWith("✓") ? "#1E7A3E" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
+      {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 300, background: msg.startsWith("✓") ? "#1E7A3E" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
 
       {/* ── Header (khuôn ShopBase) ── */}
       <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
@@ -369,8 +369,8 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
 
       {/* Templates modal (v502) */}
       {tplOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 16 }} onClick={() => setTplOpen(false)}>
-          <div className="panel" style={{ width: 640, maxWidth: "100%", padding: 18, maxHeight: "88vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.55)", zIndex: 200, overflowY: "auto", padding: "36px 16px" }} onClick={() => setTplOpen(false)}>
+          <div className="panel" style={{ width: 640, maxWidth: "100%", padding: 18, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)" }} onClick={(e) => e.stopPropagation()}>
             <b style={{ fontSize: 15 }}>Templates · {store?.name}</b>
             {tplNeedSql && <div style={{ fontSize: 12, background: "#FFF3D6", border: "1px solid #EAD28A", borderRadius: 10, padding: "8px 12px", margin: "10px 0" }}>Run <b>MIGRATION_v502_woo_templates.sql</b> on Supabase first — the templates table doesn&apos;t exist yet.</div>}
             <div style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 12px", lineHeight: 1.5 }}>
@@ -405,8 +405,8 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
 
       {/* New category modal */}
       {catOpen && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 16 }} onClick={() => setCatOpen(false)}>
-          <div className="panel" style={{ width: 420, maxWidth: "100%", padding: 18 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.55)", zIndex: 200, overflowY: "auto", padding: "36px 16px" }} onClick={() => setCatOpen(false)}>
+          <div className="panel" style={{ width: 420, maxWidth: "100%", padding: 18, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)" }} onClick={(e) => e.stopPropagation()}>
             <b style={{ fontSize: 15 }}>New category</b>
             <div style={{ marginTop: 12 }}>
               <L label="Name"><input value={catName} onChange={(e) => setCatName(e.target.value)} placeholder="e.g. Christmas" style={inp} /></L>
@@ -427,8 +427,8 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
 
       {/* New / Edit product modal */}
       {form && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 16, overflowY: "auto" }} onClick={() => !saving && setForm(null)}>
-          <div className="panel" style={{ width: 720, maxWidth: "100%", padding: 18, maxHeight: "92vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.55)", zIndex: 200, overflowY: "auto", padding: "36px 16px" }} onClick={() => !saving && setForm(null)}>
+          <div className="panel" style={{ width: 720, maxWidth: "100%", padding: 18, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <b style={{ fontSize: 15 }}>{form.id ? "Edit product" : "New product"}</b>
               {tpls.length > 0 && (

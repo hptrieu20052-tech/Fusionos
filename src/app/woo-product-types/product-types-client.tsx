@@ -104,7 +104,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
 
   return (
     <div style={{ display: "grid", gap: 14, maxWidth: 1100, margin: "0 auto", width: "100%" }}>
-      {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 60, background: msg.startsWith("✓") ? "#1E7A3E" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
+      {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 300, background: msg.startsWith("✓") ? "#1E7A3E" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
 
       <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
@@ -187,8 +187,8 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
 
       {/* Editor modal */}
       {form && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.45)", zIndex: 50, display: "grid", placeItems: "center", padding: 16, overflowY: "auto" }} onClick={() => !saving && setForm(null)}>
-          <div className="panel" style={{ width: 680, maxWidth: "100%", padding: 18, maxHeight: "92vh", overflowY: "auto" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,20,40,.55)", zIndex: 200, overflowY: "auto", padding: "36px 16px" }} onClick={() => !saving && setForm(null)}>
+          <div className="panel" style={{ width: 680, maxWidth: "100%", padding: 18, margin: "0 auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)" }} onClick={(e) => e.stopPropagation()}>
             <b style={{ fontSize: 15 }}>{editIndex >= 0 ? `Edit style · ${styles[editIndex]?.styles}` : "New product type"}</b>
             <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px", marginTop: 12 }}>
               <label style={{ display: "block", marginBottom: 10 }}>
