@@ -54,12 +54,19 @@ function cleanStyles(input: unknown): Style[] | { error: string } {
     if (!name) return { error: `Style #${i + 1}: name is required` };
     if (seen.has(name.toLowerCase())) return { error: `Duplicate style name "${name}"` };
     seen.add(name.toLowerCase());
-    const sizes = (Array.isArray(s.sizes) ? s.sizes : []).map((x) => strv(x)).filter(Boolean).slice(0, 60);
-    if (!sizes.length) return { error: `Style "${name}": add at least one size` };
-    for (const sz of sizes) {
+    const sizesRaw = (Array.isArray(s.sizes) ? s.sizes : []).map((x) => strv(x)).filter(Boolean).slice(0, 60);
+    if (!sizesRaw.length) return { error: `Style "${name}": add at least one size` };
+    const sizes: string[] = [];
+    for (const sz of sizesRaw) {
       if (!/^.+-\d+(\.\d{1,2})?$/.test(sz)) return { error: `Style "${name}": size "${sz}" must be "Name-Price" like "M-18.99"` };
-      const price = Number(sz.slice(sz.lastIndexOf("-") + 1));
+      const cut = sz.lastIndexOf("-");
+      const price = Number(sz.slice(cut + 1));
       if (!(price > 0)) return { error: `Style "${name}": size "${sz}" price must be > 0` };
+      // v514 · Plugin tách size theo dấu "-" ĐẦU TIÊN → tên size chứa "-" làm sai cả tên lẫn giá
+      // (vd "0-3M-21.99" → tên "0", giá $3). Tự đổi "-" trong TÊN thành "–" (en-dash) cho an toàn.
+      const szName = sz.slice(0, cut).replace(/-/g, "–").trim();
+      if (!szName) return { error: `Style "${name}": size "${sz}" is missing a name` };
+      sizes.push(`${szName}-${sz.slice(cut + 1)}`);
     }
     const colors = (Array.isArray(s.colors) ? s.colors : []).map((x) => strv(x)).filter(Boolean).slice(0, 60);
     let designs = (Array.isArray(s.designs) ? s.designs : []).map((x) => strv(x)).filter(Boolean).slice(0, 10);

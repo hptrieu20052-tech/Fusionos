@@ -44,7 +44,8 @@ function fromForm(f: FormStyle): Style {
   return {
     styles: f.name.trim(),
     image: f.image.trim(),
-    sizes: f.sizes.filter((s) => s.n.trim() && s.p.trim()).map((s) => `${s.n.trim()}-${s.p.trim()}`),
+    // v514 · plugin tách "Tên-Giá" theo dấu "-" ĐẦU TIÊN → tên size không được chứa "-"; tự đổi thành "–".
+    sizes: f.sizes.filter((s) => s.n.trim() && s.p.trim()).map((s) => `${s.n.trim().replace(/-/g, "–")}-${s.p.trim()}`),
     colors: f.colors.filter((c) => c.n.trim()).map((c) => `${c.n.trim()}|${(c.hex || "#cccccc").trim()}`),
     designs: [...(f.front ? ["front"] : []), ...(f.back ? ["back"] : [])].length ? [...(f.front ? ["front"] : []), ...(f.back ? ["back"] : [])] : ["front"],
     ...(f.ship.trim() ? { shipping: f.ship.trim() } : {}),
@@ -278,7 +279,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
               </label>
             </div>
 
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", margin: "4px 0 6px" }}>Sizes &amp; prices ($) — for one-size items use &quot;One Size&quot;</div>
+            <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", margin: "4px 0 6px" }}>Sizes &amp; prices ($) — for one-size items use &quot;One Size&quot;. Don&apos;t use &quot;-&quot; in size names (auto-converted to &quot;–&quot;)</div>
             <div style={{ display: "grid", gap: 6 }}>
               {form.sizes.map((s, i) => (
                 <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 130px 34px", gap: 8, alignItems: "center" }}>
