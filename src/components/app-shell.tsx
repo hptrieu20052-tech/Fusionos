@@ -9,13 +9,16 @@ import {
 import { useLang } from "@/components/lang-provider";
 import { AmazonLogo } from "@/components/amazon-logo";
 import { SHOPBASE_LOGO_SRC } from "@/components/shopbase-logo";
+import { WOO_LOGO_SRC } from "@/components/woo-logo";
 
 // Logo sàn cho nav — dùng logo MÀU bản gốc (giống trang Stores), không dùng bản đen nav-*.png.
-const MK_SRC: Record<string, string> = { etsy: "/marketplaces/etsy.png", shopify: "/marketplaces/shopify.png", tiktok: "/marketplaces/tiktok.png", shopbase: SHOPBASE_LOGO_SRC };
+// v515 · thêm woocommerce (logo Woo tím data-URI) — trước đây thiếu nên rơi vào fallback = logo Shopify.
+const MK_SRC: Record<string, string> = { etsy: "/marketplaces/etsy.png", shopify: "/marketplaces/shopify.png", tiktok: "/marketplaces/tiktok.png", shopbase: SHOPBASE_LOGO_SRC, woocommerce: WOO_LOGO_SRC };
+const MK_ROUND = new Set(["shopbase", "woocommerce"]); // logo vuông cần bo góc cho hợp
 const MarketplaceLogo = ({ mk, size = 16 }: { mk: string; size?: number }) => (
-  // ShopBase: logo chính thức (data-URI). Sàn khác: dùng ảnh đã có.
+  // ShopBase/Woo: logo chính thức (data-URI). Sàn khác: dùng ảnh đã có.
   // eslint-disable-next-line @next/next/no-img-element
-  <img src={MK_SRC[mk] ?? MK_SRC.shopify} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, borderRadius: mk === "shopbase" ? size * 0.22 : 0 }} />
+  <img src={MK_SRC[mk] ?? MK_SRC.shopify} alt={mk} width={size} height={size} style={{ width: size, height: size, objectFit: "contain", display: "block", flexShrink: 0, borderRadius: MK_ROUND.has(mk) ? size * 0.22 : 0 }} />
 );
 
 type P = { width?: number; height?: number; style?: React.CSSProperties };
