@@ -84,8 +84,8 @@ export default function AdsCenterClient() {
 
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
   // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
-  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null };
-  type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; eff?: string; budget: number }>; ads: Record<string, AdEnt> };
+  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string };
+  type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt> };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
     try {
@@ -242,6 +242,22 @@ export default function AdsCenterClient() {
       const g = byCamp.get(a.campId) ?? { name: a.campaign, ads: [] };
       g.ads.push(a); byCamp.set(a.campId, g);
     }
+    // v532 · ads CHƯA CHI TIÊU (chưa có dòng insights nào trong khoảng ngày) — dựng từ cấu trúc thật
+    // trên Meta (route /entities, có name + adset_id + campaign_id) với số liệu 0, để campaign/ad set
+    // mới tạo vẫn thấy đủ ad set + ads như Ads Manager.
+    const campName = new Map(campList.map((c) => [c.id, c.name]));
+    for (const [adId, ad] of Object.entries(ent?.ads ?? {})) {
+      if (m.has(adId)) continue;
+      if (!ad.campId || !ad.adsetId) continue; // entities bản cũ (chưa deploy) — bỏ qua êm
+      if (ad.status === "ARCHIVED" || ad.status === "DELETED") continue;
+      m.set(adId, {
+        campId: ad.campId, campaign: campName.get(ad.campId) || "—",
+        ad: ad.name || adId, adId, adset: ent?.adsets[ad.adsetId]?.name ?? "", adsetId: ad.adsetId,
+        spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0,
+      });
+      if (!byCamp.has(ad.campId)) byCamp.set(ad.campId, { name: campName.get(ad.campId) || "—", ads: [] });
+      byCamp.get(ad.campId)!.ads.push(m.get(adId)!);
+    }
     // v531 · campaign MỚI chưa chi tiêu (không có dòng insights) — vẫn hiện card rỗng để bấm ＋ Ads / bật tắt.
     for (const c of campList) {
       if (c.id && !byCamp.has(c.id)) byCamp.set(c.id, { name: c.name || "—", ads: [] });
@@ -249,7 +265,7 @@ export default function AdsCenterClient() {
     // v454 · sắp theo AD SET (nhóm) rồi spend — render sẽ chèn hàng tiêu đề mỗi khi đổi ad set.
     for (const g of Array.from(byCamp.values())) g.ads.sort((x: Agg, y: Agg) => x.adset.localeCompare(y.adset) || y.spend - x.spend);
     return Array.from(byCamp.entries()).sort((x, y) => y[1].ads.reduce((s, a) => s + a.spend, 0) - x[1].ads.reduce((s, a) => s + a.spend, 0));
-  }, [rows, campList]);
+  }, [rows, campList, ent]);
 
   const totals = useMemo(() => {
     const t = { spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 };
