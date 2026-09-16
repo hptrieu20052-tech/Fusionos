@@ -80,7 +80,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     setBusy(true);
     const j = await fetch(`/api/woo-products?storeId=${sid}&search=${encodeURIComponent(q)}&page=${pg}&status=${status}&category=${cat || ""}&seller=${seller}&template=${tpl}`).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setBusy(false);
-    if (j.ok) { setProducts(j.products ?? []); setTotal(Number(j.total) || 0); setTotalPages(Math.max(1, Number(j.totalPages) || 1)); setSel(new Set()); }
+    if (j.ok) { setProducts(j.products ?? []); setTotal(Number(j.total) || 0); setTotalPages(Math.max(1, Number(j.totalPages) || 1)); setSel(new Set()); setIsAdminView(!!j.admin); }
     else flash("✗ " + (j.error ?? "Error"));
   }, []);
 
@@ -102,16 +102,18 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     else flash("✗ " + (j.error ?? "Error"));
   };
   // v508 · Bulk edit giá / description cho các dòng đã tick (để trống = giữ nguyên).
-  const emptyBulk = { regularPrice: "", salePrice: "", description: "", descriptionMode: "replace", setTypes: false, wcpStyles: [] as string[] };
+  const emptyBulk = { regularPrice: "", salePrice: "", description: "", descriptionMode: "replace", setTypes: false, wcpStyles: [] as string[], owner: "" };
+  const [isAdminView, setIsAdminView] = useState(false); // v527 · GET trả admin=true khi user không bị scope
   const [bulk, setBulk] = useState<typeof emptyBulk | null>(null);
   const bulkApply = async () => {
     if (!bulk || !sel.size) return;
-    if (!bulk.regularPrice.trim() && !bulk.salePrice.trim() && !bulk.description.trim() && !bulk.setTypes) { flash("✗ Fill at least one field (blank = keep current)"); return; }
+    if (!bulk.regularPrice.trim() && !bulk.salePrice.trim() && !bulk.description.trim() && !bulk.setTypes && !bulk.owner) { flash("✗ Fill at least one field (blank = keep current)"); return; }
     setSaving(true);
     const j = await fetch("/api/woo-products", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, ids: Array.from(sel), set: {
       regularPrice: bulk.regularPrice.trim(), salePrice: bulk.salePrice.trim(),
       description: bulk.description, descriptionMode: bulk.descriptionMode,
       ...(bulk.setTypes ? { wcpStyles: bulk.wcpStyles } : {}), // v512 · gán Product Types hàng loạt
+      ...(bulk.owner ? { ownerId: bulk.owner } : {}),           // v527 · gán chủ sở hữu (admin)
     } }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setSaving(false);
     if (j.ok) { flash(`✓ ${j.updated} products updated`); setBulk(null); loadProducts(storeId, search, page, fStatus, fCat, fSeller, fTpl); }
@@ -205,7 +207,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
       ? await fetch("/api/woo-products", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, productId: form.id, product }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }))
       : await fetch("/api/woo-products", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, product, templateId: form.tplId || undefined }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }));
     setSaving(false);
-    if (j.ok) { flash(form.id ? "✓ Product updated" : "✓ Product created on the store"); setForm(null); loadProducts(storeId, search, page, fStatus, fCat, fSeller, fTpl); loadCats(storeId); }
+    if (j.ok) { flash(j.warn ? "⚠ " + j.warn : form.id ? "✓ Product updated" : "✓ Product created on the store"); setForm(null); loadProducts(storeId, search, page, fStatus, fCat, fSeller, fTpl); loadCats(storeId); }
     else flash("✗ " + (j.error ?? "Error"));
   };
 
@@ -419,6 +421,16 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                 </L>
               </div>
             </div>
+            {isAdminView && sellers.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <L label="Assign owner (admin) — gán các sản phẩm đã tick cho seller (seller đó thấy + sửa được; cứu sản phẩm thiếu người tạo)">
+                  <select value={bulk.owner} onChange={(e) => setBulk({ ...bulk, owner: e.target.value })} style={inp}>
+                    <option value="">— no change —</option>
+                    {sellers.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                  </select>
+                </L>
+              </div>
+            )}
             {ptypes.length > 0 && (
               <div style={{ marginBottom: 10 }}>
                 <label style={{ display: "inline-flex", gap: 8, alignItems: "center", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>

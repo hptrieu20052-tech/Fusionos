@@ -134,7 +134,7 @@ export async function GET(req: NextRequest) {
         });
       } catch { /* bảng chưa migrate → giữ nguyên */ }
     }
-    return NextResponse.json({ ok: true, products, total: r.total, totalPages: r.totalPages, page });
+    return NextResponse.json({ ok: true, products, total: r.total, totalPages: r.totalPages, page, admin: !st.scoped });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }
@@ -202,8 +202,14 @@ export async function POST(req: NextRequest) {
     const slim = slimProduct(created);
     // v503 · ghi chủ sở hữu — nền tảng cho "của ai người đó thấy" trong store share.
     const tplId = /^[0-9a-f-]{36}$/i.test(String(b?.templateId ?? "")) ? String(b.templateId) : null;
-    try { await db.insert(schema.wooProductOwners).values({ storeId: st.id, productId: slim.id, createdBy: session.sub, templateId: tplId }).onConflictDoNothing(); } catch { /* chưa migrate → bỏ qua */ }
-    return NextResponse.json({ ok: true, product: slim });
+    // v527 · ghi owner TRƯỢT là seller mất quyền sửa chính đồ mình (ca EL002) → retry 1 lần + báo rõ.
+    let ownWarn: string | undefined;
+    try { await db.insert(schema.wooProductOwners).values({ storeId: st.id, productId: slim.id, createdBy: session.sub, templateId: tplId }).onConflictDoNothing(); }
+    catch {
+      try { await db.insert(schema.wooProductOwners).values({ storeId: st.id, productId: slim.id, createdBy: session.sub, templateId: tplId }).onConflictDoNothing(); }
+      catch { ownWarn = "Product created on store, but the owner record failed — ask admin to tick it → Bulk edit → Assign owner."; }
+    }
+    return NextResponse.json({ ok: true, product: slim, ...(ownWarn ? { warn: ownWarn } : {}) });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }
@@ -262,12 +268,17 @@ export async function PATCH(req: NextRequest) {
   // v512 · bulk gán Product Types (meta _wcp_selected_styles) — fix "thêm type mới là áp vào listing cũ":
   // gán tường minh cho hàng cũ thì type mới thêm sau không lọt vào picker của chúng nữa.
   const wcpStyles = Array.isArray(set.wcpStyles) ? set.wcpStyles.map((x) => strv(x)).filter(Boolean).slice(0, 50) : null;
+  // v527 · Assign owner (chỉ admin): gán các sản phẩm đã tick cho 1 seller — sửa dòng woo_product_owners,
+  // vừa cứu sản phẩm "mồ côi" owner (ghi trượt lúc tạo) vừa dùng khi admin muốn GIAO listing cho seller.
+  const ownerId = /^[0-9a-f-]{36}$/i.test(String((set as { ownerId?: string }).ownerId ?? "")) ? String((set as { ownerId?: string }).ownerId) : "";
   const hasStatus = ["publish", "draft"].includes(status);
-  const hasSet = !!(regularPrice || salePrice || description.trim() || wcpStyles !== null);
+  const hasSet = !!(regularPrice || salePrice || description.trim() || wcpStyles !== null || ownerId);
   if (!hasStatus && !hasSet) return NextResponse.json({ ok: false, error: "nothing to update" }, { status: 400 });
+  // (kiểm tra scoped nằm sau wooStore — chèn tại chỗ dùng)
   if (regularPrice && !(Number(regularPrice) > 0)) return NextResponse.json({ ok: false, error: "invalid price" }, { status: 400 });
   if (salePrice && salePrice !== "0" && !(Number(salePrice) > 0)) return NextResponse.json({ ok: false, error: "invalid sale price" }, { status: 400 });
 
+  if (ownerId && st.scoped) return NextResponse.json({ ok: false, error: "Only admins can assign product owners." }, { status: 403 });
   let ids = (Array.isArray(b?.ids) ? b.ids : []).map((x: unknown) => Number(x)).filter((n: number) => n > 0).slice(0, 50);
   if (!ids.length) return NextResponse.json({ ok: false, error: "no products selected" }, { status: 400 });
   // v503 · scoped seller: bulk chỉ áp lên sản phẩm MÌNH tạo.
@@ -280,7 +291,16 @@ export async function PATCH(req: NextRequest) {
       if (!ids.length) return NextResponse.json({ ok: false, error: "None of the selected products were created by you." }, { status: 403 });
     } catch { /* chưa migrate → giữ hành vi cũ */ }
   }
+  const wooTouch = hasStatus || !!regularPrice || !!salePrice || !!description.trim() || wcpStyles !== null;
   try {
+    if (!wooTouch) {
+      // v527 · chỉ gán owner — không đụng Woo.
+      for (const id of ids) {
+        await db.insert(schema.wooProductOwners).values({ storeId: st.id, productId: id, createdBy: ownerId })
+          .onConflictDoUpdate({ target: [schema.wooProductOwners.storeId, schema.wooProductOwners.productId], set: { createdBy: ownerId } });
+      }
+      return NextResponse.json({ ok: true, updated: ids.length });
+    }
     // Append description → cần description hiện tại: lấy 1 phát qua include=ids.
     const curDesc = new Map<number, string>();
     if (description.trim() && descMode === "append") {
@@ -301,6 +321,14 @@ export async function PATCH(req: NextRequest) {
       return u;
     });
     await wooApi(st.cred, "products/batch", { method: "POST", body: JSON.stringify({ update }) });
+    if (ownerId) {
+      for (const id of ids) {
+        try {
+          await db.insert(schema.wooProductOwners).values({ storeId: st.id, productId: id, createdBy: ownerId })
+            .onConflictDoUpdate({ target: [schema.wooProductOwners.storeId, schema.wooProductOwners.productId], set: { createdBy: ownerId } });
+        } catch { /* chưa migrate */ }
+      }
+    }
     return NextResponse.json({ ok: true, updated: ids.length });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
