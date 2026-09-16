@@ -204,11 +204,15 @@ export default function AdsCenterClient() {
     setDupBusy("");
   };
   // v525 · nút hành động nhỏ dùng chung trên các hàng
-  // v530 · đổi tên campaign / ad set / ad ngay tại bảng — prompt tên mới → POST apply {action:"rename"}.
+  // v530 · đổi tên campaign / ad set / ad ngay tại bảng. v533 · sửa INLINE (như ô budget) —
+  // bấm ✎ → tên thành ô nhập ngay tại chỗ, Enter/✓ lưu, Esc/✕ hủy. Không dùng window.prompt nữa.
   const [renBusy, setRenBusy] = useState("");
-  const renameEnt = async (kind: "camp" | "adset" | "ad", id: string, curName: string) => {
-    const name = (window.prompt("Tên mới:", curName) ?? "").trim();
-    if (!name || name === curName) return;
+  const [renEdit, setRenEdit] = useState<{ kind: "camp" | "adset" | "ad"; id: string; val: string } | null>(null);
+  const saveRename = async () => {
+    if (!renEdit || renBusy) return;
+    const { kind, id } = renEdit;
+    const name = renEdit.val.trim();
+    if (!name) { setErr("Tên không được để trống"); return; }
     setRenBusy(kind + ":" + id); setErr("");
     try {
       const j = await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "rename", id, name }) }).then((r) => r.json());
@@ -218,11 +222,17 @@ export default function AdsCenterClient() {
           kind === "camp" && r.campaignId === id ? { ...r, campaignName: name }
           : kind === "adset" && r.adsetId === id ? { ...r, adsetName: name }
           : kind === "ad" && r.adId === id ? { ...r, adName: name } : r));
-        setErr(`✓ Đã đổi tên → "${name}"`);
+        setCampList((cs) => kind === "camp" ? cs.map((c) => c.id === id ? { ...c, name } : c) : cs);
+        setEnt((e) => e && kind === "adset" && e.adsets[id] ? { ...e, adsets: { ...e.adsets, [id]: { ...e.adsets[id], name } } }
+          : e && kind === "ad" && e.ads[id] ? { ...e, ads: { ...e.ads, [id]: { ...e.ads[id], name } } } : e);
+        setRenEdit(null);
       } else setErr(j.error ?? "Rename failed");
     } catch (e) { setErr(String((e as Error).message)); }
     setRenBusy("");
   };
+  const renOkBtn: React.CSSProperties = { border: "none", background: "#16A34A", color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, cursor: "pointer" };
+  const renXBtn: React.CSSProperties = { border: "none", background: "transparent", color: "var(--muted)", fontSize: 11, cursor: "pointer" };
+  const renInput = (width: number, fontSize: number): React.CSSProperties => ({ width, border: "1px solid #C9D2DE", borderRadius: 8, padding: "3px 8px", fontSize, fontWeight: 700, font: "inherit", outline: "none", background: "#fff" });
   const rowBtn: React.CSSProperties = { border: "1px solid #C9D2DE", background: "#fff", color: "#1D4ED8", borderRadius: 999, padding: "1px 9px", fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" };
   const penBtn: React.CSSProperties = { border: "none", background: "transparent", color: "#8794A5", fontSize: 12, cursor: "pointer", padding: "0 3px", flexShrink: 0, lineHeight: 1 };
 
@@ -386,10 +396,20 @@ export default function AdsCenterClient() {
                 <Toggle on={ent.camp[campId] === "ACTIVE"} armed={ctlArm === "camp:" + campId} busy={ctlBusy === "camp:" + campId}
                   onClick={() => toggleStatus("camp", campId)} />
               )}
-              <b style={{ fontSize: 14 }}>{g.name}</b>
-              {/* v530 · đổi tên campaign */}
-              <button onClick={(e) => { e.stopPropagation(); renameEnt("camp", campId, g.name); }} disabled={renBusy === "camp:" + campId}
-                title="Đổi tên campaign" style={penBtn}>{renBusy === "camp:" + campId ? "…" : "✎"}</button>
+              {/* v533 · đổi tên campaign — sửa inline ngay tại chỗ */}
+              {renEdit?.kind === "camp" && renEdit.id === campId ? (
+                <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <input autoFocus value={renEdit.val} onChange={(e) => setRenEdit({ kind: "camp", id: campId, val: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === "Enter") saveRename(); if (e.key === "Escape") setRenEdit(null); }}
+                    style={renInput(260, 13.5)} />
+                  <button onClick={saveRename} disabled={renBusy === "camp:" + campId} style={renOkBtn}>{renBusy === "camp:" + campId ? "…" : "✓"}</button>
+                  <button onClick={() => setRenEdit(null)} style={renXBtn}>✕</button>
+                </span>
+              ) : (<>
+                <b style={{ fontSize: 14 }}>{g.name}</b>
+                <button onClick={(e) => { e.stopPropagation(); setRenEdit({ kind: "camp", id: campId, val: g.name }); }}
+                  title="Đổi tên campaign" style={penBtn}>✎</button>
+              </>)}
               {status && (
                 <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, letterSpacing: ".3px",
                   background: isActive ? "#E9F7EF" : "#F1F1F4", color: isActive ? "#1F6F45" : "#8794A5" }}>
@@ -427,10 +447,21 @@ export default function AdsCenterClient() {
                                   dim={ent.adsets[a.adsetId].status === "ACTIVE" && ent.adsets[a.adsetId].eff === "CAMPAIGN_PAUSED"}
                                   onClick={() => toggleStatus("adset", a.adsetId)} />
                               )}
-                              <span>▪ {a.adset || "(no ad set)"}</span>
-                              {/* v530 · đổi tên ad set */}
-                              <button onClick={(e) => { e.stopPropagation(); renameEnt("adset", a.adsetId, a.adset); }} disabled={renBusy === "adset:" + a.adsetId}
-                                title="Đổi tên ad set" style={penBtn}>{renBusy === "adset:" + a.adsetId ? "…" : "✎"}</button>
+                              {/* v533 · đổi tên ad set — sửa inline */}
+                              {renEdit?.kind === "adset" && renEdit.id === a.adsetId ? (
+                                <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                  <span>▪</span>
+                                  <input autoFocus value={renEdit.val} onChange={(e) => setRenEdit({ kind: "adset", id: a.adsetId, val: e.target.value })}
+                                    onKeyDown={(e) => { if (e.key === "Enter") saveRename(); if (e.key === "Escape") setRenEdit(null); }}
+                                    style={renInput(220, 11.5)} />
+                                  <button onClick={saveRename} disabled={renBusy === "adset:" + a.adsetId} style={renOkBtn}>{renBusy === "adset:" + a.adsetId ? "…" : "✓"}</button>
+                                  <button onClick={() => setRenEdit(null)} style={renXBtn}>✕</button>
+                                </span>
+                              ) : (<>
+                                <span>▪ {a.adset || "(no ad set)"}</span>
+                                <button onClick={(e) => { e.stopPropagation(); setRenEdit({ kind: "adset", id: a.adsetId, val: a.adset }); }}
+                                  title="Đổi tên ad set" style={penBtn}>✎</button>
+                              </>)}
                               {/* v457 · budget/ngày — bấm ✎ để sửa, Enter hoặc ✓ để lưu */}
                               {ent?.adsets[a.adsetId] && (budEdit?.id === a.adsetId ? (
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -489,10 +520,20 @@ export default function AdsCenterClient() {
                               title="Xem lớn creative"
                               style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9" }} />
                           )}
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.ad}</span>
-                          {/* v530 · đổi tên ad */}
-                          <button onClick={(e) => { e.stopPropagation(); renameEnt("ad", a.adId, a.ad); }} disabled={renBusy === "ad:" + a.adId}
-                            title="Đổi tên ad" style={penBtn}>{renBusy === "ad:" + a.adId ? "…" : "✎"}</button>
+                          {/* v533 · đổi tên ad — sửa inline */}
+                          {renEdit?.kind === "ad" && renEdit.id === a.adId ? (
+                            <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                              <input autoFocus value={renEdit.val} onChange={(e) => setRenEdit({ kind: "ad", id: a.adId, val: e.target.value })}
+                                onKeyDown={(e) => { if (e.key === "Enter") saveRename(); if (e.key === "Escape") setRenEdit(null); }}
+                                style={renInput(220, 12)} />
+                              <button onClick={saveRename} disabled={renBusy === "ad:" + a.adId} style={renOkBtn}>{renBusy === "ad:" + a.adId ? "…" : "✓"}</button>
+                              <button onClick={() => setRenEdit(null)} style={renXBtn}>✕</button>
+                            </span>
+                          ) : (<>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.ad}</span>
+                            <button onClick={(e) => { e.stopPropagation(); setRenEdit({ kind: "ad", id: a.adId, val: a.ad }); }}
+                              title="Đổi tên ad" style={penBtn}>✎</button>
+                          </>)}
                           {/* v525 · dup ad này (PAUSED) — mặc định cùng ad set, dán ID khác để thả vào winner MAIN */}
                           <button onClick={(e) => { e.stopPropagation(); dupAd(a.adId, a.ad, a.adsetId); }} disabled={dupBusy === "ad:" + a.adId}
                             title="Duplicate ad (PAUSED)" style={{ ...rowBtn, padding: "0 7px", flexShrink: 0, opacity: dupBusy === "ad:" + a.adId ? 0.5 : 1 }}>⧉</button>
