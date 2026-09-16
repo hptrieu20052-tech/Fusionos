@@ -202,7 +202,27 @@ export default function AdsCenterClient() {
     setDupBusy("");
   };
   // v525 · nút hành động nhỏ dùng chung trên các hàng
+  // v530 · đổi tên campaign / ad set / ad ngay tại bảng — prompt tên mới → POST apply {action:"rename"}.
+  const [renBusy, setRenBusy] = useState("");
+  const renameEnt = async (kind: "camp" | "adset" | "ad", id: string, curName: string) => {
+    const name = (window.prompt("Tên mới:", curName) ?? "").trim();
+    if (!name || name === curName) return;
+    setRenBusy(kind + ":" + id); setErr("");
+    try {
+      const j = await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "rename", id, name }) }).then((r) => r.json());
+      if (j.ok) {
+        // Đổi tên ngay trên bảng (không chờ sync) — meta_insights sẽ khớp lại ở lần sync sau.
+        setRows((rs) => rs.map((r) =>
+          kind === "camp" && r.campaignId === id ? { ...r, campaignName: name }
+          : kind === "adset" && r.adsetId === id ? { ...r, adsetName: name }
+          : kind === "ad" && r.adId === id ? { ...r, adName: name } : r));
+        setErr(`✓ Đã đổi tên → "${name}"`);
+      } else setErr(j.error ?? "Rename failed");
+    } catch (e) { setErr(String((e as Error).message)); }
+    setRenBusy("");
+  };
   const rowBtn: React.CSSProperties = { border: "1px solid #C9D2DE", background: "#fff", color: "#1D4ED8", borderRadius: 999, padding: "1px 9px", fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" };
+  const penBtn: React.CSSProperties = { border: "none", background: "transparent", color: "#8794A5", fontSize: 12, cursor: "pointer", padding: "0 3px", flexShrink: 0, lineHeight: 1 };
 
   // Gộp theo campaign → ad
   const grouped = useMemo(() => {
@@ -345,6 +365,9 @@ export default function AdsCenterClient() {
                   onClick={() => toggleStatus("camp", campId)} />
               )}
               <b style={{ fontSize: 14 }}>{g.name}</b>
+              {/* v530 · đổi tên campaign */}
+              <button onClick={(e) => { e.stopPropagation(); renameEnt("camp", campId, g.name); }} disabled={renBusy === "camp:" + campId}
+                title="Đổi tên campaign" style={penBtn}>{renBusy === "camp:" + campId ? "…" : "✎"}</button>
               {status && (
                 <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, letterSpacing: ".3px",
                   background: isActive ? "#E9F7EF" : "#F1F1F4", color: isActive ? "#1F6F45" : "#8794A5" }}>
@@ -381,6 +404,9 @@ export default function AdsCenterClient() {
                                   onClick={() => toggleStatus("adset", a.adsetId)} />
                               )}
                               <span>▪ {a.adset || "(no ad set)"}</span>
+                              {/* v530 · đổi tên ad set */}
+                              <button onClick={(e) => { e.stopPropagation(); renameEnt("adset", a.adsetId, a.adset); }} disabled={renBusy === "adset:" + a.adsetId}
+                                title="Đổi tên ad set" style={penBtn}>{renBusy === "adset:" + a.adsetId ? "…" : "✎"}</button>
                               {/* v457 · budget/ngày — bấm ✎ để sửa, Enter hoặc ✓ để lưu */}
                               {ent?.adsets[a.adsetId] && (budEdit?.id === a.adsetId ? (
                                 <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -440,6 +466,9 @@ export default function AdsCenterClient() {
                               style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9" }} />
                           )}
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.ad}</span>
+                          {/* v530 · đổi tên ad */}
+                          <button onClick={(e) => { e.stopPropagation(); renameEnt("ad", a.adId, a.ad); }} disabled={renBusy === "ad:" + a.adId}
+                            title="Đổi tên ad" style={penBtn}>{renBusy === "ad:" + a.adId ? "…" : "✎"}</button>
                           {/* v525 · dup ad này (PAUSED) — mặc định cùng ad set, dán ID khác để thả vào winner MAIN */}
                           <button onClick={(e) => { e.stopPropagation(); dupAd(a.adId, a.ad, a.adsetId); }} disabled={dupBusy === "ad:" + a.adId}
                             title="Duplicate ad (PAUSED)" style={{ ...rowBtn, padding: "0 7px", flexShrink: 0, opacity: dupBusy === "ad:" + a.adId ? 0.5 : 1 }}>⧉</button>

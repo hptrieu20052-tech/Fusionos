@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const token = process.env.META_SYSTEM_TOKEN ?? "";
   if (!token) return NextResponse.json({ ok: false, error: "META_SYSTEM_TOKEN missing" }, { status: 400 });
 
-  const body = await req.json().catch(() => null) as { action?: string; adId?: string; adsetId?: string; id?: string; status?: string; budget?: number } | null;
+  const body = await req.json().catch(() => null) as { action?: string; adId?: string; adsetId?: string; id?: string; status?: string; budget?: number; name?: string } | null;
   const action = body?.action ?? "";
   const adId = String(body?.adId ?? "").replace(/\D/g, "");
   const adsetId = String(body?.adsetId ?? "").replace(/\D/g, "");
@@ -43,6 +43,14 @@ export async function POST(req: NextRequest) {
       if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
       await fb(id, token, { status });
       return NextResponse.json({ ok: true, did: status });
+    }
+    // v530 · đổi tên campaign / ad set / ad ngay từ Ads Center (POST /{id} {name}).
+    if (action === "rename") {
+      const id = String(body?.id ?? "").replace(/\D/g, "");
+      const name = String(body?.name ?? "").trim().slice(0, 120);
+      if (!id || !name) return NextResponse.json({ ok: false, error: "id + name required" }, { status: 400 });
+      await fb(id, token, { name });
+      return NextResponse.json({ ok: true, did: name });
     }
     if (action === "set_budget") {
       const dollars = Number(body?.budget);
