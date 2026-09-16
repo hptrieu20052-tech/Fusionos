@@ -8,10 +8,14 @@ export const maxDuration = 120;
 /**
  * v525 · Nhân bản ad set / ad ngay từ Meta Ads Center (Meta /copies API) — phục vụ playbook
  * MAIN/TEST: thăng cấp winner (dup ad set sang campaign MAIN), nhân biến thể (dup ad vào ad set).
+ * v535 · Thêm kind "campaign" + cờ deep cho adset — luồng Dup chuẩn FUSION: copy KHUNG
+ * (campaign/ad set, không kèm ads) rồi client chuyển sang Manage Products chọn sản phẩm và push.
  *
- * POST { kind: "adset", id, campaignId?, name?, budget? }
- *   → copy ad set (KÈM ads bên trong, tất cả PAUSED) vào campaignId (trống = cùng campaign);
- *     đổi tên + đặt daily budget mới nếu truyền.
+ * POST { kind: "campaign", id, name? }
+ *   → copy campaign (KHÔNG kèm ad sets/ads, PAUSED); đổi tên nếu truyền. Trả id campaign mới.
+ * POST { kind: "adset", id, campaignId?, name?, budget?, deep? }
+ *   → copy ad set vào campaignId (trống = cùng campaign), PAUSED. deep=false: KHÔNG kèm ads
+ *     (copy khung — client dẫn sang kit chọn product); deep khác false: KÈM toàn bộ ads (mặc định cũ).
  * POST { kind: "ad", id, adsetId?, name? }
  *   → copy 1 ad (PAUSED) vào adsetId (trống = cùng ad set).
  */
@@ -36,18 +40,27 @@ export async function POST(req: NextRequest) {
   const token = process.env.META_SYSTEM_TOKEN ?? "";
   if (!token) return NextResponse.json({ ok: false, error: "Meta API not configured" }, { status: 400 });
 
-  const b = await req.json().catch(() => null) as { kind?: string; id?: string; campaignId?: string; adsetId?: string; name?: string; budget?: number } | null;
-  const kind = b?.kind === "ad" ? "ad" : b?.kind === "adset" ? "adset" : "";
+  const b = await req.json().catch(() => null) as { kind?: string; id?: string; campaignId?: string; adsetId?: string; name?: string; budget?: number; deep?: boolean } | null;
+  const kind = b?.kind === "ad" ? "ad" : b?.kind === "adset" ? "adset" : b?.kind === "campaign" ? "campaign" : "";
   const id = String(b?.id ?? "").replace(/\D/g, "");
-  if (!kind || !id) return NextResponse.json({ ok: false, error: "kind (adset|ad) + id required" }, { status: 400 });
+  if (!kind || !id) return NextResponse.json({ ok: false, error: "kind (campaign|adset|ad) + id required" }, { status: 400 });
   const name = String(b?.name ?? "").trim().slice(0, 120);
 
   try {
+    if (kind === "campaign") {
+      // v535 · copy KHUNG campaign (objective/cấu hình), không kèm ad sets/ads — client dẫn sang kit chọn product.
+      const r = await fb(`${id}/copies`, token, { deep_copy: false, status_option: "PAUSED" });
+      const newId = String(r.copied_campaign_id ?? (Array.isArray(r.ad_object_ids) ? (r.ad_object_ids as { copied_id?: string }[])[0]?.copied_id : "") ?? "");
+      if (!newId) return NextResponse.json({ ok: true, id: null, warn: "Copied, but Meta didn't return the new campaign id — check Ads Manager." });
+      if (name) await fb(newId, token, { name }).catch(() => { /* copy đã xong — đổi tên lỗi thì sửa tay */ });
+      return NextResponse.json({ ok: true, id: newId });
+    }
     if (kind === "adset") {
       const campaignId = String(b?.campaignId ?? "").replace(/\D/g, "");
-      // deep_copy: copy cả ads bên trong; status_option PAUSED — duyệt xong bật tay.
+      // v535 · deep=false → copy khung KHÔNG kèm ads; mặc định (deep khác false) giữ hành vi cũ: kèm ads.
+      const deep = b?.deep !== false;
       const r = await fb(`${id}/copies`, token, {
-        deep_copy: true, status_option: "PAUSED",
+        deep_copy: deep, status_option: "PAUSED",
         ...(campaignId ? { campaign_id: campaignId } : {}),
       });
       const newId = String(r.copied_adset_id ?? (Array.isArray(r.ad_object_ids) ? (r.ad_object_ids as { copied_id?: string }[])[0]?.copied_id : "") ?? "");
