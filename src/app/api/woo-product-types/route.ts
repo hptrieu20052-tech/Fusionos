@@ -82,17 +82,25 @@ function cleanStyles(input: unknown): Style[] | { error: string } {
   return out;
 }
 
+/** v529 · chuẩn hoá size Y HỆT cleanStyles (en-dash + trim tên) — để bản thô trên store (còn "-"
+ *  trong tên size, vd "0-3M") không bị so lệch với bản đã chuẩn hoá seller gửi lên → chặn oan. */
+function canonSize(sz: string): string {
+  const cut = sz.lastIndexOf("-");
+  if (cut <= 0) return sz;
+  const name = sz.slice(0, cut).replace(/-/g, "–").trim();
+  return name ? `${name}-${sz.slice(cut + 1)}` : sz;
+}
 /** Chuẩn hoá 1 style (kể cả bản thô từ bridge) để SO SÁNH nội dung — chặn seller sửa lén đồ admin. */
 function canon(s: Record<string, unknown>): string {
-  const d = (Array.isArray(s.designs) ? s.designs : []).map(strv).filter(Boolean);
+  const d = (Array.isArray(s.designs) ? s.designs : []).map(strv).filter(Boolean).slice(0, 10);
   return JSON.stringify({
-    n: strv(s.styles),
-    i: strv(s.image),
-    sz: (Array.isArray(s.sizes) ? s.sizes : []).map(strv).filter(Boolean),
-    c: (Array.isArray(s.colors) ? s.colors : []).map(strv).filter(Boolean),
+    n: strv(s.styles).slice(0, 120),
+    i: strv(s.image).slice(0, 500),
+    sz: (Array.isArray(s.sizes) ? s.sizes : []).map(strv).filter(Boolean).slice(0, 60).map(canonSize),
+    c: (Array.isArray(s.colors) ? s.colors : []).map(strv).filter(Boolean).slice(0, 60),
     d: d.length ? d : ["front", "back"], // khớp default của cleanStyles — tránh chặn oan
-    sh: strv(s.shipping),
-    g: strv(s.group), // v522 · group cũng bất khả xâm phạm trên style admin
+    sh: strv(s.shipping).slice(0, 20000),
+    g: strv(s.group).slice(0, 80), // v522 · group cũng bất khả xâm phạm trên style admin
   });
 }
 
