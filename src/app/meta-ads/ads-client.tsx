@@ -178,13 +178,13 @@ export default function AdsCenterClient() {
   // (Meta Ads Kit) như luồng ＋ New campaign — copy KHUNG trên Meta rồi nhảy sang Manage Products.
   // Ô tick "copy kèm creative" giữ lại luồng copy y nguyên (Meta /copies) cho ai cần.
   const [dupBusy, setDupBusy] = useState("");
-  const [dupForm, setDupForm] = useState<{ kind: "camp" | "adset" | "ad"; id: string; label: string; name: string; target: string; orig: string; budget: string; deep: boolean; adsetName: string } | null>(null);
+  const [dupForm, setDupForm] = useState<{ kind: "camp" | "adset" | "ad"; id: string; label: string; name: string; target: string; orig: string; budget: string; deep: boolean; adsetName: string; start: string } | null>(null);
   const dupCamp = (campId: string, campName: string) =>
-    setDupForm({ kind: "camp", id: campId, label: campName || campId, name: `${campName} - Copy`, target: "", orig: "", budget: "", deep: false, adsetName: "" });
+    setDupForm({ kind: "camp", id: campId, label: campName || campId, name: `${campName} - Copy`, target: "", orig: "", budget: "", deep: false, adsetName: "", start: "" });
   const dupAdset = (adsetId: string, adsetName: string, campId: string) =>
-    setDupForm({ kind: "adset", id: adsetId, label: adsetName || adsetId, name: `${adsetName} - Copy`, target: campId, orig: campId, budget: "", deep: false, adsetName });
+    setDupForm({ kind: "adset", id: adsetId, label: adsetName || adsetId, name: `${adsetName} - Copy`, target: campId, orig: campId, budget: "", deep: false, adsetName, start: "" });
   const dupAd = (adId: string, adName: string, curAdsetId: string, curAdsetName: string) =>
-    setDupForm({ kind: "ad", id: adId, label: adName || adId, name: `${adName} - Copy`, target: curAdsetId, orig: curAdsetId, budget: "", deep: false, adsetName: curAdsetName });
+    setDupForm({ kind: "ad", id: adId, label: adName || adId, name: `${adName} - Copy`, target: curAdsetId, orig: curAdsetId, budget: "", deep: false, adsetName: curAdsetName, start: "" });
   const submitDup = async () => {
     if (!dupForm || dupBusy) return;
     const f = dupForm;
@@ -199,9 +199,11 @@ export default function AdsCenterClient() {
         setErr(j.ok ? "⚠ " + (j.warn ?? "Copied — check Ads Manager.") : "✗ " + (j.error ?? "Dup failed"));
       } else if (f.kind === "adset") {
         const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ kind: "adset", id: f.id, campaignId: f.target.trim(), name: f.name.trim(), budget: Number(f.budget) || undefined, deep: f.deep }) }).then((r) => r.json());
+          body: JSON.stringify({ kind: "adset", id: f.id, campaignId: f.target.trim(), name: f.name.trim(), budget: Number(f.budget) || undefined, deep: f.deep,
+            startTime: f.start ? new Date(f.start).toISOString() : undefined }) }).then((r) => r.json());
         if (!j.ok) { setErr("✗ " + (j.error ?? "Dup failed")); }
-        else if (f.deep) { setErr(`✓ Đã dup ad set${j.id ? ` (#${j.id})` : ""} KÈM ads — PAUSED. Bấm ⟳ Sync now để thấy, bật trong Ads Manager sau khi kiểm tra.`); setDupForm(null); loadEnt(); }
+        else if (j.warn) { setErr(`⚠ ${j.warn}${j.id && !f.deep ? ` Ad set mới #${j.id} đã tạo — Sync xong bấm ＋ Ads trên nó để thêm ads.` : ""}`); setDupForm(null); loadEnt(); }
+        else if (f.deep) { setErr(`✓ Đã dup ad set${j.id ? ` (#${j.id})` : ""} KÈM ads — PAUSED${f.start ? `, lịch chạy ${new Date(f.start).toLocaleString()}` : ""}. Bấm ⟳ Sync now để thấy, bật trong Ads Manager sau khi kiểm tra.`); setDupForm(null); loadEnt(); }
         else if (j.id) { window.location.href = `/shopify-products?adskit=1&adsetId=${j.id}&adset=${encodeURIComponent(f.name.trim())}`; return; }
         else setErr("⚠ " + (j.warn ?? "Copied — check Ads Manager."));
       } else {
@@ -607,6 +609,11 @@ export default function AdsCenterClient() {
             {dupForm.kind === "adset" && (
               <label style={dupLbl}>Daily budget $ cho bản sao — trống = giữ budget cũ
                 <input value={dupForm.budget} onChange={(e) => setDupForm({ ...dupForm, budget: e.target.value.replace(/[^0-9.]/g, "") })} style={dupInp} placeholder="vd 25" />
+              </label>
+            )}
+            {dupForm.kind === "adset" && (
+              <label style={dupLbl}>Lịch chạy (giờ máy anh) — trống = theo ad set gốc (giờ gốc đã qua thì bật là chạy ngay)
+                <input type="datetime-local" value={dupForm.start} onChange={(e) => setDupForm({ ...dupForm, start: e.target.value })} style={dupInp} />
               </label>
             )}
             {dupForm.kind !== "camp" && (

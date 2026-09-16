@@ -13,9 +13,10 @@ export const maxDuration = 120;
  *
  * POST { kind: "campaign", id, name? }
  *   → copy campaign (KHÔNG kèm ad sets/ads, PAUSED); đổi tên nếu truyền. Trả id campaign mới.
- * POST { kind: "adset", id, campaignId?, name?, budget?, deep? }
+ * POST { kind: "adset", id, campaignId?, name?, budget?, deep?, startTime? }
  *   → copy ad set vào campaignId (trống = cùng campaign), PAUSED. deep=false: KHÔNG kèm ads
  *     (copy khung — client dẫn sang kit chọn product); deep khác false: KÈM toàn bộ ads (mặc định cũ).
+ *     startTime (ISO): đặt lịch chạy cho BẢN SAO — trống = giữ theo ad set gốc (giờ gốc đã qua thì bật là chạy ngay).
  * POST { kind: "ad", id, adsetId?, name? }
  *   → copy 1 ad (PAUSED) vào adsetId (trống = cùng ad set).
  */
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
   const token = process.env.META_SYSTEM_TOKEN ?? "";
   if (!token) return NextResponse.json({ ok: false, error: "Meta API not configured" }, { status: 400 });
 
-  const b = await req.json().catch(() => null) as { kind?: string; id?: string; campaignId?: string; adsetId?: string; name?: string; budget?: number; deep?: boolean } | null;
+  const b = await req.json().catch(() => null) as { kind?: string; id?: string; campaignId?: string; adsetId?: string; name?: string; budget?: number; deep?: boolean; startTime?: string } | null;
   const kind = b?.kind === "ad" ? "ad" : b?.kind === "adset" ? "adset" : b?.kind === "campaign" ? "campaign" : "";
   const id = String(b?.id ?? "").replace(/\D/g, "");
   if (!kind || !id) return NextResponse.json({ ok: false, error: "kind (campaign|adset|ad) + id required" }, { status: 400 });
@@ -69,8 +70,15 @@ export async function POST(req: NextRequest) {
       const patch: Record<string, unknown> = {};
       if (name) patch.name = name;
       if (budget > 0) patch.daily_budget = Math.round(Math.min(1000, budget) * 100);
-      if (Object.keys(patch).length) await fb(newId, token, patch).catch(() => { /* copy đã xong — đổi tên/budget lỗi thì sửa tay */ });
-      return NextResponse.json({ ok: true, id: newId });
+      // v536 · lịch chạy riêng cho bản sao (ISO, tương lai) — không truyền = giữ start_time của gốc.
+      const st = String(b?.startTime ?? "").trim();
+      if (st) {
+        const d = new Date(st);
+        if (!isNaN(d.getTime()) && d.getTime() > Date.now()) patch.start_time = d.toISOString();
+      }
+      let patchWarn = "";
+      if (Object.keys(patch).length) await fb(newId, token, patch).catch((e: Error) => { patchWarn = `Copied, nhưng đổi tên/budget/lịch lỗi: ${String(e.message).slice(0, 120)} — sửa tay trong Ads Manager.`; });
+      return NextResponse.json({ ok: true, id: newId, ...(patchWarn ? { warn: patchWarn } : {}) });
     }
     // kind === "ad"
     const adsetId = String(b?.adsetId ?? "").replace(/\D/g, "");
