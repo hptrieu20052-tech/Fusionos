@@ -45,6 +45,8 @@ export default function AdsCenterClient() {
   const [lastSync, setLastSync] = useState<string | null>(null);
   // v451 · trạng thái campaign + filter + thu gọn từng campaign (nhớ localStorage).
   const [campStatus, setCampStatus] = useState<Record<string, string>>({});
+  // v531 · danh sách đủ campaign từ meta_campaigns — để campaign MỚI (chưa chi tiêu) vẫn hiện trong bảng.
+  const [campList, setCampList] = useState<{ id: string; name: string; status: string }[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleCamp = (id: string, cur: boolean) => {
@@ -146,7 +148,7 @@ export default function AdsCenterClient() {
     setBusy(true); setErr("");
     try {
       const j = await fetch(`/api/meta-ads/insights?from=${from}&to=${to}`).then((r) => r.json());
-      if (j.ok) { setRows(j.rows ?? []); setLastSync(j.lastSyncAt); setCampStatus(j.campaignStatus ?? {}); }
+      if (j.ok) { setRows(j.rows ?? []); setLastSync(j.lastSyncAt); setCampStatus(j.campaignStatus ?? {}); setCampList(Array.isArray(j.campaignList) ? j.campaignList : []); }
       else setErr(j.error ?? "Load failed");
     } catch (e) { setErr(String((e as Error).message)); }
     setBusy(false);
@@ -240,10 +242,14 @@ export default function AdsCenterClient() {
       const g = byCamp.get(a.campId) ?? { name: a.campaign, ads: [] };
       g.ads.push(a); byCamp.set(a.campId, g);
     }
+    // v531 · campaign MỚI chưa chi tiêu (không có dòng insights) — vẫn hiện card rỗng để bấm ＋ Ads / bật tắt.
+    for (const c of campList) {
+      if (c.id && !byCamp.has(c.id)) byCamp.set(c.id, { name: c.name || "—", ads: [] });
+    }
     // v454 · sắp theo AD SET (nhóm) rồi spend — render sẽ chèn hàng tiêu đề mỗi khi đổi ad set.
     for (const g of Array.from(byCamp.values())) g.ads.sort((x: Agg, y: Agg) => x.adset.localeCompare(y.adset) || y.spend - x.spend);
     return Array.from(byCamp.entries()).sort((x, y) => y[1].ads.reduce((s, a) => s + a.spend, 0) - x[1].ads.reduce((s, a) => s + a.spend, 0));
-  }, [rows]);
+  }, [rows, campList]);
 
   const totals = useMemo(() => {
     const t = { spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 };
@@ -374,13 +380,15 @@ export default function AdsCenterClient() {
                   {isActive ? "ACTIVE" : status}
                 </span>
               )}
-              <span style={{ fontSize: 12, color: "var(--muted)" }}>{ads.length} ads · {money(ct.spend)} · {ct.pur} purchases{ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}</span>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                {ads.length ? `${ads.length} ads · ${money(ct.spend)} · ${ct.pur} purchases${ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}` : "mới tạo — chưa có chi tiêu trong khoảng ngày này"}
+              </span>
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                 {/* v525 · tạo ads mới vào ĐÚNG campaign này — mở Meta Ads Kit bên Manage Products với campaign đã trỏ sẵn */}
                 <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}`} style={{ ...rowBtn, textDecoration: "none", padding: "3px 11px", fontSize: 11 }}>＋ Ads</a>
               </span>
             </div>
-            <div style={{ overflowX: "auto", display: isCollapsed ? "none" : "block" }}>
+            <div style={{ overflowX: "auto", display: isCollapsed || !ads.length ? "none" : "block" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr style={{ borderBottom: "1px solid var(--line)" }}>
                   <th style={{ ...th, textAlign: "left" }}>Ad</th>

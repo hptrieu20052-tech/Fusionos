@@ -25,7 +25,12 @@ export async function GET(req: NextRequest) {
   const [m] = await db.select({ t: sql<string>`max(updated_at)` }).from(schema.metaInsights);
   // v451 · map trạng thái campaign cho filter Active/Inactive (bảng có thể chưa migrate → rỗng êm).
   const statuses = await db.select().from(schema.metaCampaigns).catch(() => []);
-  return NextResponse.json({ ok: true, rows, from, to, lastSyncAt: m?.t ?? null, campaignStatus: Object.fromEntries(statuses.map((c) => [c.campaignId, c.status ?? ""])) });
+  return NextResponse.json({
+    ok: true, rows, from, to, lastSyncAt: m?.t ?? null,
+    campaignStatus: Object.fromEntries(statuses.map((c) => [c.campaignId, c.status ?? ""])),
+    // v531 · danh sách ĐỦ campaign (kể cả campaign mới chưa chi tiêu — không có dòng insights nào)
+    campaignList: statuses.map((c) => ({ id: c.campaignId, name: c.name ?? "", status: c.status ?? "" })),
+  });
 }
 
 // ---- Tín hiệu tính bằng CODE (AI chỉ nhận định, không làm số học) ----
