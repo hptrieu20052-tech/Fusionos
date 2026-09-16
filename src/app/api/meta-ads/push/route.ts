@@ -9,20 +9,23 @@ export const maxDuration = 300;
 
 /**
  * v445 · Meta Marketing API — đẩy ads TRỰC TIẾP từ Meta Ads Kit, thay cho bulk import file.
+ * v525 · CẤU TRÚC LINH HOẠT cho playbook MAIN/TEST:
+ *   - campaignId: đẩy vào campaign ĐANG CÓ (trống = tạo mới như cũ).
+ *   - mode "per_ad"   (mặc định, như cũ): mỗi ad 1 ad set mới × $budget.
+ *   - mode "single"   : 1 ad set MỚI (tên = adsetPrefix, $budget) chứa toàn bộ ads.
+ *   - mode "custom"   : adsets[{name,budget}] — mỗi ad gán vào 1 ad set qua item.adset
+ *                       (TEST: Halloween $25 × 3 ads + First Birthday $25 × 3 ads trong 1 lần push).
+ *   - mode "existing_adset": adsetId — tạo ads THẲNG vào ad set đang chạy (thả biến thể vào winner).
  *
- * GET  /api/meta-ads/push        → test cấu hình: đọc tên ad account + page + pixel bằng token.
- * POST /api/meta-ads/push        → tạo 1 campaign (PAUSED, Sales, ABO) + mỗi item 1 ad set ($X/ngày,
- *   US/tuổi theo kit, tối ưu Purchase trên pixel) + upload ảnh + creative + ad (tất cả PAUSED).
- *   Kiểm soát được cả những thứ bulk import bó tay: KHÔNG catalog, TẮT Advantage+ enhancements,
- *   TẮT multi-advertiser (2 cái sau best-effort — API cũ/mới khác field, lỗi thì bỏ qua opt-out).
- *
+ * GET  /api/meta-ads/push → test cấu hình. POST → tạo (tất cả PAUSED, bật tay sau khi duyệt).
  * Env (Vercel): META_SYSTEM_TOKEN, META_AD_ACCOUNT_ID (act_...), META_PAGE_ID, META_PIXEL_ID.
  * Token là System User Never-expire — TUYỆT ĐỐI không log ra ngoài.
  */
 const V = "v23.0";
 const G = `https://graph.facebook.com/${V}`;
 
-type Item = { id: string; adName: string; primary: string; headline: string; imageUrl?: string };
+type Item = { id: string; adName: string; primary: string; headline: string; imageUrl?: string; adset?: string };
+type AdsetDef = { name: string; budget: number };
 
 function cfg() {
   const token = process.env.META_SYSTEM_TOKEN ?? "";
@@ -53,7 +56,6 @@ export async function GET() {
   if (!c) return NextResponse.json({ ok: false, error: "Missing env: META_SYSTEM_TOKEN / META_AD_ACCOUNT_ID / META_PAGE_ID / META_PIXEL_ID (set in Vercel, then redeploy)" }, { status: 400 });
   try {
     const acc = await fb(`${c.account}?fields=name,currency,timezone_name,timezone_offset_hours_utc`, c.token);
-    // Đọc tên page/pixel chỉ để hiển thị — thiếu quyền đọc KHÔNG chặn việc tạo ads, nên lỗi thì ghi chú thôi.
     const page = await fb(`${c.pageId}?fields=name`, c.token).catch((e) => ({ name: `(cannot read page name: ${String((e as Error).message).slice(0, 120)})` }));
     const pixel = await fb(`${c.pixelId}?fields=name`, c.token).catch(() => ({ name: "(no pixel read access — ads vẫn tạo được)" }));
     return NextResponse.json({ ok: true, account: { id: c.account, name: acc.name, currency: acc.currency, timezone: acc.timezone_name, utcOffset: acc.timezone_offset_hours_utc }, page: { id: c.pageId, name: (page as { name?: string }).name }, pixel: { id: c.pixelId, name: (pixel as { name?: string }).name } });
@@ -69,17 +71,27 @@ export async function POST(req: NextRequest) {
   if (!c) return NextResponse.json({ ok: false, error: "Meta API not configured — set env vars in Vercel first" }, { status: 400 });
 
   const body = await req.json().catch(() => null) as {
-    campaign?: string; adsetPrefix?: string; budget?: number; ageMin?: number; ageMax?: number;
+    campaign?: string; campaignId?: string; adsetPrefix?: string; budget?: number; ageMin?: number; ageMax?: number;
     countries?: string; startTime?: string; items?: Item[];
+    mode?: string; adsets?: AdsetDef[]; adsetId?: string;
   } | null;
   const campaign = (body?.campaign ?? "").trim();
+  const campaignIdIn = String(body?.campaignId ?? "").replace(/\D/g, "");
+  const mode = ["per_ad", "single", "custom", "existing_adset"].includes(String(body?.mode)) ? String(body?.mode) : "per_ad";
   const adsetPrefix = (body?.adsetPrefix ?? "").trim() || campaign;
   const budget = Math.max(1, Math.min(1000, Number(body?.budget) || 5));
   const ageMin = Math.min(65, Math.max(13, Number(body?.ageMin) || 18));
   const ageMax = Math.min(65, Math.max(13, Number(body?.ageMax) || 65));
   const countries = String(body?.countries ?? "US").toUpperCase().split(",").map((s) => s.trim()).filter((s) => /^[A-Z]{2}$/.test(s));
   const items = (body?.items ?? []).filter((i) => i && i.id && i.adName).slice(0, 20);
-  if (!campaign || !items.length) return NextResponse.json({ ok: false, error: "campaign and items are required" }, { status: 400 });
+  const adsetDefs = (Array.isArray(body?.adsets) ? body!.adsets! : [])
+    .map((a) => ({ name: String(a?.name ?? "").trim().slice(0, 100), budget: Math.max(1, Math.min(1000, Number(a?.budget) || 5)) }))
+    .filter((a) => a.name).slice(0, 10);
+  const targetAdsetId = String(body?.adsetId ?? "").replace(/\D/g, "");
+  if (!items.length) return NextResponse.json({ ok: false, error: "items are required" }, { status: 400 });
+  if (mode === "existing_adset" && !targetAdsetId) return NextResponse.json({ ok: false, error: "adsetId is required for existing-adset mode" }, { status: 400 });
+  if (mode !== "existing_adset" && !campaign && !campaignIdIn) return NextResponse.json({ ok: false, error: "campaign (or campaignId) is required" }, { status: 400 });
+  if (mode === "custom" && !adsetDefs.length) return NextResponse.json({ ok: false, error: "custom mode needs at least one ad set (name + budget)" }, { status: 400 });
 
   // start_time: kit gửi "YYYY-MM-DDTHH:mm" THEO MÚI GIỜ AD ACCOUNT → hỏi offset của account để ra UTC.
   let startIso = "";
@@ -91,23 +103,60 @@ export async function POST(req: NextRequest) {
     startIso = new Date(utcMs).toISOString().replace(/\.\d{3}Z$/, "+0000");
   }
 
-  // Link + ảnh lấy từ DB (ảnh do user chọn trong kit được ưu tiên).
+  // Link + ảnh lấy từ DB (ảnh do user chọn trong kit — kể cả ảnh angle tự upload — được ưu tiên).
   const prods = await db.select({ id: schema.shopifyProducts.id, images: schema.shopifyProducts.images, onlineStoreUrl: schema.shopifyProducts.onlineStoreUrl })
     .from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.id, items.map((i) => i.id)));
   const byId = new Map(prods.map((p) => [p.id, p]));
 
   const results: { adName: string; ok: boolean; error?: string; opts?: string }[] = [];
   let lifecycleAll = true;   // v447 · existing_customer_budget_percentage được nhận cho mọi ad set?
-  let campaignId = "";
+
+  // ── Campaign: dùng ID có sẵn, hoặc tạo mới (PAUSED, Sales, ABO) ──
+  let campaignId = campaignIdIn;
+  if (mode !== "existing_adset" && !campaignId) {
+    try {
+      const camp = await fb(`${c.account}/campaigns`, c.token, {
+        name: campaign, objective: "OUTCOME_SALES", status: "PAUSED", buying_type: "AUCTION", special_ad_categories: [],
+        // ABO thuần: không campaign budget, KHÔNG cho ad set chia sẻ budget (test phải sạch, mỗi mẫu đúng $X của nó).
+        is_adset_budget_sharing_enabled: false,
+      });
+      campaignId = String(camp.id);
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: "Create campaign failed: " + String((e as Error).message) }, { status: 400 });
+    }
+  }
+
+  // ── Ad set dùng CHUNG (mode single/custom) — tạo TRƯỚC vòng lặp ads ──
+  const adsetBase = (name: string, dailyBudget: number) => ({
+    name, campaign_id: campaignId, status: "PAUSED",
+    daily_budget: Math.round(dailyBudget * 100),
+    billing_event: "IMPRESSIONS", optimization_goal: "OFFSITE_CONVERSIONS",
+    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+    promoted_object: { pixel_id: c.pixelId, custom_event_type: "PURCHASE" },
+    targeting: { geo_locations: { countries }, age_min: ageMin, age_max: ageMax },
+    ...(startIso ? { start_time: startIso } : {}),
+  });
+  const makeAdset = async (name: string, dailyBudget: number): Promise<string> => {
+    // v447 · lifecycle "Get conversions from all audiences": không giới hạn ngân sách khách cũ (100%).
+    try {
+      const a = await fb(`${c.account}/adsets`, c.token, { ...adsetBase(name, dailyBudget), existing_customer_budget_percentage: 100 });
+      return String(a.id);
+    } catch {
+      lifecycleAll = false;
+      const a = await fb(`${c.account}/adsets`, c.token, adsetBase(name, dailyBudget));
+      return String(a.id);
+    }
+  };
+
+  const sharedAdsets = new Map<string, string>(); // lower(name) → adset id
   try {
-    const camp = await fb(`${c.account}/campaigns`, c.token, {
-      name: campaign, objective: "OUTCOME_SALES", status: "PAUSED", buying_type: "AUCTION", special_ad_categories: [],
-      // ABO thuần: không campaign budget, KHÔNG cho ad set chia sẻ budget (test phải sạch, mỗi mẫu đúng $X của nó).
-      is_adset_budget_sharing_enabled: false,
-    });
-    campaignId = String(camp.id);
+    if (mode === "single") {
+      sharedAdsets.set("__single__", await makeAdset(adsetPrefix || campaign || "Ad set", budget));
+    } else if (mode === "custom") {
+      for (const d of adsetDefs) sharedAdsets.set(d.name.toLowerCase(), await makeAdset(d.name, d.budget));
+    }
   } catch (e) {
-    return NextResponse.json({ ok: false, error: "Create campaign failed: " + String((e as Error).message) }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "Create ad set failed: " + String((e as Error).message), campaignId }, { status: 400 });
   }
 
   let idx = 0;
@@ -131,21 +180,18 @@ export async function POST(req: NextRequest) {
       const hash = Object.values(images ?? {})[0]?.hash;
       if (!hash) throw new Error("no image hash returned");
 
-      // 2) ad set — $X/ngày, Purchase trên pixel, broad, PAUSED (+ start_time nếu có)
-      const adsetBase = {
-        name: `${adsetPrefix}-${String(idx).padStart(2, "0")}`,
-        campaign_id: campaignId, status: "PAUSED",
-        daily_budget: Math.round(budget * 100),
-        billing_event: "IMPRESSIONS", optimization_goal: "OFFSITE_CONVERSIONS",
-        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-        promoted_object: { pixel_id: c.pixelId, custom_event_type: "PURCHASE" },
-        targeting: { geo_locations: { countries }, age_min: ageMin, age_max: ageMax },
-        ...(startIso ? { start_time: startIso } : {}),
-      };
-      // v447 · lifecycle "Get conversions from all audiences": không giới hạn ngân sách khách cũ (100%).
-      let adset: Record<string, unknown>;
-      try { adset = await fb(`${c.account}/adsets`, c.token, { ...adsetBase, existing_customer_budget_percentage: 100 }); }
-      catch { lifecycleAll = false; adset = await fb(`${c.account}/adsets`, c.token, adsetBase); }
+      // 2) ad set đích theo mode
+      let adsetId: string;
+      if (mode === "existing_adset") adsetId = targetAdsetId;
+      else if (mode === "single") adsetId = sharedAdsets.get("__single__") as string;
+      else if (mode === "custom") {
+        const want = String(it.adset ?? "").trim().toLowerCase() || adsetDefs[0].name.toLowerCase();
+        const found = sharedAdsets.get(want);
+        if (!found) throw new Error(`unknown ad set "${it.adset}"`);
+        adsetId = found;
+      } else {
+        adsetId = await makeAdset(`${adsetPrefix}-${String(idx).padStart(2, "0")}`, budget);
+      }
 
       // 3) creative — tắt enhancements + multi-advertiser (best-effort: API version cũ/mới khác field)
       const story = {
@@ -157,7 +203,6 @@ export async function POST(req: NextRequest) {
           image_hash: hash,
         },
       };
-      // v447 · thử lần lượt các tổ hợp opt-out (Meta đổi field theo version) — nhớ lại tổ hợp nào ăn.
       const variants: { label: string; extra: Record<string, unknown> }[] = [
         { label: "multiOff+enhOff", extra: { contextual_multi_ads: { enroll_status: "OPT_OUT" }, degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } } } },
         { label: "multiOff", extra: { contextual_multi_ads: { enroll_status: "OPT_OUT" } } },
@@ -175,7 +220,7 @@ export async function POST(req: NextRequest) {
 
       // 4) ad — PAUSED, bật tay sau khi liếc preview
       await fb(`${c.account}/ads`, c.token, {
-        name: it.adName, adset_id: String(adset.id), creative: { creative_id: String(creative.id) }, status: "PAUSED",
+        name: it.adName, adset_id: adsetId, creative: { creative_id: String(creative.id) }, status: "PAUSED",
       });
       okIds.push(it.id);
       results.push({ adName: it.adName, ok: true, opts: applied });
@@ -191,7 +236,7 @@ export async function POST(req: NextRequest) {
   const okResults = results.filter((r) => r.ok);
   if (okResults.some((r) => !String(r.opts ?? "").includes("multiOff"))) manual.push("untick Multi-advertiser ads (per ad)");
   if (okResults.some((r) => !String(r.opts ?? "").includes("enhOff"))) manual.push("check Advantage+ enhancements = Off (per ad)");
-  if (!lifecycleAll) manual.push("set Lifecycle = all audiences (per ad set)");
+  if (mode !== "existing_adset" && !lifecycleAll) manual.push("set Lifecycle = all audiences (per ad set)");
   manual.push("Personalized destinations: turn Shop off (per ad — Meta has no API switch)");
-  return NextResponse.json({ ok: true, campaignId, created: okIds.length, total: items.length, results, manual });
+  return NextResponse.json({ ok: true, campaignId: campaignId || null, created: okIds.length, total: items.length, results, manual });
 }

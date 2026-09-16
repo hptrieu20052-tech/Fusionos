@@ -311,12 +311,21 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitAdset, setKitAdset] = useState("Train-Books-Test");
   const [kitPrefix, setKitPrefix] = useState("Train");
   // v442 · per_ad (mặc định): mỗi ad 1 ad set mới với budget riêng — vòng sàng lọc công bằng.
-  const [kitMode, setKitMode] = useState<"per_ad" | "single">("per_ad");
+  const [kitMode, setKitMode] = useState<"per_ad" | "single" | "custom" | "existing">("per_ad");
   const [kitBudget, setKitBudget] = useState("5");
   const [kitPixel, setKitPixel] = useState("");
   // v442c · Campaign ID — importer của Meta khớp campaign theo ID, không theo tên. Có ID thì
   // ad set chui vào campaign ĐANG CHẠY; bỏ trống thì file tạo campaign MỚI (kèm Objective).
   const [kitCampId, setKitCampId] = useState("");
+  // v525 · chiến lược MAIN/TEST: custom = tự khai nhiều ad set kèm $/day riêng, gán từng ad;
+  // existing = tạo ads THẲNG vào ad set đang chạy (thả biến thể vào winner của MAIN).
+  const [kitAdsetId, setKitAdsetId] = useState("");
+  const [kitAdsets, setKitAdsets] = useState<{ name: string; budget: string }[]>([{ name: "Halloween", budget: "25" }, { name: "First Birthday", budget: "25" }]);
+  const [kitItemAdset, setKitItemAdset] = useState<Record<string, string>>({});
+  // v525 · ảnh ANGLE tự upload theo sản phẩm (ngoài ảnh listing) — chọn được như thumbnail thường.
+  const [kitExtra, setKitExtra] = useState<Record<string, string[]>>({});
+  const [kitUpBusy, setKitUpBusy] = useState("");
+  const [kitLinked, setKitLinked] = useState(false); // deep-link từ Meta Ads Center → không cho cfg cũ đè
   // v443 · target chỉnh được từ kit (áp cho các ad set mới ở mode per_ad).
   const [kitAgeMin, setKitAgeMin] = useState("18");
   const [kitAgeMax, setKitAgeMax] = useState("65");
@@ -333,6 +342,27 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
   };
   const [kitBusy, setKitBusy] = useState(false);
+  // v525 · upload ảnh angle: nén client (max 1600px) → storage FUSION → URL dùng làm creative.
+  const kitUpload = async (rid: string, file: File | null) => {
+    if (!file || kitUpBusy) return;
+    setKitUpBusy(rid);
+    try {
+      const url0 = URL.createObjectURL(file);
+      const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url0; });
+      const max = 1600, ratio = Math.min(1, max / Math.max(img.width, img.height));
+      const cv = document.createElement("canvas"); cv.width = Math.round(img.width * ratio); cv.height = Math.round(img.height * ratio);
+      cv.getContext("2d")!.drawImage(img, 0, 0, cv.width, cv.height);
+      const dataUrl = cv.toDataURL(file.type === "image/png" ? "image/png" : "image/jpeg", 0.9);
+      URL.revokeObjectURL(url0);
+      const j = await postJSON("/api/woo-products/upload", { dataUrl });
+      if (j.ok && j.url) {
+        setKitExtra((m) => ({ ...m, [rid]: [...(m[rid] ?? []), j.url as string] }));
+        setKitImg((m) => ({ ...m, [rid]: j.url as string }));
+        flash("✓ Ảnh angle đã upload & chọn làm creative", true);
+      } else flash("✗ " + (j.error ?? "upload error"), false);
+    } catch { flash("✗ upload error", false); }
+    setKitUpBusy("");
+  };
   const kitAdName = (title: string, idx: number) =>
     `${kitPrefix || "Ad"}-${String(idx + 1).padStart(2, "0")}-${title.split(/\s+/).slice(0, 4).join("-").replace(/[^\w-]/g, "")}`.slice(0, 60);
   // v445 · Push thẳng qua Marketing API — tạo campaign + ad sets + ads (tất cả PAUSED) trong 1 cú bấm.
@@ -341,14 +371,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const kitPush = async () => {
     const list = rows.filter((r) => kitTexts[r.id]);
     if (!list.length || kitBusy) return;
+    if (kitMode === "custom" && !kitAdsets.some((a) => a.name.trim())) { flash("✗ Custom: thêm ít nhất 1 ad set (tên + $/day)", false); return; }
+    if (kitMode === "existing" && !kitAdsetId) { flash("✗ Nhập Ad set ID đích (mode: vào ad set có sẵn)", false); return; }
     if (!kitArm) { setKitArm(true); setTimeout(() => setKitArm(false), 4000); return; }
     setKitArm(false);
     setKitBusy(true);
     try {
-      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries, st: kitStartTime })); } catch { /* ignore */ }
-      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "" }));
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, ai: kitAdsetId, as: kitAdsets.map((x) => ({ n: x.name, b: x.budget })), g1: kitAgeMin, g2: kitAgeMax, co: kitCountries, st: kitStartTime })); } catch { /* ignore */ }
+      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "", adset: kitItemAdset[r.id] || (kitAdsets.find((x) => x.name.trim())?.name ?? "") }));
       const j = await postJSON("/api/meta-ads/push", {
-        campaign: kitCampaign, adsetPrefix: kitAdset, budget: Number(kitBudget) || 5,
+        campaign: kitCampaign, campaignId: kitCampId, adsetPrefix: kitAdset, budget: Number(kitBudget) || 5,
+        mode: kitMode === "existing" ? "existing_adset" : kitMode, adsetId: kitAdsetId,
+        adsets: kitAdsets.filter((a) => a.name.trim()).map((a) => ({ name: a.name.trim(), budget: Number(a.budget) || 5 })),
         ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStartCombined, items,
       });
       if (j.ok) {
@@ -366,7 +400,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (!list.length || kitBusy) return;
     setKitBusy(true);
     try {
-      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, g1: kitAgeMin, g2: kitAgeMax, co: kitCountries, st: kitStartTime })); } catch { /* ignore */ }
+      try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, ai: kitAdsetId, as: kitAdsets.map((x) => ({ n: x.name, b: x.budget })), g1: kitAgeMin, g2: kitAgeMax, co: kitCountries, st: kitStartTime })); } catch { /* ignore */ }
       const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "" }));
       const res = await fetch("/api/shopify-products/meta-bulk", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -415,6 +449,20 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const flash = (text: string, ok = true) => { setMsg({ text, ok }); setTimeout(() => setMsg(null), 5000); };
   const load = async () => { setLoading(true); try { const j = await fetch("/api/shopify-products").then((r) => r.json()); if (j.ok) setRows(j.rows); } catch { /* noop */ } setLoading(false); };
   useEffect(() => { load(); }, []);
+  // v525 · Deep-link từ Meta Ads Center: /shopify-products?adskit=1&campaignId=..&campaign=..&adsetId=..&adset=..
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      if (q.get("adskit") !== "1") return;
+      const ci = (q.get("campaignId") ?? "").replace(/\D/g, "");
+      if (ci) setKitCampId(ci);
+      if (q.get("campaign")) setKitCampaign(String(q.get("campaign")));
+      const asid = (q.get("adsetId") ?? "").replace(/\D/g, "");
+      if (asid) { setKitAdsetId(asid); setKitMode("existing"); if (q.get("adset")) setKitAdset(String(q.get("adset"))); }
+      if (ci || asid) { setKitLinked(true); flash(`🎯 Meta Ads Kit đã trỏ sẵn ${asid ? "AD SET #" + asid : "campaign #" + ci} — tick sản phẩm rồi mở "🎯 Meta Ads Kit…" trong bulk actions`, true); }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     try { const s = window.localStorage.getItem("shopifyAiModel"); if (s) setAiModel(s); } catch { /* ignore */ }
     fetch("/api/books/models?type=text").then((r) => r.json()).then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
@@ -1307,13 +1355,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       // v441 · nhớ campaign/ad set/prefix của lần export trước.
       try {
         const cfg = JSON.parse(localStorage.getItem("adskit.cfg") ?? "{}");
-        if (cfg.c) setKitCampaign(cfg.c);
-        if (cfg.a) setKitAdset(cfg.a);
+        // v525 · deep-link từ Meta Ads Center đang trỏ campaign/ad set đích → KHÔNG cho cfg cũ đè target.
+        if (!kitLinked) {
+          if (cfg.c) setKitCampaign(cfg.c);
+          if (cfg.a) setKitAdset(cfg.a);
+          if (["per_ad", "single", "custom", "existing"].includes(cfg.m)) setKitMode(cfg.m);
+          if (cfg.ci) setKitCampId(String(cfg.ci));
+          if (cfg.ai) setKitAdsetId(String(cfg.ai));
+        }
         if (cfg.p) setKitPrefix(cfg.p);
-        if (cfg.m === "per_ad" || cfg.m === "single") setKitMode(cfg.m);
+        if (Array.isArray(cfg.as) && cfg.as.length) setKitAdsets(cfg.as.map((x: { n?: string; b?: string }) => ({ name: String(x.n ?? ""), budget: String(x.b ?? "25") })));
         if (cfg.b) setKitBudget(String(cfg.b));
         if (cfg.x) setKitPixel(String(cfg.x));
-        if (cfg.ci) setKitCampId(String(cfg.ci));
         if (cfg.g1) setKitAgeMin(String(cfg.g1));
         if (cfg.g2) setKitAgeMax(String(cfg.g2));
         if (cfg.co) setKitCountries(String(cfg.co));
@@ -2371,23 +2424,46 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 <div><span style={kitLab}>Ad name prefix</span>
                   <input value={kitPrefix} onChange={(e) => setKitPrefix(e.target.value)} style={kitIn} /></div>
                 <div><span style={kitLab}>Structure</span>
-                  <select value={kitMode} onChange={(e) => setKitMode(e.target.value as "per_ad" | "single")} style={{ ...kitIn, padding: "9px 8px" }}>
-                    <option value="per_ad">1 ad set per ad (new)</option>
-                    <option value="single">All in one ad set (existing)</option>
+                  <select value={kitMode} onChange={(e) => setKitMode(e.target.value as "per_ad" | "single" | "custom" | "existing")} style={{ ...kitIn, padding: "9px 8px" }}>
+                    <option value="per_ad">1 ad set per ad — mỗi ad $X (test sàng lọc)</option>
+                    <option value="single">1 ad set MỚI chứa tất cả ads</option>
+                    <option value="custom">Custom ad sets — gán từng ad (TEST 2 nhánh)</option>
+                    <option value="existing">Vào ad set CÓ SẴN (Ad set ID — MAIN winner)</option>
                   </select></div>
               </div>
+              {kitMode === "custom" && (
+                <div style={{ marginBottom: 12 }}>
+                  <span style={kitLab}>Ad sets (tên + $/day riêng) — gán từng sản phẩm ở dropdown cạnh ảnh</span>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                    {kitAdsets.map((a, i) => (
+                      <span key={i} style={{ display: "inline-flex", gap: 6, alignItems: "center", background: "#fff", border: "1px solid #E6E9EE", borderRadius: 10, padding: "6px 8px" }}>
+                        <input value={a.name} placeholder="Ad set name (vd Halloween)" onChange={(e) => setKitAdsets((l) => l.map((x, xi) => xi === i ? { ...x, name: e.target.value } : x))} style={{ ...kitIn, width: 170, padding: "6px 8px" }} />
+                        <span style={{ fontSize: 12 }}>$</span>
+                        <input value={a.budget} onChange={(e) => setKitAdsets((l) => l.map((x, xi) => xi === i ? { ...x, budget: e.target.value.replace(/[^\d.]/g, "") } : x))} style={{ ...kitIn, width: 56, padding: "6px 8px", textAlign: "center" }} />
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>/day</span>
+                        <button onClick={() => setKitAdsets((l) => l.filter((_, xi) => xi !== i))} style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--muted)", fontSize: 13 }}>✕</button>
+                      </span>
+                    ))}
+                    <button onClick={() => setKitAdsets((l) => [...l, { name: "", budget: "25" }])} style={{ border: "1px dashed #C9D2DE", background: "transparent", borderRadius: 10, padding: "6px 12px", fontSize: 12, cursor: "pointer", color: "#1D4ED8", fontWeight: 700 }}>+ Ad set</button>
+                  </div>
+                </div>
+              )}
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-                {kitMode === "per_ad" && (
-                  <div style={{ width: 86 }}><span style={kitLab}>$ / day each</span>
+                {(kitMode === "per_ad" || kitMode === "single") && (
+                  <div style={{ width: 86 }}><span style={kitLab}>{kitMode === "single" ? "$ / day (ad set)" : "$ / day each"}</span>
                     <input value={kitBudget} onChange={(e) => setKitBudget(e.target.value.replace(/[^\d.]/g, ""))} style={{ ...kitIn, textAlign: "center" }} /></div>
                 )}
-                {kitMode === "per_ad" && (
+                {kitMode !== "existing" && (
                   <div style={{ width: 150 }}><span style={kitLab}>Pixel ID</span>
                     <input value={kitPixel} onChange={(e) => setKitPixel(e.target.value.replace(/\D/g, ""))} style={kitIn} /></div>
                 )}
                 <div style={{ width: 160 }}><span style={kitLab}>Campaign ID</span>
                   <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new" style={kitIn} /></div>
-                {kitMode === "per_ad" && (
+                {kitMode === "existing" && (
+                  <div style={{ width: 170 }}><span style={kitLab}>Ad set ID (đích) *</span>
+                    <input value={kitAdsetId} onChange={(e) => setKitAdsetId(e.target.value.replace(/\D/g, ""))} placeholder="dán từ Meta Ads Center" style={kitIn} /></div>
+                )}
+                {kitMode !== "existing" && (
                   <div style={{ width: 118 }}><span style={kitLab}>Age</span>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                       <input value={kitAgeMin} onChange={(e) => setKitAgeMin(e.target.value.replace(/\D/g, ""))} style={{ ...kitIn, width: 50, textAlign: "center", padding: "9px 4px" }} />
@@ -2395,11 +2471,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <input value={kitAgeMax} onChange={(e) => setKitAgeMax(e.target.value.replace(/\D/g, ""))} style={{ ...kitIn, width: 50, textAlign: "center", padding: "9px 4px" }} />
                     </div></div>
                 )}
-                {kitMode === "per_ad" && (
+                {kitMode !== "existing" && (
                   <div style={{ width: 90 }}><span style={kitLab}>Countries</span>
                     <input value={kitCountries} onChange={(e) => setKitCountries(e.target.value.toUpperCase())} placeholder="US" style={{ ...kitIn, textAlign: "center" }} /></div>
                 )}
-                {kitMode === "per_ad" && (
+                {kitMode !== "existing" && (
                   <div><span style={kitLab}>Start date · ad account time zone</span>
                     <div style={{ display: "flex", gap: 8 }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#EEF0F3", borderRadius: 10, padding: "0 12px" }}>
@@ -2440,8 +2516,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     style={{ ...ghost, padding: "9px 15px", fontSize: 12.5, borderRadius: 10, opacity: kitBusy || !kitCampaign.trim() || !kitAdset.trim() ? 0.55 : 1 }}>
                     {kitBusy ? "…" : "⬇ Import file"}
                   </button>
-                  <button onClick={kitPush} disabled={kitBusy || !kitCampaign.trim()}
-                    style={{ ...pill(kitArm ? "#B45309" : "#16A34A", "#fff"), padding: "9px 18px", fontSize: 12.5, borderRadius: 10, opacity: kitBusy || !kitCampaign.trim() ? 0.55 : 1 }}>
+                  <button onClick={kitPush} disabled={kitBusy || (kitMode === "existing" ? !kitAdsetId : !(kitCampaign.trim() || kitCampId))}
+                    style={{ ...pill(kitArm ? "#B45309" : "#16A34A", "#fff"), padding: "9px 18px", fontSize: 12.5, borderRadius: 10, opacity: kitBusy || (kitMode === "existing" ? !kitAdsetId : !(kitCampaign.trim() || kitCampId)) ? 0.55 : 1 }}>
                     {kitBusy ? "Working…" : kitArm ? "⚠ Click again to confirm" : "🚀 Push to Meta"}
                   </button>
                 </div>
@@ -2470,6 +2546,33 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           </span>
                         );
                       })}
+                      {/* v525 · ảnh ANGLE tự upload — chọn được như thumbnail thường */}
+                      {(kitExtra[r.id] ?? []).map((u, i) => {
+                        const picked = (kitImg[r.id] || "") === u;
+                        return (
+                          <span key={"x" + i} style={{ position: "relative", display: "inline-block" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={u} alt="" onClick={() => setKitImg((m) => ({ ...m, [r.id]: u }))}
+                              style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, cursor: "pointer", display: "block",
+                                border: picked ? "3px solid #16A34A" : "1px dashed #7C3AED", opacity: picked ? 1 : 0.85 }} />
+                            {picked && <span style={{ position: "absolute", top: 4, left: 4, background: "#16A34A", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>✓</span>}
+                            <span style={{ position: "absolute", bottom: 4, left: 4, background: "#7C3AED", color: "#fff", borderRadius: 6, fontSize: 9, fontWeight: 800, padding: "1px 5px" }}>ANGLE</span>
+                          </span>
+                        );
+                      })}
+                      <label title="Upload ảnh angle riêng để chạy ads (không đụng listing)"
+                        style={{ width: 92, height: 92, borderRadius: 8, border: "1.5px dashed #C9D2DE", background: "#FAFBFC", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 2, cursor: "pointer", color: "#1D4ED8", fontSize: 11, fontWeight: 700 }}>
+                        <span style={{ fontSize: 18 }}>{kitUpBusy === r.id ? "…" : "＋"}</span>
+                        <span>{kitUpBusy === r.id ? "Uploading" : "Upload"}</span>
+                        <input type="file" accept="image/*" hidden onChange={(e) => { kitUpload(r.id, e.target.files?.[0] ?? null); e.target.value = ""; }} />
+                      </label>
+                      {/* v525 · mode custom: ad này thuộc ad set nào */}
+                      {kitMode === "custom" && (
+                        <select value={kitItemAdset[r.id] ?? ""} onChange={(e) => setKitItemAdset((m) => ({ ...m, [r.id]: e.target.value }))}
+                          style={{ width: "100%", border: "1px solid #C9D2DE", borderRadius: 8, padding: "6px 8px", fontSize: 12, background: "#fff" }}>
+                          {kitAdsets.filter((x) => x.name.trim()).map((x) => <option key={x.name} value={x.name}>→ {x.name} (${x.budget}/day)</option>)}
+                        </select>
+                      )}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

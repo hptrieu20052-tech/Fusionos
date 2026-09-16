@@ -172,6 +172,38 @@ export default function AdsCenterClient() {
     setAiBusy(false);
   };
 
+  // v525 · Dup ad set (kèm ads, PAUSED) / Dup ad — Meta /copies API. Prompt tối giản, arm 1 bước confirm().
+  const [dupBusy, setDupBusy] = useState("");
+  const dupAdset = async (adsetId: string, adsetName: string, campId: string) => {
+    const name = window.prompt("Tên ad set BẢN SAO (copy PAUSED, kèm toàn bộ ads bên trong):", `${adsetName} - Copy`);
+    if (name === null) return;
+    const target = window.prompt("Campaign ID đích (trống = giữ nguyên campaign hiện tại; dán ID campaign MAIN để thăng cấp winner):", campId) ?? "";
+    const budgetS = window.prompt("Daily budget $ cho bản sao (trống = giữ budget cũ):", "") ?? "";
+    setDupBusy("adset:" + adsetId); setErr("");
+    try {
+      const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "adset", id: adsetId, campaignId: target.trim(), name: name.trim(), budget: Number(budgetS) || undefined }) }).then((r) => r.json());
+      if (j.ok) setErr(`✓ Đã dup ad set${j.id ? ` (#${j.id})` : ""} — PAUSED. Bấm ⟳ Sync now để thấy trong bảng, bật trong Ads Manager sau khi kiểm tra.`);
+      else setErr("✗ " + (j.error ?? "Dup failed"));
+    } catch (e) { setErr("✗ " + String((e as Error).message)); }
+    setDupBusy("");
+  };
+  const dupAd = async (adId: string, adName: string, curAdsetId: string) => {
+    const target = window.prompt("Ad set ID đích (mặc định = chính ad set này; dán ID ad set winner trong MAIN để thả biến thể):", curAdsetId) ?? "";
+    if (!target.trim()) return;
+    const name = window.prompt("Tên ad bản sao:", `${adName} - Copy`) ?? "";
+    setDupBusy("ad:" + adId); setErr("");
+    try {
+      const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "ad", id: adId, adsetId: target.trim(), name: name.trim() }) }).then((r) => r.json());
+      if (j.ok) setErr(`✓ Đã dup ad${j.id ? ` (#${j.id})` : ""} — PAUSED. Bấm ⟳ Sync now để thấy.`);
+      else setErr("✗ " + (j.error ?? "Dup failed"));
+    } catch (e) { setErr("✗ " + String((e as Error).message)); }
+    setDupBusy("");
+  };
+  // v525 · nút hành động nhỏ dùng chung trên các hàng
+  const rowBtn: React.CSSProperties = { border: "1px solid #C9D2DE", background: "#fff", color: "#1D4ED8", borderRadius: 999, padding: "1px 9px", fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" };
+
   // Gộp theo campaign → ad
   const grouped = useMemo(() => {
     type Agg = { campId: string; campaign: string; ad: string; adId: string; adset: string; adsetId: string; spend: number; imp: number; lc: number; atc: number; pur: number; rev: number };
@@ -319,6 +351,10 @@ export default function AdsCenterClient() {
                 </span>
               )}
               <span style={{ fontSize: 12, color: "var(--muted)" }}>{ads.length} ads · {money(ct.spend)} · {ct.pur} purchases{ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}</span>
+              <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                {/* v525 · tạo ads mới vào ĐÚNG campaign này — mở Meta Ads Kit bên Manage Products với campaign đã trỏ sẵn */}
+                <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}`} style={{ ...rowBtn, textDecoration: "none", padding: "3px 11px", fontSize: 11 }}>＋ Ads</a>
+              </span>
             </div>
             <div style={{ overflowX: "auto", display: isCollapsed ? "none" : "block" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -366,6 +402,12 @@ export default function AdsCenterClient() {
                               <span style={{ fontWeight: 600, color: "var(--muted)" }}>
                                 {grp.length} ad{grp.length > 1 ? "s" : ""} · {money(gs.spend)} · {gs.atc} ATC · {gs.pur} purch{gs.spend ? ` · ROAS ${(gs.rev / gs.spend).toFixed(2)}` : ""}
                               </span>
+                              {/* v525 · tạo ads thẳng vào ad set này / nhân bản cả ad set (kèm ads, PAUSED) */}
+                              <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}&adsetId=${a.adsetId}&adset=${encodeURIComponent(a.adset)}`}
+                                onClick={(e) => e.stopPropagation()} style={{ ...rowBtn, textDecoration: "none" }}>＋ Ads</a>
+                              <button onClick={(e) => { e.stopPropagation(); dupAdset(a.adsetId, a.adset, campId); }} disabled={dupBusy === "adset:" + a.adsetId} style={{ ...rowBtn, opacity: dupBusy === "adset:" + a.adsetId ? 0.5 : 1 }}>
+                                {dupBusy === "adset:" + a.adsetId ? "…" : "⧉ Dup set"}
+                              </button>
                             </span>
                           </td>
                         </tr>
@@ -397,6 +439,9 @@ export default function AdsCenterClient() {
                               style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9" }} />
                           )}
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.ad}</span>
+                          {/* v525 · dup ad này (PAUSED) — mặc định cùng ad set, dán ID khác để thả vào winner MAIN */}
+                          <button onClick={(e) => { e.stopPropagation(); dupAd(a.adId, a.ad, a.adsetId); }} disabled={dupBusy === "ad:" + a.adId}
+                            title="Duplicate ad (PAUSED)" style={{ ...rowBtn, padding: "0 7px", flexShrink: 0, opacity: dupBusy === "ad:" + a.adId ? 0.5 : 1 }}>⧉</button>
                         </span>
                       </td>
                       <td style={{ ...td, fontWeight: 700 }}>{money(a.spend)}</td>
