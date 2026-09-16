@@ -255,6 +255,7 @@ export default function AdsCenterClient() {
           {lastSync ? `Synced ${new Date(lastSync).toLocaleString()}` : "Never synced — bấm Sync now"}
         </span>
         <span style={{ flex: 1 }} />
+        <a href="/shopify-products?adskit=1&newcamp=1" style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>＋ New campaign</a>
         <button onClick={syncNow} disabled={syncBusy} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: syncBusy ? .6 : 1 }}>
           {syncBusy ? "Syncing…" : "⟳ Sync now"}
         </button>

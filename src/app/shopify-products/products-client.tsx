@@ -454,6 +454,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     try {
       const q = new URLSearchParams(window.location.search);
       if (q.get("adskit") !== "1") return;
+      // v528 · ＋ New campaign từ Ads Center: kit ở chế độ tạo campaign MỚI (không dính cfg cũ).
+      if (q.get("newcamp") === "1") {
+        setKitCampId(""); setKitAdsetId(""); setKitCampaign("");
+        setKitLinked(true);
+        flash("🎯 Tạo CAMPAIGN MỚI — tick sản phẩm, mở \"🎯 Meta Ads Kit…\" trong bulk actions, đặt tên campaign + chọn Structure rồi Push", true);
+        return;
+      }
       const ci = (q.get("campaignId") ?? "").replace(/\D/g, "");
       if (ci) setKitCampId(ci);
       if (q.get("campaign")) setKitCampaign(String(q.get("campaign")));
