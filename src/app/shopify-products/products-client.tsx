@@ -342,6 +342,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       setKitTargets({ camps, adsets });
     } catch { /* không phải admin / lỗi mạng → giữ ô nhập ID tay */ }
   };
+  // v559 · deep-link trỏ thẳng ad set (không kèm campaign) → kitTargets tải xong thì tự chọn campaign cha.
+  useEffect(() => {
+    if (!kitTargets || kitMode !== "existing" || !kitAdsetId) return;
+    const a = kitTargets.adsets.find((x) => x.id === kitAdsetId);
+    if (a?.campId && a.campId !== kitCampId) { setKitCampId(a.campId); const c = kitTargets.camps.find((x) => x.id === a.campId); if (c) setKitCampaign(c.name); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kitTargets, kitAdsetId, kitMode]);
   const [kitItemAdset, setKitItemAdset] = useState<Record<string, string>>({});
   // v525 · ảnh ANGLE tự upload theo sản phẩm (ngoài ảnh listing) — chọn được như thumbnail thường.
   const [kitExtra, setKitExtra] = useState<Record<string, string[]>>({});
@@ -2493,7 +2500,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 <div><span style={kitLab}>Campaign</span>
                   {kitTargets?.camps.length ? (
                     <select value={kitCampId} style={{ ...kitIn, padding: "9px 8px" }}
-                      onChange={(e) => { const id = e.target.value; setKitCampId(id); const c = kitTargets.camps.find((x) => x.id === id); if (id && c) setKitCampaign(c.name); }}>
+                      onChange={(e) => {
+                        const id = e.target.value; setKitCampId(id);
+                        const c = kitTargets.camps.find((x) => x.id === id); if (id && c) setKitCampaign(c.name);
+                        // v559 · ad set đang chọn không thuộc campaign mới → quay về Create NEW ad set
+                        if (kitMode === "existing" && kitAdsetId) { const cur = kitTargets.adsets.find((x) => x.id === kitAdsetId); if (!cur || cur.campId !== id) { setKitAdsetId(""); setKitMode("single"); } }
+                      }}>
                       <option value="">➕ Create NEW campaign</option>
                       {kitTargets.camps.map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + c.name}</option>)}
                     </select>
@@ -2515,10 +2527,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         if (a) { setKitAdset(a.name); if (a.campId) { setKitCampId(a.campId); const c = kitTargets.camps.find((x) => x.id === a.campId); if (c) setKitCampaign(c.name); } }
                       }}>
                       <option value="">➕ Create NEW ad set(s)</option>
-                      {kitTargets.adsets.map((a) => {
-                        const c = kitTargets.camps.find((x) => x.id === a.campId);
-                        return <option key={a.id} value={a.id}>{(a.status === "ACTIVE" ? "🟢 " : "⏸ ") + a.name + (a.budget ? ` · $${a.budget}/d` : "") + (c ? ` · ${c.name}` : "")}</option>;
-                      })}
+                      {/* v559 · chỉ liệt kê ad set THUỘC campaign đang chọn — campaign mới thì chưa có ad set nào */}
+                      {kitTargets.adsets.filter((a) => (!!kitCampId && a.campId === kitCampId) || a.id === kitAdsetId).map((a) => (
+                        <option key={a.id} value={a.id}>{(a.status === "ACTIVE" ? "🟢 " : "⏸ ") + a.name + (a.budget ? ` · $${a.budget}/d` : "")}</option>
+                      ))}
                     </select>
                   ) : (
                     <input value={kitAdset} onChange={(e) => setKitAdset(e.target.value)} style={kitIn} />
