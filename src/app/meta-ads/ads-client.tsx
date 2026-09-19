@@ -564,13 +564,16 @@ export default function AdsCenterClient() {
                           {/* v525 · dup ad này (PAUSED) — mặc định cùng ad set, dán ID khác để thả vào winner MAIN */}
                           <button onClick={(e) => { e.stopPropagation(); dupAd(a.adId, a.ad, a.adsetId, a.adset); }} disabled={dupBusy === "ad:" + a.adId}
                             title="Duplicate ad — chọn product bên Shopify rồi push" style={{ ...rowBtn, padding: "0 7px", flexShrink: 0, opacity: dupBusy === "ad:" + a.adId ? 0.5 : 1 }}>⧉</button>
-                          {/* v537 · mở đúng listing bên Manage Products · Shopify để sửa (suy từ link đích của creative) */}
+                          {/* v537 · mở đúng listing bên Manage Products · Shopify để sửa (suy từ link đích của creative) — v538 style badge SHOPIFY, mở tab mới */}
                           {(() => {
                             const l = ent?.ads[a.adId]?.plink ?? "";
                             const m = l.match(/\/products\/([^/?#]+)/);
                             return m ? (
-                              <a href={`/shopify-products?edit=${encodeURIComponent(m[1])}`} onClick={(e) => e.stopPropagation()}
-                                title="Sửa listing bên Manage Products · Shopify" style={{ ...rowBtn, textDecoration: "none", padding: "0 7px", flexShrink: 0 }}>🛍</a>
+                              <a href={`/shopify-products?edit=${encodeURIComponent(m[1])}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+                                title="Sửa listing bên Manage Products · Shopify (tab mới)"
+                                style={{ background: "#3F9142", color: "#fff", borderRadius: 999, padding: "2px 10px", fontSize: 9.5, fontWeight: 800, letterSpacing: ".4px", textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "16px" }}>
+                                ⬆ SHOPIFY
+                              </a>
                             ) : null;
                           })()}
                         </span>
