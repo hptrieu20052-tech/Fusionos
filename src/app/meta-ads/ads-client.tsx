@@ -233,7 +233,7 @@ export default function AdsCenterClient() {
             startTime: f.start ? new Date(f.start).toISOString() : undefined }) }).then((r) => r.json());
         if (!j.ok) { try { tab?.close(); } catch { /* ignore */ } setErr("✗ " + (j.error ?? "Dup failed")); }
         else if (j.warn) { try { tab?.close(); } catch { /* ignore */ } setErr(`⚠ ${j.warn}${j.id && !f.deep ? ` New ad set #${j.id} was created — after Sync, use ＋ Ads on it to add ads.` : ""}`); setDupForm(null); loadEnt(); }
-        else if (f.deep) { setErr(`✓ Ad set duplicated${j.id ? ` (#${j.id})` : ""} WITH ${partial ? `${chosen.length}/${inSet.length} selected` : "its"} ads — PAUSED${f.start ? `, scheduled for ${new Date(f.start).toLocaleString()}` : ""}. Hit ⟳ Sync now to see it; enable after review.`); setDupForm(null); loadEnt(); }
+        else if (f.deep) { setErr(`✓ Ad set duplicated${j.id ? ` (#${j.id})` : ""} WITH ${inSet.length ? `${chosen.length}/${inSet.length} selected` : "its"} ads — PAUSED${f.start ? `, scheduled for ${new Date(f.start).toLocaleString()}` : ""}. Hit ⟳ Sync now to see it; enable after review.`); setDupForm(null); loadEnt(); }
         else if (j.id) {
           const hs = handlesIn((ad) => ad.adsetId === f.id);
           goto(`/shopify-products?adskit=1&adsetId=${j.id}&adset=${encodeURIComponent(f.name.trim())}${hs ? `&sel=${encodeURIComponent(hs)}` : ""}`);
