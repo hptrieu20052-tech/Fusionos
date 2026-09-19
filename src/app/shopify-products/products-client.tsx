@@ -592,7 +592,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       if (ov === null) { await saveExtras(false); flash("✓ Saved locally — not pushed (HIGH policy risk not overridden)" + persWarn); setEditId(null); setBusy(false); load(); return; }
       const j = await postJSON("/api/shopify-products/push", { ids: [edit.id], override: ov });
       await saveExtras(true);
-      if (j.ok || j.pushed) { flash("✓ Saved & updated on Shopify (gồm custom options + feed)" + persWarn); setEditId(null); load(); }
+      if (j.ok || j.pushed) {
+        // v540 · partial (vd ảnh Shopify tải thất bại) — báo rõ thay vì im lặng.
+        const pw = String((j.results ?? [])[0]?.error ?? "");
+        flash(pw ? `⚠ Saved & pushed, nhưng: ${pw.replace(/^partial:\s*/, "")}` + persWarn : "✓ Saved & updated on Shopify (gồm custom options + feed)" + persWarn, !pw);
+        setEditId(null); load();
+      }
       else { const err = (j.results ?? [])[0]?.error ?? j.error ?? "push failed"; flash("✗ Saved locally but Shopify update failed: " + err + (/write_products|scope|access/i.test(String(err)) ? " — add scope write_products + reinstall app" : ""), false); setEditId(null); load(); }
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);

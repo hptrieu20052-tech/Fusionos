@@ -306,14 +306,24 @@ export async function POST(req: NextRequest) {
         // Đọc lại từ Shopify sau khi push. BẮT BUỘC: ảnh mới thêm chưa có media GID trong bản local,
         // nếu không nạp lại thì lần Push sau productCreateMedia sẽ thêm ảnh đó LẦN NỮA (ảnh trùng).
         // Đồng thời làm mới variant GID / handle / inventory / collections cho đúng bảng.
+        // v540 · Media xử lý BẤT ĐỒNG BỘ: đọc lại quá sớm thì thiếu ảnh mới → ghi đè local là "mất ảnh".
+        // Chờ tới khi đủ số ảnh (tối đa ~10s); vẫn thiếu thì GIỮ ảnh local, Sync sau tự thay bằng bản có GID.
+        const expectedImages = (Array.isArray(r.p.images) ? r.p.images as SyncedImage[] : []).filter((im) => /^https?:\/\//i.test(im?.src ?? "")).length;
         let fresh: Awaited<ReturnType<typeof fetchOneShopifyProduct>> = null;
-        try { fresh = await fetchOneShopifyProduct(cred, r.p.shopifyProductId); } catch { /* refetch lỗi không chặn — Shopify đã nhận */ }
+        for (let i = 0; i < 4; i++) {
+          try { fresh = await fetchOneShopifyProduct(cred, r.p.shopifyProductId); } catch { /* refetch lỗi không chặn — Shopify đã nhận */ }
+          if ((fresh?.images.length ?? 0) >= expectedImages || i === 3) break;
+          await new Promise((res2) => setTimeout(res2, 2500));
+        }
+        const freshImages = fresh && fresh.images.length >= expectedImages
+          ? fresh.images
+          : (Array.isArray(r.p.images) ? r.p.images as SyncedImage[] : []);
         await db.update(schema.shopifyProducts).set({
           ...(fresh ? {
             handle: fresh.handle, title: fresh.title, bodyHtml: fresh.bodyHtml, vendor: fresh.vendor, productType: fresh.productType,
             tags: fresh.tags, status: fresh.status, seoTitle: fresh.seoTitle, seoDescription: fresh.seoDescription,
             category: fresh.category, collections: fresh.collections, options: fresh.options,
-            variants: fresh.variants, images: fresh.images,
+            variants: fresh.variants, images: freshImages,
             onlineStoreUrl: fresh.onlineStoreUrl, totalInventory: fresh.totalInventory, syncedAt: new Date(),
           } : {}),
           dirty: false, pushedAt: new Date(), updatedAt: new Date(),

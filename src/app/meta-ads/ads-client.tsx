@@ -47,7 +47,7 @@ export default function AdsCenterClient() {
   const [campStatus, setCampStatus] = useState<Record<string, string>>({});
   // v531 · danh sách đủ campaign từ meta_campaigns — để campaign MỚI (chưa chi tiêu) vẫn hiện trong bảng.
   const [campList, setCampList] = useState<{ id: string; name: string; status: string }[]>([]);
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active"); // v540 · mặc định lọc Active
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleCamp = (id: string, cur: boolean) => {
     setCollapsed((m) => { const n = { ...m, [id]: !cur }; try { localStorage.setItem("metaads.collapsed", JSON.stringify(n)); } catch { /* ignore */ } return n; });

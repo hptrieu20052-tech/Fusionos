@@ -139,6 +139,11 @@ const MEDIA_REORDER = `mutation MR($id: ID!, $moves: [MoveInput!]!) {
 const MEDIA_LIST = `query M($id: ID!) {
   product(id: $id) { media(first: 50) { nodes { ... on MediaImage { id } } } }
 }`;
+// v540 · Shopify xử lý media BẤT ĐỒNG BỘ: productCreateMedia trả OK rồi mới tải ảnh về sau.
+// Ảnh hỏng/URL không tải được sẽ FAILED trong im lặng → phải poll status để báo cho người dùng.
+const MEDIA_STATUS = `query MSt($id: ID!) {
+  product(id: $id) { media(first: 50) { nodes { ... on MediaImage { id status mediaErrors { message } } } } }
+}`;
 
 type LocalProduct = {
   shopifyProductId: string; title: string; bodyHtml: string | null; tags: string | null;
@@ -198,11 +203,28 @@ export async function pushProductToShopify(
     const ed = ue(rd.productDeleteMedia?.userErrors); if (ed) return { ok: false, error: "delete image: " + ed };
   }
   const toAdd = local.images.filter((im) => !im.id && /^https?:\/\//i.test(im.src));
+  let mediaWarn = "";
   if (toAdd.length) {
-    const rc = await shopifyGraphQL<{ productCreateMedia?: { mediaUserErrors?: unknown } }>(cred, MEDIA_CREATE, {
+    const rc = await shopifyGraphQL<{ productCreateMedia?: { media?: { id?: string }[]; mediaUserErrors?: unknown } }>(cred, MEDIA_CREATE, {
       productId: pid, media: toAdd.map((im) => ({ originalSource: im.src, alt: im.altText || undefined, mediaContentType: "IMAGE" })),
     });
     const ec = ue(rc.productCreateMedia?.mediaUserErrors); if (ec) return { ok: false, error: "add image: " + ec };
+    // v540 · CHỜ Shopify xử lý ảnh mới (tối đa ~12s): FAILED → báo rõ thay vì im lặng mất ảnh.
+    const newIds = (rc.productCreateMedia?.media ?? []).map((m) => String(m?.id ?? "")).filter(Boolean);
+    for (let i = 0; i < 6 && newIds.length; i++) {
+      await new Promise((res) => setTimeout(res, 2000));
+      try {
+        const st = await shopifyGraphQL<{ product?: { media?: { nodes?: { id?: string; status?: string; mediaErrors?: { message?: string }[] }[] } } }>(cred, MEDIA_STATUS, { id: pid });
+        const nodes = (st.product?.media?.nodes ?? []).filter((n) => newIds.includes(String(n.id ?? "")));
+        const failed = nodes.filter((n) => n.status === "FAILED");
+        if (failed.length) {
+          const msgs = failed.map((n) => (n.mediaErrors ?? []).map((e) => e.message).filter(Boolean).join(", ")).filter(Boolean).join("; ");
+          mediaWarn = `${failed.length}/${toAdd.length} image(s) FAILED on Shopify${msgs ? ": " + msgs : " (URL ảnh không tải được?)"}`.slice(0, 200);
+          break;
+        }
+        if (!nodes.some((n) => n.status === "PROCESSING" || n.status === "UPLOADED")) break; // tất cả READY
+      } catch { break; /* poll lỗi không chặn — push chính đã xong */ }
+    }
   }
   // Sắp xếp: đọc lại media HIỆN CÓ trên Shopify (sau add/delete) để chỉ move GID đang tồn tại —
   // GID cũ/không còn sẽ làm CẢ lệnh reorder lỗi. newPosition 0-based. KHÔNG nuốt lỗi nữa → trả warn.
@@ -221,5 +243,6 @@ export async function pushProductToShopify(
       if (er) warn = "reorder: " + er;
     } catch (e) { warn = "reorder: " + String((e as Error)?.message ?? e).slice(0, 140); }
   }
-  return { ok: true, warn };
+  const allWarn = [mediaWarn, warn].filter(Boolean).join("; ") || undefined;
+  return { ok: true, warn: allWarn };
 }
