@@ -682,9 +682,33 @@ export default function AdsCenterClient() {
               <input autoFocus value={dupForm.name} onChange={(e) => setDupForm({ ...dupForm, name: e.target.value })}
                 onKeyDown={(e) => { if (e.key === "Enter") submitDup(); if (e.key === "Escape") setDupForm(null); }} style={dupInp} />
             </label>
-            {dupForm.kind !== "camp" && (
-              <label style={dupLbl}>{dupForm.kind === "adset" ? "Campaign ID đích — trống = giữ campaign hiện tại; dán ID campaign MAIN để thăng cấp winner" : "Ad set ID đích — mặc định = chính ad set này; dán ID ad set winner trong MAIN để thả biến thể"}
-                <input value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value.replace(/\D/g, "") })} style={dupInp} />
+            {/* v549 · đích chọn bằng DROPDOWN (như kit) — hết dán ID tay */}
+            {dupForm.kind === "adset" && (
+              <label style={dupLbl}>Campaign đích — giữ campaign hiện tại, hoặc chọn campaign MAIN để thăng cấp
+                {campList.length ? (
+                  <select value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value })} style={dupInp}>
+                    <option value="">— giữ campaign hiện tại —</option>
+                    {campList.map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + (c.name || c.id)}</option>)}
+                  </select>
+                ) : (
+                  <input value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value.replace(/\D/g, "") })} style={dupInp} placeholder="trống = giữ campaign hiện tại" />
+                )}
+              </label>
+            )}
+            {dupForm.kind === "ad" && (
+              <label style={dupLbl}>Ad set đích — mặc định chính ad set này; chọn ad set Winners bên MAIN để thăng cấp
+                {ent && Object.keys(ent.adsets).length ? (
+                  <select value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value })} style={dupInp}>
+                    {Object.entries(ent.adsets)
+                      .sort((x, y) => ((x[1].status === "ACTIVE" ? 0 : 1) - (y[1].status === "ACTIVE" ? 0 : 1)) || String(x[1].name ?? "").localeCompare(String(y[1].name ?? "")))
+                      .map(([id, s]) => {
+                        const cn = campList.find((c) => c.id === s.campId)?.name ?? "";
+                        return <option key={id} value={id}>{(s.status === "ACTIVE" ? "🟢 " : "⏸ ") + (s.name || id) + (s.budget ? ` · $${s.budget}/d` : "") + (cn ? ` · ${cn}` : "")}</option>;
+                      })}
+                  </select>
+                ) : (
+                  <input value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value.replace(/\D/g, "") })} style={dupInp} placeholder="dán ID ad set đích" />
+                )}
               </label>
             )}
             {dupForm.kind === "adset" && (
