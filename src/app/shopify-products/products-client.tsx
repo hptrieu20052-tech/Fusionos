@@ -2488,20 +2488,45 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             </div>
             {/* v446 · Config panel — style đồng bộ kiểu Ads Manager. */}
             <div style={{ background: "#F6F7F9", border: "1px solid #E6E9EE", borderRadius: 16, padding: 16, marginBottom: 16 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.1fr 1.5fr", gap: 12, marginBottom: 12 }}>
+              {/* v558 · 2 truc chon tuong minh: Campaign (moi / co san) + Ad set (moi / co san) */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                 <div><span style={kitLab}>Campaign</span>
-                  <input value={kitCampaign} onChange={(e) => setKitCampaign(e.target.value)} style={kitIn} /></div>
-                <div><span style={kitLab}>{kitMode === "per_ad" ? "Ad set name prefix" : "Ad set"}</span>
-                  <input value={kitAdset} onChange={(e) => setKitAdset(e.target.value)} style={kitIn} /></div>
-                <div><span style={kitLab}>Ad name prefix</span>
-                  <input value={kitPrefix} onChange={(e) => setKitPrefix(e.target.value)} style={kitIn} /></div>
-                <div><span style={kitLab}>Structure</span>
-                  <select value={kitMode} onChange={(e) => setKitMode(e.target.value as "per_ad" | "single" | "custom" | "existing")} style={{ ...kitIn, padding: "9px 8px" }}>
-                    <option value="per_ad">1 ad set per ad — $X each (screening test)</option>
-                    <option value="single">1 NEW ad set with all ads</option>
-                    <option value="custom">Custom ad sets — assign each ad (TEST branches)</option>
-                    <option value="existing">Into EXISTING ad set (MAIN winner)</option>
-                  </select></div>
+                  {kitTargets?.camps.length ? (
+                    <select value={kitCampId} style={{ ...kitIn, padding: "9px 8px" }}
+                      onChange={(e) => { const id = e.target.value; setKitCampId(id); const c = kitTargets.camps.find((x) => x.id === id); if (id && c) setKitCampaign(c.name); }}>
+                      <option value="">➕ Create NEW campaign</option>
+                      {kitTargets.camps.map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + c.name}</option>)}
+                    </select>
+                  ) : (
+                    <input value={kitCampaign} onChange={(e) => setKitCampaign(e.target.value)} style={kitIn} />
+                  )}</div>
+                {!kitCampId ? (
+                  <div><span style={kitLab}>New campaign name</span>
+                    <input value={kitCampaign} onChange={(e) => setKitCampaign(e.target.value)} style={kitIn} /></div>
+                ) : <div />}
+                <div><span style={kitLab}>Ad set</span>
+                  {kitTargets?.adsets.length ? (
+                    <select value={kitMode === "existing" ? kitAdsetId : ""} style={{ ...kitIn, padding: "9px 8px" }}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        if (!id) { setKitAdsetId(""); if (kitMode === "existing") setKitMode("single"); return; }
+                        setKitAdsetId(id); setKitMode("existing");
+                        const a = kitTargets.adsets.find((x) => x.id === id);
+                        if (a) { setKitAdset(a.name); if (a.campId) { setKitCampId(a.campId); const c = kitTargets.camps.find((x) => x.id === a.campId); if (c) setKitCampaign(c.name); } }
+                      }}>
+                      <option value="">➕ Create NEW ad set(s)</option>
+                      {kitTargets.adsets.map((a) => {
+                        const c = kitTargets.camps.find((x) => x.id === a.campId);
+                        return <option key={a.id} value={a.id}>{(a.status === "ACTIVE" ? "🟢 " : "⏸ ") + a.name + (a.budget ? ` · $${a.budget}/d` : "") + (c ? ` · ${c.name}` : "")}</option>;
+                      })}
+                    </select>
+                  ) : (
+                    <input value={kitAdset} onChange={(e) => setKitAdset(e.target.value)} style={kitIn} />
+                  )}</div>
+                {kitMode !== "existing" ? (
+                  <div><span style={kitLab}>{kitMode === "per_ad" ? "New ad set name prefix" : "New ad set name"}</span>
+                    <input value={kitAdset} onChange={(e) => setKitAdset(e.target.value)} style={kitIn} /></div>
+                ) : <div />}
               </div>
               {kitMode === "custom" && (
                 <div style={{ marginBottom: 12 }}>
@@ -2521,6 +2546,20 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 </div>
               )}
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div style={{ width: 140 }}><span style={kitLab}>Ad name prefix</span>
+                  <input value={kitPrefix} onChange={(e) => setKitPrefix(e.target.value)} style={kitIn} /></div>
+                {kitMode !== "existing" && (
+                  <div style={{ width: 235 }}><span style={kitLab}>Structure</span>
+                    <select value={kitMode} onChange={(e) => setKitMode(e.target.value as "per_ad" | "single" | "custom" | "existing")} style={{ ...kitIn, padding: "9px 8px" }}>
+                      <option value="per_ad">1 ad set per ad — $X each (screening test)</option>
+                      <option value="single">1 NEW ad set with all ads</option>
+                      <option value="custom">Custom ad sets — assign each ad (TEST branches)</option>
+                      {!kitTargets?.adsets.length && <option value="existing">Into EXISTING ad set (paste ID)</option>}
+                    </select></div>
+                )}
+                {kitMode === "existing" && (
+                  <div style={{ alignSelf: "center", fontSize: 12, color: "var(--muted)", fontWeight: 600 }}>→ ads will be pushed into the selected EXISTING ad set (PAUSED)</div>
+                )}
                 {(kitMode === "per_ad" || kitMode === "single") && (
                   <div style={{ width: 86 }}><span style={kitLab}>{kitMode === "single" ? "$ / day (ad set)" : "$ / day each"}</span>
                     <input value={kitBudget} onChange={(e) => setKitBudget(e.target.value.replace(/[^\d.]/g, ""))} style={{ ...kitIn, textAlign: "center" }} /></div>
@@ -2529,34 +2568,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   <div style={{ width: 150 }}><span style={kitLab}>Pixel ID</span>
                     <input value={kitPixel} onChange={(e) => setKitPixel(e.target.value.replace(/\D/g, ""))} style={kitIn} /></div>
                 )}
-                <div style={{ width: kitTargets?.camps.length ? 220 : 160 }}><span style={kitLab}>Campaign {kitTargets?.camps.length ? "(pick existing / create new)" : "ID"}</span>
-                  {kitTargets?.camps.length ? (
-                    <select value={kitCampId} style={kitIn}
-                      onChange={(e) => { const id = e.target.value; setKitCampId(id); const c = kitTargets.camps.find((x) => x.id === id); if (id && c) setKitCampaign(c.name); }}>
-                      <option value="">— create NEW campaign (name it in the Campaign box) —</option>
-                      {kitTargets.camps.map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + c.name}</option>)}
-                    </select>
-                  ) : (
-                    <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new" style={kitIn} />
-                  )}</div>
-                {kitMode === "existing" && (
-                  <div style={{ width: kitTargets?.adsets.length ? 260 : 170 }}><span style={kitLab}>Ad set (target) *</span>
-                    {kitTargets?.adsets.length ? (
-                      <select value={kitAdsetId} style={kitIn}
-                        onChange={(e) => {
-                          const id = e.target.value; setKitAdsetId(id);
-                          const a = kitTargets.adsets.find((x) => x.id === id);
-                          if (id && a) { setKitAdset(a.name); if (a.campId) { setKitCampId(a.campId); const c = kitTargets.camps.find((x) => x.id === a.campId); if (c) setKitCampaign(c.name); } }
-                        }}>
-                        <option value="">— pick an ad set —</option>
-                        {kitTargets.adsets.map((a) => {
-                          const c = kitTargets.camps.find((x) => x.id === a.campId);
-                          return <option key={a.id} value={a.id}>{(a.status === "ACTIVE" ? "🟢 " : "⏸ ") + a.name + (a.budget ? ` · $${a.budget}/d` : "") + (c ? ` · ${c.name}` : "")}</option>;
-                        })}
-                      </select>
-                    ) : (
-                      <input value={kitAdsetId} onChange={(e) => setKitAdsetId(e.target.value.replace(/\D/g, ""))} placeholder="paste from Meta Ads Center" style={kitIn} />
-                    )}</div>
+                {!kitTargets?.camps.length && (
+                  <div style={{ width: 150 }}><span style={kitLab}>Campaign ID</span>
+                    <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new" style={kitIn} /></div>
+                )}
+                {kitMode === "existing" && !kitTargets?.adsets.length && (
+                  <div style={{ width: 170 }}><span style={kitLab}>Ad set ID (target) *</span>
+                    <input value={kitAdsetId} onChange={(e) => setKitAdsetId(e.target.value.replace(/\D/g, ""))} placeholder="paste from Meta Ads Center" style={kitIn} /></div>
                 )}
                 {kitMode !== "existing" && (
                   <div style={{ width: 118 }}><span style={kitLab}>Age</span>
