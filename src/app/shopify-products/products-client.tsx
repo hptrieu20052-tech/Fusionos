@@ -329,8 +329,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       const j = await fetch("/api/meta-ads/entities").then((r) => r.json());
       if (!j?.ok) return;
       const cn = (j.campNames ?? {}) as Record<string, string>;
-      const camps = Object.entries((j.camp ?? {}) as Record<string, string>).map(([id, status]) => ({ id, name: cn[id] || id, status: String(status) }));
+      // v557 · bỏ campaign/ad set ARCHIVED/DELETED — Meta không nhận push vào đích đã lưu trữ
+      const dead = (st: unknown) => /ARCHIVED|DELETED/i.test(String(st ?? ""));
+      const camps = Object.entries((j.camp ?? {}) as Record<string, string>).filter(([, st]) => !dead(st)).map(([id, status]) => ({ id, name: cn[id] || id, status: String(status) }));
+      const liveCamp = new Set(camps.map((c) => c.id));
       const adsets = Object.entries((j.adsets ?? {}) as Record<string, { status?: string; budget?: number; name?: string; campId?: string }>)
+        .filter(([, v]) => !dead(v?.status) && (!v?.campId || liveCamp.has(String(v.campId))))
         .map(([id, v]) => ({ id, name: v?.name || id, campId: String(v?.campId ?? ""), status: String(v?.status ?? ""), budget: Number(v?.budget) || 0 }));
       const rank = (s: string) => (s === "ACTIVE" ? 0 : 1);
       camps.sort((a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name));

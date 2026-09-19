@@ -693,7 +693,8 @@ export default function AdsCenterClient() {
                 {campList.length ? (
                   <select value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value })} style={dupInp}>
                     <option value="">— keep current campaign —</option>
-                    {campList.map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + (c.name || c.id)}</option>)}
+                    {/* v557 · ẩn campaign ARCHIVED/DELETED — Meta không cho thêm ad set vào campaign lưu trữ */}
+                    {campList.filter((c) => !/ARCHIVED|DELETED/i.test(c.status)).map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + (c.name || c.id)}</option>)}
                   </select>
                 ) : (
                   <input value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value.replace(/\D/g, "") })} style={dupInp} placeholder="empty = keep current campaign" />
@@ -705,6 +706,7 @@ export default function AdsCenterClient() {
                 {ent && Object.keys(ent.adsets).length ? (
                   <select value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value })} style={dupInp}>
                     {Object.entries(ent.adsets)
+                      .filter(([, s2]) => !/ARCHIVED|DELETED/i.test(s2.status))
                       .sort((x, y) => ((x[1].status === "ACTIVE" ? 0 : 1) - (y[1].status === "ACTIVE" ? 0 : 1)) || String(x[1].name ?? "").localeCompare(String(y[1].name ?? "")))
                       .map(([id, s]) => {
                         const cn = campList.find((c) => c.id === s.campId)?.name ?? "";
