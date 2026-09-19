@@ -178,13 +178,15 @@ export default function AdsCenterClient() {
   // (Meta Ads Kit) như luồng ＋ New campaign — copy KHUNG trên Meta rồi nhảy sang Manage Products.
   // Ô tick "copy kèm creative" giữ lại luồng copy y nguyên (Meta /copies) cho ai cần.
   const [dupBusy, setDupBusy] = useState("");
-  const [dupForm, setDupForm] = useState<{ kind: "camp" | "adset" | "ad"; id: string; label: string; name: string; target: string; orig: string; budget: string; deep: boolean; adsetName: string; start: string } | null>(null);
+  const [dupForm, setDupForm] = useState<{ kind: "camp" | "adset" | "ad"; id: string; label: string; name: string; target: string; orig: string; budget: string; deep: boolean; adsetName: string; start: string; picks: Record<string, boolean> } | null>(null);
   const dupCamp = (campId: string, campName: string) =>
-    setDupForm({ kind: "camp", id: campId, label: campName || campId, name: `${campName} - Copy`, target: "", orig: "", budget: "", deep: false, adsetName: "", start: "" });
+    setDupForm({ kind: "camp", id: campId, label: campName || campId, name: `${campName} - Copy`, target: "", orig: "", budget: "", deep: false, adsetName: "", start: "", picks: {} });
   const dupAdset = (adsetId: string, adsetName: string, campId: string) =>
-    setDupForm({ kind: "adset", id: adsetId, label: adsetName || adsetId, name: `${adsetName} - Copy`, target: campId, orig: campId, budget: "", deep: false, adsetName, start: "" });
+    setDupForm({ kind: "adset", id: adsetId, label: adsetName || adsetId, name: `${adsetName} - Copy`, target: campId, orig: campId, budget: "", deep: false, adsetName, start: "", picks: {} });
   const dupAd = (adId: string, adName: string, curAdsetId: string, curAdsetName: string) =>
-    setDupForm({ kind: "ad", id: adId, label: adName || adId, name: `${adName} - Copy`, target: curAdsetId, orig: curAdsetId, budget: "", deep: false, adsetName: curAdsetName, start: "" });
+    setDupForm({ kind: "ad", id: adId, label: adName || adId, name: `${adName} - Copy`, target: curAdsetId, orig: curAdsetId, budget: "", deep: false, adsetName: curAdsetName, start: "", picks: {} });
+  // v551 · ads nằm trong ad set nguồn (để chọn con nào được copy kèm)
+  const adsInSet = (adsetId: string) => Object.entries(ent?.ads ?? {}).filter(([, a]) => a.adsetId === adsetId);
   const submitDup = async () => {
     if (!dupForm || dupBusy) return;
     const f = dupForm;
@@ -219,12 +221,18 @@ export default function AdsCenterClient() {
           setDupForm(null); loadEnt();
         } else { try { tab?.close(); } catch { /* ignore */ } setErr(j.ok ? "⚠ " + (j.warn ?? "Copied — check Ads Manager.") : "✗ " + (j.error ?? "Dup failed")); }
       } else if (f.kind === "adset") {
+        // v551 · nếu người dùng bỏ tick bớt ads trong danh sách → chỉ copy những ad đã chọn.
+        const inSet = adsInSet(f.id).map(([id]) => id);
+        const chosen = inSet.filter((id) => f.picks[id] !== false);
+        if (f.deep && inSet.length && !chosen.length) { setErr("Select at least 1 ad to copy"); setDupBusy(""); return; }
+        const partial = f.deep && inSet.length > 0 && chosen.length < inSet.length;
         const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ kind: "adset", id: f.id, campaignId: f.target.trim(), name: f.name.trim(), budget: Number(f.budget) || undefined, deep: f.deep,
+            ...(partial ? { adIds: chosen } : {}),
             startTime: f.start ? new Date(f.start).toISOString() : undefined }) }).then((r) => r.json());
         if (!j.ok) { try { tab?.close(); } catch { /* ignore */ } setErr("✗ " + (j.error ?? "Dup failed")); }
         else if (j.warn) { try { tab?.close(); } catch { /* ignore */ } setErr(`⚠ ${j.warn}${j.id && !f.deep ? ` New ad set #${j.id} was created — after Sync, use ＋ Ads on it to add ads.` : ""}`); setDupForm(null); loadEnt(); }
-        else if (f.deep) { setErr(`✓ Ad set duplicated${j.id ? ` (#${j.id})` : ""} WITH its ads — PAUSED${f.start ? `, scheduled for ${new Date(f.start).toLocaleString()}` : ""}. Hit ⟳ Sync now to see it; enable after review.`); setDupForm(null); loadEnt(); }
+        else if (f.deep) { setErr(`✓ Ad set duplicated${j.id ? ` (#${j.id})` : ""} WITH ${partial ? `${chosen.length}/${inSet.length} selected` : "its"} ads — PAUSED${f.start ? `, scheduled for ${new Date(f.start).toLocaleString()}` : ""}. Hit ⟳ Sync now to see it; enable after review.`); setDupForm(null); loadEnt(); }
         else if (j.id) {
           const hs = handlesIn((ad) => ad.adsetId === f.id);
           goto(`/shopify-products?adskit=1&adsetId=${j.id}&adset=${encodeURIComponent(f.name.trim())}${hs ? `&sel=${encodeURIComponent(hs)}` : ""}`);
@@ -716,19 +724,62 @@ export default function AdsCenterClient() {
                 <input value={dupForm.budget} onChange={(e) => setDupForm({ ...dupForm, budget: e.target.value.replace(/[^0-9.]/g, "") })} style={dupInp} placeholder="vd 25" />
               </label>
             )}
-            {dupForm.kind === "adset" && (
-              <label style={dupLbl}>Schedule (your local time) — empty = inherit from the source ad set (runs as soon as enabled if its start time has passed)
-                <input type="datetime-local" value={dupForm.start} onChange={(e) => setDupForm({ ...dupForm, start: e.target.value })} style={dupInp} />
-              </label>
-            )}
+            {/* v552 · lịch chạy kiểu Meta Ads Kit: ngày + giờ + chip nhanh (ASAP = theo ad set gốc) */}
+            {dupForm.kind === "adset" && (() => {
+              const sDate = dupForm.start.slice(0, 10);
+              const sTime = dupForm.start.length >= 16 ? dupForm.start.slice(11, 16) : "";
+              const setStart = (d: string, t: string) => setDupForm({ ...dupForm, start: d ? `${d}T${t || "08:00"}` : "" });
+              const dstr = (off: number) => { const x = new Date(Date.now() + off * 86400000); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+              const chip = (on: boolean): React.CSSProperties => ({ border: on ? "1.5px solid #16A34A" : "1px solid #C9D2DE", background: on ? "#F0FBF4" : "#fff", color: on ? "#15803D" : "#5B6472", borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" });
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: "#5B6472" }}>START DATE (your local time) — ⚡ ASAP = inherit from the source ad set</span>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input type="date" value={sDate} onChange={(e) => setStart(e.target.value, sTime)} style={{ ...dupInp, flex: 1 }} />
+                    <input type="time" value={sTime} onChange={(e) => setStart(sDate || dstr(0), e.target.value)} style={{ ...dupInp, width: 120 }} />
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button type="button" onClick={() => setDupForm({ ...dupForm, start: "" })} style={chip(!dupForm.start)}>⚡ ASAP</button>
+                    <button type="button" onClick={() => setStart(dstr(0), sTime || "08:00")} style={chip(!!sDate && sDate === dstr(0))}>Today</button>
+                    <button type="button" onClick={() => setStart(dstr(1), sTime || "08:00")} style={chip(!!sDate && sDate === dstr(1))}>Tomorrow</button>
+                    {["00:00", "08:00", "20:00"].map((t) => (
+                      <button key={t} type="button" onClick={() => setStart(sDate || dstr(0), t)} style={chip(!!dupForm.start && sTime === t)}>{t}</button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
             {dupForm.kind !== "camp" && (
               <label style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: "#5B6472", cursor: "pointer" }}>
                 <input type="checkbox" checked={dupForm.deep} onChange={(e) => setDupForm({ ...dupForm, deep: e.target.checked })} style={{ marginTop: 2 }} />
                 <span>{dupForm.kind === "adset"
-                  ? "Copy WITH all ads inside (keeps creatives/products — skips the product picker). Use to promote a winner to MAIN as-is."
+                  ? "Copy WITH the ads inside (keeps creatives/posts — skips the product picker). Untick any ad below you don't want to bring along."
                   : "Exact copy of this ad's creative/product (skips the product picker)."}</span>
               </label>
             )}
+            {/* v551 · chọn ADS nào được copy kèm — bỏ tick con không muốn mang theo */}
+            {dupForm.kind === "adset" && dupForm.deep && (() => {
+              const inSet = adsInSet(dupForm.id);
+              if (!inSet.length) return null;
+              const nChosen = inSet.filter(([id]) => dupForm.picks[id] !== false).length;
+              return (
+                <div style={{ display: "flex", flexDirection: "column", gap: 5, border: "1px solid #EEF1F5", borderRadius: 10, padding: "8px 10px", maxHeight: 170, overflowY: "auto" }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" }}>ADS TO COPY ({nChosen}/{inSet.length})</span>
+                  {inSet.map(([id, a]) => (
+                    <label key={id} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer" }}>
+                      <input type="checkbox" checked={dupForm.picks[id] !== false}
+                        onChange={() => setDupForm({ ...dupForm, picks: { ...dupForm.picks, [id]: dupForm.picks[id] === false } })}
+                        style={{ accentColor: "#16A34A", flexShrink: 0 }} />
+                      {a.thumb && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={a.thumb} alt="" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: 4, flexShrink: 0, border: "1px solid #E3E7EE" }} />
+                      )}
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || id}</span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })()}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button onClick={() => setDupForm(null)} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
               <button onClick={submitDup} disabled={!!dupBusy} style={{ border: "none", background: "#1D4ED8", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: dupBusy ? .6 : 1 }}>

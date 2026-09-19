@@ -58,8 +58,10 @@ export async function POST(req: NextRequest) {
     }
     if (kind === "adset") {
       const campaignId = String(b?.campaignId ?? "").replace(/\D/g, "");
+      // v551 · adIds: CHỈ copy những ad được chọn — copy khung trước rồi copy từng ad vào bản sao.
+      const adIds = (Array.isArray(b?.adIds) ? b!.adIds! : []).map((x) => String(x).replace(/\D/g, "")).filter(Boolean).slice(0, 50);
       // v535 · deep=false → copy khung KHÔNG kèm ads; mặc định (deep khác false) giữ hành vi cũ: kèm ads.
-      const deep = b?.deep !== false;
+      const deep = adIds.length ? false : b?.deep !== false;
       const r = await fb(`${id}/copies`, token, {
         deep_copy: deep, status_option: "PAUSED",
         ...(campaignId ? { campaign_id: campaignId } : {}),
@@ -78,7 +80,15 @@ export async function POST(req: NextRequest) {
       }
       let patchWarn = "";
       if (Object.keys(patch).length) await fb(newId, token, patch).catch((e: Error) => { patchWarn = `Copied, but rename/budget/schedule update failed: ${String(e.message).slice(0, 120)} — fix manually in Ads Manager.`; });
-      return NextResponse.json({ ok: true, id: newId, ...(patchWarn ? { warn: patchWarn } : {}) });
+      // v551 · copy TỪNG ad được chọn vào bản sao (giữ nguyên creative/post) — PAUSED hết.
+      let copied = 0;
+      const adFails: string[] = [];
+      for (const aid of adIds) {
+        try { await fb(`${aid}/copies`, token, { adset_id: newId, status_option: "PAUSED" }); copied++; }
+        catch (e) { adFails.push(String((e as Error).message).slice(0, 80)); }
+      }
+      const warns = [patchWarn, adFails.length ? `${adFails.length} ad(s) failed to copy: ${adFails[0]}` : ""].filter(Boolean).join("; ");
+      return NextResponse.json({ ok: true, id: newId, ...(adIds.length ? { copied } : {}), ...(warns ? { warn: warns } : {}) });
     }
     // kind === "ad"
     const adsetId = String(b?.adsetId ?? "").replace(/\D/g, "");
