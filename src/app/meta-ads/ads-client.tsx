@@ -190,22 +190,32 @@ export default function AdsCenterClient() {
     const f = dupForm;
     if (f.kind === "ad" && !f.target.trim()) { setErr("Ad set ID đích không được trống"); return; }
     setDupBusy(f.kind + ":" + f.id); setErr("");
+    // v539 · kit mở ở TAB MỚI (giữ nguyên màn Ads Center đang làm việc). Mở tab trống NGAY trong cú
+    // click (trước await) để không bị popup blocker chặn, xong mới trỏ URL; lỗi thì đóng tab lại.
+    const willRedirect = f.kind === "camp" || !f.deep;
+    let tab: Window | null = null;
+    if (willRedirect) { try { tab = window.open("about:blank", "_blank"); } catch { tab = null; } }
+    const goto = (url: string) => { if (tab) tab.location.href = url; else window.open(url, "_blank"); };
     try {
       if (f.kind === "camp") {
         // Copy khung campaign → sang kit chọn product (push sẽ tạo ad set + ads vào campaign mới).
         const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ kind: "campaign", id: f.id, name: f.name.trim() }) }).then((r) => r.json());
-        if (j.ok && j.id) { window.location.href = `/shopify-products?adskit=1&campaignId=${j.id}&campaign=${encodeURIComponent(f.name.trim())}`; return; }
-        setErr(j.ok ? "⚠ " + (j.warn ?? "Copied — check Ads Manager.") : "✗ " + (j.error ?? "Dup failed"));
+        if (j.ok && j.id) {
+          goto(`/shopify-products?adskit=1&campaignId=${j.id}&campaign=${encodeURIComponent(f.name.trim())}`);
+          setErr(`✓ Campaign mới #${j.id} — kit chọn products đã mở ở TAB MỚI.`); setDupForm(null); loadEnt();
+        } else { try { tab?.close(); } catch { /* ignore */ } setErr(j.ok ? "⚠ " + (j.warn ?? "Copied — check Ads Manager.") : "✗ " + (j.error ?? "Dup failed")); }
       } else if (f.kind === "adset") {
         const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ kind: "adset", id: f.id, campaignId: f.target.trim(), name: f.name.trim(), budget: Number(f.budget) || undefined, deep: f.deep,
             startTime: f.start ? new Date(f.start).toISOString() : undefined }) }).then((r) => r.json());
-        if (!j.ok) { setErr("✗ " + (j.error ?? "Dup failed")); }
-        else if (j.warn) { setErr(`⚠ ${j.warn}${j.id && !f.deep ? ` Ad set mới #${j.id} đã tạo — Sync xong bấm ＋ Ads trên nó để thêm ads.` : ""}`); setDupForm(null); loadEnt(); }
+        if (!j.ok) { try { tab?.close(); } catch { /* ignore */ } setErr("✗ " + (j.error ?? "Dup failed")); }
+        else if (j.warn) { try { tab?.close(); } catch { /* ignore */ } setErr(`⚠ ${j.warn}${j.id && !f.deep ? ` Ad set mới #${j.id} đã tạo — Sync xong bấm ＋ Ads trên nó để thêm ads.` : ""}`); setDupForm(null); loadEnt(); }
         else if (f.deep) { setErr(`✓ Đã dup ad set${j.id ? ` (#${j.id})` : ""} KÈM ads — PAUSED${f.start ? `, lịch chạy ${new Date(f.start).toLocaleString()}` : ""}. Bấm ⟳ Sync now để thấy, bật trong Ads Manager sau khi kiểm tra.`); setDupForm(null); loadEnt(); }
-        else if (j.id) { window.location.href = `/shopify-products?adskit=1&adsetId=${j.id}&adset=${encodeURIComponent(f.name.trim())}`; return; }
-        else setErr("⚠ " + (j.warn ?? "Copied — check Ads Manager."));
+        else if (j.id) {
+          goto(`/shopify-products?adskit=1&adsetId=${j.id}&adset=${encodeURIComponent(f.name.trim())}`);
+          setErr(`✓ Ad set mới #${j.id} — kit chọn products đã mở ở TAB MỚI.`); setDupForm(null); loadEnt();
+        } else { try { tab?.close(); } catch { /* ignore */ } setErr("⚠ Copied — check Ads Manager."); }
       } else {
         // kind === "ad"
         if (f.deep) {
@@ -214,13 +224,13 @@ export default function AdsCenterClient() {
           if (j.ok) { setErr(`✓ Đã dup ad${j.id ? ` (#${j.id})` : ""} — PAUSED. Bấm ⟳ Sync now để thấy.`); setDupForm(null); loadEnt(); }
           else setErr("✗ " + (j.error ?? "Dup failed"));
         } else {
-          // Không cần gọi Meta — sang thẳng kit chọn product, push ad mới vào ad set đích.
+          // Không cần gọi Meta — sang thẳng kit chọn product ở tab mới, push ad mới vào ad set đích.
           const nm = f.target.trim() === f.orig ? f.adsetName : ""; // tên chỉ đúng khi đích = ad set gốc
-          window.location.href = `/shopify-products?adskit=1&adsetId=${f.target.trim()}${nm ? `&adset=${encodeURIComponent(nm)}` : ""}`;
-          return;
+          goto(`/shopify-products?adskit=1&adsetId=${f.target.trim()}${nm ? `&adset=${encodeURIComponent(nm)}` : ""}`);
+          setErr("✓ Kit chọn products đã mở ở TAB MỚI — tick sản phẩm rồi Push vào ad set đích."); setDupForm(null);
         }
       }
-    } catch (e) { setErr("✗ " + String((e as Error).message)); }
+    } catch (e) { try { tab?.close(); } catch { /* ignore */ } setErr("✗ " + String((e as Error).message)); }
     setDupBusy("");
   };
   // v525 · nút hành động nhỏ dùng chung trên các hàng
@@ -329,7 +339,7 @@ export default function AdsCenterClient() {
           {lastSync ? `Synced ${new Date(lastSync).toLocaleString()}` : "Never synced — bấm Sync now"}
         </span>
         <span style={{ flex: 1 }} />
-        <a href="/shopify-products?adskit=1&newcamp=1" style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>＋ New campaign</a>
+        <a href="/shopify-products?adskit=1&newcamp=1" target="_blank" rel="noopener noreferrer" style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>＋ New campaign</a>
         <button onClick={syncNow} disabled={syncBusy} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: syncBusy ? .6 : 1 }}>
           {syncBusy ? "Syncing…" : "⟳ Sync now"}
         </button>
@@ -447,8 +457,8 @@ export default function AdsCenterClient() {
                   style={{ ...rowBtn, padding: "3px 11px", fontSize: 11, opacity: dupBusy === "camp:" + campId ? 0.5 : 1 }}>
                   {dupBusy === "camp:" + campId ? "…" : "⧉ Dup camp"}
                 </button>
-                {/* v525 · tạo ads mới vào ĐÚNG campaign này — mở Meta Ads Kit bên Manage Products với campaign đã trỏ sẵn */}
-                <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}`} style={{ ...rowBtn, textDecoration: "none", padding: "3px 11px", fontSize: 11 }}>＋ Ads</a>
+                {/* v525 · tạo ads mới vào ĐÚNG campaign này — mở Meta Ads Kit bên Manage Products với campaign đã trỏ sẵn (v539 tab mới) */}
+                <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}`} target="_blank" rel="noopener noreferrer" style={{ ...rowBtn, textDecoration: "none", padding: "3px 11px", fontSize: 11 }}>＋ Ads</a>
               </span>
             </div>
             <div style={{ overflowX: "auto", display: isCollapsed || !ads.length ? "none" : "block" }}>
@@ -513,7 +523,7 @@ export default function AdsCenterClient() {
                               </span>
                               {/* v525 · tạo ads thẳng vào ad set này / nhân bản cả ad set (kèm ads, PAUSED) */}
                               <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}&adsetId=${a.adsetId}&adset=${encodeURIComponent(a.adset)}`}
-                                onClick={(e) => e.stopPropagation()} style={{ ...rowBtn, textDecoration: "none" }}>＋ Ads</a>
+                                target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ ...rowBtn, textDecoration: "none" }}>＋ Ads</a>
                               <button onClick={(e) => { e.stopPropagation(); dupAdset(a.adsetId, a.adset, campId); }} disabled={dupBusy === "adset:" + a.adsetId} style={{ ...rowBtn, opacity: dupBusy === "adset:" + a.adsetId ? 0.5 : 1 }}>
                                 {dupBusy === "adset:" + a.adsetId ? "…" : "⧉ Dup set"}
                               </button>
