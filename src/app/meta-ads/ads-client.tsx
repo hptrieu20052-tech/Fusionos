@@ -222,13 +222,14 @@ export default function AdsCenterClient() {
         } else { try { tab?.close(); } catch { /* ignore */ } setErr(j.ok ? "⚠ " + (j.warn ?? "Copied — check Ads Manager.") : "✗ " + (j.error ?? "Dup failed")); }
       } else if (f.kind === "adset") {
         // v551 · nếu người dùng bỏ tick bớt ads trong danh sách → chỉ copy những ad đã chọn.
+        // v555 · Meta deep_copy đồng bộ giới hạn <3 ads → LUÔN đi đường copy khung + copy TỪNG ad
+        // (adIds) khi biết danh sách ads; deep_copy chỉ còn là fallback khi entities chưa tải được.
         const inSet = adsInSet(f.id).map(([id]) => id);
         const chosen = inSet.filter((id) => f.picks[id] !== false);
         if (f.deep && inSet.length && !chosen.length) { setErr("Select at least 1 ad to copy"); setDupBusy(""); return; }
-        const partial = f.deep && inSet.length > 0 && chosen.length < inSet.length;
         const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ kind: "adset", id: f.id, campaignId: f.target.trim(), name: f.name.trim(), budget: Number(f.budget) || undefined, deep: f.deep,
-            ...(partial ? { adIds: chosen } : {}),
+            ...(f.deep && inSet.length ? { adIds: chosen } : {}),
             startTime: f.start ? new Date(f.start).toISOString() : undefined }) }).then((r) => r.json());
         if (!j.ok) { try { tab?.close(); } catch { /* ignore */ } setErr("✗ " + (j.error ?? "Dup failed")); }
         else if (j.warn) { try { tab?.close(); } catch { /* ignore */ } setErr(`⚠ ${j.warn}${j.id && !f.deep ? ` New ad set #${j.id} was created — after Sync, use ＋ Ads on it to add ads.` : ""}`); setDupForm(null); loadEnt(); }
@@ -678,21 +679,17 @@ export default function AdsCenterClient() {
       {dupForm && (
         <div onClick={() => setDupForm(null)} style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(15,20,40,.55)", overflowY: "auto", padding: "60px 16px" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ margin: "0 auto", maxWidth: 430, background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-            <b style={{ fontSize: 14.5 }}>{dupForm.kind === "camp" ? "⧉ Duplicate campaign" : dupForm.kind === "adset" ? "⧉ Duplicate ad set" : "⧉ Duplicate ad"}</b>
-            <span style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
-              {dupForm.kind === "camp"
-                ? <>Creates a NEW campaign copying the settings of <b>{dupForm.label}</b> (PAUSED, no ads) → kit opens in a new tab with the <b>source campaign's products pre-selected</b> — adjust, pick a Structure, then Push.</>
-                : dupForm.kind === "adset"
-                ? <>Copies the ad set SHELL <b>{dupForm.label}</b> (targeting + optimization, PAUSED, no ads) → kit opens in a new tab with the <b>source ad set's products pre-selected</b> — adjust, then Push into the copy.</>
-                : <>Creates a new ad in the target ad set: kit opens in a new tab with <b>this ad's exact product pre-selected</b> — tweak text/image, then Push.</>}
-            </span>
+            <b style={{ fontSize: 14.5 }}>
+              {dupForm.kind === "camp" ? "⧉ Duplicate campaign" : dupForm.kind === "adset" ? "⧉ Duplicate ad set" : "⧉ Duplicate ad"}
+              <span style={{ fontWeight: 600, color: "var(--muted)" }}> · {dupForm.label}</span>
+            </b>
             <label style={dupLbl}>Copy name
               <input autoFocus value={dupForm.name} onChange={(e) => setDupForm({ ...dupForm, name: e.target.value })}
                 onKeyDown={(e) => { if (e.key === "Enter") submitDup(); if (e.key === "Escape") setDupForm(null); }} style={dupInp} />
             </label>
             {/* v549 · đích chọn bằng DROPDOWN (như kit) — hết dán ID tay */}
             {dupForm.kind === "adset" && (
-              <label style={dupLbl}>Target campaign — keep the current one, or pick your MAIN campaign to promote
+              <label style={dupLbl}>Target campaign
                 {campList.length ? (
                   <select value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value })} style={dupInp}>
                     <option value="">— keep current campaign —</option>
@@ -704,7 +701,7 @@ export default function AdsCenterClient() {
               </label>
             )}
             {dupForm.kind === "ad" && (
-              <label style={dupLbl}>Target ad set — defaults to this ad set; pick your MAIN Winners ad set to promote
+              <label style={dupLbl}>Target ad set
                 {ent && Object.keys(ent.adsets).length ? (
                   <select value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value })} style={dupInp}>
                     {Object.entries(ent.adsets)
@@ -720,7 +717,7 @@ export default function AdsCenterClient() {
               </label>
             )}
             {dupForm.kind === "adset" && (
-              <label style={dupLbl}>Daily budget $ for the copy — empty = keep original
+              <label style={dupLbl}>Daily budget $ (empty = keep original)
                 <input value={dupForm.budget} onChange={(e) => setDupForm({ ...dupForm, budget: e.target.value.replace(/[^0-9.]/g, "") })} style={dupInp} placeholder="vd 25" />
               </label>
             )}
@@ -733,7 +730,7 @@ export default function AdsCenterClient() {
               const chip = (on: boolean): React.CSSProperties => ({ border: on ? "1.5px solid #16A34A" : "1px solid #C9D2DE", background: on ? "#F0FBF4" : "#fff", color: on ? "#15803D" : "#5B6472", borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" });
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: "#5B6472" }}>START DATE (your local time) — ⚡ ASAP = inherit from the source ad set</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: "#5B6472" }}>START DATE (your local time)</span>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input type="date" value={sDate} onChange={(e) => setStart(e.target.value, sTime)} style={{ ...dupInp, flex: 1 }} />
                     <input type="time" value={sTime} onChange={(e) => setStart(sDate || dstr(0), e.target.value)} style={{ ...dupInp, width: 120 }} />
@@ -752,9 +749,7 @@ export default function AdsCenterClient() {
             {dupForm.kind !== "camp" && (
               <label style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: "#5B6472", cursor: "pointer" }}>
                 <input type="checkbox" checked={dupForm.deep} onChange={(e) => setDupForm({ ...dupForm, deep: e.target.checked })} style={{ marginTop: 2 }} />
-                <span>{dupForm.kind === "adset"
-                  ? "Copy WITH the ads inside (keeps creatives/posts — skips the product picker). Untick any ad below you don't want to bring along."
-                  : "Exact copy of this ad's creative/product (skips the product picker)."}</span>
+                <span>{dupForm.kind === "adset" ? "Copy WITH the ads inside (keeps creatives/posts)" : "Exact copy of this ad's creative"}</span>
               </label>
             )}
             {/* v551 · chọn ADS nào được copy kèm — bỏ tick con không muốn mang theo */}
