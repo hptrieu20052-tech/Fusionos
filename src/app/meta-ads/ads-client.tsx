@@ -21,7 +21,7 @@ const num = (n: number) => n.toLocaleString();
 function Toggle({ on, armed, busy, onClick, title, dim }: { on: boolean; armed: boolean; busy: boolean; onClick: () => void; title?: string; dim?: boolean }) {
   return (
     <button onClick={(e) => { e.stopPropagation(); onClick(); }} disabled={busy}
-      title={title ?? (dim ? "Tầng cha đang OFF — mục này KHÔNG chạy dù công tắc riêng vẫn bật" : on ? "Đang ON — bấm 2 lần để tắt" : "Đang OFF — bấm 2 lần để bật")}
+      title={title ?? (dim ? "Parent level is OFF — this item does NOT deliver even though its own switch is on" : on ? "ON — click twice to turn off" : "OFF — click twice to turn on")}
       style={{ border: "none", cursor: "pointer", borderRadius: 999, padding: 0, width: 34, height: 18, position: "relative", flexShrink: 0, verticalAlign: "middle",
         background: armed ? "#F59E0B" : on ? "#16A34A" : "#CBD5E1", transition: "background .15s", opacity: busy ? .55 : dim ? .45 : 1 }}>
       <span style={{ position: "absolute", top: 2, left: armed ? 10 : on ? 18 : 2, width: 14, height: 14, borderRadius: 999, background: "#fff", transition: "left .15s", boxShadow: "0 1px 2px rgba(0,0,0,.25)" }} />
@@ -132,7 +132,7 @@ export default function AdsCenterClient() {
   const [budEdit, setBudEdit] = useState<{ id: string; val: string } | null>(null);
   const saveBudget = async (adsetId: string) => {
     const dollars = Number(budEdit?.val);
-    if (!isFinite(dollars) || dollars <= 0) { setErr("Budget phải là số > 0"); return; }
+    if (!isFinite(dollars) || dollars <= 0) { setErr("Budget must be a number > 0"); return; }
     setCtlBusy("bud:" + adsetId); setErr("");
     try {
       const j = await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_budget", adsetId, budget: dollars }) }).then((r) => r.json());
@@ -188,7 +188,7 @@ export default function AdsCenterClient() {
   const submitDup = async () => {
     if (!dupForm || dupBusy) return;
     const f = dupForm;
-    if (f.kind === "ad" && !f.target.trim()) { setErr("Ad set ID đích không được trống"); return; }
+    if (f.kind === "ad" && !f.target.trim()) { setErr("Target ad set is required"); return; }
     setDupBusy(f.kind + ":" + f.id); setErr("");
     // v539 · kit mở ở TAB MỚI (giữ nguyên màn Ads Center đang làm việc). Mở tab trống NGAY trong cú
     // click (trước await) để không bị popup blocker chặn, xong mới trỏ URL; lỗi thì đóng tab lại.
@@ -215,7 +215,7 @@ export default function AdsCenterClient() {
         if (j.ok && j.id) {
           const hs = handlesIn((ad) => ad.campId === f.id);
           goto(`/shopify-products?adskit=1&campaignId=${j.id}&campaign=${encodeURIComponent(f.name.trim())}${hs ? `&sel=${encodeURIComponent(hs)}` : ""}`);
-          setErr(hs ? `✓ Campaign mới #${j.id} — kit mở ở TAB MỚI, sản phẩm của campaign gốc đã TICK SẴN.` : `✓ Campaign mới #${j.id} — kit chọn products đã mở ở TAB MỚI.`);
+          setErr(hs ? `✓ New campaign #${j.id} — kit opened in a NEW TAB with the source campaign's products pre-selected.` : `✓ New campaign #${j.id} — product-picker kit opened in a NEW TAB.`);
           setDupForm(null); loadEnt();
         } else { try { tab?.close(); } catch { /* ignore */ } setErr(j.ok ? "⚠ " + (j.warn ?? "Copied — check Ads Manager.") : "✗ " + (j.error ?? "Dup failed")); }
       } else if (f.kind === "adset") {
@@ -223,12 +223,12 @@ export default function AdsCenterClient() {
           body: JSON.stringify({ kind: "adset", id: f.id, campaignId: f.target.trim(), name: f.name.trim(), budget: Number(f.budget) || undefined, deep: f.deep,
             startTime: f.start ? new Date(f.start).toISOString() : undefined }) }).then((r) => r.json());
         if (!j.ok) { try { tab?.close(); } catch { /* ignore */ } setErr("✗ " + (j.error ?? "Dup failed")); }
-        else if (j.warn) { try { tab?.close(); } catch { /* ignore */ } setErr(`⚠ ${j.warn}${j.id && !f.deep ? ` Ad set mới #${j.id} đã tạo — Sync xong bấm ＋ Ads trên nó để thêm ads.` : ""}`); setDupForm(null); loadEnt(); }
-        else if (f.deep) { setErr(`✓ Đã dup ad set${j.id ? ` (#${j.id})` : ""} KÈM ads — PAUSED${f.start ? `, lịch chạy ${new Date(f.start).toLocaleString()}` : ""}. Bấm ⟳ Sync now để thấy, bật trong Ads Manager sau khi kiểm tra.`); setDupForm(null); loadEnt(); }
+        else if (j.warn) { try { tab?.close(); } catch { /* ignore */ } setErr(`⚠ ${j.warn}${j.id && !f.deep ? ` New ad set #${j.id} was created — after Sync, use ＋ Ads on it to add ads.` : ""}`); setDupForm(null); loadEnt(); }
+        else if (f.deep) { setErr(`✓ Ad set duplicated${j.id ? ` (#${j.id})` : ""} WITH its ads — PAUSED${f.start ? `, scheduled for ${new Date(f.start).toLocaleString()}` : ""}. Hit ⟳ Sync now to see it; enable after review.`); setDupForm(null); loadEnt(); }
         else if (j.id) {
           const hs = handlesIn((ad) => ad.adsetId === f.id);
           goto(`/shopify-products?adskit=1&adsetId=${j.id}&adset=${encodeURIComponent(f.name.trim())}${hs ? `&sel=${encodeURIComponent(hs)}` : ""}`);
-          setErr(hs ? `✓ Ad set mới #${j.id} — kit mở ở TAB MỚI, sản phẩm của ad set gốc đã TICK SẴN.` : `✓ Ad set mới #${j.id} — kit chọn products đã mở ở TAB MỚI.`);
+          setErr(hs ? `✓ New ad set #${j.id} — kit opened in a NEW TAB with the source ad set's products pre-selected.` : `✓ New ad set #${j.id} — product-picker kit opened in a NEW TAB.`);
           setDupForm(null); loadEnt();
         } else { try { tab?.close(); } catch { /* ignore */ } setErr("⚠ Copied — check Ads Manager."); }
       } else {
@@ -236,7 +236,7 @@ export default function AdsCenterClient() {
         if (f.deep) {
           const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ kind: "ad", id: f.id, adsetId: f.target.trim(), name: f.name.trim() }) }).then((r) => r.json());
-          if (j.ok) { setErr(`✓ Đã dup ad${j.id ? ` (#${j.id})` : ""} — PAUSED. Bấm ⟳ Sync now để thấy.`); setDupForm(null); loadEnt(); }
+          if (j.ok) { setErr(`✓ Ad duplicated${j.id ? ` (#${j.id})` : ""} — PAUSED. Hit ⟳ Sync now to see it.`); setDupForm(null); loadEnt(); }
           else setErr("✗ " + (j.error ?? "Dup failed"));
         } else {
           // Không cần gọi Meta — sang thẳng kit ở tab mới, push ad mới vào ad set đích.
@@ -244,7 +244,7 @@ export default function AdsCenterClient() {
           const nm = f.target.trim() === f.orig ? f.adsetName : ""; // tên chỉ đúng khi đích = ad set gốc
           const ph = ((ent?.ads[f.id]?.plink ?? "").match(/\/products\/([^/?#]+)/) ?? [])[1] ?? "";
           goto(`/shopify-products?adskit=1&adsetId=${f.target.trim()}${nm ? `&adset=${encodeURIComponent(nm)}` : ""}${ph ? `&sel=${encodeURIComponent(ph)}` : ""}`);
-          setErr(ph ? "✓ Kit đã mở ở TAB MỚI — sản phẩm của ad này TICK SẴN, kiểm tra ảnh/text rồi Push." : "✓ Kit chọn products đã mở ở TAB MỚI — tick sản phẩm rồi Push vào ad set đích.");
+          setErr(ph ? "✓ Kit opened in a NEW TAB — this ad's product is pre-selected; review image/text then Push." : "✓ Product-picker kit opened in a NEW TAB — select products then Push into the target ad set.");
           setDupForm(null);
         }
       }
@@ -260,7 +260,7 @@ export default function AdsCenterClient() {
     if (!renEdit || renBusy) return;
     const { kind, id } = renEdit;
     const name = renEdit.val.trim();
-    if (!name) { setErr("Tên không được để trống"); return; }
+    if (!name) { setErr("Name cannot be empty"); return; }
     setRenBusy(kind + ":" + id); setErr("");
     try {
       const j = await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "rename", id, name }) }).then((r) => r.json());
@@ -287,9 +287,9 @@ export default function AdsCenterClient() {
       const m = (ent?.ads[id]?.plink ?? "").match(/\/products\/([^/?#]+)/);
       if (m) hs.add(m[1]);
     });
-    if (!hs.size) { setErr("✗ Các ads đã tick không có link sản phẩm trong creative — không suy ra được product."); return; }
+    if (!hs.size) { setErr("✗ The selected ads have no product link in their creatives — cannot resolve products."); return; }
     window.open(`/shopify-products?adskit=1&newcamp=1&sel=${encodeURIComponent(Array.from(hs).slice(0, 30).join(","))}`, "_blank");
-    setErr(`✓ Kit mở ở TAB MỚI với ${hs.size} sản phẩm TICK SẴN — đặt tên campaign, chọn Structure rồi Push.`);
+    setErr(`✓ Kit opened in a NEW TAB with ${hs.size} product(s) pre-selected — name the campaign, pick a Structure, then Push.`);
     setAdSel(new Set());
   };
   const renOkBtn: React.CSSProperties = { border: "none", background: "#16A34A", color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, cursor: "pointer" };
@@ -370,7 +370,7 @@ export default function AdsCenterClient() {
           ))}
         </div>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>
-          {lastSync ? `Synced ${new Date(lastSync).toLocaleString()}` : "Never synced — bấm Sync now"}
+          {lastSync ? `Synced ${new Date(lastSync).toLocaleString()}` : "Never synced — hit Sync now"}
         </span>
         <span style={{ flex: 1 }} />
         <a href="/shopify-products?adskit=1&newcamp=1" target="_blank" rel="noopener noreferrer" style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>＋ New campaign</a>
@@ -441,7 +441,7 @@ export default function AdsCenterClient() {
 
       {/* Tables per campaign */}
       {busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>Loading…</div> : null}
-      {!busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>No data yet — bấm ⟳ Sync now (cần env META_SYSTEM_TOKEN, đã chạy MIGRATION_v449).</div> : null}
+      {!busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>No data yet — hit ⟳ Sync now (requires META_SYSTEM_TOKEN env + MIGRATION_v449).</div> : null}
       {grouped.map(([campId, g]) => {
         const ads = g.ads;
         const status = campStatus[campId] ?? "";
@@ -474,7 +474,7 @@ export default function AdsCenterClient() {
               ) : (<>
                 <b style={{ fontSize: 14 }}>{g.name}</b>
                 <button onClick={(e) => { e.stopPropagation(); setRenEdit({ kind: "camp", id: campId, val: g.name }); }}
-                  title="Đổi tên campaign" style={penBtn}>✎</button>
+                  title="Rename campaign" style={penBtn}>✎</button>
               </>)}
               {status && (
                 <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, letterSpacing: ".3px",
@@ -483,12 +483,12 @@ export default function AdsCenterClient() {
                 </span>
               )}
               <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                {ads.length ? `${ads.length} ads · ${money(ct.spend)} · ${ct.pur} purchases${ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}` : "mới tạo — chưa có chi tiêu trong khoảng ngày này"}
+                {ads.length ? `${ads.length} ads · ${money(ct.spend)} · ${ct.pur} purchases${ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}` : "newly created — no spend in this date range yet"}
               </span>
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                 {/* v535 · dup campaign — copy khung rồi sang kit chọn product */}
                 <button onClick={() => dupCamp(campId, g.name)} disabled={dupBusy === "camp:" + campId}
-                  title="Nhân bản CAMPAIGN này: copy cấu hình (chưa có ads, PAUSED) → kit mở ở tab mới với sản phẩm của campaign gốc TICK SẴN, chỉnh rồi Push."
+                  title="Duplicate this CAMPAIGN: copies its settings (no ads, PAUSED) → kit opens in a new tab with the source campaign's products pre-selected; adjust, then Push."
                   style={{ ...dupBtn, padding: "3px 11px", fontSize: 11, opacity: dupBusy === "camp:" + campId ? 0.5 : 1 }}>
                   {dupBusy === "camp:" + campId ? "…" : "⧉ Dup campaign"}
                 </button>
@@ -516,7 +516,7 @@ export default function AdsCenterClient() {
                               {/* v547 · tick cả AD SET — chọn/bỏ toàn bộ ads bên trong */}
                               <input type="checkbox" checked={grp.every((x) => adSel.has(x.adId))}
                                 onChange={() => setAdSel((s) => { const n = new Set(s); const all = grp.every((x) => n.has(x.adId)); grp.forEach((x) => { if (all) n.delete(x.adId); else n.add(x.adId); }); return n; })}
-                                onClick={(e) => e.stopPropagation()} title="Tick cả ad set — chọn toàn bộ ads bên trong để gom vào campaign mới"
+                                onClick={(e) => e.stopPropagation()} title="Select the whole ad set — every ad inside, for the new campaign"
                                 style={{ cursor: "pointer", flexShrink: 0, width: 14, height: 14, accentColor: "#16A34A" }} />
                               {/* v457 · bật/tắt ad set */}
                               {ent?.adsets[a.adsetId] && (
@@ -537,7 +537,7 @@ export default function AdsCenterClient() {
                               ) : (<>
                                 <span>▪ {a.adset || "(no ad set)"}</span>
                                 <button onClick={(e) => { e.stopPropagation(); setRenEdit({ kind: "adset", id: a.adsetId, val: a.adset }); }}
-                                  title="Đổi tên ad set" style={penBtn}>✎</button>
+                                  title="Rename ad set" style={penBtn}>✎</button>
                               </>)}
                               {/* v457 · budget/ngày — bấm ✎ để sửa, Enter hoặc ✓ để lưu */}
                               {ent?.adsets[a.adsetId] && (budEdit?.id === a.adsetId ? (
@@ -553,7 +553,7 @@ export default function AdsCenterClient() {
                                   <button onClick={() => setBudEdit(null)} style={{ border: "none", background: "transparent", color: "var(--muted)", fontSize: 11, cursor: "pointer" }}>✕</button>
                                 </span>
                               ) : (
-                                <span onClick={() => setBudEdit({ id: a.adsetId, val: String(ent.adsets[a.adsetId].budget || "") })} title="Sửa daily budget của ad set"
+                                <span onClick={() => setBudEdit({ id: a.adsetId, val: String(ent.adsets[a.adsetId].budget || "") })} title="Edit ad set daily budget"
                                   style={{ cursor: "pointer", color: "#1D4ED8", background: "#EDF3FF", borderRadius: 999, padding: "1px 8px", fontWeight: 700 }}>
                                   {ent.adsets[a.adsetId].budget ? `$${ent.adsets[a.adsetId].budget}/day` : "CBO"} ✎
                                 </span>
@@ -565,7 +565,7 @@ export default function AdsCenterClient() {
                               <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}&adsetId=${a.adsetId}&adset=${encodeURIComponent(a.adset)}`}
                                 target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ ...rowBtn, textDecoration: "none" }}>＋ Ads</a>
                               <button onClick={(e) => { e.stopPropagation(); dupAdset(a.adsetId, a.adset, campId); }} disabled={dupBusy === "adset:" + a.adsetId}
-                                title="Nhân bản AD SET này: giữ nguyên targeting + budget (PAUSED, chưa có ads) → kit mở ở tab mới với sản phẩm của ad set gốc TICK SẴN, chỉnh rồi Push vào bản sao. Có lựa chọn copy KÈM ads y nguyên / đổi campaign đích (đưa sang MAIN)."
+                                title="Duplicate this AD SET: keeps targeting + budget (PAUSED, no ads) → kit opens in a new tab with the source ad set's products pre-selected; adjust, then Push into the copy. Options: copy WITH its ads as-is / change target campaign (promote to MAIN)."
                                 style={{ ...dupBtn, opacity: dupBusy === "adset:" + a.adsetId ? 0.5 : 1 }}>
                                 {dupBusy === "adset:" + a.adsetId ? "…" : "⧉ Dup ad set"}
                               </button>
@@ -579,7 +579,7 @@ export default function AdsCenterClient() {
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: "100%" }}>
                           {/* v547 · tick ad để gom vào campaign mới (thanh nổi dưới màn hình) */}
                           <input type="checkbox" checked={adSel.has(a.adId)} onChange={() => toggleAdSel(a.adId)} onClick={(e) => e.stopPropagation()}
-                            title="Tick để gom vào campaign MỚI (chọn được nhiều ads, khác ad set cũng được)"
+                            title="Select to group into a NEW campaign (multiple ads, across ad sets)"
                             style={{ cursor: "pointer", flexShrink: 0, width: 14, height: 14, accentColor: "#16A34A" }} />
                           {/* v457 · bật/tắt từng ad */}
                           {ent && ent.ads[a.adId] !== undefined && (() => {
@@ -588,10 +588,10 @@ export default function AdsCenterClient() {
                             const offByParent = ad.status === "ACTIVE" && (ad.eff === "ADSET_PAUSED" || ad.eff === "CAMPAIGN_PAUSED");
                             return (
                               <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0, opacity: offByParent ? 0.45 : 1 }}
-                                title={offByParent ? (ad.eff === "ADSET_PAUSED" ? "Ad set đang OFF — ad này KHÔNG chạy dù công tắc riêng vẫn bật" : "Campaign đang OFF — ad này KHÔNG chạy dù công tắc riêng vẫn bật") : undefined}>
+                                title={offByParent ? (ad.eff === "ADSET_PAUSED" ? "Ad set is OFF — this ad is NOT delivering even though its own switch is on" : "Campaign is OFF — this ad is NOT delivering even though its own switch is on") : undefined}>
                                 <Toggle on={ad.status === "ACTIVE"} armed={ctlArm === "ad:" + a.adId} busy={ctlBusy === "ad:" + a.adId}
                                   onClick={() => toggleStatus("ad", a.adId)} />
-                                {offByParent && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#8A93A6", background: "#EEF1F5", borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>⏸ {ad.eff === "ADSET_PAUSED" ? "theo set" : "theo camp"}</span>}
+                                {offByParent && <span style={{ fontSize: 9.5, fontWeight: 800, color: "#8A93A6", background: "#EEF1F5", borderRadius: 5, padding: "1px 5px", whiteSpace: "nowrap" }}>⏸ {ad.eff === "ADSET_PAUSED" ? "set off" : "camp off"}</span>}
                               </span>
                             );
                           })()}
@@ -600,7 +600,7 @@ export default function AdsCenterClient() {
                             /* eslint-disable-next-line @next/next/no-img-element */
                             <img src={ent.ads[a.adId]!.thumb!} alt="" loading="lazy"
                               onClick={(e) => { e.stopPropagation(); setZoom(ent.ads[a.adId]?.img || ent.ads[a.adId]?.thumb || ""); }}
-                              title="Xem lớn creative"
+                              title="View creative full size"
                               style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9" }} />
                           )}
                           {/* v533 · đổi tên ad — sửa inline */}
@@ -615,11 +615,11 @@ export default function AdsCenterClient() {
                           ) : (<>
                             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.ad}</span>
                             <button onClick={(e) => { e.stopPropagation(); setRenEdit({ kind: "ad", id: a.adId, val: a.ad }); }}
-                              title="Đổi tên ad" style={penBtn}>✎</button>
+                              title="Rename ad" style={penBtn}>✎</button>
                           </>)}
                           {/* v525 · dup ad này (PAUSED) — mặc định cùng ad set, dán ID khác để thả vào winner MAIN */}
                           <button onClick={(e) => { e.stopPropagation(); dupAd(a.adId, a.ad, a.adsetId, a.adset); }} disabled={dupBusy === "ad:" + a.adId}
-                            title="Nhân bản AD này: mở kit với ĐÚNG sản phẩm của ad đã tick sẵn → push ad mới vào ad set đích (mặc định chính ad set này; dán ID ad set Winners để THĂNG CẤP winner vào MAIN). Trong form có lựa chọn copy y nguyên creative."
+                            title="Duplicate this AD: opens the kit with this ad's exact product pre-selected → push a new ad into the target ad set (defaults to this one; pick your MAIN Winners ad set to promote). The form also offers an exact-creative copy."
                             style={{ ...dupBtn, flexShrink: 0, opacity: dupBusy === "ad:" + a.adId ? 0.5 : 1 }}>
                             {dupBusy === "ad:" + a.adId ? "…" : "⧉ Dup ad"}
                           </button>
@@ -629,7 +629,7 @@ export default function AdsCenterClient() {
                             const m = l.match(/\/products\/([^/?#]+)/);
                             return m ? (
                               <a href={`/shopify-products?edit=${encodeURIComponent(m[1])}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
-                                title="Sửa listing bên Manage Products · Shopify (tab mới)"
+                                title="Edit listing in Manage Products · Shopify (new tab)"
                                 style={{ background: "#3F9142", color: "#fff", borderRadius: 999, padding: "2px 10px", fontSize: 9.5, fontWeight: 800, letterSpacing: ".4px", textDecoration: "none", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "16px" }}>
                                 ⬆ SHOPIFY
                               </a>
@@ -659,11 +659,11 @@ export default function AdsCenterClient() {
       {/* v547 · thanh nổi khi có ads được tick — tạo campaign mới từ đúng các sản phẩm đó */}
       {adSel.size > 0 && (
         <div style={{ position: "fixed", left: "50%", bottom: 20, transform: "translateX(-50%)", zIndex: 260, background: "#0F172A", color: "#fff", borderRadius: 999, padding: "10px 16px", display: "flex", alignItems: "center", gap: 12, boxShadow: "0 12px 40px rgba(15,23,42,.4)", whiteSpace: "nowrap" }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700 }}>{adSel.size} ads đã tick</span>
+          <span style={{ fontSize: 12.5, fontWeight: 700 }}>{adSel.size} ads selected</span>
           <button onClick={newCampFromSel} style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 999, padding: "7px 14px", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
-            ＋ Tạo campaign MỚI từ ads này
+            ＋ New campaign from these ads
           </button>
-          <button onClick={() => setAdSel(new Set())} style={{ border: "none", background: "transparent", color: "#94A3B8", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>✕ Bỏ chọn</button>
+          <button onClick={() => setAdSel(new Set())} style={{ border: "none", background: "transparent", color: "#94A3B8", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>✕ Clear</button>
         </div>
       )}
       {/* v534 · form Dup ad set / Dup ad trong trang — thay chuỗi hộp thoại của trình duyệt */}
@@ -673,30 +673,30 @@ export default function AdsCenterClient() {
             <b style={{ fontSize: 14.5 }}>{dupForm.kind === "camp" ? "⧉ Duplicate campaign" : dupForm.kind === "adset" ? "⧉ Duplicate ad set" : "⧉ Duplicate ad"}</b>
             <span style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
               {dupForm.kind === "camp"
-                ? <>Tạo campaign MỚI copy cấu hình từ <b>{dupForm.label}</b> (PAUSED, chưa có ads) → kit mở ở tab mới với <b>sản phẩm của campaign gốc TICK SẴN</b> — thêm/bớt nếu muốn, chọn Structure rồi Push.</>
+                ? <>Creates a NEW campaign copying the settings of <b>{dupForm.label}</b> (PAUSED, no ads) → kit opens in a new tab with the <b>source campaign's products pre-selected</b> — adjust, pick a Structure, then Push.</>
                 : dupForm.kind === "adset"
-                ? <>Copy KHUNG ad set <b>{dupForm.label}</b> (targeting + tối ưu hoá, PAUSED, chưa có ads) → kit mở ở tab mới với <b>sản phẩm của ad set gốc TICK SẴN</b> — chỉnh rồi Push vào bản sao.</>
-                : <>Tạo ad mới vào ad set đích: kit mở ở tab mới với <b>đúng sản phẩm của ad này TICK SẴN</b> — chỉnh text/ảnh rồi Push.</>}
+                ? <>Copies the ad set SHELL <b>{dupForm.label}</b> (targeting + optimization, PAUSED, no ads) → kit opens in a new tab with the <b>source ad set's products pre-selected</b> — adjust, then Push into the copy.</>
+                : <>Creates a new ad in the target ad set: kit opens in a new tab with <b>this ad's exact product pre-selected</b> — tweak text/image, then Push.</>}
             </span>
-            <label style={dupLbl}>Tên bản sao
+            <label style={dupLbl}>Copy name
               <input autoFocus value={dupForm.name} onChange={(e) => setDupForm({ ...dupForm, name: e.target.value })}
                 onKeyDown={(e) => { if (e.key === "Enter") submitDup(); if (e.key === "Escape") setDupForm(null); }} style={dupInp} />
             </label>
             {/* v549 · đích chọn bằng DROPDOWN (như kit) — hết dán ID tay */}
             {dupForm.kind === "adset" && (
-              <label style={dupLbl}>Campaign đích — giữ campaign hiện tại, hoặc chọn campaign MAIN để thăng cấp
+              <label style={dupLbl}>Target campaign — keep the current one, or pick your MAIN campaign to promote
                 {campList.length ? (
                   <select value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value })} style={dupInp}>
-                    <option value="">— giữ campaign hiện tại —</option>
+                    <option value="">— keep current campaign —</option>
                     {campList.map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + (c.name || c.id)}</option>)}
                   </select>
                 ) : (
-                  <input value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value.replace(/\D/g, "") })} style={dupInp} placeholder="trống = giữ campaign hiện tại" />
+                  <input value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value.replace(/\D/g, "") })} style={dupInp} placeholder="empty = keep current campaign" />
                 )}
               </label>
             )}
             {dupForm.kind === "ad" && (
-              <label style={dupLbl}>Ad set đích — mặc định chính ad set này; chọn ad set Winners bên MAIN để thăng cấp
+              <label style={dupLbl}>Target ad set — defaults to this ad set; pick your MAIN Winners ad set to promote
                 {ent && Object.keys(ent.adsets).length ? (
                   <select value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value })} style={dupInp}>
                     {Object.entries(ent.adsets)
@@ -707,17 +707,17 @@ export default function AdsCenterClient() {
                       })}
                   </select>
                 ) : (
-                  <input value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value.replace(/\D/g, "") })} style={dupInp} placeholder="dán ID ad set đích" />
+                  <input value={dupForm.target} onChange={(e) => setDupForm({ ...dupForm, target: e.target.value.replace(/\D/g, "") })} style={dupInp} placeholder="paste target ad set ID" />
                 )}
               </label>
             )}
             {dupForm.kind === "adset" && (
-              <label style={dupLbl}>Daily budget $ cho bản sao — trống = giữ budget cũ
+              <label style={dupLbl}>Daily budget $ for the copy — empty = keep original
                 <input value={dupForm.budget} onChange={(e) => setDupForm({ ...dupForm, budget: e.target.value.replace(/[^0-9.]/g, "") })} style={dupInp} placeholder="vd 25" />
               </label>
             )}
             {dupForm.kind === "adset" && (
-              <label style={dupLbl}>Lịch chạy (giờ máy anh) — trống = theo ad set gốc (giờ gốc đã qua thì bật là chạy ngay)
+              <label style={dupLbl}>Schedule (your local time) — empty = inherit from the source ad set (runs as soon as enabled if its start time has passed)
                 <input type="datetime-local" value={dupForm.start} onChange={(e) => setDupForm({ ...dupForm, start: e.target.value })} style={dupInp} />
               </label>
             )}
@@ -725,14 +725,14 @@ export default function AdsCenterClient() {
               <label style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: "#5B6472", cursor: "pointer" }}>
                 <input type="checkbox" checked={dupForm.deep} onChange={(e) => setDupForm({ ...dupForm, deep: e.target.checked })} style={{ marginTop: 2 }} />
                 <span>{dupForm.kind === "adset"
-                  ? "Copy KÈM toàn bộ ads bên trong (giữ nguyên creative/sản phẩm — bỏ qua bước chọn product). Dùng khi thăng cấp winner sang MAIN y nguyên."
-                  : "Copy y nguyên creative/sản phẩm của ad này (bỏ qua bước chọn product)."}</span>
+                  ? "Copy WITH all ads inside (keeps creatives/products — skips the product picker). Use to promote a winner to MAIN as-is."
+                  : "Exact copy of this ad's creative/product (skips the product picker)."}</span>
               </label>
             )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button onClick={() => setDupForm(null)} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
               <button onClick={submitDup} disabled={!!dupBusy} style={{ border: "none", background: "#1D4ED8", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: dupBusy ? .6 : 1 }}>
-                {dupBusy ? "Working…" : dupForm.kind !== "camp" && dupForm.deep ? "⧉ Duplicate" : "⧉ Dup & chọn products →"}
+                {dupBusy ? "Working…" : dupForm.kind !== "camp" && dupForm.deep ? "⧉ Duplicate" : "⧉ Dup & pick products →"}
               </button>
             </div>
           </div>

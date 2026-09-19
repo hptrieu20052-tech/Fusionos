@@ -294,7 +294,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         }
         setKitAi(new Set(ids.slice(i + 8)));
       }
-      flash(fail ? `⚠ AI copy: ${done} done · ${fail} failed — bấm lại để thử tiếp` : `✓ AI copy written for ${done} product(s)`, !fail);
+      flash(fail ? `⚠ AI copy: ${done} done · ${fail} failed — click again to retry` : `✓ AI copy written for ${done} product(s)`, !fail);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "AI copy error"), false); }
     setKitAi(new Set());
   };
@@ -375,7 +375,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       if (j.ok && j.url) {
         setKitExtra((m) => ({ ...m, [rid]: [...(m[rid] ?? []), j.url as string] }));
         setKitImg((m) => ({ ...m, [rid]: j.url as string }));
-        flash("✓ Ảnh angle đã upload & chọn làm creative", true);
+        flash("✓ Angle image uploaded & selected as the creative", true);
       } else flash("✗ " + (j.error ?? "upload error"), false);
     } catch { flash("✗ upload error", false); }
     setKitUpBusy("");
@@ -388,8 +388,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const kitPush = async () => {
     const list = rows.filter((r) => kitTexts[r.id]);
     if (!list.length || kitBusy) return;
-    if (kitMode === "custom" && !kitAdsets.some((a) => a.name.trim())) { flash("✗ Custom: thêm ít nhất 1 ad set (tên + $/day)", false); return; }
-    if (kitMode === "existing" && !kitAdsetId) { flash("✗ Nhập Ad set ID đích (mode: vào ad set có sẵn)", false); return; }
+    if (kitMode === "custom" && !kitAdsets.some((a) => a.name.trim())) { flash("✗ Custom: add at least 1 ad set (name + $/day)", false); return; }
+    if (kitMode === "existing" && !kitAdsetId) { flash("✗ Pick a target ad set (mode: existing ad set)", false); return; }
     if (!kitArm) { setKitArm(true); setTimeout(() => setKitArm(false), 4000); return; }
     setKitArm(false);
     setKitBusy(true);
@@ -478,7 +478,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       if (q.get("newcamp") === "1") {
         setKitCampId(""); setKitAdsetId(""); setKitCampaign("");
         setKitLinked(true);
-        flash("🎯 Tạo CAMPAIGN MỚI — tick sản phẩm, mở \"🎯 Meta Ads Kit…\" trong bulk actions, đặt tên campaign + chọn Structure rồi Push", true);
+        flash("🎯 NEW CAMPAIGN mode — select products, open \"🎯 Meta Ads Kit…\" in bulk actions, name the campaign, pick a Structure, then Push", true);
         return;
       }
       const ci = (q.get("campaignId") ?? "").replace(/\D/g, "");
@@ -486,7 +486,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       if (q.get("campaign")) setKitCampaign(String(q.get("campaign")));
       const asid = (q.get("adsetId") ?? "").replace(/\D/g, "");
       if (asid) { setKitAdsetId(asid); setKitMode("existing"); if (q.get("adset")) setKitAdset(String(q.get("adset"))); }
-      if (ci || asid) { setKitLinked(true); flash(`🎯 Meta Ads Kit đã trỏ sẵn ${asid ? "AD SET #" + asid : "campaign #" + ci} — tick sản phẩm rồi mở "🎯 Meta Ads Kit…" trong bulk actions`, true); }
+      if (ci || asid) { setKitLinked(true); flash(`🎯 Meta Ads Kit is pre-targeted to ${asid ? "AD SET #" + asid : "campaign #" + ci} — select products then open "🎯 Meta Ads Kit…" in bulk actions`, true); }
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -497,7 +497,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (!pendingSel.length || !rows.length) return;
     const ids = rows.filter((x) => pendingSel.includes((x.handle ?? "").toLowerCase())).map((x) => x.id);
     if (ids.length) { setSel(new Set(ids)); setAutoKit(true); }
-    else flash("✗ Không tìm thấy sản phẩm khớp với ad này — tick tay giúp nhé", false);
+    else flash("✗ No product matched this ad — please select it manually", false);
     setPendingSel([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, pendingSel]);
@@ -575,7 +575,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const toggle = (id: string) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
 
   const doSync = async () => {
-    if (!syncStore) return flash("✗ Chưa có store Shopify — thêm store + cấu hình API trong Stores trước", false);
+    if (!syncStore) return flash("✗ No Shopify store yet — add a store + API credentials in Stores first", false);
     setBusy(true);
     try {
       const j = await postJSON("/api/shopify-products/sync", { storeId: syncStore });
@@ -633,7 +633,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       if (j.ok || j.pushed) {
         // v540 · partial (vd ảnh Shopify tải thất bại) — báo rõ thay vì im lặng.
         const pw = String((j.results ?? [])[0]?.error ?? "");
-        flash(pw ? `⚠ Saved & pushed, nhưng: ${pw.replace(/^partial:\s*/, "")}` + persWarn : "✓ Saved & updated on Shopify (gồm custom options + feed)" + persWarn, !pw);
+        flash(pw ? `⚠ Saved & pushed, but: ${pw.replace(/^partial:\s*/, "")}` + persWarn : "✓ Saved & updated on Shopify (incl. custom options + feed)" + persWarn, !pw);
         setEditId(null); load();
       }
       else { const err = (j.results ?? [])[0]?.error ?? j.error ?? "push failed"; flash("✗ Saved locally but Shopify update failed: " + err + (/write_products|scope|access/i.test(String(err)) ? " — add scope write_products + reinstall app" : ""), false); setEditId(null); load(); }
@@ -700,13 +700,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const addVideoToDesc = () => {
     if (!edit) return;
     const url = edit.videoPublicUrl;
-    if (!url) { flash("✗ Chưa có URL video — gắn lại video (Attach) rồi thử.", false); return; }
+    if (!url) { flash("✗ No video URL yet — re-attach the video, then retry.", false); return; }
     const body = edit.bodyHtml ?? "";
-    if (body.includes(url)) { flash("Video đã có trong mô tả rồi."); return; }
+    if (body.includes(url)) { flash("Video is already in the description."); return; }
     const poster = edit.videoThumbUrl ? ` poster="${edit.videoThumbUrl}"` : "";
     const emb = `\n<div style="margin:16px 0;text-align:center"><video controls playsinline preload="metadata"${poster} style="width:100%;max-width:520px;border-radius:12px;display:inline-block"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video></div>\n`;
     setEdit({ ...edit, bodyHtml: body + emb });
-    flash("✓ Đã chèn video vào Description — nhớ Save rồi Push để lên Shopify.");
+    flash("✓ Video inserted into Description — remember to Save, then Push to Shopify.");
   };
   // v206 · HIGH risk KHÔNG còn chặn cứng — chỉ cảnh báo. Admin xác nhận thì vẫn Push qua (gửi override).
   //   trả null  = có HIGH nhưng người dùng huỷ / không phải admin ⇒ ĐỪNG push
@@ -747,7 +747,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       setProg((p) => p ? { ...p, done: sent, fail: Math.max(0, sent - ok) } : p);
     }
     const failed = ids.length - ok;
-    flash(`${failed ? "⚠" : "✓"} Pushed ${ok}/${ids.length} to Shopify${failed ? ` · ${failed} failed: ${errs[0] ?? ""}` : ""}${/write_products|scope|access/i.test(errs.join(" ")) ? " — thêm scope write_products + Install lại app" : ""}`, failed === 0);
+    flash(`${failed ? "⚠" : "✓"} Pushed ${ok}/${ids.length} to Shopify${failed ? ` · ${failed} failed: ${errs[0] ?? ""}` : ""}${/write_products|scope|access/i.test(errs.join(" ")) ? " — add the write_products scope + reinstall the app" : ""}`, failed === 0);
     if (!keepProgress) setProg(null);
     await load();
     setBusy(false);
@@ -1663,7 +1663,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle / ID" style={{ ...fctl, width: "100%", maxWidth: "none", marginBottom: 8 }} />
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {showSellerFilter && (
-            <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Seller — theo chủ listing (seller nguồn Etsy), không phải chủ store" style={fsel(!!sellerFilter)}>
+            <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Seller — by listing owner (source Etsy seller), not store owner" style={fsel(!!sellerFilter)}>
               <option value="">All sellers</option>{sellerOptions.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           )}
@@ -1871,7 +1871,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8 }}>
               <b>429 / rate limit</b> → the AI model is throttling you: pick a paid model instead of a <code>:free</code> one, or retry in a few minutes.
               {" "}<b>402 / credit</b> → top up OpenRouter. <b>timeout</b> → the model is too slow, switch to a faster one.
-              {" "}<b>server ngắt giữa chừng</b> → not an AI error: the request ran past its time limit and was killed. Select fewer listings and press Retry failed.
+              {" "}<b>server cut off mid-run</b> → not an AI error: the request ran past its time limit and was killed. Select fewer listings and press Retry failed.
             </div>
           )}
         </div>
@@ -1889,14 +1889,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   nhỏ để không chèn ép Title như v182 (title từng bị bóp mỗi từ một dòng). */}
               <th style={{ padding: "10px 12px", textAlign: "left", width: 34 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
               <th style={{ padding: "10px 6px", textAlign: "left", width: 54 }}>Image</th>
-              <th style={{ padding: "10px 6px", textAlign: "left", width: 50 }} title="Listing đã gắn video chưa">Video</th>
+              <th style={{ padding: "10px 6px", textAlign: "left", width: 50 }} title="Has a video attached?">Video</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Title</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "11%" }}>Store / Seller</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Type / Category</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "8%" }}>Collections</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Template</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 175 }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
-              <th onClick={() => setSortOrders((v) => !v)} title="Số đơn đã bán · bấm để sắp xếp cao → thấp" style={{ padding: "10px 8px", textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
+              <th onClick={() => setSortOrders((v) => !v)} title="Orders sold · click to sort high → low" style={{ padding: "10px 8px", textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
               <th style={{ padding: "10px 8px", textAlign: "right", width: 84 }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 70 }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right", width: 84 }}>Actions</th>
@@ -1904,14 +1904,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
           </thead>
           <tbody>
             {loading && <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Chọn store rồi bấm <b>Sync from Shopify</b>.</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Pick a store, then hit <b>Sync from Shopify</b>.</td></tr>}
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
                 <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} images={r.imageUrls} alt={r.title} size={42} radius={8} border /></td>
                 <td style={{ padding: "8px 6px" }}>
                   {r.videoThumbUrl ? (
-                    <div title={`Video #${r.videoCode}${r.videoPushed ? " · đã lên Shopify" : " · chưa đẩy lên media"}`} style={{ position: "relative", width: 42, height: 42 }}>
+                    <div title={`Video #${r.videoCode}${r.videoPushed ? " · pushed to Shopify" : " · not pushed to media yet"}`} style={{ position: "relative", width: 42, height: 42 }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={r.videoThumbUrl} alt="" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 8, border: r.videoPushed ? "1px solid var(--line)" : "2px solid #E0A93B", display: "block", background: "#0B1220" }} />
                       <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
@@ -1925,7 +1925,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 <td style={{ padding: "8px" }}>
                   {/* v203 · click thẳng title để mở Edit (giống Shopify admin), bỏ nút Edit riêng */}
                   <div onClick={() => canEdit && openEdit(r.id)} title={canEdit ? "Click to edit" : undefined}
-                    style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0, cursor: canEdit ? "pointer" : "default", color: canEdit ? "var(--blue)" : "inherit" }}>{r.title.slice(0, 70)}{r.dirty && <span title="Có chỉnh sửa chưa Push" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
+                    style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0, cursor: canEdit ? "pointer" : "default", color: canEdit ? "var(--blue)" : "inherit" }}>{r.title.slice(0, 70)}{r.dirty && <span title="Has unsaved edits — not pushed yet" style={{ fontSize: 10, fontWeight: 800, color: "#B7791F", background: "#FFF6E6", padding: "1px 6px", borderRadius: 999 }}>EDITED</span>}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)" }}>{r.variantCount} variants · {r.imageCount} images{r.totalInventory != null ? ` · inv ${r.totalInventory}` : ""}{r.optionsSummary ? ` · ${r.optionsSummary}` : ""}</div>
                   {/* v276 · Product ID để dán nhanh vào Video Library (attach listing bằng ID, khỏi search tên). Click = copy. */}
                   <div onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.id); }} title="Click to copy product ID"
@@ -2017,7 +2017,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...(r.persOwn ? { background: "#E9F7EF", color: "#1F6F45" } : { background: "#F1F1F4", color: "#8794A5" }) }}>opt {r.persCount}</span>
                   </div>
                 </td>
-                <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 13, fontWeight: r.orders > 0 ? 800 : 400, color: r.orders > 0 ? "#14213D" : "var(--faint)" }} title="Số đơn đã bán">{r.orders > 0 ? r.orders : "–"}</td>
+                <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 13, fontWeight: r.orders > 0 ? 800 : 400, color: r.orders > 0 ? "#14213D" : "var(--faint)" }} title="Orders sold">{r.orders > 0 ? r.orders : "–"}</td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12 }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
                 {/* v203 · Actions gọn như Shopify admin: 👁 = xem trên storefront · Push (khi có sửa).
@@ -2147,12 +2147,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           {edit.videoThumbUrl && <img src={edit.videoThumbUrl} alt="" width={40} height={40} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
                           <span style={{ fontWeight: 800 }}>#{edit.videoCode}</span>
                           <span style={{ flex: 1, minWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: "var(--muted)" }}>{edit.videoTitle}</span>
-                          <button disabled={busy || !edit.videoPublicUrl} title={edit.videoPublicUrl ? "Chèn video vào ô Description" : "Gắn lại video để lấy URL rồi chèn"} onClick={addVideoToDesc} style={{ ...pill("#2952B3", "#fff"), padding: "6px 12px", fontSize: 12.5, opacity: (busy || !edit.videoPublicUrl) ? .6 : 1 }}>+ Vào mô tả</button>
+                          <button disabled={busy || !edit.videoPublicUrl} title={edit.videoPublicUrl ? "Insert the video into the Description" : "Re-attach the video to get its URL, then insert"} onClick={addVideoToDesc} style={{ ...pill("#2952B3", "#fff"), padding: "6px 12px", fontSize: 12.5, opacity: (busy || !edit.videoPublicUrl) ? .6 : 1 }}>+ Vào mô tả</button>
                           <button disabled={busy} onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Remove</button>
                         </div>
                       ) : (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                          <input value={vidCode} onChange={(e) => setVidCode(e.target.value.toUpperCase().replace(/[^A-Z0-9.\-]/g, ""))} placeholder="#123 hoặc QT-XX-01.1" style={{ ...ctl, width: 160, padding: "8px 11px" }} />
+                          <input value={vidCode} onChange={(e) => setVidCode(e.target.value.toUpperCase().replace(/[^A-Z0-9.\-]/g, ""))} placeholder="#123 or QT-XX-01.1" style={{ ...ctl, width: 160, padding: "8px 11px" }} />
                           <button disabled={busy || !vidCode} onClick={() => setVideo(false)} style={{ ...pill("#2952B3", "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || !vidCode) ? .6 : 1 }}>Attach</button>
                         </div>
                       )}
@@ -2233,7 +2233,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                       <label style={lab}>Variants ({edit.variants.length}) — price / compare-at / SKU</label>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Đặt giá cho tất cả:</span>
+                        <span style={{ fontSize: 11, color: "var(--muted)" }}>Set price for all:</span>
                         <input type="number" step="0.01" min="0" placeholder="0.00" onBlur={(e) => setAllPrices(e.target.value)} style={{ ...ctl, width: 90, padding: "5px 8px", textAlign: "right" }} />
                       </div>
                     </div>
@@ -2493,15 +2493,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   <input value={kitPrefix} onChange={(e) => setKitPrefix(e.target.value)} style={kitIn} /></div>
                 <div><span style={kitLab}>Structure</span>
                   <select value={kitMode} onChange={(e) => setKitMode(e.target.value as "per_ad" | "single" | "custom" | "existing")} style={{ ...kitIn, padding: "9px 8px" }}>
-                    <option value="per_ad">1 ad set per ad — mỗi ad $X (test sàng lọc)</option>
-                    <option value="single">1 ad set MỚI chứa tất cả ads</option>
-                    <option value="custom">Custom ad sets — gán từng ad (TEST 2 nhánh)</option>
-                    <option value="existing">Vào ad set CÓ SẴN (Ad set ID — MAIN winner)</option>
+                    <option value="per_ad">1 ad set per ad — $X each (screening test)</option>
+                    <option value="single">1 NEW ad set with all ads</option>
+                    <option value="custom">Custom ad sets — assign each ad (TEST branches)</option>
+                    <option value="existing">Into EXISTING ad set (MAIN winner)</option>
                   </select></div>
               </div>
               {kitMode === "custom" && (
                 <div style={{ marginBottom: 12 }}>
-                  <span style={kitLab}>Ad sets (tên + $/day riêng) — gán từng sản phẩm ở dropdown cạnh ảnh</span>
+                  <span style={kitLab}>Ad sets (name + own $/day) — assign each product in the dropdown next to its images</span>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
                     {kitAdsets.map((a, i) => (
                       <span key={i} style={{ display: "inline-flex", gap: 6, alignItems: "center", background: "#fff", border: "1px solid #E6E9EE", borderRadius: 10, padding: "6px 8px" }}>
@@ -2525,18 +2525,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   <div style={{ width: 150 }}><span style={kitLab}>Pixel ID</span>
                     <input value={kitPixel} onChange={(e) => setKitPixel(e.target.value.replace(/\D/g, ""))} style={kitIn} /></div>
                 )}
-                <div style={{ width: kitTargets?.camps.length ? 220 : 160 }}><span style={kitLab}>Campaign {kitTargets?.camps.length ? "(chọn có sẵn / tạo mới)" : "ID"}</span>
+                <div style={{ width: kitTargets?.camps.length ? 220 : 160 }}><span style={kitLab}>Campaign {kitTargets?.camps.length ? "(pick existing / create new)" : "ID"}</span>
                   {kitTargets?.camps.length ? (
                     <select value={kitCampId} style={kitIn}
                       onChange={(e) => { const id = e.target.value; setKitCampId(id); const c = kitTargets.camps.find((x) => x.id === id); if (id && c) setKitCampaign(c.name); }}>
-                      <option value="">— tạo campaign MỚI (đặt tên ở ô Campaign) —</option>
+                      <option value="">— create NEW campaign (name it in the Campaign box) —</option>
                       {kitTargets.camps.map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + c.name}</option>)}
                     </select>
                   ) : (
                     <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new" style={kitIn} />
                   )}</div>
                 {kitMode === "existing" && (
-                  <div style={{ width: kitTargets?.adsets.length ? 260 : 170 }}><span style={kitLab}>Ad set (đích) *</span>
+                  <div style={{ width: kitTargets?.adsets.length ? 260 : 170 }}><span style={kitLab}>Ad set (target) *</span>
                     {kitTargets?.adsets.length ? (
                       <select value={kitAdsetId} style={kitIn}
                         onChange={(e) => {
@@ -2544,14 +2544,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           const a = kitTargets.adsets.find((x) => x.id === id);
                           if (id && a) { setKitAdset(a.name); if (a.campId) { setKitCampId(a.campId); const c = kitTargets.camps.find((x) => x.id === a.campId); if (c) setKitCampaign(c.name); } }
                         }}>
-                        <option value="">— chọn ad set —</option>
+                        <option value="">— pick an ad set —</option>
                         {kitTargets.adsets.map((a) => {
                           const c = kitTargets.camps.find((x) => x.id === a.campId);
                           return <option key={a.id} value={a.id}>{(a.status === "ACTIVE" ? "🟢 " : "⏸ ") + a.name + (a.budget ? ` · $${a.budget}/d` : "") + (c ? ` · ${c.name}` : "")}</option>;
                         })}
                       </select>
                     ) : (
-                      <input value={kitAdsetId} onChange={(e) => setKitAdsetId(e.target.value.replace(/\D/g, ""))} placeholder="dán từ Meta Ads Center" style={kitIn} />
+                      <input value={kitAdsetId} onChange={(e) => setKitAdsetId(e.target.value.replace(/\D/g, ""))} placeholder="paste from Meta Ads Center" style={kitIn} />
                     )}</div>
                 )}
                 {kitMode !== "existing" && (
@@ -2651,7 +2651,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           </span>
                         );
                       })}
-                      <label title="Upload ảnh angle riêng để chạy ads (không đụng listing)"
+                      <label title="Upload a custom angle image for ads (does not touch the listing)"
                         style={{ width: 92, height: 92, borderRadius: 8, border: "1.5px dashed #C9D2DE", background: "#FAFBFC", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 2, cursor: "pointer", color: "#1D4ED8", fontSize: 11, fontWeight: 700 }}>
                         <span style={{ fontSize: 18 }}>{kitUpBusy === r.id ? "…" : "＋"}</span>
                         <span>{kitUpBusy === r.id ? "Uploading" : "Upload"}</span>

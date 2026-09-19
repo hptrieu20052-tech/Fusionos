@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
         if (!isNaN(d.getTime()) && d.getTime() > Date.now()) patch.start_time = d.toISOString();
       }
       let patchWarn = "";
-      if (Object.keys(patch).length) await fb(newId, token, patch).catch((e: Error) => { patchWarn = `Copied, nhưng đổi tên/budget/lịch lỗi: ${String(e.message).slice(0, 120)} — sửa tay trong Ads Manager.`; });
+      if (Object.keys(patch).length) await fb(newId, token, patch).catch((e: Error) => { patchWarn = `Copied, but rename/budget/schedule update failed: ${String(e.message).slice(0, 120)} — fix manually in Ads Manager.`; });
       return NextResponse.json({ ok: true, id: newId, ...(patchWarn ? { warn: patchWarn } : {}) });
     }
     // kind === "ad"
