@@ -531,19 +531,16 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   }, []);
   const chooseModel = (m: string) => { setAiModel(m); try { window.localStorage.setItem("shopifyAiModel", m); } catch { /* ignore */ } };
 
-  // v548 · lọc theo seller THẬT của từng LISTING (store share nhiều seller): seller nguồn Etsy của
-  // listing (badge cam) → fallback seller của store. Trước đây lọc theo chủ STORE nên store chung vô dụng.
-  const sellerOptions = useMemo(() => Array.from(new Set(rows.map((r) => (r.etsyListing?.seller || r.sellerName || "").trim()).filter(Boolean))).sort(), [rows]);
-  const showSellerFilter = sellerOptions.length > 1 || sellers.length > 1;
-  const storesForFilter = stores;
+  const showSellerFilter = sellers.length > 1;
+  const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
   // Danh sách giá trị distinct cho 3 filter (theo store đang lọc nếu có)
-  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && (!sellerFilter || (r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter)), [rows, storeFilter, sellerFilter]);
+  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && (!sellerFilter || stores.find((s) => s.id === r.storeId)?.sellerId === sellerFilter)), [rows, storeFilter, sellerFilter, stores]);
   const typeOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.productType).filter(Boolean))).sort(), [scopeRows]);
   const categoryOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.categoryName).filter(Boolean))).sort(), [scopeRows]);
   const collectionOptions = useMemo(() => Array.from(new Set(scopeRows.flatMap((r) => r.collectionTitles ?? []).filter(Boolean))).sort(), [scopeRows]);
   const statusOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => (r.status || "").toUpperCase()).filter(Boolean))).sort(), [scopeRows]);
   const filtered = useMemo(() => rows.filter((r) =>
-    (!sellerFilter || (r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter) &&
+    (!sellerFilter || stores.find((s) => s.id === r.storeId)?.sellerId === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (!typeFilter || (typeFilter === "__none__" ? !(r.productType ?? "").trim() : r.productType === typeFilter)) &&
     (!categoryFilter || (categoryFilter === "__none__" ? !(r.categoryName ?? "").trim() : r.categoryName === categoryFilter)) &&
@@ -1663,8 +1660,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle / ID" style={{ ...fctl, width: "100%", maxWidth: "none", marginBottom: 8 }} />
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {showSellerFilter && (
-            <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Seller — theo chủ listing (seller nguồn Etsy), không phải chủ store" style={fsel(!!sellerFilter)}>
-              <option value="">All sellers</option>{sellerOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+            <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
+              <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           )}
           <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} title="Store" style={fsel(!!storeFilter)}>
