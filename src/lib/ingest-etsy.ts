@@ -1,6 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { beforeLaunch } from "@/lib/ingest-cutoff";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { ignoredSet } from "@/lib/ignored-orders";
 import { decodeEntities } from "@/lib/variant-display";
 import { storeFeePct, estFee } from "@/lib/fee";
@@ -49,6 +49,33 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
 
   // Blocklist đơn hệ thống CŨ — hỏi DB 1 lần cho cả lô, không hỏi từng đơn
   const blocked = await ignoredSet(orders.map((o) => String(o.externalId ?? "")));
+
+  // ---- v542 · STORE WOO NHIỀU SELLER: đơn thuộc về CHỦ LISTING, không phải chủ store ----
+  // items[].listingId = Woo product_id → tra bảng woo_product_owners (storeId, productId) → createdBy.
+  // Item đầu tiên có dòng owner quyết định seller của đơn; listing admin (không có dòng) → seller của store như cũ.
+  let wooOwner = new Map<number, string>();
+  if (platform === "woocommerce") {
+    try {
+      const pids = Array.from(new Set(orders
+        .flatMap((o) => (Array.isArray(o.items) ? o.items : []).map((it) => Number(String(it.listingId ?? "").trim())))
+        .filter((n) => Number.isFinite(n) && n > 0)));
+      if (pids.length) {
+        const own = await db.select({ productId: schema.wooProductOwners.productId, createdBy: schema.wooProductOwners.createdBy })
+          .from(schema.wooProductOwners)
+          .where(and(eq(schema.wooProductOwners.storeId, store.id), inArray(schema.wooProductOwners.productId, pids)));
+        wooOwner = new Map(own.filter((r) => r.createdBy).map((r) => [Number(r.productId), String(r.createdBy)]));
+      }
+    } catch { /* bảng chưa migrate → theo seller của store như cũ */ }
+  }
+  const sellerFor = (o: InOrder): string | null => {
+    if (platform === "woocommerce" && wooOwner.size) {
+      for (const it of (Array.isArray(o.items) ? o.items : [])) {
+        const own = wooOwner.get(Number(String(it.listingId ?? "").trim()));
+        if (own) return own;
+      }
+    }
+    return store.sellerId;
+  };
 
   // ---- ADDRESS 2 LẤY TỪ COPY ADDRESS (formatted_address) — NGUỒN CHUẨN 100% CỦA ETSY ----
   // Extension đôi khi để second_line rác ("Apt 101") lọt vào addr2. Copy address là địa chỉ Etsy SẼ SHIP,
@@ -124,6 +151,12 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         }
         const inTotal = num(o.total);
         if (inTotal > 0 && (!dup.total || Number(dup.total) === 0)) patch.total = (inTotal / fx).toFixed(2);
+        // v542 · đơn Woo kéo về TRƯỚC fix chưa gán seller → tự lành theo chủ listing ở lần sync sau.
+        // Chỉ điền khi đơn đang TRỐNG seller — không đè gán tay.
+        if (platform === "woocommerce" && !dup.sellerId) {
+          const own = sellerFor(o);
+          if (own) patch.sellerId = own;
+        }
         // MERGE ITEM: điền blank title/variant/price/image/personalization cho item.
         // (đơn cũ import Excel/harvest thiếu → kéo lại từ API/extension là tự lành, KHÔNG đè dữ liệu đã có).
         let itemUpdated = false;
@@ -259,7 +292,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
 
       const [order] = await db.insert(schema.orders).values({
         externalId: ext, platform: platform as never,
-        storeId: store.id, sellerId: store.sellerId, source: source as never, status: "new",
+        storeId: store.id, sellerId: sellerFor(o), source: source as never, status: "new",
         platformStatus: s(o.platformStatus),
         shippingType: s(o.shippingType),
         shippingMethod: s(o.shippingMethod),

@@ -204,13 +204,14 @@ export async function pushProductToShopify(
   }
   const toAdd = local.images.filter((im) => !im.id && /^https?:\/\//i.test(im.src));
   let mediaWarn = "";
+  let newIds: string[] = []; // v543 · GID của ảnh MỚI (theo đúng thứ tự toAdd) — để reorder xếp được cả ảnh mới
   if (toAdd.length) {
     const rc = await shopifyGraphQL<{ productCreateMedia?: { media?: { id?: string }[]; mediaUserErrors?: unknown } }>(cred, MEDIA_CREATE, {
       productId: pid, media: toAdd.map((im) => ({ originalSource: im.src, alt: im.altText || undefined, mediaContentType: "IMAGE" })),
     });
     const ec = ue(rc.productCreateMedia?.mediaUserErrors); if (ec) return { ok: false, error: "add image: " + ec };
     // v540 · CHỜ Shopify xử lý ảnh mới (tối đa ~12s): FAILED → báo rõ thay vì im lặng mất ảnh.
-    const newIds = (rc.productCreateMedia?.media ?? []).map((m) => String(m?.id ?? "")).filter(Boolean);
+    newIds = (rc.productCreateMedia?.media ?? []).map((m) => String(m?.id ?? "")).filter(Boolean);
     for (let i = 0; i < 6 && newIds.length; i++) {
       await new Promise((res) => setTimeout(res, 2000));
       try {
@@ -234,7 +235,11 @@ export async function pushProductToShopify(
     const rl2 = await shopifyGraphQL<{ product?: { media?: { nodes?: { id?: string }[] } } }>(cred, MEDIA_LIST, { id: pid });
     curIds = new Set((rl2.product?.media?.nodes ?? []).map((n) => String(n.id ?? "")).filter(Boolean));
   } catch { /* đọc lỗi → bỏ lọc, dùng id local */ }
-  const ordered = local.images.filter((im) => im.id && (curIds.size === 0 || curIds.has(im.id)));
+  // v543 · Ghép GID vừa tạo vào ảnh MỚI theo đúng vị trí trong danh sách local — trước đây ảnh mới
+  // (chưa có id) bị loại khỏi lệnh reorder nên luôn rơi xuống CUỐI, sai thứ tự người dùng sắp.
+  let k = 0;
+  const resolved = local.images.map((im) => (im.id || !/^https?:\/\//i.test(im.src)) ? im : { ...im, id: newIds[k++] ?? "" });
+  const ordered = resolved.filter((im) => im.id && (curIds.size === 0 || curIds.has(im.id)));
   if (ordered.length > 1) {
     const moves = ordered.map((im, i) => ({ id: im.id, newPosition: String(i) }));
     try {

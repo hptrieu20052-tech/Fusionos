@@ -471,6 +471,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     try {
       const q = new URLSearchParams(window.location.search);
       if (q.get("adskit") !== "1") return;
+      // v544 · sel=<handle[,handle]> — tự TICK sẵn sản phẩm (và tự mở kit) khi rows tải xong.
+      const selH = (q.get("sel") ?? "").trim().toLowerCase();
+      if (selH) setPendingSel(selH.split(",").map((x) => x.trim()).filter(Boolean));
       // v528 · ＋ New campaign từ Ads Center: kit ở chế độ tạo campaign MỚI (không dính cfg cũ).
       if (q.get("newcamp") === "1") {
         setKitCampId(""); setKitAdsetId(""); setKitCampaign("");
@@ -487,6 +490,21 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // v544 · sel=<handle> từ Ads Center (⧉ trên ad) — rows tải xong thì tick sẵn sản phẩm + TỰ MỞ kit.
+  const [pendingSel, setPendingSel] = useState<string[]>([]);
+  const [autoKit, setAutoKit] = useState(false);
+  useEffect(() => {
+    if (!pendingSel.length || !rows.length) return;
+    const ids = rows.filter((x) => pendingSel.includes((x.handle ?? "").toLowerCase())).map((x) => x.id);
+    if (ids.length) { setSel(new Set(ids)); setAutoKit(true); }
+    else flash("✗ Không tìm thấy sản phẩm khớp với ad này — tick tay giúp nhé", false);
+    setPendingSel([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, pendingSel]);
+  useEffect(() => {
+    if (autoKit && sel.size) { setAutoKit(false); runAction("ads_kit"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoKit, sel]);
   // v537 · Deep-link từ Meta Ads Center: /shopify-products?edit=<handle> → lọc + tự mở form edit đúng listing.
   const [pendingEdit, setPendingEdit] = useState("");
   useEffect(() => {
@@ -513,16 +531,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   }, []);
   const chooseModel = (m: string) => { setAiModel(m); try { window.localStorage.setItem("shopifyAiModel", m); } catch { /* ignore */ } };
 
-  const showSellerFilter = sellers.length > 1;
-  const storesForFilter = useMemo(() => sellerFilter ? stores.filter((s) => s.sellerId === sellerFilter) : stores, [stores, sellerFilter]);
+  // v548 · lọc theo seller THẬT của từng LISTING (store share nhiều seller): seller nguồn Etsy của
+  // listing (badge cam) → fallback seller của store. Trước đây lọc theo chủ STORE nên store chung vô dụng.
+  const sellerOptions = useMemo(() => Array.from(new Set(rows.map((r) => (r.etsyListing?.seller || r.sellerName || "").trim()).filter(Boolean))).sort(), [rows]);
+  const showSellerFilter = sellerOptions.length > 1 || sellers.length > 1;
+  const storesForFilter = stores;
   // Danh sách giá trị distinct cho 3 filter (theo store đang lọc nếu có)
-  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && (!sellerFilter || stores.find((s) => s.id === r.storeId)?.sellerId === sellerFilter)), [rows, storeFilter, sellerFilter, stores]);
+  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && (!sellerFilter || (r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter)), [rows, storeFilter, sellerFilter]);
   const typeOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.productType).filter(Boolean))).sort(), [scopeRows]);
   const categoryOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.categoryName).filter(Boolean))).sort(), [scopeRows]);
   const collectionOptions = useMemo(() => Array.from(new Set(scopeRows.flatMap((r) => r.collectionTitles ?? []).filter(Boolean))).sort(), [scopeRows]);
   const statusOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => (r.status || "").toUpperCase()).filter(Boolean))).sort(), [scopeRows]);
   const filtered = useMemo(() => rows.filter((r) =>
-    (!sellerFilter || stores.find((s) => s.id === r.storeId)?.sellerId === sellerFilter) &&
+    (!sellerFilter || (r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (!typeFilter || (typeFilter === "__none__" ? !(r.productType ?? "").trim() : r.productType === typeFilter)) &&
     (!categoryFilter || (categoryFilter === "__none__" ? !(r.categoryName ?? "").trim() : r.categoryName === categoryFilter)) &&
@@ -1642,8 +1663,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle / ID" style={{ ...fctl, width: "100%", maxWidth: "none", marginBottom: 8 }} />
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {showSellerFilter && (
-            <select value={sellerFilter} onChange={(e) => { setSellerFilter(e.target.value); setStoreFilter(""); }} title="Seller" style={fsel(!!sellerFilter)}>
-              <option value="">All sellers</option>{sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Seller — theo chủ listing (seller nguồn Etsy), không phải chủ store" style={fsel(!!sellerFilter)}>
+              <option value="">All sellers</option>{sellerOptions.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           )}
           <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} title="Store" style={fsel(!!storeFilter)}>
