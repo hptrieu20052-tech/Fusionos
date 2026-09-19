@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
   const token = process.env.META_SYSTEM_TOKEN ?? "";
   if (!token) return NextResponse.json({ ok: false, error: "Meta API not configured" }, { status: 400 });
 
-  const b = await req.json().catch(() => null) as { kind?: string; id?: string; campaignId?: string; adsetId?: string; name?: string; budget?: number; deep?: boolean; startTime?: string } | null;
+  const b = await req.json().catch(() => null) as { kind?: string; id?: string; campaignId?: string; adsetId?: string; name?: string; budget?: number; deep?: boolean; startTime?: string; adIds?: unknown[] } | null;
   const kind = b?.kind === "ad" ? "ad" : b?.kind === "adset" ? "adset" : b?.kind === "campaign" ? "campaign" : "";
   const id = String(b?.id ?? "").replace(/\D/g, "");
   if (!kind || !id) return NextResponse.json({ ok: false, error: "kind (campaign|adset|ad) + id required" }, { status: 400 });
