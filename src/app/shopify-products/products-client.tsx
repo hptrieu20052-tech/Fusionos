@@ -321,6 +321,23 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   // existing = tạo ads THẲNG vào ad set đang chạy (thả biến thể vào winner của MAIN).
   const [kitAdsetId, setKitAdsetId] = useState("");
   const [kitAdsets, setKitAdsets] = useState<{ name: string; budget: string }[]>([{ name: "Halloween", budget: "25" }, { name: "First Birthday", budget: "25" }]);
+  // v541 · danh sách campaign/ad set THẬT từ Meta — dropdown chọn đích thay vì dán ID tay.
+  const [kitTargets, setKitTargets] = useState<{ camps: { id: string; name: string; status: string }[]; adsets: { id: string; name: string; campId: string; status: string; budget: number }[] } | null>(null);
+  const loadKitTargets = async () => {
+    if (kitTargets) return;
+    try {
+      const j = await fetch("/api/meta-ads/entities").then((r) => r.json());
+      if (!j?.ok) return;
+      const cn = (j.campNames ?? {}) as Record<string, string>;
+      const camps = Object.entries((j.camp ?? {}) as Record<string, string>).map(([id, status]) => ({ id, name: cn[id] || id, status: String(status) }));
+      const adsets = Object.entries((j.adsets ?? {}) as Record<string, { status?: string; budget?: number; name?: string; campId?: string }>)
+        .map(([id, v]) => ({ id, name: v?.name || id, campId: String(v?.campId ?? ""), status: String(v?.status ?? ""), budget: Number(v?.budget) || 0 }));
+      const rank = (s: string) => (s === "ACTIVE" ? 0 : 1);
+      camps.sort((a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name));
+      adsets.sort((a, b) => rank(a.status) - rank(b.status) || a.name.localeCompare(b.name));
+      setKitTargets({ camps, adsets });
+    } catch { /* không phải admin / lỗi mạng → giữ ô nhập ID tay */ }
+  };
   const [kitItemAdset, setKitItemAdset] = useState<Record<string, string>>({});
   // v525 · ảnh ANGLE tự upload theo sản phẩm (ngoài ảnh listing) — chọn được như thumbnail thường.
   const [kitExtra, setKitExtra] = useState<Record<string, string[]>>({});
@@ -1368,6 +1385,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (key === "pinterest") { setPinOpen(true); return; }
     // v439 · Ads kit — sinh sẵn text/link/ảnh cho từng sản phẩm đã chọn, copy dán sang Ads Manager.
     if (key === "ads_kit") {
+      loadKitTargets(); // v541 · nạp danh sách campaign/ad set cho dropdown (chạy nền, lỗi thì giữ ô ID tay)
       const init: Record<string, { primary: string; headline: string }> = {};
       // v455 · ưu tiên bản text đã sửa lần trước (localStorage), chưa sửa mới dùng text tự sinh.
       let savedT: Record<string, { p?: string; h?: string }> = {};
@@ -2486,11 +2504,34 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   <div style={{ width: 150 }}><span style={kitLab}>Pixel ID</span>
                     <input value={kitPixel} onChange={(e) => setKitPixel(e.target.value.replace(/\D/g, ""))} style={kitIn} /></div>
                 )}
-                <div style={{ width: 160 }}><span style={kitLab}>Campaign ID</span>
-                  <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new" style={kitIn} /></div>
+                <div style={{ width: kitTargets?.camps.length ? 220 : 160 }}><span style={kitLab}>Campaign {kitTargets?.camps.length ? "(chọn có sẵn / tạo mới)" : "ID"}</span>
+                  {kitTargets?.camps.length ? (
+                    <select value={kitCampId} style={kitIn}
+                      onChange={(e) => { const id = e.target.value; setKitCampId(id); const c = kitTargets.camps.find((x) => x.id === id); if (id && c) setKitCampaign(c.name); }}>
+                      <option value="">— tạo campaign MỚI (đặt tên ở ô Campaign) —</option>
+                      {kitTargets.camps.map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + c.name}</option>)}
+                    </select>
+                  ) : (
+                    <input value={kitCampId} onChange={(e) => setKitCampId(e.target.value.replace(/\D/g, ""))} placeholder="empty = create new" style={kitIn} />
+                  )}</div>
                 {kitMode === "existing" && (
-                  <div style={{ width: 170 }}><span style={kitLab}>Ad set ID (đích) *</span>
-                    <input value={kitAdsetId} onChange={(e) => setKitAdsetId(e.target.value.replace(/\D/g, ""))} placeholder="dán từ Meta Ads Center" style={kitIn} /></div>
+                  <div style={{ width: kitTargets?.adsets.length ? 260 : 170 }}><span style={kitLab}>Ad set (đích) *</span>
+                    {kitTargets?.adsets.length ? (
+                      <select value={kitAdsetId} style={kitIn}
+                        onChange={(e) => {
+                          const id = e.target.value; setKitAdsetId(id);
+                          const a = kitTargets.adsets.find((x) => x.id === id);
+                          if (id && a) { setKitAdset(a.name); if (a.campId) { setKitCampId(a.campId); const c = kitTargets.camps.find((x) => x.id === a.campId); if (c) setKitCampaign(c.name); } }
+                        }}>
+                        <option value="">— chọn ad set —</option>
+                        {kitTargets.adsets.map((a) => {
+                          const c = kitTargets.camps.find((x) => x.id === a.campId);
+                          return <option key={a.id} value={a.id}>{(a.status === "ACTIVE" ? "🟢 " : "⏸ ") + a.name + (a.budget ? ` · $${a.budget}/d` : "") + (c ? ` · ${c.name}` : "")}</option>;
+                        })}
+                      </select>
+                    ) : (
+                      <input value={kitAdsetId} onChange={(e) => setKitAdsetId(e.target.value.replace(/\D/g, ""))} placeholder="dán từ Meta Ads Center" style={kitIn} />
+                    )}</div>
                 )}
                 {kitMode !== "existing" && (
                   <div style={{ width: 118 }}><span style={kitLab}>Age</span>

@@ -38,13 +38,15 @@ export async function GET() {
   try {
     // v532 · kèm name + campaign_id/adset_id — để UI dựng CẤU TRÚC ad set/ads cho campaign mới chưa chi tiêu.
     const [camps, adsets, ads] = await Promise.all([
-      fbList(`${G}/${act}/campaigns?fields=id,status&limit=200`, token),
+      fbList(`${G}/${act}/campaigns?fields=id,name,status&limit=200`, token),
       fbList(`${G}/${act}/adsets?fields=id,name,campaign_id,status,effective_status,daily_budget&limit=200`, token),
       fbList(`${G}/${act}/ads?fields=id,name,adset_id,campaign_id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url,object_story_spec}&limit=300`, token),
     ]);
     return NextResponse.json({
       ok: true,
       camp: Object.fromEntries(camps.map((c) => [String(c.id), String(c.status ?? "")])),
+      // v541 · tên campaign — cho dropdown chọn campaign/ad set trong Meta Ads Kit.
+      campNames: Object.fromEntries(camps.map((c) => [String(c.id), String(c.name ?? "")])),
       adsets: Object.fromEntries(adsets.map((s) => [String(s.id), { status: String(s.status ?? ""), eff: String(s.effective_status ?? ""), budget: (Number(s.daily_budget) || 0) / 100, name: String(s.name ?? ""), campId: String(s.campaign_id ?? "") }])),
       ads: Object.fromEntries(ads.map((a) => {
         const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string; object_story_spec?: { link_data?: { link?: string } } };
