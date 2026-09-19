@@ -84,7 +84,7 @@ export default function AdsCenterClient() {
 
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
   // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
-  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string };
+  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null };
   type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt> };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
@@ -564,6 +564,15 @@ export default function AdsCenterClient() {
                           {/* v525 · dup ad này (PAUSED) — mặc định cùng ad set, dán ID khác để thả vào winner MAIN */}
                           <button onClick={(e) => { e.stopPropagation(); dupAd(a.adId, a.ad, a.adsetId, a.adset); }} disabled={dupBusy === "ad:" + a.adId}
                             title="Duplicate ad — chọn product bên Shopify rồi push" style={{ ...rowBtn, padding: "0 7px", flexShrink: 0, opacity: dupBusy === "ad:" + a.adId ? 0.5 : 1 }}>⧉</button>
+                          {/* v537 · mở đúng listing bên Manage Products · Shopify để sửa (suy từ link đích của creative) */}
+                          {(() => {
+                            const l = ent?.ads[a.adId]?.plink ?? "";
+                            const m = l.match(/\/products\/([^/?#]+)/);
+                            return m ? (
+                              <a href={`/shopify-products?edit=${encodeURIComponent(m[1])}`} onClick={(e) => e.stopPropagation()}
+                                title="Sửa listing bên Manage Products · Shopify" style={{ ...rowBtn, textDecoration: "none", padding: "0 7px", flexShrink: 0 }}>🛍</a>
+                            ) : null;
+                          })()}
                         </span>
                       </td>
                       <td style={{ ...td, fontWeight: 700 }}>{money(a.spend)}</td>

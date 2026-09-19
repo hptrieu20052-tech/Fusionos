@@ -470,6 +470,23 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     } catch { /* ignore */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // v537 · Deep-link từ Meta Ads Center: /shopify-products?edit=<handle> → lọc + tự mở form edit đúng listing.
+  const [pendingEdit, setPendingEdit] = useState("");
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const h = (q.get("edit") ?? "").trim();
+      if (h) { setPendingEdit(h.toLowerCase()); setKw(h); }
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!pendingEdit || !rows.length) return;
+    const r = rows.find((x) => (x.handle ?? "").toLowerCase() === pendingEdit)
+      ?? rows.find((x) => (x.handle ?? "").toLowerCase().includes(pendingEdit));
+    if (r) { setPendingEdit(""); openEdit(r.id); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, pendingEdit]);
   useEffect(() => {
     try { const s = window.localStorage.getItem("shopifyAiModel"); if (s) setAiModel(s); } catch { /* ignore */ }
     fetch("/api/books/models?type=text").then((r) => r.json()).then((j) => { if (Array.isArray(j?.models)) setAiModels(j.models); }).catch(() => { /* offline */ });
