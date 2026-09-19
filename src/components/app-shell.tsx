@@ -386,7 +386,13 @@ export default function AppShell({ user, links, children, canProducts = false, c
               // Sau "Design Studio": chèn nhóm Seller Hub thu gọn (bấm để mở) — gom Products/Templates/Customer Messages/Marketing/Finance.
               if (l.href === hubAnchor && (canProducts || canSupport || canMarketing || canFinanceTiktok)) {
                 const hubItems = [
+                  // v560 · mobile đủ mục như desktop: Etsy + Shopify + Meta Ads + Product Sales
                   ...(canProducts ? [
+                    { href: "/etsy-products", icon: <MarketplaceLogo mk="etsy" size={18} />, label: "Manage Products Etsy" },
+                    { href: "/shopify-products", icon: <MarketplaceLogo mk="shopify" size={18} />, label: "Manage Products Shopify" },
+                    { href: "/shopify-templates", icon: <MarketplaceLogo mk="shopify" size={18} />, label: "Manage Templates Shopify" },
+                    { href: "/shopify-feed-labels", icon: <MarketplaceLogo mk="shopify" size={18} />, label: "Feed Labels Shopify" },
+                    { href: "/studio", icon: <MarketplaceLogo mk="shopify" size={18} />, label: "Create Your Own Studio" },
                     { href: "/shopbase-products", icon: <MarketplaceLogo mk="shopbase" size={18} />, label: "Manage Products ShopBase" },
                     { href: "/shopbase-templates", icon: <MarketplaceLogo mk="shopbase" size={18} />, label: "Manage Templates ShopBase" },
                     { href: "/shopbase-collections", icon: <MarketplaceLogo mk="shopbase" size={18} />, label: "Manage Collections ShopBase" },
@@ -398,6 +404,12 @@ export default function AppShell({ user, links, children, canProducts = false, c
                     { href: "/amazon-templates", icon: <AmazonLogo size={18} />, label: "Manage Templates Amazon" },
                     { href: "/tiktok-products", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Products Tiktok" },
                     { href: "/tiktok-templates", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Templates Tiktok" },
+                  ] : []),
+                  ...(user.role === "admin" ? [
+                    { href: "/meta-ads", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg>, label: "Meta Ads Center" },
+                  ] : []),
+                  ...(canProducts ? [
+                    { href: "/stats/products", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="21" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.25" y="7" width="3.5" height="11" /><rect x="15.5" y="4" width="3.5" height="14" /></svg>, label: "Product Sales" },
                   ] : []),
                   ...(canSupport && user.role === "admin" ? [
                     { href: "/support-email", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>, label: "Customer Emails" },
@@ -471,6 +483,18 @@ export default function AppShell({ user, links, children, canProducts = false, c
               <Link href="/marketing" prefetch className={`mobile-nav-item${isActive("/marketing") ? " active" : ""}`}>
                 <span className="topnav-ic"><IconMarketing width={18} height={18} /></span>
                 Marketing Tiktok
+              </Link>
+            )}
+            {!hasDesigns && user.role === "admin" && (
+              <Link href="/meta-ads" prefetch className={`mobile-nav-item${isActive("/meta-ads") ? " active" : ""}`}>
+                <span className="topnav-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg></span>
+                Meta Ads Center
+              </Link>
+            )}
+            {!hasDesigns && canProducts && (
+              <Link href="/stats/products" prefetch className={`mobile-nav-item${isActive("/stats/products") ? " active" : ""}`}>
+                <span className="topnav-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="21" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.25" y="7" width="3.5" height="11" /><rect x="15.5" y="4" width="3.5" height="14" /></svg></span>
+                Product Sales
               </Link>
             )}
           </nav>
