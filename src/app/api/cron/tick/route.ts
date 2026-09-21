@@ -121,9 +121,9 @@ async function tick(req: NextRequest) {
       const base = cred!.lastSyncAt ? new Date(cred!.lastSyncAt).getTime() - 86400_000 : Date.now() - 60 * 86400_000;
       const raw = await fetchWooOrders(cred!, { after: new Date(base).toISOString(), maxPages: 4 });
       const orders = raw.map(normalizeWooOrder).filter((o) => o.externalId);
-      const r = orders.length
-        ? await insertEtsyOrders({ id: st.id, sellerId: st.sellerId, fx: st.fx, name: st.name }, orders, "api", "woocommerce")
-        : { created: 0, updated: 0, skipped: 0, errors: [] as string[] };
+      // v564 · LUÔN gọi insertEtsyOrders (kể cả 0 đơn mới) — bên trong có backfill seller cho đơn Woo cũ
+      // trống seller; trước đây bị gác sau "orders.length" nên store vắng đơn thì backfill không bao giờ chạy.
+      const r = await insertEtsyOrders({ id: st.id, sellerId: st.sellerId, fx: st.fx, name: st.name }, orders, "api", "woocommerce");
       await touchWooSync(st.id);
       woocommerce.push({ store: st.name, ok: true, received: orders.length, created: r.created, updated: r.updated, skipped: r.skipped });
     } catch (e) {
