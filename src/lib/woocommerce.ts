@@ -167,6 +167,7 @@ export function normalizeWooOrder(o: Record<string, unknown>): InOrder {
       variant: undefined, // Woo nhét variation vào meta_data (Size/Color) → đã gom vào personalization
       personalization: personalization || undefined,
       listingId: strv(li.product_id) || undefined,
+      imageUrl: strv(((li.image ?? {}) as Record<string, unknown>).src) || undefined, // v561 · thumbnail item
       files: files.length ? files : undefined,
     };
   });
@@ -211,5 +212,26 @@ export async function fetchWooOrders(cred: WooCred, opts: { after?: string; maxP
     }
     if (batch.length < 100) break; // trang cuối
   }
+  // v561 · line item thiếu ảnh (Woo cũ / variation trả image rỗng) → tra products 1 lần lấy ảnh đại diện.
+  try {
+    const missing = new Set<string>();
+    for (const o of out) for (const li of (Array.isArray(o.line_items) ? o.line_items : []) as Record<string, unknown>[]) {
+      const img = (li.image ?? {}) as Record<string, unknown>;
+      const pid = strv(li.product_id);
+      if (pid && !strv(img.src)) missing.add(pid);
+    }
+    if (missing.size) {
+      const ids = Array.from(missing).slice(0, 100);
+      const pj = await wooApi(cred, `products?include=${ids.join(",")}&per_page=100&_fields=id,images`);
+      const imgOf = new Map((Array.isArray(pj) ? pj as Record<string, unknown>[] : []).map((pr) => {
+        const im0 = (Array.isArray(pr.images) ? pr.images[0] : null) as Record<string, unknown> | null;
+        return [strv(pr.id), strv(im0?.src)] as [string, string];
+      }));
+      for (const o of out) for (const li of (Array.isArray(o.line_items) ? o.line_items : []) as Record<string, unknown>[]) {
+        const img = (li.image ?? {}) as Record<string, unknown>;
+        if (!strv(img.src)) { const src = imgOf.get(strv(li.product_id)); if (src) li.image = { src }; }
+      }
+    }
+  } catch { /* ảnh là phụ — lỗi không chặn kéo đơn */ }
   return out;
 }

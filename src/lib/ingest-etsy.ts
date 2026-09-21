@@ -1,6 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { beforeLaunch } from "@/lib/ingest-cutoff";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { ignoredSet } from "@/lib/ignored-orders";
 import { decodeEntities } from "@/lib/variant-display";
 import { storeFeePct, estFee } from "@/lib/fee";
@@ -333,6 +333,29 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
     }
   }
 
+  // v561 · BACKFILL seller cho đơn Woo CŨ trống seller (đơn kéo về trước khi listing được gán chủ —
+  // nằm ngoài cửa sổ sync nên merge không sờ lại). Chạy mỗi vòng, rẻ: chỉ quét đơn sellerId NULL.
+  if (platform === "woocommerce") {
+    try {
+      const orphans = await db.select({ id: schema.orders.id }).from(schema.orders)
+        .where(and(eq(schema.orders.storeId, store.id), eq(schema.orders.platform, "woocommerce" as never), isNull(schema.orders.sellerId))).limit(200);
+      if (orphans.length) {
+        const oids = orphans.map((o) => o.id);
+        const its = await db.select({ orderId: schema.orderItems.orderId, lid: schema.orderItems.etsyListingId })
+          .from(schema.orderItems).where(inArray(schema.orderItems.orderId, oids));
+        const pids = Array.from(new Set(its.map((x) => Number(String(x.lid ?? "").trim())).filter((n) => Number.isFinite(n) && n > 0)));
+        if (pids.length) {
+          const own2 = await db.select({ productId: schema.wooProductOwners.productId, createdBy: schema.wooProductOwners.createdBy })
+            .from(schema.wooProductOwners).where(and(eq(schema.wooProductOwners.storeId, store.id), inArray(schema.wooProductOwners.productId, pids)));
+          const map2 = new Map(own2.filter((r) => r.createdBy).map((r) => [Number(r.productId), String(r.createdBy)]));
+          for (const o of orphans) {
+            const own = its.filter((x) => x.orderId === o.id).map((x) => map2.get(Number(String(x.lid ?? "").trim()))).find(Boolean);
+            if (own) await db.update(schema.orders).set({ sellerId: own }).where(eq(schema.orders.id, o.id));
+          }
+        }
+      }
+    } catch { /* backfill là phụ — bảng chưa migrate thì bỏ qua */ }
+  }
   await db.update(schema.stores).set({ lastSyncAt: new Date() }).where(eq(schema.stores.id, store.id));
   // Thông báo SALE về Telegram theo team (lỗi Telegram không ảnh hưởng ingest)
   if (createdIds.length) {
