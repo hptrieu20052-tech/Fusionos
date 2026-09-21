@@ -9,7 +9,7 @@ import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
 import { pushTiktokTrackingForOrder } from "@/lib/tiktok-tracking";
 import { pushShopifyTrackingForOrder } from "@/lib/shopify";
 import { shopbaseConfigured, fetchShopBaseOrders, normalizeShopBaseOrder, touchShopBaseSync, type ShopBaseCred } from "@/lib/shopbase";
-import { wooConfigured, fetchWooOrders, normalizeWooOrder, touchWooSync, type WooCred } from "@/lib/woocommerce";
+import { wooConfigured, fetchWooOrders, normalizeWooOrder, touchWooSync, backfillWooItemImages, type WooCred } from "@/lib/woocommerce";
 import { syncPrintway } from "@/lib/printway-sync";
 import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
@@ -112,7 +112,7 @@ async function tick(req: NextRequest) {
   // ---- 1b3. WooCommerce: kéo đơn mới cho MỌI store đã cấu hình (v496) ----
   // Cùng khuôn ShopBase: cửa sổ từ lastSyncAt - 1 ngày (overlap bắt đơn sửa), chưa sync thì 60 ngày.
   // Dedup theo (woocommerce, external_id). Store chưa cấu hình → bỏ qua êm.
-  const woocommerce: { store: string; ok: boolean; received?: number; created?: number; updated?: number; skipped?: number; error?: string }[] = [];
+  const woocommerce: { store: string; ok: boolean; received?: number; created?: number; updated?: number; skipped?: number; imgFilled?: number; error?: string }[] = [];
   for (const st of stores) {
     const cred = (((st.c ?? {}) as Record<string, unknown>).woocommerce ?? null) as WooCred | null;
     if (!wooConfigured(cred)) continue;
@@ -124,8 +124,10 @@ async function tick(req: NextRequest) {
       // v564 · LUÔN gọi insertEtsyOrders (kể cả 0 đơn mới) — bên trong có backfill seller cho đơn Woo cũ
       // trống seller; trước đây bị gác sau "orders.length" nên store vắng đơn thì backfill không bao giờ chạy.
       const r = await insertEtsyOrders({ id: st.id, sellerId: st.sellerId, fx: st.fx, name: st.name }, orders, "api", "woocommerce");
+      // v565 · backfill ảnh item cho đơn cũ thiếu image_url (kéo về trước v561, ngoài cửa sổ sync)
+      const bi = await backfillWooItemImages(st.id, cred!).catch(() => ({ scanned: 0, filled: 0 }));
       await touchWooSync(st.id);
-      woocommerce.push({ store: st.name, ok: true, received: orders.length, created: r.created, updated: r.updated, skipped: r.skipped });
+      woocommerce.push({ store: st.name, ok: true, received: orders.length, created: r.created, updated: r.updated, skipped: r.skipped, imgFilled: bi.filled });
     } catch (e) {
       woocommerce.push({ store: st.name, ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) });
     }

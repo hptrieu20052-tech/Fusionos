@@ -9,7 +9,7 @@
  * consumerSecret, lastSyncAt } — cô lập như shopbase/spapi. KHÔNG commit secret vào code.
  */
 import { db, schema } from "@/lib/db";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc, gte, isNull } from "drizzle-orm";
 import type { InOrder, InItem } from "@/lib/ingest-etsy";
 
 export type WooCred = { storeUrl?: string; consumerKey?: string; consumerSecret?: string; lastSyncAt?: string };
@@ -234,4 +234,37 @@ export async function fetchWooOrders(cred: WooCred, opts: { after?: string; maxP
     }
   } catch { /* ảnh là phụ — lỗi không chặn kéo đơn */ }
   return out;
+}
+
+/**
+ * v565 · BACKFILL ảnh item cho đơn Woo CŨ: đơn kéo về TRƯỚC v561 thì order_items không có image_url,
+ * lại nằm ngoài cửa sổ sync (lastSyncAt − 1 ngày) nên merge không bao giờ sờ lại → thumbnail trống
+ * vĩnh viễn (case #315562). Quét item thiếu ảnh của đơn ≤60 ngày, tra products theo listingId
+ * (= Woo product_id) → điền order_items.image_url. Rẻ: 1 query DB + ≤1 call Woo mỗi vòng cron;
+ * hết item thiếu thì query trả 0 dòng, không gọi API.
+ */
+export async function backfillWooItemImages(storeId: string, cred: WooCred): Promise<{ scanned: number; filled: number }> {
+  const since = new Date(Date.now() - 60 * 86400_000);
+  const rows = await db.select({ id: schema.orderItems.id, lid: schema.orderItems.etsyListingId })
+    .from(schema.orderItems)
+    .innerJoin(schema.orders, eq(schema.orderItems.orderId, schema.orders.id))
+    .where(and(
+      eq(schema.orders.storeId, storeId),
+      eq(schema.orders.platform, "woocommerce" as never),
+      isNull(schema.orderItems.imageUrl),
+      gte(schema.orders.orderedAt, since),
+    )).limit(300);
+  const pids = Array.from(new Set(rows.map((r) => strv(r.lid)).filter((x) => /^\d+$/.test(x)))).slice(0, 100);
+  if (!pids.length) return { scanned: rows.length, filled: 0 };
+  const pj = await wooApi(cred, `products?include=${pids.join(",")}&per_page=100&_fields=id,images`);
+  const imgOf = new Map((Array.isArray(pj) ? (pj as Record<string, unknown>[]) : []).map((pr) => {
+    const im0 = (Array.isArray(pr.images) ? pr.images[0] : null) as Record<string, unknown> | null;
+    return [strv(pr.id), strv(im0?.src)] as [string, string];
+  }));
+  let filled = 0;
+  for (const r of rows) {
+    const src = imgOf.get(strv(r.lid));
+    if (src) { await db.update(schema.orderItems).set({ imageUrl: src }).where(eq(schema.orderItems.id, r.id)); filled++; }
+  }
+  return { scanned: rows.length, filled };
 }
