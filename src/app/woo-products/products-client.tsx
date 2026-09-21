@@ -343,7 +343,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
               <tr key={p.id} style={sel.has(p.id) ? { background: "#F6F9FF" } : undefined}>
                 <td style={td}><input type="checkbox" checked={sel.has(p.id)} onChange={() => toggleSel(p.id)} /></td>
                 <td style={td}>
-                  <div onClick={() => p.thumb && setZoom(p.images?.[0] || p.thumb)} title={p.thumb ? "Click to zoom" : undefined}
+                  <div onClick={() => p.thumb && setZoom(p.images?.[0]?.src || p.thumb)} title={p.thumb ? "Click to zoom" : undefined}
                     style={{ width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "#F1F3F8", cursor: p.thumb ? "zoom-in" : "default" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {p.thumb ? <img src={p.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
