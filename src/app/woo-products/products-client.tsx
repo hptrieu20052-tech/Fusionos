@@ -62,6 +62,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
   const [ptypes, setPtypes] = useState<TypeChip[]>([]); // v505/v522 · chip Product Type (đã gộp theo Group)
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [zoom, setZoom] = useState(""); // v562 · lightbox phóng to thumbnail
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(""), 4000); };
 
   const loadCats = useCallback(async (sid: string) => {
@@ -342,7 +343,8 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
               <tr key={p.id} style={sel.has(p.id) ? { background: "#F6F9FF" } : undefined}>
                 <td style={td}><input type="checkbox" checked={sel.has(p.id)} onChange={() => toggleSel(p.id)} /></td>
                 <td style={td}>
-                  <div style={{ width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "#F1F3F8" }}>
+                  <div onClick={() => p.thumb && setZoom(p.images?.[0] || p.thumb)} title={p.thumb ? "Click to zoom" : undefined}
+                    style={{ width: 52, height: 52, borderRadius: 10, overflow: "hidden", background: "#F1F3F8", cursor: p.thumb ? "zoom-in" : "default" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     {p.thumb ? <img src={p.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
                   </div>
@@ -607,6 +609,13 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
               </div>
             )}
           </div>
+        </div>
+      )}
+      {/* v562 · lightbox phóng to thumbnail — click nền hoặc ảnh để đóng */}
+      {zoom && (
+        <div onClick={() => setZoom("")} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(16,20,28,.85)", display: "flex", alignItems: "center", justifyContent: "center", padding: 30, cursor: "zoom-out" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={zoom} alt="" style={{ maxWidth: "90vw", maxHeight: "88vh", objectFit: "contain", borderRadius: 12, boxShadow: "0 20px 60px rgba(0,0,0,.45)", background: "#fff" }} />
         </div>
       )}
     </div>
