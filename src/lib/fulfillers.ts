@@ -782,7 +782,7 @@ function printifyAdapter(): FulfillerAdapter {
       // Mỗi line phải có recipe (blueprint/provider/variant). Upload design → tạo product → gom line_item.
       const missing = ctx.lines.filter((l) => !l.pfBlueprintId || !l.pfProviderId || !l.pfVariantId);
       if (missing.length) {
-        throw new Error(`Chưa cấu hình Blueprint/Provider/Variant cho SKU: ${missing.map((l) => l.fulfillerSku).join(", ")}. Vào SKU mapping → tab Printify để chọn.`);
+        throw new Error(`Blueprint/Provider/Variant not configured for SKU: ${missing.map((l) => l.fulfillerSku).join(", ")}. Open SKU mapping → Printify tab to set them.`);
       }
       const extNumber = orderExtNumber(o);
       // Lấy kích thước vùng in theo (blueprint, provider) — cache theo cặp để không gọi trùng
@@ -851,10 +851,10 @@ function printifyAdapter(): FulfillerAdapter {
           const sides = Array.from(byKind.values());
           const primary = byKind.get("design_front") ?? byKind.get("book_cover") ?? byKind.get("cover_front")
             ?? sides.slice().sort((a, b) => a.kind.localeCompare(b.kind))[0];
-          if (!primary) throw new Error(`SKU ${l.fulfillerSku}: card design chưa có file mặt in nào — Printify yêu cầu ít nhất 1 ảnh.`);
+          if (!primary) throw new Error(`SKU ${l.fulfillerSku}: the design card has no print files — Printify requires at least 1 image. Assign/complete the design first.`);
           // Card NHIỀU mặt (lịch/photo book) mà không map được vùng nào → DỪNG, không đẩy sản phẩm chỉ có 1 ảnh.
           if (sides.length > 1) {
-            throw new Error(`SKU ${l.fulfillerSku}: blueprint có vùng in [${positions.slice(0, 8).join(", ")}${positions.length > 8 ? "…" : ""}] nhưng không khớp được với các mặt design [${sides.map((x) => x.kind).slice(0, 8).join(", ")}${sides.length > 8 ? "…" : ""}]. KHÔNG đẩy để tránh sản phẩm thiếu trang — gửi admin tên vùng in này để bổ sung rule map.`);
+            throw new Error(`SKU ${l.fulfillerSku}: blueprint print sides [${positions.slice(0, 8).join(", ")}${positions.length > 8 ? "…" : ""}] could not be matched to design sides [${sides.map((x) => x.kind).slice(0, 8).join(", ")}${sides.length > 8 ? "…" : ""}]. NOT pushed to avoid a product with missing pages — send these side names to the admin to add a mapping rule.`);
           }
           plan.push({ position: positions[0], side: primary });
         }
@@ -863,7 +863,29 @@ function printifyAdapter(): FulfillerAdapter {
         const unmatchedPos = positions.filter((pos) => !plan.some((x) => x.position === pos));
         const unusedKinds = Array.from(byKind.keys()).filter((k) => !used.has(k));
         if (unmatchedPos.length && unusedKinds.length) {
-          throw new Error(`SKU ${l.fulfillerSku}: ${unmatchedPos.length} vùng in chưa có ảnh [${unmatchedPos.slice(0, 10).join(", ")}${unmatchedPos.length > 10 ? "…" : ""}] trong khi design còn mặt chưa dùng [${unusedKinds.slice(0, 10).join(", ")}${unusedKinds.length > 10 ? "…" : ""}]. KHÔNG đẩy để tránh sản phẩm thiếu trang — gửi admin thông tin này để bổ sung rule map.`);
+          throw new Error(`SKU ${l.fulfillerSku}: ${unmatchedPos.length} print side(s) have no image [${unmatchedPos.slice(0, 10).join(", ")}${unmatchedPos.length > 10 ? "…" : ""}] while the design still has unused sides [${unusedKinds.slice(0, 10).join(", ")}${unusedKinds.length > 10 ? "…" : ""}]. NOT pushed to avoid a product with missing pages — send this info to the admin to add a mapping rule.`);
+        }
+        // v566 · SP NHIỀU TRANG (Wall/Desktop Calendar, Photo Book): BẮT BUỘC đủ ảnh cho MỌI vùng in
+        // mới cho đẩy. Lỗ hổng cũ: designer up THIẾU HẲN mặt (vd Photo Book 25 vùng, card chỉ có cover
+        // + vài trang) → các mặt có sẵn đều map được, không còn "mặt chưa dùng" nên 3 lớp chặn trên đều
+        // lọt → Printify không check lại, in trang trắng hàng loạt. Nhận diện SP nhiều trang: tên
+        // product type có calendar / photo book, HOẶC blueprint có vùng in đánh số / tên tháng.
+        // ÁO (front/back/sleeve) chủ động BỎ QUA — in 1 mặt hay 2 mặt là tuỳ mẫu, không cố định được.
+        const isMultiPage = realPos.length > 0 && (
+          /calendar|photo\s*book/i.test(String(l.fulfillerProduct ?? "")) ||
+          positions.some((p) => /\d/.test(p) || MONTH_NAMES.some((m) => p.toLowerCase().includes(m)))
+        );
+        if (isMultiPage && unmatchedPos.length) {
+          const have = Array.from(byKind.keys()).sort();
+          throw new Error(
+            `BLOCKED — ${l.fulfillerSku}: this product requires a design file for EVERY print side before pushing to Printify ` +
+            `(${plan.length}/${positions.length} sides ready). Missing ${unmatchedPos.length} side(s): ` +
+            `[${unmatchedPos.slice(0, 12).join(", ")}${unmatchedPos.length > 12 ? "…" : ""}]. ` +
+            (have.length
+              ? `The design card only has: [${have.slice(0, 12).join(", ")}${have.length > 12 ? "…" : ""}]. `
+              : `The design card has NO print files at all. `) +
+            `Send the order back to the designer to upload the missing sides, then push again.`
+          );
         }
 
         const uploaded = await mapLimit(plan, 5, (x) => uploadImageByUrl(token, `${l.fulfillerSku}-${x.side.kind}`, x.side.url));
