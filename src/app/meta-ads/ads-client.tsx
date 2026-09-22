@@ -51,6 +51,8 @@ export default function AdsCenterClient() {
   // v572 · lọc theo SELLER. Seller của camp = gán tay (DB) > đoán từ tên (token đầu không phải từ khoá).
   const UNASSIGNED = "(unassigned)";
   const [sellerFilter, setSellerFilter] = useState("");
+  // v574 · tab riêng cho thống kê seller — chừa không gian màn hình chính cho quản lý ads.
+  const [view, setView] = useState<"ads" | "sellers">("ads");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleCamp = (id: string, cur: boolean) => {
     setCollapsed((m) => { const n = { ...m, [id]: !cur }; try { localStorage.setItem("metaads.collapsed", JSON.stringify(n)); } catch { /* ignore */ } return n; });
@@ -449,6 +451,17 @@ export default function AdsCenterClient() {
       {/* Header */}
       <div style={{ ...card, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <b style={{ fontSize: 17 }}>📣 Meta Ads Center</b>
+        {/* v574 · tab Ads / By seller — thống kê seller tách trang riêng */}
+        <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
+          {([["ads", "Ads"], ["sellers", "By seller"]] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setView(k)}
+              style={{ border: "none", borderRadius: 8, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                background: view === k ? "#fff" : "transparent", color: view === k ? "var(--ink)" : "var(--muted)",
+                boxShadow: view === k ? "0 1px 2px rgba(16,24,40,.12)" : "none" }}>
+              {label}
+            </button>
+          ))}
+        </div>
         <DateRangePicker value={dr} onChange={setDr} />
         {/* v451 · lọc campaign theo trạng thái thật từ Meta */}
         <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
@@ -512,17 +525,18 @@ export default function AdsCenterClient() {
         ))}
       </div>
 
-      {/* v572 · SPEND BY SELLER — khối thống kê riêng theo seller (khoảng ngày đang xem).
-          Bấm 1 dòng = lọc danh sách campaign bên dưới theo seller đó, bấm lại để bỏ lọc. */}
-      {sellerStats.length > 0 && (
+      {/* v574 · TAB "BY SELLER" — trang thống kê riêng (khoảng ngày đang xem).
+          Bấm 1 dòng = nhảy về tab Ads đã lọc sẵn theo seller đó. */}
+      {view === "sellers" && (
         <div style={{ ...card, padding: "14px 18px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
             <b style={{ fontSize: 14 }}>Spend by seller</b>
-            <span style={{ fontSize: 11.5, color: "var(--muted)" }}>per-ad, by the OWNER of the Shopify listing each creative links to · click a row to filter the table below</span>
+            <span style={{ fontSize: 11.5, color: "var(--muted)" }}>per-ad, by the OWNER of the Shopify listing each creative links to · click a row to open that seller&#39;s ads</span>
             {sellerFilter && (
               <button onClick={() => setSellerFilter("")} style={{ marginLeft: "auto", border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Clear filter ✕</button>
             )}
           </div>
+          {!sellerStats.length && <div style={{ padding: 16, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>No spend in this date range yet.</div>}
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr style={{ borderBottom: "1px solid var(--line)" }}>
@@ -536,7 +550,8 @@ export default function AdsCenterClient() {
                   const on = sellerFilter === key;
                   const roas = s.spend ? s.rev / s.spend : 0;
                   return (
-                    <tr key={key} onClick={() => setSellerFilter(on ? "" : key)}
+                    <tr key={key} onClick={() => { setSellerFilter(on ? "" : key); setView("ads"); }}
+                      title="Open this seller's ads"
                       style={{ borderBottom: "1px solid #F1F3F6", cursor: "pointer", background: on ? "#EDF3FF" : undefined }}>
                       <td style={{ ...td, textAlign: "left", fontWeight: 800 }}>
                         {key === UNASSIGNED ? <span style={{ color: "var(--muted)", fontWeight: 600 }}>(unassigned)</span> : key}
@@ -562,7 +577,7 @@ export default function AdsCenterClient() {
       )}
 
       {/* AI result */}
-      {ai && (
+      {view === "ads" && ai && (
         <div style={{ ...card, padding: 18, borderColor: "#D8CCFF", background: "#FBFAFF" }}>
           <b style={{ fontSize: 14 }}>🤖 AI Analysis</b>
           <p style={{ fontSize: 13.5, lineHeight: 1.55, margin: "8px 0 10px" }}>{ai.summary}</p>
@@ -593,10 +608,10 @@ export default function AdsCenterClient() {
         </div>
       )}
 
-      {/* Tables per campaign */}
-      {busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>Loading…</div> : null}
-      {!busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>No data yet — hit ⟳ Sync now (requires META_SYSTEM_TOKEN env + MIGRATION_v449).</div> : null}
-      {grouped.map(([campId, g]) => {
+      {/* Tables per campaign — chỉ ở tab Ads (v574) */}
+      {view === "ads" && busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>Loading…</div> : null}
+      {view === "ads" && !busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>No data yet — hit ⟳ Sync now (requires META_SYSTEM_TOKEN env + MIGRATION_v449).</div> : null}
+      {view === "ads" && grouped.map(([campId, g]) => {
         // v573 · lọc theo seller Ở CẤP AD (theo chủ listing): campaign chung nhiều seller thì chỉ hiện
         // phần ads của seller đang lọc — subtotal campaign/ad set cũng chỉ cộng phần đó.
         const ads = sellerFilter
