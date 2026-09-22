@@ -100,6 +100,37 @@ export default function AdsCenterClient() {
   }, []);
   useEffect(() => { loadEnt(); }, [loadEnt]);
 
+  // v570 · RULE ENGINE — verdict từng ad (WAITING/STARVED/GRACE/ALIVE/KILL/WINNER/CHECK + MAIN_*)
+  // engine chấm nền 2h/lần trên LIFETIME; UI chỉ đọc bảng state + nút Undo/Rotate/Run now.
+  type RuleRow = { adId: string; verdict: string; phase?: string | null; reason?: string | null; autoPaused?: boolean; pauseReason?: string | null; resumeAt?: string | null };
+  const [rules, setRules] = useState<Map<string, RuleRow>>(new Map());
+  const [ruleCfg, setRuleCfg] = useState<{ campKillSpend7d: number; adsetMinAlive: number; adsetMaxActive: number } | null>(null);
+  const [ruleRunAt, setRuleRunAt] = useState<string | null>(null);
+  const [ruleBusy, setRuleBusy] = useState("");
+  const loadRules = useCallback(async () => {
+    try {
+      const j = await fetch("/api/meta-ads/rules").then((r) => r.json());
+      if (j.ok) {
+        setRules(new Map((j.state as RuleRow[]).map((r) => [r.adId, r])));
+        setRuleCfg(j.config ?? null);
+        setRuleRunAt(j.lastRunAt ?? null);
+      }
+    } catch { /* rule là phụ — lỗi không chặn bảng số */ }
+  }, []);
+  useEffect(() => { loadRules(); }, [loadRules]);
+  const ruleAction = async (key: string, body: Record<string, unknown>) => {
+    if (ruleBusy) return;
+    setRuleBusy(key); setErr("");
+    try {
+      const j = await fetch("/api/meta-ads/rules", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+      if (!j.ok) setErr(j.error ?? "Rule action failed");
+      await Promise.all([loadRules(), loadEnt()]);
+    } catch (e) { setErr(String((e as Error).message)); }
+    setRuleBusy("");
+  };
+  // arm 2 bước cho Rotate (tắt ad thật) — chống bấm nhầm.
+  const [rotArm, setRotArm] = useState("");
+
   const [ctlArm, setCtlArm] = useState("");
   const [ctlBusy, setCtlBusy] = useState("");
   // Mọi hành động điều khiển đều arm 2 bước (giống Approve) — chống bấm nhầm bật/tắt tiền thật.
@@ -311,6 +342,30 @@ export default function AdsCenterClient() {
   const dupBtn: React.CSSProperties = { border: "1px solid #DDD3F8", background: "#F7F4FE", color: "#6D28D9", borderRadius: 999, padding: "1px 9px", fontSize: 10.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" };
   const penBtn: React.CSSProperties = { border: "none", background: "transparent", color: "#8794A5", fontSize: 12, cursor: "pointer", padding: "0 3px", flexShrink: 0, lineHeight: 1 };
 
+  // v570 · Badge verdict theo rule engine — pill CHỮ (không emoji), màu phân biệt nhanh.
+  const V_PILL: Record<string, { bg: string; fg: string }> = {
+    WAITING:    { bg: "#EEF1F5", fg: "#5B6472" },
+    STARVED:    { bg: "#FEF3C7", fg: "#92400E" },
+    GRACE:      { bg: "#FEF3C7", fg: "#92400E" },
+    ALIVE:      { bg: "#DCFCE7", fg: "#166534" },
+    KILL:       { bg: "#DC2626", fg: "#FFFFFF" },
+    WINNER:     { bg: "#16A34A", fg: "#FFFFFF" },
+    CHECK:      { bg: "#D97706", fg: "#FFFFFF" },
+    MAIN_WATCH: { bg: "#FEF3C7", fg: "#92400E" },
+    MAIN_RED:   { bg: "#DC2626", fg: "#FFFFFF" },
+    SCALE_FAST: { bg: "#FEF3C7", fg: "#92400E" },
+    ROTATED:    { bg: "#E0E7FF", fg: "#3730A3" },
+  };
+  const V_LABEL: Record<string, string> = { MAIN_WATCH: "WATCH ROAS", MAIN_RED: "ROAS LOW", SCALE_FAST: "SCALING FAST", CHECK: "CHECK LANDING" };
+  const ruleOf = (adId: string): RuleRow | null => rules.get(adId) ?? null;
+  // Nền dòng: KILL/MAIN_RED đỏ nhạt · GRACE/STARVED/CHECK/MAIN_WATCH vàng nhạt — liếc 1 giây là thấy.
+  const rowBg = (adId: string): string | undefined => {
+    const v = ruleOf(adId)?.verdict ?? "";
+    if (v === "KILL" || v === "MAIN_RED") return "#FEF2F2";
+    if (v === "GRACE" || v === "STARVED" || v === "CHECK" || v === "MAIN_WATCH") return "#FFFBEB";
+    return undefined;
+  };
+
   // Gộp theo campaign → ad
   const grouped = useMemo(() => {
     type Agg = { campId: string; campaign: string; ad: string; adId: string; adset: string; adsetId: string; spend: number; imp: number; lc: number; atc: number; pur: number; rev: number };
@@ -385,6 +440,12 @@ export default function AdsCenterClient() {
         <a href="/shopify-products?adskit=1&newcamp=1" target="_blank" rel="noopener noreferrer" style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>＋ New campaign</a>
         <button onClick={syncNow} disabled={syncBusy} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: syncBusy ? .6 : 1 }}>
           {syncBusy ? "Syncing…" : "⟳ Sync now"}
+        </button>
+        {/* v570 · chạy rule engine ngay (bình thường tự chạy nền 2h/lần trong cron) */}
+        <button onClick={() => ruleAction("run", { action: "run" })} disabled={ruleBusy === "run"}
+          title={`Re-score every ad now (engine auto-runs every ~2h in the background)${ruleRunAt ? ` — last run ${new Date(ruleRunAt).toLocaleString()}` : ""}`}
+          style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: ruleBusy === "run" ? .6 : 1 }}>
+          {ruleBusy === "run" ? "Scoring…" : "Run rules"}
         </button>
         <select value={aiModel} onChange={(e) => pickModel(e.target.value)} title="AI model"
           style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "7px 8px", fontSize: 12.5, background: "#fff", maxWidth: 190 }}>
@@ -494,6 +555,18 @@ export default function AdsCenterClient() {
               <span style={{ fontSize: 12, color: "var(--muted)" }}>
                 {ads.length ? `${ads.length} ads · ${money(ct.spend)} · ${ct.pur} purchases${ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}` : "newly created — no spend in this date range yet"}
               </span>
+              {/* v570 · camp TEST đốt ≥$60 (khoảng ngày đang xem) vào ads KILL mà 0 winner → đổi angle */}
+              {(() => {
+                if (!/test/i.test(g.name) || !ruleCfg) return null;
+                const killSpend = ads.filter((x) => rules.get(x.adId)?.verdict === "KILL").reduce((s2, x) => s2 + x.spend, 0);
+                const hasWinner = ads.some((x) => rules.get(x.adId)?.verdict === "WINNER");
+                return killSpend >= ruleCfg.campKillSpend7d && !hasWinner ? (
+                  <span title={`${money(killSpend)} burned on KILL-verdict ads in this date range with no winner — change the ANGLE, don't add more designs on the same theme`}
+                    style={{ background: "#DC2626", color: "#fff", borderRadius: 6, padding: "2px 9px", fontSize: 9.5, fontWeight: 800, letterSpacing: ".3px", whiteSpace: "nowrap" }}>
+                    {money(killSpend)} BURNED · CHANGE ANGLE
+                  </span>
+                ) : null;
+              })()}
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                 {/* v535 · dup campaign — copy khung rồi sang kit chọn product */}
                 <button onClick={() => dupCamp(campId, g.name)} disabled={dupBusy === "camp:" + campId}
@@ -570,6 +643,24 @@ export default function AdsCenterClient() {
                               <span style={{ fontWeight: 600, color: "var(--muted)" }}>
                                 {grp.length} ad{grp.length > 1 ? "s" : ""} · {money(gs.spend)} · {gs.atc} ATC · {gs.pur} purch{gs.spend ? ` · ROAS ${(gs.rev / gs.spend).toFixed(2)}` : ""}
                               </span>
+                              {/* v570 · cảnh báo cấp AD SET theo rule engine (chỉ camp TEST) + SCALE_FAST (MAIN) */}
+                              {(() => {
+                                const chips: { t: string; tip: string; red?: boolean }[] = [];
+                                const sf = rules.get("adset:" + a.adsetId);
+                                if (sf?.verdict === "SCALE_FAST") chips.push({ t: "SCALING FAST", tip: sf.reason ?? "", red: false });
+                                if (/test/i.test(g.name) && ruleCfg) {
+                                  const alive = grp.filter((x) => { const v = rules.get(x.adId)?.verdict; return v === "ALIVE" || v === "WINNER"; }).length;
+                                  const active = grp.filter((x) => ent?.ads[x.adId]?.eff === "ACTIVE").length;
+                                  if (active > ruleCfg.adsetMaxActive) chips.push({ t: `${active} ADS — TOO MANY`, tip: `More than ${ruleCfg.adsetMaxActive} active ads for this budget — designs will starve each other` });
+                                  else if (active && alive < ruleCfg.adsetMinAlive) chips.push({ t: `${alive}/${ruleCfg.adsetMinAlive} ALIVE — ADD DESIGNS`, tip: `Fewer than ${ruleCfg.adsetMinAlive} ALIVE ads — fill the empty slots with new designs` });
+                                }
+                                return chips.map((c) => (
+                                  <span key={c.t} title={c.tip}
+                                    style={{ background: c.red ? "#DC2626" : "#FEF3C7", color: c.red ? "#fff" : "#92400E", borderRadius: 6, padding: "1px 8px", fontSize: 9.5, fontWeight: 800, letterSpacing: ".3px", whiteSpace: "nowrap" }}>
+                                    {c.t}
+                                  </span>
+                                ));
+                              })()}
                               {/* v525 · tạo ads thẳng vào ad set này / nhân bản cả ad set (kèm ads, PAUSED) */}
                               <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}&adsetId=${a.adsetId}&adset=${encodeURIComponent(a.adset)}`}
                                 target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ ...rowBtn, textDecoration: "none" }}>＋ Ads</a>
@@ -583,7 +674,7 @@ export default function AdsCenterClient() {
                         </tr>
                       );
                     })()}
-                    <tr key={a.ad} style={{ borderBottom: "1px solid #F1F3F6" }}>
+                    <tr key={a.ad} style={{ borderBottom: "1px solid #F1F3F6", background: rowBg(a.adId) }}>
                       <td style={{ ...td, textAlign: "left", maxWidth: 360, paddingLeft: 22 }} title={`${a.adset} › ${a.ad}`}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: "100%" }}>
                           {/* v547 · tick ad để gom vào campaign mới (thanh nổi dưới màn hình) */}
@@ -644,16 +735,61 @@ export default function AdsCenterClient() {
                               </a>
                             ) : null;
                           })()}
+                          {/* v570 · badge verdict rule engine — pill chữ, tooltip = lý do đầy đủ */}
+                          {(() => {
+                            const r = ruleOf(a.adId);
+                            if (!r) return null;
+                            const st = V_PILL[r.verdict] ?? { bg: "#EEF1F5", fg: "#5B6472" };
+                            const autoOff = !!r.autoPaused && ent?.ads[a.adId]?.status === "PAUSED" && r.pauseReason === "verdict";
+                            return (
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0 }} onClick={(e) => e.stopPropagation()}>
+                                <span title={r.reason ?? ""}
+                                  style={{ background: st.bg, color: st.fg, borderRadius: 6, padding: "2px 8px", fontSize: 9.5, fontWeight: 800, letterSpacing: ".4px", whiteSpace: "nowrap", lineHeight: "16px", cursor: "default" }}>
+                                  {V_LABEL[r.verdict] ?? r.verdict}
+                                </span>
+                                {autoOff && (
+                                  <span title={r.reason ?? ""} style={{ background: "#111827", color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 9.5, fontWeight: 800, whiteSpace: "nowrap", lineHeight: "16px" }}>AUTO-PAUSED</span>
+                                )}
+                                {autoOff && (
+                                  <button onClick={() => ruleAction("undo:" + a.adId, { action: "undo", adId: a.adId })} disabled={ruleBusy === "undo:" + a.adId}
+                                    title="Turn this ad back ON (the engine will never auto-pause it again)"
+                                    style={{ border: "1px solid #C9D2DE", background: "#fff", color: "#1F2937", borderRadius: 6, padding: "1px 8px", fontSize: 9.5, fontWeight: 800, cursor: "pointer" }}>
+                                    {ruleBusy === "undo:" + a.adId ? "…" : "UNDO"}
+                                  </button>
+                                )}
+                                {r.verdict === "STARVED" && (() => {
+                                  // Rotate = tạm tắt ad TOP-SPEND cùng ad set 48h để nhường impressions — arm 2 bước.
+                                  const sib = ads.filter((x) => x.adsetId === a.adsetId && x.adId !== a.adId && ent?.ads[x.adId]?.eff === "ACTIVE").sort((x, y) => y.spend - x.spend)[0];
+                                  if (!sib) return null;
+                                  const k = "rot:" + a.adId;
+                                  return (
+                                    <button disabled={ruleBusy === k}
+                                      onClick={() => { if (rotArm !== k) { setRotArm(k); setTimeout(() => setRotArm((c) => (c === k ? "" : c)), 4000); return; } setRotArm(""); ruleAction(k, { action: "rotate", adId: sib.adId, adName: sib.ad }); }}
+                                      title={`Pause top-spend sibling "${sib.ad}" (${money(sib.spend)}) for 48h so this ad gets impressions — it turns back ON automatically`}
+                                      style={{ border: "1px solid #F0C36D", background: rotArm === k ? "#B45309" : "#FFF7E6", color: rotArm === k ? "#fff" : "#92400E", borderRadius: 6, padding: "1px 8px", fontSize: 9.5, fontWeight: 800, cursor: "pointer" }}>
+                                      {ruleBusy === k ? "…" : rotArm === k ? "SURE?" : "ROTATE"}
+                                    </button>
+                                  );
+                                })()}
+                              </span>
+                            );
+                          })()}
                         </span>
                       </td>
-                      <td style={{ ...td, fontWeight: 700 }}>{money(a.spend)}</td>
+                      {(() => { const v = ruleOf(a.adId)?.verdict ?? ""; const red = v === "KILL" || v === "MAIN_RED"; return (
+                      <td style={{ ...td, fontWeight: red ? 800 : 700, color: red ? "#DC2626" : "inherit" }}>{money(a.spend)}</td>
+                      ); })()}
                       <td style={td}>{num(a.imp)}</td>
                       <td style={td}>{num(a.lc)}</td>
                       <td style={{ ...td, fontWeight: 700, color: a.imp && 100 * a.lc / a.imp >= 1.5 ? "#1F6F45" : a.imp ? "#B7791F" : "inherit" }}>{a.imp ? (100 * a.lc / a.imp).toFixed(2) + "%" : "—"}</td>
                       <td style={td}>{a.lc ? money(a.spend / a.lc) : "—"}</td>
-                      <td style={td}>{num(a.atc)}</td>
+                      {(() => { const r = ruleOf(a.adId); const red = r?.verdict === "KILL" && r?.phase === "P1" && !a.atc; return (
+                      <td style={{ ...td, ...(red ? { color: "#DC2626", fontWeight: 800 } : {}) }}>{num(a.atc)}</td>
+                      ); })()}
                       <td style={td}>{a.atc ? money(a.spend / a.atc) : "—"}</td>
-                      <td style={{ ...td, fontWeight: 700 }}>{num(a.pur)}</td>
+                      {(() => { const r = ruleOf(a.adId); const red = r?.verdict === "KILL" && r?.phase === "P2" && !a.pur; return (
+                      <td style={{ ...td, fontWeight: 700, ...(red ? { color: "#DC2626", fontWeight: 800 } : {}) }}>{num(a.pur)}</td>
+                      ); })()}
                       <td style={{ ...td, color: a.pur && a.spend / a.pur <= 25 ? "#1F6F45" : "inherit" }}>{a.pur ? money(a.spend / a.pur) : "—"}</td>
                       <td style={td}>{money(a.rev)}</td>
                       <td style={{ ...td, fontWeight: 800, color: a.spend && a.rev / a.spend >= 1.5 ? "#1F6F45" : a.spend && a.rev > 0 ? "#B7791F" : "inherit" }}>{a.spend ? (a.rev / a.spend).toFixed(2) : "—"}</td>

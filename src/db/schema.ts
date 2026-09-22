@@ -460,6 +460,50 @@ export const metaCampaigns = pgTable("meta_campaigns", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 
+// v570 · RULE ENGINE Meta ads — verdict từng ad (WAITING/STARVED/GRACE/ALIVE/KILL/WINNER/CHECK
+// + MAIN_WATCH/MAIN_RED/SCALE_FAST cho camp MAIN; hàng adset-level dùng ad_id = "adset:<id>").
+// Engine chạy trong cron tick (gate 2h), tính trên LIFETIME của ad. Cần MIGRATION_v570_meta_rules.sql
+export const metaRuleState = pgTable("meta_rule_state", {
+  adId: text("ad_id").primaryKey(),
+  verdict: text("verdict").notNull(),
+  phase: text("phase"),                             // P0 / P1 / P2 / MAIN / ADSET
+  reason: text("reason"),                           // 1 câu tooltip (English — UI)
+  metrics: jsonb("metrics"),                        // snapshot {spend,impr,ctr,atc,pur,rev,ageH}
+  since: timestamp("since", { withTimezone: true }).notNull().defaultNow(), // verdict giữ từ lúc nào (buffer P2 12h)
+  autoPaused: boolean("auto_paused").notNull().default(false), // engine đã tự tắt ad này (chỉ 1 lần trọn đời)
+  autoPausedAt: timestamp("auto_paused_at", { withTimezone: true }),
+  pauseReason: text("pause_reason"),                // verdict | rotation
+  resumeAt: timestamp("resume_at", { withTimezone: true }), // rotation: hẹn giờ tự bật lại
+  ruleVersion: text("rule_version"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+export const metaRuleLog = pgTable("meta_rule_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  adId: text("ad_id").notNull(),
+  adName: text("ad_name"),
+  verdict: text("verdict"),
+  action: text("action").notNull(),                 // auto_pause | undo | rotate_pause | rotate_resume
+  metrics: jsonb("metrics"),
+  ruleVersion: text("rule_version"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  idxMetaRuleLogAd: index("idx_meta_rule_log_ad").on(t.adId, t.createdAt),
+}));
+export const metaRuleConfig = pgTable("meta_rule_config", {
+  id: integer("id").primaryKey().default(1),
+  config: jsonb("config"),                          // ngưỡng ($8/$15/$28, CTR 1.5/2%...) — chỉnh số không sửa code
+  engineLastRunAt: timestamp("engine_last_run_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+export const metaBudgetLog = pgTable("meta_budget_log", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  adsetId: text("adset_id").notNull(),
+  budget: numeric("budget", { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  idxMetaBudgetLogAdset: index("idx_meta_budget_log_adset").on(t.adsetId, t.createdAt),
+}));
+
 // v503 · Chủ sở hữu sản phẩm Woo (mirror quy tắc v459 ShopBase cho store share):
 // sản phẩm tạo qua FUSION ghi created_by; không có dòng = coi như admin tạo/sync.
 export const wooProductOwners = pgTable("woo_product_owners", {
