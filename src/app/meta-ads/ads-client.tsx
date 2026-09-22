@@ -46,8 +46,11 @@ export default function AdsCenterClient() {
   // v451 · trạng thái campaign + filter + thu gọn từng campaign (nhớ localStorage).
   const [campStatus, setCampStatus] = useState<Record<string, string>>({});
   // v531 · danh sách đủ campaign từ meta_campaigns — để campaign MỚI (chưa chi tiêu) vẫn hiện trong bảng.
-  const [campList, setCampList] = useState<{ id: string; name: string; status: string }[]>([]);
+  const [campList, setCampList] = useState<{ id: string; name: string; status: string; seller?: string | null }[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("active"); // v540 · mặc định lọc Active
+  // v572 · lọc theo SELLER. Seller của camp = gán tay (DB) > đoán từ tên (token đầu không phải từ khoá).
+  const UNASSIGNED = "(unassigned)";
+  const [sellerFilter, setSellerFilter] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleCamp = (id: string, cur: boolean) => {
     setCollapsed((m) => { const n = { ...m, [id]: !cur }; try { localStorage.setItem("metaads.collapsed", JSON.stringify(n)); } catch { /* ignore */ } return n; });
@@ -84,7 +87,7 @@ export default function AdsCenterClient() {
 
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
   // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
-  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null };
+  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null; seller?: string | null };
   type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt> };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
@@ -413,6 +416,31 @@ export default function AdsCenterClient() {
     return t;
   }, [rows]);
 
+  // ---- v573 · SELLER THEO LISTING SHOPIFY (không theo tên camp) ----
+  // Mỗi ad thuộc về CHỦ LISTING mà creative trỏ tới (shopify_products.created_by — v567).
+  // Route /entities trả sẵn ads[].seller; ad không match được listing → (unassigned).
+  const adSeller = (adId: string) => (ent?.ads[adId]?.seller ?? "").trim();
+  const sellerOptions = useMemo(() => {
+    const s = new Set<string>();
+    for (const a of Object.values(ent?.ads ?? {})) { const n = (a.seller ?? "").trim(); if (n) s.add(n); }
+    return Array.from(s).sort();
+  }, [ent]);
+  // Thống kê theo seller (khoảng ngày đang xem) — khối riêng trên đầu trang, cộng theo TỪNG AD.
+  const sellerStats = useMemo(() => {
+    type S = { seller: string; camps: Set<string>; ads: Set<string>; spend: number; imp: number; lc: number; atc: number; pur: number; rev: number };
+    const m = new Map<string, S>();
+    for (const r of rows) {
+      const key = adSeller(r.adId) || UNASSIGNED;
+      const x = m.get(key) ?? { seller: key, camps: new Set<string>(), ads: new Set<string>(), spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 };
+      x.camps.add(r.campaignId); x.ads.add(r.adId);
+      x.spend += Number(r.spend) || 0; x.imp += r.impressions ?? 0; x.lc += r.linkClicks ?? 0;
+      x.atc += r.atc ?? 0; x.pur += r.purchases ?? 0; x.rev += Number(r.revenue) || 0;
+      m.set(key, x);
+    }
+    return Array.from(m.values()).sort((a, b) => b.spend - a.spend);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, ent]);
+
   const th: React.CSSProperties = { textAlign: "right", padding: "8px 10px", fontSize: 10.5, fontWeight: 800, letterSpacing: ".3px", textTransform: "uppercase", color: "var(--muted)", whiteSpace: "nowrap" };
   const td: React.CSSProperties = { textAlign: "right", padding: "8px 10px", fontSize: 12.5, whiteSpace: "nowrap" };
 
@@ -433,6 +461,13 @@ export default function AdsCenterClient() {
             </button>
           ))}
         </div>
+        {/* v572 · lọc theo seller (nguồn: gán tay + đoán từ tên camp) */}
+        <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Filter campaigns by seller"
+          style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "6px 8px", fontSize: 12, fontWeight: 700, background: sellerFilter ? "#EDF3FF" : "#fff", maxWidth: 170 }}>
+          <option value="">All sellers</option>
+          {sellerOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+          <option value={UNASSIGNED}>(unassigned)</option>
+        </select>
         <span style={{ fontSize: 12, color: "var(--muted)" }}>
           {lastSync ? `Synced ${new Date(lastSync).toLocaleString()}` : "Never synced — hit Sync now"}
         </span>
@@ -477,6 +512,55 @@ export default function AdsCenterClient() {
         ))}
       </div>
 
+      {/* v572 · SPEND BY SELLER — khối thống kê riêng theo seller (khoảng ngày đang xem).
+          Bấm 1 dòng = lọc danh sách campaign bên dưới theo seller đó, bấm lại để bỏ lọc. */}
+      {sellerStats.length > 0 && (
+        <div style={{ ...card, padding: "14px 18px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+            <b style={{ fontSize: 14 }}>Spend by seller</b>
+            <span style={{ fontSize: 11.5, color: "var(--muted)" }}>per-ad, by the OWNER of the Shopify listing each creative links to · click a row to filter the table below</span>
+            {sellerFilter && (
+              <button onClick={() => setSellerFilter("")} style={{ marginLeft: "auto", border: "1px solid var(--line)", background: "#fff", borderRadius: 8, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Clear filter ✕</button>
+            )}
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ borderBottom: "1px solid var(--line)" }}>
+                <th style={{ ...th, textAlign: "left" }}>Seller</th>
+                <th style={th}>Camps</th><th style={th}>Ads</th><th style={th}>Spend</th><th style={th}>% Spend</th>
+                <th style={th}>CTR</th><th style={th}>ATC</th><th style={th}>$/ATC</th><th style={th}>Purch</th><th style={th}>CPA</th><th style={th}>Revenue</th><th style={th}>ROAS</th>
+              </tr></thead>
+              <tbody>
+                {sellerStats.map((s) => {
+                  const key = s.seller;
+                  const on = sellerFilter === key;
+                  const roas = s.spend ? s.rev / s.spend : 0;
+                  return (
+                    <tr key={key} onClick={() => setSellerFilter(on ? "" : key)}
+                      style={{ borderBottom: "1px solid #F1F3F6", cursor: "pointer", background: on ? "#EDF3FF" : undefined }}>
+                      <td style={{ ...td, textAlign: "left", fontWeight: 800 }}>
+                        {key === UNASSIGNED ? <span style={{ color: "var(--muted)", fontWeight: 600 }}>(unassigned)</span> : key}
+                      </td>
+                      <td style={td}>{s.camps.size}</td>
+                      <td style={td}>{s.ads.size}</td>
+                      <td style={{ ...td, fontWeight: 800 }}>{money(s.spend)}</td>
+                      <td style={td}>{totals.spend ? (100 * s.spend / totals.spend).toFixed(0) + "%" : "—"}</td>
+                      <td style={{ ...td, color: s.imp && 100 * s.lc / s.imp >= 1.5 ? "#1F6F45" : "inherit" }}>{s.imp ? (100 * s.lc / s.imp).toFixed(2) + "%" : "—"}</td>
+                      <td style={td}>{num(s.atc)}</td>
+                      <td style={td}>{s.atc ? money(s.spend / s.atc) : "—"}</td>
+                      <td style={{ ...td, fontWeight: 700 }}>{num(s.pur)}</td>
+                      <td style={{ ...td, color: s.pur && s.spend / s.pur <= 25 ? "#1F6F45" : "inherit" }}>{s.pur ? money(s.spend / s.pur) : "—"}</td>
+                      <td style={td}>{money(s.rev)}</td>
+                      <td style={{ ...td, fontWeight: 800, color: s.spend && roas >= 1.5 ? "#1F6F45" : s.spend && s.rev > 0 ? "#B7791F" : "inherit" }}>{s.spend ? roas.toFixed(2) : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* AI result */}
       {ai && (
         <div style={{ ...card, padding: 18, borderColor: "#D8CCFF", background: "#FBFAFF" }}>
@@ -513,12 +597,17 @@ export default function AdsCenterClient() {
       {busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>Loading…</div> : null}
       {!busy && !rows.length ? <div style={{ ...card, padding: 24, textAlign: "center", color: "var(--muted)" }}>No data yet — hit ⟳ Sync now (requires META_SYSTEM_TOKEN env + MIGRATION_v449).</div> : null}
       {grouped.map(([campId, g]) => {
-        const ads = g.ads;
+        // v573 · lọc theo seller Ở CẤP AD (theo chủ listing): campaign chung nhiều seller thì chỉ hiện
+        // phần ads của seller đang lọc — subtotal campaign/ad set cũng chỉ cộng phần đó.
+        const ads = sellerFilter
+          ? g.ads.filter((a) => { const sn = adSeller(a.adId); return sellerFilter === UNASSIGNED ? !sn : sn === sellerFilter; })
+          : g.ads;
         const status = campStatus[campId] ?? "";
         const isActive = status === "ACTIVE";
         // Filter theo trạng thái; campaign không rõ status (chưa sync) chỉ hiện ở All.
         if (statusFilter === "active" && !isActive) return null;
         if (statusFilter === "inactive" && (isActive || !status)) return null;
+        if (sellerFilter && !ads.length) return null; // campaign không có ad nào của seller này
         // Mặc định: campaign đang tắt thì thu gọn sẵn cho đỡ rối.
         const isCollapsed = collapsed[campId] ?? (status ? !isActive : false);
         const ct = ads.reduce((s, a) => ({ spend: s.spend + a.spend, imp: s.imp + a.imp, lc: s.lc + a.lc, atc: s.atc + a.atc, pur: s.pur + a.pur, rev: s.rev + a.rev }), { spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 });

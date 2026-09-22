@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
     ok: true, rows, from, to, lastSyncAt: m?.t ?? null,
     campaignStatus: Object.fromEntries(statuses.map((c) => [c.campaignId, c.status ?? ""])),
     // v531 · danh sách ĐỦ campaign (kể cả campaign mới chưa chi tiêu — không có dòng insights nào)
-    campaignList: statuses.map((c) => ({ id: c.campaignId, name: c.name ?? "", status: c.status ?? "" })),
+    // v572 · kèm seller (gán tay; null = UI tự đoán từ tên)
+    campaignList: statuses.map((c) => ({ id: c.campaignId, name: c.name ?? "", status: c.status ?? "", seller: (c as { seller?: string | null }).seller ?? null })),
   });
 }
 

@@ -457,6 +457,9 @@ export const metaCampaigns = pgTable("meta_campaigns", {
   campaignId: text("campaign_id").primaryKey(),
   name: text("name"),
   status: text("status"),                        // effective_status từ Meta
+  // v572 · SELLER của campaign (gán tay ở Ads Center; NULL = UI tự đoán từ tên camp).
+  // Nguồn cho filter theo seller + khối "Spend by seller". Cần MIGRATION_v572_meta_campaign_seller.sql
+  seller: text("seller"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 

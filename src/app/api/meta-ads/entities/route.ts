@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { db, schema } from "@/lib/db";
+import { eq, inArray } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,6 +44,36 @@ export async function GET() {
       fbList(`${G}/${act}/adsets?fields=id,name,campaign_id,status,effective_status,daily_budget&limit=200`, token),
       fbList(`${G}/${act}/ads?fields=id,name,adset_id,campaign_id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url,object_story_spec}&limit=300`, token),
     ]);
+    // v573 · SELLER từng ad = CHỦ LISTING Shopify mà creative trỏ tới (shopify_products.created_by
+    // — v567). plink → handle → created_by → tên user. Ad video: link nằm trong video_data.call_to_action.
+    type Spec = { link_data?: { link?: string }; video_data?: { call_to_action?: { value?: { link?: string } } } };
+    const plinkOf = (cr: { object_story_spec?: Spec }): string | null =>
+      cr.object_story_spec?.link_data?.link ?? cr.object_story_spec?.video_data?.call_to_action?.value?.link ?? null;
+    const handleOf = (l: string | null): string => {
+      const m = String(l ?? "").match(/\/products\/([^/?#]+)/);
+      try { return m ? decodeURIComponent(m[1]).toLowerCase() : ""; } catch { return m ? m[1].toLowerCase() : ""; }
+    };
+    const sellerByHandle = new Map<string, string>();
+    try {
+      const handles = Array.from(new Set(ads.map((a) => handleOf(plinkOf((a.creative ?? {}) as { object_story_spec?: Spec }))).filter(Boolean)));
+      if (handles.length) {
+        const prods = await db.select({ handle: schema.shopifyProducts.handle, createdBy: schema.shopifyProducts.createdBy })
+          .from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.handle, handles));
+        const uids = Array.from(new Set(prods.map((p) => p.createdBy).filter(Boolean))) as string[];
+        const users = uids.length
+          ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, uids))
+          : [];
+        const nameOf = new Map(users.map((u) => [u.id, u.name]));
+        for (const p of prods) {
+          const h = (p.handle ?? "").toLowerCase();
+          if (h && p.createdBy && !sellerByHandle.has(h)) {
+            const n = nameOf.get(p.createdBy);
+            if (n) sellerByHandle.set(h, n);
+          }
+        }
+      }
+    } catch { /* seller là phụ — lỗi DB không chặn bảng điều khiển */ }
+
     return NextResponse.json({
       ok: true,
       camp: Object.fromEntries(camps.map((c) => [String(c.id), String(c.status ?? "")])),
@@ -49,10 +81,11 @@ export async function GET() {
       campNames: Object.fromEntries(camps.map((c) => [String(c.id), String(c.name ?? "")])),
       adsets: Object.fromEntries(adsets.map((s) => [String(s.id), { status: String(s.status ?? ""), eff: String(s.effective_status ?? ""), budget: (Number(s.daily_budget) || 0) / 100, name: String(s.name ?? ""), campId: String(s.campaign_id ?? "") }])),
       ads: Object.fromEntries(ads.map((a) => {
-        const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string; object_story_spec?: { link_data?: { link?: string } } };
+        const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string; object_story_spec?: Spec };
         // eff = trạng thái HIỆU LỰC (ADSET_PAUSED/CAMPAIGN_PAUSED khi tầng cha tắt) — UI dựng nhãn "tắt theo set".
         // v537 · plink = link đích của creative (talewix.com/products/<handle>) — UI dẫn về Manage Products để sửa listing.
-        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null, name: String(a.name ?? ""), adsetId: String(a.adset_id ?? ""), campId: String(a.campaign_id ?? ""), plink: cr.object_story_spec?.link_data?.link ?? null }];
+        const plink = plinkOf(cr);
+        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null, name: String(a.name ?? ""), adsetId: String(a.adset_id ?? ""), campId: String(a.campaign_id ?? ""), plink, seller: sellerByHandle.get(handleOf(plink)) ?? null }];
       })),
     });
   } catch (e) {
