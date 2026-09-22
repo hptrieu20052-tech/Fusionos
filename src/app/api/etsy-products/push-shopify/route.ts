@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
 
   const results: { id: string; title: string; ok: boolean; error?: string }[] = [];
   let staged = 0;
-  for (const { p } of rows) {
+  for (const { p, storeSeller } of rows) {
     const title = p.shopifyTitle || p.title;
     try {
       // Trùng mẫu với catalog Shopify (từ BẤT KỲ shop/seller nào) → từ chối, trừ khi chính là
@@ -197,6 +197,9 @@ export async function POST(req: NextRequest) {
         personalization: persFields.length ? persFields : null,
         templateId: templateId || null,
         etsyProductId: p.id,
+        // v567 · CHỦ LISTING = seller của shop Etsy nguồn (admin stage hộ thì công vẫn về seller);
+        // không rõ thì người bấm stage. "Của ai người đó thấy" bên Manage Products · Shopify.
+        createdBy: storeSeller ?? session.sub,
         policyRisk: null, policyHits: null, policyCheckedAt: null, // v179: chưa audit — quét bằng AI trước khi Push
         dirty: true,
         updatedAt: new Date(),

@@ -244,9 +244,10 @@ export async function POST(req: NextRequest) {
   const scopeIds = await storeOwnerScopeIds(session);
   const shared = await sharedStoreIds(scopeIds);
   if (scopeIds && rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  // v459 · store SHARE: chỉ xem — thao tác ghi chỉ khi là store CỦA MÌNH (admin/manager không giới hạn).
-  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub)) {
-    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem — chỉ sửa được listing store của bạn" }, { status: 403 });
+  // v567 · store SHARE: seller push được listing MÌNH TẠO (created_by) — rule shopbase.
+  // Listing của người khác / của admin / bản sync không rõ chủ → chỉ admin push.
+  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub && r.p.createdBy !== session.sub)) {
+    return NextResponse.json({ ok: false, error: "forbidden: you can only push listings you created" }, { status: 403 });
   }
 
   // v172b · Template của các bản nháp — cần cho category / collections / sales channels lúc TẠO MỚI.

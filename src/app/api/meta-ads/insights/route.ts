@@ -33,6 +33,25 @@ export async function GET(req: NextRequest) {
   });
 }
 
+// v568 · Trạng thái HIỆU LỰC từng ad từ Graph (effective_status: ACTIVE / PAUSED / ADSET_PAUSED /
+// CAMPAIGN_PAUSED / ARCHIVED...) — để AI CHỈ phân tích ad đang chạy. Lỗi/thiếu token → null (giữ nếp cũ).
+async function fbEffStatuses(): Promise<Map<string, string> | null> {
+  const token = process.env.META_SYSTEM_TOKEN ?? "";
+  const acctRaw = process.env.META_AD_ACCOUNT_ID ?? "";
+  if (!token || !acctRaw) return null;
+  const act = acctRaw.startsWith("act_") ? acctRaw : `act_${acctRaw}`;
+  const out = new Map<string, string>();
+  let next = `https://graph.facebook.com/v23.0/${act}/ads?fields=id,effective_status&limit=300`;
+  for (let p = 0; p < 5 && next; p++) {
+    const res = await fetch(next, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20000) });
+    const j = await res.json().catch(() => ({} as Record<string, unknown>)) as { error?: unknown; data?: { id: string; effective_status?: string }[]; paging?: { next?: string } };
+    if (!res.ok || j.error) return null;
+    for (const a of j.data ?? []) out.set(String(a.id), String(a.effective_status ?? ""));
+    next = j.paging?.next ?? "";
+  }
+  return out;
+}
+
 // ---- Tín hiệu tính bằng CODE (AI chỉ nhận định, không làm số học) ----
 type Agg = {
   ad: string; adset: string; campaign: string; days: number;
@@ -92,6 +111,21 @@ export async function POST(req: NextRequest) {
     revenue: +a.revenue.toFixed(2), roas: a.roas, spendLast3d: +a.spend3.toFixed(2),
   }));
 
+  // v568 · AI CHỈ phân tích ad ĐANG CHẠY. Ad/ad set/campaign đã tắt (dù mới tắt hôm qua) vẫn còn
+  // chi tiêu trong khoảng ngày nên trước đây vẫn vào bảng → AI đề xuất pause ad ĐÃ pause (thừa, gây
+  // nhiễu — phản hồi 22/9). Lấy effective_status THẬT; Graph lỗi → phân tích như cũ, không chặn.
+  let analyzed = table;
+  let excluded: { count: number; spend: number } | null = null;
+  const eff = await fbEffStatuses().catch(() => null);
+  if (eff) {
+    const live = table.filter((r) => (eff.get(r.adId) ?? "") === "ACTIVE");
+    if (live.length && live.length < table.length) {
+      const dead = table.filter((r) => (eff.get(r.adId) ?? "") !== "ACTIVE");
+      analyzed = live;
+      excluded = { count: dead.length, spend: +dead.reduce((s, r) => s + r.spend, 0).toFixed(2) };
+    }
+  }
+
   const system = [
     "Bạn là chuyên gia tối ưu Meta ads cho POD/e-commerce (AOV sản phẩm ~$25-45, sách cá nhân hoá trẻ em).",
     "Bạn nhận BẢNG SỐ ĐÃ TÍNH SẴN (không tự tính lại số học). Nguyên tắc:",
@@ -102,11 +136,15 @@ export async function POST(req: NextRequest) {
     "- Ad có campaignStatus KHÁC ACTIVE = campaign đã tắt: chỉ dùng làm dữ liệu tham khảo, TUYỆT ĐỐI không đề xuất pause/raise/lower cho các ad này (đề xuất là thừa).",
     'Trả JSON đúng schema: {"summary": string (3-6 câu tiếng Việt, tổng quan), "winners": string[], "losers": string[], "actions": [{"ad": string, "adId": string (copy NGUYÊN VĂN từ bảng), "adsetId": string (copy NGUYÊN VĂN), "action": "keep"|"pause"|"raise_budget"|"lower_budget"|"new_creative"|"watch", "reason": string (1-2 câu tiếng Việt)}], "nextTest": string (1-3 câu gợi ý test tiếp)}',
   ].join("\n");
-  const user = `Khoảng ${from} → ${to}. Bảng số liệu từng ad (đã cộng dồn):\n${JSON.stringify(table)}`;
+  const user = `Khoảng ${from} → ${to}. Bảng số liệu từng ad ĐANG CHẠY (đã cộng dồn${excluded ? `; đã loại ${excluded.count} ad ĐÃ TẮT khỏi bảng — chúng tiêu $${excluded.spend} trong khoảng này, chỉ nhắc trong tổng quan nếu cần, KHÔNG đề xuất hành động cho chúng` : ""}):\n${JSON.stringify(analyzed)}`;
 
   try {
     const out = await orChatJSON<Record<string, unknown>>(system, user, { model, maxTokens: 2200, temperature: 0.3, timeoutMs: 50000, reasoning: "low" });
-    return NextResponse.json({ ok: true, from, to, table, ai: out });
+    // v568 · lưới an toàn: bỏ action AI lỡ viết cho ad không nằm trong bảng đang chạy.
+    const liveIds = new Set(analyzed.map((r) => r.adId));
+    const acts = (out as { actions?: { adId?: string }[] }).actions;
+    if (Array.isArray(acts)) (out as { actions?: { adId?: string }[] }).actions = acts.filter((a) => !a?.adId || liveIds.has(String(a.adId)));
+    return NextResponse.json({ ok: true, from, to, table: analyzed, ai: out });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error).message).slice(0, 300) }, { status: 400 });
   }

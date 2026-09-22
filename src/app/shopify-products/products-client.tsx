@@ -11,6 +11,7 @@ type Store = { id: string; name: string; sellerId: string | null; sellerName: st
 type Seller = { id: string; name: string };
 type Row = {
   id: string; storeId: string; storeName: string | null; sellerName: string | null;
+  createdBy?: string | null; creatorName?: string | null; // v567 · chủ listing (created_by)
   title: string; handle: string | null; status: string; dirty: boolean;
   variantCount: number; minPrice: number | null; maxPrice: number | null;
   mainImage: string | null; imageCount: number; imageUrls?: string[]; onlineStoreUrl: string | null;
@@ -544,17 +545,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
 
   // v548 · lọc theo seller THẬT của từng LISTING (store share nhiều seller): seller nguồn Etsy của
   // listing (badge cam) → fallback seller của store. Trước đây lọc theo chủ STORE nên store chung vô dụng.
-  const sellerOptions = useMemo(() => Array.from(new Set(rows.map((r) => (r.etsyListing?.seller || r.sellerName || "").trim()).filter(Boolean))).sort(), [rows]);
+  const sellerOptions = useMemo(() => Array.from(new Set(rows.map((r) => (r.creatorName || r.etsyListing?.seller || r.sellerName || "").trim()).filter(Boolean))).sort(), [rows]);
   const showSellerFilter = sellerOptions.length > 1 || sellers.length > 1;
   const storesForFilter = stores;
   // Danh sách giá trị distinct cho 3 filter (theo store đang lọc nếu có)
-  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && (!sellerFilter || (r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter)), [rows, storeFilter, sellerFilter]);
+  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && (!sellerFilter || (r.creatorName || r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter)), [rows, storeFilter, sellerFilter]);
   const typeOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.productType).filter(Boolean))).sort(), [scopeRows]);
   const categoryOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.categoryName).filter(Boolean))).sort(), [scopeRows]);
   const collectionOptions = useMemo(() => Array.from(new Set(scopeRows.flatMap((r) => r.collectionTitles ?? []).filter(Boolean))).sort(), [scopeRows]);
   const statusOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => (r.status || "").toUpperCase()).filter(Boolean))).sort(), [scopeRows]);
   const filtered = useMemo(() => rows.filter((r) =>
-    (!sellerFilter || (r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter) &&
+    (!sellerFilter || (r.creatorName || r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (!typeFilter || (typeFilter === "__none__" ? !(r.productType ?? "").trim() : r.productType === typeFilter)) &&
     (!categoryFilter || (categoryFilter === "__none__" ? !(r.categoryName ?? "").trim() : r.categoryName === categoryFilter)) &&
@@ -1944,7 +1945,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     <span style={{ opacity: .55 }}>ID</span> {r.id}
                   </div>
                 </td>
-                <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.sellerName ?? "—"}</div>
+                <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.creatorName ?? r.sellerName ?? "—"}</div>
                   {/* v203 · chip Etsy giờ là LINK — click mở listing gốc bên Manage Products · Etsy (thay nút Etsy ở Actions) */}
                   {r.etsyListing && (r.etsyListing.store || r.etsyListing.seller) && (
                     <a href={`/etsy-products?pid=${encodeURIComponent(r.etsyListing.id)}`} target="_blank" rel="noreferrer"

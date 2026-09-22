@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, desc, or, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
+import { storeOwnerScopeIds, sharedStoreIds, adminUserIds } from "@/lib/scope";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,12 @@ export async function GET(req: NextRequest) {
       .where(eq(schema.shopifyProducts.id, id)).limit(1);
     if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     if (scopeIds && !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId)))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    // v567 · "của ai người đó thấy" (rule shopbase v459): seller chỉ mở listing MÌNH tạo, listing
+    // do admin tạo/sync, hoặc listing chưa rõ chủ. Store của chính mình → thấy hết như cũ.
+    if (session.role !== "admin" && scopeIds && r.storeSeller !== session.sub && r.p.createdBy && r.p.createdBy !== session.sub) {
+      const admins = await adminUserIds();
+      if (!admins.includes(r.p.createdBy)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    }
     return NextResponse.json({ ok: true, product: { ...r.p, storeName: r.storeName, videoCode: r.videoCode, videoTitle: r.videoTitle, videoThumbUrl: r.videoThumbUrl } });
   }
 
@@ -43,7 +49,20 @@ export async function GET(req: NextRequest) {
     .leftJoin(schema.productVideos, eq(schema.productVideos.id, schema.shopifyProducts.videoId))
     .orderBy(desc(schema.shopifyProducts.updatedAt));
 
-  const scoped = scopeIds ? rows.filter((r) => (r.storeSeller && scopeIds.includes(r.storeSeller)) || shared.includes(r.p.storeId ?? "")) : rows;
+  let scoped = scopeIds ? rows.filter((r) => (r.storeSeller && scopeIds.includes(r.storeSeller)) || shared.includes(r.p.storeId ?? "")) : rows;
+  // v567 · Store share nhiều seller: "của ai người đó thấy" (rule shopbase v459). Seller thấy:
+  // listing MÌNH tạo + listing do ADMIN tạo/sync + listing chưa rõ chủ (created_by NULL — bản sync).
+  // Store của CHÍNH MÌNH → thấy hết như cũ. Admin/manager không giới hạn.
+  if (session.role !== "admin" && scopeIds) {
+    const admins = await adminUserIds();
+    scoped = scoped.filter((r) => r.storeSeller === session.sub || !r.p.createdBy || r.p.createdBy === session.sub || admins.includes(r.p.createdBy));
+  }
+  // v567 · Tên người tạo từng listing (cột/filter Seller lọc theo CHỦ LISTING, không phải chủ store)
+  const creatorIds = Array.from(new Set(scoped.map((r) => r.p.createdBy).filter(Boolean))) as string[];
+  const creators = creatorIds.length
+    ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, creatorIds))
+    : [];
+  const creatorById = new Map(creators.map((c) => [c.id, c.name]));
 
   // v181 · Listing Etsy GỐC của từng sản phẩm (để nút "Etsy" nhảy về Manage Products · Etsy):
   //   - flow mới (v172): shopify_products.etsy_product_id
@@ -117,6 +136,9 @@ export async function GET(req: NextRequest) {
     const tplHasFacts = !!(tpl && ((tpl.baseDescription ?? "").trim() || (tpl.productDetails ?? "").trim() || (tpl.shippingInfo ?? "").trim()));
     return {
       id: r.p.id, storeId: r.p.storeId, storeName: r.storeName, sellerName: r.sellerName,
+      // v567 · chủ listing (created_by) — filter Seller lọc theo người này khi có
+      createdBy: r.p.createdBy ?? null,
+      creatorName: r.p.createdBy ? (creatorById.get(r.p.createdBy) ?? null) : null,
       title: r.p.title, handle: r.p.handle, status: r.p.status, dirty: r.p.dirty,
       productType: r.p.productType ?? "",
       categoryName: (r.p.category as { name?: string } | null)?.name ?? "",
@@ -181,15 +203,18 @@ export async function PATCH(req: NextRequest) {
   const id = String(b?.id ?? "").trim();
   if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
-  const [r] = await db.select({ storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id })
+  const [r] = await db.select({ storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id, createdBy: schema.shopifyProducts.createdBy })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
   if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
   const shared = await sharedStoreIds(scopeIds);
   if (scopeIds && !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId)))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  // v459 · store share: chỉ xem — sửa chỉ khi là store CỦA MÌNH.
-  if (session.role !== "admin" && scopeIds && r.storeSeller !== session.sub) return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem" }, { status: 403 });
+  // v567 · store share: seller sửa được listing MÌNH TẠO (rule shopbase v435); listing của người
+  // khác / của admin / bản sync không rõ chủ → chỉ admin sửa. Store của mình → sửa hết như cũ.
+  if (session.role !== "admin" && scopeIds && r.storeSeller !== session.sub && r.createdBy !== session.sub) {
+    return NextResponse.json({ ok: false, error: "forbidden: this listing was created by someone else — only its creator or an admin can edit it" }, { status: 403 });
+  }
 
   const patch: Record<string, unknown> = { dirty: true, updatedAt: new Date() };
   if (typeof b.title === "string" && b.title.trim()) patch.title = b.title.trim();
@@ -218,12 +243,14 @@ export async function DELETE(req: NextRequest) {
   const scopeIds = await storeOwnerScopeIds(session);
   const shared = await sharedStoreIds(scopeIds);
   if (scopeIds) {
-    const rows = await db.select({ id: schema.shopifyProducts.id, seller: schema.stores.sellerId, sStoreId: schema.stores.id })
+    const rows = await db.select({ id: schema.shopifyProducts.id, seller: schema.stores.sellerId, sStoreId: schema.stores.id, createdBy: schema.shopifyProducts.createdBy })
       .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
       .where(inArray(schema.shopifyProducts.id, ids));
     if (rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-    // v459 · store share: không xoá listing store người khác.
-    if (session.role !== "admin" && rows.some((r) => r.seller !== session.sub)) return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem" }, { status: 403 });
+    // v567 · store share: seller chỉ xoá listing MÌNH TẠO; của người khác/admin/bản sync → chỉ admin.
+    if (session.role !== "admin" && rows.some((r) => r.seller !== session.sub && r.createdBy !== session.sub)) {
+      return NextResponse.json({ ok: false, error: "forbidden: you can only delete listings you created" }, { status: 403 });
+    }
   }
   await db.delete(schema.shopifyProducts).where(inArray(schema.shopifyProducts.id, ids));
   return NextResponse.json({ ok: true, deleted: ids.length });

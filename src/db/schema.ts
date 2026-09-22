@@ -311,6 +311,10 @@ export const shopifyProducts = pgTable("shopify_products", {
   videoMediaId: text("video_media_id"),            // GID media video trên Shopify của RIÊNG listing này
   videoPushedAt: timestamp("video_pushed_at", { withTimezone: true }),
   etsyProductId: uuid("etsy_product_id"),
+  // v567 · Ai stage/tạo listing này (users.id) — store Shopify dùng CHUNG nhiều seller nên áp
+  // "của ai người đó thấy" như shopbase (v459) / woo. NULL = bản sync / không rõ người tạo →
+  // mọi seller trong store đều thấy, chỉ admin sửa. Cần MIGRATION_v567_shopify_created_by.sql
+  createdBy: uuid("created_by"),
   // v177 · Policy & Trademark scan (src/lib/policy-scan.ts) — lưới an toàn cửa Shopify.
   // risk: clean/medium/high (NULL = chưa quét) · hits: [{term, field, severity}]
   // HIGH bị CHẶN ở nút Push. Cần MIGRATION_v177_policy_scan.sql
