@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DateRangePicker, { rangeToDates, RangeValue } from "@/components/date-range";
+import { MetaLogo } from "@/components/meta-logo";
 
 /**
  * v449 · Meta Ads Center — đọc bảng meta_insights (cron đồng bộ nền), gộp theo campaign → ad,
@@ -90,7 +91,7 @@ export default function AdsCenterClient() {
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
   // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
   type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null; seller?: string | null; post?: string | null };
-  type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt> };
+  type Ent = { camp: Record<string, string>; campBudget?: Record<string, number>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt> };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
     try {
@@ -99,7 +100,7 @@ export default function AdsCenterClient() {
         // Chịu được cả shape cũ (id → status string) lẫn mới (id → {status, thumb, img}) — an toàn lúc deploy lệch nhịp.
         const ads: Record<string, AdEnt> = {};
         for (const [k, v] of Object.entries((j.ads ?? {}) as Record<string, unknown>)) ads[k] = typeof v === "string" ? { status: v } : (v as AdEnt);
-        setEnt({ camp: j.camp ?? {}, adsets: j.adsets ?? {}, ads });
+        setEnt({ camp: j.camp ?? {}, campBudget: j.campBudget ?? {}, adsets: j.adsets ?? {}, ads });
       }
     } catch { /* điều khiển là phụ — lỗi không chặn bảng số */ }
   }, []);
@@ -414,6 +415,21 @@ export default function AdsCenterClient() {
   const adIsOff = (adId: string) => { const e = ent?.ads[adId]; return !!e && e.eff !== "ACTIVE"; };
   // v579 · thu gọn từng AD SET (mũi tên ▼ như campaign) — ẩn toàn bộ hàng ads, giữ hàng subtotal.
   const [adsetFold, setAdsetFold] = useState<Record<string, boolean>>({});
+  // v587 · Publish to Page: đăng caption + link sản phẩm của ad thành BÀI CÔNG KHAI trên page
+  // (Meta không cho publish ngược dark post). Arm 2 bước vì là hành động công khai.
+  const [pubArm, setPubArm] = useState("");
+  const [pubBusy, setPubBusy] = useState("");
+  const publishToPage = async (adId: string) => {
+    if (pubBusy) return;
+    if (pubArm !== adId) { setPubArm(adId); setTimeout(() => setPubArm((c) => (c === adId ? "" : c)), 4000); return; }
+    setPubArm(""); setPubBusy(adId); setErr("");
+    try {
+      const j = await fetch("/api/meta-ads/publish-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adId }) }).then((r) => r.json());
+      if (j.ok) setErr(`✓ Published to the Page as a public post${j.url ? ` — ${j.url}` : ""}. To pool engagement, run new ads on THIS post (Dup ad → Exact copy from an ad using it).`);
+      else setErr("✗ " + (j.error ?? "Publish failed"));
+    } catch (e) { setErr("✗ " + String((e as Error).message)); }
+    setPubBusy("");
+  };
   // v584 · bấm chip post = copy FULL post id vào clipboard (soi trùng/search trên Facebook).
   const [copiedPost, setCopiedPost] = useState("");
   const copyText = (t: string) => {
@@ -524,10 +540,8 @@ export default function AdsCenterClient() {
       <div style={{ ...card, padding: "12px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
         {/* Hàng 1 · view & filters */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          {/* v586 · logo Meta = public/marketplaces/meta.png (anh tự thêm file logo chính thức như các sàn khác) */}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/marketplaces/meta.png" alt="" width={22} height={22} style={{ width: 22, height: 22, objectFit: "contain", flexShrink: 0 }}
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          {/* v587 · logo Meta (dò file trước — chưa có public/marketplaces/meta.png thì không render gì, hết ảnh vỡ) */}
+          <MetaLogo size={22} />
           <b style={{ fontSize: 17, whiteSpace: "nowrap" }}>Meta Ads Center</b>
           {/* v574 · tab Ads / By seller — thống kê seller tách trang riêng */}
           <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
@@ -740,6 +754,20 @@ export default function AdsCenterClient() {
                   {isActive ? "ACTIVE" : status}
                 </span>
               )}
+              {/* v588 · TỔNG NGÂN SÁCH/NGÀY của campaign — CBO lấy budget campaign, không CBO = cộng
+                  budget các ad set ĐANG BẬT bên trong. Nhìn hàng ngang là cân đối được tiền giữa các camp. */}
+              {ent && (() => {
+                const cbo = ent.campBudget?.[campId] ?? 0;
+                const setSum = Object.values(ent.adsets).filter((s2) => s2.campId === campId && s2.status === "ACTIVE").reduce((t2, s2) => t2 + (s2.budget || 0), 0);
+                const total = cbo || setSum;
+                if (!total) return null;
+                return (
+                  <span title={cbo ? "Campaign budget (CBO — Meta spreads it across ad sets)" : "Total daily budget = sum of this campaign's ACTIVE ad sets"}
+                    style={{ fontSize: 11, fontWeight: 800, padding: "2px 10px", borderRadius: 999, background: "#EDF3FF", color: "#1D4ED8", whiteSpace: "nowrap" }}>
+                    ${total % 1 ? total.toFixed(2) : total}/day{cbo ? " · CBO" : ""}
+                  </span>
+                );
+              })()}
               <span style={{ fontSize: 12, color: "var(--muted)" }}>
                 {ads.length ? `${ads.length} ads · ${money(ct.spend)} · ${ct.pur} purchases${ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}` : "newly created — no spend in this date range yet"}
               </span>
@@ -963,6 +991,14 @@ export default function AdsCenterClient() {
                               </span>
                             );
                           })()}
+                          {/* v587 · đăng nội dung ad này thành BÀI CÔNG KHAI trên page (arm 2 bước) */}
+                          {ent?.ads[a.adId]?.post && (
+                            <button onClick={(e) => { e.stopPropagation(); publishToPage(a.adId); }} disabled={pubBusy === a.adId}
+                              title="Publish this ad's caption + product link as a PUBLIC post on the Page (Meta cannot publish the ad's dark post itself). Then run new ads on that post to pool engagement."
+                              style={{ border: "1px solid #C9D2DE", background: pubArm === a.adId ? "#B45309" : "#fff", color: pubArm === a.adId ? "#fff" : "#5B6472", borderRadius: 5, padding: "1px 7px", fontSize: 9, fontWeight: 800, letterSpacing: ".3px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px" }}>
+                              {pubBusy === a.adId ? "…" : pubArm === a.adId ? "SURE?" : "→ PAGE"}
+                            </button>
+                          )}
                           {/* v570 · badge verdict rule engine — pill chữ, tooltip = lý do đầy đủ */}
                           {(() => {
                             const r = ruleOf(a.adId);

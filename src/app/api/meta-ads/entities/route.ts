@@ -40,7 +40,7 @@ export async function GET() {
   try {
     // v532 · kèm name + campaign_id/adset_id — để UI dựng CẤU TRÚC ad set/ads cho campaign mới chưa chi tiêu.
     const [camps, adsets, ads] = await Promise.all([
-      fbList(`${G}/${act}/campaigns?fields=id,name,status&limit=200`, token),
+      fbList(`${G}/${act}/campaigns?fields=id,name,status,daily_budget&limit=200`, token),
       fbList(`${G}/${act}/adsets?fields=id,name,campaign_id,status,effective_status,daily_budget&limit=200`, token),
       fbList(`${G}/${act}/ads?fields=id,name,adset_id,campaign_id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url,object_story_spec,effective_object_story_id}&limit=300`, token),
     ]);
@@ -63,7 +63,7 @@ export async function GET() {
         const users = uids.length
           ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, uids))
           : [];
-        const nameOf = new Map(users.map((u) => [u.id, u.name]));
+        const nameOf = new Map<string, string | null>(users.map((u) => [u.id, u.name]));
         for (const p of prods) {
           const h = (p.handle ?? "").toLowerCase();
           if (h && p.createdBy && !sellerByHandle.has(h)) {
@@ -79,6 +79,8 @@ export async function GET() {
       camp: Object.fromEntries(camps.map((c) => [String(c.id), String(c.status ?? "")])),
       // v541 · tên campaign — cho dropdown chọn campaign/ad set trong Meta Ads Kit.
       campNames: Object.fromEntries(camps.map((c) => [String(c.id), String(c.name ?? "")])),
+      // v588 · budget CẤP CAMPAIGN (CBO, USD/ngày) — 0 = camp không CBO (budget nằm ở ad set).
+      campBudget: Object.fromEntries(camps.map((c) => [String(c.id), (Number(c.daily_budget) || 0) / 100])),
       adsets: Object.fromEntries(adsets.map((s) => [String(s.id), { status: String(s.status ?? ""), eff: String(s.effective_status ?? ""), budget: (Number(s.daily_budget) || 0) / 100, name: String(s.name ?? ""), campId: String(s.campaign_id ?? "") }])),
       ads: Object.fromEntries(ads.map((a) => {
         const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string; object_story_spec?: Spec; effective_object_story_id?: string };

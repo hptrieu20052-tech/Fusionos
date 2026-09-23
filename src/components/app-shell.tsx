@@ -8,6 +8,7 @@ import {
 } from "@/components/icons";
 import { useLang } from "@/components/lang-provider";
 import { AmazonLogo } from "@/components/amazon-logo";
+import { MetaLogo } from "@/components/meta-logo";
 import { SHOPBASE_LOGO_SRC } from "@/components/shopbase-logo";
 import { WOO_LOGO_SRC } from "@/components/woo-logo";
 
@@ -230,9 +231,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
     // thiếu file → onError rơi về icon loa cũ, menu không bị trống.
     ...(user.role === "admin" ? [{
       t: "link", href: "/meta-ads", label: "Meta Ads",
-      /* eslint-disable-next-line @next/next/no-img-element */
-      icon: <img src="/marketplaces/meta.png" alt="" width={16} height={16} style={{ width: 16, height: 16, objectFit: "contain", display: "block" }}
-        onError={(e) => { const el = e.target as HTMLImageElement; el.outerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v3"/><path d="M7 9v7"/><path d="M18 4 7 9v7l11 5V4Z"/><path d="M20 10a2 2 0 0 1 0 4"/></svg>'; }} />,
+      icon: <MetaLogo size={16} fallback={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg>} />,
     }] as HubNode[] : []),
     ...(canProducts ? [{
       t: "link", href: "/stats/products", label: "Product Sales",
@@ -410,8 +409,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
                     { href: "/tiktok-templates", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Templates Tiktok" },
                   ] : []),
                   ...(user.role === "admin" ? [
-                    /* eslint-disable-next-line @next/next/no-img-element */
-                    { href: "/meta-ads", icon: <img src="/marketplaces/meta.png" alt="" width={18} height={18} style={{ width: 18, height: 18, objectFit: "contain", display: "block" }} />, label: "Meta Ads Center" },
+                    { href: "/meta-ads", icon: <MetaLogo size={18} fallback={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg>} />, label: "Meta Ads Center" },
                   ] : []),
                   ...(canProducts ? [
                     { href: "/stats/products", icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="21" x2="21" y2="21" /><rect x="5" y="11" width="3.5" height="7" /><rect x="10.25" y="7" width="3.5" height="11" /><rect x="15.5" y="4" width="3.5" height="14" /></svg>, label: "Product Sales" },
@@ -492,8 +490,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
             )}
             {!hasDesigns && user.role === "admin" && (
               <Link href="/meta-ads" prefetch className={`mobile-nav-item${isActive("/meta-ads") ? " active" : ""}`}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <span className="topnav-ic"><img src="/marketplaces/meta.png" alt="" width={18} height={18} style={{ width: 18, height: 18, objectFit: "contain", display: "block" }} /></span>
+                <span className="topnav-ic"><MetaLogo size={18} fallback={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg>} /></span>
                 Meta Ads Center
               </Link>
             )}
