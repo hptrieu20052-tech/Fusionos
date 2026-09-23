@@ -68,7 +68,7 @@ export async function GET() {
       rawOf.set(String(a.id), { plink: plinkOf(cr), post: cr.effective_object_story_id ?? null });
     }
     const byPost = new Map<string, string>();
-    for (const r of rawOf.values()) if (r.post && r.plink && !byPost.has(r.post)) byPost.set(r.post, r.plink);
+    rawOf.forEach((r) => { if (r.post && r.plink && !byPost.has(r.post)) byPost.set(r.post, r.plink); });
     const missing = Array.from(new Set(Array.from(rawOf.values()).filter((r) => r.post && !r.plink && !byPost.has(r.post)).map((r) => r.post as string))).slice(0, 50);
     if (missing.length) {
       try {

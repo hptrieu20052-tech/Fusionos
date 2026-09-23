@@ -655,7 +655,7 @@ export default function AdsCenterClient() {
               <thead><tr style={{ borderBottom: "1px solid var(--line)" }}>
                 <th style={{ ...th, textAlign: "left" }}>Seller</th>
                 <th style={th}>Camps</th><th style={th}>Ads</th><th style={th}>Spend</th><th style={th}>% Spend</th>
-                <th style={th}>CTR</th><th style={th}>ATC</th><th style={th}>$/ATC</th><th style={th}>Purch</th><th style={th}>CPA</th><th style={th}>Revenue</th><th style={th}>ROAS</th>
+                <th style={th}>CPM</th><th style={th}>CTR</th><th style={th}>ATC</th><th style={th}>$/ATC</th><th style={th}>Purch</th><th style={th}>CPA</th><th style={th}>Revenue</th><th style={th}>ROAS</th>
               </tr></thead>
               <tbody>
                 {sellerStats.map((s) => {
@@ -673,6 +673,7 @@ export default function AdsCenterClient() {
                       <td style={td}>{s.ads.size}</td>
                       <td style={{ ...td, fontWeight: 800 }}>{money(s.spend)}</td>
                       <td style={td}>{totals.spend ? (100 * s.spend / totals.spend).toFixed(0) + "%" : "—"}</td>
+                      <td style={{ ...td, color: s.imp ? (1000 * s.spend / s.imp <= 25 ? "#1F6F45" : 1000 * s.spend / s.imp >= 50 ? "#B7791F" : "inherit") : "inherit" }}>{s.imp ? money(1000 * s.spend / s.imp) : "—"}</td>
                       <td style={{ ...td, color: s.imp && 100 * s.lc / s.imp >= 1.5 ? "#1F6F45" : "inherit" }}>{s.imp ? (100 * s.lc / s.imp).toFixed(2) + "%" : "—"}</td>
                       <td style={td}>{num(s.atc)}</td>
                       <td style={td}>{s.atc ? money(s.spend / s.atc) : "—"}</td>
@@ -824,7 +825,7 @@ export default function AdsCenterClient() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead><tr style={{ borderBottom: "1px solid var(--line)" }}>
                   <th style={{ ...th, textAlign: "left" }}>Ad</th>
-                  <th style={th}>Spend</th><th style={th}>Impr</th><th style={th}>Link clicks</th><th style={th}>CTR</th><th style={th}>CPC</th>
+                  <th style={th}>Spend</th><th style={th}>Impr</th><th style={th}>CPM</th><th style={th}>Link clicks</th><th style={th}>CTR</th><th style={th}>CPC</th>
                   <th style={th}>ATC</th><th style={th}>$/ATC</th><th style={th}>Purch</th><th style={th}>CPA</th><th style={th}>Revenue</th><th style={th}>ROAS</th>
                 </tr></thead>
                 <tbody>
@@ -832,10 +833,10 @@ export default function AdsCenterClient() {
                     {/* v454 · hàng AD SET — hiện khi bắt đầu nhóm mới, kèm subtotal của cả set. */}
                     {(ai === 0 || ads[ai - 1].adset !== a.adset) && (() => {
                       const grp = ads.filter((x) => x.adset === a.adset);
-                      const gs = grp.reduce((s2, x) => ({ spend: s2.spend + x.spend, atc: s2.atc + x.atc, pur: s2.pur + x.pur, rev: s2.rev + x.rev }), { spend: 0, atc: 0, pur: 0, rev: 0 });
+                      const gs = grp.reduce((s2, x) => ({ spend: s2.spend + x.spend, imp: s2.imp + x.imp, atc: s2.atc + x.atc, pur: s2.pur + x.pur, rev: s2.rev + x.rev }), { spend: 0, imp: 0, atc: 0, pur: 0, rev: 0 });
                       return (
                         <tr key={"set-" + a.adset} style={{ background: "#F7F9FC", borderBottom: "1px solid #EDF0F4" }}>
-                          <td colSpan={12} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 800, color: "#5B6472" }}>
+                          <td colSpan={13} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 800, color: "#5B6472" }}>
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
                               {/* v579 · thu gọn/xổ ad set này (như mũi tên campaign) */}
                               <span onClick={(e) => { e.stopPropagation(); setAdsetFold((s) => ({ ...s, [a.adsetId]: !s[a.adsetId] })); }}
@@ -887,7 +888,7 @@ export default function AdsCenterClient() {
                                 </span>
                               ))}
                               <span style={{ fontWeight: 600, color: "var(--muted)" }}>
-                                {grp.length} ad{grp.length > 1 ? "s" : ""} · {money(gs.spend)} · {gs.atc} ATC · {gs.pur} purch{gs.spend ? ` · ROAS ${(gs.rev / gs.spend).toFixed(2)}` : ""}
+                                {grp.length} ad{grp.length > 1 ? "s" : ""} · {money(gs.spend)}{gs.imp ? ` · CPM ${money(1000 * gs.spend / gs.imp)}` : ""} · {gs.atc} ATC · {gs.pur} purch{gs.spend ? ` · ROAS ${(gs.rev / gs.spend).toFixed(2)}` : ""}
                               </span>
                               {/* v578 · nút xổ/thu ads ĐÃ TẮT của ad set này (mặc định ẩn cho gọn bảng) */}
                               {(() => {
@@ -1077,6 +1078,8 @@ export default function AdsCenterClient() {
                       <td style={{ ...td, fontWeight: red ? 800 : 700, color: red ? "#DC2626" : "inherit" }}>{money(a.spend)}</td>
                       ); })()}
                       <td style={td}>{num(a.imp)}</td>
+                      {/* v594 · CPM = chi phí / 1000 impressions — xanh khi rẻ (≤$25), cam khi đắt (≥$50: audience hẹp/creative bị phạt) */}
+                      <td style={{ ...td, color: a.imp ? (1000 * a.spend / a.imp <= 25 ? "#1F6F45" : 1000 * a.spend / a.imp >= 50 ? "#B7791F" : "inherit") : "inherit" }}>{a.imp ? money(1000 * a.spend / a.imp) : "—"}</td>
                       <td style={td}>{num(a.lc)}</td>
                       <td style={{ ...td, fontWeight: 700, color: a.imp && 100 * a.lc / a.imp >= 1.5 ? "#1F6F45" : a.imp ? "#B7791F" : "inherit" }}>{a.imp ? (100 * a.lc / a.imp).toFixed(2) + "%" : "—"}</td>
                       <td style={td}>{a.lc ? money(a.spend / a.lc) : "—"}</td>
