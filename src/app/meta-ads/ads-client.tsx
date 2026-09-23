@@ -937,7 +937,11 @@ export default function AdsCenterClient() {
                     {!adsetFold[a.adsetId] && (!adIsOff(a.adId) || showOff[a.adsetId]) && (
                     <tr key={a.ad} style={{ borderBottom: "1px solid #F1F3F6", background: rowBg(a.adId) }}>
                       <td style={{ ...td, textAlign: "left", maxWidth: 360, paddingLeft: 22 }} title={`${a.adset} › ${a.ad}`}>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: "100%" }}>
+                        {/* v595 · bố cục 2 TẦNG — tầng 1: công tắc · thumb · TÊN AD · Dup; tầng 2 (ngay dưới
+                            title): SHOPIFY · post id · PAGE · verdict. Trước đây xếp 1 hàng nên ad nhiều
+                            badge (STARVED + ROTATE) tràn đè lên cột Spend. */}
+                        <span style={{ display: "flex", alignItems: "flex-start", gap: 7, maxWidth: "100%" }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flexShrink: 0, marginTop: 1 }}>
                           {/* v547 · tick ad để gom vào campaign mới (thanh nổi dưới màn hình) */}
                           <input type="checkbox" checked={adSel.has(a.adId)} onChange={() => toggleAdSel(a.adId)} onClick={(e) => e.stopPropagation()}
                             title="Select to group into a NEW campaign (multiple ads, across ad sets)"
@@ -971,6 +975,10 @@ export default function AdsCenterClient() {
                               title="View creative full size"
                               style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9" }} />
                           )}
+                          </span>
+                          {/* v595 · cột phải: tầng 1 = tên + Dup; tầng 2 = các badge, thẳng hàng dưới title */}
+                          <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, flex: 1 }}>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 7, minWidth: 0 }}>
                           {/* v533 · đổi tên ad — sửa inline */}
                           {renEdit?.kind === "ad" && renEdit.id === a.adId ? (
                             <span onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -991,6 +999,10 @@ export default function AdsCenterClient() {
                             style={{ ...dupBtn, flexShrink: 0, opacity: dupBusy === "ad:" + a.adId ? 0.5 : 1 }}>
                             {dupBusy === "ad:" + a.adId ? "…" : "⧉ Dup ad"}
                           </button>
+                          </span>
+                          {/* v595 · tầng 2 — badge dưới title (wrap được, không đè cột số) */}
+                          {(ent?.ads[a.adId]?.plink || ent?.ads[a.adId]?.post || ruleOf(a.adId)) && (
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>
                           {/* v537 · mở đúng listing bên Manage Products · Shopify để sửa (suy từ link đích của creative) — v538 style badge SHOPIFY, mở tab mới */}
                           {(() => {
                             const l = ent?.ads[a.adId]?.plink ?? "";
@@ -1072,6 +1084,9 @@ export default function AdsCenterClient() {
                               </span>
                             );
                           })()}
+                          </span>
+                          )}
+                          </span>
                         </span>
                       </td>
                       {(() => { const v = ruleOf(a.adId)?.verdict ?? ""; const red = v === "KILL" || v === "MAIN_RED"; return (
