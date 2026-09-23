@@ -127,7 +127,29 @@ export async function GET(req: NextRequest) {
     for (const r of oc) if (r.pid) orderCountByPid.set(r.pid, Number(r.n));
   } catch { /* bảng trống / lỗi → để 0 */ }
 
+  // v596 · Số đơn ETSY của listing GỐC — cột tham khảo khi chọn design đưa vào ads (demand đã
+  // chứng minh bên Etsy). etsy_products KHÔNG lưu listing id số bên Etsy nên không join id được;
+  // khớp theo TITLE chuẩn hoá (lower + gộp khoảng trắng) của order item Etsy ↔ title listing Etsy
+  // gốc đã link (v181). Title Etsy dài & đặc thù nên trùng giả gần như không có. Không loại đơn
+  // 'new' như cột Shopify: đây là tổng demand lịch sử, chỉ bỏ cancel/trash.
+  const etsyOrderByTitle = new Map<string, number>();
+  try {
+    const ec = (await db.execute(sql`
+      SELECT lower(regexp_replace(trim(oi.product_title), '\\s+', ' ', 'g')) AS t,
+             count(DISTINCT oi.order_id)::int AS n
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      WHERE o.platform = 'etsy' AND o.status NOT IN ('cancel','trash')
+      GROUP BY 1
+    `)).rows as { t: string; n: number }[];
+    for (const r of ec) if (r.t) etsyOrderByTitle.set(r.t, Number(r.n));
+  } catch { /* bảng trống / lỗi → để 0 */ }
+  const normT = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+
   const list = scoped.map((r) => {
+    // v596 · resolve link Etsy MỘT lần — dùng cho cả etsyListing (v181) lẫn đếm đơn Etsy.
+    const eln = (r.p.etsyProductId ? etsyById.get(r.p.etsyProductId) : undefined)
+      ?? (r.p.shopifyProductId ? etsyByGid.get(r.p.shopifyProductId) : undefined);
     const vs = (Array.isArray(r.p.variants) ? r.p.variants as Variant[] : []);
     const prices = vs.map((v) => Number(v.price)).filter((n) => !isNaN(n) && n > 0);
     const imgs = (Array.isArray(r.p.images) ? r.p.images as Img[] : []);
@@ -158,11 +180,7 @@ export async function GET(req: NextRequest) {
       policyRisk: r.p.policyRisk ?? null,
       policyCheckedAt: r.p.policyCheckedAt,
       // v181 · Listing Etsy gốc (null = không có / đã xoá bên Manage Etsy)
-      etsyListing: (() => {
-        const e = (r.p.etsyProductId ? etsyById.get(r.p.etsyProductId) : undefined)
-          ?? (r.p.shopifyProductId ? etsyByGid.get(r.p.shopifyProductId) : undefined);
-        return e ? { id: e.id, title: e.title, store: e.storeName ?? "", seller: e.sellerName ?? "" } : null;
-      })(),
+      etsyListing: eln ? { id: eln.id, title: eln.title, store: eln.storeName ?? "", seller: eln.sellerName ?? "" } : null,
       policyHitsSummary: Array.isArray(r.p.policyHits)
         ? (r.p.policyHits as { term: string; field: string }[]).slice(0, 6).map((h) => `"${h.term}" (${h.field})`).join(", ")
         : "",
@@ -189,6 +207,9 @@ export async function GET(req: NextRequest) {
       amz: amzSet.has(r.p.id),
       // v381 · số đơn đã bán của listing (khớp theo phần số của shopify_product_id).
       orders: (() => { const d = String(r.p.shopifyProductId ?? "").replace(/\D/g, ""); return d ? (orderCountByPid.get(d) ?? 0) : 0; })(),
+      // v596 · số đơn ETSY (tham khảo): title listing Etsy gốc; không có link thì thử chính title Shopify
+      // (listing tạo tay nhưng trùng title với listing Etsy cũ vẫn khớp được).
+      etsyOrders: etsyOrderByTitle.get(normT(eln?.title ?? "")) ?? etsyOrderByTitle.get(normT(r.p.title)) ?? 0,
     };
   });
   return NextResponse.json({ ok: true, rows: list });

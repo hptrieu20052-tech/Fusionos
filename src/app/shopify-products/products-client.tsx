@@ -36,6 +36,7 @@ type Row = {
   adsAt: string | null;
   // v381: số đơn đã bán của listing.
   orders: number;
+  etsyOrders: number; // v596 · đơn của listing Etsy GỐC (tham khảo — khớp theo title)
 };
 type SelOpt = { name: string; value: string };
 type Variant = { id: string; title: string; selectedOptions: SelOpt[]; price: string; compareAtPrice: string | null; sku: string; inventoryQty: number | null; barcode: string; inventoryItemId?: string | null };
@@ -236,6 +237,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [videoFilter, setVideoFilter] = useState<"" | "has" | "no">(""); // listing có / không có video
   const [adsFilter, setAdsFilter] = useState<"" | "ran" | "not">("");    // v456 · đã / chưa chạy Meta ads (ads_at)
   const [sortOrders, setSortOrders] = useState(false); // v381 · sắp xếp theo SỐ ĐƠN giảm dần (top seller)
+  const [sortEtsy, setSortEtsy] = useState(false);     // v596 · sắp xếp theo ĐƠN ETSY gốc — chọn design cho ads
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(20);
   const [syncStore, setSyncStore] = useState(stores[0]?.id ?? "");
@@ -574,9 +576,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     (!kw.trim() || (r.title + " " + (r.handle ?? "") + " " + (r.id ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
   ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, adsFilter, pidFilter, stores]);
   // v381 · Sắp xếp theo SỐ ĐƠN giảm dần khi bật (top seller → tối ưu trước). Tắt → giữ thứ tự server.
-  const sorted = useMemo(() => sortOrders ? [...filtered].sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0)) : filtered, [filtered, sortOrders]);
+  const sorted = useMemo(() => sortEtsy ? [...filtered].sort((a, b) => (b.etsyOrders ?? 0) - (a.etsyOrders ?? 0)) : sortOrders ? [...filtered].sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0)) : filtered, [filtered, sortOrders, sortEtsy]);
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, adsFilter, sortOrders, pageSize]);
+  useEffect(() => { setPage(1); }, [kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, adsFilter, sortOrders, sortEtsy, pageSize]);
   const pageC = Math.min(page, totalPages);
   const paged = useMemo(() => sorted.slice((pageC - 1) * pageSize, pageC * pageSize), [sorted, pageC, pageSize]);
   // Trong danh sách đang chọn: đã chạy AI (selDone), chưa chạy (selTodo), đã sửa chưa Push (selDirty).
@@ -1937,15 +1939,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               <th style={{ padding: "10px 8px", textAlign: "left", width: "8%" }}>Collections</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Template</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 175 }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
-              <th onClick={() => setSortOrders((v) => !v)} title="Orders sold · click to sort high → low" style={{ padding: "10px 8px", textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
+              <th onClick={() => { setSortOrders((v) => !v); setSortEtsy(false); }} title="Orders sold · click to sort high → low" style={{ padding: "10px 8px", textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
+              {/* v596 · đơn của listing ETSY gốc — tham khảo để chọn design đưa vào ads (khớp theo title) */}
+              <th onClick={() => { setSortEtsy((v) => !v); setSortOrders(false); }} title="Orders of the ORIGINAL Etsy listing (reference, matched by title) · click to sort high → low" style={{ padding: "10px 8px", textAlign: "right", width: 56, cursor: "pointer", userSelect: "none", color: sortEtsy ? "#B45309" : "#C77B3B" }}>Etsy{sortEtsy ? " ↓" : " ⇅"}</th>
               <th style={{ padding: "10px 8px", textAlign: "right", width: 84 }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 70 }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right", width: 84 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={13} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Pick a store, then hit <b>Sync from Shopify</b>.</td></tr>}
+            {loading && <tr><td colSpan={14} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={14} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Pick a store, then hit <b>Sync from Shopify</b>.</td></tr>}
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
@@ -2059,6 +2063,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   </div>
                 </td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 13, fontWeight: r.orders > 0 ? 800 : 400, color: r.orders > 0 ? "#14213D" : "var(--faint)" }} title="Orders sold">{r.orders > 0 ? r.orders : "–"}</td>
+                {/* v596 · đơn Etsy gốc — tone cam, số NHẠT (chỉ tham khảo, không phải doanh số Shopify) */}
+                <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12.5, fontWeight: r.etsyOrders > 0 ? 600 : 400, color: r.etsyOrders > 0 ? "#C77B3B" : "var(--faint)", opacity: r.etsyOrders > 0 ? 0.85 : 1 }} title="Orders of the original Etsy listing (reference)">{r.etsyOrders > 0 ? r.etsyOrders : "–"}</td>
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12 }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
                 {/* v203 · Actions gọn như Shopify admin: 👁 = xem trên storefront · Push (khi có sửa).
