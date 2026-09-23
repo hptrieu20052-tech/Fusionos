@@ -409,6 +409,8 @@ export default function AdsCenterClient() {
   // Meta (đã xoá nhưng có spend trong khoảng ngày) vẫn hiện — không có gì để bật/tắt nữa.
   const [showOff, setShowOff] = useState<Record<string, boolean>>({});
   const adIsOff = (adId: string) => { const e = ent?.ads[adId]; return !!e && e.eff !== "ACTIVE"; };
+  // v579 · thu gọn từng AD SET (mũi tên ▼ như campaign) — ẩn toàn bộ hàng ads, giữ hàng subtotal.
+  const [adsetFold, setAdsetFold] = useState<Record<string, boolean>>({});
   // Nền dòng: KILL/MAIN_RED đỏ nhạt · GRACE/STARVED/CHECK/MAIN_WATCH vàng nhạt — liếc 1 giây là thấy.
   const rowBg = (adId: string): string | undefined => {
     const v = ruleOf(adId)?.verdict ?? "";
@@ -494,61 +496,69 @@ export default function AdsCenterClient() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Header */}
-      <div style={{ ...card, padding: "14px 18px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <b style={{ fontSize: 17 }}>📣 Meta Ads Center</b>
-        {/* v574 · tab Ads / By seller — thống kê seller tách trang riêng */}
-        <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
-          {([["ads", "Ads"], ["sellers", "By seller"]] as const).map(([k, label]) => (
-            <button key={k} onClick={() => setView(k)}
-              style={{ border: "none", borderRadius: 8, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                background: view === k ? "#fff" : "transparent", color: view === k ? "var(--ink)" : "var(--muted)",
-                boxShadow: view === k ? "0 1px 2px rgba(16,24,40,.12)" : "none" }}>
-              {label}
-            </button>
-          ))}
+      {/* Header — v579 · 2 hàng theo logic dùng: hàng 1 = XEM GÌ (tab · ngày · lọc), hàng 2 = LÀM GÌ (hành động) */}
+      <div style={{ ...card, padding: "12px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
+        {/* Hàng 1 · view & filters */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <b style={{ fontSize: 17, whiteSpace: "nowrap" }}>📣 Meta Ads Center</b>
+          {/* v574 · tab Ads / By seller — thống kê seller tách trang riêng */}
+          <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
+            {([["ads", "Ads"], ["sellers", "By seller"]] as const).map(([k, label]) => (
+              <button key={k} onClick={() => setView(k)}
+                style={{ border: "none", borderRadius: 8, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  background: view === k ? "#fff" : "transparent", color: view === k ? "var(--ink)" : "var(--muted)",
+                  boxShadow: view === k ? "0 1px 2px rgba(16,24,40,.12)" : "none" }}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <DateRangePicker value={dr} onChange={setDr} />
+          {/* v451 · lọc campaign theo trạng thái thật từ Meta */}
+          <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
+            {(["all", "active", "inactive"] as const).map((f) => (
+              <button key={f} onClick={() => setStatusFilter(f)}
+                style={{ border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                  background: statusFilter === f ? "#fff" : "transparent", color: statusFilter === f ? "var(--ink)" : "var(--muted)",
+                  boxShadow: statusFilter === f ? "0 1px 2px rgba(16,24,40,.12)" : "none" }}>
+                {f === "all" ? "All" : f === "active" ? "Active" : "Inactive"}
+              </button>
+            ))}
+          </div>
+          {/* v573 · lọc theo seller (chủ listing Shopify của từng ad) */}
+          <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Filter ads by seller (owner of the Shopify listing)"
+            style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "6px 8px", fontSize: 12, fontWeight: 700, background: sellerFilter ? "#EDF3FF" : "#fff", maxWidth: 170 }}>
+            <option value="">All sellers</option>
+            {sellerOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            <option value={UNASSIGNED}>(unassigned)</option>
+          </select>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap" }}>
+            {lastSync ? `Synced ${new Date(lastSync).toLocaleString()}` : "Never synced — hit Sync now"}
+          </span>
         </div>
-        <DateRangePicker value={dr} onChange={setDr} />
-        {/* v451 · lọc campaign theo trạng thái thật từ Meta */}
-        <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
-          {(["all", "active", "inactive"] as const).map((f) => (
-            <button key={f} onClick={() => setStatusFilter(f)}
-              style={{ border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                background: statusFilter === f ? "#fff" : "transparent", color: statusFilter === f ? "var(--ink)" : "var(--muted)",
-                boxShadow: statusFilter === f ? "0 1px 2px rgba(16,24,40,.12)" : "none" }}>
-              {f === "all" ? "All" : f === "active" ? "Active" : "Inactive"}
-            </button>
-          ))}
-        </div>
-        {/* v572 · lọc theo seller (nguồn: gán tay + đoán từ tên camp) */}
-        <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Filter campaigns by seller"
-          style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "6px 8px", fontSize: 12, fontWeight: 700, background: sellerFilter ? "#EDF3FF" : "#fff", maxWidth: 170 }}>
-          <option value="">All sellers</option>
-          {sellerOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-          <option value={UNASSIGNED}>(unassigned)</option>
-        </select>
-        <span style={{ fontSize: 12, color: "var(--muted)" }}>
-          {lastSync ? `Synced ${new Date(lastSync).toLocaleString()}` : "Never synced — hit Sync now"}
-        </span>
-        <span style={{ flex: 1 }} />
-        <a href="/shopify-products?adskit=1&newcamp=1" target="_blank" rel="noopener noreferrer" style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>＋ New campaign</a>
-        <button onClick={syncNow} disabled={syncBusy} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: syncBusy ? .6 : 1 }}>
-          {syncBusy ? "Syncing…" : "⟳ Sync now"}
-        </button>
-        {/* v570 · chạy rule engine ngay (bình thường tự chạy nền 2h/lần trong cron) */}
-        <button onClick={() => ruleAction("run", { action: "run" })} disabled={ruleBusy === "run"}
-          title={`Re-score every ad now (engine auto-runs every ~2h in the background)${ruleRunAt ? ` — last run ${new Date(ruleRunAt).toLocaleString()}` : ""}`}
-          style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: ruleBusy === "run" ? .6 : 1 }}>
-          {ruleBusy === "run" ? "Scoring…" : "Run rules"}
-        </button>
-        <select value={aiModel} onChange={(e) => pickModel(e.target.value)} title="AI model"
-          style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "7px 8px", fontSize: 12.5, background: "#fff", maxWidth: 190 }}>
-          <option value="">Model: server default</option>
-          {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-        </select>
-        <button onClick={analyze} disabled={aiBusy || !rows.length} style={{ border: "none", background: "#7C5CFF", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: aiBusy || !rows.length ? .6 : 1 }}>
+        {/* Hàng 2 · actions: tạo (trái) · dữ liệu (phải) · AI (phải cùng) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <a href="/shopify-products?adskit=1&newcamp=1" target="_blank" rel="noopener noreferrer" style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>＋ New campaign</a>
+          <span style={{ flex: 1 }} />
+          <button onClick={syncNow} disabled={syncBusy} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: syncBusy ? .6 : 1 }}>
+            {syncBusy ? "Syncing…" : "⟳ Sync now"}
+          </button>
+          {/* v570 · chạy rule engine ngay (bình thường tự chạy nền 2h/lần trong cron) */}
+          <button onClick={() => ruleAction("run", { action: "run" })} disabled={ruleBusy === "run"}
+            title={`Re-score every ad now (engine auto-runs every ~2h in the background)${ruleRunAt ? ` — last run ${new Date(ruleRunAt).toLocaleString()}` : ""}`}
+            style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: ruleBusy === "run" ? .6 : 1 }}>
+            {ruleBusy === "run" ? "Scoring…" : "Run rules"}
+          </button>
+          <span style={{ width: 1, alignSelf: "stretch", background: "var(--line)", margin: "2px 4px" }} />
+          <select value={aiModel} onChange={(e) => pickModel(e.target.value)} title="AI model"
+            style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "7px 8px", fontSize: 12.5, background: "#fff", maxWidth: 190 }}>
+            <option value="">Model: server default</option>
+            {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+          <button onClick={analyze} disabled={aiBusy || !rows.length} style={{ border: "none", background: "#7C5CFF", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: aiBusy || !rows.length ? .6 : 1 }}>
           {aiBusy ? "Analyzing…" : "🤖 AI Analyze"}
-        </button>
+          </button>
+        </div>
       </div>
       {err && <div style={{ ...card, padding: "10px 16px", borderColor: "#F5CFCF", background: "#FDECEC", color: "#C0392B", fontSize: 13, fontWeight: 600 }}>{err}</div>}
 
@@ -745,6 +755,10 @@ export default function AdsCenterClient() {
                         <tr key={"set-" + a.adset} style={{ background: "#F7F9FC", borderBottom: "1px solid #EDF0F4" }}>
                           <td colSpan={12} style={{ padding: "6px 10px", fontSize: 11, fontWeight: 800, color: "#5B6472" }}>
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+                              {/* v579 · thu gọn/xổ ad set này (như mũi tên campaign) */}
+                              <span onClick={(e) => { e.stopPropagation(); setAdsetFold((s) => ({ ...s, [a.adsetId]: !s[a.adsetId] })); }}
+                                title={adsetFold[a.adsetId] ? "Expand this ad set" : "Collapse this ad set"}
+                                style={{ cursor: "pointer", fontSize: 10, color: "var(--muted)", transform: adsetFold[a.adsetId] ? "rotate(-90deg)" : "none", transition: "transform .12s", width: 12, display: "inline-block", textAlign: "center", flexShrink: 0 }}>▼</span>
                               {/* v547 · tick cả AD SET — chọn/bỏ toàn bộ ads bên trong */}
                               <input type="checkbox" checked={grp.every((x) => adSel.has(x.adId))}
                                 onChange={() => setAdSel((s) => { const n = new Set(s); const all = grp.every((x) => n.has(x.adId)); grp.forEach((x) => { if (all) n.delete(x.adId); else n.add(x.adId); }); return n; })}
@@ -837,7 +851,7 @@ export default function AdsCenterClient() {
                         </tr>
                       );
                     })()}
-                    {(!adIsOff(a.adId) || showOff[a.adsetId]) && (
+                    {!adsetFold[a.adsetId] && (!adIsOff(a.adId) || showOff[a.adsetId]) && (
                     <tr key={a.ad} style={{ borderBottom: "1px solid #F1F3F6", background: rowBg(a.adId) }}>
                       <td style={{ ...td, textAlign: "left", maxWidth: 360, paddingLeft: 22 }} title={`${a.adset} › ${a.ad}`}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: "100%" }}>
