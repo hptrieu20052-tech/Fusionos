@@ -411,6 +411,21 @@ export default function AdsCenterClient() {
   const adIsOff = (adId: string) => { const e = ent?.ads[adId]; return !!e && e.eff !== "ACTIVE"; };
   // v579 · thu gọn từng AD SET (mũi tên ▼ như campaign) — ẩn toàn bộ hàng ads, giữ hàng subtotal.
   const [adsetFold, setAdsetFold] = useState<Record<string, boolean>>({});
+  // v580 · số ads trong từng ad set (đang chạy/tổng) — hiện trong dropdown chọn ad set đích
+  // của Move/Dup để biết set nào đầy set nào vơi mà chia cho đều.
+  const adsetCounts = useMemo(() => {
+    const m = new Map<string, { on: number; total: number }>();
+    for (const a of Object.values(ent?.ads ?? {})) {
+      const sid = a.adsetId ?? "";
+      if (!sid || a.status === "ARCHIVED" || a.status === "DELETED") continue;
+      const c = m.get(sid) ?? { on: 0, total: 0 };
+      c.total++;
+      if (a.eff === "ACTIVE") c.on++;
+      m.set(sid, c);
+    }
+    return m;
+  }, [ent]);
+  const setCountLabel = (id: string) => { const c = adsetCounts.get(id); return c ? ` · ${c.on}/${c.total} ads` : " · 0 ads"; };
   // Nền dòng: KILL/MAIN_RED đỏ nhạt · GRACE/STARVED/CHECK/MAIN_WATCH vàng nhạt — liếc 1 giây là thấy.
   const rowBg = (adId: string): string | undefined => {
     const v = ruleOf(adId)?.verdict ?? "";
@@ -1014,7 +1029,7 @@ export default function AdsCenterClient() {
                 .sort((x, y) => ((x[1].status === "ACTIVE" ? 0 : 1) - (y[1].status === "ACTIVE" ? 0 : 1)) || String(x[1].name ?? "").localeCompare(String(y[1].name ?? "")))
                 .map(([id, s]) => {
                   const cn = bulkMv.camp ? "" : (campList.find((c) => c.id === s.campId)?.name ?? "");
-                  return <option key={id} value={id}>{(s.status === "ACTIVE" ? "🟢 " : "⏸ ") + (s.name || id) + (s.budget ? ` · $${s.budget}/d` : "") + (cn ? ` · ${cn}` : "")}</option>;
+                  return <option key={id} value={id}>{(s.status === "ACTIVE" ? "🟢 " : "⏸ ") + (s.name || id) + (s.budget ? ` · $${s.budget}/d` : "") + setCountLabel(id) + (cn ? ` · ${cn}` : "")}</option>;
                 })}
             </select>
             <label style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: "#5B6472", cursor: "pointer" }}>
@@ -1066,7 +1081,7 @@ export default function AdsCenterClient() {
                       .sort((x, y) => ((x[1].status === "ACTIVE" ? 0 : 1) - (y[1].status === "ACTIVE" ? 0 : 1)) || String(x[1].name ?? "").localeCompare(String(y[1].name ?? "")))
                       .map(([id, s]) => {
                         const cn = campList.find((c) => c.id === s.campId)?.name ?? "";
-                        return <option key={id} value={id}>{(s.status === "ACTIVE" ? "🟢 " : "⏸ ") + (s.name || id) + (s.budget ? ` · $${s.budget}/d` : "") + (cn ? ` · ${cn}` : "")}</option>;
+                        return <option key={id} value={id}>{(s.status === "ACTIVE" ? "🟢 " : "⏸ ") + (s.name || id) + (s.budget ? ` · $${s.budget}/d` : "") + setCountLabel(id) + (cn ? ` · ${cn}` : "")}</option>;
                       })}
                   </select>
                 ) : (
