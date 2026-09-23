@@ -89,7 +89,7 @@ export default function AdsCenterClient() {
 
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
   // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
-  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null; seller?: string | null };
+  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null; seller?: string | null; post?: string | null };
   type Ent = { camp: Record<string, string>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt> };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
@@ -292,7 +292,9 @@ export default function AdsCenterClient() {
                 offNote = p.ok ? " Original ad turned OFF." : " ⚠ Could not turn off the original — do it manually.";
               } catch { offNote = " ⚠ Could not turn off the original — do it manually."; }
             }
-            setErr(`✓ Ad duplicated${j.id ? ` (#${j.id})` : ""} — PAUSED (turn it on after review).${offNote} Hit ⟳ Sync now to see it.`);
+            // v582 · keptPost=false = Meta không cho tái dùng post gốc → bản sao mang POST MỚI, báo rõ.
+            const postNote = j.keptPost === false ? " ⚠ Original post could NOT be reused — this copy has a NEW post (no social proof)." : " Post & social proof carried over.";
+            setErr(`✓ Ad duplicated${j.id ? ` (#${j.id})` : ""} — PAUSED (turn it on after review).${postNote}${offNote} Hit ⟳ Sync now to see it.`);
             setDupForm(null); loadEnt();
           }
           else setErr("✗ " + (j.error ?? "Dup failed"));
@@ -359,7 +361,7 @@ export default function AdsCenterClient() {
     const ids = Array.from(adSel);
     if (!ids.length) { setBulkMv(null); return; }
     setErr("");
-    let ok = 0; const fails: string[] = [];
+    let ok = 0, newPost = 0; const fails: string[] = [];
     for (let i = 0; i < ids.length; i++) {
       setBulkBusy(`${i + 1}/${ids.length}`);
       try {
@@ -367,6 +369,7 @@ export default function AdsCenterClient() {
           body: JSON.stringify({ kind: "ad", id: ids[i], adsetId: bulkMv.adset }) }).then((r) => r.json());
         if (j.ok) {
           ok++;
+          if (j.keptPost === false) newPost++; // v582 · post gốc không tái dùng được → bản sao post mới
           // MOVE: copy xong tắt gốc — lỗi tắt không phá copy (Sync xong tắt tay được)
           if (bulkMv.moveOff) await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "set_status", id: ids[i], status: "PAUSED" }) }).then((r) => r.json()).catch(() => null);
@@ -375,7 +378,7 @@ export default function AdsCenterClient() {
     }
     setBulkBusy("");
     const tgt = ent?.adsets[bulkMv.adset]?.name || bulkMv.adset;
-    setErr(`${fails.length ? "⚠" : "✓"} ${ok}/${ids.length} ad(s) copied into "${tgt}" — PAUSED (keep posts/social proof)${bulkMv.moveOff ? "; originals turned OFF" : ""}. Hit ⟳ Sync now, review, then enable.${fails.length ? ` First error: ${fails[0]}` : ""}`);
+    setErr(`${fails.length || newPost ? "⚠" : "✓"} ${ok}/${ids.length} ad(s) copied into "${tgt}" — PAUSED${newPost ? `; ${ok - newPost} kept their post, ${newPost} got a NEW post (original not reusable)` : "; posts & social proof carried over"}${bulkMv.moveOff ? "; originals turned OFF" : ""}. Hit ⟳ Sync now, review, then enable.${fails.length ? ` First error: ${fails[0]}` : ""}`);
     setBulkMv(null); setAdSel(new Set()); loadEnt();
   };
   const renOkBtn: React.CSSProperties = { border: "none", background: "#16A34A", color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, cursor: "pointer" };
@@ -927,6 +930,19 @@ export default function AdsCenterClient() {
                                 ⬆ SHOPIFY
                               </a>
                             ) : null;
+                          })()}
+                          {/* v581 · POST ID (đuôi 6 số) — ads CÙNG mã = cùng post/social proof (dup giữ post);
+                              khác mã = creative khác (kit push tạo post mới). Tooltip có mã đầy đủ. */}
+                          {(() => {
+                            const po = ent?.ads[a.adId]?.post ?? "";
+                            if (!po) return null;
+                            const tail = po.split("_").pop() ?? po;
+                            return (
+                              <span title={`Facebook post ${po} — ads showing the SAME code share one post (likes/comments carry); a different code means a different creative/post`}
+                                style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, fontWeight: 700, color: "#6B7280", background: "#F3F4F6", border: "1px solid #E5E7EB", borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px", cursor: "default" }}>
+                                P·{tail.slice(-6)}
+                              </span>
+                            );
                           })()}
                           {/* v570 · badge verdict rule engine — pill chữ, tooltip = lý do đầy đủ */}
                           {(() => {

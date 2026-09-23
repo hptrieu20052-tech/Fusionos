@@ -42,7 +42,7 @@ export async function GET() {
     const [camps, adsets, ads] = await Promise.all([
       fbList(`${G}/${act}/campaigns?fields=id,name,status&limit=200`, token),
       fbList(`${G}/${act}/adsets?fields=id,name,campaign_id,status,effective_status,daily_budget&limit=200`, token),
-      fbList(`${G}/${act}/ads?fields=id,name,adset_id,campaign_id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url,object_story_spec}&limit=300`, token),
+      fbList(`${G}/${act}/ads?fields=id,name,adset_id,campaign_id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url,object_story_spec,effective_object_story_id}&limit=300`, token),
     ]);
     // v573 · SELLER từng ad = CHỦ LISTING Shopify mà creative trỏ tới (shopify_products.created_by
     // — v567). plink → handle → created_by → tên user. Ad video: link nằm trong video_data.call_to_action.
@@ -81,11 +81,13 @@ export async function GET() {
       campNames: Object.fromEntries(camps.map((c) => [String(c.id), String(c.name ?? "")])),
       adsets: Object.fromEntries(adsets.map((s) => [String(s.id), { status: String(s.status ?? ""), eff: String(s.effective_status ?? ""), budget: (Number(s.daily_budget) || 0) / 100, name: String(s.name ?? ""), campId: String(s.campaign_id ?? "") }])),
       ads: Object.fromEntries(ads.map((a) => {
-        const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string; object_story_spec?: Spec };
+        const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string; object_story_spec?: Spec; effective_object_story_id?: string };
         // eff = trạng thái HIỆU LỰC (ADSET_PAUSED/CAMPAIGN_PAUSED khi tầng cha tắt) — UI dựng nhãn "tắt theo set".
         // v537 · plink = link đích của creative (talewix.com/products/<handle>) — UI dẫn về Manage Products để sửa listing.
+        // v581 · post = effective_object_story_id — 2 ads cùng post là cùng social proof (dup giữ post);
+        // khác post = creative khác (kit push tạo post mới). UI hiện đuôi mã để soi ngay trên bảng.
         const plink = plinkOf(cr);
-        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null, name: String(a.name ?? ""), adsetId: String(a.adset_id ?? ""), campId: String(a.campaign_id ?? ""), plink, seller: sellerByHandle.get(handleOf(plink)) ?? null }];
+        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null, name: String(a.name ?? ""), adsetId: String(a.adset_id ?? ""), campId: String(a.campaign_id ?? ""), plink, seller: sellerByHandle.get(handleOf(plink)) ?? null, post: cr.effective_object_story_id ?? null }];
       })),
     });
   } catch (e) {

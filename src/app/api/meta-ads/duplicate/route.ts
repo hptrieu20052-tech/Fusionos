@@ -35,11 +35,45 @@ async function fb(path: string, token: string, body?: Record<string, unknown>): 
   return j as Record<string, unknown>;
 }
 
+/**
+ * v582 · COPY AD GIỮ NGUYÊN POST. Phát hiện 23/9 (2 post trùng nội dung trên page): /copies của
+ * Meta TẠO LẠI creative với ad inline (object_story_spec) → Facebook sinh POST MỚI, mất social proof.
+ * Cách chuẩn "giữ post ID": tạo creative mới trỏ THẲNG object_story_id = post của ad gốc rồi dựng ad
+ * từ creative đó — like/comment/share theo 100%. Không lấy được post id → fallback /copies như cũ
+ * (kept=false, UI cảnh báo).
+ */
+async function copyAdKeepPost(token: string, act: string, aid: string, adsetId: string, name?: string): Promise<{ id: string; kept: boolean }> {
+  let post = "", ig = "", srcName = "", srcAdset = "";
+  try {
+    const src = await fb(`${aid}?fields=name,adset_id,creative{effective_object_story_id,instagram_actor_id}`, token);
+    srcName = String(src.name ?? "");
+    srcAdset = String(src.adset_id ?? "");
+    const cr = (src.creative ?? {}) as { effective_object_story_id?: string; instagram_actor_id?: string };
+    post = String(cr.effective_object_story_id ?? "");
+    ig = String(cr.instagram_actor_id ?? "");
+  } catch { /* đọc không được → fallback /copies */ }
+  const target = adsetId || srcAdset;
+  if (post && act && target) {
+    try {
+      let nc: Record<string, unknown>;
+      // instagram_actor_id giữ placement IG của post gốc; Meta từ chối field này → thử lại không kèm.
+      try { nc = await fb(`${act}/adcreatives`, token, { object_story_id: post, ...(ig ? { instagram_actor_id: ig } : {}) }); }
+      catch { nc = await fb(`${act}/adcreatives`, token, { object_story_id: post }); }
+      const ad = await fb(`${act}/ads`, token, { name: (name ?? "").trim() || srcName || `Ad ${aid} - Copy`, adset_id: target, creative: { creative_id: String(nc.id) }, status: "PAUSED" });
+      if (ad.id) return { id: String(ad.id), kept: true };
+    } catch { /* rơi xuống /copies */ }
+  }
+  const r = await fb(`${aid}/copies`, token, { status_option: "PAUSED", ...(adsetId ? { adset_id: adsetId } : {}) });
+  return { id: String(r.copied_ad_id ?? ""), kept: false };
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const token = process.env.META_SYSTEM_TOKEN ?? "";
   if (!token) return NextResponse.json({ ok: false, error: "Meta API not configured" }, { status: 400 });
+  const acctRaw = process.env.META_AD_ACCOUNT_ID ?? "";
+  const act = acctRaw ? (acctRaw.startsWith("act_") ? acctRaw : `act_${acctRaw}`) : "";
 
   const b = await req.json().catch(() => null) as { kind?: string; id?: string; campaignId?: string; adsetId?: string; name?: string; budget?: number; deep?: boolean; startTime?: string; adIds?: unknown[] } | null;
   const kind = b?.kind === "ad" ? "ad" : b?.kind === "adset" ? "adset" : b?.kind === "campaign" ? "campaign" : "";
@@ -80,25 +114,26 @@ export async function POST(req: NextRequest) {
       }
       let patchWarn = "";
       if (Object.keys(patch).length) await fb(newId, token, patch).catch((e: Error) => { patchWarn = `Copied, but rename/budget/schedule update failed: ${String(e.message).slice(0, 120)} — fix manually in Ads Manager.`; });
-      // v551 · copy TỪNG ad được chọn vào bản sao (giữ nguyên creative/post) — PAUSED hết.
-      let copied = 0;
+      // v551 · copy TỪNG ad được chọn vào bản sao — PAUSED hết.
+      // v582 · giữ post THẬT: creative mới trỏ object_story_id của ad gốc (xem copyAdKeepPost).
+      let copied = 0, kept = 0;
       const adFails: string[] = [];
       for (const aid of adIds) {
-        try { await fb(`${aid}/copies`, token, { adset_id: newId, status_option: "PAUSED" }); copied++; }
+        try { const c = await copyAdKeepPost(token, act, aid, newId); copied++; if (c.kept) kept++; }
         catch (e) { adFails.push(String((e as Error).message).slice(0, 80)); }
       }
-      const warns = [patchWarn, adFails.length ? `${adFails.length} ad(s) failed to copy: ${adFails[0]}` : ""].filter(Boolean).join("; ");
-      return NextResponse.json({ ok: true, id: newId, ...(adIds.length ? { copied } : {}), ...(warns ? { warn: warns } : {}) });
+      const warns = [
+        patchWarn,
+        adFails.length ? `${adFails.length} ad(s) failed to copy: ${adFails[0]}` : "",
+        copied > kept ? `${copied - kept} ad(s) got a NEW post (original post not reusable) — their social proof did NOT carry over` : "",
+      ].filter(Boolean).join("; ");
+      return NextResponse.json({ ok: true, id: newId, ...(adIds.length ? { copied, keptPosts: kept } : {}), ...(warns ? { warn: warns } : {}) });
     }
-    // kind === "ad"
+    // kind === "ad" — v582 · giữ post thật qua object_story_id (fallback /copies nếu không lấy được post)
     const adsetId = String(b?.adsetId ?? "").replace(/\D/g, "");
-    const r = await fb(`${id}/copies`, token, {
-      status_option: "PAUSED",
-      ...(adsetId ? { adset_id: adsetId } : {}),
-    });
-    const newId = String(r.copied_ad_id ?? "");
-    if (newId && name) await fb(newId, token, { name }).catch(() => { /* ignore */ });
-    return NextResponse.json({ ok: true, id: newId || null });
+    const c = await copyAdKeepPost(token, act, id, adsetId, name || undefined);
+    if (c.id && name && !c.kept) await fb(c.id, token, { name }).catch(() => { /* ignore */ });
+    return NextResponse.json({ ok: true, id: c.id || null, keptPost: c.kept });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error).message) }, { status: 400 });
   }
