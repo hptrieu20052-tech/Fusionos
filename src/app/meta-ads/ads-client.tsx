@@ -350,6 +350,34 @@ export default function AdsCenterClient() {
     setErr(`✓ Kit opened in a NEW TAB with ${hs.size} product(s) pre-selected — name the campaign, pick a Structure, then Push.`);
     setAdSel(new Set());
   };
+  // v577 · CHUYỂN NHIỀU ADS đã tick sang 1 ad set khác (campaign khác cũng được):
+  // copy từng con qua Meta /copies (GIỮ post/social proof) + tuỳ chọn tắt gốc = move hàng loạt.
+  const [bulkMv, setBulkMv] = useState<{ camp: string; adset: string; moveOff: boolean } | null>(null);
+  const [bulkBusy, setBulkBusy] = useState("");
+  const submitBulkMv = async () => {
+    if (!bulkMv || !bulkMv.adset || bulkBusy) return;
+    const ids = Array.from(adSel);
+    if (!ids.length) { setBulkMv(null); return; }
+    setErr("");
+    let ok = 0; const fails: string[] = [];
+    for (let i = 0; i < ids.length; i++) {
+      setBulkBusy(`${i + 1}/${ids.length}`);
+      try {
+        const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: "ad", id: ids[i], adsetId: bulkMv.adset }) }).then((r) => r.json());
+        if (j.ok) {
+          ok++;
+          // MOVE: copy xong tắt gốc — lỗi tắt không phá copy (Sync xong tắt tay được)
+          if (bulkMv.moveOff) await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "set_status", id: ids[i], status: "PAUSED" }) }).then((r) => r.json()).catch(() => null);
+        } else fails.push(String(j.error ?? "copy failed").slice(0, 80));
+      } catch (e) { fails.push(String((e as Error).message).slice(0, 80)); }
+    }
+    setBulkBusy("");
+    const tgt = ent?.adsets[bulkMv.adset]?.name || bulkMv.adset;
+    setErr(`${fails.length ? "⚠" : "✓"} ${ok}/${ids.length} ad(s) copied into "${tgt}" — PAUSED (keep posts/social proof)${bulkMv.moveOff ? "; originals turned OFF" : ""}. Hit ⟳ Sync now, review, then enable.${fails.length ? ` First error: ${fails[0]}` : ""}`);
+    setBulkMv(null); setAdSel(new Set()); loadEnt();
+  };
   const renOkBtn: React.CSSProperties = { border: "none", background: "#16A34A", color: "#fff", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, cursor: "pointer" };
   const renXBtn: React.CSSProperties = { border: "none", background: "transparent", color: "var(--muted)", fontSize: 11, cursor: "pointer" };
   const renInput = (width: number, fontSize: number): React.CSSProperties => ({ width, border: "1px solid #C9D2DE", borderRadius: 8, padding: "3px 8px", fontSize, fontWeight: 700, font: "inherit", outline: "none", background: "#fff" });
@@ -925,7 +953,48 @@ export default function AdsCenterClient() {
           <button onClick={newCampFromSel} style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 999, padding: "7px 14px", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
             ＋ New campaign from these ads
           </button>
+          {/* v577 · chuyển cả lô sang 1 ad set khác (giữ post) — chọn camp → ad set trong form */}
+          <button onClick={() => setBulkMv({ camp: "", adset: "", moveOff: true })} style={{ border: "none", background: "#6D28D9", color: "#fff", borderRadius: 999, padding: "7px 14px", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>
+            ⧉ Move to ad set…
+          </button>
           <button onClick={() => setAdSel(new Set())} style={{ border: "none", background: "transparent", color: "#94A3B8", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>✕ Clear</button>
+        </div>
+      )}
+      {/* v577 · form MOVE nhiều ads: chọn campaign → ad set đích → Duplicate (giữ post, tuỳ chọn tắt gốc) */}
+      {bulkMv && (
+        <div onClick={() => !bulkBusy && setBulkMv(null)} style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(15,20,40,.55)", overflowY: "auto", padding: "60px 16px" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ margin: "0 auto", maxWidth: 430, background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <b style={{ fontSize: 14.5 }}>⧉ Move / copy {adSel.size} ad{adSel.size > 1 ? "s" : ""}</b>
+            <label style={{ fontSize: 11, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" }}>TARGET CAMPAIGN</label>
+            <select value={bulkMv.camp} onChange={(e) => setBulkMv({ ...bulkMv, camp: e.target.value, adset: "" })}
+              style={{ border: "1px solid #C9D2DE", borderRadius: 10, padding: "8px 10px", fontSize: 12.5, background: "#fff" }}>
+              <option value="">All campaigns</option>
+              {campList.filter((c) => !/ARCHIVED|DELETED/i.test(c.status)).map((c) => <option key={c.id} value={c.id}>{(c.status === "ACTIVE" ? "🟢 " : "⏸ ") + (c.name || c.id)}</option>)}
+            </select>
+            <label style={{ fontSize: 11, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" }}>TARGET AD SET</label>
+            <select value={bulkMv.adset} onChange={(e) => setBulkMv({ ...bulkMv, adset: e.target.value })}
+              style={{ border: "1px solid #C9D2DE", borderRadius: 10, padding: "8px 10px", fontSize: 12.5, background: "#fff" }}>
+              <option value="">— select ad set —</option>
+              {Object.entries(ent?.adsets ?? {})
+                .filter(([, s]) => !/ARCHIVED|DELETED/i.test(s.status) && (!bulkMv.camp || s.campId === bulkMv.camp))
+                .sort((x, y) => ((x[1].status === "ACTIVE" ? 0 : 1) - (y[1].status === "ACTIVE" ? 0 : 1)) || String(x[1].name ?? "").localeCompare(String(y[1].name ?? "")))
+                .map(([id, s]) => {
+                  const cn = bulkMv.camp ? "" : (campList.find((c) => c.id === s.campId)?.name ?? "");
+                  return <option key={id} value={id}>{(s.status === "ACTIVE" ? "🟢 " : "⏸ ") + (s.name || id) + (s.budget ? ` · $${s.budget}/d` : "") + (cn ? ` · ${cn}` : "")}</option>;
+                })}
+            </select>
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: "#5B6472", cursor: "pointer" }}>
+              <input type="checkbox" checked={bulkMv.moveOff} onChange={(e) => setBulkMv({ ...bulkMv, moveOff: e.target.checked })} style={{ marginTop: 2 }} />
+              <span>MOVE — turn OFF the originals after copying (copies keep posts &amp; social proof)</span>
+            </label>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+              <button onClick={() => setBulkMv(null)} disabled={!!bulkBusy} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+              <button onClick={submitBulkMv} disabled={!!bulkBusy || !bulkMv.adset}
+                style={{ border: "none", background: "#6D28D9", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: bulkBusy || !bulkMv.adset ? .6 : 1 }}>
+                {bulkBusy ? `Copying ${bulkBusy}…` : `⧉ ${bulkMv.moveOff ? "Move" : "Copy"} ${adSel.size} ad${adSel.size > 1 ? "s" : ""}`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {/* v534 · form Dup ad set / Dup ad trong trang — thay chuỗi hộp thoại của trình duyệt */}
