@@ -404,6 +404,11 @@ export default function AdsCenterClient() {
   };
   const V_LABEL: Record<string, string> = { MAIN_WATCH: "WATCH ROAS", MAIN_RED: "ROAS LOW", SCALE_FAST: "SCALING FAST", CHECK: "CHECK LANDING" };
   const ruleOf = (adId: string): RuleRow | null => rules.get(adId) ?? null;
+  // v578 · ẨN ads ĐÃ TẮT theo mặc định (đỡ rối bảng) — nút "N OFF" trên hàng ad set để xổ ra khi cần check.
+  // Tính theo effective_status: tắt trực tiếp hoặc tắt theo set/camp đều coi là OFF. Ad không còn trên
+  // Meta (đã xoá nhưng có spend trong khoảng ngày) vẫn hiện — không có gì để bật/tắt nữa.
+  const [showOff, setShowOff] = useState<Record<string, boolean>>({});
+  const adIsOff = (adId: string) => { const e = ent?.ads[adId]; return !!e && e.eff !== "ACTIVE"; };
   // Nền dòng: KILL/MAIN_RED đỏ nhạt · GRACE/STARVED/CHECK/MAIN_WATCH vàng nhạt — liếc 1 giây là thấy.
   const rowBg = (adId: string): string | undefined => {
     const v = ruleOf(adId)?.verdict ?? "";
@@ -788,6 +793,19 @@ export default function AdsCenterClient() {
                               <span style={{ fontWeight: 600, color: "var(--muted)" }}>
                                 {grp.length} ad{grp.length > 1 ? "s" : ""} · {money(gs.spend)} · {gs.atc} ATC · {gs.pur} purch{gs.spend ? ` · ROAS ${(gs.rev / gs.spend).toFixed(2)}` : ""}
                               </span>
+                              {/* v578 · nút xổ/thu ads ĐÃ TẮT của ad set này (mặc định ẩn cho gọn bảng) */}
+                              {(() => {
+                                const nOff = grp.filter((x) => adIsOff(x.adId)).length;
+                                if (!nOff) return null;
+                                const open = !!showOff[a.adsetId];
+                                return (
+                                  <button onClick={(e) => { e.stopPropagation(); setShowOff((s) => ({ ...s, [a.adsetId]: !open })); }}
+                                    title={open ? "Hide the paused/off ads of this ad set" : "Show the paused/off ads of this ad set"}
+                                    style={{ border: "1px solid #E3E7EE", background: open ? "#EEF1F5" : "#fff", color: "#5B6472", borderRadius: 999, padding: "1px 9px", fontSize: 10, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                    {open ? `▾ Hide ${nOff} OFF` : `▸ ${nOff} OFF`}
+                                  </button>
+                                );
+                              })()}
                               {/* v570 · cảnh báo cấp AD SET theo rule engine (chỉ camp TEST) + SCALE_FAST (MAIN) */}
                               {(() => {
                                 const chips: { t: string; tip: string; red?: boolean }[] = [];
@@ -819,6 +837,7 @@ export default function AdsCenterClient() {
                         </tr>
                       );
                     })()}
+                    {(!adIsOff(a.adId) || showOff[a.adsetId]) && (
                     <tr key={a.ad} style={{ borderBottom: "1px solid #F1F3F6", background: rowBg(a.adId) }}>
                       <td style={{ ...td, textAlign: "left", maxWidth: 360, paddingLeft: 22 }} title={`${a.adset} › ${a.ad}`}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 7, maxWidth: "100%" }}>
@@ -939,6 +958,7 @@ export default function AdsCenterClient() {
                       <td style={td}>{money(a.rev)}</td>
                       <td style={{ ...td, fontWeight: 800, color: a.spend && a.rev / a.spend >= 1.5 ? "#1F6F45" : a.spend && a.rev > 0 ? "#B7791F" : "inherit" }}>{a.spend ? (a.rev / a.spend).toFixed(2) : "—"}</td>
                     </tr>
+                    )}
                   </>))}
                 </tbody>
               </table>
