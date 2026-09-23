@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { sql } from "drizzle-orm";
+import { notInArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -101,6 +101,13 @@ async function run(req: NextRequest) {
       await db.insert(schema.metaCampaigns).values({ campaignId: cmp.id, name: cmp.name ?? "", status: cmp.effective_status ?? "", updatedAt: new Date() })
         .onConflictDoUpdate({ target: schema.metaCampaigns.campaignId, set: { name: sql`excluded.name`, status: sql`excluded.status`, updatedAt: sql`now()` } });
       campaigns++;
+    }
+    // v589 · campaign đã XOÁ trên Meta thì list này KHÔNG trả về nữa → status trong DB kẹt ACTIVE mãi,
+    // filter Active vẫn hiện camp ma. Bản ghi không còn trong list → đánh dấu DELETED (giữ lịch sử).
+    if (list.length) {
+      const ids = list.map((c) => c.id).filter(Boolean) as string[];
+      await db.update(schema.metaCampaigns).set({ status: "DELETED", updatedAt: new Date() })
+        .where(notInArray(schema.metaCampaigns.campaignId, ids));
     }
   } catch { /* trạng thái là phụ — lỗi không chặn insights */ }
 

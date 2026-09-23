@@ -412,9 +412,24 @@ export default function AdsCenterClient() {
   // Tính theo effective_status: tắt trực tiếp hoặc tắt theo set/camp đều coi là OFF. Ad không còn trên
   // Meta (đã xoá nhưng có spend trong khoảng ngày) vẫn hiện — không có gì để bật/tắt nữa.
   const [showOff, setShowOff] = useState<Record<string, boolean>>({});
-  const adIsOff = (adId: string) => { const e = ent?.ads[adId]; return !!e && e.eff !== "ACTIVE"; };
+  // v589 · ad KHÔNG còn trong entities (đã XOÁ trên Meta) cũng tính là OFF → ẩn mặc định như ad tắt.
+  // Lịch sử chi tiêu vẫn giữ (tiền đã tiêu là thật) — bấm "N OFF" là xem lại được, kèm nhãn DELETED.
+  const entReady = useMemo(() => !!ent && Object.keys(ent.ads).length > 0, [ent]);
+  const adIsOff = (adId: string) => {
+    if (!entReady) return false;                 // entities chưa tải → không ẩn nhầm cả bảng
+    const e = ent!.ads[adId];
+    return !e || e.eff !== "ACTIVE";
+  };
   // v579 · thu gọn từng AD SET (mũi tên ▼ như campaign) — ẩn toàn bộ hàng ads, giữ hàng subtotal.
   const [adsetFold, setAdsetFold] = useState<Record<string, boolean>>({});
+  // v590 · ẨN nguyên AD SET đã tắt/xoá theo mặc định (cả hàng subtotal) — nút "N SETS OFF" trên
+  // header campaign xổ ra khi cần check. Subtotal campaign vẫn cộng ĐỦ cả phần ẩn (tiền là thật).
+  const [showOffSets, setShowOffSets] = useState<Record<string, boolean>>({});
+  const setIsOff = (adsetId: string) => {
+    if (!entReady) return false;                 // entities chưa tải → không ẩn nhầm
+    const s = ent!.adsets[adsetId];
+    return !s || s.status !== "ACTIVE";          // !s = ad set đã XOÁ trên Meta
+  };
   // v587 · Publish to Page: đăng caption + link sản phẩm của ad thành BÀI CÔNG KHAI trên page
   // (Meta không cho publish ngược dark post). Arm 2 bước vì là hành động công khai.
   const [pubArm, setPubArm] = useState("");
@@ -712,18 +727,21 @@ export default function AdsCenterClient() {
       {view === "ads" && grouped.map(([campId, g]) => {
         // v573 · lọc theo seller Ở CẤP AD (theo chủ listing): campaign chung nhiều seller thì chỉ hiện
         // phần ads của seller đang lọc — subtotal campaign/ad set cũng chỉ cộng phần đó.
-        const ads = sellerFilter
+        const adsAll = sellerFilter
           ? g.ads.filter((a) => { const sn = adSeller(a.adId); return sellerFilter === UNASSIGNED ? !sn : sn === sellerFilter; })
           : g.ads;
+        // v590 · ad set đã tắt/xoá → ẩn nguyên khối (cả hàng subtotal) trừ khi bấm xổ ra.
+        const offSets = entReady ? Array.from(new Set(adsAll.filter((x) => setIsOff(x.adsetId)).map((x) => x.adsetId))) : [];
+        const ads = showOffSets[campId] ? adsAll : adsAll.filter((a) => !setIsOff(a.adsetId));
         const status = campStatus[campId] ?? "";
         const isActive = status === "ACTIVE";
         // Filter theo trạng thái; campaign không rõ status (chưa sync) chỉ hiện ở All.
         if (statusFilter === "active" && !isActive) return null;
         if (statusFilter === "inactive" && (isActive || !status)) return null;
-        if (sellerFilter && !ads.length) return null; // campaign không có ad nào của seller này
+        if (sellerFilter && !adsAll.length) return null; // campaign không có ad nào của seller này
         // Mặc định: campaign đang tắt thì thu gọn sẵn cho đỡ rối.
         const isCollapsed = collapsed[campId] ?? (status ? !isActive : false);
-        const ct = ads.reduce((s, a) => ({ spend: s.spend + a.spend, imp: s.imp + a.imp, lc: s.lc + a.lc, atc: s.atc + a.atc, pur: s.pur + a.pur, rev: s.rev + a.rev }), { spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 });
+        const ct = adsAll.reduce((s, a) => ({ spend: s.spend + a.spend, imp: s.imp + a.imp, lc: s.lc + a.lc, atc: s.atc + a.atc, pur: s.pur + a.pur, rev: s.rev + a.rev }), { spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 });
         return (
           <div key={campId} style={{ ...card, padding: "6px 6px 2px", overflow: "hidden" }}>
             <div onClick={() => toggleCamp(campId, isCollapsed)}
@@ -769,13 +787,21 @@ export default function AdsCenterClient() {
                 );
               })()}
               <span style={{ fontSize: 12, color: "var(--muted)" }}>
-                {ads.length ? `${ads.length} ads · ${money(ct.spend)} · ${ct.pur} purchases${ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}` : "newly created — no spend in this date range yet"}
+                {adsAll.length ? `${adsAll.length} ads · ${money(ct.spend)} · ${ct.pur} purchases${ct.spend ? ` · ROAS ${(ct.rev / ct.spend).toFixed(2)}` : ""}` : "newly created — no spend in this date range yet"}
               </span>
+              {/* v590 · xổ/thu các AD SET đã tắt/xoá của campaign này (mặc định ẩn nguyên khối) */}
+              {offSets.length > 0 && (
+                <button onClick={(e) => { e.stopPropagation(); setShowOffSets((s) => ({ ...s, [campId]: !s[campId] })); }}
+                  title={showOffSets[campId] ? "Hide the paused/deleted ad sets of this campaign" : "Show the paused/deleted ad sets of this campaign (their spend already counts in the subtotal)"}
+                  style={{ border: "1px solid #E3E7EE", background: showOffSets[campId] ? "#EEF1F5" : "#fff", color: "#5B6472", borderRadius: 999, padding: "2px 10px", fontSize: 10, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>
+                  {showOffSets[campId] ? `▾ Hide ${offSets.length} OFF set${offSets.length > 1 ? "s" : ""}` : `▸ ${offSets.length} set${offSets.length > 1 ? "s" : ""} OFF`}
+                </button>
+              )}
               {/* v570 · camp TEST đốt ≥$60 (khoảng ngày đang xem) vào ads KILL mà 0 winner → đổi angle */}
               {(() => {
                 if (!/test/i.test(g.name) || !ruleCfg) return null;
-                const killSpend = ads.filter((x) => rules.get(x.adId)?.verdict === "KILL").reduce((s2, x) => s2 + x.spend, 0);
-                const hasWinner = ads.some((x) => rules.get(x.adId)?.verdict === "WINNER");
+                const killSpend = adsAll.filter((x) => rules.get(x.adId)?.verdict === "KILL").reduce((s2, x) => s2 + x.spend, 0);
+                const hasWinner = adsAll.some((x) => rules.get(x.adId)?.verdict === "WINNER");
                 return killSpend >= ruleCfg.campKillSpend7d && !hasWinner ? (
                   <span title={`${money(killSpend)} burned on KILL-verdict ads in this date range with no winner — change the ANGLE, don't add more designs on the same theme`}
                     style={{ background: "#DC2626", color: "#fff", borderRadius: 6, padding: "2px 9px", fontSize: 9.5, fontWeight: 800, letterSpacing: ".3px", whiteSpace: "nowrap" }}>
@@ -929,6 +955,13 @@ export default function AdsCenterClient() {
                               </span>
                             );
                           })()}
+                          {/* v589 · ad đã XOÁ trên Meta (không còn trong entities) — chỉ còn lịch sử chi tiêu */}
+                          {entReady && ent!.ads[a.adId] === undefined && (
+                            <span title="Deleted on Meta — this row remains only for its spend history in the selected date range"
+                              style={{ fontSize: 9, fontWeight: 800, letterSpacing: ".4px", color: "#8794A6", background: "#EEF1F5", borderRadius: 5, padding: "1px 7px", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px" }}>
+                              DELETED
+                            </span>
+                          )}
                           {/* v462 · thumbnail creative — click phóng to để biết đang nhìn MẪU nào */}
                           {ent?.ads[a.adId]?.thumb && (
                             /* eslint-disable-next-line @next/next/no-img-element */
