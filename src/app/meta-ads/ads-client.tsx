@@ -414,6 +414,12 @@ export default function AdsCenterClient() {
   const adIsOff = (adId: string) => { const e = ent?.ads[adId]; return !!e && e.eff !== "ACTIVE"; };
   // v579 · thu gọn từng AD SET (mũi tên ▼ như campaign) — ẩn toàn bộ hàng ads, giữ hàng subtotal.
   const [adsetFold, setAdsetFold] = useState<Record<string, boolean>>({});
+  // v584 · bấm chip post = copy FULL post id vào clipboard (soi trùng/search trên Facebook).
+  const [copiedPost, setCopiedPost] = useState("");
+  const copyText = (t: string) => {
+    const fb2 = () => { try { const el = document.createElement("textarea"); el.value = t; document.body.appendChild(el); el.select(); document.execCommand("copy"); el.remove(); } catch { /* thôi */ } };
+    try { navigator.clipboard.writeText(t).catch(fb2); } catch { fb2(); }
+  };
   // v580 · số ads trong từng ad set (đang chạy/tổng) — hiện trong dropdown chọn ad set đích
   // của Move/Dup để biết set nào đầy set nào vơi mà chia cho đều.
   const adsetCounts = useMemo(() => {
@@ -936,11 +942,19 @@ export default function AdsCenterClient() {
                           {(() => {
                             const po = ent?.ads[a.adId]?.post ?? "";
                             if (!po) return null;
+                            // v584 · chip hiện ĐỦ id post (phần sau "_") — CLICK là copy full id (pageid_postid)
+                            // để dán vào Facebook/Ads Manager soi trùng. Màu nền theo HASH toàn bộ id:
+                            // cùng post = cùng màu, khác post = khác màu (đuôi số id kiểu 122… hay trùng nhau).
                             const tail = po.split("_").pop() ?? po;
+                            let h = 5381; for (let i = 0; i < po.length; i++) h = ((h << 5) + h + po.charCodeAt(i)) | 0;
+                            const hue = (h >>> 0) % 360;
+                            const done = copiedPost === po;
                             return (
-                              <span title={`Facebook post ${po} — ads showing the SAME code share one post (likes/comments carry); a different code means a different creative/post`}
-                                style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, fontWeight: 700, color: "#6B7280", background: "#F3F4F6", border: "1px solid #E5E7EB", borderRadius: 5, padding: "1px 6px", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px", cursor: "default" }}>
-                                P·{tail.slice(-6)}
+                              <span onClick={(e) => { e.stopPropagation(); copyText(po); setCopiedPost(po); setTimeout(() => setCopiedPost((c) => (c === po ? "" : c)), 1500); }}
+                                title={`Facebook post ${po} — click to COPY the full id. Ads with the SAME id & color share one post (likes/comments carry).`}
+                                style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, fontWeight: 800, cursor: "copy", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px", borderRadius: 5, padding: "1px 6px",
+                                  color: done ? "#166534" : `hsl(${hue},55%,30%)`, background: done ? "#DCFCE7" : `hsl(${hue},70%,93%)`, border: done ? "1px solid #BBF7D0" : `1px solid hsl(${hue},50%,82%)` }}>
+                                {done ? "✓ COPIED" : tail}
                               </span>
                             );
                           })()}
