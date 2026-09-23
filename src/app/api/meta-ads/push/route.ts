@@ -203,10 +203,14 @@ export async function POST(req: NextRequest) {
           image_hash: hash,
         },
       };
+      // v591 · url_tags = UTM động ({{campaign.name}}/{{ad.name}} do Meta tự điền) — đơn Shopify về
+      // FUSION mang đúng utm_campaign/utm_content, thống kê seller/mẫu khớp ads. Field chuẩn lâu đời.
+      const URL_TAGS = "utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";
       const variants: { label: string; extra: Record<string, unknown> }[] = [
-        { label: "multiOff+enhOff", extra: { contextual_multi_ads: { enroll_status: "OPT_OUT" }, degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } } } },
-        { label: "multiOff", extra: { contextual_multi_ads: { enroll_status: "OPT_OUT" } } },
-        { label: "enhOff", extra: { degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } } } },
+        { label: "multiOff+enhOff", extra: { url_tags: URL_TAGS, contextual_multi_ads: { enroll_status: "OPT_OUT" }, degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } } } },
+        { label: "multiOff", extra: { url_tags: URL_TAGS, contextual_multi_ads: { enroll_status: "OPT_OUT" } } },
+        { label: "enhOff", extra: { url_tags: URL_TAGS, degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } } } },
+        { label: "utm", extra: { url_tags: URL_TAGS } },
         { label: "default", extra: {} },
       ];
       let creative: Record<string, unknown> | null = null;

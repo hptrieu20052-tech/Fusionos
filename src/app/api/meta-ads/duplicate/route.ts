@@ -55,12 +55,26 @@ async function copyAdKeepPost(token: string, act: string, aid: string, adsetId: 
   const target = adsetId || srcAdset;
   if (post && act && target) {
     try {
-      let nc: Record<string, unknown>;
-      // instagram_actor_id giữ placement IG của post gốc; Meta từ chối field này → thử lại không kèm.
-      try { nc = await fb(`${act}/adcreatives`, token, { object_story_id: post, ...(ig ? { instagram_actor_id: ig } : {}) }); }
-      catch { nc = await fb(`${act}/adcreatives`, token, { object_story_id: post }); }
-      const ad = await fb(`${act}/ads`, token, { name: (name ?? "").trim() || srcName || `Ad ${aid} - Copy`, adset_id: target, creative: { creative_id: String(nc.id) }, status: "PAUSED" });
-      if (ad.id) return { id: String(ad.id), kept: true };
+      // v591 · creative bản sao kèm: UTM động (đơn về FUSION khớp campaign/ad) + tắt multi-advertiser
+      // + tắt Advantage+ enhancements (khỏi bị Meta crop/chế ảnh). Meta từ chối field nào → thử bậc
+      // thấp hơn (instagram_actor_id giữ placement IG của post gốc, cũng có thể bị từ chối).
+      const URL_TAGS = "utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";
+      const igx = ig ? { instagram_actor_id: ig } : {};
+      const tries: Record<string, unknown>[] = [
+        { object_story_id: post, ...igx, url_tags: URL_TAGS, contextual_multi_ads: { enroll_status: "OPT_OUT" }, degrees_of_freedom_spec: { creative_features_spec: { standard_enhancements: { enroll_status: "OPT_OUT" } } } },
+        { object_story_id: post, ...igx, url_tags: URL_TAGS, contextual_multi_ads: { enroll_status: "OPT_OUT" } },
+        { object_story_id: post, ...igx, url_tags: URL_TAGS },
+        { object_story_id: post, ...igx },
+        { object_story_id: post },
+      ];
+      let nc: Record<string, unknown> | null = null;
+      for (const t of tries) {
+        try { nc = await fb(`${act}/adcreatives`, token, t); break; } catch { /* thử bậc thấp hơn */ }
+      }
+      if (nc?.id) {
+        const ad = await fb(`${act}/ads`, token, { name: (name ?? "").trim() || srcName || `Ad ${aid} - Copy`, adset_id: target, creative: { creative_id: String(nc.id) }, status: "PAUSED" });
+        if (ad.id) return { id: String(ad.id), kept: true };
+      }
     } catch { /* rơi xuống /copies */ }
   }
   const r = await fb(`${aid}/copies`, token, { status_option: "PAUSED", ...(adsetId ? { adset_id: adsetId } : {}) });
