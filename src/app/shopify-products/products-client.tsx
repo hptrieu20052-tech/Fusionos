@@ -122,7 +122,7 @@ async function postJSON<T = any>(url: string, body: unknown): Promise<T> {
 type ActKey =
   | "set_template" | "push_template" | "find_replace" | "personalization"
   | "google_prep" | "feed_copy" | "feed_export"
-  | "policy_ai" | "ai_collection" | "tags" | "collection" | "channels"
+  | "policy_ai" | "ai_collection" | "tags" | "collection" | "channels" | "set_owner"
   | "active" | "draft" | "archive" | "delete"
   | "pinterest" | "push_amazon" | "ads_kit";
 type ActionItem = { key: ActKey; label: string; danger?: boolean };
@@ -173,6 +173,9 @@ const ACTION_GROUPS: ActionGroup[] = [
       { key: "tags", label: "Add / remove tags…" },
       { key: "collection", label: "Add / remove collection…" },
       { key: "channels", label: "Include / exclude sales channels…" },
+      // v592 · admin-only (lọc lúc render): gán chủ listing cho hàng tạo TAY trên Shopify trước khi
+      // có FUSION (created_by NULL → seller filter + Spend by seller bên Meta Ads = "(unassigned)").
+      { key: "set_owner", label: "Assign owner (admin)…" },
     ],
   },
   {
@@ -461,7 +464,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [edPersOwn, setEdPersOwn] = useState(false);
   const [edPersTpl, setEdPersTpl] = useState("");
   const [persInfo, setPersInfo] = useState<{ title: string; source: "product" | "template" | "none"; templateName: string; count: number; withOwn: number }>({ title: "", source: "none", templateName: "", count: 0, withOwn: 0 });
-  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template" | "replace" | "pushtpl" | "gprep"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
+  const [act, setAct] = useState<null | { key: ActKey; title: string; kind: "tags" | "collection" | "publication" | "template" | "replace" | "pushtpl" | "gprep" | "owner"; storeId: string; loading: boolean; items: { id: string; label: string }[] }>(null);
   const [tagInput, setTagInput] = useState("");
   // Hai lệnh gộp dùng checkbox chọn bước nào chạy; tags/collection/channels dùng công tắc Add↔Remove.
   const [parts, setParts] = useState<Record<string, boolean>>({});
@@ -1507,6 +1510,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       } catch { setAct((a) => a ? { ...a, loading: false } : a); }
       return;
     }
+    // v592 · Assign owner — chỉ ghi created_by trong DB FUSION, không đụng Shopify → chạy được
+    // trên nhiều store cùng lúc. Danh sách seller lấy từ prop sellers (server đưa sẵn).
+    if (key === "set_owner") {
+      if (!isAdmin) return flash("✗ Admin only — ask an admin to assign listing owners", false);
+      setPickOne("");
+      setAct({
+        key, title: "Assign owner", kind: "owner", storeId: "", loading: false,
+        items: [{ id: "__none__", label: "— No owner (clear → unassigned) —" }, ...sellers.map((s) => ({ id: s.id, label: s.name }))],
+      });
+      return;
+    }
     // Picker actions còn lại (template / collection / channels) — cần đúng 1 store
     const sids = selStoreIds();
     if (sids.length !== 1) return flash("✗ These actions need products from ONE store — filter by store first (template/channel/collection IDs are per store).", false);
@@ -1547,6 +1561,21 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       try {
         const j = await postJSON("/api/shopify-products/set-template", { ids: Array.from(sel), templateId });
         if (j.ok) flash(`✓ ${templateId ? "Linked" : "Unlinked"} template on ${j.done} product(s)${j.skipped ? ` · ${j.skipped} skipped (other store)` : ""} — existing descriptions unchanged; run ✦ AI Optimize to rewrite them`);
+        else flash("✗ " + (j.error ?? "Failed"), false);
+      } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
+      await load();
+      setBusy(false);
+      return;
+    }
+    // v592 · Assign owner — DB-only (created_by), listing trên Shopify không đổi gì.
+    if (act.kind === "owner") {
+      if (!pickOne) return flash("✗ Pick a seller (or the clear option)", false);
+      const userId = pickOne === "__none__" ? "" : pickOne;
+      const who = userId ? (act.items.find((it) => it.id === userId)?.label ?? "seller") : "";
+      setAct(null); setBusy(true);
+      try {
+        const j = await postJSON("/api/shopify-products/set-owner", { ids: Array.from(sel), userId });
+        if (j.ok) { flash(userId ? `✓ Assigned ${j.updated} listing(s) to ${who} — seller filter & Meta Ads "Spend by seller" pick this up on next load` : `✓ Cleared owner on ${j.updated} listing(s)`); setSel(new Set()); }
         else flash("✗ " + (j.error ?? "Failed"), false);
       } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
       await load();
@@ -1805,7 +1834,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     {ACTION_GROUPS.map((g) => (
                       <div key={g.title} style={{ padding: 2, minWidth: 0 }}>
                         <div style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: .6, textTransform: "uppercase", color: "var(--muted)", padding: "6px 8px 4px", borderBottom: "1px solid var(--line)", marginBottom: 3 }}>{g.title}</div>
-                        {g.items.map((a) => (
+                        {g.items.filter((a) => a.key !== "set_owner" || isAdmin).map((a) => (
                           <button key={a.key} disabled={busy} onClick={() => runAction(a.key)} style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", fontSize: 13, lineHeight: 1.35, border: "none", background: "none", borderRadius: 8, cursor: "pointer", color: a.danger ? "var(--red)" : "var(--ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} onMouseEnter={(e) => (e.currentTarget.style.background = "#F3F5F8")} onMouseLeave={(e) => (e.currentTarget.style.background = "none")} title={a.label}>{a.label}</button>
                         ))}
                       </div>
@@ -2294,6 +2323,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <div style={{ fontSize: 12.5, color: "var(--muted)", marginBottom: 14 }}>
               {act.key === "set_template"
                 ? <>Applies to <b>{sel.size}</b> selected product(s) — links the facts source for ✦ AI Optimize only. Nothing is sent to Shopify and the current description is not touched.</>
+                : act.kind === "owner"
+                ? <>Applies to <b>{sel.size}</b> selected listing(s) — sets the FUSION owner (seller) only. Nothing is sent to Shopify. Seller visibility, the seller filter and Meta Ads &quot;Spend by seller&quot; all follow this owner.</>
                 : act.kind === "gprep"
                 ? <>Applies to <b>{sel.size}</b> selected product(s). Writes SKU / metafields / image alt only — title, description, price and images are untouched, so this does not restart the Merchant Center review, and no Push is needed afterwards.</>
                 : <>Applies to <b>{sel.size}</b> selected product(s) — runs on Shopify.</>}
@@ -2374,9 +2405,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
 
             {act.kind !== "tags" && act.kind !== "replace" && act.kind !== "gprep" && (
               act.loading ? <div style={{ padding: "24px 0", textAlign: "center", color: "var(--muted)" }}>Loading…</div>
-              : act.items.length === 0 ? <div style={{ padding: "20px 0", textAlign: "center", color: "var(--muted)" }}>{act.kind === "collection" ? "No manual collections on this store." : act.kind === "template" ? "No templates for this store — create one in Manage Templates · Shopify." : "None available on this store."}</div>
+              : act.items.length === 0 ? <div style={{ padding: "20px 0", textAlign: "center", color: "var(--muted)" }}>{act.kind === "collection" ? "No manual collections on this store." : act.kind === "template" ? "No templates for this store — create one in Manage Templates · Shopify." : act.kind === "owner" ? "No sellers found — add sellers in Manage Users first." : "None available on this store."}</div>
               : <div style={{ display: "grid", gap: 4, maxHeight: 320, overflowY: "auto" }}>
-                  {act.items.map((it) => (act.kind === "collection" || act.kind === "template" || act.kind === "pushtpl") ? (
+                  {act.items.map((it) => (act.kind === "collection" || act.kind === "template" || act.kind === "pushtpl" || act.kind === "owner") ? (
                     <label key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 10, cursor: "pointer", background: pickOne === it.id ? "#F3FBF6" : "transparent" }}>
                       <input type="radio" name="pickCol" checked={pickOne === it.id} onChange={() => setPickOne(it.id)} />
                       <span style={{ fontSize: 13.5 }}>{it.label}</span>
