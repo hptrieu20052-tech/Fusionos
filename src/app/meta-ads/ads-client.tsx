@@ -214,7 +214,9 @@ export default function AdsCenterClient() {
   // (Meta Ads Kit) như luồng ＋ New campaign — copy KHUNG trên Meta rồi nhảy sang Manage Products.
   // Ô tick "copy kèm creative" giữ lại luồng copy y nguyên (Meta /copies) cho ai cần.
   const [dupBusy, setDupBusy] = useState("");
-  const [dupForm, setDupForm] = useState<{ kind: "camp" | "adset" | "ad"; id: string; label: string; name: string; target: string; orig: string; budget: string; deep: boolean; adsetName: string; start: string; picks: Record<string, boolean> } | null>(null);
+  // v576 · moveOff: sau khi copy xong thì TẮT ad gốc — "chuyển" ad sang ad set/camp khác trong 1 phát
+  // (Meta không có move thật; chuẩn là copy giữ post rồi tắt gốc — đây là 2 bước gộp 1).
+  const [dupForm, setDupForm] = useState<{ kind: "camp" | "adset" | "ad"; id: string; label: string; name: string; target: string; orig: string; budget: string; deep: boolean; adsetName: string; start: string; picks: Record<string, boolean>; moveOff?: boolean } | null>(null);
   const dupCamp = (campId: string, campName: string) =>
     setDupForm({ kind: "camp", id: campId, label: campName || campId, name: `${campName} - Copy`, target: "", orig: "", budget: "", deep: false, adsetName: "", start: "", picks: {} });
   const dupAdset = (adsetId: string, adsetName: string, campId: string) =>
@@ -281,7 +283,18 @@ export default function AdsCenterClient() {
         if (f.deep) {
           const j = await fetch("/api/meta-ads/duplicate", { method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ kind: "ad", id: f.id, adsetId: f.target.trim(), name: f.name.trim() }) }).then((r) => r.json());
-          if (j.ok) { setErr(`✓ Ad duplicated${j.id ? ` (#${j.id})` : ""} — PAUSED. Hit ⟳ Sync now to see it.`); setDupForm(null); loadEnt(); }
+          if (j.ok) {
+            // v576 · "move": copy xong tự TẮT ad gốc — lỗi tắt không phá copy, chỉ nhắc tắt tay.
+            let offNote = "";
+            if (f.moveOff) {
+              try {
+                const p = await fetch("/api/meta-ads/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_status", id: f.id, status: "PAUSED" }) }).then((r) => r.json());
+                offNote = p.ok ? " Original ad turned OFF." : " ⚠ Could not turn off the original — do it manually.";
+              } catch { offNote = " ⚠ Could not turn off the original — do it manually."; }
+            }
+            setErr(`✓ Ad duplicated${j.id ? ` (#${j.id})` : ""} — PAUSED (turn it on after review).${offNote} Hit ⟳ Sync now to see it.`);
+            setDupForm(null); loadEnt();
+          }
           else setErr("✗ " + (j.error ?? "Dup failed"));
         } else {
           // Không cần gọi Meta — sang thẳng kit ở tab mới, push ad mới vào ad set đích.
@@ -992,6 +1005,13 @@ export default function AdsCenterClient() {
               <label style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: "#5B6472", cursor: "pointer" }}>
                 <input type="checkbox" checked={dupForm.deep} onChange={(e) => setDupForm({ ...dupForm, deep: e.target.checked })} style={{ marginTop: 2 }} />
                 <span>{dupForm.kind === "adset" ? "Copy WITH the ads inside (keeps creatives/posts)" : "Exact copy of this ad's creative"}</span>
+              </label>
+            )}
+            {/* v576 · MOVE: copy giữ post + tự tắt gốc = chuyển ad sang ad set/campaign khác trong 1 phát */}
+            {dupForm.kind === "ad" && dupForm.deep && (
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 11.5, color: "#5B6472", cursor: "pointer" }}>
+                <input type="checkbox" checked={!!dupForm.moveOff} onChange={(e) => setDupForm({ ...dupForm, moveOff: e.target.checked })} style={{ marginTop: 2 }} />
+                <span>MOVE — turn OFF the original ad after copying (copy keeps the post &amp; social proof)</span>
               </label>
             )}
             {/* v551 · chọn ADS nào được copy kèm — bỏ tick con không muốn mang theo */}
