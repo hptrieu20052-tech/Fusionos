@@ -524,7 +524,11 @@ export default function AdsCenterClient() {
       <div style={{ ...card, padding: "12px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
         {/* Hàng 1 · view & filters */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <b style={{ fontSize: 17, whiteSpace: "nowrap" }}>📣 Meta Ads Center</b>
+          {/* v586 · logo Meta = public/marketplaces/meta.png (anh tự thêm file logo chính thức như các sàn khác) */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/marketplaces/meta.png" alt="" width={22} height={22} style={{ width: 22, height: 22, objectFit: "contain", flexShrink: 0 }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          <b style={{ fontSize: 17, whiteSpace: "nowrap" }}>Meta Ads Center</b>
           {/* v574 · tab Ads / By seller — thống kê seller tách trang riêng */}
           <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
             {([["ads", "Ads"], ["sellers", "By seller"]] as const).map(([k, label]) => (
@@ -950,9 +954,10 @@ export default function AdsCenterClient() {
                             const hue = (h >>> 0) % 360;
                             const done = copiedPost === po;
                             return (
-                              <span onClick={(e) => { e.stopPropagation(); copyText(po); setCopiedPost(po); setTimeout(() => setCopiedPost((c) => (c === po ? "" : c)), 1500); }}
-                                title={`Facebook post ${po} — click to COPY the full id. Ads with the SAME id & color share one post (likes/comments carry).`}
-                                style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, fontWeight: 800, cursor: "copy", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px", borderRadius: 5, padding: "1px 6px",
+                              // v585 · click = copy CHỈ số post (bỏ id page phía trước) · con trỏ bàn tay
+                              <span onClick={(e) => { e.stopPropagation(); copyText(tail); setCopiedPost(po); setTimeout(() => setCopiedPost((c) => (c === po ? "" : c)), 1500); }}
+                                title={`Post ${tail} — click to COPY the post id. Ads with the SAME id & color share one post (likes/comments carry).`}
+                                style={{ fontFamily: "ui-monospace, monospace", fontSize: 9, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px", borderRadius: 5, padding: "1px 6px",
                                   color: done ? "#166534" : `hsl(${hue},55%,30%)`, background: done ? "#DCFCE7" : `hsl(${hue},70%,93%)`, border: done ? "1px solid #BBF7D0" : `1px solid hsl(${hue},50%,82%)` }}>
                                 {done ? "✓ COPIED" : tail}
                               </span>
