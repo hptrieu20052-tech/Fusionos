@@ -1002,8 +1002,12 @@ export default function AdsCenterClient() {
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 5, border: "1px solid #EEF1F5", borderRadius: 10, padding: "8px 10px", maxHeight: 170, overflowY: "auto" }}>
                   <span style={{ fontSize: 10.5, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" }}>ADS TO COPY ({nChosen}/{inSet.length})</span>
-                  {inSet.map(([id, a]) => (
-                    <label key={id} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer" }}>
+                  {inSet.map(([id, a]) => {
+                    // v575 · trạng thái từng ad trong danh sách copy — biết con nào đang chạy, con nào đã tắt
+                    const on = a.status === "ACTIVE" && a.eff === "ACTIVE";
+                    const offByParent = a.status === "ACTIVE" && (a.eff === "ADSET_PAUSED" || a.eff === "CAMPAIGN_PAUSED");
+                    return (
+                    <label key={id} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12, cursor: "pointer", opacity: on ? 1 : 0.75 }}>
                       <input type="checkbox" checked={dupForm.picks[id] !== false}
                         onChange={() => setDupForm({ ...dupForm, picks: { ...dupForm.picks, [id]: dupForm.picks[id] === false } })}
                         style={{ accentColor: "#16A34A", flexShrink: 0 }} />
@@ -1012,8 +1016,14 @@ export default function AdsCenterClient() {
                         <img src={a.thumb} alt="" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: 4, flexShrink: 0, border: "1px solid #E3E7EE" }} />
                       )}
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || id}</span>
+                      <span title={on ? "This ad is delivering" : offByParent ? "Ad switch is on but its ad set/campaign is OFF — not delivering" : "This ad is turned OFF"}
+                        style={{ marginLeft: "auto", flexShrink: 0, fontSize: 9, fontWeight: 800, letterSpacing: ".4px", borderRadius: 5, padding: "1px 7px", lineHeight: "14px",
+                          background: on ? "#DCFCE7" : "#EEF1F5", color: on ? "#166534" : "#8794A5" }}>
+                        {on ? "ACTIVE" : offByParent ? "OFF (parent)" : "OFF"}
+                      </span>
                     </label>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })()}
