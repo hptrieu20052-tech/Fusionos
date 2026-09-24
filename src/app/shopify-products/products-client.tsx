@@ -334,6 +334,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     try {
       const j = await fetch("/api/meta-ads/entities").then((r) => r.json());
       if (!j?.ok) return;
+      // v599 · múi giờ ad account — quy đổi giờ VN nhập vào ↔ giờ Mỹ hiển thị.
+      if (j.tz?.name) setKitTz({ name: String(j.tz.name), offset: Number(j.tz.offset) || 0 });
       const cn = (j.campNames ?? {}) as Record<string, string>;
       // v557 · bỏ campaign/ad set ARCHIVED/DELETED — Meta không nhận push vào đích đã lưu trữ
       const dead = (st: unknown) => /ARCHIVED|DELETED/i.test(String(st ?? ""));
@@ -369,8 +371,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   // v444/v446 · giờ bắt đầu (MÚI GIỜ AD ACCOUNT, vd PDT) — 2 ô date + time kiểu Ads Manager; trống = chạy ngay khi bật.
   const [kitStartDate, setKitStartDate] = useState("");
   const [kitStartTime, setKitStartTime] = useState("");
+  const [kitTz, setKitTz] = useState<{ name: string; offset: number } | null>(null); // v599 · múi giờ ad account
   // v455 · chỉ chọn ngày cũng chạy được (giờ mặc định 00:00); bỏ trống cả hai = chạy ngay khi duyệt xong.
   const kitStartCombined = kitStartDate ? `${kitStartDate}T${kitStartTime || "00:00"}` : "";
+  // v599 · GIỜ NHẬP = GIỜ VIỆT NAM (giờ máy người đặt). Gửi server dạng ISO tuyệt đối — trước đây
+  // chuỗi trần bị hiểu theo múi giờ AD ACCOUNT (Mỹ) nên đặt 20:00 tối VN thành 20:00 tối Mỹ, lệch nguyên buổi.
+  const kitStartIso = (() => { if (!kitStartCombined) return ""; const d = new Date(kitStartCombined); return isNaN(d.getTime()) ? "" : d.toISOString(); })();
   const kitDatePlus = (d: number) => {
     const t = new Date(Date.now() + d * 86400000);
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
@@ -417,7 +423,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         campaign: kitCampaign, campaignId: kitCampId, adsetPrefix: kitAdset, budget: Number(kitBudget) || 5,
         mode: kitMode === "existing" ? "existing_adset" : kitMode, adsetId: kitAdsetId,
         adsets: kitAdsets.filter((a) => a.name.trim()).map((a) => ({ name: a.name.trim(), budget: Number(a.budget) || 5 })),
-        ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStartCombined, items,
+        ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStartIso, items,
       });
       if (j.ok) {
         const failed = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
@@ -438,7 +444,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "" }));
       const res = await fetch("/api/shopify-products/meta-bulk", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel, campaignId: kitCampId, ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStartCombined }),
+        body: JSON.stringify({ campaign: kitCampaign, adset: kitAdset, items, mode: kitMode, budget: Number(kitBudget) || 5, pixel: kitPixel, campaignId: kitCampId, ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStartIso }),
       });
       if (!res.ok) { const j = await res.json().catch(() => null); flash("✗ " + (j?.error ?? `Export failed (${res.status})`), false); setKitBusy(false); return; }
       const blob = await res.blob();
@@ -2641,7 +2647,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     <input value={kitCountries} onChange={(e) => setKitCountries(e.target.value.toUpperCase())} placeholder="US" style={{ ...kitIn, textAlign: "center" }} /></div>
                 )}
                 {kitMode !== "existing" && (
-                  <div><span style={kitLab}>Start date · ad account time zone</span>
+                  <div><span style={kitLab}>Start date · Vietnam time (your local)</span>
                     <div style={{ display: "flex", gap: 8 }}>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 7, background: "#EEF0F3", borderRadius: 10, padding: "0 12px" }}>
                         <span style={{ fontSize: 13 }}>🗓</span>
@@ -2663,7 +2669,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         <button key={tm} onClick={() => { setKitStartTime(tm); if (!kitStartDate) setKitStartDate(kitDatePlus(0)); }}
                           style={kitChip(!!kitStartDate && kitStartTime === tm)}>{tm}</button>
                       ))}
-                    </div></div>
+                    </div>
+                    {/* v599 · quy đổi sang GIỜ AD ACCOUNT (Mỹ) — 20:00 VN hiện ngay là mấy giờ sáng bên Mỹ, kèm ngày */}
+                    {(() => {
+                      if (!kitStartCombined || !kitTz?.name) return null;
+                      try {
+                        const d = new Date(kitStartCombined);
+                        if (isNaN(d.getTime())) return null;
+                        const us = d.toLocaleString("en-US", { timeZone: kitTz.name, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+                        return <div style={{ fontSize: 11, fontWeight: 700, color: "#B45309", marginTop: 6 }}>US ad-account time: {us} <span style={{ fontWeight: 600, color: "#8794A5" }}>· {kitTz.name}</span></div>;
+                      } catch { return null; }
+                    })()}</div>
                 )}
                 <span style={{ flex: 1 }} />
                 <div style={{ display: "flex", gap: 8 }}>

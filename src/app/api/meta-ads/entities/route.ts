@@ -39,10 +39,13 @@ export async function GET() {
 
   try {
     // v532 · kèm name + campaign_id/adset_id — để UI dựng CẤU TRÚC ad set/ads cho campaign mới chưa chi tiêu.
-    const [camps, adsets, ads] = await Promise.all([
+    const [camps, adsets, ads, acct] = await Promise.all([
       fbList(`${G}/${act}/campaigns?fields=id,name,status,daily_budget&limit=200`, token),
       fbList(`${G}/${act}/adsets?fields=id,name,campaign_id,status,effective_status,daily_budget&limit=200`, token),
       fbList(`${G}/${act}/ads?fields=id,name,adset_id,campaign_id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url,object_story_spec,effective_object_story_id}&limit=300`, token),
+      // v599 · múi giờ AD ACCOUNT — UI đặt lịch nhập giờ VN, hiện kèm giờ Mỹ tương ứng để đối chiếu.
+      fetch(`${G}/${act}?fields=timezone_name,timezone_offset_hours_utc`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) })
+        .then((r) => r.json()).catch(() => ({})) as Promise<{ timezone_name?: string; timezone_offset_hours_utc?: number }>,
     ]);
     // v573 · SELLER từng ad = CHỦ LISTING Shopify mà creative trỏ tới (shopify_products.created_by
     // — v567). plink → handle → created_by → tên user. Ad video: link nằm trong video_data.call_to_action.
@@ -113,6 +116,8 @@ export async function GET() {
 
     return NextResponse.json({
       ok: true,
+      // v599 · múi giờ ad account (vd America/Los_Angeles, offset -7/-8) — cho UI quy đổi giờ đặt lịch.
+      tz: { name: String(acct.timezone_name ?? ""), offset: Number(acct.timezone_offset_hours_utc ?? 0) },
       camp: Object.fromEntries(camps.map((c) => [String(c.id), String(c.status ?? "")])),
       // v541 · tên campaign — cho dropdown chọn campaign/ad set trong Meta Ads Kit.
       campNames: Object.fromEntries(camps.map((c) => [String(c.id), String(c.name ?? "")])),

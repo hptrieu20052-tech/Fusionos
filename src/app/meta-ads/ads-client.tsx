@@ -91,7 +91,7 @@ export default function AdsCenterClient() {
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
   // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
   type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null; seller?: string | null; post?: string | null };
-  type Ent = { camp: Record<string, string>; campBudget?: Record<string, number>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt> };
+  type Ent = { camp: Record<string, string>; campBudget?: Record<string, number>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt>; tz?: { name: string; offset: number } | null };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
     try {
@@ -100,7 +100,7 @@ export default function AdsCenterClient() {
         // Chịu được cả shape cũ (id → status string) lẫn mới (id → {status, thumb, img}) — an toàn lúc deploy lệch nhịp.
         const ads: Record<string, AdEnt> = {};
         for (const [k, v] of Object.entries((j.ads ?? {}) as Record<string, unknown>)) ads[k] = typeof v === "string" ? { status: v } : (v as AdEnt);
-        setEnt({ camp: j.camp ?? {}, campBudget: j.campBudget ?? {}, adsets: j.adsets ?? {}, ads });
+        setEnt({ camp: j.camp ?? {}, campBudget: j.campBudget ?? {}, adsets: j.adsets ?? {}, ads, tz: j.tz ?? null });
       }
     } catch { /* điều khiển là phụ — lỗi không chặn bảng số */ }
   }, []);
@@ -1225,7 +1225,7 @@ export default function AdsCenterClient() {
               const chip = (on: boolean): React.CSSProperties => ({ border: on ? "1.5px solid #16A34A" : "1px solid #C9D2DE", background: on ? "#F0FBF4" : "#fff", color: on ? "#15803D" : "#5B6472", borderRadius: 999, padding: "3px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" });
               return (
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: "#5B6472" }}>START DATE (your local time)</span>
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: "#5B6472" }}>START DATE (Vietnam time — your local)</span>
                   <div style={{ display: "flex", gap: 8 }}>
                     <input type="date" value={sDate} onChange={(e) => setStart(e.target.value, sTime)} style={{ ...dupInp, flex: 1 }} />
                     <input type="time" value={sTime} onChange={(e) => setStart(sDate || dstr(0), e.target.value)} style={{ ...dupInp, width: 120 }} />
@@ -1238,6 +1238,17 @@ export default function AdsCenterClient() {
                       <button key={t} type="button" onClick={() => setStart(sDate || dstr(0), t)} style={chip(!!dupForm.start && sTime === t)}>{t}</button>
                     ))}
                   </div>
+                  {/* v599 · quy đổi sang GIỜ AD ACCOUNT (Mỹ) — nhập 20:00 VN thấy ngay đó là mấy giờ sáng bên Mỹ */}
+                  {(() => {
+                    const tzn = ent?.tz?.name;
+                    if (!dupForm.start || !tzn) return null;
+                    try {
+                      const d = new Date(dupForm.start);
+                      if (isNaN(d.getTime())) return null;
+                      const us = d.toLocaleString("en-US", { timeZone: tzn, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+                      return <span style={{ fontSize: 11, fontWeight: 700, color: "#B45309" }}>US ad-account time: {us} <span style={{ fontWeight: 600, color: "#8794A5" }}>· {tzn}</span></span>;
+                    } catch { return null; }
+                  })()}
                 </div>
               );
             })()}

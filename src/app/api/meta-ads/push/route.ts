@@ -93,14 +93,22 @@ export async function POST(req: NextRequest) {
   if (mode !== "existing_adset" && !campaign && !campaignIdIn) return NextResponse.json({ ok: false, error: "campaign (or campaignId) is required" }, { status: 400 });
   if (mode === "custom" && !adsetDefs.length) return NextResponse.json({ ok: false, error: "custom mode needs at least one ad set (name + budget)" }, { status: 400 });
 
-  // start_time: kit gửi "YYYY-MM-DDTHH:mm" THEO MÚI GIỜ AD ACCOUNT → hỏi offset của account để ra UTC.
+  // v599 · start_time: kit giờ gửi ISO TUYỆT ĐỐI (client tính từ giờ VN người đặt; UI hiện kèm giờ Mỹ
+  // để đối chiếu) → có Z/offset thì dùng thẳng. Chuỗi trần "YYYY-MM-DDTHH:mm" (client cũ chưa reload)
+  // giữ cách cũ: hiểu theo múi giờ AD ACCOUNT.
   let startIso = "";
-  const sm = String(body?.startTime ?? "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-  if (sm) {
-    const acc = await fb(`${c.account}?fields=timezone_offset_hours_utc`, c.token).catch(() => ({ timezone_offset_hours_utc: 0 }));
-    const off = Number((acc as { timezone_offset_hours_utc?: number }).timezone_offset_hours_utc ?? 0);
-    const utcMs = Date.UTC(+sm[1], +sm[2] - 1, +sm[3], +sm[4], +sm[5]) - off * 3600000;
-    startIso = new Date(utcMs).toISOString().replace(/\.\d{3}Z$/, "+0000");
+  const stRaw = String(body?.startTime ?? "");
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(stRaw)) {
+    const d = new Date(stRaw);
+    if (!isNaN(d.getTime())) startIso = d.toISOString().replace(/\.\d{3}Z$/, "+0000");
+  } else {
+    const sm = stRaw.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (sm) {
+      const acc = await fb(`${c.account}?fields=timezone_offset_hours_utc`, c.token).catch(() => ({ timezone_offset_hours_utc: 0 }));
+      const off = Number((acc as { timezone_offset_hours_utc?: number }).timezone_offset_hours_utc ?? 0);
+      const utcMs = Date.UTC(+sm[1], +sm[2] - 1, +sm[3], +sm[4], +sm[5]) - off * 3600000;
+      startIso = new Date(utcMs).toISOString().replace(/\.\d{3}Z$/, "+0000");
+    }
   }
 
   // Link + ảnh lấy từ DB (ảnh do user chọn trong kit — kể cả ảnh angle tự upload — được ưu tiên).
