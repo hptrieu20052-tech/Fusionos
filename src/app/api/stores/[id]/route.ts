@@ -67,8 +67,9 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const patch: Record<string, unknown> = {};
   if (typeof b.name === "string" && b.name.trim()) {
     const nm = b.name.trim();
+    // v598 · store đã xoá mềm không giữ chỗ tên — đặt lại tên cũ được.
     const [dupName] = await db.select({ id: schema.stores.id })
-      .from(schema.stores).where(and(sql`lower(${schema.stores.name}) = lower(${nm})`, ne(schema.stores.id, params.id))).limit(1);
+      .from(schema.stores).where(and(sql`lower(${schema.stores.name}) = lower(${nm})`, ne(schema.stores.id, params.id), ne(schema.stores.status, "deleted" as never))).limit(1);
     if (dupName) return NextResponse.json({ ok: false, error: `Tên store "${nm}" đã tồn tại — hãy dùng tên khác` }, { status: 409 });
     patch.name = nm;
   }
@@ -142,15 +143,44 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json({ ok: true, ingestToken: patch.ingestToken as string | undefined, handover, moved });
 }
 
-// DELETE — xóa store (gỡ liên kết đơn/design về null để giữ lịch sử)
+// DELETE — v598 · XOÁ MỀM: store chỉ ẨN đi (status='deleted'), KHÔNG xoá dòng.
+// Trước đây xoá cứng: dòng stores mất → etsy_products mất chỗ tựa → listing Shopify "mất gốc"
+// (Manage Products mất tên chủ, webhook đơn rơi hết về admin — sự cố 24/9). Giờ:
+//   · listing ở Manage Products Etsy/Shopify, đơn, design GIỮ NGUYÊN, liên kết còn đủ;
+//   · store biến mất khỏi trang Stores, cron sync, webhook; ingest token bị thu hồi
+//     (extension cũ không bơm đơn vào được nữa);
+//   · trước khi ẩn, ĐÓNG DẤU chủ (created_by) lên các listing Shopify stage từ store này —
+//     kể cả sau này có ai xoá cứng dữ liệu Etsy, quyền sở hữu vẫn nằm trên chính listing.
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   if ((await levelOf(session, "stores")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  await db.update(schema.orders).set({ storeId: null }).where(eq(schema.orders.storeId, params.id));
-  await db.update(schema.designs).set({ storeId: null }).where(eq(schema.designs.storeId, params.id));
-  await db.delete(schema.stores).where(eq(schema.stores.id, params.id));
-  return NextResponse.json({ ok: true });
+  const [st] = await db.select({ sellerId: schema.stores.sellerId }).from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
+  if (!st) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
+  // Seller chỉ xoá store của CHÍNH MÌNH (PATCH đã có rule này — DELETE trước đây bỏ sót).
+  if (session.role === "seller" && st.sellerId !== session.sub) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+
+  let stamped = 0;
+  if (st.sellerId) {
+    try {
+      // Backfill v567 nhưng scope theo store này — cả 2 chiều liên kết Etsy ↔ Shopify.
+      const r1 = (await db.execute(sql`
+        UPDATE shopify_products sp SET created_by = ${st.sellerId}::uuid, updated_at = now()
+        FROM etsy_products ep
+        WHERE ep.store_id = ${params.id}::uuid AND sp.etsy_product_id = ep.id AND sp.created_by IS NULL
+        RETURNING sp.id`)).rows;
+      const r2 = (await db.execute(sql`
+        UPDATE shopify_products sp SET created_by = ${st.sellerId}::uuid, updated_at = now()
+        FROM etsy_products ep
+        WHERE ep.store_id = ${params.id}::uuid AND sp.created_by IS NULL
+          AND sp.shopify_product_id <> '' AND ep.shopify_product_id = sp.shopify_product_id
+        RETURNING sp.id`)).rows;
+      stamped = r1.length + r2.length;
+    } catch { /* đóng dấu là bảo hiểm thêm — lỗi không chặn việc ẩn store */ }
+  }
+
+  await db.update(schema.stores).set({ status: "deleted" as never, ingestToken: null }).where(eq(schema.stores.id, params.id));
+  return NextResponse.json({ ok: true, softDeleted: true, stamped });
 }
 
 // POST /api/stores/[id] với ?action=health — kiểm tra kết nối (mô phỏng nếu chưa có API thật)

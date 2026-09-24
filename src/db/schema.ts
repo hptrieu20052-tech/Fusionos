@@ -10,7 +10,8 @@ export const userStatusEnum = pgEnum("user_status", ["active", "pending", "leave
 // v496 · thêm "woocommerce" — cần chạy MIGRATION_v496_woocommerce.sql (ALTER TYPE ADD VALUE) trước khi dùng.
 export const marketplaceEnum = pgEnum("marketplace", ["tiktok", "amazon", "etsy", "shopify", "shopbase", "woocommerce", "other"]);
 export const connectMethodEnum = pgEnum("connect_method", ["api", "extension", "excel"]);
-export const storeStatusEnum = pgEnum("store_status", ["active", "warning", "suspended", "pending"]);
+// v598 · "deleted" = XOÁ MỀM: ẩn khỏi danh sách/sync/webhook nhưng giữ dòng để listing-đơn-design không mất liên kết.
+export const storeStatusEnum = pgEnum("store_status", ["active", "warning", "suspended", "pending", "deleted"]);
 export const orderStatusEnum = pgEnum("order_status", [
   "new", "created", "in_production", "shipped", "delivered", "completed", "cancel", "has_issues", "out_of_stock", "trash",
 ]);

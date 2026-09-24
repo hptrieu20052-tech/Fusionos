@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
-import { sql } from "drizzle-orm";
+import { ne, sql } from "drizzle-orm";
 import { getValidCfg, readEtsyCfg, fetchReceipts, normalizeReceipt } from "@/lib/etsy";
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
 import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/lib/tiktok-shop";
@@ -47,10 +47,11 @@ async function tick(req: NextRequest) {
   const deadline = started + 50000; // chừa 10s an toàn trước maxDuration
 
   // ---- 1. Etsy: kéo đơn mới cho mọi store đã connect ----
+  // v598 · store xoá mềm không sync nữa (dòng vẫn còn để giữ liên kết listing/đơn).
   const stores = await db.select({
     id: schema.stores.id, sellerId: schema.stores.sellerId, fx: schema.stores.fxRate,
     name: schema.stores.name, c: schema.stores.apiCredentials,
-  }).from(schema.stores);
+  }).from(schema.stores).where(ne(schema.stores.status, "deleted" as never));
 
   const etsy: { store: string; ok: boolean; received?: number; created?: number; skipped?: number; error?: string }[] = [];
   for (const st of stores) {

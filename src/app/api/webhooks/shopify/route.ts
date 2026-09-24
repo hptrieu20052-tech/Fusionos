@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, eq, inArray, like, or } from "drizzle-orm";
+import { and, eq, inArray, like, ne, or } from "drizzle-orm";
 import { verifyShopifyHmac, normalizeShopifyOrder, splitShopifyOrderBySeller, shopHost, webhookSecretOf, type ShopifyCred } from "@/lib/shopify";
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
 
@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
   if (!topic.startsWith("orders/")) return NextResponse.json({ ok: true, skipped: "topic " + topic });
 
   // Tìm store Shopify khớp shop domain (nếu chỉ có 1 store shopify thì dùng luôn store đó)
-  const shopifyStores = await db.select().from(schema.stores).where(eq(schema.stores.marketplace, "shopify"));
+  // v598 · store xoá mềm không nhận webhook nữa.
+  const shopifyStores = await db.select().from(schema.stores).where(and(eq(schema.stores.marketplace, "shopify"), ne(schema.stores.status, "deleted" as never)));
   if (!shopifyStores.length) return NextResponse.json({ ok: false, error: "no shopify store configured" }, { status: 202 });
   const store = shopifyStores.find((s) => shopHost((s.apiCredentials ?? {}) as ShopifyCred).toLowerCase() === shopDomain)
     ?? (shopifyStores.length === 1 ? shopifyStores[0] : undefined);
@@ -61,11 +62,19 @@ export async function POST(req: NextRequest) {
     const pidToSeller = new Map<string, string>();
     if (pids.length) {
       const gids = pids.map((n) => `gid://shopify/Product/${n}`);
+      // v597 · CHỦ LISTING (shopify_products.created_by — v567) là nguồn CHÍNH. Đường etsy_products
+      // đứt ngay khi seller xoá store Etsy nguồn (bug 24/9: mọi đơn rơi về admin) — created_by nằm
+      // trên chính listing Shopify nên sống sót, và admin gán tay qua Assign owner cũng ăn vào đây.
+      const owned = await db.select({ gid: schema.shopifyProducts.shopifyProductId, createdBy: schema.shopifyProducts.createdBy })
+        .from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.shopifyProductId, gids))
+        .catch(() => [] as { gid: string | null; createdBy: string | null }[]);
+      for (const m of owned) { const n = String(m.gid ?? "").replace(/\D/g, ""); if (n && m.createdBy) pidToSeller.set(n, m.createdBy); }
+      // Fallback flow cũ: listing stage từ Etsy chưa gán owner → seller của store Etsy nguồn.
       const matched = await db.select({ gid: schema.etsyProducts.shopifyProductId, sellerId: schema.stores.sellerId })
         .from(schema.etsyProducts)
         .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
         .where(inArray(schema.etsyProducts.shopifyProductId, gids));
-      for (const m of matched) { const n = String(m.gid ?? "").replace(/\D/g, ""); if (n && m.sellerId) pidToSeller.set(n, m.sellerId); }
+      for (const m of matched) { const n = String(m.gid ?? "").replace(/\D/g, ""); if (n && m.sellerId && !pidToSeller.has(n)) pidToSeller.set(n, m.sellerId); }
     }
     // 2) Fallback cho item list tay (không map được): gán ADMIN đầu tiên để support/admin thấy mà fulfill.
     const [admin] = await db.select({ id: schema.users.id }).from(schema.users)

@@ -1577,7 +1577,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       setAct(null); setBusy(true);
       try {
         const j = await postJSON("/api/shopify-products/set-owner", { ids: Array.from(sel), userId });
-        if (j.ok) { flash(userId ? `✓ Assigned ${j.updated} listing(s) to ${who} — seller filter & Meta Ads "Spend by seller" pick this up on next load` : `✓ Cleared owner on ${j.updated} listing(s)`); setSel(new Set()); }
+        if (j.ok) { flash(userId ? `✓ Assigned ${j.updated} listing(s) to ${who}${j.ordersMoved ? ` · ${j.ordersMoved} past order(s) re-assigned from admin to ${who}` : ""} — seller filter & Meta Ads "Spend by seller" pick this up on next load` : `✓ Cleared owner on ${j.updated} listing(s)`); setSel(new Set()); }
         else flash("✗ " + (j.error ?? "Failed"), false);
       } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
       await load();
@@ -1978,7 +1978,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     <span style={{ opacity: .55 }}>ID</span> {r.id}
                   </div>
                 </td>
-                <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.creatorName ?? r.sellerName ?? "—"}</div>
+                {/* v597 · fallback thêm seller của listing Etsy gốc (đồng bộ với filter Seller) — chỉ khi
+                    cả created_by lẫn link Etsy đều mất mới rơi về chủ store */}
+                <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.creatorName ?? r.etsyListing?.seller ?? r.sellerName ?? "—"}</div>
                   {/* v203 · chip Etsy giờ là LINK — click mở listing gốc bên Manage Products · Etsy (thay nút Etsy ở Actions) */}
                   {r.etsyListing && (r.etsyListing.store || r.etsyListing.seller) && (
                     <a href={`/etsy-products?pid=${encodeURIComponent(r.etsyListing.id)}`} target="_blank" rel="noreferrer"

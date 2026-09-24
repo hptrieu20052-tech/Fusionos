@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { db, schema } from "@/lib/db";
-import { desc, eq, and, or, inArray, sql } from "drizzle-orm";
+import { desc, eq, ne, and, or, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { scopeOwnerIds, sharedStoreIds } from "@/lib/scope";
@@ -18,6 +18,9 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const scopeIds = await scopeOwnerIds(session, "stores");
   const parts = [];
+  // v598 · store xoá mềm (status='deleted') KHÔNG hiện ở đâu nữa — nhưng dòng vẫn còn trong DB
+  // nên listing/đơn/design của nó giữ nguyên liên kết.
+  parts.push(ne(schema.stores.status, "deleted" as never));
   // Phạm vi own/team: store thuộc seller trong phạm vi HOẶC store được SHARE (v458, Shopify/ShopBase).
   const shared = await sharedStoreIds(scopeIds);
   if (scopeIds) parts.push(shared.length
@@ -164,8 +167,9 @@ export async function POST(req: NextRequest) {
   }
   // Chặn trùng tên store (không phân biệt hoa/thường) — tránh nhầm lẫn khi khớp đơn về sau
   const name = String(b.name).trim();
+  // v598 · store đã xoá mềm không giữ chỗ tên — tạo store mới trùng tên store đã xoá được.
   const [dupName] = await db.select({ id: schema.stores.id })
-    .from(schema.stores).where(sql`lower(${schema.stores.name}) = lower(${name})`).limit(1);
+    .from(schema.stores).where(and(sql`lower(${schema.stores.name}) = lower(${name})`, ne(schema.stores.status, "deleted" as never))).limit(1);
   if (dupName) return NextResponse.json({ ok: false, error: `Tên store "${name}" đã tồn tại — hãy dùng tên khác` }, { status: 409 });
 
   // Seller tạo store → luôn là store của chính mình (bỏ qua sellerId gửi lên)
