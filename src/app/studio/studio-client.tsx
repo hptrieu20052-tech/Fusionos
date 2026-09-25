@@ -11,7 +11,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type Settings = { enabled: boolean; model: string; aspectRatio: string; dailyLimitIp: number; dailyLimitGlobal: number; watermark: string; origins: string[]; prompt: string };
 type TplVariant = { id: string; title: string; price: string };
-type Tpl = { id: string; title: string; thumbUrl: string; baseImageUrl: string; variantId: string; price: string; promptExtra: string; active: boolean; sort: number; variants: TplVariant[]; description: string; ageRange: string; pages: string; backImageUrl: string; genBack: boolean };
+type Tpl = { id: string; title: string; thumbUrl: string; baseImageUrl: string; variantId: string; price: string; promptExtra: string; active: boolean; sort: number; variants: TplVariant[]; description: string; ageRange: string; pages: string; backImageUrl: string; genBack: boolean; sellerId?: string | null };
+type Seller = { id: string; name: string | null };
 type Lead = { id: string; templateId: string | null; childName: string; email: string; previewUrl: string | null; photoUrl: string | null; model: string; cost: string; ip: string; status: string; error: string; createdAt: string };
 type Model = { id: string; name: string };
 type PickProduct = { id: string; title: string; thumb: string; url: string | null; variants: { id: string; title: string; price: string }[]; desc?: string };
@@ -21,7 +22,7 @@ const lbl: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, color: "var(
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 14, padding: 16, marginBottom: 14 };
 const btn = (bg: string): React.CSSProperties => ({ background: bg, color: "#fff", border: 0, borderRadius: 11, padding: "10px 20px", fontWeight: 800, fontSize: 13.5, cursor: "pointer" });
 
-const EMPTY_TPL: Tpl = { id: "", title: "", thumbUrl: "", baseImageUrl: "", variantId: "", price: "", promptExtra: "", active: true, sort: 0, variants: [], description: "", ageRange: "", pages: "", backImageUrl: "", genBack: false };
+const EMPTY_TPL: Tpl = { id: "", title: "", thumbUrl: "", baseImageUrl: "", variantId: "", price: "", promptExtra: "", active: true, sort: 0, variants: [], description: "", ageRange: "", pages: "", backImageUrl: "", genBack: false, sellerId: null };
 
 /** v493 · Nút Upload ảnh từ máy: nén client-side (≤1600px JPEG) → POST /api/studio/admin/upload → trả URL R2. */
 function UploadBtn({ onDone, onError }: { onDone: (url: string) => void; onError: (m: string) => void }) {
@@ -60,6 +61,7 @@ function UploadBtn({ onDone, onError }: { onDone: (url: string) => void; onError
 export default function StudioClient() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [templates, setTemplates] = useState<Tpl[]>([]);
+  const [sellers, setSellers] = useState<Seller[]>([]); // v600 · dropdown Assign seller
   const [leads, setLeads] = useState<Lead[]>([]);
   const [models, setModels] = useState<Model[]>([]);
   const [edit, setEdit] = useState<Tpl | null>(null);      // template đang sửa/tạo (null = đóng form)
@@ -74,7 +76,7 @@ export default function StudioClient() {
   const load = useCallback(async () => {
     try {
       const j = await fetch("/api/studio/admin").then((r) => r.json());
-      if (j.ok) { setSettings(j.settings); setTemplates(j.templates ?? []); setLeads(j.leads ?? []); }
+      if (j.ok) { setSettings(j.settings); setTemplates(j.templates ?? []); setLeads(j.leads ?? []); setSellers(j.sellers ?? []); }
       else setMsg("✗ " + (j.error || "Failed to load"));
     } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? e)); }
   }, []);
@@ -135,6 +137,18 @@ export default function StudioClient() {
       description: (prev?.description?.trim() ? prev.description : (p.desc ?? "")),
     }) as Tpl);
     setPickRows([]); setPickQ("");
+  };
+
+  // v600 · gán seller ngay trên dòng — PUT nguyên template (các field khác giữ nguyên); server
+  // đồng thời đóng dấu created_by lên listing Shopify chứa variant → đơn wizard chia đúng seller.
+  const assignSeller = async (t: Tpl, sellerId: string) => {
+    setSaving(true); setMsg("");
+    try {
+      const j = await fetch("/api/studio/admin", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ template: { ...t, sellerId: sellerId || null } }) }).then((r) => r.json());
+      if (j.ok) { setMsg(sellerId ? `✓ Seller assigned${j.stamped ? ` · Shopify listing owner updated (${j.stamped})` : ""}` : "✓ Seller cleared"); load(); }
+      else setMsg("✗ " + (j.error || "Save failed"));
+    } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? e)); }
+    setSaving(false);
   };
 
   const delTpl = async (id: string) => {
@@ -237,10 +251,22 @@ export default function StudioClient() {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 {t.thumbUrl ? <img src={t.thumbUrl} alt="" style={{ width: 52, height: 52, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line)" }} /> : <div style={{ width: 52, height: 52, borderRadius: 10, background: "#f4f4f4" }} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 800, fontSize: 13.5 }}>{t.title} {!t.active && <span style={{ color: "var(--red)", fontSize: 11.5 }}>· hidden</span>}</div>
+                  {/* v600 · click TITLE để sửa (bỏ nút Edit) */}
+                  <div onClick={() => setEdit({ ...t })} title="Click to edit this template"
+                    style={{ fontWeight: 800, fontSize: 13.5, cursor: "pointer" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = "#f68b1e")}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = "")}>
+                    {t.title} {!t.active && <span style={{ color: "var(--red)", fontSize: 11.5 }}>· hidden</span>}
+                  </div>
                   <div style={{ fontSize: 12, color: "var(--muted)" }}>{t.price || "—"} · variant {t.variantId || "—"}{(t.variants?.length ?? 0) > 1 ? ` · ${t.variants.length} sizes selectable` : ""} · sort {t.sort}</div>
                 </div>
-                <button onClick={() => setEdit({ ...t })} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 9, padding: "7px 14px", cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}>Edit</button>
+                {/* v600 · Assign seller ngay trên dòng — đơn qua wizard chia về seller này */}
+                <select value={t.sellerId ?? ""} disabled={saving} onChange={(e) => assignSeller(t, e.target.value)}
+                  title="Assign this template to a seller — Studio orders for it will count toward that seller (the linked Shopify listing's owner is updated too)"
+                  style={{ border: "1px solid var(--line)", background: t.sellerId ? "#FFF9F2" : "#fff", color: t.sellerId ? "#B45309" : "var(--muted)", borderRadius: 9, padding: "7px 10px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", maxWidth: 170 }}>
+                  <option value="">— no seller —</option>
+                  {sellers.map((s) => <option key={s.id} value={s.id}>{s.name || s.id.slice(0, 8)}</option>)}
+                </select>
                 <button onClick={() => delTpl(t.id)} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 9, padding: "7px 12px", cursor: "pointer", color: "var(--red)", fontSize: 13 }}>✕</button>
               </div>
             ))}
@@ -284,6 +310,13 @@ export default function StudioClient() {
                 <div><span style={lbl}>Price label</span><input value={edit.price} onChange={(e) => setEdit({ ...edit, price: e.target.value })} placeholder="$29.95" style={inp} /></div>
                 <div><span style={lbl}>Shopify variant ID (add to cart)</span><input value={edit.variantId} onChange={(e) => setEdit({ ...edit, variantId: e.target.value })} placeholder="4512345678901" style={inp} /></div>
                 <div><span style={lbl}>Sort</span><input type="number" value={edit.sort} onChange={(e) => setEdit({ ...edit, sort: Number(e.target.value) || 0 })} style={inp} /></div>
+                {/* v600 · seller của template — đơn wizard + listing Shopify liên kết tính về người này */}
+                <div><span style={lbl}>Seller (owner)</span>
+                  <select value={edit.sellerId ?? ""} onChange={(e) => setEdit({ ...edit, sellerId: e.target.value || null })} style={inp}>
+                    <option value="">— no seller —</option>
+                    {sellers.map((s) => <option key={s.id} value={s.id}>{s.name || s.id.slice(0, 8)}</option>)}
+                  </select>
+                </div>
               </div>
               <div style={{ marginBottom: 12 }}>
                 <span style={lbl}>Thumb URL (wizard grid)</span>

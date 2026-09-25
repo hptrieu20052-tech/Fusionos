@@ -1201,6 +1201,8 @@ export const studioTemplates = pgTable("studio_templates", {
   // genBack = true → AI gen cả bìa sau theo mặt bé (2× phí gen, chạy song song với bìa trước).
   backImageUrl: text("back_image_url").notNull().default(""),
   genBack: boolean("gen_back").notNull().default(false),
+  // v600 · SELLER của template — đơn qua wizard chia về seller này (đồng bộ created_by listing Shopify).
+  sellerId: uuid("seller_id"),
   active: boolean("active").notNull().default(true),
   sort: integer("sort").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

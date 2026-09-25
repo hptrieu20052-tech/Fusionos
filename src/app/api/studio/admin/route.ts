@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
-import { and, asc, desc, eq, ilike, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { getStudioSettings, saveStudioSettings, defaultStudioSettings, type StudioSettings } from "@/lib/studio";
 import { fileUrl } from "@/lib/storage";
@@ -54,6 +54,12 @@ export async function GET(req: NextRequest) {
   }
 
   const settings = await getStudioSettings();
+  // v600 · danh sách seller cho dropdown Assign seller trên tab Templates.
+  let sellers: { id: string; name: string | null }[] = [];
+  try {
+    sellers = await db.select({ id: schema.users.id, name: schema.users.fullName })
+      .from(schema.users).where(eq(schema.users.role, "seller"));
+  } catch { /* phụ */ }
   let templates: unknown[] = [], leads: unknown[] = [];
   try {
     templates = await db.select().from(schema.studioTemplates)
@@ -69,7 +75,7 @@ export async function GET(req: NextRequest) {
     }).from(schema.studioPreviews).orderBy(desc(schema.studioPreviews.createdAt)).limit(100);
     leads = rows.map((r) => ({ ...r, previewUrl: r.previewKey ? fileUrl(r.previewKey) : null, photoUrl: r.photoKey ? fileUrl(r.photoKey) : null }));
   } catch { /* bảng chưa migrate → trả rỗng, UI hiện hướng dẫn chạy SQL */ }
-  return NextResponse.json({ ok: true, settings, defaults: defaultStudioSettings(), templates, leads });
+  return NextResponse.json({ ok: true, settings, defaults: defaultStudioSettings(), templates, leads, sellers });
 }
 
 export async function PATCH(req: NextRequest) {
@@ -94,7 +100,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 type TplVariant = { id?: string; title?: string; price?: string };
-type TplBody = { id?: string; title?: string; thumbUrl?: string; baseImageUrl?: string; variantId?: string; price?: string; promptExtra?: string; active?: boolean; sort?: number; variants?: TplVariant[]; description?: string; ageRange?: string; pages?: string; backImageUrl?: string; genBack?: boolean };
+type TplBody = { id?: string; title?: string; thumbUrl?: string; baseImageUrl?: string; variantId?: string; price?: string; promptExtra?: string; active?: boolean; sort?: number; variants?: TplVariant[]; description?: string; ageRange?: string; pages?: string; backImageUrl?: string; genBack?: boolean; sellerId?: string | null };
 function tplFields(t: TplBody) {
   // v488 · variants: danh sách size/paper cho khách chọn trong wizard (picker tự nạp khi chọn sản phẩm).
   const variants = (Array.isArray(t.variants) ? t.variants : []).map((v) => ({
@@ -117,7 +123,25 @@ function tplFields(t: TplBody) {
     pages: String(t.pages ?? "").trim().slice(0, 10),
     backImageUrl: String(t.backImageUrl ?? "").trim(),
     genBack: t.genBack === true,
+    // v600 · seller của template — uuid hợp lệ hoặc null (bỏ gán).
+    sellerId: /^[0-9a-f-]{36}$/i.test(String(t.sellerId ?? "")) ? String(t.sellerId) : null,
   };
+}
+
+// v600 · Gán seller cho template → ĐÓNG DẤU luôn created_by lên listing Shopify chứa variant đó.
+// Nhờ vậy đơn khách đặt qua wizard (add-to-cart variant này) được webhook v597 chia đúng seller,
+// và Spend by seller bên Meta Ads cũng nhìn thấy chủ listing. Best-effort — lỗi không chặn Save.
+async function stampOwnerByVariant(variantId: string, sellerId: string | null): Promise<number> {
+  if (!sellerId) return 0;
+  const vid = String(variantId ?? "").replace(/\D/g, "");
+  if (!vid) return 0;
+  try {
+    const r = (await db.execute(sql`
+      UPDATE shopify_products SET created_by = ${sellerId}::uuid, updated_at = now()
+      WHERE variants::text LIKE ${"%" + vid + "%"}
+      RETURNING id`)).rows;
+    return r.length;
+  } catch { return 0; }
 }
 
 export async function POST(req: NextRequest) {
@@ -127,7 +151,8 @@ export async function POST(req: NextRequest) {
   if (!f.title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
   try {
     const [row] = await db.insert(schema.studioTemplates).values(f).returning();
-    return NextResponse.json({ ok: true, template: row });
+    const stamped = await stampOwnerByVariant(f.variantId, f.sellerId);
+    return NextResponse.json({ ok: true, template: row, stamped });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
@@ -143,7 +168,8 @@ export async function PUT(req: NextRequest) {
   if (!f.title) return NextResponse.json({ ok: false, error: "title required" }, { status: 400 });
   try {
     await db.update(schema.studioTemplates).set({ ...f, updatedAt: new Date() }).where(eq(schema.studioTemplates.id, id));
-    return NextResponse.json({ ok: true });
+    const stamped = await stampOwnerByVariant(f.variantId, f.sellerId);
+    return NextResponse.json({ ok: true, stamped });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 500 });
   }
