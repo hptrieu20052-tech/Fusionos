@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!session || session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const token = process.env.META_SYSTEM_TOKEN ?? "";
   if (!token) return NextResponse.json({ ok: false, error: "Meta API not configured" }, { status: 400 });
-  const b = await req.json().catch(() => null) as { adId?: string; fb?: boolean; ig?: boolean; when?: string } | null;
+  const b = await req.json().catch(() => null) as { adId?: string; fb?: boolean; ig?: boolean; when?: string; preview?: boolean } | null;
   const adId = String(b?.adId ?? "").replace(/\D/g, "");
   if (!adId) return NextResponse.json({ ok: false, error: "adId required" }, { status: 400 });
   const toFb = b?.fb !== false;
@@ -55,6 +55,16 @@ export async function POST(req: NextRequest) {
     const imageUrl = String(cr.image_url ?? spec.link_data?.picture ?? spec.video_data?.image_url ?? cr.thumbnail_url ?? "").trim();
     if (!pageId) return NextResponse.json({ ok: false, error: "Cannot resolve the Facebook Page from this ad's creative." }, { status: 400 });
     if (!message && !link) return NextResponse.json({ ok: false, error: "This ad's creative has no caption/link to publish." }, { status: 400 });
+
+    // v615 · preview: trả nội dung SẼ ĐĂNG (caption + link + ảnh) + tình trạng link IG — không đăng gì.
+    if (b?.preview === true) {
+      let igLinked: boolean | null = null;
+      try {
+        const pg = await fb(`${pageId}?fields=instagram_business_account`, token);
+        igLinked = !!((pg.instagram_business_account ?? {}) as { id?: string }).id;
+      } catch { igLinked = null; }
+      return NextResponse.json({ ok: true, preview: { message, link, imageUrl, pageId, igLinked } });
+    }
 
     const warns: string[] = [];
     let fbPostId = "", igMediaId = "", igQueued = false;

@@ -436,6 +436,14 @@ export default function AdsCenterClient() {
   // (FB dùng lịch native của Meta — đúng giờ tuyệt đối; IG xếp hàng, cron đăng khi tới giờ).
   const [pubBusy, setPubBusy] = useState("");
   const [pubForm, setPubForm] = useState<null | { adId: string; name: string; fb: boolean; ig: boolean; date: string; time: string }>(null);
+  // v615 · preview nội dung SẼ ĐĂNG (caption + link + ảnh từ creative thật) — nạp khi mở form.
+  const [pubPrev, setPubPrev] = useState<null | { message: string; link: string; imageUrl: string; igLinked: boolean | null }>(null);
+  const openPub = (adId: string, name: string) => {
+    setPubForm({ adId, name, fb: true, ig: false, date: "", time: "" });
+    setPubPrev(null);
+    fetch("/api/meta-ads/publish-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adId, preview: true }) })
+      .then((r) => r.json()).then((j) => { if (j.ok && j.preview) setPubPrev(j.preview); }).catch(() => { /* preview là phụ */ });
+  };
   const submitPub = async () => {
     if (!pubForm || pubBusy) return;
     const f = pubForm;
@@ -1054,7 +1062,7 @@ export default function AdsCenterClient() {
                           })()}
                           {/* v587 · đăng nội dung ad thành BÀI CÔNG KHAI — v614 mở form chọn kênh (FB/IG) + đặt lịch */}
                           {ent?.ads[a.adId]?.post && (
-                            <button onClick={(e) => { e.stopPropagation(); setPubForm({ adId: a.adId, name: a.ad, fb: true, ig: false, date: "", time: "" }); }} disabled={pubBusy === a.adId}
+                            <button onClick={(e) => { e.stopPropagation(); openPub(a.adId, a.ad); }} disabled={pubBusy === a.adId}
                               title="Publish this ad's caption + product link as a PUBLIC post — Facebook Page and/or Instagram, now or scheduled (Meta cannot publish the ad's dark post itself)."
                               style={{ border: "1px solid #C9D2DE", background: "#fff", color: "#5B6472", borderRadius: 5, padding: "1px 7px", fontSize: 9, fontWeight: 800, letterSpacing: ".3px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px" }}>
                               {pubBusy === a.adId ? "…" : "→ PAGE"}
@@ -1146,51 +1154,76 @@ export default function AdsCenterClient() {
           <button onClick={() => setAdSel(new Set())} style={{ border: "none", background: "transparent", color: "#94A3B8", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>✕ Clear</button>
         </div>
       )}
-      {/* v614 · form ĐĂNG BÀI từ ad: kênh FB Page / Instagram + đăng ngay hoặc ĐẶT LỊCH (giờ VN + hiện giờ Mỹ) */}
-      {pubForm && (
+      {/* v614/v615 · form ĐĂNG BÀI: preview nội dung thật + chip kênh + lịch kiểu chip (Publish now / Today / Tomorrow / giờ) */}
+      {pubForm && (() => {
+        const f = pubForm;
+        const dstr = (off: number) => { const x = new Date(Date.now() + off * 86400000); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`; };
+        const chip = (on: boolean): React.CSSProperties => ({ border: on ? "1.5px solid #16A34A" : "1px solid #C9D2DE", background: on ? "#F0FBF4" : "#fff", color: on ? "#15803D" : "#5B6472", borderRadius: 999, padding: "4px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" });
+        const chChip = (on: boolean): React.CSSProperties => ({ border: on ? "1.5px solid #1D4ED8" : "1px solid #C9D2DE", background: on ? "#EDF3FF" : "#fff", color: on ? "#1D4ED8" : "#5B6472", borderRadius: 999, padding: "6px 14px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" });
+        const lab: React.CSSProperties = { fontSize: 11, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" };
+        return (
         <div onClick={() => !pubBusy && setPubForm(null)} style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(15,20,40,.55)", overflowY: "auto", padding: "60px 16px" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ margin: "0 auto", maxWidth: 440, background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-            <b style={{ fontSize: 14.5 }}>Publish as a PUBLIC post <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 12 }}>· {pubForm.name}</span></b>
-            <label style={{ fontSize: 11, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" }}>CHANNELS</label>
-            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, cursor: "pointer" }}>
-              <input type="checkbox" checked={pubForm.fb} onChange={(e) => setPubForm({ ...pubForm, fb: e.target.checked })} style={{ marginTop: 2 }} />
-              <span><b>Facebook Page</b> — scheduling uses Meta&apos;s native scheduler (publishes at the EXACT time)</span>
-            </label>
-            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, cursor: "pointer" }}>
-              <input type="checkbox" checked={pubForm.ig} onChange={(e) => setPubForm({ ...pubForm, ig: e.target.checked })} style={{ marginTop: 2 }} />
-              <span><b>Instagram</b> — needs an IG Business account linked to the Page; posts image + caption (link as text)</span>
-            </label>
-            <label style={{ fontSize: 11, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" }}>WHEN · VIETNAM TIME (empty = post now · schedule needs ≥ 10 minutes ahead)</label>
+          <div onClick={(e) => e.stopPropagation()} style={{ margin: "0 auto", maxWidth: 460, background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <b style={{ fontSize: 14.5 }}>Publish post <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 12 }}>· {f.name}</span></b>
+            {/* PREVIEW — đúng nội dung sẽ đăng (caption + link + ảnh từ creative) */}
+            <label style={lab}>PREVIEW</label>
+            <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 10, display: "flex", gap: 10, background: "#FAFBFC", minHeight: 60 }}>
+              {pubPrev === null ? <span style={{ fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>Loading…</span> : (<>
+                {pubPrev.imageUrl && (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={pubPrev.imageUrl} alt="" style={{ width: 76, height: 76, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0 }} />
+                )}
+                <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.5 }}>
+                  <div style={{ whiteSpace: "pre-wrap", maxHeight: 110, overflowY: "auto" }}>{pubPrev.message || <span style={{ color: "var(--muted)" }}>(no caption)</span>}</div>
+                  {pubPrev.link && <div style={{ color: "#1D4ED8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 4, fontSize: 11.5 }}>{pubPrev.link}</div>}
+                </div>
+              </>)}
+            </div>
+            {/* CHANNELS — chip bật/tắt */}
+            <label style={lab}>CHANNELS</label>
             <div style={{ display: "flex", gap: 8 }}>
-              <input type="date" value={pubForm.date} onChange={(e) => setPubForm({ ...pubForm, date: e.target.value })}
+              <button type="button" onClick={() => setPubForm({ ...f, fb: !f.fb })} style={chChip(f.fb)}>Facebook Page</button>
+              <button type="button" onClick={() => setPubForm({ ...f, ig: !f.ig })} style={{ ...chChip(f.ig), ...(pubPrev?.igLinked === false ? { color: "#C0392B", borderColor: "#E5B5B0" } : {}) }}>
+                Instagram{pubPrev?.igLinked === false ? " — not linked" : ""}
+              </button>
+            </div>
+            {/* SCHEDULE — chip như form dup ad set */}
+            <label style={lab}>SCHEDULE · VIETNAM TIME</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="date" value={f.date} onChange={(e) => setPubForm({ ...f, date: e.target.value })}
                 style={{ flex: 1, border: "1px solid #C9D2DE", borderRadius: 10, padding: "8px 10px", fontSize: 12.5, background: "#fff" }} />
-              <input type="time" value={pubForm.time} onChange={(e) => setPubForm({ ...pubForm, time: e.target.value })}
+              <input type="time" value={f.time} onChange={(e) => setPubForm({ ...f, time: e.target.value, date: f.date || dstr(0) })}
                 style={{ width: 120, border: "1px solid #C9D2DE", borderRadius: 10, padding: "8px 10px", fontSize: 12.5, background: "#fff" }} />
             </div>
-            {/* quy đổi sang giờ Mỹ (múi giờ ad account) — như phần đặt lịch ads v599 */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => setPubForm({ ...f, date: "", time: "" })} style={chip(!f.date)}>⚡ Publish now</button>
+              <button type="button" onClick={() => setPubForm({ ...f, date: dstr(0), time: f.time || "08:00" })} style={chip(!!f.date && f.date === dstr(0))}>Today</button>
+              <button type="button" onClick={() => setPubForm({ ...f, date: dstr(1), time: f.time || "08:00" })} style={chip(f.date === dstr(1))}>Tomorrow</button>
+              {["00:00", "08:00", "20:00"].map((t) => (
+                <button key={t} type="button" onClick={() => setPubForm({ ...f, time: t, date: f.date || dstr(0) })} style={chip(!!f.date && f.time === t)}>{t}</button>
+              ))}
+            </div>
             {(() => {
               const tzn = ent?.tz?.name;
-              if (!pubForm.date || !tzn) return null;
+              if (!f.date || !tzn) return null;
               try {
-                const d = new Date(`${pubForm.date}T${pubForm.time || "08:00"}`);
+                const d = new Date(`${f.date}T${f.time || "08:00"}`);
                 if (isNaN(d.getTime())) return null;
                 const us = d.toLocaleString("en-US", { timeZone: tzn, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
                 return <span style={{ fontSize: 11, fontWeight: 700, color: "#B45309" }}>US ad-account time: {us} <span style={{ fontWeight: 600, color: "#8794A5" }}>· {tzn}</span></span>;
               } catch { return null; }
             })()}
-            {pubForm.ig && pubForm.date && (
-              <span style={{ fontSize: 11, color: "var(--muted)" }}>Instagram has no native scheduler — the IG post goes out on the first system cycle after the chosen time (a few minutes&apos; drift).</span>
-            )}
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
               <button onClick={() => setPubForm(null)} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 999, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "#5B6472" }}>Cancel</button>
-              <button onClick={submitPub} disabled={!!pubBusy || (!pubForm.fb && !pubForm.ig)}
-                style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 999, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: pubBusy || (!pubForm.fb && !pubForm.ig) ? 0.5 : 1 }}>
-                {pubBusy ? "Working…" : pubForm.date ? "Schedule post" : "Publish now"}
+              <button onClick={submitPub} disabled={!!pubBusy || (!f.fb && !f.ig)}
+                style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 999, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: pubBusy || (!f.fb && !f.ig) ? 0.5 : 1 }}>
+                {pubBusy ? "Working…" : f.date ? "Schedule" : "Publish now"}
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
       {/* v577 · form MOVE nhiều ads: chọn campaign → ad set đích → Duplicate (giữ post, tuỳ chọn tắt gốc) */}
       {bulkMv && (
         <div onClick={() => !bulkBusy && setBulkMv(null)} style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(15,20,40,.55)", overflowY: "auto", padding: "60px 16px" }}>
