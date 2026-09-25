@@ -1203,6 +1203,8 @@ export const studioTemplates = pgTable("studio_templates", {
   genBack: boolean("gen_back").notNull().default(false),
   // v600 · SELLER của template — đơn qua wizard chia về seller này (đồng bộ created_by listing Shopify).
   sellerId: uuid("seller_id"),
+  // v602 · GALLERY ảnh listing (ảnh trong sách) hiện ở trang chi tiết wizard — chỉ xem, AI vẫn chỉ gen BÌA.
+  galleryImages: jsonb("gallery_images").notNull().default([]),
   active: boolean("active").notNull().default(true),
   sort: integer("sort").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

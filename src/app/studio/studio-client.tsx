@@ -11,18 +11,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 type Settings = { enabled: boolean; model: string; aspectRatio: string; dailyLimitIp: number; dailyLimitGlobal: number; watermark: string; origins: string[]; prompt: string };
 type TplVariant = { id: string; title: string; price: string };
-type Tpl = { id: string; title: string; thumbUrl: string; baseImageUrl: string; variantId: string; price: string; promptExtra: string; active: boolean; sort: number; variants: TplVariant[]; description: string; ageRange: string; pages: string; backImageUrl: string; genBack: boolean; sellerId?: string | null };
+type Tpl = { id: string; title: string; thumbUrl: string; baseImageUrl: string; variantId: string; price: string; promptExtra: string; active: boolean; sort: number; variants: TplVariant[]; description: string; ageRange: string; pages: string; backImageUrl: string; genBack: boolean; sellerId?: string | null; galleryImages?: string[] };
 type Seller = { id: string; name: string | null };
 type Lead = { id: string; templateId: string | null; childName: string; email: string; previewUrl: string | null; photoUrl: string | null; model: string; cost: string; ip: string; status: string; error: string; createdAt: string };
 type Model = { id: string; name: string };
-type PickProduct = { id: string; title: string; thumb: string; url: string | null; variants: { id: string; title: string; price: string }[]; desc?: string };
+type PickProduct = { id: string; title: string; thumb: string; url: string | null; variants: { id: string; title: string; price: string }[]; desc?: string; imageUrls?: string[] };
 
 const inp: React.CSSProperties = { padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", background: "#fff", fontSize: 13, width: "100%", boxSizing: "border-box" };
 const lbl: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".4px", marginBottom: 4, display: "block" };
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 14, padding: 16, marginBottom: 14 };
 const btn = (bg: string): React.CSSProperties => ({ background: bg, color: "#fff", border: 0, borderRadius: 11, padding: "10px 20px", fontWeight: 800, fontSize: 13.5, cursor: "pointer" });
 
-const EMPTY_TPL: Tpl = { id: "", title: "", thumbUrl: "", baseImageUrl: "", variantId: "", price: "", promptExtra: "", active: true, sort: 0, variants: [], description: "", ageRange: "", pages: "", backImageUrl: "", genBack: false, sellerId: null };
+const EMPTY_TPL: Tpl = { id: "", title: "", thumbUrl: "", baseImageUrl: "", variantId: "", price: "", promptExtra: "", active: true, sort: 0, variants: [], description: "", ageRange: "", pages: "", backImageUrl: "", genBack: false, sellerId: null, galleryImages: [] };
 
 /** v493 · Nút Upload ảnh từ máy: nén client-side (≤1600px JPEG) → POST /api/studio/admin/upload → trả URL R2. */
 function UploadBtn({ onDone, onError }: { onDone: (url: string) => void; onError: (m: string) => void }) {
@@ -135,6 +135,8 @@ export default function StudioClient() {
       variants: p.variants.map((x) => ({ id: x.id, title: x.title, price: x.price ? `$${x.price}` : "" })),
       // v490 · auto-fill mô tả từ body sản phẩm (admin sửa lại được trước khi Save)
       description: (prev?.description?.trim() ? prev.description : (p.desc ?? "")),
+      // v602 · auto-fill GALLERY = toàn bộ ảnh listing (ảnh trong sách) — chỉ hiển thị, AI vẫn chỉ gen bìa.
+      galleryImages: (prev?.galleryImages?.length ? prev.galleryImages : (p.imageUrls ?? [])),
     }) as Tpl);
     setPickRows([]); setPickQ("");
   };
@@ -281,7 +283,7 @@ export default function StudioClient() {
             <div style={{ background: "#FFF9F2", border: "1px solid #F2D9BC", borderRadius: 12, padding: 12, marginBottom: 14 }}>
               <span style={lbl}>Pick from your Shopify products (auto-fill)</span>
               <div style={{ display: "flex", gap: 8 }}>
-                <input value={pickQ} onChange={(e) => setPickQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchProducts(); }} placeholder="Search product title… e.g. zoo book" style={inp} />
+                <input value={pickQ} onChange={(e) => setPickQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchProducts(); }} placeholder="Search title… or paste a listing ID (FUSION uuid / Shopify product-variant number)" style={inp} />
                 <button onClick={searchProducts} disabled={picking} style={{ ...btn("#14213D"), padding: "9px 18px", fontSize: 13, opacity: picking ? 0.6 : 1 }}>{picking ? "…" : "Search"}</button>
               </div>
               {pickRows.length > 0 && (
@@ -342,6 +344,26 @@ export default function StudioClient() {
                   <input type="checkbox" checked={edit.genBack} onChange={(e) => setEdit({ ...edit, genBack: e.target.checked })} style={{ width: 15, height: 15 }} />
                   AI-personalize the back cover too (2× generation cost — leave OFF unless the character appears on the back)
                 </label>
+              </div>
+              {/* v602 · GALLERY — ảnh listing (ảnh trong sách) hiện ở trang chi tiết wizard. Chỉ để xem:
+                  AI vẫn chỉ gen ảnh BÌA (Base cover). Picker tự nạp toàn bộ ảnh; ✕ bỏ ảnh không muốn. */}
+              <div style={{ marginBottom: 12 }}>
+                <span style={lbl}>Gallery — listing photos shown on the wizard detail view ({(edit.galleryImages ?? []).length}/12 · AI still generates the COVER only)</span>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  {(edit.galleryImages ?? []).map((u, i) => (
+                    <span key={u + i} style={{ position: "relative", display: "inline-block" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={u} alt="" style={{ width: 62, height: 62, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", display: "block" }} />
+                      <button type="button" onClick={() => setEdit((p) => p && { ...p, galleryImages: (p.galleryImages ?? []).filter((_, j) => j !== i) })}
+                        title="Remove this photo from the gallery"
+                        style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "1px solid var(--line)", background: "#fff", color: "var(--red)", fontSize: 11, fontWeight: 800, cursor: "pointer", lineHeight: "18px", padding: 0 }}>✕</button>
+                    </span>
+                  ))}
+                  {(edit.galleryImages ?? []).length < 12 && (
+                    <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, galleryImages: [...(p.galleryImages ?? []), u] })} onError={(m) => setMsg("✗ " + m)} />
+                  )}
+                  {(edit.galleryImages ?? []).length === 0 && <span style={{ fontSize: 12, color: "var(--muted)" }}>Empty — pick the product above to auto-fill from its Shopify photos, or upload manually.</span>}
+                </div>
               </div>
               <div style={{ marginBottom: 12 }}><span style={lbl}>Description (shown on the wizard detail view)</span><textarea value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} rows={3} style={{ ...inp, resize: "vertical" }} /></div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 12 }}>

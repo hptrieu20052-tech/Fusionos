@@ -1,6 +1,6 @@
 "use client";
 import { AmazonLogo } from "@/components/amazon-logo";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
 // v142: editor Custom options dùng chung với Edit listing và màn Etsy — 1 bản duy nhất.
@@ -560,13 +560,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const showSellerFilter = sellerOptions.length > 1 || sellers.length > 1;
   const storesForFilter = stores;
   // Danh sách giá trị distinct cho 3 filter (theo store đang lọc nếu có)
-  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && (!sellerFilter || (r.creatorName || r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter)), [rows, storeFilter, sellerFilter]);
+  // v601 · sellerFilter "__noowner__" = listing CHƯA CÓ CHỦ (created_by trống) — gom 1 phát để Assign owner.
+  const sellerMatch = useCallback((r: Row) => !sellerFilter || (sellerFilter === "__noowner__" ? !r.createdBy : (r.creatorName || r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter), [sellerFilter]);
+  const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && sellerMatch(r)), [rows, storeFilter, sellerMatch]);
   const typeOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.productType).filter(Boolean))).sort(), [scopeRows]);
   const categoryOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.categoryName).filter(Boolean))).sort(), [scopeRows]);
   const collectionOptions = useMemo(() => Array.from(new Set(scopeRows.flatMap((r) => r.collectionTitles ?? []).filter(Boolean))).sort(), [scopeRows]);
   const statusOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => (r.status || "").toUpperCase()).filter(Boolean))).sort(), [scopeRows]);
   const filtered = useMemo(() => rows.filter((r) =>
-    (!sellerFilter || (r.creatorName || r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter) &&
+    sellerMatch(r) &&
     (!storeFilter || r.storeId === storeFilter) &&
     (!typeFilter || (typeFilter === "__none__" ? !(r.productType ?? "").trim() : r.productType === typeFilter)) &&
     (!categoryFilter || (categoryFilter === "__none__" ? !(r.categoryName ?? "").trim() : r.categoryName === categoryFilter)) &&
@@ -580,7 +582,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     (!adsFilter || (adsFilter === "ran" ? !!r.adsAt : !r.adsAt)) &&
     (!pidFilter || r.id === pidFilter) &&
     (!kw.trim() || (r.title + " " + (r.handle ?? "") + " " + (r.id ?? "")).toLowerCase().includes(kw.trim().toLowerCase()))
-  ), [rows, kw, sellerFilter, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, adsFilter, pidFilter, stores]);
+  ), [rows, kw, sellerMatch, storeFilter, typeFilter, categoryFilter, collectionFilter, statusFilter, aiFilter, feedFilter, prepFilter, riskFilter, videoFilter, adsFilter, pidFilter, stores]);
   // v381 · Sắp xếp theo SỐ ĐƠN giảm dần khi bật (top seller → tối ưu trước). Tắt → giữ thứ tự server.
   const sorted = useMemo(() => sortEtsy ? [...filtered].sort((a, b) => (b.etsyOrders ?? 0) - (a.etsyOrders ?? 0)) : sortOrders ? [...filtered].sort((a, b) => (b.orders ?? 0) - (a.orders ?? 0)) : filtered, [filtered, sortOrders, sortEtsy]);
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
@@ -1713,7 +1715,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           {showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Seller — by listing owner (source Etsy seller), not store owner" style={fsel(!!sellerFilter)}>
-              <option value="">All sellers</option>{sellerOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+              <option value="">All sellers</option>
+              {/* v601 · gom listing CHƯA CÓ CHỦ (created_by trống) — chọn hết rồi Assign owner một phát */}
+              <option value="__noowner__">— No owner (unassigned) —</option>
+              {sellerOptions.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           )}
           <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} title="Store" style={fsel(!!storeFilter)}>

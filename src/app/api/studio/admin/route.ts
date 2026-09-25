@@ -30,25 +30,36 @@ export async function GET(req: NextRequest) {
   if (q) {
     type Img = { src?: string; position?: number };
     type Vari = { id?: string; title?: string; price?: string };
+    // v602 · search nhận cả ID: uuid FUSION của listing (dán từ cột ID bảng Manage Products) tìm
+    // ĐÍCH DANH (bỏ lọc status); chuỗi số ≥8 = Shopify product id HOẶC variant id; còn lại theo title.
+    const cond = /^[0-9a-f-]{36}$/i.test(q)
+      ? eq(schema.shopifyProducts.id, q)
+      : /^\d{8,}$/.test(q)
+      ? and(sql`(${schema.shopifyProducts.shopifyProductId} LIKE ${"%" + q} OR ${schema.shopifyProducts.variants}::text LIKE ${"%" + q + "%"})`,
+          inArray(schema.shopifyProducts.status, ["ACTIVE", "UNLISTED"]))
+      // v491 · nhận cả UNLISTED — bản "Photo Edition" cố tình để Unlisted (mua được qua wizard,
+      // ẩn khỏi search/collection của store) nên không được lọc mất khỏi picker.
+      : and(ilike(schema.shopifyProducts.title, `%${q}%`), inArray(schema.shopifyProducts.status, ["ACTIVE", "UNLISTED"]));
     const rows = await db.select({
       id: schema.shopifyProducts.id, title: schema.shopifyProducts.title,
       images: schema.shopifyProducts.images, variants: schema.shopifyProducts.variants,
       status: schema.shopifyProducts.status, url: schema.shopifyProducts.onlineStoreUrl,
       bodyHtml: schema.shopifyProducts.bodyHtml, // v490 · auto-fill description cho trang chi tiết wizard
     }).from(schema.shopifyProducts)
-      // v491 · nhận cả UNLISTED — bản "Photo Edition" cố tình để Unlisted (mua được qua wizard,
-      // ẩn khỏi search/collection của store) nên không được lọc mất khỏi picker.
-      .where(and(ilike(schema.shopifyProducts.title, `%${q}%`), inArray(schema.shopifyProducts.status, ["ACTIVE", "UNLISTED"])))
+      .where(cond)
       .orderBy(desc(schema.shopifyProducts.updatedAt)).limit(20);
     const products = rows.map((r) => {
       const imgs = (Array.isArray(r.images) ? r.images : []) as Img[];
-      const thumb = imgs.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99)).map((i) => String(i?.src ?? "")).find((s) => /^https?:/i.test(s)) ?? "";
+      // v602 · TẤT CẢ ảnh listing (theo position) — auto-fill gallery cho trang chi tiết wizard.
+      const imageUrls = imgs.slice().sort((a, b) => (a?.position ?? 99) - (b?.position ?? 99))
+        .map((i) => String(i?.src ?? "")).filter((s) => /^https?:/i.test(s)).slice(0, 12);
+      const thumb = imageUrls[0] ?? "";
       const vars = ((Array.isArray(r.variants) ? r.variants : []) as Vari[]).map((v) => ({
         id: String(v?.id ?? "").replace(/\D/g, ""),         // GID → id số cho /cart/add.js
         title: String(v?.title ?? "Default"), price: String(v?.price ?? ""),
       })).filter((v) => v.id);
       const desc = String(r.bodyHtml ?? "").replace(/<[^>]+>/g, " ").replace(/&[a-z#0-9]+;/gi, " ").replace(/\s+/g, " ").trim().slice(0, 400);
-      return { id: r.id, title: r.title, thumb, url: r.url, variants: vars, desc };
+      return { id: r.id, title: r.title, thumb, url: r.url, variants: vars, desc, imageUrls };
     });
     return NextResponse.json({ ok: true, products });
   }
@@ -100,7 +111,7 @@ export async function PATCH(req: NextRequest) {
 }
 
 type TplVariant = { id?: string; title?: string; price?: string };
-type TplBody = { id?: string; title?: string; thumbUrl?: string; baseImageUrl?: string; variantId?: string; price?: string; promptExtra?: string; active?: boolean; sort?: number; variants?: TplVariant[]; description?: string; ageRange?: string; pages?: string; backImageUrl?: string; genBack?: boolean; sellerId?: string | null };
+type TplBody = { id?: string; title?: string; thumbUrl?: string; baseImageUrl?: string; variantId?: string; price?: string; promptExtra?: string; active?: boolean; sort?: number; variants?: TplVariant[]; description?: string; ageRange?: string; pages?: string; backImageUrl?: string; genBack?: boolean; sellerId?: string | null; galleryImages?: unknown[] };
 function tplFields(t: TplBody) {
   // v488 · variants: danh sách size/paper cho khách chọn trong wizard (picker tự nạp khi chọn sản phẩm).
   const variants = (Array.isArray(t.variants) ? t.variants : []).map((v) => ({
@@ -125,6 +136,8 @@ function tplFields(t: TplBody) {
     genBack: t.genBack === true,
     // v600 · seller của template — uuid hợp lệ hoặc null (bỏ gán).
     sellerId: /^[0-9a-f-]{36}$/i.test(String(t.sellerId ?? "")) ? String(t.sellerId) : null,
+    // v602 · gallery ảnh listing (trang chi tiết wizard) — tối đa 12 URL http(s).
+    galleryImages: (Array.isArray(t.galleryImages) ? t.galleryImages : []).map((u) => String(u).trim()).filter((u) => /^https?:\/\//i.test(u)).slice(0, 12),
   };
 }
 
