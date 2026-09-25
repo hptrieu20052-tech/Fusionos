@@ -111,11 +111,14 @@ export async function POST(req: NextRequest) {
           const fs = Array.isArray(it.files) ? it.files : [];
           const m = fs.map((f) => String(f?.url ?? "").match(/preview-([0-9a-f-]{36})\.png/i)).find(Boolean);
           if (m) {
+            const pid = String(m[1] ?? "");
             const [pv] = await db.select({ cleanKey: schema.studioPreviews.cleanKey, cleanBackKey: schema.studioPreviews.cleanBackKey })
-              .from(schema.studioPreviews).where(eq(schema.studioPreviews.id, m[1])).limit(1);
-            if (pv?.cleanKey) fs.push({ name: `cover-CLEAN-${m[1]}.png`, url: fileUrl(pv.cleanKey) });
-            if (pv?.cleanBackKey) fs.push({ name: `cover-back-CLEAN-${m[1]}.png`, url: fileUrl(pv.cleanBackKey) });
-            if (pv?.cleanKey || pv?.cleanBackKey) it.files = fs;
+              .from(schema.studioPreviews).where(eq(schema.studioPreviews.id, pid)).limit(1);
+            const ck = String(pv?.cleanKey ?? "");
+            const cbk = String(pv?.cleanBackKey ?? "");
+            if (ck) fs.push({ name: `cover-CLEAN-${pid}.png`, url: fileUrl(ck) });
+            if (cbk) fs.push({ name: `cover-back-CLEAN-${pid}.png`, url: fileUrl(cbk) });
+            if (ck || cbk) it.files = fs;
           }
         } catch { /* cột chưa migrate / preview cũ → giữ nguyên files */ }
       }
