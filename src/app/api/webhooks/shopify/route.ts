@@ -114,11 +114,14 @@ export async function POST(req: NextRequest) {
             const pid = String(m[1] ?? "");
             const [pv] = await db.select({ cleanKey: schema.studioPreviews.cleanKey, cleanBackKey: schema.studioPreviews.cleanBackKey })
               .from(schema.studioPreviews).where(eq(schema.studioPreviews.id, pid)).limit(1);
+            // fileUrl trả string | null (thiếu config storage → null) → narrow qua biến trước khi push.
             const ck = String(pv?.cleanKey ?? "");
             const cbk = String(pv?.cleanBackKey ?? "");
-            if (ck) fs.push({ name: `cover-CLEAN-${pid}.png`, url: fileUrl(ck) });
-            if (cbk) fs.push({ name: `cover-back-CLEAN-${pid}.png`, url: fileUrl(cbk) });
-            if (ck || cbk) it.files = fs;
+            const cu = ck ? fileUrl(ck) : null;
+            const cbu = cbk ? fileUrl(cbk) : null;
+            if (cu) fs.push({ name: `cover-CLEAN-${pid}.png`, url: cu });
+            if (cbu) fs.push({ name: `cover-back-CLEAN-${pid}.png`, url: cbu });
+            if (cu || cbu) it.files = fs;
           }
         } catch { /* cột chưa migrate / preview cũ → giữ nguyên files */ }
       }
