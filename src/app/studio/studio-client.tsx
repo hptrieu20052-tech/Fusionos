@@ -141,20 +141,31 @@ export default function StudioClient() {
     setPickRows([]); setPickQ("");
   };
 
-  // v604 · nạp gallery từ CHÍNH listing đã link (tra theo variant id qua picker search v602) —
-  // khỏi phải Pick lại sản phẩm chỉ để lấy ảnh.
+  // v607 · nạp gallery: NGƯỜI DÙNG TỰ CHỌN listing nguồn — gõ tên/ID → Search → hiện danh sách
+  // khớp (kèm SỐ ẢNH) → bấm chọn là ảnh listing đó đổ vào gallery. Không tự đoán gì cả
+  // (bản Photo Edition unlisted chỉ có 1 ảnh bìa nên thường sẽ chọn listing GỐC làm nguồn).
   const [galBusy, setGalBusy] = useState(false);
-  const fillGalleryFromListing = async () => {
+  const [galSrc, setGalSrc] = useState("");
+  const [galRows, setGalRows] = useState<PickProduct[]>([]);
+  const applyGallery = (p: PickProduct) => {
+    const imgs = (p.imageUrls ?? []).slice(0, 12);
+    if (!imgs.length) { setMsg("✗ That listing has no photos"); return; }
+    setEdit((prev) => prev && { ...prev, galleryImages: imgs });
+    setGalRows([]);
+    setMsg(`✓ Loaded ${imgs.length} photo(s) from "${(p.title ?? "").slice(0, 60)}" — Save to keep`);
+  };
+  const searchGallerySource = async () => {
     if (!edit) return;
     const vid = String(edit.variantId ?? "").replace(/\D/g, "");
-    if (!vid) { setMsg("✗ This template has no Shopify variant ID — pick the product above first"); return; }
-    setGalBusy(true); setMsg("");
+    const q = galSrc.trim() || vid;
+    if (!q) { setMsg("✗ Type a listing title/ID in the source box (or pick the product above first)"); return; }
+    setGalBusy(true); setMsg(""); setGalRows([]);
     try {
-      const j = await fetch(`/api/studio/admin?search=${encodeURIComponent(vid)}`).then((r) => r.json());
-      const p = (j.products ?? [])[0] as PickProduct | undefined;
-      const imgs = (p?.imageUrls ?? []).slice(0, 12);
-      if (!imgs.length) setMsg("✗ Listing not found (or it has no photos) — check the variant ID");
-      else { setEdit((prev) => prev && { ...prev, galleryImages: imgs }); setMsg(`✓ Loaded ${imgs.length} photo(s) from the listing — Save to keep`); }
+      const j = await fetch(`/api/studio/admin?search=${encodeURIComponent(q)}`).then((r) => r.json());
+      const rows = ((j.products ?? []) as PickProduct[]);
+      if (!rows.length) setMsg("✗ No listing matches — refine the title or paste its ID");
+      else if (rows.length === 1) applyGallery(rows[0]);
+      else setGalRows(rows); // nhiều kết quả → hiện danh sách cho bạn TỰ CHỌN
     } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? e)); }
     setGalBusy(false);
   };
@@ -382,9 +393,12 @@ export default function StudioClient() {
                         style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "1px solid var(--line)", background: "#fff", color: "var(--red)", fontSize: 11, fontWeight: 800, cursor: "pointer", lineHeight: "18px", padding: 0 }}>✕</button>
                     </span>
                   ))}
-                  {/* v604 · 2 lựa chọn rõ ràng: lấy ảnh từ chính listing đã link, hoặc upload tay */}
-                  <button type="button" onClick={fillGalleryFromListing} disabled={galBusy}
-                    title="Load ALL photos from the linked Shopify listing (replaces the current gallery)"
+                  {/* v607 · 2 lựa chọn: chọn listing nguồn rồi lấy ảnh, hoặc upload tay */}
+                  <input value={galSrc} onChange={(e) => setGalSrc(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchGallerySource(); }}
+                    placeholder="listing title / ID… (blank = this template's listing)"
+                    style={{ ...inp, width: 300, fontSize: 12 }} />
+                  <button type="button" onClick={searchGallerySource} disabled={galBusy}
+                    title="Find the listing, then PICK it from the results — its photos replace the current gallery"
                     style={{ border: "1px solid #F2D9BC", background: "#FFF9F2", color: "#B45309", borderRadius: 10, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", opacity: galBusy ? 0.6 : 1 }}>
                     {galBusy ? "Loading…" : "⤓ Use listing photos"}
                   </button>
@@ -393,6 +407,23 @@ export default function StudioClient() {
                   )}
                   {(edit.galleryImages ?? []).length === 0 && <span style={{ fontSize: 12, color: "var(--muted)" }}>Empty — use the listing&apos;s photos or upload manually.</span>}
                 </div>
+                {/* v607 · nhiều listing khớp → BẠN tự chọn nguồn (kèm số ảnh của từng con) */}
+                {galRows.length > 0 && (
+                  <div style={{ marginTop: 8, border: "1px solid #F2D9BC", background: "#FFF9F2", borderRadius: 12, padding: 8, maxHeight: 260, overflowY: "auto" }}>
+                    <div style={{ fontSize: 11.5, fontWeight: 800, color: "#B45309", padding: "2px 4px 6px" }}>Pick the SOURCE listing — PHOTOS ONLY (variant / price / add-to-cart stay on the Photo Edition):</div>
+                    {galRows.map((p) => (
+                      <div key={p.id} onClick={() => applyGallery(p)}
+                        style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 6px", borderTop: "1px solid #f2e4d2", cursor: "pointer", borderRadius: 8 }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#FFF1E0")} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        {p.thumb ? <img src={p.thumb} alt="" style={{ width: 38, height: 38, borderRadius: 8, objectFit: "cover" }} /> : <div style={{ width: 38, height: 38, borderRadius: 8, background: "#eee" }} />}
+                        <div style={{ flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.title}</div>
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: (p.imageUrls?.length ?? 0) > 1 ? "#1F6F45" : "var(--muted)", whiteSpace: "nowrap" }}>{p.imageUrls?.length ?? 0} photos</span>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => setGalRows([])} style={{ marginTop: 6, border: "none", background: "none", color: "var(--muted)", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>✕ Cancel</button>
+                  </div>
+                )}
               </div>
               <div style={{ marginBottom: 12 }}><span style={lbl}>Description (shown on the wizard detail view)</span><textarea value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} rows={3} style={{ ...inp, resize: "vertical" }} /></div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 12 }}>
