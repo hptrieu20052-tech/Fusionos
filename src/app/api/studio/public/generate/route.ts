@@ -96,11 +96,23 @@ export async function POST(req: NextRequest) {
     }).returning({ id: schema.studioPreviews.id });
     const key = `studio/preview-${row.id}.png`;
     await writeFile(key, marked, "image/png");
-    let backKey = "";
+    // v605 · LƯU BẢN SẠCH (không watermark) — trước đây vứt ngay sau khi đóng dấu nên đơn về
+    // seller chỉ có bản watermark, không dùng in được. Bản sạch KHÔNG trả cho khách (không nằm
+    // trong response) — chỉ đính vào card đơn + tab Leads qua webhook/admin.
+    let cleanKey = "";
+    try {
+      cleanKey = `studio/cover-${row.id}.png`;
+      await writeFile(cleanKey, Buffer.from(b64, "base64"), "image/png");
+    } catch { cleanKey = ""; }
+    let backKey = "", cleanBackKey = "";
     if (backB64) {
       const markedBack = await watermarkImage(Buffer.from(backB64, "base64"), st.watermark);
       backKey = `studio/preview-${row.id}-back.png`;
       await writeFile(backKey, markedBack, "image/png");
+      try {
+        cleanBackKey = `studio/cover-${row.id}-back.png`;
+        await writeFile(cleanBackKey, Buffer.from(backB64, "base64"), "image/png");
+      } catch { cleanBackKey = ""; }
     }
     // v494 · LƯU ẢNH GỐC của khách — designer cần khi sản xuất ruột sách. URL đi kèm order
     // (property ẩn _Child Photo) + hiện trong tab Leads.
@@ -112,7 +124,7 @@ export async function POST(req: NextRequest) {
         await writeFile(photoKey, pb, "image/jpeg");
       }
     } catch { /* ảnh gốc lỗi → vẫn trả preview */ }
-    await db.update(schema.studioPreviews).set({ previewKey: key, previewBackKey: backKey, photoKey }).where(eq(schema.studioPreviews.id, row.id));
+    await db.update(schema.studioPreviews).set({ previewKey: key, previewBackKey: backKey, photoKey, cleanKey, cleanBackKey }).where(eq(schema.studioPreviews.id, row.id));
     return J({ ok: true, previewId: row.id, url: fileUrl(key), backUrl: backKey ? fileUrl(backKey) : null, photoUrl: photoKey ? fileUrl(photoKey) : null });
   } catch (e) {
     return J({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) }, 500);

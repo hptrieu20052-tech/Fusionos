@@ -1218,6 +1218,9 @@ export const studioPreviews = pgTable("studio_previews", {
   email: text("email").notNull().default(""),               // bắt sau khi gen (Save your preview)
   previewKey: text("preview_key").notNull().default(""),    // key storage ảnh preview (đã watermark)
   previewBackKey: text("preview_back_key").notNull().default(""), // v492 · bìa sau gen (nếu template bật genBack)
+  // v605 · bản SẠCH (không watermark) — chỉ cho seller/designer qua card đơn + tab Leads, khách không thấy.
+  cleanKey: text("clean_key").notNull().default(""),
+  cleanBackKey: text("clean_back_key").notNull().default(""),
   photoKey: text("photo_key").notNull().default(""),         // v494 · ẢNH GỐC khách upload — designer cần để làm ruột sách
   model: text("model").notNull().default(""),
   cost: numeric("cost").notNull().default("0"),

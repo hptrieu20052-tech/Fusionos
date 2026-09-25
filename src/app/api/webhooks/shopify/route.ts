@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { and, eq, inArray, like, ne, or } from "drizzle-orm";
 import { verifyShopifyHmac, normalizeShopifyOrder, splitShopifyOrderBySeller, shopHost, webhookSecretOf, type ShopifyCred } from "@/lib/shopify";
 import { insertEtsyOrders } from "@/lib/ingest-etsy";
+import { fileUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
@@ -103,6 +104,20 @@ export async function POST(req: NextRequest) {
       for (const it of part.order.items ?? []) {
         const n = String(it.listingId ?? "").replace(/\D/g, "");
         if (!it.imageUrl && n && pidToImg.has(n)) it.imageUrl = pidToImg.get(n);
+        // v605 · Đơn STUDIO: file preview khách kèm theo đơn là bản CÓ WATERMARK (chống xài chùa)
+        // → đính thêm BÌA SẠCH cho seller/designer. Nhận diện qua id trong URL preview-<uuid>.png,
+        // tra studio_previews.clean_key (v605 lưu lúc gen). Đơn gen trước v605 không có bản sạch.
+        try {
+          const fs = Array.isArray(it.files) ? it.files : [];
+          const m = fs.map((f) => String(f?.url ?? "").match(/preview-([0-9a-f-]{36})\.png/i)).find(Boolean);
+          if (m) {
+            const [pv] = await db.select({ cleanKey: schema.studioPreviews.cleanKey, cleanBackKey: schema.studioPreviews.cleanBackKey })
+              .from(schema.studioPreviews).where(eq(schema.studioPreviews.id, m[1])).limit(1);
+            if (pv?.cleanKey) fs.push({ name: `cover-CLEAN-${m[1]}.png`, url: fileUrl(pv.cleanKey) });
+            if (pv?.cleanBackKey) fs.push({ name: `cover-back-CLEAN-${m[1]}.png`, url: fileUrl(pv.cleanBackKey) });
+            if (pv?.cleanKey || pv?.cleanBackKey) it.files = fs;
+          }
+        } catch { /* cột chưa migrate / preview cũ → giữ nguyên files */ }
       }
       const r = await insertEtsyOrders(
         { id: store.id, sellerId: part.sellerId, fx: store.fxRate, name: store.name },
