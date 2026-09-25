@@ -3,7 +3,9 @@ import { and, eq, lte } from "drizzle-orm";
 
 /**
  * v614 · Đăng bài lên Facebook Page + Instagram từ nội dung ad (nút → PAGE, Meta Ads Center).
- *  - FB Page: POST /{page}/feed (đăng ngay hoặc kèm scheduled_publish_time — đặt lịch NATIVE của Meta).
+ *  - FB Page (v617): PHOTO POST /{page}/photos — ảnh creative full + caption, LINK dán vào comment
+ *    đầu tiên (comment chỉ thêm được khi bài đã publish → bài HẸN GIỜ đi qua page_post_queue,
+ *    cron tick đăng ảnh + comment link khi tới giờ). Không có ảnh → fallback link post /feed.
  *  - Instagram: Content Publishing API (container /media → /media_publish) — cần IG Business account
  *    link với Page + quyền instagram_basic + instagram_content_publish. IG KHÔNG có đặt lịch native
  *    → bài hẹn giờ nằm trong bảng page_post_queue, cron tick gọi processPagePostQueue() đăng khi tới giờ.
@@ -27,7 +29,8 @@ export type PagePostJob = {
   imageUrl: string;
   toFb: boolean;
   toIg: boolean;
-  /** FB only — unix seconds cho scheduled_publish_time (≥10 phút, ≤75 ngày). IG bỏ qua (queue lo). */
+  /** FB only — unix seconds cho scheduled_publish_time (≥10 phút, ≤75 ngày). v617: route không dùng
+   *  nữa (hẹn giờ đi qua queue để còn comment link sau khi đăng) — giữ cho tương thích. */
   fbScheduleUnix?: number;
 };
 
@@ -43,13 +46,29 @@ export async function publishPagePost(job: PagePostJob, sysToken: string): Promi
   let fbPostId = "";
   if (job.toFb) {
     const sched = Number(job.fbScheduleUnix ?? 0);
-    const post = await fb(`${job.pageId}/feed`, pageToken, {
-      ...(job.message ? { message: job.message } : {}),
-      ...(job.link ? { link: job.link } : {}),
-      // Đặt lịch native: bài nằm trong Scheduled posts của page, Meta tự đăng ĐÚNG giờ.
-      ...(sched > 0 ? { published: false, scheduled_publish_time: sched } : {}),
-    });
-    fbPostId = String(post.id ?? "");
+    if (job.imageUrl) {
+      // v617 · PHOTO POST: đăng ảnh creative ĐẦY ĐỦ (link post cũ để FB cào ảnh OG rồi crop mất
+      // headline). Link KHÔNG nằm caption — dán vào COMMENT đầu tiên ngay sau khi đăng.
+      const post = await fb(`${job.pageId}/photos`, pageToken, {
+        url: job.imageUrl,
+        ...(job.message ? { message: job.message } : {}),
+        ...(sched > 0 ? { published: false, scheduled_publish_time: sched } : {}),
+      });
+      // /photos trả {id: photoId, post_id: pageId_postId} — comment/URL dùng post_id.
+      fbPostId = String((post as { post_id?: string }).post_id ?? post.id ?? "");
+      if (job.link && fbPostId && !sched) {
+        try { await fb(`${fbPostId}/comments`, pageToken, { message: job.link }); }
+        catch { warns.push("Photo published but the link comment failed — paste the link in a comment manually."); }
+      }
+    } else {
+      // Không có ảnh dùng được → giữ link post như cũ (FB tự dựng link card).
+      const post = await fb(`${job.pageId}/feed`, pageToken, {
+        ...(job.message ? { message: job.message } : {}),
+        ...(job.link ? { link: job.link } : {}),
+        ...(sched > 0 ? { published: false, scheduled_publish_time: sched } : {}),
+      });
+      fbPostId = String(post.id ?? "");
+    }
   }
 
   let igMediaId = "";

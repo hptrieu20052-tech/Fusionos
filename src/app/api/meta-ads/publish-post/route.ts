@@ -11,11 +11,12 @@ export const maxDuration = 60;
  * Meta KHÔNG cho publish ngược dark post lên tường — nên làm chiều xuôi: lấy caption + link + ảnh
  * từ creative của ad rồi đăng bài organic thật.
  * v614 · { adId, fb?, ig?, when? }:
- *   - fb (mặc định true): đăng lên Facebook Page. when (ISO, tương lai ≥10 phút) → dùng đặt lịch
- *     NATIVE của Meta (scheduled_publish_time) — bài nằm trong Scheduled posts, đăng ĐÚNG giờ.
+ *   - fb (mặc định true): đăng lên Facebook Page — v617 dạng PHOTO POST (ảnh creative full +
+ *     caption), LINK dán vào COMMENT đầu tiên (theo yêu cầu: link post cũ bị FB cào ảnh OG crop).
  *   - ig: đăng lên Instagram Business account link với Page (ảnh + caption; link là text).
- *     IG không có đặt lịch native → bài hẹn giờ vào bảng page_post_queue, cron tick đăng khi tới
- *     giờ (lệch tối đa 1 chu kỳ cron).
+ *   - when (ISO, tương lai ≥10 phút): hẹn giờ — CẢ 2 kênh vào bảng page_post_queue, cron tick
+ *     đăng khi tới giờ (lệch tối đa 1 chu kỳ cron; FB bỏ đặt lịch native vì cần comment link
+ *     ngay sau khi bài lên).
  * Cần token có pages_manage_posts (+ instagram_content_publish cho IG); thiếu → báo rõ, không đăng.
  */
 const V = "v23.0";
@@ -86,34 +87,31 @@ export async function POST(req: NextRequest) {
     }
 
     const warns: string[] = [];
-    let fbPostId = "", igMediaId = "", igQueued = false;
+    let fbPostId = "", igMediaId = "", fbQueued = false, igQueued = false;
 
-    // FB: đăng ngay hoặc đặt lịch native — làm trong request luôn (Meta giữ lịch, không cần cron).
-    if (toFb) {
-      const r = await publishPagePost({ pageId, message, link, imageUrl, toFb: true, toIg: false, ...(schedMs ? { fbScheduleUnix: Math.round(schedMs / 1000) } : {}) }, token);
+    if (schedMs) {
+      // v617 · HẸN GIỜ (cả FB lẫn IG) đều qua page_post_queue: FB giờ là PHOTO POST + link ở
+      // COMMENT — comment chỉ thêm được lúc bài đã đăng, nên không dùng đặt lịch native của Meta
+      // nữa; cron tick đăng khi tới giờ (lệch tối đa 1 chu kỳ cron).
+      try {
+        await db.insert(schema.pagePostQueue).values({ adId, pageId, message, link, imageUrl, toFb, toIg, scheduledAt: new Date(schedMs) });
+        fbQueued = toFb; igQueued = toIg;
+      } catch { return NextResponse.json({ ok: false, error: "Could not queue the scheduled post — run MIGRATION_v614 first." }, { status: 400 }); }
+    } else {
+      // Đăng ngay: 1 call lo cả hai kênh (page token lấy 1 lần).
+      const r = await publishPagePost({ pageId, message, link, imageUrl, toFb, toIg }, token);
       fbPostId = r.fbPostId ?? "";
+      igMediaId = r.igMediaId ?? "";
       warns.push(...r.warns);
-    }
-
-    // IG: đăng ngay trong request; hẹn giờ → xếp hàng cho cron tick.
-    if (toIg) {
-      if (schedMs) {
-        try {
-          await db.insert(schema.pagePostQueue).values({ adId, pageId, message, link, imageUrl, toFb: false, toIg: true, scheduledAt: new Date(schedMs) });
-          igQueued = true;
-        } catch { warns.push("Could not queue the Instagram post — run MIGRATION_v614 first."); }
-      } else {
-        const r = await publishPagePost({ pageId, message, link, imageUrl, toFb: false, toIg: true }, token);
-        igMediaId = r.igMediaId ?? "";
-        warns.push(...r.warns);
-      }
     }
 
     return NextResponse.json({
       ok: true,
-      ...(fbPostId ? { fbPostId, fbUrl: `https://www.facebook.com/${fbPostId}`, fbScheduled: !!schedMs } : {}),
+      ...(fbPostId ? { fbPostId, fbUrl: `https://www.facebook.com/${fbPostId}` } : {}),
       ...(igMediaId ? { igMediaId } : {}),
-      ...(igQueued ? { igQueued: true, igAt: new Date(schedMs).toISOString() } : {}),
+      ...(fbQueued ? { fbQueued: true } : {}),
+      ...(igQueued ? { igQueued: true } : {}),
+      ...(schedMs && (fbQueued || igQueued) ? { queuedAt: new Date(schedMs).toISOString() } : {}),
       ...(warns.length ? { warn: warns.join(" ") } : {}),
     });
   } catch (e) {

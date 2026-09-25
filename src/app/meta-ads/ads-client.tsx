@@ -462,9 +462,11 @@ export default function AdsCenterClient() {
       const j = await fetch("/api/meta-ads/publish-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adId: f.adId, fb: f.fb, ig: f.ig, ...(when ? { when } : {}) }) }).then((r) => r.json());
       if (j.ok) {
         const bits = [
-          j.fbPostId ? (j.fbScheduled ? `FB Page: SCHEDULED (Meta will publish it on time)` : `FB Page: published${j.fbUrl ? ` — ${j.fbUrl}` : ""}`) : "",
+          j.fbPostId ? `FB Page: photo published (link in the first comment)${j.fbUrl ? ` — ${j.fbUrl}` : ""}` : "",
           j.igMediaId ? "Instagram: published" : "",
-          j.igQueued ? "Instagram: queued — posts on the next system cycle after the scheduled time" : "",
+          j.fbQueued && j.igQueued ? "FB + Instagram: queued — post on the next system cycle after the scheduled time"
+            : j.fbQueued ? "FB Page: queued — photo + link comment post on the next system cycle after the scheduled time"
+            : j.igQueued ? "Instagram: queued — posts on the next system cycle after the scheduled time" : "",
         ].filter(Boolean).join(" · ");
         setErr(`✓ ${bits || "Done"}.${j.warn ? ` ⚠ ${j.warn}` : ""} To pool engagement, run new ads on the published post.`);
         setPubForm(null);
@@ -1180,7 +1182,12 @@ export default function AdsCenterClient() {
                 )}
                 <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.5 }}>
                   <div style={{ whiteSpace: "pre-wrap", maxHeight: 110, overflowY: "auto" }}>{pubPrev.message || <span style={{ color: "var(--muted)" }}>(no caption)</span>}</div>
-                  {pubPrev.link && <div style={{ color: "#1D4ED8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 4, fontSize: 11.5 }}>{pubPrev.link}</div>}
+                  {pubPrev.link && (
+                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 4, fontSize: 11.5 }}>
+                      <span style={{ color: "#8794A5", fontWeight: 700 }}>FB 1st comment · </span>
+                      <span style={{ color: "#1D4ED8" }}>{pubPrev.link}</span>
+                    </div>
+                  )}
                 </div>
               </>)}
             </div>
