@@ -508,6 +508,25 @@ export const metaBudgetLog = pgTable("meta_budget_log", {
   idxMetaBudgetLogAdset: index("idx_meta_budget_log_adset").on(t.adsetId, t.createdAt),
 }));
 
+// v614 · HÀNG ĐỢI ĐĂNG BÀI Instagram cho nút → PAGE. FB Page dùng đặt lịch native của Meta;
+// IG Graph API không có đặt lịch → xếp hàng ở đây, cron tick đăng khi tới giờ.
+export const pagePostQueue = pgTable("page_post_queue", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  adId: text("ad_id").notNull().default(""),
+  pageId: text("page_id").notNull().default(""),
+  message: text("message").notNull().default(""),
+  link: text("link").notNull().default(""),
+  imageUrl: text("image_url").notNull().default(""),
+  toFb: boolean("to_fb").notNull().default(false),
+  toIg: boolean("to_ig").notNull().default(false),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }).notNull().defaultNow(),
+  status: text("status").notNull().default("pending"),   // pending | done | error
+  result: jsonb("result").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  idxPagePostQueueDue: index("idx_page_post_queue_due").on(t.status, t.scheduledAt),
+}));
+
 // v503 · Chủ sở hữu sản phẩm Woo (mirror quy tắc v459 ShopBase cho store share):
 // sản phẩm tạo qua FUSION ghi created_by; không có dòng = coi như admin tạo/sync.
 export const wooProductOwners = pgTable("woo_product_owners", {

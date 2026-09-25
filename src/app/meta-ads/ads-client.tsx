@@ -432,16 +432,31 @@ export default function AdsCenterClient() {
   };
   // v587 · Publish to Page: đăng caption + link sản phẩm của ad thành BÀI CÔNG KHAI trên page
   // (Meta không cho publish ngược dark post). Arm 2 bước vì là hành động công khai.
-  const [pubArm, setPubArm] = useState("");
+  // v614 · form đăng bài: chọn kênh (FB Page / Instagram) + đăng ngay hoặc ĐẶT LỊCH giờ VN
+  // (FB dùng lịch native của Meta — đúng giờ tuyệt đối; IG xếp hàng, cron đăng khi tới giờ).
   const [pubBusy, setPubBusy] = useState("");
-  const publishToPage = async (adId: string) => {
-    if (pubBusy) return;
-    if (pubArm !== adId) { setPubArm(adId); setTimeout(() => setPubArm((c) => (c === adId ? "" : c)), 4000); return; }
-    setPubArm(""); setPubBusy(adId); setErr("");
+  const [pubForm, setPubForm] = useState<null | { adId: string; name: string; fb: boolean; ig: boolean; date: string; time: string }>(null);
+  const submitPub = async () => {
+    if (!pubForm || pubBusy) return;
+    const f = pubForm;
+    if (!f.fb && !f.ig) { setErr("✗ Pick at least one channel"); return; }
+    let when: string | undefined;
+    if (f.date) {
+      const d = new Date(`${f.date}T${f.time || "08:00"}`); // giờ VN (máy người đặt)
+      if (!isNaN(d.getTime()) && d.getTime() > Date.now()) when = d.toISOString();
+    }
+    setPubBusy(f.adId); setErr("");
     try {
-      const j = await fetch("/api/meta-ads/publish-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adId }) }).then((r) => r.json());
-      if (j.ok) setErr(`✓ Published to the Page as a public post${j.url ? ` — ${j.url}` : ""}. To pool engagement, run new ads on THIS post (Dup ad → Exact copy from an ad using it).`);
-      else setErr("✗ " + (j.error ?? "Publish failed"));
+      const j = await fetch("/api/meta-ads/publish-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adId: f.adId, fb: f.fb, ig: f.ig, ...(when ? { when } : {}) }) }).then((r) => r.json());
+      if (j.ok) {
+        const bits = [
+          j.fbPostId ? (j.fbScheduled ? `FB Page: SCHEDULED (Meta will publish it on time)` : `FB Page: published${j.fbUrl ? ` — ${j.fbUrl}` : ""}`) : "",
+          j.igMediaId ? "Instagram: published" : "",
+          j.igQueued ? "Instagram: queued — posts on the next system cycle after the scheduled time" : "",
+        ].filter(Boolean).join(" · ");
+        setErr(`✓ ${bits || "Done"}.${j.warn ? ` ⚠ ${j.warn}` : ""} To pool engagement, run new ads on the published post.`);
+        setPubForm(null);
+      } else setErr("✗ " + (j.error ?? "Publish failed"));
     } catch (e) { setErr("✗ " + String((e as Error).message)); }
     setPubBusy("");
   };
@@ -1037,12 +1052,12 @@ export default function AdsCenterClient() {
                               </span>
                             );
                           })()}
-                          {/* v587 · đăng nội dung ad này thành BÀI CÔNG KHAI trên page (arm 2 bước) */}
+                          {/* v587 · đăng nội dung ad thành BÀI CÔNG KHAI — v614 mở form chọn kênh (FB/IG) + đặt lịch */}
                           {ent?.ads[a.adId]?.post && (
-                            <button onClick={(e) => { e.stopPropagation(); publishToPage(a.adId); }} disabled={pubBusy === a.adId}
-                              title="Publish this ad's caption + product link as a PUBLIC post on the Page (Meta cannot publish the ad's dark post itself). Then run new ads on that post to pool engagement."
-                              style={{ border: "1px solid #C9D2DE", background: pubArm === a.adId ? "#B45309" : "#fff", color: pubArm === a.adId ? "#fff" : "#5B6472", borderRadius: 5, padding: "1px 7px", fontSize: 9, fontWeight: 800, letterSpacing: ".3px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px" }}>
-                              {pubBusy === a.adId ? "…" : pubArm === a.adId ? "SURE?" : "→ PAGE"}
+                            <button onClick={(e) => { e.stopPropagation(); setPubForm({ adId: a.adId, name: a.ad, fb: true, ig: false, date: "", time: "" }); }} disabled={pubBusy === a.adId}
+                              title="Publish this ad's caption + product link as a PUBLIC post — Facebook Page and/or Instagram, now or scheduled (Meta cannot publish the ad's dark post itself)."
+                              style={{ border: "1px solid #C9D2DE", background: "#fff", color: "#5B6472", borderRadius: 5, padding: "1px 7px", fontSize: 9, fontWeight: 800, letterSpacing: ".3px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px" }}>
+                              {pubBusy === a.adId ? "…" : "→ PAGE"}
                             </button>
                           )}
                           {/* v570 · badge verdict rule engine — pill chữ, tooltip = lý do đầy đủ */}
@@ -1129,6 +1144,51 @@ export default function AdsCenterClient() {
             ⧉ Move to ad set…
           </button>
           <button onClick={() => setAdSel(new Set())} style={{ border: "none", background: "transparent", color: "#94A3B8", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>✕ Clear</button>
+        </div>
+      )}
+      {/* v614 · form ĐĂNG BÀI từ ad: kênh FB Page / Instagram + đăng ngay hoặc ĐẶT LỊCH (giờ VN + hiện giờ Mỹ) */}
+      {pubForm && (
+        <div onClick={() => !pubBusy && setPubForm(null)} style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(15,20,40,.55)", overflowY: "auto", padding: "60px 16px" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ margin: "0 auto", maxWidth: 440, background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <b style={{ fontSize: 14.5 }}>Publish as a PUBLIC post <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 12 }}>· {pubForm.name}</span></b>
+            <label style={{ fontSize: 11, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" }}>CHANNELS</label>
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, cursor: "pointer" }}>
+              <input type="checkbox" checked={pubForm.fb} onChange={(e) => setPubForm({ ...pubForm, fb: e.target.checked })} style={{ marginTop: 2 }} />
+              <span><b>Facebook Page</b> — scheduling uses Meta&apos;s native scheduler (publishes at the EXACT time)</span>
+            </label>
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, cursor: "pointer" }}>
+              <input type="checkbox" checked={pubForm.ig} onChange={(e) => setPubForm({ ...pubForm, ig: e.target.checked })} style={{ marginTop: 2 }} />
+              <span><b>Instagram</b> — needs an IG Business account linked to the Page; posts image + caption (link as text)</span>
+            </label>
+            <label style={{ fontSize: 11, fontWeight: 800, color: "#8794A5", letterSpacing: ".3px" }}>WHEN · VIETNAM TIME (empty = post now · schedule needs ≥ 10 minutes ahead)</label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input type="date" value={pubForm.date} onChange={(e) => setPubForm({ ...pubForm, date: e.target.value })}
+                style={{ flex: 1, border: "1px solid #C9D2DE", borderRadius: 10, padding: "8px 10px", fontSize: 12.5, background: "#fff" }} />
+              <input type="time" value={pubForm.time} onChange={(e) => setPubForm({ ...pubForm, time: e.target.value })}
+                style={{ width: 120, border: "1px solid #C9D2DE", borderRadius: 10, padding: "8px 10px", fontSize: 12.5, background: "#fff" }} />
+            </div>
+            {/* quy đổi sang giờ Mỹ (múi giờ ad account) — như phần đặt lịch ads v599 */}
+            {(() => {
+              const tzn = ent?.tz?.name;
+              if (!pubForm.date || !tzn) return null;
+              try {
+                const d = new Date(`${pubForm.date}T${pubForm.time || "08:00"}`);
+                if (isNaN(d.getTime())) return null;
+                const us = d.toLocaleString("en-US", { timeZone: tzn, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+                return <span style={{ fontSize: 11, fontWeight: 700, color: "#B45309" }}>US ad-account time: {us} <span style={{ fontWeight: 600, color: "#8794A5" }}>· {tzn}</span></span>;
+              } catch { return null; }
+            })()}
+            {pubForm.ig && pubForm.date && (
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>Instagram has no native scheduler — the IG post goes out on the first system cycle after the chosen time (a few minutes&apos; drift).</span>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+              <button onClick={() => setPubForm(null)} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 999, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: "#5B6472" }}>Cancel</button>
+              <button onClick={submitPub} disabled={!!pubBusy || (!pubForm.fb && !pubForm.ig)}
+                style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 999, padding: "7px 16px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: pubBusy || (!pubForm.fb && !pubForm.ig) ? 0.5 : 1 }}>
+                {pubBusy ? "Working…" : pubForm.date ? "Schedule post" : "Publish now"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {/* v577 · form MOVE nhiều ads: chọn campaign → ad set đích → Duplicate (giữ post, tuỳ chọn tắt gốc) */}

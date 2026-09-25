@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import ThumbZoom from "@/components/thumb-zoom"; // v612 · zoom thumb template (lightbox + trượt gallery)
 
 /**
  * v484 · Studio "Create Your Own" — trang admin cấu hình wizard khách trên talewix.com.
@@ -307,8 +308,8 @@ export default function StudioClient() {
             {templates.length === 0 && <div style={{ color: "var(--muted)", fontSize: 13, padding: 4 }}>No templates yet — add the covers customers can personalize.</div>}
             {templates.map((t) => (
               <div key={t.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 2px", borderBottom: "1px solid var(--line)" }}>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {t.thumbUrl ? <img src={t.thumbUrl} alt="" style={{ width: 52, height: 52, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line)" }} /> : <div style={{ width: 52, height: 52, borderRadius: 10, background: "#f4f4f4" }} />}
+                {/* v612 · hover = preview to · click = lightbox trượt được cả gallery (mũi tên / phím mũi tên) */}
+                {t.thumbUrl ? <ThumbZoom src={t.thumbUrl} size={52} radius={10} border images={[t.thumbUrl, ...((t.galleryImages ?? []).filter((u) => u !== t.thumbUrl))]} /> : <div style={{ width: 52, height: 52, borderRadius: 10, background: "#f4f4f4" }} />}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {/* v600 · click TITLE để sửa (bỏ nút Edit) */}
                   <div onClick={() => setEdit({ ...t })} title="Click to edit this template"

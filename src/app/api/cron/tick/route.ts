@@ -15,6 +15,7 @@ import { syncPrintify } from "@/lib/printify-sync";
 import { syncOnosWem } from "@/lib/onos-wem-sync";
 import { syncSupportMail } from "@/lib/support-mail";
 import { runMetaRuleEngine } from "@/lib/meta-rules";
+import { processPagePostQueue } from "@/lib/page-post"; // v614 · đăng bài IG hẹn giờ
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -242,7 +243,7 @@ async function tick(req: NextRequest) {
   // với "hết giờ, không chạy". ONOS/Compassup/Lenful nằm trong onosWem nên nó luôn là thằng đói.
   // Sửa: (a) đánh dấu rõ `skipped (time budget)`, (b) XOAY vòng thứ tự theo phút để không nhà nào
   // vĩnh viễn đứng cuối hàng.
-  const results: Record<string, unknown> = { printway: null, printify: null, onosWem: null, supportMail: null, metaRules: null };
+  const results: Record<string, unknown> = { printway: null, printify: null, onosWem: null, supportMail: null, metaRules: null, pagePosts: null };
   const jobs: Array<{ key: string; run: () => Promise<unknown> }> = [
     { key: "printway", run: () => syncPrintway({ force: false }) },
     { key: "printify", run: () => syncPrintify({ force: false }) },
@@ -251,6 +252,8 @@ async function tick(req: NextRequest) {
     { key: "supportMail", run: () => syncSupportMail({ force: false }) },
     // v570 · rule engine Meta ads (gate 2h bên trong runMetaRuleEngine — gọi mỗi tick vẫn rẻ).
     { key: "metaRules", run: () => runMetaRuleEngine() },
+    // v614 · đăng bài Instagram HẸN GIỜ (page_post_queue) — IG API không có đặt lịch native.
+    { key: "pagePosts", run: () => processPagePostQueue() },
   ];
   const rot = Math.floor(started / 600_000) % jobs.length; // đổi thứ tự mỗi 10 phút
   for (let i = 0; i < jobs.length; i++) {
