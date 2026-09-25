@@ -141,6 +141,24 @@ export default function StudioClient() {
     setPickRows([]); setPickQ("");
   };
 
+  // v604 · nạp gallery từ CHÍNH listing đã link (tra theo variant id qua picker search v602) —
+  // khỏi phải Pick lại sản phẩm chỉ để lấy ảnh.
+  const [galBusy, setGalBusy] = useState(false);
+  const fillGalleryFromListing = async () => {
+    if (!edit) return;
+    const vid = String(edit.variantId ?? "").replace(/\D/g, "");
+    if (!vid) { setMsg("✗ This template has no Shopify variant ID — pick the product above first"); return; }
+    setGalBusy(true); setMsg("");
+    try {
+      const j = await fetch(`/api/studio/admin?search=${encodeURIComponent(vid)}`).then((r) => r.json());
+      const p = (j.products ?? [])[0] as PickProduct | undefined;
+      const imgs = (p?.imageUrls ?? []).slice(0, 12);
+      if (!imgs.length) setMsg("✗ Listing not found (or it has no photos) — check the variant ID");
+      else { setEdit((prev) => prev && { ...prev, galleryImages: imgs }); setMsg(`✓ Loaded ${imgs.length} photo(s) from the listing — Save to keep`); }
+    } catch (e) { setMsg("✗ " + String((e as Error)?.message ?? e)); }
+    setGalBusy(false);
+  };
+
   // v600 · gán seller ngay trên dòng — PUT nguyên template (các field khác giữ nguyên); server
   // đồng thời đóng dấu created_by lên listing Shopify chứa variant → đơn wizard chia đúng seller.
   const assignSeller = async (t: Tpl, sellerId: string) => {
@@ -275,9 +293,14 @@ export default function StudioClient() {
             <button onClick={() => setEdit({ ...EMPTY_TPL, sort: templates.length })} style={{ marginTop: 10, background: "none", border: "1px dashed var(--line)", borderRadius: 10, padding: "9px 14px", fontSize: 13, fontWeight: 700, color: "#f68b1e", cursor: "pointer" }}>+ Add template</button>
           </div>
 
+          {/* v603 · form edit = MODAL nổi (trước đây nằm bẹp cuối trang, click title phải mò xuống tìm) */}
           {edit && (
-            <div style={card}>
-              <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 12 }}>{edit.id ? "Edit template" : "New template"}</div>
+            <div onClick={() => !saving && setEdit(null)} style={{ position: "fixed", inset: 0, zIndex: 400, background: "rgba(20,25,40,.5)", overflowY: "auto", padding: "40px 16px" }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ ...card, maxWidth: 860, margin: "0 auto", boxShadow: "0 24px 70px rgba(15,20,40,.35)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                <div style={{ fontWeight: 900, fontSize: 16 }}>{edit.id ? "Edit template" : "New template"}<span style={{ fontWeight: 600, fontSize: 13, color: "var(--muted)" }}>{edit.title ? ` · ${edit.title.slice(0, 60)}` : ""}</span></div>
+                <button onClick={() => setEdit(null)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "var(--muted)", lineHeight: 1 }}>✕</button>
+              </div>
 
             {/* Picker: chọn từ sản phẩm Shopify đã sync — tự điền title/ảnh/variant/giá */}
             <div style={{ background: "#FFF9F2", border: "1px solid #F2D9BC", borderRadius: 12, padding: 12, marginBottom: 14 }}>
@@ -359,10 +382,16 @@ export default function StudioClient() {
                         style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "1px solid var(--line)", background: "#fff", color: "var(--red)", fontSize: 11, fontWeight: 800, cursor: "pointer", lineHeight: "18px", padding: 0 }}>✕</button>
                     </span>
                   ))}
+                  {/* v604 · 2 lựa chọn rõ ràng: lấy ảnh từ chính listing đã link, hoặc upload tay */}
+                  <button type="button" onClick={fillGalleryFromListing} disabled={galBusy}
+                    title="Load ALL photos from the linked Shopify listing (replaces the current gallery)"
+                    style={{ border: "1px solid #F2D9BC", background: "#FFF9F2", color: "#B45309", borderRadius: 10, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", opacity: galBusy ? 0.6 : 1 }}>
+                    {galBusy ? "Loading…" : "⤓ Use listing photos"}
+                  </button>
                   {(edit.galleryImages ?? []).length < 12 && (
                     <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, galleryImages: [...(p.galleryImages ?? []), u] })} onError={(m) => setMsg("✗ " + m)} />
                   )}
-                  {(edit.galleryImages ?? []).length === 0 && <span style={{ fontSize: 12, color: "var(--muted)" }}>Empty — pick the product above to auto-fill from its Shopify photos, or upload manually.</span>}
+                  {(edit.galleryImages ?? []).length === 0 && <span style={{ fontSize: 12, color: "var(--muted)" }}>Empty — use the listing&apos;s photos or upload manually.</span>}
                 </div>
               </div>
               <div style={{ marginBottom: 12 }}><span style={lbl}>Description (shown on the wizard detail view)</span><textarea value={edit.description} onChange={(e) => setEdit({ ...edit, description: e.target.value })} rows={3} style={{ ...inp, resize: "vertical" }} /></div>
@@ -374,10 +403,11 @@ export default function StudioClient() {
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, marginBottom: 14, cursor: "pointer" }}>
                 <input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} style={{ width: 16, height: 16 }} /> Active (visible to customers)
               </label>
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={saveTpl} disabled={saving} style={{ ...btn("#f68b1e"), opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save template"}</button>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button onClick={() => setEdit(null)} style={{ ...btn("#8a8f98") }}>Cancel</button>
+                <button onClick={saveTpl} disabled={saving} style={{ ...btn("#f68b1e"), opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save template"}</button>
               </div>
+            </div>
             </div>
           )}
         </>
