@@ -22,10 +22,18 @@ const lbl: React.CSSProperties = { fontSize: 11.5, fontWeight: 800, color: "var(
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 14, padding: 16, marginBottom: 14 };
 const btn = (bg: string): React.CSSProperties => ({ background: bg, color: "#fff", border: 0, borderRadius: 11, padding: "10px 20px", fontWeight: 800, fontSize: 13.5, cursor: "pointer" });
 
+/** v611 · preview nhỏ cạnh ô URL ảnh (Thumb / Base cover / Back cover) — key theo src để URL đổi là ảnh remount, lỗi ảnh thì tự ẩn. */
+const UrlThumb = ({ src }: { src: string }) => (src ?? "").trim() ? (
+  /* eslint-disable-next-line @next/next/no-img-element */
+  <img key={src} src={src} alt="" onError={(e) => { e.currentTarget.style.display = "none"; }}
+    style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0, display: "block", background: "#f4f4f4" }} />
+) : null;
+
 const EMPTY_TPL: Tpl = { id: "", title: "", thumbUrl: "", baseImageUrl: "", variantId: "", price: "", promptExtra: "", active: true, sort: 0, variants: [], description: "", ageRange: "", pages: "", backImageUrl: "", genBack: false, sellerId: null, galleryImages: [] };
 
-/** v493 · Nút Upload ảnh từ máy: nén client-side (≤1600px JPEG) → POST /api/studio/admin/upload → trả URL R2. */
-function UploadBtn({ onDone, onError }: { onDone: (url: string) => void; onError: (m: string) => void }) {
+/** v493 · Nút Upload ảnh từ máy: nén client-side (≤1600px JPEG) → POST /api/studio/admin/upload → trả URL R2.
+ *  v610 · tile=true → render Ô VUÔNG NÉT ĐỨT "+ Add photos" (đồng điệu trình sửa ảnh Manage Products Shopify). */
+function UploadBtn({ onDone, onError, tile }: { onDone: (url: string) => void; onError: (m: string) => void; tile?: boolean }) {
   const ref = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const handle = (f: File) => {
@@ -46,6 +54,17 @@ function UploadBtn({ onDone, onError }: { onDone: (url: string) => void; onError
     img.onerror = () => onError("Could not read that image");
     img.src = URL.createObjectURL(f);
   };
+  if (tile) return (
+    <>
+      <div onClick={() => !busy && ref.current?.click()}
+        style={{ width: "100%", aspectRatio: "1", minHeight: 96, borderRadius: 12, border: "2px dashed #C9D2DE", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, cursor: "pointer", color: "#f68b1e", opacity: busy ? 0.6 : 1, background: "#FFFDFA", boxSizing: "border-box" }}>
+        <span style={{ fontSize: 24, lineHeight: 1, fontWeight: 400 }}>{busy ? "…" : "+"}</span>
+        <span style={{ fontSize: 11, fontWeight: 700 }}>{busy ? "Uploading" : "Add photos"}</span>
+      </div>
+      <input ref={ref} type="file" accept="image/*" style={{ display: "none" }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handle(f); e.target.value = ""; }} />
+    </>
+  );
   return (
     <>
       <button type="button" onClick={() => ref.current?.click()} disabled={busy}
@@ -147,6 +166,15 @@ export default function StudioClient() {
   const [galBusy, setGalBusy] = useState(false);
   const [galSrc, setGalSrc] = useState("");
   const [galRows, setGalRows] = useState<PickProduct[]>([]);
+  // v610 · KÉO-THẢ sắp xếp gallery (đồng điệu trình sửa ảnh Manage Products Shopify).
+  const [galDrag, setGalDrag] = useState<number | null>(null);
+  const galMove = (from: number, to: number) => setEdit((p) => {
+    if (!p) return p;
+    const arr = [...(p.galleryImages ?? [])];
+    const [x] = arr.splice(from, 1);
+    arr.splice(to, 0, x);
+    return { ...p, galleryImages: arr };
+  });
   const applyGallery = (p: PickProduct) => {
     const imgs = (p.imageUrls ?? []).slice(0, 12);
     if (!imgs.length) { setMsg("✗ That listing has no photos"); return; }
@@ -356,21 +384,24 @@ export default function StudioClient() {
               </div>
               <div style={{ marginBottom: 12 }}>
                 <span style={lbl}>Thumb URL (wizard grid)</span>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <UrlThumb src={edit.thumbUrl} />
                   <input value={edit.thumbUrl} onChange={(e) => setEdit({ ...edit, thumbUrl: e.target.value, baseImageUrl: edit.baseImageUrl || e.target.value })} placeholder="https://cdn.shopify.com/…/cover.jpg" style={inp} />
                   <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, thumbUrl: u, baseImageUrl: p.baseImageUrl || u })} onError={(m) => setMsg("✗ " + m)} />
                 </div>
               </div>
               <div style={{ marginBottom: 12 }}>
                 <span style={lbl}>Base cover URL (AI reference — the original cover art, defaults to thumb)</span>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <UrlThumb src={edit.baseImageUrl} />
                   <input value={edit.baseImageUrl} onChange={(e) => setEdit({ ...edit, baseImageUrl: e.target.value })} style={inp} />
                   <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, baseImageUrl: u })} onError={(m) => setMsg("✗ " + m)} />
                 </div>
               </div>
               <div style={{ marginBottom: 12 }}>
                 <span style={lbl}>Back cover URL (optional — shown on the 3D book preview)</span>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <UrlThumb src={edit.backImageUrl} />
                   <input value={edit.backImageUrl} onChange={(e) => setEdit({ ...edit, backImageUrl: e.target.value })} placeholder="https://cdn.shopify.com/…/back.jpg" style={inp} />
                   <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, backImageUrl: u })} onError={(m) => setMsg("✗ " + m)} />
                 </div>
@@ -380,33 +411,43 @@ export default function StudioClient() {
                 </label>
               </div>
               {/* v602 · GALLERY — ảnh listing (ảnh trong sách) hiện ở trang chi tiết wizard. Chỉ để xem:
-                  AI vẫn chỉ gen ảnh BÌA (Base cover). Picker tự nạp toàn bộ ảnh; ✕ bỏ ảnh không muốn. */}
+                  AI vẫn chỉ gen ảnh BÌA (Base cover).
+                  v610 · style ĐỒNG ĐIỆU trình sửa ảnh Manage Products Shopify: lưới card to,
+                  KÉO-THẢ sắp xếp, badge MAIN trên ảnh đầu, ✕ tròn góc, ô "+ Add photos" nét đứt. */}
               <div style={{ marginBottom: 12 }}>
-                <span style={lbl}>Gallery — listing photos shown on the wizard detail view ({(edit.galleryImages ?? []).length}/12 · AI still generates the COVER only)</span>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                  {(edit.galleryImages ?? []).map((u, i) => (
-                    <span key={u + i} style={{ position: "relative", display: "inline-block" }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={u} alt="" style={{ width: 62, height: 62, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", display: "block" }} />
-                      <button type="button" onClick={() => setEdit((p) => p && { ...p, galleryImages: (p.galleryImages ?? []).filter((_, j) => j !== i) })}
-                        title="Remove this photo from the gallery"
-                        style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "1px solid var(--line)", background: "#fff", color: "var(--red)", fontSize: 11, fontWeight: 800, cursor: "pointer", lineHeight: "18px", padding: 0 }}>✕</button>
-                    </span>
-                  ))}
-                  {/* v607 · 2 lựa chọn: chọn listing nguồn rồi lấy ảnh, hoặc upload tay */}
+                <span style={lbl}>Gallery ({(edit.galleryImages ?? []).length}/12) · drag to reorder · the first photo shows first · AI still generates the COVER only</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
                   <input value={galSrc} onChange={(e) => setGalSrc(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") searchGallerySource(); }}
                     placeholder="listing title / ID… (blank = this template's listing)"
-                    style={{ ...inp, width: 300, fontSize: 12 }} />
+                    style={{ ...inp, flex: 1, fontSize: 12 }} />
                   <button type="button" onClick={searchGallerySource} disabled={galBusy}
-                    title="Find the listing, then PICK it from the results — its photos replace the current gallery"
+                    title="Find the listing, then PICK it from the results — its photos replace the current gallery (photos only; variant/price stay on the Photo Edition)"
                     style={{ border: "1px solid #F2D9BC", background: "#FFF9F2", color: "#B45309", borderRadius: 10, padding: "9px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", opacity: galBusy ? 0.6 : 1 }}>
                     {galBusy ? "Loading…" : "⤓ Use listing photos"}
                   </button>
-                  {(edit.galleryImages ?? []).length < 12 && (
-                    <UploadBtn onDone={(u) => setEdit((p) => p && { ...p, galleryImages: [...(p.galleryImages ?? []), u] })} onError={(m) => setMsg("✗ " + m)} />
-                  )}
-                  {(edit.galleryImages ?? []).length === 0 && <span style={{ fontSize: 12, color: "var(--muted)" }}>Empty — use the listing&apos;s photos or upload manually.</span>}
                 </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(106px, 1fr))", gap: 10 }}>
+                  {(edit.galleryImages ?? []).map((u, i) => (
+                    <div key={u + i} draggable
+                      onDragStart={() => setGalDrag(i)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => { e.preventDefault(); if (galDrag != null && galDrag !== i) galMove(galDrag, i); setGalDrag(null); }}
+                      onDragEnd={() => setGalDrag(null)}
+                      title="Drag to reorder"
+                      style={{ position: "relative", aspectRatio: "1", borderRadius: 12, border: galDrag === i ? "2px dashed #f68b1e" : "1px solid var(--line)", overflow: "hidden", cursor: "grab", opacity: galDrag === i ? 0.5 : 1, background: "#fff", boxShadow: "0 1px 4px rgba(20,25,40,.06)" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={u} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block", pointerEvents: "none" }} />
+                      {i === 0 && <span style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "rgba(20,25,40,.72)", color: "#fff", fontSize: 10, fontWeight: 800, textAlign: "center", padding: "3px 0", letterSpacing: ".5px" }}>MAIN</span>}
+                      <button type="button" onClick={() => setEdit((p) => p && { ...p, galleryImages: (p.galleryImages ?? []).filter((_, j) => j !== i) })}
+                        title="Remove this photo from the gallery"
+                        style={{ position: "absolute", top: 6, right: 6, width: 22, height: 22, borderRadius: "50%", border: "none", background: "rgba(255,255,255,.94)", color: "#14213D", fontSize: 11, fontWeight: 800, cursor: "pointer", lineHeight: "22px", padding: 0, boxShadow: "0 1px 4px rgba(0,0,0,.28)" }}>✕</button>
+                    </div>
+                  ))}
+                  {(edit.galleryImages ?? []).length < 12 && (
+                    <UploadBtn tile onDone={(u) => setEdit((p) => p && { ...p, galleryImages: [...(p.galleryImages ?? []), u] })} onError={(m) => setMsg("✗ " + m)} />
+                  )}
+                </div>
+                {(edit.galleryImages ?? []).length === 0 && <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Empty — use the listing&apos;s photos or add them manually.</div>}
                 {/* v607 · nhiều listing khớp → BẠN tự chọn nguồn (kèm số ảnh của từng con) */}
                 {galRows.length > 0 && (
                   <div style={{ marginTop: 8, border: "1px solid #F2D9BC", background: "#FFF9F2", borderRadius: 12, padding: 8, maxHeight: 260, overflowY: "auto" }}>
