@@ -48,13 +48,32 @@ export async function POST(req: NextRequest) {
     const ad = await fb(`${adId}?fields=name,creative{object_story_spec,effective_object_story_id,image_url,thumbnail_url}`, token);
     const cr = (ad.creative ?? {}) as { object_story_spec?: Spec; effective_object_story_id?: string; image_url?: string; thumbnail_url?: string };
     const spec = cr.object_story_spec ?? {};
-    const pageId = String(spec.page_id ?? (cr.effective_object_story_id ?? "").split("_")[0] ?? "");
-    const message = String(spec.link_data?.message ?? spec.video_data?.message ?? "").trim();
-    const link = String(spec.link_data?.link ?? spec.video_data?.call_to_action?.value?.link ?? "").trim();
+    const postId = String(cr.effective_object_story_id ?? "");
+    const pageId = String(spec.page_id ?? postId.split("_")[0] ?? "");
+    let message = String(spec.link_data?.message ?? spec.video_data?.message ?? "").trim();
+    let link = String(spec.link_data?.link ?? spec.video_data?.call_to_action?.value?.link ?? "").trim();
     // Ảnh cho IG: ảnh gốc creative > ảnh trong spec > thumbnail (ad video chỉ có thumbnail).
-    const imageUrl = String(cr.image_url ?? spec.link_data?.picture ?? spec.video_data?.image_url ?? cr.thumbnail_url ?? "").trim();
+    let imageUrl = String(cr.image_url ?? spec.link_data?.picture ?? spec.video_data?.image_url ?? cr.thumbnail_url ?? "").trim();
     if (!pageId) return NextResponse.json({ ok: false, error: "Cannot resolve the Facebook Page from this ad's creative." }, { status: 400 });
-    if (!message && !link) return NextResponse.json({ ok: false, error: "This ad's creative has no caption/link to publish." }, { status: 400 });
+
+    // v616 · Ad DUP "GIỮ POST" (v582): creative chỉ trỏ object_story_id — KHÔNG có spec → trước đây
+    // báo "no caption/link" (preview treo Loading). Đọc nội dung từ CHÍNH POST bằng page token:
+    // message + link + ảnh của post là đúng thứ sẽ đăng lại.
+    if ((!message || !link || !imageUrl) && postId) {
+      try {
+        const pg = await fb(`${pageId}?fields=access_token`, token);
+        const ptk = String((pg as { access_token?: string }).access_token ?? "");
+        if (ptk) {
+          const po = await fb(`${postId}?fields=message,attachments{unshimmed_url,url,media{image{src}}}`, ptk);
+          if (!message) message = String((po as { message?: string }).message ?? "").trim();
+          const att = (((po.attachments ?? {}) as { data?: { unshimmed_url?: string; url?: string; media?: { image?: { src?: string } } }[] }).data ?? [])[0];
+          const unshim = (u: string) => { const m2 = u.match(/[?&]u=([^&]+)/); if (/l(m)?\.facebook\.com/.test(u) && m2) { try { return decodeURIComponent(m2[1]); } catch { return u; } } return u; };
+          if (!link) link = unshim(String(att?.unshimmed_url ?? att?.url ?? "")).trim();
+          if (!imageUrl) imageUrl = String(att?.media?.image?.src ?? "").trim();
+        }
+      } catch { /* thiếu quyền đọc post → dùng những gì có */ }
+    }
+    if (!message && !link) return NextResponse.json({ ok: false, error: "This ad's creative has no caption/link to publish (and the original post could not be read — check the Page role of the system token)." }, { status: 400 });
 
     // v615 · preview: trả nội dung SẼ ĐĂNG (caption + link + ảnh) + tình trạng link IG — không đăng gì.
     if (b?.preview === true) {

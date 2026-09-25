@@ -437,12 +437,16 @@ export default function AdsCenterClient() {
   const [pubBusy, setPubBusy] = useState("");
   const [pubForm, setPubForm] = useState<null | { adId: string; name: string; fb: boolean; ig: boolean; date: string; time: string }>(null);
   // v615 · preview nội dung SẼ ĐĂNG (caption + link + ảnh từ creative thật) — nạp khi mở form.
-  const [pubPrev, setPubPrev] = useState<null | { message: string; link: string; imageUrl: string; igLinked: boolean | null }>(null);
+  const [pubPrev, setPubPrev] = useState<null | { message: string; link: string; imageUrl: string; igLinked: boolean | null; error?: string }>(null);
   const openPub = (adId: string, name: string) => {
     setPubForm({ adId, name, fb: true, ig: false, date: "", time: "" });
     setPubPrev(null);
+    // v616 · lỗi preview phải HIỆN RA (trước đây nuốt lỗi → khung treo "Loading…" mãi).
+    const fail = (m: string) => setPubPrev({ message: "", link: "", imageUrl: "", igLinked: null, error: m });
     fetch("/api/meta-ads/publish-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adId, preview: true }) })
-      .then((r) => r.json()).then((j) => { if (j.ok && j.preview) setPubPrev(j.preview); }).catch(() => { /* preview là phụ */ });
+      .then((r) => r.json())
+      .then((j) => { if (j.ok && j.preview) setPubPrev(j.preview); else fail(String(j.error ?? "Preview failed")); })
+      .catch((e) => fail(String((e as Error).message)));
   };
   const submitPub = async () => {
     if (!pubForm || pubBusy) return;
@@ -1168,7 +1172,8 @@ export default function AdsCenterClient() {
             {/* PREVIEW — đúng nội dung sẽ đăng (caption + link + ảnh từ creative) */}
             <label style={lab}>PREVIEW</label>
             <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 10, display: "flex", gap: 10, background: "#FAFBFC", minHeight: 60 }}>
-              {pubPrev === null ? <span style={{ fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>Loading…</span> : (<>
+              {pubPrev === null ? <span style={{ fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>Loading…</span>
+              : pubPrev.error ? <span style={{ fontSize: 12, color: "#C0392B", fontWeight: 700, alignSelf: "center" }}>✗ {pubPrev.error}</span> : (<>
                 {pubPrev.imageUrl && (
                   /* eslint-disable-next-line @next/next/no-img-element */
                   <img src={pubPrev.imageUrl} alt="" style={{ width: 76, height: 76, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0 }} />
