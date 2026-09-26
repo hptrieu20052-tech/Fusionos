@@ -438,9 +438,12 @@ export default function AdsCenterClient() {
   const [pubForm, setPubForm] = useState<null | { adId: string; name: string; fb: boolean; ig: boolean; date: string; time: string }>(null);
   // v615 · preview nội dung SẼ ĐĂNG (caption + link + ảnh từ creative thật) — nạp khi mở form.
   const [pubPrev, setPubPrev] = useState<null | { message: string; link: string; imageUrl: string; igLinked: boolean | null; error?: string }>(null);
+  // v618 · tab preview FB / IG: 2 kênh đăng KHÁC nhau (FB link ở comment; IG link là text cuối caption).
+  const [pubPrevTab, setPubPrevTab] = useState<"fb" | "ig">("fb");
   const openPub = (adId: string, name: string) => {
     setPubForm({ adId, name, fb: true, ig: false, date: "", time: "" });
     setPubPrev(null);
+    setPubPrevTab("fb");
     // v616 · lỗi preview phải HIỆN RA (trước đây nuốt lỗi → khung treo "Loading…" mãi).
     const fail = (m: string) => setPubPrev({ message: "", link: "", imageUrl: "", igLinked: null, error: m });
     fetch("/api/meta-ads/publish-post", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adId, preview: true }) })
@@ -1171,24 +1174,43 @@ export default function AdsCenterClient() {
         <div onClick={() => !pubBusy && setPubForm(null)} style={{ position: "fixed", inset: 0, zIndex: 320, background: "rgba(15,20,40,.55)", overflowY: "auto", padding: "60px 16px" }}>
           <div onClick={(e) => e.stopPropagation()} style={{ margin: "0 auto", maxWidth: 460, background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 24px 70px rgba(15,20,40,.35)", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
             <b style={{ fontSize: 14.5 }}>Publish post <span style={{ fontWeight: 600, color: "var(--muted)", fontSize: 12 }}>· {f.name}</span></b>
-            {/* PREVIEW — đúng nội dung sẽ đăng (caption + link + ảnh từ creative) */}
-            <label style={lab}>PREVIEW</label>
+            {/* PREVIEW — đúng nội dung sẽ đăng; v618 tab FB / IG vì 2 kênh render khác nhau */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <label style={{ ...lab, flex: 1 }}>PREVIEW</label>
+              {(["fb", "ig"] as const).map((k) => (
+                <button key={k} type="button" onClick={() => setPubPrevTab(k)}
+                  style={{ border: `1px solid ${pubPrevTab === k ? "#2050D0" : "var(--line)"}`, background: pubPrevTab === k ? "#EDF2FF" : "#fff", color: pubPrevTab === k ? "#2050D0" : "#5B6472", borderRadius: 999, padding: "2px 10px", fontSize: 10.5, fontWeight: 800, cursor: "pointer" }}>
+                  {k === "fb" ? "Facebook" : "Instagram"}
+                </button>
+              ))}
+            </div>
             <div style={{ border: "1px solid var(--line)", borderRadius: 12, padding: 10, display: "flex", gap: 10, background: "#FAFBFC", minHeight: 60 }}>
               {pubPrev === null ? <span style={{ fontSize: 12, color: "var(--muted)", alignSelf: "center" }}>Loading…</span>
               : pubPrev.error ? <span style={{ fontSize: 12, color: "#C0392B", fontWeight: 700, alignSelf: "center" }}>✗ {pubPrev.error}</span> : (<>
                 {pubPrev.imageUrl && (
                   /* eslint-disable-next-line @next/next/no-img-element */
-                  <img src={pubPrev.imageUrl} alt="" style={{ width: 76, height: 76, objectFit: "cover", borderRadius: 10, border: "1px solid var(--line)", flexShrink: 0 }} />
+                  <img src={pubPrev.imageUrl} alt="" style={{ width: 76, height: 76, objectFit: "cover", borderRadius: pubPrevTab === "ig" ? 4 : 10, border: "1px solid var(--line)", flexShrink: 0 }} />
                 )}
-                <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.5 }}>
-                  <div style={{ whiteSpace: "pre-wrap", maxHeight: 110, overflowY: "auto" }}>{pubPrev.message || <span style={{ color: "var(--muted)" }}>(no caption)</span>}</div>
-                  {pubPrev.link && (
-                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 4, fontSize: 11.5 }}>
-                      <span style={{ color: "#8794A5", fontWeight: 700 }}>FB 1st comment · </span>
-                      <span style={{ color: "#1D4ED8" }}>{pubPrev.link}</span>
+                {pubPrevTab === "ig" ? (
+                  // IG: ảnh vuông + caption = message + link dạng TEXT ở cuối (IG không cho link bấm).
+                  <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.5 }}>
+                    {pubPrev.igLinked === false && <div style={{ color: "#C0392B", fontWeight: 800, fontSize: 11, marginBottom: 3 }}>✗ Instagram not linked to this Page</div>}
+                    <div style={{ whiteSpace: "pre-wrap", maxHeight: 110, overflowY: "auto" }}>
+                      {[pubPrev.message, pubPrev.link].filter(Boolean).join("\n\n") || <span style={{ color: "var(--muted)" }}>(no caption)</span>}
                     </div>
-                  )}
-                </div>
+                    {!pubPrev.imageUrl && <div style={{ color: "#C0392B", fontWeight: 700, fontSize: 11, marginTop: 3 }}>No image — Instagram requires one, IG will be skipped.</div>}
+                  </div>
+                ) : (
+                  <div style={{ minWidth: 0, fontSize: 12, lineHeight: 1.5 }}>
+                    <div style={{ whiteSpace: "pre-wrap", maxHeight: 110, overflowY: "auto" }}>{pubPrev.message || <span style={{ color: "var(--muted)" }}>(no caption)</span>}</div>
+                    {pubPrev.link && (
+                      <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 4, fontSize: 11.5 }}>
+                        <span style={{ color: "#8794A5", fontWeight: 700 }}>FB 1st comment · </span>
+                        <span style={{ color: "#1D4ED8" }}>{pubPrev.link}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>)}
             </div>
             {/* CHANNELS — chip bật/tắt */}

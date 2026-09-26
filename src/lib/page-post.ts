@@ -78,14 +78,20 @@ export async function publishPagePost(job: PagePostJob, sysToken: string): Promi
     if (!igId) warns.push("No Instagram Business account is linked to the Page — IG skipped (link it in Page settings → Linked accounts).");
     else if (!job.imageUrl) warns.push("This ad's creative has no usable image — Instagram needs one, IG skipped.");
     else {
-      // Caption = message + link dạng text (IG không cho link click trong caption).
-      const caption = [job.message, job.link].filter(Boolean).join("\n\n").slice(0, 2200);
-      const cont = await fb(`${igId}/media`, pageToken, { image_url: job.imageUrl, caption });
-      const cid = String(cont.id ?? "");
-      if (!cid) warns.push("Instagram media container was not created — check instagram_content_publish permission.");
-      else {
-        const pub = await fb(`${igId}/media_publish`, pageToken, { creation_id: cid });
-        igMediaId = String(pub.id ?? "");
+      // v618 · IG lỗi KHÔNG được ném ra ngoài: FB ở trên có thể ĐÃ đăng — throw ở đây làm caller
+      // tưởng cả job fail rồi đăng lại FB lần nữa (nguồn bài trùng). IG lỗi → warn, job vẫn "xong".
+      try {
+        // Caption = message + link dạng text (IG không cho link click trong caption).
+        const caption = [job.message, job.link].filter(Boolean).join("\n\n").slice(0, 2200);
+        const cont = await fb(`${igId}/media`, pageToken, { image_url: job.imageUrl, caption });
+        const cid = String(cont.id ?? "");
+        if (!cid) warns.push("Instagram media container was not created — check instagram_content_publish permission.");
+        else {
+          const pub = await fb(`${igId}/media_publish`, pageToken, { creation_id: cid });
+          igMediaId = String(pub.id ?? "");
+        }
+      } catch (e) {
+        warns.push(`Instagram failed: ${String((e as Error).message).slice(0, 200)}`);
       }
     }
   }
@@ -102,15 +108,37 @@ export async function processPagePostQueue(): Promise<{ processed: number; faile
       .where(and(eq(schema.pagePostQueue.status, "pending"), lte(schema.pagePostQueue.scheduledAt, new Date())))
       .limit(10);
   } catch { return { processed: 0, failed: 0 }; /* bảng chưa migrate */ }
+  // v618 · Row kẹt "processing" quá 20' (tick chết giữa chừng — bài CÓ THỂ đã lên) → đóng error,
+  // TUYỆT ĐỐI không đăng lại (đây từng là nguồn đăng trùng 2 bài FB).
+  try {
+    const stuck = await db.select().from(schema.pagePostQueue).where(eq(schema.pagePostQueue.status, "processing")).limit(20);
+    for (const s of stuck) {
+      const at = new Date(String((s.result as { claimedAt?: string } | null)?.claimedAt ?? s.createdAt)).getTime();
+      if (Number.isFinite(at) && Date.now() - at > 20 * 60000) {
+        await db.update(schema.pagePostQueue)
+          .set({ status: "error", result: { error: "interrupted mid-publish — the post may already be live on the Page; check before re-queueing" } as never })
+          .where(eq(schema.pagePostQueue.id, s.id)).catch(() => { /* thôi */ });
+      }
+    }
+  } catch { /* thôi */ }
   let ok = 0, failed = 0;
   for (const r of rows) {
+    // v618 · CLAIM nguyên tử: 2 tick chạy chồng nhau (hoặc tick trước timeout chưa kịp ghi done)
+    // từng cùng nhặt 1 row pending → ĐĂNG TRÙNG. Chỉ tick chuyển được pending→processing mới đăng.
+    const claimed = await db.update(schema.pagePostQueue)
+      .set({ status: "processing", result: { claimedAt: new Date().toISOString() } as never })
+      .where(and(eq(schema.pagePostQueue.id, r.id), eq(schema.pagePostQueue.status, "pending")))
+      .returning({ id: schema.pagePostQueue.id })
+      .catch(() => [] as { id: string }[]);
+    if (!claimed.length) continue;
     try {
       const res = await publishPagePost({ pageId: r.pageId, message: r.message, link: r.link, imageUrl: r.imageUrl, toFb: r.toFb, toIg: r.toIg }, token);
       await db.update(schema.pagePostQueue).set({ status: "done", result: res as never }).where(eq(schema.pagePostQueue.id, r.id));
       ok++;
     } catch (e) {
+      // Lỗi thật (trước khi đăng được gì — lỗi IG đã thành warn bên trong) → error, không retry.
       await db.update(schema.pagePostQueue).set({ status: "error", result: { error: String((e as Error).message).slice(0, 300) } as never })
-        .where(eq(schema.pagePostQueue.id, r.id)).catch(() => { /* giữ pending nếu cả update lỗi */ });
+        .where(eq(schema.pagePostQueue.id, r.id)).catch(() => { /* stale-recovery sẽ đóng row */ });
       failed++;
     }
   }
