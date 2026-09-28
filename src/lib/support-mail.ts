@@ -90,12 +90,40 @@ const refsOf = (p: ParsedMail): string[] => {
   return Array.from(new Set(out.filter(Boolean)));
 };
 
+export type MailKind = "customer" | "promo";
+// Địa chỉ máy gửi hàng loạt — gần như không bao giờ là khách thật viết tay.
+// (KHÔNG gồm mailer-daemon — báo bounce là mail quan trọng: reply cho khách bị trả về.)
+const PROMO_FROM = /^(no-?reply|noreply|do-?not-?reply|donotreply|newsletters?|news|marketing|promotions?|promo|offers?|deals|notifications?|notify|updates?|digest|campaigns?)@/i;
+/**
+ * v619 · Phân loại 1 mail đến: khách thật hay quảng cáo/newsletter.
+ *  - Mail qua hệ thống Shopify (contact form, khách reply notification) = CUSTOMER dù from là
+ *    no-reply@shopify.com — nhận diện qua domain shopify / header x-shopify.
+ *  - List-Unsubscribe / Precedence: bulk|list = mail gửi hàng loạt → PROMO.
+ *  - From dạng no-reply/newsletter/marketing… → PROMO. Còn lại → CUSTOMER.
+ */
+function classifyMail(p: ParsedMail, fromEmail: string): MailKind {
+  const dom = fromEmail.split("@")[1] ?? "";
+  if (/(^|\.)shopify(email)?\.com$/i.test(dom)) return "customer";
+  const h = p.headers;
+  try {
+    if (h?.has("x-shopify-topic") || h?.has("x-shopify-shop-domain")) return "customer";
+    if (h?.has("list-unsubscribe") || h?.has("list-id")) return "promo";
+    const prec = String(h?.get("precedence") ?? "").toLowerCase();
+    if (prec.includes("bulk") || prec.includes("list")) return "promo";
+    const autoSub = String(h?.get("auto-submitted") ?? "").toLowerCase();
+    if (autoSub && autoSub !== "no") return "promo";
+  } catch { /* header lạ → bỏ qua tín hiệu này */ }
+  if (PROMO_FROM.test(fromEmail)) return "promo";
+  return "customer";
+}
+
 /**
  * Tìm/tạo thread cho 1 mail. peerEmail = phía "khách" của thread (mail đến: người gửi;
  * mail đi từ Sent: người nhận). Ưu tiên nối theo References → (account + email + subject) → tạo mới.
- * Thread tạo từ folder ≠ inbox thì KHÔNG đánh unread (đỡ nhiễu vì spam/quảng cáo).
+ * v619: thread mới mang kind (customer/promo); mail KHÁCH nằm trong Spam vẫn đánh unread
+ * (rescue — trước đây spam im lặng nên hay bị xót), promo thì không làm phiền.
  */
-async function threadFor(p: ParsedMail, peerEmail: string, peerName: string | null, accountId: string | null, folder: MailFolder): Promise<string> {
+async function threadFor(p: ParsedMail, peerEmail: string, peerName: string | null, accountId: string | null, folder: MailFolder, kind: MailKind): Promise<string> {
   const refs = refsOf(p);
   if (refs.length) {
     const hit = await db.select({ threadId: schema.supportEmailMessages.threadId })
@@ -114,7 +142,9 @@ async function threadFor(p: ParsedMail, peerEmail: string, peerName: string | nu
   if (byPair.length) return byPair[0].id;
   const [row] = await db.insert(schema.supportEmailThreads).values({
     accountId, customerEmail: peerEmail, customerName: peerName, subject: subj,
-    unread: folder === "inbox",
+    // Khách thật: inbox VÀ spam đều unread (spam-rescue). Promo: chỉ nằm im, tự xem khi rảnh.
+    unread: kind === "customer" && (folder === "inbox" || folder === "spam"),
+    kind,
   }).returning({ id: schema.supportEmailThreads.id });
   return row.id;
 }
@@ -199,7 +229,9 @@ async function syncFolder(
         const peerEmail = direction === "in" ? fromEmail : (toEmail || fromEmail);
         const peerName = direction === "in" ? (from?.name || null) : (to?.name || null);
         const messageId = p.messageId ?? `<uid-${m.uid}-${folder}@fusion.local>`;
-        const threadId = await threadFor(p, peerEmail, peerName, acc.id, folder);
+        // v619 · phân loại khách thật / promo (mail mình gửi từ Sent luôn coi là customer).
+        const kind: MailKind = direction === "out" ? "customer" : classifyMail(p, fromEmail);
+        const threadId = await threadFor(p, peerEmail, peerName, acc.id, folder, kind);
 
         // Đính kèm → storage (R2/local), tối đa 10 file, 10MB/file.
         const atts: Att[] = [];
@@ -227,14 +259,18 @@ async function syncFolder(
         if (!ins.length) continue; // trùng Message-ID (đã sync rồi)
         created++;
 
-        // Chỉ mail INBOX mới đánh unread/mở lại thread — spam/trash không làm phiền.
+        // v619 · Mail KHÁCH THẬT ở inbox HOẶC spam mới đánh unread/mở thread (spam-rescue:
+        // mail khách rơi vào Spam không còn im lặng). Promo/trash không làm phiền.
+        const ping = direction === "in" && kind === "customer" && (folder === "inbox" || folder === "spam");
         await db.update(schema.supportEmailThreads).set({
           lastMessageAt: sql`GREATEST(${schema.supportEmailThreads.lastMessageAt}, ${when})`,
           lastSnippet: snippetOf(p),
           lastDirection: direction,
-          unread: direction === "in" && folder === "inbox" ? true : undefined,
-          status: direction === "in" && folder === "inbox" ? "open" : undefined,
+          unread: ping ? true : undefined,
+          status: ping ? "open" : undefined,
           customerName: peerName || undefined,
+          // Chỉ NÂNG promo → customer (khách thật nhắn vào thread từng bị coi là promo).
+          kind: kind === "customer" ? "customer" : undefined,
           msgCount: sql`${schema.supportEmailThreads.msgCount} + 1`,
         }).where(eq(schema.supportEmailThreads.id, threadId));
       } catch (e) {
@@ -397,6 +433,7 @@ export async function sendSupportReply(args: { threadId: string; body: string; u
     lastMessageAt: now,
     lastSnippet: (body || `📎 ${attSaved[0]?.name ?? "attachment"}`).replace(/\s+/g, " ").slice(0, 140),
     lastDirection: "out", unread: false, status: "open",
+    kind: "customer",   // v619 · đã trả lời = chắc chắn khách thật
     msgCount: sql`${schema.supportEmailThreads.msgCount} + 1`,
   }).where(eq(schema.supportEmailThreads.id, args.threadId));
 

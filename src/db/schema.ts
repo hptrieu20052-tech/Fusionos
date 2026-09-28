@@ -1164,11 +1164,16 @@ export const supportEmailThreads = pgTable("support_email_threads", {
   unread: boolean("unread").notNull().default(true),
   msgCount: integer("msg_count").notNull().default(0),
   assignedTo: uuid("assigned_to").references(() => users.id),
+  // v619 · Phân loại thread: "customer" = khách thật | "promo" = mail quảng cáo/newsletter/no-reply.
+  // Nhận diện lúc sync (List-Unsubscribe, Precedence: bulk, địa chỉ no-reply/newsletter/marketing…).
+  // Chỉ NÂNG promo → customer (mail thật đến sau), không bao giờ hạ customer → promo.
+  kind: text("kind").notNull().default("customer"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("idx_sup_email_threads_last").on(t.lastMessageAt),
   index("idx_sup_email_threads_customer").on(t.customerEmail),
   index("idx_sup_email_threads_account").on(t.accountId),
+  index("idx_sup_email_threads_kind").on(t.kind),
 ]);
 
 export const supportEmailMessages = pgTable("support_email_messages", {

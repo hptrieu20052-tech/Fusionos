@@ -11,6 +11,9 @@ const PAGE_SIZE = 20;
 
 // GET /api/support-email/threads?folder=inbox&status=open|closed&account=<id|env>&page=1
 // Danh sách thread theo FOLDER (như webmail) + phân trang 20/trang + đếm số thread từng folder.
+// v619 · folder="customers" (mặc định mới của UI): MỌI thread khách thật (kind=customer) có mail
+// ở inbox HOẶC spam — mail khách rơi vào Spam vẫn hiện ở đây kèm cờ hasSpam (không bị xót nữa),
+// còn mail quảng cáo/newsletter (kind=promo) bị gạt sang các folder thường.
 // Quyền: role admin/support + module support ≥ 1.
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -22,13 +25,17 @@ export async function GET(req: NextRequest) {
   const q = req.nextUrl.searchParams;
   const status = q.get("status");
   const account = q.get("account"); // id hộp thư | "env" (thread account_id NULL) | rỗng = tất cả
-  const folderRaw = q.get("folder") ?? "inbox";
-  const folder = (MAIL_FOLDERS as readonly string[]).includes(folderRaw) ? (folderRaw as MailFolder) : "inbox";
+  const folderRaw = q.get("folder") ?? "customers";
+  const folder = folderRaw === "customers" ? "customers"
+    : (MAIL_FOLDERS as readonly string[]).includes(folderRaw) ? (folderRaw as MailFolder) : "customers";
   const page = Math.max(1, Number(q.get("page")) || 1);
 
   const conds: SQL[] = [
-    // Thread thuộc folder F = có ít nhất 1 mail đang nằm ở folder F.
-    sql`EXISTS (SELECT 1 FROM support_email_messages m WHERE m.thread_id = ${schema.supportEmailThreads.id} AND m.folder = ${folder})`,
+    folder === "customers"
+      // Khách thật, mail nằm ở inbox hoặc spam (spam-rescue) — kể cả thread mình chủ động gửi (sent).
+      ? sql`${schema.supportEmailThreads.kind} = 'customer' AND EXISTS (SELECT 1 FROM support_email_messages m WHERE m.thread_id = ${schema.supportEmailThreads.id} AND m.folder IN ('inbox','spam','sent'))`
+      // Thread thuộc folder F = có ít nhất 1 mail đang nằm ở folder F.
+      : sql`EXISTS (SELECT 1 FROM support_email_messages m WHERE m.thread_id = ${schema.supportEmailThreads.id} AND m.folder = ${folder})`,
   ];
   if (status === "open" || status === "closed") conds.push(eq(schema.supportEmailThreads.status, status));
   if (account === "env") conds.push(isNull(schema.supportEmailThreads.accountId));
@@ -38,9 +45,14 @@ export async function GET(req: NextRequest) {
   const [{ total }] = await db.select({ total: sql<number>`count(*)::int` })
     .from(schema.supportEmailThreads).where(where);
   const totalPages = Math.max(1, Math.ceil(Number(total) / PAGE_SIZE));
-  const rows = await db.select().from(schema.supportEmailThreads).where(where)
+  // v619 · hasSpam: thread có mail đang nằm ở Spam → UI gắn chip cam trong view Customers.
+  const raw = await db.select({
+    t: schema.supportEmailThreads,
+    hasSpam: sql<boolean>`EXISTS (SELECT 1 FROM support_email_messages m WHERE m.thread_id = ${schema.supportEmailThreads.id} AND m.folder = 'spam')`,
+  }).from(schema.supportEmailThreads).where(where)
     .orderBy(desc(schema.supportEmailThreads.lastMessageAt))
     .limit(PAGE_SIZE).offset((Math.min(page, totalPages) - 1) * PAGE_SIZE);
+  const rows = raw.map((r) => ({ ...r.t, hasSpam: !!r.hasSpam }));
 
   // Đếm số thread mỗi folder (tôn trọng filter account, KHÔNG dính filter status/folder).
   const accSql = account === "env"
@@ -55,6 +67,13 @@ export async function GET(req: NextRequest) {
   `)).rows as { folder: string; n: number }[];
   const folderCounts: Record<string, number> = {};
   for (const r of fc) folderCounts[r.folder] = Number(r.n);
+  // Số thread Customers (khách thật, inbox/spam/sent) — mục đầu tiên của cột folder.
+  const [cc] = (await db.execute(sql`
+    SELECT COUNT(*)::int AS n FROM support_email_threads t
+    WHERE t.kind = 'customer'${accSql}
+      AND EXISTS (SELECT 1 FROM support_email_messages m WHERE m.thread_id = t.id AND m.folder IN ('inbox','spam','sent'))
+  `)).rows as { n: number }[];
+  folderCounts.customers = Number(cc?.n ?? 0);
 
   const accRows = await db.select({
     id: schema.supportEmailAccounts.id, label: schema.supportEmailAccounts.label,

@@ -18,6 +18,8 @@ type Thread = {
   id: string; accountId: string | null; customerEmail: string; customerName: string | null; subject: string;
   status: string; lastDirection: string; lastMessageAt: string; lastSnippet: string;
   unread: boolean; msgCount: number;
+  kind?: string;      // v619 · customer | promo
+  hasSpam?: boolean;  // v619 · có mail đang nằm trong Spam (spam-rescue) → chip cam
 };
 type Att = { name: string; key: string; size: number; type: string; url: string | null };
 type Msg = {
@@ -31,6 +33,8 @@ const fIc = (paths: React.ReactNode) => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ display: "block" }}>{paths}</svg>
 );
 const FOLDERS: { key: string; label: string; icon: React.ReactNode }[] = [
+  // v619 · view mặc định: MỌI mail khách thật (kể cả bị rơi vào Spam — chip cam), gạt promo/newsletter ra ngoài.
+  { key: "customers", label: "Customers", icon: fIc(<><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></>) },
   { key: "inbox", label: "Inbox", icon: fIc(<><path d="M22 12h-6l-2 3h-4l-2-3H2" /><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z" /></>) },
   { key: "sent", label: "Sent", icon: fIc(<><line x1="22" y1="2" x2="11" y2="13" /><path d="M22 2 15 22l-4-9-9-4 20-7Z" /></>) },
   { key: "archive", label: "Archive", icon: fIc(<><polyline points="21 8 21 21 3 21 3 8" /><rect x="1" y="3" width="22" height="5" /><line x1="10" y1="12" x2="14" y2="12" /></>) },
@@ -222,7 +226,7 @@ function MailboxManager({ onClose, onChanged }: { onClose: () => void; onChanged
 export default function InboxClient({ level, isAdmin, configured }: { level: number; isAdmin: boolean; configured: boolean }) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [folder, setFolder] = useState("inbox");
+  const [folder, setFolder] = useState("customers");   // v619 · mặc định: mail khách thật
   const [folderCounts, setFolderCounts] = useState<Record<string, number>>({});
   const [filter, setFilter] = useState<"all" | "open" | "closed">("all");
   const [accFilter, setAccFilter] = useState<string>(""); // "" = tất cả hộp thư
@@ -459,6 +463,13 @@ export default function InboxClient({ level, isAdmin, configured }: { level: num
                     {t.lastDirection === "out" ? "You: " : ""}{t.lastSnippet || "—"}
                   </span>
                   <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                    {/* v619 · thread có mail đang nằm trong Spam của hộp thư → nhắc để không xót */}
+                    {t.hasSpam && folder !== "spam" && (
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "#B45309", background: "#FEF3E2", borderRadius: 8, padding: "0 6px" }}>SPAM</span>
+                    )}
+                    {t.kind === "promo" && folder !== "customers" && (
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "var(--faint)", border: "1px solid var(--line)", borderRadius: 8, padding: "0 6px" }}>PROMO</span>
+                    )}
                     {manyAccounts && accLabel(t) && (
                       <span style={{ fontSize: 10, fontWeight: 700, color: "var(--blue)", background: "var(--blue-soft)", borderRadius: 8, padding: "0 6px" }}>{accLabel(t)}</span>
                     )}
