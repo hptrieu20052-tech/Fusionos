@@ -23,6 +23,8 @@ const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--ink)",
 export default function WooCategoriesClient({ stores, canEdit }: { stores: StoreOpt[]; canEdit: boolean }) {
   const [storeId, setStoreId] = useState(stores[0]?.id ?? "");
   const [cats, setCats] = useState<Cat[]>([]);
+  const [storeUrl, setStoreUrl] = useState("");        // v620 · base URL của store (dựng link category)
+  const [copiedId, setCopiedId] = useState(0);         // v620 · category vừa copy link → icon ✓ xanh
   const [selCat, setSelCat] = useState<Cat | null>(null);
   const [prods, setProds] = useState<Prod[]>([]);
   const [page, setPage] = useState(1);
@@ -38,8 +40,28 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
     setBusy(true);
     const j = await fetch(`/api/woo-products/categories?storeId=${sid}`).then((r) => r.json()).catch(() => ({ ok: false }));
     setBusy(false);
-    if (j.ok) setCats(j.categories ?? []); else flash("✗ " + (j.error ?? "Error"));
+    if (j.ok) { setCats(j.categories ?? []); setStoreUrl(String(j.storeUrl ?? "")); } else flash("✗ " + (j.error ?? "Error"));
   }, []);
+
+  // v620 · Link category ngoài site (permalink mặc định của Woo: /product-category/<cha>/<con>/)
+  // + nút copy: bấm là link vào clipboard, icon đổi ✓ xanh 1.5s.
+  const catUrl = useCallback((c: Cat): string => {
+    if (!storeUrl) return "";
+    const byId = new Map(cats.map((x) => [x.id, x]));
+    const chain: string[] = [];
+    let cur: Cat | undefined = c;
+    for (let i = 0; cur && i < 5; i++) { chain.unshift(cur.slug); cur = cur.parent ? byId.get(cur.parent) : undefined; }
+    return `${storeUrl}/product-category/${chain.join("/")}/`;
+  }, [cats, storeUrl]);
+  const copyLink = (c: Cat) => {
+    const u = catUrl(c);
+    if (!u) return;
+    const fb = () => { try { const el = document.createElement("textarea"); el.value = u; document.body.appendChild(el); el.select(); document.execCommand("copy"); el.remove(); } catch { /* thôi */ } };
+    try { navigator.clipboard.writeText(u).catch(fb); } catch { fb(); }
+    setCopiedId(c.id);
+    setTimeout(() => setCopiedId((x) => (x === c.id ? 0 : x)), 1500);
+    flash(`✓ Link copied — ${u}`);
+  };
   useEffect(() => { setSelCat(null); setProds([]); loadCats(storeId); }, [storeId, loadCats]);
 
   const loadProds = useCallback(async (sid: string, catId: number, pg: number) => {
@@ -135,6 +157,13 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
                   {c.name} <span style={{ color: "var(--muted)", fontSize: 11.5, fontWeight: 600 }}>· {c.count} products</span>
                   {c.ownerName ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 99, background: "#EEF3FF", color: "var(--blue)" }}>{c.ownerName}</span> : null}
                 </span>
+                {/* v620 · copy link category ngoài site — ai cũng dùng được (chạy ads, share) */}
+                {storeUrl && (
+                  <button onClick={(e) => { e.stopPropagation(); copyLink(c); }} title={`Copy link — ${catUrl(c)}`}
+                    style={{ border: 0, background: "transparent", cursor: "pointer", fontSize: 12.5, color: copiedId === c.id ? "#1E7A3E" : "var(--muted)", fontWeight: 800 }}>
+                    {copiedId === c.id ? "✓" : "🔗"}
+                  </button>
+                )}
                 {canEdit && <button onClick={(e) => { e.stopPropagation(); renameCat(c); }} title="Rename" style={{ border: 0, background: "transparent", cursor: "pointer", fontSize: 13, color: "var(--muted)" }}>✎</button>}
                 {canEdit && <button onClick={(e) => { e.stopPropagation(); delCat(c); }} title="Delete (products stay)" style={{ border: 0, background: "transparent", cursor: "pointer", fontSize: 14, color: "var(--red)" }}>✕</button>}
               </div>

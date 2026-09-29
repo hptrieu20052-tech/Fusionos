@@ -4,7 +4,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
-import { wooApi, wooConfigured, type WooCred } from "@/lib/woocommerce";
+import { wooApi, wooBaseUrl, wooConfigured, type WooCred } from "@/lib/woocommerce";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -90,7 +90,8 @@ export async function GET(req: NextRequest) {
         : new Map<string, string>();
       out = out.map((c) => { const o = owners.get(c.id); return o ? { ...c, ownerName: names.get(o) || "seller" } : c; });
     }
-    return NextResponse.json({ ok: true, categories: out });
+    // v620 · storeUrl để client dựng link category ngoài site (nút copy link).
+    return NextResponse.json({ ok: true, categories: out, storeUrl: wooBaseUrl(cred) });
   } catch (e) {
     return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 300) }, { status: 200 });
   }
