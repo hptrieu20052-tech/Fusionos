@@ -5,7 +5,7 @@
  * (xem, mở link, gỡ khỏi category). Seller chỉ thấy + sửa category CỦA MÌNH (v517);
  * admin thấy toàn bộ cây collection công khai.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 
 type StoreOpt = { id: string; name: string };
@@ -106,8 +106,20 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
     else flash("✗ " + (j.error ?? "Error"));
   };
 
+  // v621 · Lọc theo seller (chip ownerName trên category): "" = tất cả, "__admin__" = category
+  // chung của admin (không có chip), còn lại = đúng tên seller đó.
+  const [sellerFilter, setSellerFilter] = useState("");
+  const sellerOpts = useMemo(() => {
+    const names: string[] = [];
+    for (const c of cats) { const n = String(c.ownerName ?? ""); if (n && !names.includes(n)) names.push(n); }
+    return names.sort((a, b) => a.localeCompare(b));
+  }, [cats]);
+  useEffect(() => { setSellerFilter(""); }, [storeId]);
+
   const parents = cats.filter((c) => c.parent === 0);
   const sorted = [...parents.map((p) => [p, ...cats.filter((c) => c.parent === p.id)]).flat()];
+  const shown = sellerFilter === "" ? sorted
+    : sorted.filter((c) => (sellerFilter === "__admin__" ? !c.ownerName : c.ownerName === sellerFilter));
 
   if (!stores.length) {
     return <div className="panel empty">No WooCommerce store yet — create one in <b>Stores</b> first.</div>;
@@ -135,7 +147,18 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
       <div className="m-stack-sm" style={{ display: "grid", gridTemplateColumns: "380px 1fr", gap: 14, alignItems: "start" }}>
         {/* ── Trái: CATEGORIES ── */}
         <div className="panel" style={{ padding: 16 }}>
-          <b style={{ fontSize: 13, letterSpacing: 0.5 }}>CATEGORIES ({cats.length})</b>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <b style={{ fontSize: 13, letterSpacing: 0.5, flex: 1 }}>CATEGORIES ({sellerFilter ? `${shown.length} / ${cats.length}` : cats.length})</b>
+            {/* v621 · lọc theo seller — chỉ hiện khi có category gắn chip seller */}
+            {sellerOpts.length > 0 && (
+              <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)}
+                style={{ ...inp, width: "auto", padding: "6px 9px", fontSize: 12.5, fontWeight: 700 }}>
+                <option value="">All sellers</option>
+                <option value="__admin__">— Admin / shared —</option>
+                {sellerOpts.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            )}
+          </div>
           {canEdit && (
             <div style={{ display: "grid", gap: 8, margin: "12px 0" }}>
               <div style={{ display: "flex", gap: 8 }}>
@@ -149,7 +172,7 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
             </div>
           )}
           <div style={{ marginTop: canEdit ? 0 : 12 }}>
-            {sorted.map((c) => (
+            {shown.map((c) => (
               <div key={c.id}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 10px", borderRadius: 10, cursor: "pointer", background: selCat?.id === c.id ? "#EEF3FF" : "transparent", border: selCat?.id === c.id ? "1px solid #CBD9FF" : "1px solid transparent", marginBottom: 2 }}
                 onClick={() => pick(c)}>
@@ -169,6 +192,7 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
               </div>
             ))}
             {!cats.length && !busy && <div style={{ fontSize: 13, color: "var(--muted)", padding: "10px 0" }}>No categories yet{canEdit ? " — add one above." : "."}</div>}
+            {cats.length > 0 && !shown.length && <div style={{ fontSize: 13, color: "var(--muted)", padding: "10px 0" }}>No categories for this seller.</div>}
           </div>
         </div>
 
