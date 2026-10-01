@@ -560,13 +560,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const showSellerFilter = sellerOptions.length > 1 || sellers.length > 1;
   const storesForFilter = stores;
   // Danh sách giá trị distinct cho 3 filter (theo store đang lọc nếu có)
-  // v601 · sellerFilter "__noowner__" = listing CHƯA CÓ CHỦ — v622: dùng ĐÚNG chuỗi owner như cột
-  // hiển thị (created_by → seller listing Etsy liên kết → seller store). Trước đây chỉ check
-  // created_by trống nên listing có chủ qua link Etsy (hiện tên seller) vẫn lọt vào "No owner".
+  // v601 · sellerFilter "__noowner__" = listing CHƯA CÓ CHỦ THẬT: created_by trống VÀ không
+  // thừa kế chủ từ listing Etsy liên kết (v622 fix lọt listing có chủ qua link Etsy).
+  // v623 · KHÔNG tính sellerName (seller của store) vào check này — đó chỉ là fallback hiển thị,
+  // sản phẩm nào cũng thuộc 1 store nên tính vào là "No owner" luôn = 0 (bug v622).
   const sellerMatch = useCallback((r: Row) => {
     if (!sellerFilter) return true;
-    const owner = (r.creatorName || r.etsyListing?.seller || r.sellerName || "").trim();
-    return sellerFilter === "__noowner__" ? !owner : owner === sellerFilter;
+    if (sellerFilter === "__noowner__") return !(r.creatorName || r.etsyListing?.seller || "").trim();
+    return (r.creatorName || r.etsyListing?.seller || r.sellerName || "").trim() === sellerFilter;
   }, [sellerFilter]);
   const scopeRows = useMemo(() => rows.filter((r) => (!storeFilter || r.storeId === storeFilter) && sellerMatch(r)), [rows, storeFilter, sellerMatch]);
   const typeOptions = useMemo(() => Array.from(new Set(scopeRows.map((r) => r.productType).filter(Boolean))).sort(), [scopeRows]);

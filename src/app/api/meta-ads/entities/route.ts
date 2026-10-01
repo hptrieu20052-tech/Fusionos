@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, or, sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -97,19 +97,40 @@ export async function GET() {
     try {
       const handles = Array.from(new Set(ads.map((a) => handleOf(finalPlink(String(a.id)))).filter(Boolean)));
       if (handles.length) {
-        const prods = await db.select({ handle: schema.shopifyProducts.handle, createdBy: schema.shopifyProducts.createdBy })
-          .from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.handle, handles));
+        const prods = await db.select({
+          handle: schema.shopifyProducts.handle, createdBy: schema.shopifyProducts.createdBy,
+          etsyPid: schema.shopifyProducts.etsyProductId, gid: schema.shopifyProducts.shopifyProductId,
+        }).from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.handle, handles));
         const uids = Array.from(new Set(prods.map((p) => p.createdBy).filter(Boolean))) as string[];
         const users = uids.length
           ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, uids))
           : [];
         const nameOf = new Map<string, string | null>(users.map((u) => [u.id, u.name]));
+        // v623 · listing KHÔNG có created_by → lấy seller qua LISTING ETSY LIÊN KẾT (đúng chuỗi
+        // owner của trang Manage Products) — hết cảnh spend rơi vào (unassigned) dù listing có chủ.
+        const needEtsy = prods.filter((p) => !p.createdBy);
+        const linkIds = Array.from(new Set(needEtsy.map((p) => p.etsyPid).filter(Boolean))) as string[];
+        const linkGids = Array.from(new Set(needEtsy.map((p) => p.gid).filter(Boolean))) as string[];
+        const etsySellers = (linkIds.length || linkGids.length)
+          ? await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId, sellerName: schema.users.fullName })
+              .from(schema.etsyProducts)
+              .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+              .leftJoin(schema.users, eq(schema.users.id, schema.stores.sellerId))
+              .where(or(
+                linkIds.length ? inArray(schema.etsyProducts.id, linkIds) : sql`FALSE`,
+                linkGids.length ? inArray(schema.etsyProducts.shopifyProductId, linkGids) : sql`FALSE`,
+              ))
+          : [];
+        const esById = new Map(etsySellers.map((e) => [e.id, e.sellerName]));
+        const esByGid = new Map<string, string | null>();
+        for (const e of etsySellers) { if (e.gid && !esByGid.has(e.gid)) esByGid.set(e.gid, e.sellerName); }
         for (const p of prods) {
           const h = (p.handle ?? "").toLowerCase();
-          if (h && p.createdBy && !sellerByHandle.has(h)) {
-            const n = nameOf.get(p.createdBy);
-            if (n) sellerByHandle.set(h, n);
-          }
+          if (!h || sellerByHandle.has(h)) continue;
+          const n = (p.createdBy ? nameOf.get(p.createdBy) : null)
+            ?? (p.etsyPid ? esById.get(p.etsyPid) : null)
+            ?? (p.gid ? esByGid.get(p.gid) : null);
+          if (n) sellerByHandle.set(h, String(n));
         }
       }
     } catch { /* seller là phụ — lỗi DB không chặn bảng điều khiển */ }
