@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { db, schema } from "@/lib/db";
+import { desc, eq } from "drizzle-orm";
 import { publishPagePost } from "@/lib/page-post";
 
 export const dynamic = "force-dynamic";
@@ -83,7 +84,21 @@ export async function POST(req: NextRequest) {
         const pg = await fb(`${pageId}?fields=instagram_business_account`, token);
         igLinked = !!((pg.instagram_business_account ?? {}) as { id?: string }).id;
       } catch { igLinked = null; }
-      return NextResponse.json({ ok: true, preview: { message, link, imageUrl, pageId, igLinked } });
+      // v626 · CHỐNG ĐĂNG TRÙNG: ad này đã đăng/đang chờ đăng trong 48h gần nhất (bảng
+      // page_post_queue — từ v626 mọi lần Publish now cũng ghi log vào đây) → báo để user biết.
+      let recent: { at: string; status: string } | null = null;
+      try {
+        const [r] = await db.select().from(schema.pagePostQueue)
+          .where(eq(schema.pagePostQueue.adId, adId))
+          .orderBy(desc(schema.pagePostQueue.createdAt)).limit(1);
+        if (r && r.status !== "error") {
+          const at = r.status === "pending" ? r.scheduledAt : r.createdAt;
+          if (Date.now() - new Date(r.createdAt).getTime() < 48 * 3600_000 || r.status === "pending") {
+            recent = { at: new Date(at).toISOString(), status: String(r.status) };
+          }
+        }
+      } catch { /* bảng chưa migrate — bỏ qua */ }
+      return NextResponse.json({ ok: true, preview: { message, link, imageUrl, pageId, igLinked, ...(recent ? { recent } : {}) } });
     }
 
     const warns: string[] = [];
@@ -103,6 +118,17 @@ export async function POST(req: NextRequest) {
       fbPostId = r.fbPostId ?? "";
       igMediaId = r.igMediaId ?? "";
       warns.push(...r.warns);
+      // v626 · Ghi LOG cả lần đăng ngay vào page_post_queue (status done) — để lần publish sau
+      // phát hiện "ad này vừa đăng rồi" và cảnh báo chống đăng trùng.
+      if (fbPostId || igMediaId) {
+        try {
+          await db.insert(schema.pagePostQueue).values({
+            adId, pageId, message, link, imageUrl, toFb, toIg,
+            scheduledAt: new Date(), status: "done",
+            result: { log: true, ...(fbPostId ? { fbPostId } : {}), ...(igMediaId ? { igMediaId } : {}) } as never,
+          });
+        } catch { /* bảng chưa migrate — log là phụ */ }
+      }
     }
 
     return NextResponse.json({

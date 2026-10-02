@@ -42,14 +42,14 @@ export async function GET() {
     const [camps, adsets, ads, acct] = await Promise.all([
       fbList(`${G}/${act}/campaigns?fields=id,name,status,daily_budget&limit=200`, token),
       fbList(`${G}/${act}/adsets?fields=id,name,campaign_id,status,effective_status,daily_budget&limit=200`, token),
-      fbList(`${G}/${act}/ads?fields=id,name,adset_id,campaign_id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url,object_story_spec,effective_object_story_id}&limit=300`, token),
+      fbList(`${G}/${act}/ads?fields=id,name,adset_id,campaign_id,status,effective_status,creative.thumbnail_width(512).thumbnail_height(512){thumbnail_url,image_url,object_story_spec,effective_object_story_id,product_set_id}&limit=300`, token),
       // v599 · múi giờ AD ACCOUNT — UI đặt lịch nhập giờ VN, hiện kèm giờ Mỹ tương ứng để đối chiếu.
       fetch(`${G}/${act}?fields=timezone_name,timezone_offset_hours_utc`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) })
         .then((r) => r.json()).catch(() => ({})) as Promise<{ timezone_name?: string; timezone_offset_hours_utc?: number }>,
     ]);
     // v573 · SELLER từng ad = CHỦ LISTING Shopify mà creative trỏ tới (shopify_products.created_by
     // — v567). plink → handle → created_by → tên user. Ad video: link nằm trong video_data.call_to_action.
-    type Spec = { link_data?: { link?: string }; video_data?: { call_to_action?: { value?: { link?: string } } } };
+    type Spec = { link_data?: { link?: string }; video_data?: { call_to_action?: { value?: { link?: string } } }; template_data?: Record<string, unknown> };
     const plinkOf = (cr: { object_story_spec?: Spec }): string | null =>
       cr.object_story_spec?.link_data?.link ?? cr.object_story_spec?.video_data?.call_to_action?.value?.link ?? null;
     const handleOf = (l: string | null): string => {
@@ -146,13 +146,15 @@ export async function GET() {
       campBudget: Object.fromEntries(camps.map((c) => [String(c.id), (Number(c.daily_budget) || 0) / 100])),
       adsets: Object.fromEntries(adsets.map((s) => [String(s.id), { status: String(s.status ?? ""), eff: String(s.effective_status ?? ""), budget: (Number(s.daily_budget) || 0) / 100, name: String(s.name ?? ""), campId: String(s.campaign_id ?? "") }])),
       ads: Object.fromEntries(ads.map((a) => {
-        const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string; object_story_spec?: Spec; effective_object_story_id?: string };
+        const cr = (a.creative ?? {}) as { thumbnail_url?: string; image_url?: string; object_story_spec?: Spec; effective_object_story_id?: string; product_set_id?: string };
+        // v625 · DPA/catalog ad: ảnh render ĐỘNG từ catalog theo từng người xem → không có ảnh tĩnh.
+        const dpa = !!(cr.product_set_id || cr.object_story_spec?.template_data);
         // eff = trạng thái HIỆU LỰC (ADSET_PAUSED/CAMPAIGN_PAUSED khi tầng cha tắt) — UI dựng nhãn "tắt theo set".
         // v537 · plink = link đích của creative (talewix.com/products/<handle>) — UI dẫn về Manage Products để sửa listing.
         // v581 · post = effective_object_story_id — 2 ads cùng post là cùng social proof (dup giữ post);
         // khác post = creative khác (kit push tạo post mới). UI hiện đuôi mã để soi ngay trên bảng.
         const plink = finalPlink(String(a.id));
-        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null, name: String(a.name ?? ""), adsetId: String(a.adset_id ?? ""), campId: String(a.campaign_id ?? ""), plink, seller: sellerByHandle.get(handleOf(plink)) ?? null, post: cr.effective_object_story_id ?? null }];
+        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null, name: String(a.name ?? ""), adsetId: String(a.adset_id ?? ""), campId: String(a.campaign_id ?? ""), plink, seller: sellerByHandle.get(handleOf(plink)) ?? null, post: cr.effective_object_story_id ?? null, ...(dpa ? { dpa: true } : {}) }];
       })),
     });
   } catch (e) {

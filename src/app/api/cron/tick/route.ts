@@ -244,6 +244,12 @@ async function tick(req: NextRequest) {
   // Sửa: (a) đánh dấu rõ `skipped (time budget)`, (b) XOAY vòng thứ tự theo phút để không nhà nào
   // vĩnh viễn đứng cuối hàng.
   const results: Record<string, unknown> = { printway: null, printify: null, onosWem: null, supportMail: null, metaRules: null, pagePosts: null };
+  // v627 · pagePosts (bài hẹn giờ FB/IG — v614) chạy ĐẦU TIÊN, NGOÀI vòng xoay: job nhạy giờ và
+  // phải chạy TRỌN VẸN. Trước đây nằm trong vòng xoay, có lượt rơi cuối hàng đúng lúc ngân sách đã
+  // cạn → function bị ngắt GIỮA lúc đăng (FB+IG đã lên nhưng chưa kịp ghi done → row kẹt
+  // 'processing'). Job này rẻ (≤10 bài/lượt, đa số lượt 0 bài) nên không làm các job sau đói.
+  try { results.pagePosts = await processPagePostQueue(); }
+  catch (e) { results.pagePosts = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   const jobs: Array<{ key: string; run: () => Promise<unknown> }> = [
     { key: "printway", run: () => syncPrintway({ force: false }) },
     { key: "printify", run: () => syncPrintify({ force: false }) },
@@ -252,8 +258,6 @@ async function tick(req: NextRequest) {
     { key: "supportMail", run: () => syncSupportMail({ force: false }) },
     // v570 · rule engine Meta ads (gate 2h bên trong runMetaRuleEngine — gọi mỗi tick vẫn rẻ).
     { key: "metaRules", run: () => runMetaRuleEngine() },
-    // v614 · đăng bài Instagram HẸN GIỜ (page_post_queue) — IG API không có đặt lịch native.
-    { key: "pagePosts", run: () => processPagePostQueue() },
   ];
   const rot = Math.floor(started / 600_000) % jobs.length; // đổi thứ tự mỗi 10 phút
   for (let i = 0; i < jobs.length; i++) {
@@ -262,9 +266,9 @@ async function tick(req: NextRequest) {
     try { results[job.key] = await job.run(); }
     catch (e) { results[job.key] = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
-  const { printway, printify, onosWem, supportMail, metaRules } = results;
+  const { printway, printify, onosWem, supportMail, metaRules, pagePosts } = results;
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, shopbase, woocommerce, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem, supportMail, metaRules };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, shopbase, woocommerce, ttLabelSweep, ttTrackSweep, shTrackSweep, printway, printify, onosWem, supportMail, metaRules, pagePosts };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }

@@ -90,7 +90,7 @@ export default function AdsCenterClient() {
 
   // v457 · điều khiển trực tiếp: trạng thái CẤU HÌNH + budget thật từ Meta (route /entities).
   // v462 · ads kèm thumbnail creative: thumb (512px, hiện nhỏ trong bảng) + img (ảnh gốc để zoom).
-  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null; seller?: string | null; post?: string | null };
+  type AdEnt = { status: string; eff?: string; thumb?: string | null; img?: string | null; name?: string; adsetId?: string; campId?: string; plink?: string | null; seller?: string | null; post?: string | null; dpa?: boolean };
   type Ent = { camp: Record<string, string>; campBudget?: Record<string, number>; adsets: Record<string, { status: string; eff?: string; budget: number; name?: string; campId?: string }>; ads: Record<string, AdEnt>; tz?: { name: string; offset: number } | null };
   const [ent, setEnt] = useState<Ent | null>(null);
   const loadEnt = useCallback(async () => {
@@ -437,7 +437,7 @@ export default function AdsCenterClient() {
   const [pubBusy, setPubBusy] = useState("");
   const [pubForm, setPubForm] = useState<null | { adId: string; name: string; fb: boolean; ig: boolean; date: string; time: string }>(null);
   // v615 · preview nội dung SẼ ĐĂNG (caption + link + ảnh từ creative thật) — nạp khi mở form.
-  const [pubPrev, setPubPrev] = useState<null | { message: string; link: string; imageUrl: string; igLinked: boolean | null; error?: string }>(null);
+  const [pubPrev, setPubPrev] = useState<null | { message: string; link: string; imageUrl: string; igLinked: boolean | null; error?: string; recent?: { at: string; status: string } | null }>(null);
   // v618 · tab preview FB / IG: 2 kênh đăng KHÁC nhau (FB link ở comment; IG link là text cuối caption).
   const [pubPrevTab, setPubPrevTab] = useState<"fb" | "ig">("fb");
   const openPub = (adId: string, name: string) => {
@@ -557,6 +557,9 @@ export default function AdsCenterClient() {
   // Mỗi ad thuộc về CHỦ LISTING mà creative trỏ tới (shopify_products.created_by — v567).
   // Route /entities trả sẵn ads[].seller; ad không match được listing → (unassigned).
   const adSeller = (adId: string) => (ent?.ads[adId]?.seller ?? "").trim();
+  // v624 · Ad có spend lịch sử (meta_insights) nhưng KHÔNG còn tồn tại trên Meta (đã xóa/archive)
+  // → không còn creative để tra listing/chủ. Tách khỏi (unassigned) để không bị hiểu nhầm là lỗi gán.
+  const DELETED_ADS = "(deleted ads)";
   const sellerOptions = useMemo(() => {
     const s = new Set<string>();
     for (const a of Object.values(ent?.ads ?? {})) { const n = (a.seller ?? "").trim(); if (n) s.add(n); }
@@ -567,7 +570,9 @@ export default function AdsCenterClient() {
     type S = { seller: string; camps: Set<string>; ads: Set<string>; spend: number; imp: number; lc: number; atc: number; pur: number; rev: number };
     const m = new Map<string, S>();
     for (const r of rows) {
-      const key = adSeller(r.adId) || UNASSIGNED;
+      // v624 · ent đã tải mà ad không có trong entities = ad đã bị xóa/archive trên Meta →
+      // xếp vào "(deleted ads)" (spend lịch sử), chỉ ad CÒN SỐNG thiếu link mới là (unassigned).
+      const key = adSeller(r.adId) || (ent && !ent.ads[r.adId] ? DELETED_ADS : UNASSIGNED);
       const x = m.get(key) ?? { seller: key, camps: new Set<string>(), ads: new Set<string>(), spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 };
       x.camps.add(r.campaignId); x.ads.add(r.adId);
       x.spend += Number(r.spend) || 0; x.imp += r.impressions ?? 0; x.lc += r.linkClicks ?? 0;
@@ -694,12 +699,14 @@ export default function AdsCenterClient() {
                   const key = s.seller;
                   const on = sellerFilter === key;
                   const roas = s.spend ? s.rev / s.spend : 0;
+                  const isDeleted = key === DELETED_ADS;
                   return (
-                    <tr key={key} onClick={() => { setSellerFilter(on ? "" : key); setView("ads"); }}
-                      title="Open this seller's ads"
-                      style={{ borderBottom: "1px solid #F1F3F6", cursor: "pointer", background: on ? "#EDF3FF" : undefined }}>
+                    <tr key={key} onClick={() => { if (isDeleted) return; setSellerFilter(on ? "" : key); setView("ads"); }}
+                      title={isDeleted ? "Ads deleted/archived on Meta — historical spend in this date range, no creative left to resolve the listing/seller" : "Open this seller's ads"}
+                      style={{ borderBottom: "1px solid #F1F3F6", cursor: isDeleted ? "default" : "pointer", background: on ? "#EDF3FF" : undefined, opacity: isDeleted ? 0.75 : 1 }}>
                       <td style={{ ...td, textAlign: "left", fontWeight: 800 }}>
-                        {key === UNASSIGNED ? <span style={{ color: "var(--muted)", fontWeight: 600 }}>(unassigned)</span> : key}
+                        {key === UNASSIGNED ? <span style={{ color: "var(--muted)", fontWeight: 600 }}>(unassigned)</span>
+                          : isDeleted ? <span style={{ color: "var(--muted)", fontWeight: 600 }}>🗑 (deleted ads)</span> : key}
                       </td>
                       <td style={td}>{s.camps.size}</td>
                       <td style={td}>{s.ads.size}</td>
@@ -1007,6 +1014,13 @@ export default function AdsCenterClient() {
                               title="View creative full size"
                               style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 6, cursor: "zoom-in", flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9" }} />
                           )}
+                          {/* v625 · DPA/catalog ad: không có ảnh tĩnh (Meta render động từ catalog) → icon catalog thay ô trống */}
+                          {!ent?.ads[a.adId]?.thumb && ent?.ads[a.adId]?.dpa && (
+                            <span title="Catalog ad (DPA) — Meta renders the image dynamically from your product catalog for each viewer, so there is no static creative image"
+                              style={{ width: 30, height: 30, borderRadius: 6, flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>
+                              🛒
+                            </span>
+                          )}
                           </span>
                           {/* v595 · cột phải: tầng 1 = tên + Dup; tầng 2 = các badge, thẳng hàng dưới title */}
                           <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0, flex: 1 }}>
@@ -1213,6 +1227,12 @@ export default function AdsCenterClient() {
                 )}
               </>)}
             </div>
+            {/* v626 · CHỐNG ĐĂNG TRÙNG — ad này đã đăng / đang chờ đăng gần đây thì nhắc trước khi bấm */}
+            {pubPrev?.recent && (
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: "#B45309", background: "#FEF3E2", borderRadius: 10, padding: "7px 11px", lineHeight: 1.5 }}>
+                ⚠ This ad was already {pubPrev.recent.status === "pending" ? "SCHEDULED to post" : "PUBLISHED"} — {new Date(pubPrev.recent.at).toLocaleString()}. Publishing again will create a DUPLICATE post on the Page.
+              </div>
+            )}
             {/* CHANNELS — chip bật/tắt */}
             <label style={lab}>CHANNELS</label>
             <div style={{ display: "flex", gap: 8 }}>
@@ -1412,6 +1432,12 @@ export default function AdsCenterClient() {
                       {a.thumb && (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={a.thumb} alt="" style={{ width: 22, height: 22, objectFit: "cover", borderRadius: 4, flexShrink: 0, border: "1px solid #E3E7EE" }} />
+                      )}
+                      {!a.thumb && a.dpa && (
+                        <span title="Catalog ad (DPA) — image is rendered dynamically from the product catalog"
+                          style={{ width: 22, height: 22, borderRadius: 4, flexShrink: 0, border: "1px solid #E3E7EE", background: "#F4F6F9", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12 }}>
+                          🛒
+                        </span>
                       )}
                       <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name || id}</span>
                       <span title={on ? "This ad is delivering" : offByParent ? "Ad switch is on but its ad set/campaign is OFF — not delivering" : "This ad is turned OFF"}
