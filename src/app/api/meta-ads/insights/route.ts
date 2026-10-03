@@ -12,6 +12,8 @@ export const maxDuration = 60;
  * GET  ?from=YYYY-MM-DD&to=YYYY-MM-DD → dòng insights theo ngày x ad (đọc DB, không gọi Meta).
  * POST { from, to }                   → AI phân tích: code tính tín hiệu, model viết nhận định
  *                                       + đề xuất hành động từng ad (orChatJSON, tiếng Việt).
+ * v629 · AI Analyze: client luôn gửi 3 NGÀY GẦN NHẤT; chỉ phân tích ad ACTIVE (v568) — không còn
+ *        ad ACTIVE nào trong cửa sổ thì trả lỗi rõ; prompt dặn model đánh giá theo ĐÀ cửa sổ ngắn.
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
@@ -120,7 +122,9 @@ export async function POST(req: NextRequest) {
   const eff = await fbEffStatuses().catch(() => null);
   if (eff) {
     const live = table.filter((r) => (eff.get(r.adId) ?? "") === "ACTIVE");
-    if (live.length && live.length < table.length) {
+    // v629 · không còn ad ACTIVE nào trong cửa sổ → báo rõ thay vì lặng lẽ phân tích toàn ad đã tắt.
+    if (!live.length) return NextResponse.json({ ok: false, error: "No ACTIVE ad has spend in this window — nothing to analyze." }, { status: 400 });
+    if (live.length < table.length) {
       const dead = table.filter((r) => (eff.get(r.adId) ?? "") !== "ACTIVE");
       analyzed = live;
       excluded = { count: dead.length, spend: +dead.reduce((s, r) => s + r.spend, 0).toFixed(2) };
@@ -133,11 +137,16 @@ export async function POST(req: NextRequest) {
     "- Ad tiêu < $10 coi như chưa đủ dữ liệu — đừng kết luận mạnh.",
     "- CTR link tốt ≥ 1.5-2%; cost/ATC tốt < $8-10; CPA hoà vốn quanh $20-25; ROAS mục tiêu ≥ 1.5.",
     "- ctrLink3dPct tụt >30% so với ctrLinkPct = dấu hiệu creative fatigue.",
+    // v629 · AI Analyze giờ luôn được gọi với cửa sổ 3 NGÀY GẦN NHẤT — dặn model đánh giá theo ĐÀ,
+    // không phạt ad ngân sách nhỏ vì tổng chi trong cửa sổ ngắn thấp.
+    "- Dữ liệu là CỬA SỔ NGẮN (vài ngày gần nhất): đánh giá theo ĐÀ hiện tại của từng ad. Ngưỡng 'tiêu < $10' xét TRONG cửa sổ này; ad budget nhỏ chưa đủ chi thì để 'watch', đừng vội pause.",
     "- Đề xuất phải THẬN TRỌNG: pause khi đủ bằng chứng (tiêu ≥ ~1 AOV mà 0 purchase và tín hiệu sớm xấu); tăng budget tối đa +20%/lần; đừng đụng ad đang có CPA tốt.",
     "- Ad có campaignStatus KHÁC ACTIVE = campaign đã tắt: chỉ dùng làm dữ liệu tham khảo, TUYỆT ĐỐI không đề xuất pause/raise/lower cho các ad này (đề xuất là thừa).",
     'Trả JSON đúng schema: {"summary": string (3-6 câu tiếng Việt, tổng quan), "winners": string[], "losers": string[], "actions": [{"ad": string, "adId": string (copy NGUYÊN VĂN từ bảng), "adsetId": string (copy NGUYÊN VĂN), "action": "keep"|"pause"|"raise_budget"|"lower_budget"|"new_creative"|"watch", "reason": string (1-2 câu tiếng Việt)}], "nextTest": string (1-3 câu gợi ý test tiếp)}',
   ].join("\n");
-  const user = `Khoảng ${from} → ${to}. Bảng số liệu từng ad ĐANG CHẠY (đã cộng dồn${excluded ? `; đã loại ${excluded.count} ad ĐÃ TẮT khỏi bảng — chúng tiêu $${excluded.spend} trong khoảng này, chỉ nhắc trong tổng quan nếu cần, KHÔNG đề xuất hành động cho chúng` : ""}):\n${JSON.stringify(analyzed)}`;
+  // v629 · nói rõ độ dài cửa sổ cho model (client giờ luôn gửi 3 ngày gần nhất).
+  const spanDays = Math.max(1, Math.round((new Date(to + "T00:00:00Z").getTime() - new Date(from + "T00:00:00Z").getTime()) / 86400000) + 1);
+  const user = `Khoảng ${from} → ${to} (${spanDays} ngày gần nhất). Bảng số liệu từng ad ĐANG CHẠY (đã cộng dồn${excluded ? `; đã loại ${excluded.count} ad ĐÃ TẮT khỏi bảng — chúng tiêu $${excluded.spend} trong khoảng này, chỉ nhắc trong tổng quan nếu cần, KHÔNG đề xuất hành động cho chúng` : ""}):\n${JSON.stringify(analyzed)}`;
 
   try {
     const out = await orChatJSON<Record<string, unknown>>(system, user, { model, maxTokens: 2200, temperature: 0.3, timeoutMs: 50000, reasoning: "low" });

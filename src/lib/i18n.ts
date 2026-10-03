@@ -284,6 +284,7 @@ const DICT: Record<string, { vi: string; en: string }> = {
   // Date range presets
   "dr.today": { vi: "Hôm nay", en: "Today" },
   "dr.yesterday": { vi: "Hôm qua", en: "Yesterday" },
+  "dr.3d": { vi: "3 ngày", en: "3 days" }, // v629
   "dr.7d": { vi: "7 ngày", en: "7 days" },
   "dr.30d": { vi: "30 ngày", en: "30 days" },
   "dr.thisMonth": { vi: "Tháng này", en: "This month" },

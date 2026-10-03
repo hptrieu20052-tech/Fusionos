@@ -5,8 +5,9 @@ import { useLang } from "@/components/lang-provider";
 export type RangeValue = { range: string; from?: string; to?: string };
 
 const MONTHS = ["Th 1", "Th 2", "Th 3", "Th 4", "Th 5", "Th 6", "Th 7", "Th 8", "Th 9", "Th 10", "Th 11", "Th 12"];
+// v629 · thêm preset "3 days" (rangeToDates đã hỗ trợ "3d" từ trước — chỉ thiếu nút).
 const PRESETS: [string, string][] = [
-  ["today", "dr.today"], ["yesterday", "dr.yesterday"], ["7d", "dr.7d"], ["30d", "dr.30d"],
+  ["today", "dr.today"], ["yesterday", "dr.yesterday"], ["3d", "dr.3d"], ["7d", "dr.7d"], ["30d", "dr.30d"],
   ["this_month", "dr.thisMonth"], ["last_month", "dr.lastMonth"], ["this_year", "dr.thisYear"],
 ];
 

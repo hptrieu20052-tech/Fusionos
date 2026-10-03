@@ -205,7 +205,10 @@ export default function AdsCenterClient() {
   const analyze = async () => {
     setAiBusy(true); setErr(""); setAi(null);
     try {
-      const j = await fetch("/api/meta-ads/insights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from, to, model: aiModel || undefined }) }).then((r) => r.json());
+      // v629 · AI Analyze LUÔN đánh giá 3 NGÀY GẦN NHẤT (bất kể khoảng đang xem — bảng dài hạn chỉ để
+      // nhìn; quyết định bật/tắt/budget cần đà mới nhất) + server chỉ phân tích ad đang ACTIVE (v568).
+      const a3 = rangeToDates({ range: "3d" });
+      const j = await fetch("/api/meta-ads/insights", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ from: a3.from, to: a3.to, model: aiModel || undefined }) }).then((r) => r.json());
       if (j.ok) setAi(j.ai as Ai); else setErr(j.error ?? "Analyze failed");
     } catch (e) { setErr(String((e as Error).message)); }
     setAiBusy(false);
@@ -649,7 +652,7 @@ export default function AdsCenterClient() {
             <option value="">Model: server default</option>
             {aiModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
-          <button onClick={analyze} disabled={aiBusy || !rows.length} style={{ border: "none", background: "#7C5CFF", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: aiBusy || !rows.length ? .6 : 1 }}>
+          <button onClick={analyze} disabled={aiBusy || !rows.length} title="Analyzes the LAST 3 DAYS only, ACTIVE ads only" style={{ border: "none", background: "#7C5CFF", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", opacity: aiBusy || !rows.length ? .6 : 1 }}>
           {aiBusy ? "Analyzing…" : "🤖 AI Analyze"}
           </button>
         </div>
