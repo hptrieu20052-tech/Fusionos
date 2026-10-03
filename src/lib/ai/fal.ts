@@ -139,6 +139,33 @@ export async function falVideoSubmit(
   return { requestId: d.request_id, statusUrl, responseUrl };
 }
 
+/**
+ * v628 · NỐI nhiều clip thành 1 video bằng fal ffmpeg merge-videos (queue API).
+ * Trả statusUrl/responseUrl giống falVideoSubmit — poll dùng chung falVideoPoll (kết quả merge
+ * cũng có dạng { video: { url } }). Phí: tính theo giây compute CPU (~1–2 cent/lần nối) —
+ * không đáng kể so với phí render clip.
+ */
+export async function falMergeSubmit(urls: string[]): Promise<{ requestId: string; statusUrl: string; responseUrl: string }> {
+  const key = FAL_KEY();
+  if (!key) throw new Error("FAL_KEY chưa cấu hình (thêm trong Vercel → Settings → Environment Variables).");
+  const list = urls.filter((u) => /^https:\/\//i.test(u)).slice(0, 10);
+  if (list.length < 2) throw new Error("Cần ít nhất 2 clip để nối.");
+  const res = await fetch("https://queue.fal.run/fal-ai/ffmpeg-api/merge-videos", {
+    method: "POST",
+    headers: { Authorization: `Key ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ video_urls: list }),
+    signal: AbortSignal.timeout(30000),
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`fal merge submit HTTP ${res.status}: ${text.slice(0, 300)}`);
+  let d: { request_id?: string; status_url?: string; response_url?: string };
+  try { d = JSON.parse(text); } catch { throw new Error("fal merge: phản hồi submit không phải JSON"); }
+  if (!d.request_id) throw new Error("fal merge: không nhận được request_id");
+  const statusUrl = d.status_url || `https://queue.fal.run/fal-ai/ffmpeg-api/requests/${d.request_id}/status`;
+  const responseUrl = d.response_url || `https://queue.fal.run/fal-ai/ffmpeg-api/requests/${d.request_id}`;
+  return { requestId: d.request_id, statusUrl, responseUrl };
+}
+
 /** Hỏi trạng thái job. Khi COMPLETED → lấy URL video kết quả. */
 export async function falVideoPoll(statusUrl: string, responseUrl: string): Promise<{ status: string; videoUrl?: string }> {
   const key = FAL_KEY();
