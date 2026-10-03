@@ -41,7 +41,8 @@ const ACTION_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
 
 export default function AdsCenterClient() {
   // v453 · DateRangePicker chung của FUSION (preset + lịch chọn khoảng, giống Ads Manager).
-  const [dr, setDr] = useState<RangeValue>({ range: "7d" });
+  // v630 · mặc định LAST 3 DAYS khi mở trang (khớp cửa sổ AI Analyze; xem dài hạn thì tự đổi preset).
+  const [dr, setDr] = useState<RangeValue>({ range: "3d" });
   const [rows, setRows] = useState<Row[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
   // v451 · trạng thái campaign + filter + thu gọn từng campaign (nhớ localStorage).
