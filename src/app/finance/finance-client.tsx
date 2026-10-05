@@ -30,7 +30,8 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const [days, setDays] = useState(30);
   const [dr, setDr] = useState<RangeValue | null>({ range: "30d" }); // mặc định 30 days — chỉnh bằng picker
   // feeEst / ordersEst: phần phí đang là ƯỚC TÍNH theo % của shop (sàn chưa quyết toán)
-  const [data, setData] = useState<{ totals: { revenue: number; fee: number; cost: number; profit: number; orders: number; feeEst?: number; ordersEst?: number }; byType: Row[]; daily: Row[]; bySeller: Row[]; byStore: Row[]; byPlatform: Row[]; bySupplier: Row[] } | null>(null);
+  // v632 · totals có thêm ads (Meta tự động + nhập tay) — đã trừ vào profit từ server.
+  const [data, setData] = useState<{ totals: { revenue: number; fee: number; cost: number; profit: number; orders: number; feeEst?: number; ordersEst?: number; ads?: number; adsAuto?: number; adsManual?: number; adsUnassigned?: number }; byType: Row[]; daily: Row[]; bySeller: Row[]; byStore: Row[]; byPlatform: Row[]; bySupplier: Row[] } | null>(null);
   const [form, setForm] = useState({ type: "ads", amount: "", note: "" });
   const [msg, setMsg] = useState("");
   const [showExport, setShowExport] = useState(false);
@@ -59,7 +60,11 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   // Mọi cột Cost trong các bảng dưới = CHI PHÍ FULFILL THUẦN (base + ship + ads/…), KHÔNG gồm phí sàn.
   const COST_H = "Fulfillment cost";
   const margin = revenue ? (profit / revenue) * 100 : 0;
-  const dailyNet = data.daily.map((d) => Number(d.rev) + Number(d.cost));
+  // v632 · chi phí ads (Meta + nhập tay) — server đã trừ vào profit; chart trừ theo từng ngày.
+  const ads = Number(data.totals.ads ?? 0);
+  const adsAuto = Number(data.totals.adsAuto ?? 0);
+  const adsUnassigned = Number(data.totals.adsUnassigned ?? 0);
+  const dailyNet = data.daily.map((d) => Number(d.rev) + Number(d.cost) - Number(d.ads ?? 0));
   const maxAbs = Math.max(...dailyNet.map(Math.abs), 1);
 
   return (
@@ -74,7 +79,8 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
       </div>
       {showExport && <ExportCsvModal defFrom={rangeToDates(dr ?? { range: "30d" }).from} defTo={rangeToDates(dr ?? { range: "30d" }).to} close={() => setShowExport(false)} />}
 
-      <div className="kpis kpis-5">
+      {/* v632 · thêm thẻ ADS SPEND (Meta tự động + nhập tay) — 6 thẻ, đã trừ vào Profit */}
+      <div className="kpis kpis-5" style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 12 }}>
         <div className="kpi"><div className="l">{tr("fin.revenue")}</div><div className="v" style={{ color: "var(--green)" }}>{money(revenue)}</div></div>
         <div className="kpi"><div className="l">{isEst ? "Platform fee (est.)" : "Platform fee"}</div><div className="v" style={{ color: "var(--red)" }}>{money(fee)}</div>
           {isEst && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2, lineHeight: 1.3 }}>incl. Fee (est.) {money(feeEst)} · {ordersEst} orders</div>}
@@ -82,6 +88,11 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
         {/* Chi phí Fulfill = base + ship qua supplier. KHÔNG cộng phí sàn (phí sàn đã có card riêng bên trái). */}
         <div className="kpi"><div className="l">{tr("db.fulfillCost")}</div><div className="v" style={{ color: "#C9760F" }}>{money(Math.abs(cost))}</div>
           <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2, lineHeight: 1.3 }}>{tr("db.fulfillCostSub")}</div>
+        </div>
+        <div className="kpi"><div className="l">Ads spend</div><div className="v" style={{ color: "#1D4ED8" }}>{money(ads)}</div>
+          <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2, lineHeight: 1.3 }}>
+            Meta {money(adsAuto)}{Number(data.totals.adsManual ?? 0) > 0 ? ` + manual ${money(data.totals.adsManual)}` : ""}{adsUnassigned > 0 ? ` · unassigned ${money(adsUnassigned)}` : ""}
+          </div>
         </div>
         <div className="kpi"><div className="l">{tr("fin.profit")}</div><div className="v" style={{ color: profit >= 0 ? "var(--green)" : "var(--red)" }}>{profit >= 0 ? "" : "-"}{money(profit)}</div></div>
         <div className="kpi"><div className="l">{tr("fin.margin")}</div><div className="v">{margin.toFixed(1)}%</div></div>
@@ -105,10 +116,12 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>{tr("fin.costBreakdown")}</h3>
           <HBarList rows={[
             ...(fee > 0 ? [{ label: isEst ? "Platform fee (est.)" : "Platform fee", value: fee, color: "#C98A3D", suffix: money(fee) }] : []),
+            // v632 · chi phí ads Meta (tự động từ meta_insights) — dòng riêng, màu xanh dương
+            ...(adsAuto > 0 ? [{ label: "Meta ads", value: adsAuto, color: "#3A5BC7", suffix: money(adsAuto) }] : []),
             // Bỏ 'platform_fee' ở đây vì đã gộp vào dòng Platform fee phía trên → không hiện 2 lần
             ...data.byType.filter((t) => Number(t.total) < 0 && String(t.type) !== "platform_fee").map((t) => ({
               label: typeLabel(tr, String(t.type)), value: Math.abs(Number(t.total)),
-              color: "#CE6B6B", suffix: money(t.total),
+              color: String(t.type) === "ads" ? "#3A5BC7" : "#CE6B6B", suffix: money(t.total),
             })),
           ]} />
         </div>
@@ -138,19 +151,28 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
         <div className="panel">
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by seller</h3>
+          {/* v632 · thêm cột Ads (Meta theo chủ ad + bút toán tay theo seller) — trừ thẳng vào Profit
+              của từng seller: đây là bảng kế toán tháng cho seller. */}
           <table style={{ marginTop: 8 }}>
-            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>{FEE_H}</th><th style={{ textAlign: "right" }}>{COST_H}</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
+            <thead><tr><th>Seller</th><th style={{ textAlign: "right" }}>Revenue</th><th style={{ textAlign: "right" }}>{FEE_H}</th><th style={{ textAlign: "right" }}>{COST_H}</th><th style={{ textAlign: "right" }}>Ads</th><th style={{ textAlign: "right" }}>Profit</th></tr></thead>
             <tbody>{data.bySeller.map((s) => {
-              const pf = Number(s.rev) - Number(s.fee) + Number(s.cost);
+              const adsS = Number(s.ads ?? 0);
+              const pf = Number(s.rev) - Number(s.fee) + Number(s.cost) - adsS;
               return (
-                <tr key={String(s.name)}><td><b>{String(s.name)}</b></td>
+                <tr key={String(s.id ?? s.name)}><td><b>{String(s.name)}</b></td>
                   <td style={{ textAlign: "right" }}>{money(s.rev)}</td>
                   <td style={{ textAlign: "right", color: "var(--muted)" }}>{money(s.fee)}</td>
                   <td style={{ textAlign: "right", color: "var(--red)" }}>{money(s.cost)}</td>
+                  <td style={{ textAlign: "right", color: adsS > 0 ? "#1D4ED8" : "var(--muted)" }}>{adsS > 0 ? money(adsS) : "—"}</td>
                   <td style={{ textAlign: "right", fontWeight: 800, color: pf >= 0 ? "var(--green)" : "var(--red)" }}>{pf < 0 ? "-" : ""}{money(pf)}</td></tr>
               );
             })}</tbody>
           </table>
+          {adsUnassigned > 0 && (
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 8, lineHeight: 1.5 }}>
+              ⚠ Ads spend chưa gán seller: <b>{money(adsUnassigned)}</b> — vào Meta Ads Center, bấm chip <b>👤 assign</b> trên từng ad (hoặc cả ad set / campaign) để gán chủ; gán xong số này tự chảy vào đúng seller.
+            </div>
+          )}
         </div>
         <div className="panel">
           <h3 style={{ fontWeight: 800, fontSize: 14.5 }}>Profit by platform</h3>

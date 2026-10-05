@@ -95,6 +95,7 @@ export async function GET() {
       return r.plink ?? (r.post ? byPost.get(r.post) ?? null : null);
     };
     const sellerByHandle = new Map<string, string>();
+    const sellerIdByName = new Map<string, string>(); // v632
     try {
       const handles = Array.from(new Set(ads.map((a) => handleOf(finalPlink(String(a.id)))).filter(Boolean)));
       if (handles.length) {
@@ -113,7 +114,7 @@ export async function GET() {
         const linkIds = Array.from(new Set(needEtsy.map((p) => p.etsyPid).filter(Boolean))) as string[];
         const linkGids = Array.from(new Set(needEtsy.map((p) => p.gid).filter(Boolean))) as string[];
         const etsySellers = (linkIds.length || linkGids.length)
-          ? await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId, sellerName: schema.users.fullName })
+          ? await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId, sellerName: schema.users.fullName, sellerId: schema.stores.sellerId })
               .from(schema.etsyProducts)
               .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
               .leftJoin(schema.users, eq(schema.users.id, schema.stores.sellerId))
@@ -133,8 +134,36 @@ export async function GET() {
             ?? (p.gid ? esByGid.get(p.gid) : null);
           if (n) sellerByHandle.set(h, String(n));
         }
+        // v632 · tên → user id (để persist seller_id vào meta_ad_sellers — Finance lọc theo uuid)
+        for (const u of users) { if (u.name) sellerIdByName.set(String(u.name), u.id); }
+        for (const e of etsySellers) { if (e.sellerName && e.sellerId && !sellerIdByName.has(String(e.sellerName))) sellerIdByName.set(String(e.sellerName), String(e.sellerId)); }
       }
     } catch { /* seller là phụ — lỗi DB không chặn bảng điều khiển */ }
+
+    // v632 · PERSIST + FALLBACK chủ từng ad (bảng meta_ad_sellers):
+    //   - persisted/manual: ad cũ (tạo trước hệ thống, admin gán tay) hoặc ad mà chuỗi live không còn
+    //     resolve được → vẫn có chủ trong UI và trong Finance.
+    //   - auto-upsert: chuỗi live resolve được thì ghi lại (KHÔNG đè bản ghi manual).
+    const persistedSeller = new Map<string, string>();
+    const manualSeller = new Map<string, string>(); // gán tay LUÔN thắng chuỗi live
+    try {
+      const saved = await db.select().from(schema.metaAdSellers);
+      for (const r of saved) { if (r.sellerName) { persistedSeller.set(r.adId, r.sellerName); if (r.manual) manualSeller.set(r.adId, r.sellerName); } }
+      const rowsUp: { adId: string; name: string; uid: string | null }[] = [];
+      for (const a of ads) {
+        const h = handleOf(finalPlink(String(a.id)));
+        const n = h ? sellerByHandle.get(h) : null;
+        if (n) rowsUp.push({ adId: String(a.id), name: n, uid: sellerIdByName.get(n) ?? null });
+      }
+      if (rowsUp.length) {
+        await db.execute(sql`
+          INSERT INTO meta_ad_sellers (ad_id, seller_name, seller_id, manual, updated_at)
+          VALUES ${sql.join(rowsUp.map((r) => sql`(${r.adId}, ${r.name}, ${r.uid}::uuid, false, now())`), sql`, `)}
+          ON CONFLICT (ad_id) DO UPDATE SET seller_name = excluded.seller_name, seller_id = excluded.seller_id, updated_at = now()
+          WHERE NOT meta_ad_sellers.manual
+        `);
+      }
+    } catch { /* bảng chưa migrate (MIGRATION_v632) — bỏ qua, mọi thứ chạy như cũ */ }
 
     return NextResponse.json({
       ok: true,
@@ -155,7 +184,9 @@ export async function GET() {
         // v581 · post = effective_object_story_id — 2 ads cùng post là cùng social proof (dup giữ post);
         // khác post = creative khác (kit push tạo post mới). UI hiện đuôi mã để soi ngay trên bảng.
         const plink = finalPlink(String(a.id));
-        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null, name: String(a.name ?? ""), adsetId: String(a.adset_id ?? ""), campId: String(a.campaign_id ?? ""), plink, seller: sellerByHandle.get(handleOf(plink)) ?? null, post: cr.effective_object_story_id ?? null, ...(dpa ? { dpa: true } : {}) }];
+        // v632 · GÁN TAY thắng → chuỗi live → bản persist cũ → null. Ads cũ gán tay giờ có chủ như ads mới.
+        const seller = manualSeller.get(String(a.id)) ?? sellerByHandle.get(handleOf(plink)) ?? persistedSeller.get(String(a.id)) ?? null;
+        return [String(a.id), { status: String(a.status ?? ""), eff: String(a.effective_status ?? ""), thumb: cr.thumbnail_url ?? null, img: cr.image_url ?? cr.thumbnail_url ?? null, name: String(a.name ?? ""), adsetId: String(a.adset_id ?? ""), campId: String(a.campaign_id ?? ""), plink, seller, post: cr.effective_object_story_id ?? null, ...(dpa ? { dpa: true } : {}) }];
       })),
     });
   } catch (e) {

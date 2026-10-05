@@ -499,6 +499,20 @@ export const metaRuleConfig = pgTable("meta_rule_config", {
   engineLastRunAt: timestamp("engine_last_run_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
+// v632 · CHỦ TỪNG AD (persist). Nguồn: (a) tự động — /api/meta-ads/entities ghi lại mỗi lần resolve
+// được chuỗi ad→listing→owner (v623); (b) GÁN TAY (manual=true) cho ads cũ tạo trước hệ thống —
+// auto không bao giờ đè bản ghi manual. Finance dùng bảng này tính CHI PHÍ ADS THEO SELLER,
+// kể cả khi ad đã bị xóa trên Meta. Cần MIGRATION_v632_meta_ad_sellers.sql
+export const metaAdSellers = pgTable("meta_ad_sellers", {
+  adId: text("ad_id").primaryKey(),
+  sellerName: text("seller_name").notNull().default(""),
+  sellerId: uuid("seller_id"),
+  manual: boolean("manual").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => ({
+  idxMetaAdSellersSeller: index("idx_meta_ad_sellers_seller").on(t.sellerId),
+}));
+
 export const metaBudgetLog = pgTable("meta_budget_log", {
   id: uuid("id").primaryKey().defaultRandom(),
   adsetId: text("adset_id").notNull(),

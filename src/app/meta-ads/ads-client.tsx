@@ -246,6 +246,34 @@ export default function AdsCenterClient({ isAdmin = true, myName = "" }: { isAdm
     setDupForm({ kind: "ad", id: adId, label: adName || adId, name: `${adName} - Copy`, target: curAdsetId, orig: curAdsetId, budget: "", deep: false, adsetName: curAdsetName, start: "", picks: {} });
   // v551 · ads nằm trong ad set nguồn (để chọn con nào được copy kèm)
   const adsInSet = (adsetId: string) => Object.entries(ent?.ads ?? {}).filter(([, a]) => a.adsetId === adsetId);
+  // ---- v632 · GÁN CHỦ CHO AD (manual, bảng meta_ad_sellers) — cho ads tạo TRƯỚC hệ thống
+  // (creative không link listing → "(unassigned)"). Gán xong: By-seller, seller-view và
+  // CHI PHÍ ADS bên Finance đều tính đúng. Gán tay thắng chuỗi auto và không bị sync đè. ----
+  const [asg, setAsg] = useState<{ adId: string; name: string; adsetId: string; campId: string } | null>(null);
+  const [asgSellers, setAsgSellers] = useState<{ id: string; name: string; role: string }[]>([]);
+  const [asgPick, setAsgPick] = useState("");
+  const [asgScope, setAsgScope] = useState<"ad" | "adset" | "camp">("ad");
+  const [asgBusy, setAsgBusy] = useState(false);
+  const openAssign = async (adId: string, name: string, adsetId: string, campId: string) => {
+    if (guardLite()) return;
+    setAsg({ adId, name, adsetId, campId }); setAsgScope("ad");
+    if (!asgSellers.length) {
+      try { const j = await fetch("/api/meta-ads/assign-seller").then((r) => r.json()); if (j.ok) setAsgSellers(j.sellers); } catch { /* offline */ }
+    }
+  };
+  const submitAssign = async (clear: boolean) => {
+    if (!asg || asgBusy) return;
+    if (!clear && !asgPick) { setErr("Pick a seller first"); return; }
+    const ids = asgScope === "ad" ? [asg.adId]
+      : Object.entries(ent?.ads ?? {}).filter((e) => { const x = e[1] as AdEnt; return asgScope === "adset" ? x.adsetId === asg.adsetId : x.campId === asg.campId; }).map((e) => e[0]);
+    setAsgBusy(true); setErr("");
+    try {
+      const j = await fetch("/api/meta-ads/assign-seller", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ adIds: ids.length ? ids : [asg.adId], sellerId: clear ? null : asgPick }) }).then((r) => r.json());
+      if (j.ok) { setErr(clear ? `✓ Cleared manual owner on ${j.cleared} ad(s)` : `✓ Assigned ${j.assigned} ad(s) → ${j.seller}`); setAsg(null); loadEnt(); }
+      else setErr("✗ " + (j.error ?? "Assign failed"));
+    } catch (e) { setErr("✗ " + String((e as Error).message)); }
+    setAsgBusy(false);
+  };
   const submitDup = async () => {
     if (guardLite()) return;
     if (!dupForm || dupBusy) return;
@@ -1088,9 +1116,22 @@ export default function AdsCenterClient({ isAdmin = true, myName = "" }: { isAdm
                           </button>
                           )}
                           </span>
-                          {/* v595 · tầng 2 — badge dưới title (wrap được, không đè cột số) */}
-                          {(ent?.ads[a.adId]?.plink || ent?.ads[a.adId]?.post || ruleOf(a.adId)) && (
+                          {/* v595 · tầng 2 — badge dưới title (wrap được, không đè cột số). v632: thêm chip chủ ad. */}
+                          {(ent?.ads[a.adId]?.plink || ent?.ads[a.adId]?.post || ruleOf(a.adId) || !!ent?.ads[a.adId]) && (
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap", minWidth: 0 }}>
+                          {/* v632 · CHỦ AD: chip tên seller (chuỗi live hoặc gán tay). Admin bấm để gán/đổi —
+                              ads cũ tạo trước hệ thống không link listing → "👤 assign" cho hết (unassigned). */}
+                          {ent?.ads[a.adId] && (() => {
+                            const sn = adSeller(a.adId);
+                            if (!isAdmin && !sn) return null;
+                            return (
+                              <button onClick={(e) => { e.stopPropagation(); if (isAdmin) openAssign(a.adId, a.ad, a.adsetId, campId); }}
+                                title={isAdmin ? (sn ? `Seller: ${sn} — click to reassign` : "No owner — assign this ad to a seller (feeds By-seller stats + Finance ads cost)") : `Seller: ${sn}`}
+                                style={{ border: "1px solid " + (sn ? "#DCE6FB" : "#F0D897"), background: sn ? "#F8FAFF" : "#FFFDF3", color: sn ? "#3A5BC7" : "#8A5A00", borderRadius: 999, padding: "1px 8px", fontSize: 9.5, fontWeight: 800, cursor: isAdmin ? "pointer" : "default", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "16px" }}>
+                                {sn ? `👤 ${sn}` : "👤 assign"}
+                              </button>
+                            );
+                          })()}
                           {/* v537 · mở đúng listing bên Manage Products · Shopify để sửa (suy từ link đích của creative) — v538 style badge SHOPIFY, mở tab mới */}
                           {(() => {
                             const l = ent?.ads[a.adId]?.plink ?? "";
@@ -1217,6 +1258,36 @@ export default function AdsCenterClient({ isAdmin = true, myName = "" }: { isAdm
             ⧉ Move to ad set…
           </button>
           <button onClick={() => setAdSel(new Set())} style={{ border: "none", background: "transparent", color: "#94A3B8", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>✕ Clear</button>
+        </div>
+      )}
+      {/* v632 · modal GÁN CHỦ AD (manual) */}
+      {asg && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,.45)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => !asgBusy && setAsg(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 22, width: 430, maxWidth: "92vw", boxShadow: "0 18px 50px rgba(15,23,42,.25)" }}>
+            <b style={{ fontSize: 15 }}>Assign seller</b>
+            <div style={{ fontSize: 12, color: "var(--muted)", margin: "6px 0 12px", lineHeight: 1.5 }}>
+              Ad: <b>{asg.name}</b>. Sets the ad&#39;s OWNER — used by By-seller stats, the seller view and the Finance ads cost. A manual assignment wins over the listing chain and is never overwritten by sync.
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              <select value={asgPick} onChange={(e) => setAsgPick(e.target.value)} style={{ flex: 1, minWidth: 170, border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 13 }}>
+                <option value="">— Pick a seller —</option>
+                {asgSellers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.role === "admin" ? " (admin)" : ""}</option>)}
+              </select>
+              <select value={asgScope} onChange={(e) => setAsgScope(e.target.value as "ad" | "adset" | "camp")} style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "8px 10px", fontSize: 13 }}>
+                <option value="ad">This ad only</option>
+                <option value="adset">Whole ad set</option>
+                <option value="camp">Whole campaign</option>
+              </select>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <button onClick={() => submitAssign(true)} disabled={asgBusy} title="Remove the manual assignment — falls back to the automatic listing chain on next sync"
+                style={{ border: "1px solid var(--line)", background: "#fff", color: "#B42318", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Clear manual</button>
+              <span style={{ display: "inline-flex", gap: 8 }}>
+                <button onClick={() => setAsg(null)} disabled={asgBusy} style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 10, padding: "8px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+                <button onClick={() => submitAssign(false)} disabled={asgBusy || !asgPick} style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 800, cursor: "pointer", opacity: asgBusy || !asgPick ? .6 : 1 }}>{asgBusy ? "…" : "Assign"}</button>
+              </span>
+            </div>
+          </div>
         </div>
       )}
       {/* v614/v615 · form ĐĂNG BÀI: preview nội dung thật + chip kênh + lịch kiểu chip (Publish now / Today / Tomorrow / giờ) */}
