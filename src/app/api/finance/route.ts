@@ -179,7 +179,9 @@ export async function GET(req: NextRequest) {
   // v632 · gắn chi phí ads vào từng dòng seller (auto theo seller_id + bút toán tay); seller chỉ
   // chạy ads mà chưa có đơn trong kỳ vẫn phải hiện dòng (kế toán tháng cần đủ chi phí).
   const adsAutoBySid = new Map(adsBySellerRows.filter((r) => r.sid).map((r) => [r.sid as string, r.spend]));
-  const sellerRows = (bySeller.rows as Record<string, unknown>[]).map((s) => ({
+  // v633 · KHAI BÁO RÕ kiểu phần tử: spread Record<string, unknown> bị TS làm RƠI index signature
+  // ({...s, ads} thành '{ ads: number }') → push dòng mới có id/name bị "unknown property" lúc build.
+  const sellerRows: Record<string, unknown>[] = (bySeller.rows as Record<string, unknown>[]).map((s) => ({
     ...s,
     ads: (adsAutoBySid.get(String(s.id)) ?? 0) + Math.abs(Number(s.ads_manual ?? 0)),
   }));
