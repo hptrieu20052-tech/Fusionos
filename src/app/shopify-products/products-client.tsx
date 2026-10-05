@@ -1704,7 +1704,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: 19, fontWeight: 800 }}>Manage Products · Shopify</div>
         </div>
-        {canEdit && (
+        {/* v631 · seller: trang chỉ-của-mình, chỉ sửa ảnh + custom options — Sync là việc của admin */}
+        {canEdit && isAdmin && (
           <span style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
             <select value={syncStore} onChange={(e) => setSyncStore(e.target.value)} style={{ ...ctl, maxWidth: 170 }}>
               {stores.length === 0 && <option value="">No Shopify store</option>}
@@ -1713,6 +1714,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <button disabled={busy} onClick={doSync} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: busy ? .6 : 1 }}>⟳ Sync from Shopify</button>
           </span>
         )}
+        {!isAdmin && <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1F6F45", background: "#E9F7EF", borderRadius: 999, padding: "4px 12px" }}>Your listings · you can edit images & custom options</span>}
       </div>
 
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
@@ -1720,7 +1722,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         {/* Hàng 1: ô tìm kiếm full-width. Hàng 2: các bộ lọc tự xuống dòng. */}
         <input value={kw} onChange={(e) => setKw(e.target.value)} placeholder="Search title / handle / ID" style={{ ...fctl, width: "100%", maxWidth: "none", marginBottom: 8 }} />
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          {showSellerFilter && (
+          {/* v631 · seller-lite: ẩn mọi bộ lọc quản trị — seller chỉ còn Search + Status */}
+          {isAdmin && showSellerFilter && (
             <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Seller — by listing owner (source Etsy seller), not store owner" style={fsel(!!sellerFilter)}>
               <option value="">All sellers</option>
               {/* v601 · gom listing CHƯA CÓ CHỦ (created_by trống) — chọn hết rồi Assign owner một phát */}
@@ -1728,6 +1731,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               {sellerOptions.map((n) => <option key={n} value={n}>{n}</option>)}
             </select>
           )}
+          {isAdmin && (<>
           <select value={storeFilter} onChange={(e) => setStoreFilter(e.target.value)} title="Store" style={fsel(!!storeFilter)}>
             <option value="">All stores</option>{storesForFilter.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
@@ -1740,12 +1744,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
           <select value={collectionFilter} onChange={(e) => setCollectionFilter(e.target.value)} title="Collection" style={fsel(!!collectionFilter)}>
             <option value="">All collections</option><option value="__none__">— Not in any collection —</option>{collectionOptions.map((c) => <option key={c} value={c}>{c}</option>)}
           </select>
+          </>)}
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} title="Shopify status" style={fsel(!!statusFilter)}>
             <option value="">All status</option>
             {(statusOptions.length ? statusOptions : ["ACTIVE", "DRAFT", "ARCHIVED"]).map((st) => (
               <option key={st} value={st}>{st.charAt(0) + st.slice(1).toLowerCase()}</option>
             ))}
           </select>
+          {isAdmin && (<>
           <select value={aiFilter} onChange={(e) => setAiFilter(e.target.value as "" | "todo" | "done" | "unpushed" | "stale")} title="AI Optimize status — pick 'Not optimized yet' so you never pay to rewrite the same listing twice" style={fsel(!!aiFilter, "#5B3FBF", "#C9B8F5", "#F8F6FF")}>
             <option value="">AI: all</option>
             <option value="todo">✦ Not optimized yet</option>
@@ -1787,6 +1793,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <option value="not">Not advertised yet</option>
             <option value="ran">📣 Advertised</option>
           </select>
+          </>)}
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginTop: 10, paddingTop: 10, borderTop: "1px dashed var(--line)" }}>
@@ -1799,9 +1806,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
           )}
           {anyFilter && <button onClick={clearFilters} style={{ ...linkBtn("var(--blue)"), fontSize: 12, whiteSpace: "nowrap", flex: "0 0 auto" }}>Clear filters</button>}
           <div style={{ flex: 1 }} />
-          {sel.size > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: SHOP_GREEN }}>{sel.size} selected</span>}
-          <button onClick={() => setSel(new Set(filtered.map((r) => r.id)))} disabled={!filtered.length} title="Select every product matching the filters above — not just this page" style={{ ...ghost, padding: "7px 12px", fontSize: 12.5, opacity: filtered.length ? 1 : .5 }}>Select all {filtered.length}</button>
-          {sel.size > 0 && <button onClick={() => setSel(new Set())} style={{ ...ghost, padding: "7px 12px", fontSize: 12.5 }}>Clear selection</button>}
+          {isAdmin && sel.size > 0 && <span style={{ fontSize: 12.5, fontWeight: 700, color: SHOP_GREEN }}>{sel.size} selected</span>}
+          {isAdmin && <button onClick={() => setSel(new Set(filtered.map((r) => r.id)))} disabled={!filtered.length} title="Select every product matching the filters above — not just this page" style={{ ...ghost, padding: "7px 12px", fontSize: 12.5, opacity: filtered.length ? 1 : .5 }}>Select all {filtered.length}</button>}
+          {isAdmin && sel.size > 0 && <button onClick={() => setSel(new Set())} style={{ ...ghost, padding: "7px 12px", fontSize: 12.5 }}>Clear selection</button>}
         </div>
       </div>
 
@@ -1948,10 +1955,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <tr style={{ background: "#FAFBFC", color: "var(--muted)", fontSize: 11.5, textTransform: "uppercase" }}>
               {/* v194: cân lại cột — Title là cột auto ăn phần còn lại (to nhất), cột phụ chuyển sang %
                   nhỏ để không chèn ép Title như v182 (title từng bị bóp mỗi từ một dòng). */}
-              <th style={{ padding: "10px 12px", textAlign: "left", width: 34 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>
+              {/* v631 · seller-lite: chỉ còn Image · Video · Title · Price · Status · Actions (6 cột) */}
+              {isAdmin && <th style={{ padding: "10px 12px", textAlign: "left", width: 34 }}><input type="checkbox" checked={allChecked} onChange={toggleAll} /></th>}
               <th style={{ padding: "10px 6px", textAlign: "left", width: 54 }}>Image</th>
               <th style={{ padding: "10px 6px", textAlign: "left", width: 50 }} title="Has a video attached?">Video</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Title</th>
+              {isAdmin && (<>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "11%" }}>Store / Seller</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Type / Category</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "8%" }}>Collections</th>
@@ -1960,17 +1969,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               <th onClick={() => { setSortOrders((v) => !v); setSortEtsy(false); }} title="Orders sold · click to sort high → low" style={{ padding: "10px 8px", textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
               {/* v596 · đơn của listing ETSY gốc — tham khảo để chọn design đưa vào ads (khớp theo title) */}
               <th onClick={() => { setSortEtsy((v) => !v); setSortOrders(false); }} title="Orders of the ORIGINAL Etsy listing (reference, matched by title) · click to sort high → low" style={{ padding: "10px 8px", textAlign: "right", width: 56, cursor: "pointer", userSelect: "none", color: sortEtsy ? "#B45309" : "#C77B3B" }}>Etsy{sortEtsy ? " ↓" : " ⇅"}</th>
+              </>)}
               <th style={{ padding: "10px 8px", textAlign: "right", width: 84 }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 70 }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right", width: 84 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={14} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={14} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>No products. Pick a store, then hit <b>Sync from Shopify</b>.</td></tr>}
+            {loading && <tr><td colSpan={isAdmin ? 14 : 6} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={isAdmin ? 14 : 6} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>{isAdmin ? <>No products. Pick a store, then hit <b>Sync from Shopify</b>.</> : <>No listings assigned to you yet — ask an admin to assign your listings (Assign owner).</>}</td></tr>}
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
-                <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>
+                {isAdmin && <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>}
                 <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} images={r.imageUrls} alt={r.title} size={42} radius={8} border /></td>
                 <td style={{ padding: "8px 6px" }}>
                   {r.videoThumbUrl ? (
@@ -1996,6 +2006,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     <span style={{ opacity: .55 }}>ID</span> {r.id}
                   </div>
                 </td>
+                {isAdmin && (<>
                 {/* v597 · fallback thêm seller của listing Etsy gốc (đồng bộ với filter Seller) — chỉ khi
                     cả created_by lẫn link Etsy đều mất mới rơi về chủ store */}
                 <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.creatorName ?? r.etsyListing?.seller ?? r.sellerName ?? "—"}</div>
@@ -2085,6 +2096,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 13, fontWeight: r.orders > 0 ? 800 : 400, color: r.orders > 0 ? "#14213D" : "var(--faint)" }} title="Orders sold">{r.orders > 0 ? r.orders : "–"}</td>
                 {/* v596 · đơn Etsy gốc — tone cam, số NHẠT (chỉ tham khảo, không phải doanh số Shopify) */}
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12.5, fontWeight: r.etsyOrders > 0 ? 600 : 400, color: r.etsyOrders > 0 ? "#C77B3B" : "var(--faint)", opacity: r.etsyOrders > 0 ? 0.85 : 1 }} title="Orders of the original Etsy listing (reference)">{r.etsyOrders > 0 ? r.etsyOrders : "–"}</td>
+                </>)}
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12 }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
                 {/* v203 · Actions gọn như Shopify admin: 👁 = xem trên storefront · Push (khi có sửa).
@@ -2173,12 +2185,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                   <button onClick={() => setEditId(null)} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: "var(--muted)" }}>✕</button>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "360px 1fr", gap: 20 }} className="m-stack-sm">
-                  {/* LEFT: images + status */}
+                  {/* LEFT: images + status — v631 · seller chỉ thấy phần ẢNH (status/video/SEO/feed là việc admin) */}
                   <div>
+                    {isAdmin && (<>
                     <label style={lab}>Status</label>
                     <select value={edit.status} onChange={(e) => setEdit({ ...edit, status: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 14 }}>
                       {["ACTIVE", "DRAFT", "ARCHIVED"].map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
+                    </>)}
                     {/* v200 · UI ảnh giống Edit listing bên Etsy: thumbnail lớn xếp ngang, KÉO-THẢ đổi thứ tự,
                         × ở góc, ô "Add photo" ngay trong lưới. Ảnh đầu là ảnh chính (feed GMC). */}
                     <label style={lab}>Images ({edit.images.length}) · drag to reorder · the first photo is the main image</label>
@@ -2205,6 +2219,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     </div>
                     <button onClick={addImg} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Store: {edit.storeName} · handle: {edit.handle}</div>
+                    {isAdmin && (<>
                     {/* v224 · Video from Video Library — paste #Video ID to attach (auto-pushes to media). */}
                     <div style={{ border: "1px solid #C9D8F0", borderRadius: 10, padding: "12px 14px", marginTop: 14, background: "#F7FAFF" }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2952B3", marginBottom: 8 }}>Video</div>
@@ -2258,9 +2273,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       <label style={lab}>Feed description <span style={{ fontWeight: 700, color: (edit.feedDescription ?? "").length > 0 && ((edit.feedDescription ?? "").length < 600 || (edit.feedDescription ?? "").length > 1400) ? "var(--red)" : "var(--muted)" }}>({(edit.feedDescription ?? "").length} chars · target 800-1200)</span></label>
                       <textarea value={edit.feedDescription ?? ""} onChange={(e) => setEdit({ ...edit, feedDescription: e.target.value })} rows={7} placeholder="Plain text, no HTML, no line breaks" style={{ ...ctl, width: "100%", resize: "vertical", borderColor: (edit.feedDescription ?? "").length > 0 && ((edit.feedDescription ?? "").length < 600 || (edit.feedDescription ?? "").length > 1400) ? "#F3C9C9" : "var(--line)" }} />
                     </div>
+                    </>)}
                   </div>
-                  {/* RIGHT: fields + variants */}
+                  {/* RIGHT: fields + variants — v631 · seller chỉ thấy CUSTOM OPTIONS (title/mô tả/giá là việc admin) */}
                   <div>
+                    {!isAdmin && <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--muted)", marginBottom: 12, lineHeight: 1.5 }}>{edit.title}</div>}
+                    {isAdmin && (<>
                     <label style={lab}>Title</label>
                     <input value={edit.title} onChange={(e) => setEdit({ ...edit, title: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 12 }} />
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
@@ -2271,6 +2289,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     <input value={edit.tags ?? ""} onChange={(e) => setEdit({ ...edit, tags: e.target.value })} style={{ ...ctl, width: "100%", marginBottom: 12 }} />
                     <label style={lab}>Description (HTML)</label>
                     <textarea value={edit.bodyHtml ?? ""} onChange={(e) => setEdit({ ...edit, bodyHtml: e.target.value })} rows={4} style={{ ...ctl, width: "100%", resize: "vertical", marginBottom: 14 }} />
+                    </>)}
                     {/* v142 · Custom options ngay trong listing — trước đây chỉ sửa được qua action hàng loạt.
                         Nút riêng như Save feed copy: ô cá nhân hoá nằm ở metafield, không đi cùng Save chính. */}
                     <div style={{ border: `1px solid ${SHOP_GREEN}44`, borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#F7FAF5" }}>
@@ -2285,6 +2304,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         {edPersOwn && <button disabled={busy} onClick={clearEdPers} style={{ ...ghost, padding: "7px 14px", fontSize: 12.5 }}>Use the template instead</button>}
                       </div>
                     </div>
+                    {isAdmin && (<>
                     {/* v264 · OPTIONS builder — gõ option/giá trị là TỰ xổ lại variants. */}
                     <label style={lab}>Options</label>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 10, marginBottom: 10 }}>
@@ -2326,6 +2346,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         </tbody>
                       </table>
                     </div>
+                    </>)}
                     <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
                       <button onClick={() => setEditId(null)} style={ghost}>Cancel</button>
                       <button disabled={busy} onClick={saveEdit} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: busy ? .6 : 1 }}>{busy ? "Saving…" : "Save (auto-updates Shopify)"}</button>

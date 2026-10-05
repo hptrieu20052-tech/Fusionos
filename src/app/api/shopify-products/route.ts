@@ -10,6 +10,22 @@ export const dynamic = "force-dynamic";
 type Variant = { id: string; price: string; compareAtPrice: string | null; sku: string; selectedOptions: { name: string; value: string }[]; inventoryQty: number | null; barcode?: string; title?: string; inventoryItemId?: string | null };
 type Img = { id: string; src: string; altText: string; position: number };
 
+// v631 · Chủ listing theo CHUỖI ETSY (giống webhook đơn v597/v623): listing chưa gán created_by
+// nhưng có listing Etsy gốc → chủ = seller của store Etsy nguồn. Dùng để seller "chỉ thấy của mình".
+async function etsyChainOwner(etsyPid: string | null, gid: string | null): Promise<string | null> {
+  try {
+    if (!etsyPid && !gid) return null;
+    const conds = [
+      ...(etsyPid ? [eq(schema.etsyProducts.id, etsyPid)] : []),
+      ...(gid ? [eq(schema.etsyProducts.shopifyProductId, gid)] : []),
+    ];
+    const [e] = await db.select({ sellerId: schema.stores.sellerId }).from(schema.etsyProducts)
+      .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+      .where(conds.length > 1 ? or(...conds) : conds[0]).limit(1);
+    return e?.sellerId ?? null;
+  } catch { return null; }
+}
+
 // GET /api/shopify-products            → danh sách (tóm tắt)
 // GET /api/shopify-products?id=<uuid>  → chi tiết 1 sản phẩm (full)
 export async function GET(req: NextRequest) {
@@ -30,9 +46,14 @@ export async function GET(req: NextRequest) {
       .where(eq(schema.shopifyProducts.id, id)).limit(1);
     if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
     if (scopeIds && !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId)))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-    // v567 · "của ai người đó thấy" (rule shopbase v459): seller chỉ mở listing MÌNH tạo, listing
-    // do admin tạo/sync, hoặc listing chưa rõ chủ. Store của chính mình → thấy hết như cũ.
-    if (session.role !== "admin" && scopeIds && r.storeSeller !== session.sub && r.p.createdBy && r.p.createdBy !== session.sub) {
+    // v631 · SELLER CHỈ MỞ ĐƯỢC LISTING CỦA MÌNH: createdBy = mình, hoặc listing chưa gán chủ nhưng
+    // listing Etsy gốc thuộc store của mình (chuỗi v597/v623). Store của CHÍNH MÌNH → thấy hết như cũ.
+    if (session.role === "seller" && scopeIds && r.storeSeller !== session.sub && r.p.createdBy !== session.sub) {
+      const owner = r.p.createdBy ? null : await etsyChainOwner(r.p.etsyProductId ?? null, r.p.shopifyProductId ?? null);
+      if (owner !== session.sub) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+    }
+    // v567 · role khác (không phải seller/admin) giữ nếp cũ: mở được listing mình tạo / admin tạo / chưa rõ chủ.
+    if (session.role !== "admin" && session.role !== "seller" && scopeIds && r.storeSeller !== session.sub && r.p.createdBy && r.p.createdBy !== session.sub) {
       const admins = await adminUserIds();
       if (!admins.includes(r.p.createdBy)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
     }
@@ -50,27 +71,15 @@ export async function GET(req: NextRequest) {
     .orderBy(desc(schema.shopifyProducts.updatedAt));
 
   let scoped = scopeIds ? rows.filter((r) => (r.storeSeller && scopeIds.includes(r.storeSeller)) || shared.includes(r.p.storeId ?? "")) : rows;
-  // v567 · Store share nhiều seller: "của ai người đó thấy" (rule shopbase v459). Seller thấy:
-  // listing MÌNH tạo + listing do ADMIN tạo/sync + listing chưa rõ chủ (created_by NULL — bản sync).
-  // Store của CHÍNH MÌNH → thấy hết như cũ. Admin/manager không giới hạn.
-  if (session.role !== "admin" && scopeIds) {
-    const admins = await adminUserIds();
-    scoped = scoped.filter((r) => r.storeSeller === session.sub || !r.p.createdBy || r.p.createdBy === session.sub || admins.includes(r.p.createdBy));
-  }
-  // v567 · Tên người tạo từng listing (cột/filter Seller lọc theo CHỦ LISTING, không phải chủ store)
-  const creatorIds = Array.from(new Set(scoped.map((r) => r.p.createdBy).filter(Boolean))) as string[];
-  const creators = creatorIds.length
-    ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, creatorIds))
-    : [];
-  const creatorById = new Map(creators.map((c) => [c.id, c.name]));
 
   // v181 · Listing Etsy GỐC của từng sản phẩm (để nút "Etsy" nhảy về Manage Products · Etsy):
   //   - flow mới (v172): shopify_products.etsy_product_id
   //   - flow cũ: etsy_products.shopify_product_id = gid
+  // v631 · dựng TRƯỚC bộ lọc hiển thị + kèm sellerId để tính CHỦ listing theo chuỗi Etsy.
   const linkEtsyIds = Array.from(new Set(scoped.map((r) => r.p.etsyProductId).filter(Boolean))) as string[];
   const linkGids = Array.from(new Set(scoped.map((r) => r.p.shopifyProductId).filter(Boolean))) as string[];
   const etsyRows = (linkEtsyIds.length || linkGids.length)
-    ? await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId, title: schema.etsyProducts.title, storeName: schema.stores.name, sellerName: schema.users.fullName })
+    ? await db.select({ id: schema.etsyProducts.id, gid: schema.etsyProducts.shopifyProductId, title: schema.etsyProducts.title, storeName: schema.stores.name, sellerName: schema.users.fullName, sellerId: schema.stores.sellerId })
         .from(schema.etsyProducts)
         .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
         .leftJoin(schema.users, eq(schema.users.id, schema.stores.sellerId))
@@ -82,6 +91,28 @@ export async function GET(req: NextRequest) {
   const etsyById = new Map(etsyRows.map((e) => [e.id, e]));
   const etsyByGid = new Map<string, typeof etsyRows[number]>();
   for (const e of etsyRows) { if (e.gid && !etsyByGid.has(e.gid)) etsyByGid.set(e.gid, e); }
+  const chainOwnerOf = (r: (typeof scoped)[number]): string | null => {
+    const e = (r.p.etsyProductId ? etsyById.get(r.p.etsyProductId) : undefined)
+      ?? (r.p.shopifyProductId ? etsyByGid.get(r.p.shopifyProductId) : undefined);
+    return e?.sellerId ?? null;
+  };
+
+  // v631 · SELLER CHỈ THẤY LISTING CỦA MÌNH (thay rule v567 "admin tạo thì ai cũng thấy"):
+  //   - store CỦA CHÍNH MÌNH → thấy hết như cũ;
+  //   - store share: createdBy = mình, HOẶC chưa gán chủ nhưng listing Etsy gốc thuộc store mình.
+  if (session.role === "seller" && scopeIds) {
+    scoped = scoped.filter((r) => r.storeSeller === session.sub || r.p.createdBy === session.sub || (!r.p.createdBy && chainOwnerOf(r) === session.sub));
+  } else if (session.role !== "admin" && scopeIds) {
+    // v567 · role khác (designer/support/content…) giữ nếp cũ: mình tạo + admin tạo + chưa rõ chủ.
+    const admins = await adminUserIds();
+    scoped = scoped.filter((r) => r.storeSeller === session.sub || !r.p.createdBy || r.p.createdBy === session.sub || admins.includes(r.p.createdBy));
+  }
+  // v567 · Tên người tạo từng listing (cột/filter Seller lọc theo CHỦ LISTING, không phải chủ store)
+  const creatorIds = Array.from(new Set(scoped.map((r) => r.p.createdBy).filter(Boolean))) as string[];
+  const creators = creatorIds.length
+    ? await db.select({ id: schema.users.id, name: schema.users.fullName }).from(schema.users).where(inArray(schema.users.id, creatorIds))
+    : [];
+  const creatorById = new Map(creators.map((c) => [c.id, c.name]));
 
   // v119: SẮP XẾP MỚI → CŨ. Trước đây orderBy updated_at: cột đó bị ghi lại mỗi lần AI Optimize,
   // feed copy, Save hay Push chạm vào sản phẩm, nên chạy AI vài con là cả bảng đảo thứ tự —
@@ -224,7 +255,7 @@ export async function PATCH(req: NextRequest) {
   const id = String(b?.id ?? "").trim();
   if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
-  const [r] = await db.select({ storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id, createdBy: schema.shopifyProducts.createdBy })
+  const [r] = await db.select({ storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id, createdBy: schema.shopifyProducts.createdBy, etsyPid: schema.shopifyProducts.etsyProductId, gid: schema.shopifyProducts.shopifyProductId })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
   if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
@@ -233,21 +264,30 @@ export async function PATCH(req: NextRequest) {
   if (scopeIds && !((r.storeSeller && scopeIds.includes(r.storeSeller)) || (r.sStoreId && shared.includes(r.sStoreId)))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   // v567 · store share: seller sửa được listing MÌNH TẠO (rule shopbase v435); listing của người
   // khác / của admin / bản sync không rõ chủ → chỉ admin sửa. Store của mình → sửa hết như cũ.
+  // v631 · nới cho SELLER: listing chưa gán created_by nhưng listing Etsy gốc thuộc store mình → vẫn là của mình.
   if (session.role !== "admin" && scopeIds && r.storeSeller !== session.sub && r.createdBy !== session.sub) {
-    return NextResponse.json({ ok: false, error: "forbidden: this listing was created by someone else — only its creator or an admin can edit it" }, { status: 403 });
+    const owner = (session.role === "seller" && !r.createdBy) ? await etsyChainOwner(r.etsyPid ?? null, r.gid ?? null) : null;
+    if (owner !== session.sub) {
+      return NextResponse.json({ ok: false, error: "forbidden: this listing was created by someone else — only its creator or an admin can edit it" }, { status: 403 });
+    }
   }
 
   const patch: Record<string, unknown> = { dirty: true, updatedAt: new Date() };
-  if (typeof b.title === "string" && b.title.trim()) patch.title = b.title.trim();
-  if ("bodyHtml" in b) patch.bodyHtml = String(b.bodyHtml ?? "");
-  if ("tags" in b) patch.tags = String(b.tags ?? "");
-  if ("seoTitle" in b) patch.seoTitle = String(b.seoTitle ?? "").slice(0, 200);
-  if ("seoDescription" in b) patch.seoDescription = String(b.seoDescription ?? "").slice(0, 320);
-  if ("vendor" in b) patch.vendor = String(b.vendor ?? "");
-  if ("productType" in b) patch.productType = String(b.productType ?? "");
-  if (typeof b.status === "string" && ["ACTIVE", "DRAFT", "ARCHIVED"].includes(b.status.toUpperCase())) patch.status = b.status.toUpperCase();
-  if (Array.isArray(b.options)) patch.options = b.options;   // v264 · thêm option/variant tay ở nháp
-  if (Array.isArray(b.variants)) patch.variants = b.variants;
+  // v631 · SELLER chỉ được sửa ẢNH (custom options đi route /personalization riêng) — mọi field khác
+  // (title/mô tả/giá/variants/status/SEO…) bỏ qua lặng lẽ: UI của seller cũng không hiện các ô đó.
+  const sellerImagesOnly = session.role === "seller";
+  if (!sellerImagesOnly) {
+    if (typeof b.title === "string" && b.title.trim()) patch.title = b.title.trim();
+    if ("bodyHtml" in b) patch.bodyHtml = String(b.bodyHtml ?? "");
+    if ("tags" in b) patch.tags = String(b.tags ?? "");
+    if ("seoTitle" in b) patch.seoTitle = String(b.seoTitle ?? "").slice(0, 200);
+    if ("seoDescription" in b) patch.seoDescription = String(b.seoDescription ?? "").slice(0, 320);
+    if ("vendor" in b) patch.vendor = String(b.vendor ?? "");
+    if ("productType" in b) patch.productType = String(b.productType ?? "");
+    if (typeof b.status === "string" && ["ACTIVE", "DRAFT", "ARCHIVED"].includes(b.status.toUpperCase())) patch.status = b.status.toUpperCase();
+    if (Array.isArray(b.options)) patch.options = b.options;   // v264 · thêm option/variant tay ở nháp
+    if (Array.isArray(b.variants)) patch.variants = b.variants;
+  }
   if (Array.isArray(b.images)) patch.images = b.images;
 
   await db.update(schema.shopifyProducts).set(patch).where(eq(schema.shopifyProducts.id, id));
@@ -258,6 +298,8 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const session = await getSession();
   if (!session || (await levelOf(session, "products")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v631 · seller chỉ được sửa ảnh + custom options — không xoá listing (kể cả bản mình tạo).
+  if (session.role === "seller") return NextResponse.json({ ok: false, error: "forbidden: sellers cannot delete listings — ask an admin" }, { status: 403 });
   const b = await req.json().catch(() => null);
   const ids = (Array.isArray(b?.ids) ? b.ids : []).filter((x: unknown) => /^[0-9a-f-]{36}$/i.test(String(x)));
   if (!ids.length) return NextResponse.json({ ok: false, error: "ids required" }, { status: 400 });

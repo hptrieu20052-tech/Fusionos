@@ -17,7 +17,9 @@ export const maxDuration = 60;
  */
 export async function GET(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v631 · SELLER được ĐỌC số liệu (trang Meta Ads seller-view chỉ hiện ads của chính họ); mọi
+  // thao tác ghi (POST AI analyze, apply, rules, dup, publish…) vẫn admin-only ở từng route.
+  if (!session || (session.role !== "admin" && session.role !== "seller")) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const sp = req.nextUrl.searchParams;
   const to = (sp.get("to") ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
   const from = (sp.get("from") ?? new Date(Date.now() - 13 * 86400000).toISOString().slice(0, 10)).slice(0, 10);

@@ -53,16 +53,18 @@ export async function POST(req: NextRequest) {
     id: schema.shopifyProducts.id, title: schema.shopifyProducts.title, storeId: schema.shopifyProducts.storeId,
     productType: schema.shopifyProducts.productType, templateId: schema.shopifyProducts.templateId,
     pers: schema.shopifyProducts.personalization, seller: schema.stores.sellerId, sStoreId: schema.stores.id,
-    gid: schema.shopifyProducts.shopifyProductId,
+    gid: schema.shopifyProducts.shopifyProductId, createdBy: schema.shopifyProducts.createdBy,
   }).from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
   if (!rows.length) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
   const shared = await sharedStoreIds(scopeIds);
   if (scopeIds && rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  // v459 · store SHARE: chỉ xem — thao tác ghi chỉ khi là store CỦA MÌNH (admin/manager không giới hạn).
-  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub)) {
-    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem — chỉ sửa được listing store của bạn" }, { status: 403 });
+  // v459 · store SHARE: thao tác ghi chỉ khi là store CỦA MÌNH (admin/manager không giới hạn).
+  // v631 · nới cho SELLER: custom options là 1 trong 2 thứ seller ĐƯỢC sửa (ảnh + custom field) —
+  // cho ghi khi mọi listing trong lô đều là CỦA MÌNH (created_by = mình).
+  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub && r.createdBy !== session.sub)) {
+    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem — chỉ sửa được listing của bạn" }, { status: 403 });
   }
 
   if (action === "read") {

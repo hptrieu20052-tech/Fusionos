@@ -229,7 +229,8 @@ export default function AppShell({ user, links, children, canProducts = false, c
     // v449 · Meta Ads Center — số liệu ads + AI phân tích (admin).
     // v586 · logo Meta = file public/marketplaces/meta.png (tự thêm như các logo sàn khác);
     // thiếu file → onError rơi về icon loa cũ, menu không bị trống.
-    ...(user.role === "admin" ? [{
+    // v631 · SELLER cũng thấy menu — vào là bản CHỈ XEM ads của chính mình.
+    ...(user.role === "admin" || user.role === "seller" ? [{
       t: "link", href: "/meta-ads", label: "Meta Ads",
       icon: <MetaLogo size={16} fallback={<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg>} />,
     }] as HubNode[] : []),
@@ -408,7 +409,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
                     { href: "/tiktok-products", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Products Tiktok" },
                     { href: "/tiktok-templates", icon: <MarketplaceLogo mk="tiktok" size={18} />, label: "Manage Templates Tiktok" },
                   ] : []),
-                  ...(user.role === "admin" ? [
+                  ...(user.role === "admin" || user.role === "seller" ? [
                     { href: "/meta-ads", icon: <MetaLogo size={18} fallback={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg>} />, label: "Meta Ads Center" },
                   ] : []),
                   ...(canProducts ? [
@@ -488,7 +489,7 @@ export default function AppShell({ user, links, children, canProducts = false, c
                 Marketing Tiktok
               </Link>
             )}
-            {!hasDesigns && user.role === "admin" && (
+            {!hasDesigns && (user.role === "admin" || user.role === "seller") && (
               <Link href="/meta-ads" prefetch className={`mobile-nav-item${isActive("/meta-ads") ? " active" : ""}`}>
                 <span className="topnav-ic"><MetaLogo size={18} fallback={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M3 11v3" /><path d="M7 9v7" /><path d="M18 4 7 9v7l11 5V4Z" /><path d="M20 10a2 2 0 0 1 0 4" /></svg>} /></span>
                 Meta Ads Center

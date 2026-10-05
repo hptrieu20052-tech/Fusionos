@@ -39,7 +39,10 @@ const ACTION_STYLE: Record<string, { bg: string; fg: string; label: string }> = 
   watch: { bg: "#F1F1F4", fg: "#5B6472", label: "WATCH" },
 };
 
-export default function AdsCenterClient() {
+// v631 · SELLER VIEW: seller vào được trang nhưng CHỈ XEM ads của chính mình (ads gắn listing mình
+// sở hữu — route /entities trả ads[].seller theo chuỗi v623). Mọi thao tác (bật/tắt, budget, dup,
+// rename, publish, sync, rules, AI) chỉ admin — UI ẩn nút chính, hàm nào gọi tới cũng tự chặn.
+export default function AdsCenterClient({ isAdmin = true, myName = "" }: { isAdmin?: boolean; myName?: string }) {
   // v453 · DateRangePicker chung của FUSION (preset + lịch chọn khoảng, giống Ads Manager).
   // v630 · mặc định LAST 3 DAYS khi mở trang (khớp cửa sổ AI Analyze; xem dài hạn thì tự đổi preset).
   const [dr, setDr] = useState<RangeValue>({ range: "3d" });
@@ -55,6 +58,11 @@ export default function AdsCenterClient() {
   const [sellerFilter, setSellerFilter] = useState("");
   // v574 · tab riêng cho thống kê seller — chừa không gian màn hình chính cho quản lý ads.
   const [view, setView] = useState<"ads" | "sellers">("ads");
+  // v631 · SELLER: khoá filter theo CHÍNH MÌNH + chặn mọi thao tác ghi.
+  const lite = !isAdmin;
+  // myName trống (user chưa có full name) → khoá bằng giá trị không khớp gì, KHÔNG được rơi về "" (= all).
+  useEffect(() => { if (lite) { setSellerFilter(myName || "__none__"); setView("ads"); } }, [lite, myName]);
+  const guardLite = () => { if (lite) { setErr("View-only — only an admin can act on ads."); return true; } return false; };
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const toggleCamp = (id: string, cur: boolean) => {
     setCollapsed((m) => { const n = { ...m, [id]: !cur }; try { localStorage.setItem("metaads.collapsed", JSON.stringify(n)); } catch { /* ignore */ } return n; });
@@ -78,6 +86,7 @@ export default function AdsCenterClient() {
   const [applied, setApplied] = useState<Record<number, string>>({});
   const [applyBusy, setApplyBusy] = useState(-1);
   const applyAction = async (i: number, a: AiAction) => {
+    if (guardLite()) return;
     if (applyBusy >= 0 || applied[i]) return;
     if (armIdx !== i) { setArmIdx(i); setTimeout(() => setArmIdx((c) => (c === i ? -1 : c)), 4000); return; }
     setArmIdx(-1); setApplyBusy(i);
@@ -126,6 +135,7 @@ export default function AdsCenterClient() {
   }, []);
   useEffect(() => { loadRules(); }, [loadRules]);
   const ruleAction = async (key: string, body: Record<string, unknown>) => {
+    if (guardLite()) return;
     if (ruleBusy) return;
     setRuleBusy(key); setErr("");
     try {
@@ -142,6 +152,7 @@ export default function AdsCenterClient() {
   const [ctlBusy, setCtlBusy] = useState("");
   // Mọi hành động điều khiển đều arm 2 bước (giống Approve) — chống bấm nhầm bật/tắt tiền thật.
   const ctl = async (key: string, payload: Record<string, unknown>, after: () => void) => {
+    if (guardLite()) return;
     if (ctlBusy) return;
     if (ctlArm !== key) { setCtlArm(key); setTimeout(() => setCtlArm((c) => (c === key ? "" : c)), 4000); return; }
     setCtlArm(""); setCtlBusy(key); setErr("");
@@ -169,6 +180,7 @@ export default function AdsCenterClient() {
   // Sửa budget ad set: bấm ✎ → nhập số → ✓ (không cần arm — gõ số đã là hành động chủ đích).
   const [budEdit, setBudEdit] = useState<{ id: string; val: string } | null>(null);
   const saveBudget = async (adsetId: string) => {
+    if (guardLite()) return;
     const dollars = Number(budEdit?.val);
     if (!isFinite(dollars) || dollars <= 0) { setErr("Budget must be a number > 0"); return; }
     setCtlBusy("bud:" + adsetId); setErr("");
@@ -194,6 +206,7 @@ export default function AdsCenterClient() {
   useEffect(() => { load(); }, [load]);
 
   const syncNow = async () => {
+    if (guardLite()) return;
     setSyncBusy(true); setErr("");
     try {
       const j = await fetch("/api/cron/meta-insights").then((r) => r.json());
@@ -204,6 +217,7 @@ export default function AdsCenterClient() {
   };
 
   const analyze = async () => {
+    if (guardLite()) return;
     setAiBusy(true); setErr(""); setAi(null);
     try {
       // v629 · AI Analyze LUÔN đánh giá 3 NGÀY GẦN NHẤT (bất kể khoảng đang xem — bảng dài hạn chỉ để
@@ -222,8 +236,10 @@ export default function AdsCenterClient() {
   // v576 · moveOff: sau khi copy xong thì TẮT ad gốc — "chuyển" ad sang ad set/camp khác trong 1 phát
   // (Meta không có move thật; chuẩn là copy giữ post rồi tắt gốc — đây là 2 bước gộp 1).
   const [dupForm, setDupForm] = useState<{ kind: "camp" | "adset" | "ad"; id: string; label: string; name: string; target: string; orig: string; budget: string; deep: boolean; adsetName: string; start: string; picks: Record<string, boolean>; moveOff?: boolean } | null>(null);
-  const dupCamp = (campId: string, campName: string) =>
+  const dupCamp = (campId: string, campName: string) => {
+    if (guardLite()) return;
     setDupForm({ kind: "camp", id: campId, label: campName || campId, name: `${campName} - Copy`, target: "", orig: "", budget: "", deep: false, adsetName: "", start: "", picks: {} });
+  };
   const dupAdset = (adsetId: string, adsetName: string, campId: string) =>
     setDupForm({ kind: "adset", id: adsetId, label: adsetName || adsetId, name: `${adsetName} - Copy`, target: campId, orig: campId, budget: "", deep: false, adsetName, start: "", picks: {} });
   const dupAd = (adId: string, adName: string, curAdsetId: string, curAdsetName: string) =>
@@ -231,6 +247,7 @@ export default function AdsCenterClient() {
   // v551 · ads nằm trong ad set nguồn (để chọn con nào được copy kèm)
   const adsInSet = (adsetId: string) => Object.entries(ent?.ads ?? {}).filter(([, a]) => a.adsetId === adsetId);
   const submitDup = async () => {
+    if (guardLite()) return;
     if (!dupForm || dupBusy) return;
     const f = dupForm;
     if (f.kind === "ad" && !f.target.trim()) { setErr("Target ad set is required"); return; }
@@ -322,6 +339,7 @@ export default function AdsCenterClient() {
   const [renBusy, setRenBusy] = useState("");
   const [renEdit, setRenEdit] = useState<{ kind: "camp" | "adset" | "ad"; id: string; val: string } | null>(null);
   const saveRename = async () => {
+    if (guardLite()) return;
     if (!renEdit || renBusy) return;
     const { kind, id } = renEdit;
     const name = renEdit.val.trim();
@@ -347,6 +365,7 @@ export default function AdsCenterClient() {
   const [adSel, setAdSel] = useState<Set<string>>(new Set());
   const toggleAdSel = (id: string) => setAdSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const newCampFromSel = () => {
+    if (guardLite()) return;
     const hs = new Set<string>();
     adSel.forEach((id) => {
       const m = (ent?.ads[id]?.plink ?? "").match(/\/products\/([^/?#]+)/);
@@ -362,6 +381,7 @@ export default function AdsCenterClient() {
   const [bulkMv, setBulkMv] = useState<{ camp: string; adset: string; moveOff: boolean } | null>(null);
   const [bulkBusy, setBulkBusy] = useState("");
   const submitBulkMv = async () => {
+    if (guardLite()) return;
     if (!bulkMv || !bulkMv.adset || bulkBusy) return;
     const ids = Array.from(adSel);
     if (!ids.length) { setBulkMv(null); return; }
@@ -445,6 +465,7 @@ export default function AdsCenterClient() {
   // v618 · tab preview FB / IG: 2 kênh đăng KHÁC nhau (FB link ở comment; IG link là text cuối caption).
   const [pubPrevTab, setPubPrevTab] = useState<"fb" | "ig">("fb");
   const openPub = (adId: string, name: string) => {
+    if (guardLite()) return;
     setPubForm({ adId, name, fb: true, ig: false, date: "", time: "" });
     setPubPrev(null);
     setPubPrevTab("fb");
@@ -456,6 +477,7 @@ export default function AdsCenterClient() {
       .catch((e) => fail(String((e as Error).message)));
   };
   const submitPub = async () => {
+    if (guardLite()) return;
     if (!pubForm || pubBusy) return;
     const f = pubForm;
     if (!f.fb && !f.ig) { setErr("✗ Pick at least one channel"); return; }
@@ -553,9 +575,12 @@ export default function AdsCenterClient() {
 
   const totals = useMemo(() => {
     const t = { spend: 0, imp: 0, lc: 0, atc: 0, pur: 0, rev: 0 };
-    for (const r of rows) { t.spend += Number(r.spend) || 0; t.imp += r.impressions ?? 0; t.lc += r.linkClicks ?? 0; t.atc += r.atc ?? 0; t.pur += r.purchases ?? 0; t.rev += Number(r.revenue) || 0; }
+    // v631 · seller: KPI đầu trang chỉ cộng ADS CỦA MÌNH (chờ entities tải xong mới có map ad→seller).
+    const list = lite ? (ent && myName ? rows.filter((r) => ((ent.ads[r.adId]?.seller ?? "").trim() === myName)) : []) : rows;
+    for (const r of list) { t.spend += Number(r.spend) || 0; t.imp += r.impressions ?? 0; t.lc += r.linkClicks ?? 0; t.atc += r.atc ?? 0; t.pur += r.purchases ?? 0; t.rev += Number(r.revenue) || 0; }
     return t;
-  }, [rows]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, lite, ent, myName]);
 
   // ---- v573 · SELLER THEO LISTING SHOPIFY (không theo tên camp) ----
   // Mỗi ad thuộc về CHỦ LISTING mà creative trỏ tới (shopify_products.created_by — v567).
@@ -599,7 +624,8 @@ export default function AdsCenterClient() {
           {/* v587 · logo Meta (dò file trước — chưa có public/marketplaces/meta.png thì không render gì, hết ảnh vỡ) */}
           <MetaLogo size={22} />
           <b style={{ fontSize: 17, whiteSpace: "nowrap" }}>Meta Ads Center</b>
-          {/* v574 · tab Ads / By seller — thống kê seller tách trang riêng */}
+          {/* v574 · tab Ads / By seller — thống kê seller tách trang riêng. v631 · seller không có tab này. */}
+          {isAdmin && (
           <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
             {([["ads", "Ads"], ["sellers", "By seller"]] as const).map(([k, label]) => (
               <button key={k} onClick={() => setView(k)}
@@ -610,6 +636,8 @@ export default function AdsCenterClient() {
               </button>
             ))}
           </div>
+          )}
+          {lite && <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1D4ED8", background: "#EDF3FF", borderRadius: 999, padding: "4px 12px", whiteSpace: "nowrap" }}>Your ads · {myName || "—"}</span>}
           <DateRangePicker value={dr} onChange={setDr} />
           {/* v451 · lọc campaign theo trạng thái thật từ Meta */}
           <div style={{ display: "flex", gap: 4, background: "#F1F3F6", borderRadius: 10, padding: 3 }}>
@@ -623,18 +651,21 @@ export default function AdsCenterClient() {
             ))}
           </div>
           {/* v573 · lọc theo seller (chủ listing Shopify của từng ad) */}
+          {isAdmin && (
           <select value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)} title="Filter ads by seller (owner of the Shopify listing)"
             style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "6px 8px", fontSize: 12, fontWeight: 700, background: sellerFilter ? "#EDF3FF" : "#fff", maxWidth: 170 }}>
             <option value="">All sellers</option>
             {sellerOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             <option value={UNASSIGNED}>(unassigned)</option>
           </select>
+          )}
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap" }}>
             {lastSync ? `Synced ${new Date(lastSync).toLocaleString()}` : "Never synced — hit Sync now"}
           </span>
         </div>
-        {/* Hàng 2 · actions: tạo (trái) · dữ liệu (phải) · AI (phải cùng) */}
+        {/* Hàng 2 · actions: tạo (trái) · dữ liệu (phải) · AI (phải cùng) — v631 · seller không có hàng này */}
+        {isAdmin && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <a href="/shopify-products?adskit=1&newcamp=1" target="_blank" rel="noopener noreferrer" style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 10, padding: "8px 16px", fontSize: 12.5, fontWeight: 700, textDecoration: "none", whiteSpace: "nowrap" }}>＋ New campaign</a>
           <span style={{ flex: 1 }} />
@@ -657,6 +688,7 @@ export default function AdsCenterClient() {
           {aiBusy ? "Analyzing…" : "🤖 AI Analyze"}
           </button>
         </div>
+        )}
       </div>
       {err && <div style={{ ...card, padding: "10px 16px", borderColor: "#F5CFCF", background: "#FDECEC", color: "#C0392B", fontSize: 13, fontWeight: 600 }}>{err}</div>}
 
@@ -853,6 +885,7 @@ export default function AdsCenterClient() {
                   </span>
                 ) : null;
               })()}
+              {isAdmin && (
               <span style={{ marginLeft: "auto", display: "inline-flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                 {/* v535 · dup campaign — copy khung rồi sang kit chọn product */}
                 <button onClick={() => dupCamp(campId, g.name)} disabled={dupBusy === "camp:" + campId}
@@ -863,6 +896,7 @@ export default function AdsCenterClient() {
                 {/* v525 · tạo ads mới vào ĐÚNG campaign này — mở Meta Ads Kit bên Manage Products với campaign đã trỏ sẵn (v539 tab mới) */}
                 <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}`} target="_blank" rel="noopener noreferrer" style={{ ...rowBtn, textDecoration: "none", padding: "3px 11px", fontSize: 11 }}>＋ Ads</a>
               </span>
+              )}
             </div>
             <div style={{ overflowX: "auto", display: isCollapsed || !ads.length ? "none" : "block" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -965,6 +999,7 @@ export default function AdsCenterClient() {
                                 ));
                               })()}
                               {/* v525 · tạo ads thẳng vào ad set này / nhân bản cả ad set (kèm ads, PAUSED) */}
+                              {isAdmin && (<>
                               <a href={`/shopify-products?adskit=1&campaignId=${campId}&campaign=${encodeURIComponent(g.name)}&adsetId=${a.adsetId}&adset=${encodeURIComponent(a.adset)}`}
                                 target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} style={{ ...rowBtn, textDecoration: "none" }}>＋ Ads</a>
                               <button onClick={(e) => { e.stopPropagation(); dupAdset(a.adsetId, a.adset, campId); }} disabled={dupBusy === "adset:" + a.adsetId}
@@ -972,6 +1007,7 @@ export default function AdsCenterClient() {
                                 style={{ ...dupBtn, opacity: dupBusy === "adset:" + a.adsetId ? 0.5 : 1 }}>
                                 {dupBusy === "adset:" + a.adsetId ? "…" : "⧉ Dup ad set"}
                               </button>
+                              </>)}
                             </span>
                           </td>
                         </tr>
@@ -1044,11 +1080,13 @@ export default function AdsCenterClient() {
                               title="Rename ad" style={penBtn}>✎</button>
                           </>)}
                           {/* v525 · dup ad này (PAUSED) — mặc định cùng ad set, dán ID khác để thả vào winner MAIN */}
+                          {isAdmin && (
                           <button onClick={(e) => { e.stopPropagation(); dupAd(a.adId, a.ad, a.adsetId, a.adset); }} disabled={dupBusy === "ad:" + a.adId}
                             title="Duplicate this AD: opens the kit with this ad's exact product pre-selected → push a new ad into the target ad set (defaults to this one; pick your MAIN Winners ad set to promote). The form also offers an exact-creative copy."
                             style={{ ...dupBtn, flexShrink: 0, opacity: dupBusy === "ad:" + a.adId ? 0.5 : 1 }}>
                             {dupBusy === "ad:" + a.adId ? "…" : "⧉ Dup ad"}
                           </button>
+                          )}
                           </span>
                           {/* v595 · tầng 2 — badge dưới title (wrap được, không đè cột số) */}
                           {(ent?.ads[a.adId]?.plink || ent?.ads[a.adId]?.post || ruleOf(a.adId)) && (
@@ -1088,7 +1126,7 @@ export default function AdsCenterClient() {
                             );
                           })()}
                           {/* v587 · đăng nội dung ad thành BÀI CÔNG KHAI — v614 mở form chọn kênh (FB/IG) + đặt lịch */}
-                          {ent?.ads[a.adId]?.post && (
+                          {isAdmin && ent?.ads[a.adId]?.post && (
                             <button onClick={(e) => { e.stopPropagation(); openPub(a.adId, a.ad); }} disabled={pubBusy === a.adId}
                               title="Publish this ad's caption + product link as a PUBLIC post — Facebook Page and/or Instagram, now or scheduled (Meta cannot publish the ad's dark post itself)."
                               style={{ border: "1px solid #C9D2DE", background: "#fff", color: "#5B6472", borderRadius: 5, padding: "1px 7px", fontSize: 9, fontWeight: 800, letterSpacing: ".3px", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, lineHeight: "14px" }}>
@@ -1168,7 +1206,7 @@ export default function AdsCenterClient() {
         );
       })}
       {/* v547 · thanh nổi khi có ads được tick — tạo campaign mới từ đúng các sản phẩm đó */}
-      {adSel.size > 0 && (
+      {isAdmin && adSel.size > 0 && (
         <div style={{ position: "fixed", left: "50%", bottom: 20, transform: "translateX(-50%)", zIndex: 260, background: "#0F172A", color: "#fff", borderRadius: 999, padding: "10px 16px", display: "flex", alignItems: "center", gap: 12, boxShadow: "0 12px 40px rgba(15,23,42,.4)", whiteSpace: "nowrap" }}>
           <span style={{ fontSize: 12.5, fontWeight: 700 }}>{adSel.size} ads selected</span>
           <button onClick={newCampFromSel} style={{ border: "none", background: "#16A34A", color: "#fff", borderRadius: 999, padding: "7px 14px", fontSize: 12.5, fontWeight: 800, cursor: "pointer" }}>

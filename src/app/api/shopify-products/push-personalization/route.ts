@@ -70,14 +70,17 @@ export async function POST(req: NextRequest) {
     storeId: schema.shopifyProducts.storeId, productType: schema.shopifyProducts.productType, templateId: schema.shopifyProducts.templateId,
     pers: schema.shopifyProducts.personalization,
     cred: schema.stores.apiCredentials, seller: schema.stores.sellerId, sStoreId: schema.stores.id, mk: schema.stores.marketplace,
+    createdBy: schema.shopifyProducts.createdBy,
   }).from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(inArray(schema.shopifyProducts.id, ids));
   const scopeIds = await storeOwnerScopeIds(session);
   const shared = await sharedStoreIds(scopeIds);
   if (scopeIds && rows.some((r) => !((r.seller && scopeIds.includes(r.seller)) || (r.sStoreId && shared.includes(r.sStoreId))))) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  // v459 · store SHARE: chỉ xem — thao tác ghi chỉ khi là store CỦA MÌNH (admin/manager không giới hạn).
-  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub)) {
-    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem — chỉ sửa được listing store của bạn" }, { status: 403 });
+  // v459 · store SHARE: thao tác ghi chỉ khi là store CỦA MÌNH (admin/manager không giới hạn).
+  // v631 · nới cho SELLER: custom options là 1 trong 2 thứ seller ĐƯỢC sửa — cho ghi khi
+  // mọi listing trong lô đều là CỦA MÌNH (created_by = mình).
+  if (session.role !== "admin" && scopeIds && rows.some((r) => r.seller !== session.sub && r.createdBy !== session.sub)) {
+    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem — chỉ sửa được listing của bạn" }, { status: 403 });
   }
 
   const tpls = await db.select().from(schema.shopifyTemplates);

@@ -31,7 +31,8 @@ async function fbList(url: string, token: string, maxPages = 5): Promise<Record<
 
 export async function GET() {
   const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v631 · SELLER được đọc (cần map ad→seller để trang seller-view lọc đúng ads của mình); ghi vẫn admin-only.
+  if (!session || (session.role !== "admin" && session.role !== "seller")) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const token = process.env.META_SYSTEM_TOKEN ?? "";
   const acctRaw = process.env.META_AD_ACCOUNT_ID ?? "";
   if (!token || !acctRaw) return NextResponse.json({ ok: false, error: "META_SYSTEM_TOKEN / META_AD_ACCOUNT_ID missing" }, { status: 400 });
