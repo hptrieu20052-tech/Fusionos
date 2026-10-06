@@ -27,7 +27,11 @@ type FormStyle = { name: string; image: string; sizes: { n: string; p: string }[
 
 const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
 const btnPri: React.CSSProperties = { background: "var(--ink)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
-const btnBlue: React.CSSProperties = { background: "var(--blue)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+// v635: tone màu tím WooCommerce cho toàn trang Woo
+const WOO = "#7F54B3";
+const WOO_SOFT = "#F7F3FB";
+const WOO_LINE = "#DFCFEE";
+const btnBlue: React.CSSProperties = { background: WOO, color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
 const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" };
 
 function toForm(s: Style): FormStyle {
@@ -150,7 +154,7 @@ export default function WooProductTypesClient({ stores, canEdit }: { stores: Sto
     <div style={{ display: "grid", gap: 14, maxWidth: 1100, margin: "0 auto", width: "100%" }}>
       {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 300, background: msg.startsWith("✓") ? "#1E7A3E" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
 
-      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
+      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: WOO_SOFT, border: `1px solid ${WOO_LINE}` }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
           <MarketplaceLogo mk="woocommerce" size={34} />
           <b style={{ fontSize: 19 }}>Product Types · <span style={{ color: "#7F54B3" }}>WooCommerce</span></b>

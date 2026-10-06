@@ -7,6 +7,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MarketplaceLogo } from "@/components/marketplace-logo";
 import { buildTypeChips, chipOn, toggleChip, type TypeChip } from "@/lib/woo-type-chips";
+// v634 · Custom options (personalization) — editor DÙNG CHUNG với Etsy/Shopify; lưu ở meta
+// _custom_options của Woo Custom Pro, plugin render ô nhập trên trang sản phẩm.
+import CustomOptions, { pqProblem, toPQ, type PQ } from "@/components/custom-options";
 
 type StoreOpt = { id: string; name: string; sellerId: string | null; sellerName: string | null };
 type Cat = { id: number; name: string; parent: number; count: number; slug: string };
@@ -19,11 +22,16 @@ type Prod = {
   categories: { id: number; name: string }[];
   description: string; tags: string[]; totalSales: number; dateCreated: string;
   wcpStyles?: string[]; // v505 · Product Types (meta _wcp_selected_styles) — [] = all styles
+  customOptions?: PQ[]; // v634 · personalization (meta _custom_options) — [] = chưa đặt
 };
 
 const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
 const btnPri: React.CSSProperties = { background: "var(--ink)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
-const btnBlue: React.CSSProperties = { background: "var(--blue)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+// v635: tone màu tím WooCommerce cho toàn trang Woo
+const WOO = "#7F54B3";        // tím Woo chuẩn
+const WOO_SOFT = "#F7F3FB";   // nền tím nhạt
+const WOO_LINE = "#DFCFEE";   // viền tím nhạt
+const btnBlue: React.CSSProperties = { background: WOO, color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
 const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" };
 
 function L({ label, children }: { label: string; children: React.ReactNode }) {
@@ -147,7 +155,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
   };
 
   // ── New / Edit product modal ─────────────────────────────────────────────
-  const empty = { id: 0, name: "", description: "", regularPrice: "", salePrice: "", sku: "", status: "publish", categoryIds: [] as number[], tags: "", images: [] as string[], tplId: "", wcpStyles: [] as string[] };
+  const empty = { id: 0, name: "", description: "", regularPrice: "", salePrice: "", sku: "", status: "publish", categoryIds: [] as number[], tags: "", images: [] as string[], tplId: "", wcpStyles: [] as string[], customOptions: [] as PQ[] };
   const [form, setForm] = useState<typeof empty | null>(null);
   const [saving, setSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -167,6 +175,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
       images: d.images.map((i) => i.src),
       tplId: "",
       wcpStyles: Array.isArray(d.wcpStyles) ? [...d.wcpStyles] : [],
+      customOptions: toPQ(d.customOptions), // v634
     });
   };
   // Dup: mở form NEW với data copy từ sản phẩm (id=0 → tạo mới), title thêm "(Copy)".
@@ -194,6 +203,9 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
     if (!form) return;
     if (!form.name.trim()) { flash("✗ Enter a product title"); return; }
     if (!form.regularPrice.trim()) { flash("✗ Enter a price"); return; }
+    // v634 · custom options dở dang (field không nhãn, dropdown rỗng…) → chặn lưu, báo rõ
+    const pqErr = pqProblem(form.customOptions);
+    if (pqErr) { flash("✗ Custom options: " + pqErr); return; }
     setSaving(true);
     const product = {
       name: form.name, description: form.description,
@@ -203,6 +215,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
       tags: form.tags.split(",").map((t) => t.trim()).filter(Boolean),
       images: form.images,
       wcpStyles: form.wcpStyles,
+      customOptions: form.customOptions, // v634 · ghi meta _custom_options (mảng rỗng = xoá hết field)
     };
     const j = form.id
       ? await fetch("/api/woo-products", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storeId, productId: form.id, product }) }).then((r) => r.json()).catch(() => ({ ok: false, error: "network" }))
@@ -267,7 +280,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
       {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 300, background: msg.startsWith("✓") ? "#1E7A3E" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
 
       {/* ── Header (khuôn ShopBase) ── */}
-      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
+      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: WOO_SOFT, border: `1px solid ${WOO_LINE}` }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
           <MarketplaceLogo mk="woocommerce" size={34} />
           <b style={{ fontSize: 19 }}>Manage Products · <span style={{ color: "#7F54B3" }}>WooCommerce</span></b>
@@ -315,11 +328,11 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
         <div style={{ padding: "12px 16px 0", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <b style={{ fontSize: 13 }}>{total} products</b>
           {sel.size > 0 && canEdit && (
-            <span style={{ display: "inline-flex", gap: 8, alignItems: "center", background: "#EEF3FF", border: "1px solid #CBD9FF", borderRadius: 10, padding: "5px 10px" }}>
+            <span style={{ display: "inline-flex", gap: 8, alignItems: "center", background: WOO_SOFT, border: `1px solid ${WOO_LINE}`, borderRadius: 10, padding: "5px 10px" }}>
               <b style={{ fontSize: 12 }}>{sel.size} selected</b>
               <button onClick={() => bulkStatus("publish")} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Set Active</button>
               <button onClick={() => bulkStatus("draft")} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Set Draft</button>
-              <button onClick={() => setBulk({ ...emptyBulk })} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12, borderColor: "var(--blue)", color: "var(--blue)" }}>✎ Bulk edit</button>
+              <button onClick={() => setBulk({ ...emptyBulk })} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12, borderColor: WOO, color: WOO }}>✎ Bulk edit</button>
               <button onClick={() => delProducts(Array.from(sel))} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12, color: "var(--red)", borderColor: "#F3C2C0" }}>🗑 Delete</button>
               <button onClick={exportCsv} style={{ ...btnGhost, padding: "4px 12px", fontSize: 12 }}>Export</button>
             </span>
@@ -340,7 +353,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
           </tr></thead>
           <tbody>
             {shown.map((p) => (
-              <tr key={p.id} style={sel.has(p.id) ? { background: "#F6F9FF" } : undefined}>
+              <tr key={p.id} style={sel.has(p.id) ? { background: WOO_SOFT } : undefined}>
                 <td style={td}><input type="checkbox" checked={sel.has(p.id)} onChange={() => toggleSel(p.id)} /></td>
                 <td style={td}>
                   <div onClick={() => p.thumb && setZoom(p.images?.[0]?.src || p.thumb)} title={p.thumb ? "Click to zoom" : undefined}
@@ -350,7 +363,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                   </div>
                 </td>
                 <td style={td}>
-                  <div onClick={() => canEdit && p.editable !== false && openEdit(p)} style={{ fontWeight: 700, color: "var(--blue)", cursor: canEdit && p.editable !== false ? "pointer" : "default", lineHeight: 1.4 }}>{p.name}</div>
+                  <div onClick={() => canEdit && p.editable !== false && openEdit(p)} style={{ fontWeight: 700, color: WOO, cursor: canEdit && p.editable !== false ? "pointer" : "default", lineHeight: 1.4 }}>{p.name}</div>
                   <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>{p.images.length} images{p.sku ? ` · ${p.sku}` : ""}</div>
                   <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>#{p.id}</div>
                 </td>
@@ -371,7 +384,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                 </td>
                 <td style={td}>
                   <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                    {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" title="View on store" style={{ width: 32, height: 32, borderRadius: 99, border: "1px solid #CBD9FF", background: "#EEF6FF", color: "var(--blue)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, textDecoration: "none" }}>👁</a>}
+                    {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" title="View on store" style={{ width: 32, height: 32, borderRadius: 99, border: `1px solid ${WOO_LINE}`, background: WOO_SOFT, color: WOO, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13, textDecoration: "none" }}>👁</a>}
                     {p.permalink && <button onClick={() => copyLink(p.permalink)} title="Copy product link" style={{ width: 32, height: 32, borderRadius: 99, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>⧉</button>}
                     {canEdit && p.editable !== false && <button onClick={() => openEdit(p)} title="Edit" style={{ width: 32, height: 32, borderRadius: 99, border: "1px solid var(--line)", background: "#fff", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 13 }}>✎</button>}
                     {canEdit && <button onClick={() => openDup(p)} title="Duplicate as draft" style={{ ...btnGhost, padding: "6px 12px", fontSize: 12 }}>Dup</button>}
@@ -390,7 +403,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
             {Array.from({ length: totalPages }, (_, i) => i + 1).filter((n) => n === 1 || n === totalPages || Math.abs(n - page) <= 2).map((n, i, arr) => (
               <span key={n} style={{ display: "inline-flex", gap: 8, alignItems: "center" }}>
                 {i > 0 && arr[i - 1] !== n - 1 && <span style={{ color: "var(--muted)" }}>…</span>}
-                <button onClick={() => goto(n)} disabled={busy} style={{ ...btnGhost, padding: "7px 13px", ...(n === page ? { background: "var(--blue)", color: "#fff", borderColor: "var(--blue)" } : {}) }}>{n}</button>
+                <button onClick={() => goto(n)} disabled={busy} style={{ ...btnGhost, padding: "7px 13px", ...(n === page ? { background: WOO, color: "#fff", borderColor: WOO } : {}) }}>{n}</button>
               </span>
             ))}
             <button onClick={() => goto(page + 1)} disabled={page >= totalPages || busy} style={{ ...btnGhost, opacity: page >= totalPages ? 0.4 : 1 }}>Next ›</button>
@@ -552,7 +565,7 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
                       return (
                         <button key={c.id} type="button"
                           onClick={() => setForm({ ...form, categoryIds: on ? form.categoryIds.filter((x) => x !== c.id) : [...form.categoryIds, c.id] })}
-                          style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? "1px solid var(--blue)" : "1px solid var(--line)", background: on ? "var(--blue)" : "#fff", color: on ? "#fff" : "var(--ink)" }}>
+                          style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? `1px solid ${WOO}` : "1px solid var(--line)", background: on ? WOO : "#fff", color: on ? "#fff" : "var(--ink)" }}>
                           {catLabel(c)}
                         </button>
                       );
@@ -581,11 +594,26 @@ export default function WooProductsClient({ stores, sellers, canEdit }: { stores
               <div style={{ gridColumn: "1 / -1" }}>
                 <L label="Tags (comma separated — optional)"><input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="halloween, family matching" style={inp} /></L>
               </div>
+              {/* v634 · CUSTOM OPTIONS (personalization) — editor dùng chung với Etsy/Shopify.
+                  Lưu meta _custom_options; plugin Woo Custom Pro render ô nhập trên trang sản phẩm.
+                  Lưu ý: tên field/lựa chọn không dùng , = | ; (format plugin tách bằng các ký tự đó). */}
+              <div style={{ gridColumn: "1 / -1" }}>
+                <div style={{ border: "1px solid #7F54B344", borderRadius: 10, padding: "12px 14px", background: "#FBF9FE" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 800, color: "#7F54B3" }}>Custom options ({form.customOptions.length}/10)</div>
+                    <div style={{ fontSize: 11, color: "var(--muted)" }}>this listing only · buyers fill these before Add to cart</div>
+                  </div>
+                  <CustomOptions fields={form.customOptions} onChange={(f) => setForm({ ...form, customOptions: f })} accent="#7F54B3" max={10} />
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}>
+                    Text box & List of options reach the order as line-item meta. Field names must not contain , = | or ; characters.
+                  </div>
+                </div>
+              </div>
               <div style={{ gridColumn: "1 / -1" }}>
                 <L label={`Images (${form.images.length}/12 — first image = cover)`}>
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {form.images.map((src, i) => (
-                      <div key={src + i} style={{ position: "relative", width: 86, height: 86, borderRadius: 10, overflow: "hidden", border: i === 0 ? "2px solid var(--blue)" : "1px solid var(--line)" }}>
+                      <div key={src + i} style={{ position: "relative", width: 86, height: 86, borderRadius: 10, overflow: "hidden", border: i === 0 ? `2px solid ${WOO}` : "1px solid var(--line)" }}>
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
                         <button type="button" onClick={() => setForm({ ...form, images: form.images.filter((_, x) => x !== i) })}

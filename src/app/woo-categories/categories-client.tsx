@@ -17,7 +17,11 @@ type Prod = {
 };
 
 const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
-const btnBlue: React.CSSProperties = { background: "var(--blue)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+// v635: tone màu tím WooCommerce cho toàn trang Woo
+const WOO = "#7F54B3";
+const WOO_SOFT = "#F7F3FB";
+const WOO_LINE = "#DFCFEE";
+const btnBlue: React.CSSProperties = { background: WOO, color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
 const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" };
 
 export default function WooCategoriesClient({ stores, canEdit }: { stores: StoreOpt[]; canEdit: boolean }) {
@@ -130,7 +134,7 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
       {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 300, background: msg.startsWith("✓") ? "#1E7A3E" : msg.startsWith("⚠") ? "#8A6D1A" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
 
       {/* Header — khuôn Manage Collections ShopBase */}
-      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
+      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: WOO_SOFT, border: `1px solid ${WOO_LINE}` }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
           <MarketplaceLogo mk="woocommerce" size={40} />
           <b style={{ fontSize: 19 }}>Manage Categories · <span style={{ color: "#7F54B3" }}>WooCommerce</span></b>
@@ -174,11 +178,11 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
           <div style={{ marginTop: canEdit ? 0 : 12 }}>
             {shown.map((c) => (
               <div key={c.id}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 10px", borderRadius: 10, cursor: "pointer", background: selCat?.id === c.id ? "#EEF3FF" : "transparent", border: selCat?.id === c.id ? "1px solid #CBD9FF" : "1px solid transparent", marginBottom: 2 }}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 10px", borderRadius: 10, cursor: "pointer", background: selCat?.id === c.id ? WOO_SOFT : "transparent", border: selCat?.id === c.id ? `1px solid ${WOO_LINE}` : "1px solid transparent", marginBottom: 2 }}
                 onClick={() => pick(c)}>
                 <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: c.parent ? 500 : 700, paddingLeft: c.parent ? 14 : 0 }}>
                   {c.name} <span style={{ color: "var(--muted)", fontSize: 11.5, fontWeight: 600 }}>· {c.count} products</span>
-                  {c.ownerName ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 99, background: "#EEF3FF", color: "var(--blue)" }}>{c.ownerName}</span> : null}
+                  {c.ownerName ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, padding: "1px 7px", borderRadius: 99, background: WOO_SOFT, color: WOO }}>{c.ownerName}</span> : null}
                 </span>
                 {/* v620 · copy link category ngoài site — ai cũng dùng được (chạy ads, share) */}
                 {storeUrl && (
@@ -217,11 +221,11 @@ export default function WooCategoriesClient({ stores, canEdit }: { stores: Store
                       {p.thumb ? <img src={p.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : null}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--blue)", lineHeight: 1.35 }}>{p.name}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: WOO, lineHeight: 1.35 }}>{p.name}</div>
                       <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 1 }}>${p.price || p.regularPrice || "—"}{p.sku ? ` · ${p.sku}` : ""} · #{p.id}</div>
                     </div>
                     <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 10px", borderRadius: 99, background: p.status === "publish" ? "var(--green-soft)" : "#FFF3D6", color: p.status === "publish" ? "#2E7D46" : "#8A6D1A", textTransform: "uppercase", flexShrink: 0 }}>{p.status === "publish" ? "Active" : p.status}</span>
-                    {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" title="View on store" style={{ width: 30, height: 30, borderRadius: 99, border: "1px solid #CBD9FF", background: "#EEF6FF", color: "var(--blue)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, textDecoration: "none", flexShrink: 0 }}>👁</a>}
+                    {p.permalink && <a href={p.permalink} target="_blank" rel="noreferrer" title="View on store" style={{ width: 30, height: 30, borderRadius: 99, border: `1px solid ${WOO_LINE}`, background: WOO_SOFT, color: WOO, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, textDecoration: "none", flexShrink: 0 }}>👁</a>}
                     {canEdit && p.editable !== false && <button onClick={() => removeFromCat(p)} disabled={saving} title="Remove from this category (product stays)" style={{ ...btnGhost, padding: "5px 11px", fontSize: 11.5, color: "var(--red)", borderColor: "#F3C2C0", flexShrink: 0 }}>✕ Remove</button>}
                   </div>
                 ))}

@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds, sharedStoreIds, adminUserIds } from "@/lib/scope";
 import { wooApi, wooApiFull, wooConfigured, type WooCred } from "@/lib/woocommerce";
+import { payloadOf, type PQ } from "@/lib/personalization";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -42,6 +43,44 @@ const deent = (s: string) => s
   .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
   .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&#8217;/g, "\u2019").replace(/&nbsp;/g, " ");
 
+// ===== v634 · CUSTOM OPTIONS (personalization) cho listing Woo — giống Etsy/Shopify =====
+// Lưu ở meta _custom_options (plugin Woo Custom Pro đọc để render ô nhập trên trang sản phẩm):
+//   name=<label>,type=field|select|file,required=0|1[,max=<n>][,options=a;b;c] — nhiều field nối "|"
+// Map sang PQ (bộ editor dùng chung): field↔text · select↔dropdown · file↔upload.
+// Nhãn/lựa chọn bị lọc sạch ký tự , | = ; vì format của plugin tách bằng đúng các ký tự đó.
+const sanToken = (s: string) => String(s ?? "").replace(/[,|=]/g, " ").replace(/\s+/g, " ").trim();
+function wooCustomToPQ(raw: string): PQ[] {
+  const out: PQ[] = [];
+  for (const part of String(raw ?? "").split("|")) {
+    const attrs = new Map<string, string>();
+    for (const kv of part.split(",")) {
+      const i = kv.indexOf("=");
+      if (i > 0) attrs.set(kv.slice(0, i).trim().toLowerCase(), kv.slice(i + 1).trim());
+    }
+    const label = deent(String(attrs.get("name") ?? "")).trim();
+    if (!label) continue;
+    const t = String(attrs.get("type") ?? "field").toLowerCase();
+    const options = String(attrs.get("options") ?? "").split(";").map((s) => deent(s).trim()).filter(Boolean);
+    out.push({
+      type: t === "select" ? "dropdown" : t === "file" ? "upload" : "text",
+      label, instructions: "", required: String(attrs.get("required") ?? "1") === "1",
+      maxChars: Math.min(Math.max(Math.round(Number(attrs.get("max")) || 100), 1), 1024),
+      options, maxFiles: 1,
+    });
+  }
+  return out.slice(0, 10);
+}
+function pqToWooCustom(fields: PQ[]): string {
+  return fields.map((q) => {
+    const parts = [`name=${sanToken(q.label)}`];
+    if (q.type === "dropdown") { parts.push("type=select", `options=${q.options.map((o) => sanToken(o).replace(/;/g, " ").trim()).filter(Boolean).join(";")}`); }
+    else if (q.type === "upload") parts.push("type=file");
+    else { parts.push("type=field"); if (q.maxChars) parts.push(`max=${q.maxChars}`); }
+    parts.push(`required=${q.required ? 1 : 0}`);
+    return parts.join(",");
+  }).join("|");
+}
+
 function slimProduct(p: Record<string, unknown>) {
   const imgs = (Array.isArray(p.images) ? p.images : []) as Record<string, unknown>[];
   const cats = (Array.isArray(p.categories) ? p.categories : []) as Record<string, unknown>[];
@@ -49,6 +88,8 @@ function slimProduct(p: Record<string, unknown>) {
   const meta = (Array.isArray(p.meta_data) ? p.meta_data : []) as Record<string, unknown>[];
   const wcpRaw = meta.find((m) => strv(m.key) === "_wcp_selected_styles")?.value;
   const wcpStyles = (Array.isArray(wcpRaw) ? wcpRaw : []).map((x) => strv(x)).filter(Boolean);
+  // v634 · Custom options (meta _custom_options của Woo Custom Pro) → PQ cho editor dùng chung
+  const customRaw = strv(meta.find((m) => strv(m.key) === "_custom_options")?.value);
   return {
     id: Number(p.id) || 0,
     name: deent(strv(p.name)),
@@ -64,6 +105,7 @@ function slimProduct(p: Record<string, unknown>) {
     totalSales: Number(p.total_sales) || 0,
     dateCreated: strv(p.date_created),
     wcpStyles, // [] = hiện tất cả style (mặc định plugin)
+    customOptions: wooCustomToPQ(customRaw), // v634 · personalization của listing ([] = chưa đặt)
   };
 }
 
@@ -141,7 +183,7 @@ export async function GET(req: NextRequest) {
 }
 
 // Body sản phẩm gửi lên Woo — chỉ nhận field cho phép, không forward mù.
-type InProduct = { name?: string; description?: string; regularPrice?: string; salePrice?: string; sku?: string; status?: string; categoryIds?: number[]; tags?: string[]; images?: string[]; wcpStyles?: string[] };
+type InProduct = { name?: string; description?: string; regularPrice?: string; salePrice?: string; sku?: string; status?: string; categoryIds?: number[]; tags?: string[]; images?: string[]; wcpStyles?: string[]; customOptions?: unknown };
 function wooBody(p: InProduct): Record<string, unknown> {
   const body: Record<string, unknown> = { type: "simple" };
   if (p.name != null) body.name = strv(p.name).slice(0, 300);
@@ -155,9 +197,19 @@ function wooBody(p: InProduct): Record<string, unknown> {
   if (Array.isArray(p.images)) body.images = p.images.map((src) => ({ src: strv(src) })).filter((i) => /^https?:\/\//i.test(i.src)).slice(0, 12);
   // v505 · Product Types: ghi meta _wcp_selected_styles → Woo Custom Pro chỉ hiện các style này
   // trên trang sản phẩm (mảng rỗng = hiện tất cả — đúng hành vi mặc định của plugin).
+  // v634 · meta GOM MẢNG (trước đây gán đè — thêm _custom_options là mất _wcp_selected_styles).
+  const metaOut: { key: string; value: unknown }[] = [];
   if (Array.isArray(p.wcpStyles)) {
-    body.meta_data = [{ key: "_wcp_selected_styles", value: p.wcpStyles.map((s) => strv(s)).filter(Boolean).slice(0, 50) }];
+    metaOut.push({ key: "_wcp_selected_styles", value: p.wcpStyles.map((s) => strv(s)).filter(Boolean).slice(0, 50) });
   }
+  // v634 · Custom options (personalization): PQ → chuỗi _custom_options cho Woo Custom Pro render.
+  // Mảng rỗng = xoá hết field. Không gửi key customOptions = giữ nguyên trên Woo.
+  if (Array.isArray(p.customOptions)) {
+    const fields = payloadOf(p.customOptions);
+    metaOut.push({ key: "_custom_options", value: pqToWooCustom(fields) });
+    metaOut.push({ key: "_custom_type", value: fields.length ? "custom" : "normal" });
+  }
+  if (metaOut.length) body.meta_data = metaOut;
   return body;
 }
 

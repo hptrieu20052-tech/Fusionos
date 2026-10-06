@@ -15,7 +15,11 @@ type Tpl = { id: string; name: string; title: string | null; description: string
 
 const inp: React.CSSProperties = { width: "100%", padding: "9px 12px", borderRadius: 10, border: "1px solid var(--line)", fontSize: 13.5, background: "#fff" };
 const btnPri: React.CSSProperties = { background: "var(--ink)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
-const btnBlue: React.CSSProperties = { background: "var(--blue)", color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
+// v635: tone màu tím WooCommerce cho toàn trang Woo
+const WOO = "#7F54B3";
+const WOO_SOFT = "#F7F3FB";
+const WOO_LINE = "#DFCFEE";
+const btnBlue: React.CSSProperties = { background: WOO, color: "#fff", border: 0, borderRadius: 12, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" };
 const btnGhost: React.CSSProperties = { background: "#fff", color: "var(--ink)", border: "1px solid var(--line)", borderRadius: 12, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" };
 
 function L({ label, children }: { label: string; children: React.ReactNode }) {
@@ -89,7 +93,7 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
     <div style={{ display: "grid", gap: 14, maxWidth: 1440, margin: "0 auto", width: "100%" }}>
       {msg && <div style={{ position: "fixed", top: 70, right: 20, zIndex: 300, background: msg.startsWith("✓") ? "#1E7A3E" : msg.startsWith("⚠") ? "#8A6D1A" : "#B3261E", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 700, fontSize: 13 }}>{msg}</div>}
 
-      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: "#F6F9FF", border: "1px solid #DFE8FA" }}>
+      <div className="panel" style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "14px 18px", background: WOO_SOFT, border: `1px solid ${WOO_LINE}` }}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
           <MarketplaceLogo mk="woocommerce" size={40} />
           <span>
@@ -117,7 +121,7 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
               {t.thumb ? <img src={t.thumb} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : "\ud83d\uddbc"}
             </div>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div onClick={() => canEdit && t.editable !== false && openEdit(t)} style={{ color: "var(--blue)", fontWeight: 800, fontSize: 16.5, cursor: canEdit && t.editable !== false ? "pointer" : "default", lineHeight: 1.3 }}>{t.name}</div>
+              <div onClick={() => canEdit && t.editable !== false && openEdit(t)} style={{ color: WOO, fontWeight: 800, fontSize: 16.5, cursor: canEdit && t.editable !== false ? "pointer" : "default", lineHeight: 1.3 }}>{t.name}</div>
               <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 4, lineHeight: 1.5 }}>
                 {store?.name ?? "—"} · {t.wcpStyles?.length ? `Types (${t.wcpStyles.length}): ${t.wcpStyles.join(", ").slice(0, 60)}${t.wcpStyles.join(", ").length > 60 ? "…" : ""}` : "All styles"} · ${t.price ?? "—"}{t.salePrice ? ` / sale $${t.salePrice}` : ""} · {t.categoryIds.length} categories ·{" "}
                 <span style={{ fontWeight: 800, color: t.status === "publish" ? "#2E7D46" : "#8A6D1A" }}>{t.status === "publish" ? "ACTIVE" : "DRAFT"}</span> · by <b>{t.creator || "Admin"}</b>{t.editable === false ? " · read-only" : ""}
@@ -207,7 +211,7 @@ export default function WooTemplatesClient({ stores, canEdit }: { stores: StoreO
                       return (
                         <button key={c.id} type="button"
                           onClick={() => setForm({ ...form, categoryIds: on ? form.categoryIds.filter((x) => x !== c.id) : [...form.categoryIds, c.id] })}
-                          style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? "1px solid var(--blue)" : "1px solid var(--line)", background: on ? "var(--blue)" : "#fff", color: on ? "#fff" : "var(--ink)" }}>
+                          style={{ fontSize: 11.5, fontWeight: 700, padding: "4px 11px", borderRadius: 99, cursor: "pointer", border: on ? `1px solid ${WOO}` : "1px solid var(--line)", background: on ? WOO : "#fff", color: on ? "#fff" : "var(--ink)" }}>
                           {catLabel(c)}
                         </button>
                       );
