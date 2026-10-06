@@ -134,7 +134,9 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
           <tbody>{data.byStore.map((st) => {
             const pf = Number(st.rev) - Number(st.fee) + Number(st.cost);
             return (
-              <tr key={String(st.id)}>
+              // v637 · key PHẢI gồm cả seller: store chung nhiều seller (Talewix/Sorawix) trả nhiều dòng
+              // cùng st.id → key trùng làm React giữ lại dòng cũ khi đổi khoảng ngày (số "đứng im").
+              <tr key={`${st.id}·${st.seller ?? ""}`}>
                 <td><span className="chip" style={{ marginRight: 6 }}>{String(st.marketplace)}</span><b>{String(st.store)}</b></td>
                 <td>{String(st.seller ?? "—")}</td>
                 <td style={{ textAlign: "right" }}>{String(st.orders)}</td>
