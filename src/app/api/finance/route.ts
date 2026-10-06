@@ -43,8 +43,31 @@ export async function GET(req: NextRequest) {
   const FROM = useRange ? sql`${fromQ}::date` : sql`CURRENT_DATE - (${days - 1})::int`;
   const TO = useRange ? sql`${toQ}::date` : sql`CURRENT_DATE`;
 
+  // ═══ v638 · BỘ LỌC seller / store / platform / supplier ═══
+  // fltO áp vào orders (mọi số doanh thu/đơn); fltT áp vào transactions (fee/cost).
+  // Bút toán tay KHÔNG gắn đơn: giữ khi khớp seller/store trực tiếp; còn lọc theo
+  // platform/supplier thì loại (không quy bút toán tay cho platform/supplier được).
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const uOk = (x: string | null) => (x && UUID_RE.test(x) ? x : null);
+  const PLATFORMS = ["etsy", "tiktok", "shopify", "woocommerce", "shopbase"];
+  const fSeller = uOk(req.nextUrl.searchParams.get("seller"));
+  const fStore = uOk(req.nextUrl.searchParams.get("store"));
+  const fSupplier = uOk(req.nextUrl.searchParams.get("supplier"));
+  const pRaw = req.nextUrl.searchParams.get("platform");
+  const fPlatform = pRaw && PLATFORMS.includes(pRaw) ? pRaw : null;
+  let fltO = sql``;
+  if (fSeller) fltO = sql`${fltO} AND o.seller_at_order = ${fSeller}::uuid`;
+  if (fStore) fltO = sql`${fltO} AND o.store_id = ${fStore}::uuid`;
+  if (fPlatform) fltO = sql`${fltO} AND o.platform = ${fPlatform}`;
+  if (fSupplier) fltO = sql`${fltO} AND EXISTS (SELECT 1 FROM fulfillment_orders fx WHERE fx.order_id = o.id AND fx.fulfiller_id = ${fSupplier}::uuid AND fx.status <> 'cancelled')`;
+  let fltT = sql``;
+  if (fSeller) fltT = sql`${fltT} AND t.seller_id = ${fSeller}::uuid`;
+  if (fStore) fltT = sql`${fltT} AND t.store_id = ${fStore}::uuid`;
+  if (fPlatform) fltT = sql`${fltT} AND EXISTS (SELECT 1 FROM stores s3 WHERE s3.id = t.store_id AND s3.marketplace = ${fPlatform})`;
+  if (fSupplier) fltT = sql`${fltT} AND t.order_id IS NOT NULL AND EXISTS (SELECT 1 FROM fulfillment_orders fx WHERE fx.order_id = t.order_id AND fx.fulfiller_id = ${fSupplier}::uuid AND fx.status <> 'cancelled')`;
+
   // Đơn tính doanh thu: trong range, không cancel/trash
-  const ordersWhere = sql`o.ordered_at::date >= ${FROM} AND o.ordered_at::date <= ${TO} AND o.status NOT IN ('cancel','trash')${inSeller}`;
+  const ordersWhere = sql`o.ordered_at::date >= ${FROM} AND o.ordered_at::date <= ${TO} AND o.status NOT IN ('cancel','trash')${inSeller}${fltO}`;
   // v632 · range dạng chuỗi (meta_insights.day là text YYYY-MM-DD) — cũng dùng cho mảng daily bên dưới
   const startISO = useRange ? fromQ! : new Date(Date.now() - (days - 1) * 86400000).toISOString().slice(0, 10);
   const endISO = useRange ? toQ! : new Date().toISOString().slice(0, 10);
@@ -61,14 +84,14 @@ export async function GET(req: NextRequest) {
     // Cost theo type (transactions âm; bút toán 'revenue' nhập tay vẫn cộng vào doanh thu qua totals riêng)
     db.execute(sql`
       SELECT type, sum(amount) total FROM transactions t
-      WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}
+      WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}${fltT}
       GROUP BY 1 ORDER BY total`),
     db.execute(sql`
       SELECT o.ordered_at::date d, sum(o.total) rev, sum(o.platform_fee) fee
       FROM orders o WHERE ${ordersWhere} GROUP BY 1`),
     db.execute(sql`
       SELECT t.occurred_at d, sum(t.amount) FILTER (WHERE t.type <> 'revenue') cost
-      FROM transactions t WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive} GROUP BY 1`),
+      FROM transactions t WHERE t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}${fltT} GROUP BY 1`),
     // Theo SELLER: rev/fee từ orders + cost từ transactions
     // CỘT COST = CHI PHÍ FULFILL THUẦN: loại 'revenue' và loại luôn 'platform_fee'
     // (bút toán phí sàn nhập tay được cộng sang cột FEE, tuyệt đối KHÔNG nằm trong Cost → không đếm 2 lần).
@@ -78,11 +101,11 @@ export async function GET(req: NextRequest) {
       SELECT u.id, u.full_name name,
         coalesce(sum(o.total),0) rev,
         coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.seller_id = u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) fee,
+          WHERE t.seller_id = u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}${fltT}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.seller_id = u.id AND t.type NOT IN ('revenue','platform_fee','ads') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) cost,
+          WHERE t.seller_id = u.id AND t.type NOT IN ('revenue','platform_fee','ads') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}${fltT}),0) cost,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.seller_id = u.id AND t.type = 'ads' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) ads_manual
+          WHERE t.seller_id = u.id AND t.type = 'ads' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}${fltT}),0) ads_manual
       FROM orders o JOIN users u ON u.id = o.seller_at_order
       WHERE ${ordersWhere}
       GROUP BY 1,2 ORDER BY rev DESC`),
@@ -94,9 +117,9 @@ export async function GET(req: NextRequest) {
       SELECT s.id, s.name store, s.marketplace, u.full_name seller,
         coalesce(sum(o.total),0) rev, count(*)::int orders,
         coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.store_id = s.id AND t.seller_id IS NOT DISTINCT FROM u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) fee,
+          WHERE t.store_id = s.id AND t.seller_id IS NOT DISTINCT FROM u.id AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}${fltT}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t
-          WHERE t.store_id = s.id AND t.seller_id IS NOT DISTINCT FROM u.id AND t.type NOT IN ('revenue','platform_fee','ads') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}),0) cost
+          WHERE t.store_id = s.id AND t.seller_id IS NOT DISTINCT FROM u.id AND t.type NOT IN ('revenue','platform_fee','ads') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${txLive}${fltT}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id LEFT JOIN users u ON u.id = o.seller_at_order
       WHERE ${ordersWhere}
       GROUP BY s.id, s.name, s.marketplace, u.id, u.full_name ORDER BY rev DESC`),
@@ -104,9 +127,9 @@ export async function GET(req: NextRequest) {
       SELECT s.marketplace,
         coalesce(sum(o.total),0) rev,
         coalesce(sum(o.platform_fee),0) - coalesce((SELECT sum(t.amount) FROM transactions t JOIN stores s2 ON s2.id = t.store_id
-          WHERE s2.marketplace = s.marketplace AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}),0) fee,
+          WHERE s2.marketplace = s.marketplace AND t.type = 'platform_fee' AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}${fltT}),0) fee,
         coalesce((SELECT sum(t.amount) FROM transactions t JOIN stores s2 ON s2.id = t.store_id
-          WHERE s2.marketplace = s.marketplace AND t.type NOT IN ('revenue','platform_fee','ads') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}),0) cost
+          WHERE s2.marketplace = s.marketplace AND t.type NOT IN ('revenue','platform_fee','ads') AND t.occurred_at >= ${FROM} AND t.occurred_at <= ${TO}${inTxSeller}${txLive}${fltT}),0) cost
       FROM orders o JOIN stores s ON s.id = o.store_id
       WHERE ${ordersWhere}
       GROUP BY 1 ORDER BY rev DESC`),
@@ -114,7 +137,7 @@ export async function GET(req: NextRequest) {
     // cho cùng nhà in. Đơn đẩy sang 2 nhà khác nhau sẽ xuất hiện ở cả 2 hàng (đúng bản chất).
     // Bỏ bản ghi đẩy đã cancelled (không tính chi phí).
     db.execute(sql`
-      SELECT f.name,
+      SELECT f.id, f.name,
         count(*)::int orders,
         coalesce(sum(x.cost),0) cost,
         coalesce(sum(x.rev),0) rev,
@@ -125,11 +148,11 @@ export async function GET(req: NextRequest) {
           max(o.total) rev, max(o.platform_fee) fee
         FROM fulfillment_orders ffo
         JOIN orders o ON o.id = ffo.order_id
-        WHERE ${ordersWhere} AND ffo.status <> 'cancelled'
+        WHERE ${ordersWhere} AND ffo.status <> 'cancelled'${fSupplier ? sql` AND ffo.fulfiller_id = ${fSupplier}::uuid` : sql``}
         GROUP BY 1,2
       ) x
       JOIN fulfillers f ON f.id = x.fid
-      GROUP BY f.name ORDER BY cost DESC`),
+      GROUP BY f.id, f.name ORDER BY cost DESC`),
   ]);
 
   // ═══ v632 · CHI PHÍ ADS (Meta) — spend thật từ meta_insights, gán seller qua meta_ad_sellers
@@ -138,9 +161,14 @@ export async function GET(req: NextRequest) {
   let adsAuto = 0;
   const adsDailyMap = new Map<string, number>();
   let adsBySellerRows: { sid: string | null; name: string; spend: number }[] = [];
+  // v638 · lọc seller → chỉ tính ads của seller đó (giao với scope); lọc store/platform/supplier
+  // → BỎ ads (spend Meta không quy theo store/platform/supplier được — tránh số sai).
+  const adsOwnerIds = fSeller ? (ownerIds ? ownerIds.filter((x) => x === fSeller) : [fSeller]) : ownerIds;
+  const adsSkip = !!(fStore || fPlatform || fSupplier) || (adsOwnerIds !== null && adsOwnerIds.length === 0);
   try {
-    const adsWhere = ownerIds
-      ? sql`FROM meta_insights mi JOIN meta_ad_sellers mas ON mas.ad_id = mi.ad_id WHERE mi.day >= ${startISO} AND mi.day <= ${endISO} AND mas.seller_id IN (${sql.join(ownerIds.map((x) => sql`${x}::uuid`), sql`, `)})`
+    if (adsSkip) throw new Error("ads-skip");
+    const adsWhere = adsOwnerIds
+      ? sql`FROM meta_insights mi JOIN meta_ad_sellers mas ON mas.ad_id = mi.ad_id WHERE mi.day >= ${startISO} AND mi.day <= ${endISO} AND mas.seller_id IN (${sql.join(adsOwnerIds.map((x) => sql`${x}::uuid`), sql`, `)})`
       : sql`FROM meta_insights mi LEFT JOIN meta_ad_sellers mas ON mas.ad_id = mi.ad_id WHERE mi.day >= ${startISO} AND mi.day <= ${endISO}`;
     const [aTot, aDly, aSel] = await Promise.all([
       db.execute(sql`SELECT coalesce(sum(mi.spend),0) s ${adsWhere}`),

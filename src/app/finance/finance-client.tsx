@@ -36,10 +36,39 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
   const [msg, setMsg] = useState("");
   const [showExport, setShowExport] = useState(false);
 
+  // v638 · bộ lọc seller / store / platform / supplier — áp ở SERVER cho toàn trang (KPI, chart, bảng)
+  const [flt, setFlt] = useState({ seller: "", store: "", platform: "", supplier: "" });
+  const [opts, setOpts] = useState<{ sellers: { id: string; name: string }[]; stores: { id: string; name: string; mk: string }[]; suppliers: { id: string; name: string }[]; platforms: string[] } | null>(null);
+  const hasFlt = !!(flt.seller || flt.store || flt.platform || flt.supplier);
+
   const load = useCallback(() => {
     const q = dr ? (() => { const { from, to } = rangeToDates(dr); return `from=${from}&to=${to}`; })() : `days=${days}`;
-    fetch(`/api/finance?${q}`).then((r) => r.json()).then((j) => j.ok && setData(j));
-  }, [days, dr]);
+    const f = [
+      flt.seller && `seller=${flt.seller}`, flt.store && `store=${flt.store}`,
+      flt.platform && `platform=${flt.platform}`, flt.supplier && `supplier=${flt.supplier}`,
+    ].filter(Boolean).join("&");
+    fetch(`/api/finance?${q}${f ? "&" + f : ""}`).then((r) => r.json()).then((j) => {
+      if (!j.ok) return;
+      setData(j);
+      // Lần tải KHÔNG filter → gộp (union) danh sách option, để đổi khoảng ngày không làm mất lựa chọn
+      if (!f) {
+        const stores = (j.byStore as Row[]).map((r) => ({ id: String(r.id), name: String(r.store), mk: String(r.marketplace) }));
+        const sellers = (j.bySeller as Row[]).filter((s) => s.id).map((s) => ({ id: String(s.id), name: String(s.name) }));
+        const sups = (j.bySupplier as Row[]).filter((s) => s.id).map((s) => ({ id: String(s.id), name: String(s.name) }));
+        const plats = (j.byPlatform as Row[]).map((p) => String(p.marketplace));
+        setOpts((prev) => {
+          const uniq = <T extends { id: string }>(a: T[], b: T[]) => { const m = new Map(a.map((x) => [x.id, x])); for (const x of b) m.set(x.id, x); return Array.from(m.values()); };
+          const byName = (a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name);
+          return {
+            sellers: uniq(prev?.sellers ?? [], sellers).sort(byName),
+            stores: uniq(prev?.stores ?? [], stores).sort(byName),
+            suppliers: uniq(prev?.suppliers ?? [], sups).sort(byName),
+            platforms: Array.from(new Set([...(prev?.platforms ?? []), ...plats])).sort(),
+          };
+        });
+      }
+    });
+  }, [days, dr, flt]);
   useEffect(() => { load(); }, [load]);
 
   async function addTx(e: React.FormEvent) {
@@ -78,6 +107,36 @@ export function FinanceClient({ canAdd }: { canAdd: boolean }) {
         <DateRangePicker value={dr ?? { range: "30d" }} onChange={(v) => setDr(v)} align="right" allowClear onClear={() => setDr({ range: "30d" })} />
       </div>
       {showExport && <ExportCsvModal defFrom={rangeToDates(dr ?? { range: "30d" }).from} defTo={rangeToDates(dr ?? { range: "30d" }).to} close={() => setShowExport(false)} />}
+
+      {/* v638 · Bộ lọc seller / store / platform / supplier — áp cho TOÀN TRANG (KPI, chart, các bảng) */}
+      <div className="panel" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: "10px 14px", marginBottom: 12 }}>
+        <b style={{ fontSize: 12.5, marginRight: 2 }}>Filters</b>
+        <select value={flt.seller} onChange={(e) => setFlt({ ...flt, seller: e.target.value })} style={inp}>
+          <option value="">All sellers</option>
+          {(opts?.sellers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={flt.store} onChange={(e) => setFlt({ ...flt, store: e.target.value })} style={inp}>
+          <option value="">All stores</option>
+          {(opts?.stores ?? []).map((s) => <option key={s.id} value={s.id}>{s.name} ({s.mk})</option>)}
+        </select>
+        <select value={flt.platform} onChange={(e) => setFlt({ ...flt, platform: e.target.value })} style={inp}>
+          <option value="">All platforms</option>
+          {(opts?.platforms ?? ["etsy", "tiktok", "shopify", "woocommerce", "shopbase"]).map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+        <select value={flt.supplier} onChange={(e) => setFlt({ ...flt, supplier: e.target.value })} style={inp}>
+          <option value="">All suppliers</option>
+          {(opts?.suppliers ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        {hasFlt && (
+          <button onClick={() => setFlt({ seller: "", store: "", platform: "", supplier: "" })}
+            style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 9, padding: "7px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "var(--red)" }}>
+            ✕ Clear
+          </button>
+        )}
+        {(flt.store || flt.platform || flt.supplier) && (
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>Ads spend is excluded when filtering by store / platform / supplier</span>
+        )}
+      </div>
 
       {/* v632 · thêm thẻ ADS SPEND (Meta tự động + nhập tay) — 6 thẻ, đã trừ vào Profit */}
       <div className="kpis kpis-5" style={{ display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 12 }}>
