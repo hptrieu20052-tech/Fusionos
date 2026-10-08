@@ -323,7 +323,10 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     let created = 0, updated = 0, found = 0, skipped = 0, shipUpdated = 0;
     for (let round = 0; round < 80 && cursor != null; round++) {
       setMsg(`⏳ ${name}: pulling catalog page ${cursor}… (${created} new · ${updated} updated so far)`);
-      const imp = await fetch("/api/fulfillers/printway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, cursor }) }).then(readJson).catch(errJson);
+      // Khai báo kiểu TƯỜNG MINH: cursor (trong body) được gán từ imp.nextCursor ở cuối vòng →
+      // để TS tự suy luận sẽ dính TS7022 (circular) lúc build Vercel.
+      const imp: { ok?: boolean; error?: string; done?: boolean; nextCursor?: number | null; created?: number; updated?: number; found?: number; skipped?: number; shipUpdated?: number } =
+        await fetch("/api/fulfillers/printway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, cursor }) }).then(readJson).catch(errJson);
       if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku")) + (created + updated > 0 ? ` · saved so far: ${created} new, ${updated} updated — click Update SKU to continue` : "")); refresh(); return; }
       created += Number(imp.created ?? 0); updated += Number(imp.updated ?? 0);
       found += Number(imp.found ?? 0); skipped += Number(imp.skipped ?? 0); shipUpdated += Number(imp.shipUpdated ?? 0);
