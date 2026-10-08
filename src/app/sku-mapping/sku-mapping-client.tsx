@@ -314,13 +314,24 @@ export function SkuMappingClient({ canEdit }: { canEdit: boolean }) {
     if (imp.note) await askPrompt({ title: "Hogoto response sample", message: "Copy this and send to admin:", confirmText: "Done", input: { initial: String(imp.note) } });
   }
 
-  // Kéo catalog SKU Printway (GET /products/list-sku-catalogs) → thêm mapping mới
+  // Kéo catalog SKU Printway (GET /products/list-sku-catalogs) → thêm mapping mới.
+  // v639 · catalog ~42k dòng → server xử lý THEO CHUYẾN (mỗi chuyến ~10 trang, trả { done, nextCursor })
+  // — client tự gọi lặp đến khi done, hiện tiến độ. Hết 1 cục trong 1 request như cũ là dính 504 Cloudflare.
   async function getSkuPrintway() {
-    setMsg(t("sk.pullingFrom").replace("{name}", ffs.find((f) => f.id === active)?.name ?? "Printway"));
-    const imp = await fetch("/api/fulfillers/printway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active }) }).then(readJson).catch(errJson);
-    if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku"))); return; }
+    const name = ffs.find((f) => f.id === active)?.name ?? "Printway";
+    let cursor: number | null = 1;
+    let created = 0, updated = 0, found = 0, skipped = 0, shipUpdated = 0;
+    for (let round = 0; round < 80 && cursor != null; round++) {
+      setMsg(`⏳ ${name}: pulling catalog page ${cursor}… (${created} new · ${updated} updated so far)`);
+      const imp = await fetch("/api/fulfillers/printway-import-skus", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fulfillerId: active, cursor }) }).then(readJson).catch(errJson);
+      if (!imp.ok) { setMsg("⚠ " + (imp.error ?? t("sk.errPullSku")) + (created + updated > 0 ? ` · saved so far: ${created} new, ${updated} updated — click Update SKU to continue` : "")); refresh(); return; }
+      created += Number(imp.created ?? 0); updated += Number(imp.updated ?? 0);
+      found += Number(imp.found ?? 0); skipped += Number(imp.skipped ?? 0); shipUpdated += Number(imp.shipUpdated ?? 0);
+      if (imp.done) { cursor = null; break; }
+      cursor = Number(imp.nextCursor ?? (Number(cursor) + 1));
+    }
     refresh();
-    setMsg(t("sk.addedNew").replace("{n}", String(imp.created)) + ` · ${imp.found} found, ${imp.skipped} skipped`);
+    setMsg(t("sk.addedNew").replace("{n}", String(created)) + ` · ${found} found, ${updated} updated, ${skipped} skipped` + (shipUpdated ? ` · ${shipUpdated} ship costs filled` : ""));
   }
 
   // Kéo catalog ONOS (GET /products) → thêm mapping mới (variant = Color / Size)

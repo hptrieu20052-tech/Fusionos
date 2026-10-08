@@ -904,7 +904,8 @@ function printifyAdapter(): FulfillerAdapter {
       }));
       const res = await createOrderFromProducts(token, shopId, extNumber, lineItems, address);
       // Không fetch chi phí ở đây (chậm) — base/ship/tax + tracking sẽ về tự động qua webhook Printify.
-      return { externalFfId: res.orderId, simulated: false, raw: res.raw };
+      // v639 · reused = lần đẩy trước đã tạo đơn bên Printify (mình nhận 500/timeout) → link, không đúp.
+      return { externalFfId: res.orderId, simulated: false, raw: res.raw, reason: res.reused ? "Order already existed on Printify (recovered after a failed attempt) — linked to it, no duplicate created" : undefined };
     },
   };
 }

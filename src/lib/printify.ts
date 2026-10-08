@@ -217,7 +217,36 @@ export async function createProduct(token: string, shopId: string | number, inp:
   return { productId: j.id, variantId: inp.variantId };
 }
 
-/** Tạo đơn từ product đã tạo. line_items: [{ product_id, variant_id, quantity }]. */
+const pfSleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Tìm đơn Printify theo external_id (quét 3 trang đơn mới nhất). Dùng sau lỗi MƠ HỒ
+ * (500/timeout): đơn có thể đã được tạo bên Printify dù mình nhận lỗi → link vào, không tạo đúp.
+ */
+export async function findPrintifyOrderByExternalId(token: string, shopId: string | number, externalId: string): Promise<{ orderId: string; raw: unknown } | null> {
+  try {
+    for (let page = 1; page <= 3; page++) {
+      const res = await fetch(`${BASE}/shops/${shopId}/orders.json?limit=10&page=${page}`, { headers: headers(token), cache: "no-store" });
+      if (!res.ok) return null;
+      const j = (await res.json()) as { data?: Record<string, unknown>[] };
+      const list = Array.isArray(j.data) ? j.data : [];
+      for (const o of list) {
+        const md = (o.metadata ?? {}) as Record<string, unknown>;
+        const ids = [o.external_id, md.shop_order_id, md.shop_order_label].map((x) => String(x ?? ""));
+        if (ids.includes(externalId)) return { orderId: String(o.id ?? ""), raw: o };
+      }
+      if (list.length < 10) break;
+    }
+  } catch { /* best-effort */ }
+  return null;
+}
+
+/**
+ * Tạo đơn từ product đã tạo. line_items: [{ product_id, variant_id, quantity }].
+ * v639 · Printify thỉnh thoảng trả 500 "Internal Server Error" (lỗi tạm PHÍA PRINTIFY, có request_id)
+ * → retry tối đa 3 lần (backoff 2s/4s). Trước mỗi lần retry và trước khi chịu thua: tìm đơn theo
+ * external_id — nếu lần gọi trước thực ra ĐÃ tạo được thì trả về đơn đó (reused=true), không tạo đúp.
+ */
 export async function createOrderFromProducts(
   token: string, shopId: string | number,
   externalId: string,
@@ -226,7 +255,7 @@ export async function createOrderFromProducts(
     first_name: string; last_name: string; email?: string; phone?: string;
     country: string; region?: string; address1: string; address2?: string; city: string; zip: string;
   },
-): Promise<{ orderId: string; raw: unknown }> {
+): Promise<{ orderId: string; raw: unknown; reused?: boolean }> {
   const body = {
     external_id: externalId,
     label: externalId,
@@ -241,18 +270,42 @@ export async function createOrderFromProducts(
       city: address.city || "", zip: address.zip || "",
     },
   };
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}/shops/${shopId}/orders.json`, {
-      method: "POST", headers: headers(token), body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30000),
-    });
-  } catch (e) {
-    throw new Error(`Printify create order timeout/lỗi mạng: ${String((e as Error)?.message ?? e)}`);
+  let lastErr = "";
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    // Lần retry: kiểm tra đơn đã tồn tại chưa (lần trước có thể tạo xong mà response lỗi/đứt)
+    if (attempt > 1) {
+      const existed = await findPrintifyOrderByExternalId(token, shopId, externalId);
+      if (existed) return { ...existed, reused: true };
+    }
+    let res: Response;
+    try {
+      res = await fetch(`${BASE}/shops/${shopId}/orders.json`, {
+        method: "POST", headers: headers(token), body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (e) {
+      lastErr = `Printify create order timeout/lỗi mạng: ${String((e as Error)?.message ?? e)}`;
+      if (attempt < 3) await pfSleep(2000 * attempt);
+      continue;
+    }
+    const text = await res.text();
+    if (res.ok) {
+      const j = (text ? JSON.parse(text) : {}) as { id: string };
+      return { orderId: String(j.id ?? ""), raw: j };
+    }
+    lastErr = `Printify create order HTTP ${res.status}: ${text.slice(0, 300)}`;
+    // 400 kiểu "external_id already exists" → đơn đã có bên Printify → link vào
+    if (res.status === 400 && /exist|duplicate|already/i.test(text)) {
+      const existed = await findPrintifyOrderByExternalId(token, shopId, externalId);
+      if (existed) return { ...existed, reused: true };
+    }
+    if (res.status < 500) break; // 4xx thật (payload sai...) → không retry
+    if (attempt < 3) await pfSleep(2000 * attempt);
   }
-  if (!res.ok) throw new Error(`Printify create order HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const j = (await res.json()) as { id: string };
-  return { orderId: j.id, raw: j };
+  // Hết lượt — kiểm tra lần cuối trước khi báo lỗi (phòng đơn đã tạo ở lần bị đứt response)
+  const existed = await findPrintifyOrderByExternalId(token, shopId, externalId);
+  if (existed) return { ...existed, reused: true };
+  throw new Error(lastErr || "Printify create order failed");
 }
 
 /** Liệt kê webhook đang có của shop. */
