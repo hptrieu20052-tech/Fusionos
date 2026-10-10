@@ -284,6 +284,7 @@ export async function pushWooTrackingForOrder(orderId: string): Promise<{ pushed
   }).from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
   if (!o) return { pushed: 0, reason: "order not found" };
   if (String(o.platform) !== "woocommerce") return { pushed: 0, reason: "not a WooCommerce order" };
+  if (!o.storeId) return { pushed: 0, reason: "order has no store" }; // storeId nullable trong schema
 
   const [st] = await db.select({ cred: schema.stores.apiCredentials }).from(schema.stores).where(eq(schema.stores.id, o.storeId)).limit(1);
   const cred = (((st?.cred ?? {}) as Record<string, unknown>).woocommerce ?? null) as WooCred | null;
