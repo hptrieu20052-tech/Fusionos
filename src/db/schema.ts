@@ -850,6 +850,12 @@ export const fulfillmentOrders = pgTable("fulfillment_orders", {
   shopifyPushError: text("shopify_push_error"),
   shopifyPushAttempts: integer("shopify_push_attempts").notNull().default(0),
   shopifyPushNextAt: timestamp("shopify_push_next_at", { withTimezone: true }),
+  // v641 · Thời điểm đã đẩy tracking + set completed NGƯỢC lên WooCommerce. null = chưa đẩy.
+  // Cùng bộ 3 cột backoff như TikTok/Shopify — đơn hỏng không bị quét lại mỗi vòng cron.
+  wooTrackingPushedAt: timestamp("woo_tracking_pushed_at", { withTimezone: true }),
+  wooPushError: text("woo_push_error"),
+  wooPushAttempts: integer("woo_push_attempts").notNull().default(0),
+  wooPushNextAt: timestamp("woo_push_next_at", { withTimezone: true }),
   errorMessage: text("error_message"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("idx_ff_order").on(t.orderId)]);

@@ -268,3 +268,76 @@ export async function backfillWooItemImages(storeId: string, cred: WooCred): Pro
   }
   return { scanned: rows.length, filled };
 }
+
+/**
+ * v641 · Đẩy tracking NGƯỢC lên WooCommerce cho 1 đơn (như Etsy/TikTok/Shopify):
+ * - Mỗi bản ghi fulfillment có tracking mà chưa đẩy → thêm ORDER NOTE customer-facing
+ *   (khách nhận email kèm carrier + số tracking + link) rồi đóng dấu woo_tracking_pushed_at.
+ * - Khi MỌI bản ghi đẩy sống của đơn đã có tracking đẩy xong → set đơn "completed" trên Woo
+ *   (Woo tự gửi mail Order complete) + ghi meta _tracking_number/_tracking_provider/_tracking_url.
+ * - Lỗi → lưu woo_push_error + backoff (10' × 2^lần, trần 12h) để cron không quét lại mỗi vòng.
+ */
+export async function pushWooTrackingForOrder(orderId: string): Promise<{ pushed: number; reason?: string; errors?: string[] }> {
+  const [o] = await db.select({
+    id: schema.orders.id, externalId: schema.orders.externalId,
+    storeId: schema.orders.storeId, platform: schema.orders.platform,
+  }).from(schema.orders).where(eq(schema.orders.id, orderId)).limit(1);
+  if (!o) return { pushed: 0, reason: "order not found" };
+  if (String(o.platform) !== "woocommerce") return { pushed: 0, reason: "not a WooCommerce order" };
+
+  const [st] = await db.select({ cred: schema.stores.credentials }).from(schema.stores).where(eq(schema.stores.id, o.storeId)).limit(1);
+  const cred = (((st?.cred ?? {}) as Record<string, unknown>).woocommerce ?? null) as WooCred | null;
+  if (!wooConfigured(cred)) return { pushed: 0, reason: "store missing WooCommerce API credentials" };
+  const wooOrderId = strv(o.externalId);
+  if (!/^\d+$/.test(wooOrderId)) return { pushed: 0, reason: `external_id "${wooOrderId}" is not a Woo order id` };
+
+  const fos = await db.select().from(schema.fulfillmentOrders).where(eq(schema.fulfillmentOrders.orderId, orderId));
+  const live = fos.filter((f) => String(f.status) !== "cancelled");
+  const pending = live.filter((f) => strv(f.trackingNumber) && !f.wooTrackingPushedAt);
+  if (!pending.length) return { pushed: 0, reason: "no new tracking to push" };
+
+  let pushed = 0;
+  const errors: string[] = [];
+  const okIds = new Set<string>();
+  for (const fo of pending) {
+    try {
+      const carrier = strv(fo.trackingCarrier) || "Carrier";
+      const turl = strv(fo.trackingUrl);
+      const note = `Your order has been shipped via ${carrier}. Tracking number: ${strv(fo.trackingNumber)}${turl ? ` — track your package: ${turl}` : ""}`;
+      await wooApi(cred!, `orders/${wooOrderId}/notes`, { method: "POST", body: JSON.stringify({ note, customer_note: true }) });
+      await db.update(schema.fulfillmentOrders).set({ wooTrackingPushedAt: new Date(), wooPushError: null }).where(eq(schema.fulfillmentOrders.id, fo.id));
+      okIds.add(String(fo.id));
+      pushed++;
+    } catch (e) {
+      const msg = String((e as Error)?.message ?? e).slice(0, 300);
+      errors.push(msg);
+      const attempts = Number(fo.wooPushAttempts ?? 0) + 1;
+      const delayMin = Math.min(10 * 2 ** Math.min(attempts, 6), 720);
+      await db.update(schema.fulfillmentOrders).set({
+        wooPushError: msg, wooPushAttempts: attempts, wooPushNextAt: new Date(Date.now() + delayMin * 60000),
+      }).where(eq(schema.fulfillmentOrders.id, fo.id)).catch(() => { /* cột chưa migrate → bỏ qua */ });
+    }
+  }
+
+  // Mọi bản ghi sống đã đẩy xong tracking → set completed + meta tracking (lấy theo bản ghi đầu tiên)
+  const allDone = live.every((f) => f.wooTrackingPushedAt || okIds.has(String(f.id)));
+  if (pushed > 0 && allDone) {
+    try {
+      const f0 = pending[0];
+      await wooApi(cred!, `orders/${wooOrderId}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          status: "completed",
+          meta_data: [
+            { key: "_tracking_number", value: strv(f0.trackingNumber) },
+            { key: "_tracking_provider", value: strv(f0.trackingCarrier) },
+            { key: "_tracking_url", value: strv(f0.trackingUrl) },
+          ],
+        }),
+      });
+    } catch (e) {
+      errors.push(`set completed: ${String((e as Error)?.message ?? e).slice(0, 200)}`);
+    }
+  }
+  return { pushed, errors: errors.length ? errors : undefined };
+}
