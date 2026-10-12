@@ -197,12 +197,9 @@ export async function GET(req: NextRequest) {
       categoryName: (r.p.category as { name?: string } | null)?.name ?? "",
       collectionTitles: (Array.isArray(r.p.collections) ? r.p.collections as { title: string }[] : []).map((c) => c.title).filter(Boolean),
       variantCount: vs.length, minPrice: prices.length ? Math.min(...prices) : null, maxPrice: prices.length ? Math.max(...prices) : null,
-      // v644 · GMC item id: shopify_ZZ_<productId>_<variantId> — TRÙNG TUYỆT ĐỐI format feed chính
+      // v644 · GMC item_group_id: shopify_ZZ_<productId> — TRÙNG TUYỆT ĐỐI format feed chính
       // (audit 03/08: id = shopify_ZZ_..., KHÔNG phải US). Chỉ có khi listing đã lên Shopify.
       gmcGroupId: r.p.shopifyProductId ? `shopify_ZZ_${pidNum(r.p.shopifyProductId)}` : null,
-      gmcIds: r.p.shopifyProductId
-        ? vs.map((v) => `shopify_ZZ_${pidNum(r.p.shopifyProductId)}_${pidNum(v.id)}`).filter((s) => !/_0$/.test(s))
-        : [],
       mainImage: imgs[0]?.src ?? null, imageCount: imgs.length,
       // v234 · tất cả URL ảnh (theo position) để lightbox trượt qua lại cả listing.
       imageUrls: [...imgs].sort((a, b) => (a.position ?? 99) - (b.position ?? 99)).map((i) => i.src).filter(Boolean),

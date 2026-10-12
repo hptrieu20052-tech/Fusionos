@@ -14,8 +14,8 @@ type Row = {
   createdBy?: string | null; creatorName?: string | null; // v567 · chủ listing (created_by)
   title: string; handle: string | null; status: string; dirty: boolean;
   variantCount: number; minPrice: number | null; maxPrice: number | null;
-  // v644 · GMC item ids (shopify_ZZ_<pid>[_<vid>]) — null/[] khi listing chưa lên Shopify
-  gmcGroupId: string | null; gmcIds?: string[];
+  // v644 · GMC item_group_id (shopify_ZZ_<pid>) — null khi listing chưa lên Shopify
+  gmcGroupId: string | null;
   mainImage: string | null; imageCount: number; imageUrls?: string[]; onlineStoreUrl: string | null;
   videoCode: number | null; videoThumbUrl: string | null; videoPushed: boolean;
   totalInventory: number | null; optionsSummary: string;
@@ -2016,11 +2016,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         style={{ color: "var(--muted)", cursor: "pointer", textDecorationLine: "underline", textDecorationStyle: "dotted" }}>
                         <span style={{ opacity: .55, textDecorationLine: "none" }}>GMC</span> …{String(r.gmcGroupId).replace("shopify_ZZ_", "")}
                       </span>
-                    )}
-                    {(r.gmcIds?.length ?? 0) > 0 && (
-                      <span onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.gmcIds!.join("\n")); flash(`✓ Copied ${r.gmcIds!.length} GMC variant id(s)`, true); }}
-                        title={"Copy ALL variant item ids (1 per line):\n" + r.gmcIds!.join("\n")}
-                        style={{ cursor: "pointer", color: "var(--blue)", fontWeight: 700 }}>⧉{r.gmcIds!.length}</span>
                     )}
                   </div>
                 </td>
