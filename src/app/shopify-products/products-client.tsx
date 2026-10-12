@@ -14,6 +14,8 @@ type Row = {
   createdBy?: string | null; creatorName?: string | null; // v567 · chủ listing (created_by)
   title: string; handle: string | null; status: string; dirty: boolean;
   variantCount: number; minPrice: number | null; maxPrice: number | null;
+  // v644 · GMC item ids (shopify_ZZ_<pid>[_<vid>]) — null/[] khi listing chưa lên Shopify
+  gmcGroupId: string | null; gmcIds?: string[];
   mainImage: string | null; imageCount: number; imageUrls?: string[]; onlineStoreUrl: string | null;
   videoCode: number | null; videoThumbUrl: string | null; videoPushed: boolean;
   totalInventory: number | null; optionsSummary: string;
@@ -2005,6 +2007,22 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     style={{ fontSize: 10.5, color: "var(--muted)", cursor: "pointer", fontFamily: "monospace", marginTop: 2, display: "inline-flex", alignItems: "center", gap: 4 }}>
                     <span style={{ opacity: .55 }}>ID</span> {r.id}
                   </div>
+                  {/* v644 · GMC item id (shopify_ZZ_<pid>_<vid> — đúng format feed). Click group id = copy;
+                      chip "⧉ n variant ids" = copy đủ id từng variant (mỗi dòng 1 id) để dán vào GMC/sheet. */}
+                  {r.gmcGroupId && (
+                    <div style={{ fontSize: 10.5, fontFamily: "monospace", marginTop: 1, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ opacity: .55, color: "var(--muted)" }}>GMC</span>
+                      <span onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.gmcGroupId!); flash("✓ Copied " + r.gmcGroupId, true); }}
+                        title="item_group_id — click to copy" style={{ cursor: "pointer", color: "var(--muted)", textDecorationLine: "underline", textDecorationStyle: "dotted" }}>
+                        {r.gmcGroupId}
+                      </span>
+                      {(r.gmcIds?.length ?? 0) > 0 && (
+                        <span onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.gmcIds!.join("\n")); flash(`✓ Copied ${r.gmcIds!.length} GMC variant id(s)`, true); }}
+                          title={"Copy ALL variant item ids (1 per line):\n" + r.gmcIds!.join("\n")}
+                          style={{ cursor: "pointer", color: "var(--blue)", fontWeight: 700 }}>⧉ {r.gmcIds!.length} ids</span>
+                      )}
+                    </div>
+                  )}
                 </td>
                 {isAdmin && (<>
                 {/* v597 · fallback thêm seller của listing Etsy gốc (đồng bộ với filter Seller) — chỉ khi
