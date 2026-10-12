@@ -2010,7 +2010,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       title={`${r.id}\nClick to copy FUSION product ID`} style={{ color: "var(--muted)", cursor: "pointer" }}>
                       <span style={{ opacity: .55 }}>ID</span> {r.id.slice(0, 8)}…
                     </span>
-                    {r.gmcGroupId && (
+                    {/* v647 · GMC chỉ hiện cho ADMIN — seller không làm việc với Merchant Center */}
+                    {isAdmin && r.gmcGroupId && (
                       <span onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(r.gmcGroupId!); flash("✓ Copied " + r.gmcGroupId, true); }}
                         title={`${r.gmcGroupId}\nitem_group_id — click to copy`}
                         style={{ color: "var(--muted)", cursor: "pointer", textDecorationLine: "underline", textDecorationStyle: "dotted" }}>
