@@ -21,6 +21,8 @@ const sideLabel = (t: (k: string) => string): Record<string, string> => ({
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.mo" + (i + 1))])),
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`grid_${pad2(i + 1)}`, t("dz.gridOf").replace("{m}", t("dz.mo" + (i + 1)))])),
   ...Object.fromEntries(Array.from({ length: 24 }, (_, i) => [`page_${pad2(i + 1)}`, t("dz.page").replace("{n}", String(i + 1))])),
+  // v650 · Board Book: 10 spread (file ngang 2 trang) — nhãn khớp editor Printify (Spread 1..10)
+  ...Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`spread_${pad2(i + 1)}`, `Spread ${i + 1}`])),
   // Viết tắt DST — nhãn dài bị cắt mất chữ trong ô "Add print face".
   emb_front: "DST Front", emb_back: "DST Back",
   emb_left: "DST Left", emb_right: "DST Right", emb_center: "DST Center",
@@ -36,6 +38,9 @@ const sideGroups = (t: (k: string) => string): { group: string; sides: string[] 
   // design NGUYÊN KHỔ ngang, lưới lịch designer tự vẽ trong design), KHÔNG có bìa sau. Dùng lại kind sẵn có.
   { group: "Desktop Calendar (Blank)", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`)] },
   { group: t("dz.photoBookHard"), sides: ["book_cover", ...bookPages] },
+  // v650 · Board Book (Printify): Cover (1 file trùm back cover + spine + front cover, chừa ô QR
+  // góc dưới-phải bìa sau) + Spread 1..10 — mỗi spread 1 file ngang phủ trọn 2 trang.
+  { group: "Board Book", sides: ["book_cover", ...Array.from({ length: 10 }, (_, i) => `spread_${pad2(i + 1)}`)] },
   // Đơn thêu: 1 vị trí = ảnh design (mặt ở nhóm trên) + file máy thêu .dst/.emb ở nhóm này.
   { group: "Embroidery (.DST)", sides: [...EMB_KINDS] },
 ]);
@@ -357,8 +362,8 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
       return embAlias[base] ?? "emb_center";
     }
     if (DESIGN_KINDS.includes(base)) return base;
-    // page1 / page_1 / page01 → page_01 (cả month/grid)
-    const m = base.match(/^(page|month|grid)_?0*(\d{1,2})$/);
+    // page1 / page_1 / page01 → page_01 (cả month/grid/spread — v650 Board Book)
+    const m = base.match(/^(page|month|grid|spread)_?0*(\d{1,2})$/);
     if (m) { const k = `${m[1]}_${String(m[2]).padStart(2, "0")}`; if (DESIGN_KINDS.includes(k)) return k; }
     // vài alias hay gặp. "cover" (trơn) = bìa sách (book_cover, hiện tên "Cover"); "cover front" khớp trực tiếp cover_front ở trên.
     const alias: Record<string, string> = { front: "design_front", back: "design_back", cover: "book_cover", bookcover: "book_cover", coverfront: "cover_front", frontside: "design_front", backside: "design_back", bia: "book_cover" };

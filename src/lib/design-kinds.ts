@@ -19,6 +19,9 @@ export const DESIGN_KINDS: string[] = [
   // Wall Calendars (Blank): dùng lại cover_front / month_01..12 / back_cover, chỉ thêm 12 mặt lưới lịch
   ...Array.from({ length: 12 }, (_, i) => `grid_${pad2(i + 1)}`),
   ...Array.from({ length: 24 }, (_, i) => `page_${pad2(i + 1)}`),
+  // v650 · Board Book (Printify): bìa dùng lại book_cover (1 file trùm back cover + spine + front cover),
+  // ruột = 10 spread — mỗi spread là 1 file NGANG phủ trọn 2 trang mở ra.
+  ...Array.from({ length: 10 }, (_, i) => `spread_${pad2(i + 1)}`),
 ];
 
 export const isDesignKind = (k: unknown): k is string => typeof k === "string" && DESIGN_KINDS.includes(k);
