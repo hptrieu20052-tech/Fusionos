@@ -15,6 +15,7 @@ export type InOrder = {
   addr1?: string; addr2?: string; city?: string; state?: string; zip?: string; country?: string;
   formattedAddress?: string; // địa chỉ đầy đủ sàn tự ghép (Copy address) — bảo hiểm không thiếu dòng
   total?: number; fee?: number; orderedAt?: string; note?: string; platformStatus?: string; shippingType?: string;
+  orderLabel?: string; // v651 · nhãn đơn đọc được (vd TALEWIX-1451 từ #1451 Shopify) — hiện trên card + search
   shippingMethod?: string; // mức ship khách chọn (Express/Standard…)
   utmSource?: string; utmMedium?: string; utmCampaign?: string; // quy đơn về video × kênh (Shopify landing_site)
   items?: InItem[];
@@ -123,6 +124,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         // mở chi tiết trên Etsy rồi Push lại là địa chỉ/total/note tự vào — không đè dữ liệu đã sửa tay).
         const patch: Record<string, unknown> = {};
         const fillIf = (col: string, cur: unknown, val: string | null) => { if (val && (!cur || String(cur).trim() === "")) patch[col] = val; };
+        fillIf("orderLabel", dup.orderLabel, s(o.orderLabel)); // v651 · backfill nhãn khi webhook sau mang theo
         fillIf("buyerFirst", dup.buyerFirst, s(o.buyerFirst));
         fillIf("buyerLast", dup.buyerLast, s(o.buyerLast));
         fillIf("addr1", dup.addr1, s(o.addr1));
@@ -306,6 +308,7 @@ export async function insertEtsyOrders(store: IngestStore, orders: InOrder[], so
         platformFee: num(o.fee) > 0 ? (num(o.fee) / fx).toFixed(2) : estFee(total / fx, feePct),
         feeEstimated: !(num(o.fee) > 0) && feePct > 0,
         buyerNote: s(o.note), // note KHÁCH → cột riêng (note nội bộ do staff tự ghi)
+        orderLabel: s(o.orderLabel), // v651 · vd TALEWIX-1451 (Shopify #1451) — null nếu nguồn không gửi
         orderedAt: new Date(),
       }).onConflictDoNothing().returning();
       if (!order) { skipped++; continue; } // request song song đã insert trước → coi như trùng
