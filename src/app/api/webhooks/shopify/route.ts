@@ -99,16 +99,16 @@ export async function POST(req: NextRequest) {
 
     // 3) Tách đơn theo seller (1 nhóm → 1 đơn; nhiều nhóm → đơn gốc + -CLONE-n, chia doanh thu theo tỉ lệ).
     const parts = splitShopifyOrderBySeller(body, (pid) => pidToSeller.get(pid) ?? null, adminSellerId);
-    // v651 · ORDER LABEL = TÊNSTORE-SỐĐƠN (Shopify #1451 → TALEWIX-1451, bản tách giữ hậu tố -CLONE-n)
-    // — hiện ngay trên card đơn + search được (orders API đã ILIKE order_label từ trước).
-    // externalId GIỮ NGUYÊN id số dài (78811221853xx) để round-trip API/fulfillment không đổi.
+    // v652 · ORDER LABEL hiện RÕ CẢ 2 ID: TÊNSTORE-SỐĐƠN-IDDÀI (Shopify #1451, id 7881122185311
+    // → TALEWIX-1451-7881122185311; bản tách mang luôn hậu tố -CLONE-n của externalId).
+    // Hiện ngay trên card đơn + search được bằng 1451 / TALEWIX-1451 / 78811221853xx (ILIKE order_label).
+    // externalId GIỮ NGUYÊN id số dài để round-trip API/fulfillment không đổi.
     const ordNum = String(body.order_number ?? "").trim() || String(body.name ?? "").replace(/^#/, "").trim();
     const storeTag = String(store.name ?? "").replace(/\s+/g, "").toUpperCase();
     if (ordNum && storeTag) {
       for (const part of parts) {
         const ext = String(part.order.externalId ?? "");
-        const cloneSuffix = ext.includes("-CLONE-") ? ext.slice(ext.indexOf("-CLONE-")) : "";
-        part.order.orderLabel = `${storeTag}-${ordNum}${cloneSuffix}`;
+        part.order.orderLabel = `${storeTag}-${ordNum}-${ext}`;
       }
     }
     const out: Record<string, unknown>[] = [];
