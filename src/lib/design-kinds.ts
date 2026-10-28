@@ -13,7 +13,10 @@ export const isEmbKind = (k: unknown): k is string => typeof k === "string" && E
 export const DESIGN_KINDS: string[] = [
   "mockup", "video",
   "design_front", "design_back", "sleeve_left", "sleeve_right",
-  // v653 · In CẦU VAI (across-shoulder, sleeve-to-sleeve): Tee 9450×2100 px · Hoodie/SW 10500×1650 px (300 PPI)
+  // v655 · In CẦU VAI theo VỊ TRÍ (khớp FlashShip): shoulder_front / shoulder_back.
+  // Size file: Tee 9450×2100 px · Hoodie/SW 10500×1650 px (300 PPI) — loại áo đơn tự biết qua variant.
+  // shoulder_tee/shoulder_hoodie là kind CŨ (v653) giữ lại cho design đã upload — picker không hiện nữa.
+  "shoulder_front", "shoulder_back",
   "shoulder_tee", "shoulder_hoodie",
   ...EMB_KINDS,
   "cover_front", "back_cover", "book_cover",

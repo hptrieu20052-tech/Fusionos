@@ -75,6 +75,9 @@ export type FsProduct = {
   printer_design_pocket_url?: string | null;
   printer_design_hood_url?: string | null;
   printer_design_neck_inner_url?: string | null;
+  // v654 · in cầu vai (DTF only — doc: "URL of shoulder front/back design image, DTF only")
+  printer_design_shoulder_front_url?: string | null;
+  printer_design_shoulder_back_url?: string | null;
   mockup_front_url?: string | null;
   mockup_back_url?: string | null;
   mockup_right_url?: string | null;

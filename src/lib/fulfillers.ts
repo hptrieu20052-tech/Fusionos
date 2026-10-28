@@ -574,6 +574,10 @@ function flashshipAdapter(): FulfillerAdapter {
         neck_inner: "printer_design_neck_inner_url",
         pocket: "printer_design_pocket_url",
         hood: "printer_design_hood_url", design_hood: "printer_design_hood_url",
+        // v654 · IN CẦU VAI (DTF only). Mặc định shoulder_tee/shoulder_hoodie = SAU LƯNG (kiểu
+        // across-shoulder phổ biến). Cần in TRƯỚC: đặt kind shoulder_front cho mặt đó trên design card.
+        shoulder_tee: "printer_design_shoulder_back_url", shoulder_hoodie: "printer_design_shoulder_back_url",
+        shoulder_back: "printer_design_shoulder_back_url", shoulder_front: "printer_design_shoulder_front_url",
       };
       const products: FsProduct[] = ctx.lines.map((l) => {
         const p: FsProduct = { variant_id: Number(l.fulfillerSku) || 0, quantity: l.qty, printType };

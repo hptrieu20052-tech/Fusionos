@@ -17,8 +17,10 @@ const bookPages = Array.from({ length: 24 }, (_, i) => `page_${pad2(i + 1)}`);
 // Nhãn hiển thị cho mọi mặt in. Ưu tiên nhãn này rồi mới đến i18n.
 const sideLabel = (t: (k: string) => string): Record<string, string> => ({
   design_front: "Front side", design_back: "Back side", sleeve_left: t("dz.sleeveLeft"), sleeve_right: t("dz.sleeveRight"),
-  // v653 · in cầu vai — nhãn kèm size chuẩn (300 PPI) để designer khỏi tra bảng
-  shoulder_tee: "Shoulder Tee (9450×2100)", shoulder_hoodie: "Shoulder Hoodie/SW (10500×1650)",
+  // v655 · in cầu vai theo VỊ TRÍ. Size file: Tee 9450×2100 · Hoodie/SW 10500×1650 (300 PPI)
+  shoulder_front: "Shoulder Front", shoulder_back: "Shoulder Back",
+  // kind cũ v653 (design đã upload trước đó) — chỉ để hiển thị, picker không còn
+  shoulder_tee: "Shoulder Tee (old)", shoulder_hoodie: "Shoulder Hoodie (old)",
   cover_front: t("dz.coverFront"), back_cover: t("dz.coverBack"), book_cover: t("dz.cover"),
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, t("dz.mo" + (i + 1))])),
   ...Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`grid_${pad2(i + 1)}`, t("dz.gridOf").replace("{m}", t("dz.mo" + (i + 1)))])),
@@ -32,7 +34,7 @@ const sideLabel = (t: (k: string) => string): Record<string, string> => ({
 });
 // Nhóm mặt in để thêm (theo loại sản phẩm)
 const sideGroups = (t: (k: string) => string): { group: string; sides: string[] }[] => ([
-  { group: t("dz.groupShirt"), sides: ["design_front", "design_back", "sleeve_left", "sleeve_right", "shoulder_tee", "shoulder_hoodie"] },
+  { group: t("dz.groupShirt"), sides: ["design_front", "design_back", "sleeve_left", "sleeve_right", "shoulder_front", "shoulder_back"] },
   { group: "Wall Calendars", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => `month_${pad2(i + 1)}`), "back_cover"] },
   // Wall Calendars (Blank): bìa trước → (tháng + lưới) x12 → bìa sau. Dùng lại tên mặt đã có, chỉ thêm grid_01..12.
   { group: "Wall Calendars (Blank)", sides: ["cover_front", ...Array.from({ length: 12 }, (_, i) => [`month_${pad2(i + 1)}`, `grid_${pad2(i + 1)}`]).flat(), "back_cover"] },
@@ -370,9 +372,10 @@ function DetailModal({ detail, canEdit, close, reload, reopen, flash, doUpload }
     // vài alias hay gặp. "cover" (trơn) = bìa sách (book_cover, hiện tên "Cover"); "cover front" khớp trực tiếp cover_front ở trên.
     const alias: Record<string, string> = {
       front: "design_front", back: "design_back", cover: "book_cover", bookcover: "book_cover", coverfront: "cover_front", frontside: "design_front", backside: "design_back", bia: "book_cover",
-      // v653 · in cầu vai: "cau vai tshirt.png" / "shoulder hoodie.png"… → đúng mặt
-      cau_vai_tshirt: "shoulder_tee", cau_vai_tee: "shoulder_tee", cauvai_tshirt: "shoulder_tee", shoulder_tshirt: "shoulder_tee",
-      cau_vai_hoodie: "shoulder_hoodie", cau_vai_sweatshirt: "shoulder_hoodie", cauvai_hoodie: "shoulder_hoodie", shoulder_sweatshirt: "shoulder_hoodie", shoulder_sw: "shoulder_hoodie",
+      // v655 · in cầu vai theo vị trí: "shoulder front.png" khớp thẳng; alias tiếng Việt + mặc định SAU LƯNG
+      cau_vai_truoc: "shoulder_front", cauvai_truoc: "shoulder_front", cau_vai_front: "shoulder_front",
+      cau_vai_sau: "shoulder_back", cauvai_sau: "shoulder_back", cau_vai_back: "shoulder_back",
+      cau_vai: "shoulder_back", cauvai: "shoulder_back", shoulder: "shoulder_back",
     };
     if (alias[base] && DESIGN_KINDS.includes(alias[base])) return alias[base];
     // số trần "1".."24" hoặc "p1" / "pg1" / "trang1" → page_NN
