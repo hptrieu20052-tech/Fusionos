@@ -1,6 +1,6 @@
 "use client";
 import { AmazonLogo } from "@/components/amazon-logo";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useConfirm, usePrompt } from "@/components/confirm-provider";
 import ThumbZoom from "@/components/thumb-zoom";
 // v142: editor Custom options dùng chung với Edit listing và màn Etsy — 1 bản duy nhất.
@@ -286,6 +286,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       localStorage.setItem("adskit.texts", JSON.stringify(all));
     } catch { /* ignore */ }
   };
+  // v656 · chạy ads trên POST CÓ SẴN của page: map sản phẩm → post id (trống = dark post mới như cũ).
+  const [kitPost, setKitPost] = useState<Record<string, string>>({});
+  const [pagePosts, setPagePosts] = useState<{ id: string; label: string }[] | null>([]);
+  const pagePostsLoaded = useRef(false);
+  const loadPagePosts = async () => {
+    if (pagePostsLoaded.current) return;
+    pagePostsLoaded.current = true;
+    setPagePosts(null); // null = đang tải
+    const j = await fetch("/api/meta-ads/page-posts").then((r) => r.json()).catch(() => ({ ok: false }));
+    setPagePosts(j.ok ? (j.posts as { id: string; label: string }[]) : []);
+    if (!j.ok) flash("✗ Can't load page posts: " + (j.error ?? "error"), false);
+  };
   // v455 · AI viết primary/headline (model chọn ở kit) — kết quả đổ vào ô sửa + nhớ localStorage.
   const [kitAi, setKitAi] = useState<Set<string>>(new Set());
   const kitAiGen = async (ids: string[]) => {
@@ -420,7 +432,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     setKitBusy(true);
     try {
       try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, ai: kitAdsetId, as: kitAdsets.map((x) => ({ n: x.name, b: x.budget })), g1: kitAgeMin, g2: kitAgeMax, co: kitCountries, st: kitStartTime })); } catch { /* ignore */ }
-      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "", adset: kitItemAdset[r.id] || (kitAdsets.find((x) => x.name.trim())?.name ?? "") }));
+      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "", adset: kitItemAdset[r.id] || (kitAdsets.find((x) => x.name.trim())?.name ?? ""), postId: (kitPost[r.id] ?? "").trim() }));
       const j = await postJSON("/api/meta-ads/push", {
         campaign: kitCampaign, campaignId: kitCampId, adsetPrefix: kitAdset, budget: Number(kitBudget) || 5,
         mode: kitMode === "existing" ? "existing_adset" : kitMode, adsetId: kitAdsetId,
@@ -2838,6 +2850,22 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           style={{ width: 34, border: "1px solid var(--line)", borderRadius: 8, background: kitAi.has(r.id) ? "#FEF3C7" : "#fff", cursor: "pointer", fontSize: 13 }}>{kitAi.has(r.id) ? "…" : "✨"}</button>
                         <button onClick={() => saveKitText(r.id, kitDefaultText(r.title))} title="Reset to auto-generated text"
                           style={{ width: 34, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", cursor: "pointer", fontSize: 13, color: "var(--muted)" }}>↺</button>
+                      </div>
+                      {/* v656 · Chạy ad TRÊN POST CÓ SẴN của page (giữ like/comment — social proof).
+                          Chọn từ danh sách post gần đây (xếp theo tương tác) hoặc dán link/ID. Bỏ trống = dark post mới. */}
+                      <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
+                        <select value="" onFocus={loadPagePosts}
+                          onChange={(e) => { const v = e.target.value; if (v) setKitPost((m) => ({ ...m, [r.id]: v })); }}
+                          style={{ width: 220, border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", fontSize: 12, background: "#fff", color: "var(--muted)" }}>
+                          <option value="">♻ Use existing page post…</option>
+                          {pagePosts === null && <option value="" disabled>Loading page posts…</option>}
+                          {(pagePosts ?? []).map((pp) => <option key={pp.id} value={pp.id}>{pp.label}</option>)}
+                        </select>
+                        <input value={kitPost[r.id] ?? ""} onChange={(e) => setKitPost((m) => ({ ...m, [r.id]: e.target.value }))}
+                          placeholder="…or paste post ID / facebook link (blank = new dark post)"
+                          style={{ flex: 1, border: kitPost[r.id] ? "1px solid #16A34A" : "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12, boxSizing: "border-box" }} />
+                        {kitPost[r.id] && <button onClick={() => setKitPost((m) => ({ ...m, [r.id]: "" }))} title="Clear — back to new dark post"
+                          style={{ width: 34, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", cursor: "pointer", fontSize: 13, color: "var(--red)" }}>✕</button>}
                       </div>
                     </div>
                   </div>

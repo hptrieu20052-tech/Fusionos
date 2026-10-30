@@ -24,7 +24,22 @@ export const maxDuration = 300;
 const V = "v23.0";
 const G = `https://graph.facebook.com/${V}`;
 
-type Item = { id: string; adName: string; primary: string; headline: string; imageUrl?: string; adset?: string };
+type Item = { id: string; adName: string; primary: string; headline: string; imageUrl?: string; adset?: string; postId?: string };
+
+// v656 · Chuẩn hoá post id từ ô "post có sẵn": nhận pageid_postid, id trần, hoặc link Facebook.
+// Trả "" nếu không bóc được (caller báo lỗi rõ thay vì để Meta trả lỗi khó hiểu).
+function normPostId(raw: string, pageId: string): string {
+  const s = raw.trim();
+  if (/^\d+_\d+$/.test(s)) return s;
+  if (/^\d+$/.test(s)) return `${pageId}_${s}`;
+  const mStory = s.match(/story_fbid=(\d+)[^#]*?[&?]id=(\d+)/);
+  if (mStory) return `${mStory[2]}_${mStory[1]}`;
+  const mPath = s.match(/(?:posts|permalink|videos)\/(\d+)/);
+  if (mPath) return `${pageId}_${mPath[1]}`;
+  const mFbid = s.match(/[?&]fbid=(\d+)/);
+  if (mFbid) return `${pageId}_${mFbid[1]}`;
+  return "";
+}
 type AdsetDef = { name: string; budget: number };
 
 function cfg() {
@@ -173,20 +188,42 @@ export async function POST(req: NextRequest) {
     idx++;
     try {
       const p = byId.get(it.id);
-      const link = (p?.onlineStoreUrl ?? "").trim();
-      if (!link) throw new Error("no storefront link");
-      const imgs = (Array.isArray(p?.images) ? p!.images as { src: string; position?: number }[] : []).slice().sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
-      const src = (it.imageUrl ?? "").trim() || (imgs[0]?.src ?? "");
-      if (!src) throw new Error("no image");
+      // v656 · POST CÓ SẴN: creative trỏ object_story_id → ad chạy TRÊN post đó, like/comment dồn về
+      // một chỗ (social proof). Bỏ trống postId → dark post mới như cũ.
+      const rawPost = String(it.postId ?? "").trim();
+      let existingPost = "";
+      if (rawPost) {
+        existingPost = normPostId(rawPost, c.pageId);
+        if (!existingPost) throw new Error(`can't parse post id from "${rawPost.slice(0, 60)}" — paste pageid_postid, bare post id, or a facebook.com/.../posts/<id> link`);
+      }
 
-      // 1) upload ảnh → image_hash
-      const imgRes = await fetch(src, { signal: AbortSignal.timeout(30000) });
-      if (!imgRes.ok) throw new Error("image download failed");
-      const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
-      const up = await fb(`${c.account}/adimages`, c.token, { bytes: b64 });
-      const images = up.images as Record<string, { hash: string }>;
-      const hash = Object.values(images ?? {})[0]?.hash;
-      if (!hash) throw new Error("no image hash returned");
+      let story: Record<string, unknown> | null = null;
+      if (!existingPost) {
+        const link = (p?.onlineStoreUrl ?? "").trim();
+        if (!link) throw new Error("no storefront link");
+        const imgs = (Array.isArray(p?.images) ? p!.images as { src: string; position?: number }[] : []).slice().sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+        const src = (it.imageUrl ?? "").trim() || (imgs[0]?.src ?? "");
+        if (!src) throw new Error("no image");
+
+        // 1) upload ảnh → image_hash
+        const imgRes = await fetch(src, { signal: AbortSignal.timeout(30000) });
+        if (!imgRes.ok) throw new Error("image download failed");
+        const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
+        const up = await fb(`${c.account}/adimages`, c.token, { bytes: b64 });
+        const images = up.images as Record<string, { hash: string }>;
+        const hash = Object.values(images ?? {})[0]?.hash;
+        if (!hash) throw new Error("no image hash returned");
+        const link2 = link;
+        story = {
+          page_id: c.pageId,
+          link_data: {
+            message: it.primary, link: link2, name: it.headline,
+            description: "✓ Printed in the USA  ✓ Free US shipping  ✓ 30-day guarantee",
+            call_to_action: { type: "SHOP_NOW", value: { link: link2 } },
+            image_hash: hash,
+          },
+        };
+      }
 
       // 2) ad set đích theo mode
       let adsetId: string;
@@ -201,16 +238,11 @@ export async function POST(req: NextRequest) {
         adsetId = await makeAdset(`${adsetPrefix}-${String(idx).padStart(2, "0")}`, budget);
       }
 
-      // 3) creative — tắt enhancements + multi-advertiser (best-effort: API version cũ/mới khác field)
-      const story = {
-        page_id: c.pageId,
-        link_data: {
-          message: it.primary, link, name: it.headline,
-          description: "✓ Printed in the USA  ✓ Free US shipping  ✓ 30-day guarantee",
-          call_to_action: { type: "SHOP_NOW", value: { link } },
-          image_hash: hash,
-        },
-      };
+      // 3) creative — tắt enhancements + multi-advertiser (best-effort: API version cũ/mới khác field).
+      // v656 · post có sẵn → object_story_id (cùng khuôn copyAdKeepPost v582); không → object_story_spec như cũ.
+      const creativeBase: Record<string, unknown> = existingPost
+        ? { name: it.adName, object_story_id: existingPost }
+        : { name: it.adName, object_story_spec: story };
       // v591 · url_tags = UTM động ({{campaign.name}}/{{ad.name}} do Meta tự điền) — đơn Shopify về
       // FUSION mang đúng utm_campaign/utm_content, thống kê seller/mẫu khớp ads. Field chuẩn lâu đời.
       const URL_TAGS = "utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";
@@ -225,7 +257,7 @@ export async function POST(req: NextRequest) {
       let applied = "default";
       let lastErr: unknown = null;
       for (const v of variants) {
-        try { creative = await fb(`${c.account}/adcreatives`, c.token, { name: it.adName, object_story_spec: story, ...v.extra }); applied = v.label; break; }
+        try { creative = await fb(`${c.account}/adcreatives`, c.token, { ...creativeBase, ...v.extra }); applied = v.label + (existingPost ? "+post" : ""); break; }
         catch (e) { lastErr = e; }
       }
       if (!creative) throw lastErr;
