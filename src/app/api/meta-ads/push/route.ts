@@ -3,6 +3,7 @@ import { db, schema } from "@/lib/db";
 import { inArray, sql } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
+import { publishPagePost } from "@/lib/page-post";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null) as {
     campaign?: string; campaignId?: string; adsetPrefix?: string; budget?: number; ageMin?: number; ageMax?: number;
-    countries?: string; startTime?: string; items?: Item[];
+    countries?: string; startTime?: string; items?: Item[]; autoPost?: boolean;
     mode?: string; adsets?: AdsetDef[]; adsetId?: string;
   } | null;
   const campaign = (body?.campaign ?? "").trim();
@@ -99,6 +100,8 @@ export async function POST(req: NextRequest) {
   const ageMax = Math.min(65, Math.max(13, Number(body?.ageMax) || 65));
   const countries = String(body?.countries ?? "US").toUpperCase().split(",").map((s) => s.trim()).filter((s) => /^[A-Z]{2}$/.test(s));
   const items = (body?.items ?? []).filter((i) => i && i.id && i.adName).slice(0, 20);
+  // v658 · auto-post: item nào KHÔNG chỉ định post có sẵn → đăng bài công khai lúc push rồi chạy ad trên đó
+  const autoPost = body?.autoPost === true;
   const adsetDefs = (Array.isArray(body?.adsets) ? body!.adsets! : [])
     .map((a) => ({ name: String(a?.name ?? "").trim().slice(0, 100), budget: Math.max(1, Math.min(1000, Number(a?.budget) || 5)) }))
     .filter((a) => a.name).slice(0, 10);
@@ -205,24 +208,32 @@ export async function POST(req: NextRequest) {
         const src = (it.imageUrl ?? "").trim() || (imgs[0]?.src ?? "");
         if (!src) throw new Error("no image");
 
-        // 1) upload ảnh → image_hash
-        const imgRes = await fetch(src, { signal: AbortSignal.timeout(30000) });
-        if (!imgRes.ok) throw new Error("image download failed");
-        const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
-        const up = await fb(`${c.account}/adimages`, c.token, { bytes: b64 });
-        const images = up.images as Record<string, { hash: string }>;
-        const hash = Object.values(images ?? {})[0]?.hash;
-        if (!hash) throw new Error("no image hash returned");
-        const link2 = link;
-        story = {
-          page_id: c.pageId,
-          link_data: {
-            message: it.primary, link: link2, name: it.headline,
-            description: "✓ Printed in the USA  ✓ Free US shipping  ✓ 30-day guarantee",
-            call_to_action: { type: "SHOP_NOW", value: { link: link2 } },
-            image_hash: hash,
-          },
-        };
+        if (autoPost) {
+          // v658 · AUTO-POST khi đặt lịch: đăng bài CÔNG KHAI ngay lúc push (ảnh + primary, link ở
+          // comment đầu — khuôn v617) rồi chạy ad TRÊN bài đó. Ads hẹn giờ chạy sau → bài có thời
+          // gian gom tương tác tự nhiên trước khi đổ tiền.
+          const pr = await publishPagePost({ pageId: c.pageId, message: it.primary, link, imageUrl: src, toFb: true, toIg: false }, c.token);
+          existingPost = String(pr.fbPostId ?? "");
+          if (!existingPost) throw new Error("auto-post: Facebook returned no post id");
+        } else {
+          // 1) upload ảnh → image_hash (dark post như cũ)
+          const imgRes = await fetch(src, { signal: AbortSignal.timeout(30000) });
+          if (!imgRes.ok) throw new Error("image download failed");
+          const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
+          const up = await fb(`${c.account}/adimages`, c.token, { bytes: b64 });
+          const images = up.images as Record<string, { hash: string }>;
+          const hash = Object.values(images ?? {})[0]?.hash;
+          if (!hash) throw new Error("no image hash returned");
+          story = {
+            page_id: c.pageId,
+            link_data: {
+              message: it.primary, link, name: it.headline,
+              description: "✓ Printed in the USA  ✓ Free US shipping  ✓ 30-day guarantee",
+              call_to_action: { type: "SHOP_NOW", value: { link } },
+              image_hash: hash,
+            },
+          };
+        }
       }
 
       // 2) ad set đích theo mode

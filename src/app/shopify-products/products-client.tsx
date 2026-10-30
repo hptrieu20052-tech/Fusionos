@@ -298,6 +298,24 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     setPagePosts(j.ok ? (j.posts as { id: string; label: string }[]) : []);
     if (!j.ok) flash("✗ Can't load page posts: " + (j.error ?? "error"), false);
   };
+  // v657 · MẪU MỚI chưa có post: đăng ngay 1 bài CÔNG KHAI lên page từ ảnh + primary text của dòng này
+  // rồi tự điền post id vào ô "post có sẵn" — ad chạy trên bài công khai, tương tác hiện trên tường page.
+  const [kitPosting, setKitPosting] = useState<Set<string>>(new Set());
+  const kitPostNow = async (id: string, title: string, imageUrl: string, link: string | null) => {
+    const t = kitTexts[id];
+    if (!imageUrl) { flash("✗ No image for this product — pick/upload one first", false); return; }
+    if (kitPosting.has(id)) return;
+    setKitPosting((s) => new Set(s).add(id));
+    try {
+      const j = await postJSON("/api/meta-ads/page-posts", { message: t?.primary ?? title, link: link ?? "", imageUrl });
+      if (j.ok && j.postId) {
+        setKitPost((m) => ({ ...m, [id]: String(j.postId) }));
+        pagePostsLoaded.current = false; // lần mở select sau tải lại danh sách (có bài mới)
+        flash(`✓ Posted to the page — this ad will run on that post${(j.warns ?? []).length ? " · " + (j.warns as string[])[0] : ""}`, true);
+      } else flash("✗ Post failed: " + (j.error ?? "error"), false);
+    } catch (e) { flash("✗ Post failed: " + String((e as Error)?.message ?? e), false); }
+    setKitPosting((s) => { const n = new Set(s); n.delete(id); return n; });
+  };
   // v455 · AI viết primary/headline (model chọn ở kit) — kết quả đổ vào ô sửa + nhớ localStorage.
   const [kitAi, setKitAi] = useState<Set<string>>(new Set());
   const kitAiGen = async (ids: string[]) => {
@@ -385,6 +403,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   // v444/v446 · giờ bắt đầu (MÚI GIỜ AD ACCOUNT, vd PDT) — 2 ô date + time kiểu Ads Manager; trống = chạy ngay khi bật.
   const [kitStartDate, setKitStartDate] = useState("");
   const [kitStartTime, setKitStartTime] = useState("");
+  // v658 · auto-post lúc Push: mỗi ad (chưa chỉ định post riêng) đăng thành bài công khai rồi chạy trên bài đó
+  const [kitAutoPost, setKitAutoPost] = useState(false);
   const [kitTz, setKitTz] = useState<{ name: string; offset: number } | null>(null); // v599 · múi giờ ad account
   // v455 · chỉ chọn ngày cũng chạy được (giờ mặc định 00:00); bỏ trống cả hai = chạy ngay khi duyệt xong.
   const kitStartCombined = kitStartDate ? `${kitStartDate}T${kitStartTime || "00:00"}` : "";
@@ -438,6 +458,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         mode: kitMode === "existing" ? "existing_adset" : kitMode, adsetId: kitAdsetId,
         adsets: kitAdsets.filter((a) => a.name.trim()).map((a) => ({ name: a.name.trim(), budget: Number(a.budget) || 5 })),
         ageMin: Number(kitAgeMin) || 18, ageMax: Number(kitAgeMax) || 65, countries: kitCountries, startTime: kitStartIso, items,
+        autoPost: kitAutoPost,
       });
       if (j.ok) {
         const failed = (j.results ?? []).filter((r: { ok: boolean }) => !r.ok);
@@ -2719,6 +2740,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           style={{ border: "none", background: "transparent", font: "inherit", fontSize: 13, padding: "9px 0", outline: "none", width: 110 }} />
                       </span>
                     </div>
+                    {/* v658 · AUTO-POST: lúc Push đăng luôn mỗi ad thành BÀI CÔNG KHAI trên page (ảnh + primary,
+                        link ở comment đầu) rồi ad chạy TRÊN bài đó — đặt lịch chạy sau thì bài có thời gian gom
+                        tương tác trước. Dòng nào đã chọn/dán post riêng thì vẫn dùng post đó. */}
+                    <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: kitAutoPost ? "#2E7D46" : "var(--ink)" }}>
+                      <input type="checkbox" checked={kitAutoPost} onChange={(e) => setKitAutoPost(e.target.checked)} style={{ accentColor: "#2E7D46" }} />
+                      📣 Auto-post each ad as a PUBLIC page post &amp; run the ad on it
+                    </label>
                     {/* v455 · chip chọn nhanh — không phải mò date picker; ✕ ASAP = chạy ngay khi Meta duyệt xong. */}
                     <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
                       <button onClick={() => { setKitStartDate(""); setKitStartTime(""); }} style={kitChip(!kitStartDate)}>⚡ ASAP</button>
@@ -2866,6 +2894,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           style={{ flex: 1, border: kitPost[r.id] ? "1px solid #16A34A" : "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12, boxSizing: "border-box" }} />
                         {kitPost[r.id] && <button onClick={() => setKitPost((m) => ({ ...m, [r.id]: "" }))} title="Clear — back to new dark post"
                           style={{ width: 34, border: "1px solid var(--line)", borderRadius: 8, background: "#fff", cursor: "pointer", fontSize: 13, color: "var(--red)" }}>✕</button>}
+                        {/* v657 · mẫu mới chưa có post → đăng bài công khai NGAY từ ảnh + primary rồi dùng luôn */}
+                        {!kitPost[r.id] && (
+                          <button onClick={() => kitPostNow(r.id, r.title, kitImg[r.id] || r.mainImage || "", r.onlineStoreUrl)}
+                            disabled={kitPosting.has(r.id)}
+                            title="New design with no post yet? Publish a PUBLIC page post now (this image + primary text, link in first comment) and run the ad on it."
+                            style={{ whiteSpace: "nowrap", border: "1px solid #BFE0BF", borderRadius: 8, padding: "6px 10px", fontSize: 12, fontWeight: 700, background: kitPosting.has(r.id) ? "#FEF3C7" : "#EAF3EA", color: "#2E7D46", cursor: "pointer" }}>
+                            {kitPosting.has(r.id) ? "Posting…" : "📣 Post now & use"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
