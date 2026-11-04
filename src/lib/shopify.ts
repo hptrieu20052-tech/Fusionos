@@ -257,7 +257,7 @@ export async function createShopifyFulfillment(
 
 // ---- Đẩy tracking của 1 đơn Shopify (gọi tay + tự động sau khi nhà in trả tracking) ----
 import { db, schema } from "@/lib/db";
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 
 const platformExtId = (ext: string) => ext.replace(/-CLONE-\d+$/, ""); // đơn split dùng mã đơn THẬT
 
@@ -318,4 +318,57 @@ export async function pushShopifyTrackingForOrder(orderId: string): Promise<{ ok
 // Gọi an toàn từ webhook/sync — không phải Shopify hoặc lỗi thì bỏ qua êm.
 export async function autoPushShopifyTracking(orderId: string) {
   try { return await pushShopifyTrackingForOrder(orderId); } catch { return null; }
+}
+
+// ---- v659 · BACKFILL order_label cho đơn Shopify CŨ (trước v652) ----
+// Webhook v652 chỉ gắn nhãn TALEWIX-1451-<id dài> cho đơn MỚI từ lúc deploy; đơn cũ không có
+// nhãn nên search mã ngắn trên Shopify admin (1037, 1307…) không ra. Hàm này kéo order_number
+// từ Shopify REST (orders.json?ids=… — tối đa 250 đơn/call) rồi điền order_label CÙNG KHUÔN
+// webhook: STORETAG-<số ngắn>-<id dài> (đơn split giữ hậu tố -CLONE-n ở id dài).
+// Gọi từ cron tick — tự hết việc: mọi đơn có nhãn rồi thì SELECT trả rỗng, tick sau chỉ tốn 1 query.
+export async function backfillShopifyOrderLabels(limit = 250): Promise<{ scanned: number; labeled: number; errors: string[] }> {
+  // Chỉ lấy đơn của store ĐÃ cấu hình API (store chưa kết nối thì khỏi chọn — tránh retry vô ích mỗi tick).
+  // external_id phải là id số Shopify (± -CLONE-n) — loại đơn nhập tay MANUAL-… không tra API được.
+  const rows = (await db.execute(sql`
+    SELECT o.id, o.external_id, s.id AS store_id, s.name AS store_name, s.api_credentials AS cred
+    FROM orders o JOIN stores s ON s.id = o.store_id
+    WHERE o.platform = 'shopify' AND o.order_label IS NULL
+      AND o.external_id ~ '^[0-9]+(-CLONE-[0-9]+)?$'
+      AND s.api_credentials->>'shopDomain' IS NOT NULL
+      AND (s.api_credentials->>'adminToken' IS NOT NULL OR s.api_credentials->>'clientId' IS NOT NULL)
+    ORDER BY o.ordered_at DESC
+    LIMIT ${limit}
+  `)).rows as { id: string; external_id: string; store_id: string; store_name: string; cred: ShopifyCred }[];
+  const out = { scanned: rows.length, labeled: 0, errors: [] as string[] };
+  if (!rows.length) return out;
+
+  // Gom theo store → 1 call API/store (ids=…,… — đọc hàng loạt, không gọi lẻ từng đơn)
+  const byStore = new Map<string, typeof rows>();
+  for (const r of rows) { const g = byStore.get(r.store_id) ?? []; g.push(r); byStore.set(r.store_id, g); }
+
+  for (const group of byStore.values()) {
+    const cred = (group[0].cred ?? {}) as ShopifyCred;
+    const tag = String(group[0].store_name ?? "").replace(/\s+/g, "").toUpperCase();
+    const baseIds = Array.from(new Set(group.map((r) => platformExtId(r.external_id))));
+    const numOf = new Map<string, string>();
+    try {
+      const j = await shopifyApi(cred, `orders.json?ids=${baseIds.join(",")}&status=any&fields=id,order_number,name&limit=250`);
+      for (const od of (Array.isArray(j.orders) ? j.orders : []) as Record<string, unknown>[]) {
+        const n = String(od.order_number ?? "").trim() || String(od.name ?? "").replace(/^#/, "").trim();
+        if (n) numOf.set(String(od.id), n);
+      }
+    } catch (e) {
+      out.errors.push(`${tag}: ${String((e as Error)?.message ?? e).slice(0, 160)}`);
+      continue; // token/API lỗi → để lại, tick sau thử lại (1 call/tick nên rẻ)
+    }
+    for (const r of group) {
+      const n = numOf.get(platformExtId(r.external_id));
+      // Không tìm thấy trên Shopify (đơn đã xoá/archive sâu) → vẫn gắn nhãn KHÔNG số ngắn
+      // để không bị quét lại vô hạn; search theo id dài vốn đã chạy.
+      const label = n ? `${tag}-${n}-${r.external_id}` : `${tag}-${r.external_id}`;
+      await db.update(schema.orders).set({ orderLabel: label }).where(eq(schema.orders.id, r.id));
+      out.labeled++;
+    }
+  }
+  return out;
 }

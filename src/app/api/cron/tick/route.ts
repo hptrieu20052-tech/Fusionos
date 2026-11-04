@@ -7,7 +7,7 @@ import { insertEtsyOrders } from "@/lib/ingest-etsy";
 import { readTtCfg, ttGetValidCfg, ttSearchOrders, ttNormalizeOrder } from "@/lib/tiktok-shop";
 import { fetchAndStoreTiktokLabels } from "@/lib/tiktok-label";
 import { pushTiktokTrackingForOrder } from "@/lib/tiktok-tracking";
-import { pushShopifyTrackingForOrder } from "@/lib/shopify";
+import { pushShopifyTrackingForOrder, backfillShopifyOrderLabels } from "@/lib/shopify";
 import { shopbaseConfigured, fetchShopBaseOrders, normalizeShopBaseOrder, touchShopBaseSync, type ShopBaseCred } from "@/lib/shopbase";
 import { wooConfigured, fetchWooOrders, normalizeWooOrder, touchWooSync, backfillWooItemImages, pushWooTrackingForOrder, type WooCred } from "@/lib/woocommerce";
 import { syncPrintway } from "@/lib/printway-sync";
@@ -276,6 +276,18 @@ async function tick(req: NextRequest) {
     } catch (e) { wooTrackSweep = { tried: 0, pushed: 0, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
   }
 
+  // ---- 1b5. Backfill order_label Shopify (v659) ----
+  // Đơn Shopify CŨ (trước v652) chưa có nhãn TALEWIX-1037-… nên search mã ngắn không ra.
+  // Mỗi tick kéo order_number từ Shopify cho tối đa 250 đơn thiếu nhãn (1 call API/store) →
+  // vài tick là phủ hết lịch sử, sau đó mỗi tick chỉ tốn 1 SELECT rỗng.
+  let shLabelBackfill: { scanned: number; labeled: number; errors?: string[] } | { error: string } = { scanned: 0, labeled: 0 };
+  if (Date.now() < deadline) {
+    try {
+      const r = await backfillShopifyOrderLabels(250);
+      shLabelBackfill = { scanned: r.scanned, labeled: r.labeled, ...(r.errors.length ? { errors: r.errors.slice(0, 5) } : {}) };
+    } catch (e) { shLabelBackfill = { error: String((e as Error)?.message ?? e).slice(0, 160) }; }
+  }
+
   // ---- 2/2b/3. Ba poll backup: Printway · Printify · ONOS+WEM ----
   // BUG CŨ: chạy CỐ ĐỊNH theo thứ tự printway → printify → onosWem. Hết 50s ở giữa chừng thì
   // onosWem BỊ BỎ mà summary vẫn để `null` — nhìn log không phân biệt được "không có gì để làm"
@@ -307,7 +319,7 @@ async function tick(req: NextRequest) {
   }
   const { printway, printify, onosWem, supportMail, metaRules, pagePosts } = results;
 
-  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, shopbase, woocommerce, ttLabelSweep, ttTrackSweep, shTrackSweep, wooTrackSweep, printway, printify, onosWem, supportMail, metaRules, pagePosts };
+  const summary = { ok: true, ms: Date.now() - started, etsy, tiktok, shopbase, woocommerce, ttLabelSweep, ttTrackSweep, shTrackSweep, wooTrackSweep, shLabelBackfill, printway, printify, onosWem, supportMail, metaRules, pagePosts };
   console.log("[cron/tick]", JSON.stringify({ ms: summary.ms, stores: etsy.length }));
   return NextResponse.json(summary);
 }
