@@ -216,15 +216,22 @@ export function splitShopifyOrderBySeller(
   const totalOrder = num(o.total_price) || num(o.current_total_price) || arr.reduce((a, g) => a + g.subtotal, 0);
   const sumSub = arr.reduce((a, g) => a + g.subtotal, 0) || 1;
   const baseExt = base.externalId;
-  return arr.map((g, i) => ({
-    sellerId: g.sellerId,
-    order: {
-      ...base,
-      externalId: i === 0 ? baseExt : `${baseExt}-CLONE-${i}`,
-      items: g.items,
-      total: Math.round(totalOrder * (g.subtotal / sumSub) * 100) / 100,
-    },
-  }));
+  // v662 · Chia theo CENT, phần dư dồn vào đơn cuối — tổng các phần LUÔN = total đơn thật
+  // (trước đây mỗi phần round riêng, cả cụm có thể lệch ±1-2 cent so với Shopify).
+  let remaining = Math.round(totalOrder * 100);
+  return arr.map((g, i) => {
+    const cents = i === arr.length - 1 ? remaining : Math.round(totalOrder * 100 * (g.subtotal / sumSub));
+    remaining -= cents;
+    return {
+      sellerId: g.sellerId,
+      order: {
+        ...base,
+        externalId: i === 0 ? baseExt : `${baseExt}-CLONE-${i}`,
+        items: g.items,
+        total: cents / 100,
+      },
+    };
+  });
 }
 
 // ---- ĐẨY TRACKING NGƯỢC LÊN SHOPIFY (tạo fulfillment → khách nhận email "đã gửi hàng") ----

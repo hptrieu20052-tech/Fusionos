@@ -59,12 +59,14 @@ export async function GET(req: NextRequest) {
   if (fSeller) fltO = sql`${fltO} AND o.seller_at_order = ${fSeller}::uuid`;
   if (fStore) fltO = sql`${fltO} AND o.store_id = ${fStore}::uuid`;
   if (fPlatform) fltO = sql`${fltO} AND o.platform = ${fPlatform}`;
-  if (fSupplier) fltO = sql`${fltO} AND EXISTS (SELECT 1 FROM fulfillment_orders fx WHERE fx.order_id = o.id AND fx.fulfiller_id = ${fSupplier}::uuid AND fx.status <> 'cancelled')`;
+  // v662 · GỘP ĐẨY (v460): đơn anh em bị gộp KHÔNG có bản ghi fulfill riêng (nằm trong
+  // merged_order_ids của bản ghi đơn chính) → điều kiện "đơn thuộc supplier" phải phủ cả 2 chiều.
+  if (fSupplier) fltO = sql`${fltO} AND EXISTS (SELECT 1 FROM fulfillment_orders fx WHERE (fx.order_id = o.id OR (fx.merged_order_ids IS NOT NULL AND fx.merged_order_ids @> jsonb_build_array(o.id::text))) AND fx.fulfiller_id = ${fSupplier}::uuid AND fx.status <> 'cancelled')`;
   let fltT = sql``;
   if (fSeller) fltT = sql`${fltT} AND t.seller_id = ${fSeller}::uuid`;
   if (fStore) fltT = sql`${fltT} AND t.store_id = ${fStore}::uuid`;
   if (fPlatform) fltT = sql`${fltT} AND EXISTS (SELECT 1 FROM stores s3 WHERE s3.id = t.store_id AND s3.marketplace = ${fPlatform})`;
-  if (fSupplier) fltT = sql`${fltT} AND t.order_id IS NOT NULL AND EXISTS (SELECT 1 FROM fulfillment_orders fx WHERE fx.order_id = t.order_id AND fx.fulfiller_id = ${fSupplier}::uuid AND fx.status <> 'cancelled')`;
+  if (fSupplier) fltT = sql`${fltT} AND t.order_id IS NOT NULL AND EXISTS (SELECT 1 FROM fulfillment_orders fx WHERE (fx.order_id = t.order_id OR (fx.merged_order_ids IS NOT NULL AND fx.merged_order_ids @> jsonb_build_array(t.order_id::text))) AND fx.fulfiller_id = ${fSupplier}::uuid AND fx.status <> 'cancelled')`;
 
   // Đơn tính doanh thu: trong range, không cancel/trash
   const ordersWhere = sql`o.ordered_at::date >= ${FROM} AND o.ordered_at::date <= ${TO} AND o.status NOT IN ('cancel','trash')${inSeller}${fltO}`;
@@ -143,11 +145,14 @@ export async function GET(req: NextRequest) {
         coalesce(sum(x.rev),0) rev,
         coalesce(sum(x.fee),0) fee
       FROM (
+        -- v662 · GỘP ĐẨY: join phủ cả đơn anh em (merged_order_ids) để rev/fee/số đơn tính đủ
+        -- các đơn góp item; cost chỉ tính trên dòng ĐƠN CHÍNH (o.id = ffo.order_id) để nguyên
+        -- kiện không bị nhân N lần theo số đơn trong cụm.
         SELECT ffo.fulfiller_id fid, o.id oid,
-          sum(coalesce(ffo.cost, coalesce(ffo.base_cost,0) + coalesce(ffo.ship_cost,0) + coalesce(ffo.extra_fee,0))) cost,
+          sum(CASE WHEN o.id = ffo.order_id THEN coalesce(ffo.cost, coalesce(ffo.base_cost,0) + coalesce(ffo.ship_cost,0) + coalesce(ffo.extra_fee,0)) ELSE 0 END) cost,
           max(o.total) rev, max(o.platform_fee) fee
         FROM fulfillment_orders ffo
-        JOIN orders o ON o.id = ffo.order_id
+        JOIN orders o ON (o.id = ffo.order_id OR (ffo.merged_order_ids IS NOT NULL AND ffo.merged_order_ids @> jsonb_build_array(o.id::text)))
         WHERE ${ordersWhere} AND ffo.status <> 'cancelled'${fSupplier ? sql` AND ffo.fulfiller_id = ${fSupplier}::uuid` : sql``}
         GROUP BY 1,2
       ) x

@@ -30,7 +30,9 @@ export async function GET(req: NextRequest) {
     : (sp.get("sellerId") ? sql`o.seller_id = ${sp.get("sellerId")}::uuid` : null);
   const cStore = sp.get("storeId") ? sql`o.store_id = ${sp.get("storeId")}::uuid` : null;
   const cPlatform = sp.get("platform") ? sql`o.platform = ${sp.get("platform")}::marketplace` : null;
-  const cFulfiller = sp.get("fulfillerId") ? sql`EXISTS (SELECT 1 FROM fulfillment_orders fo WHERE fo.order_id = o.id AND fo.fulfiller_id = ${sp.get("fulfillerId")}::uuid)` : null;
+  // v662 · Mọi điều kiện soi fulfillment_orders phải PHỦ cả đơn bị GỘP ĐẨY (v460): đơn anh em
+  // không có bản ghi riêng — nó nằm trong merged_order_ids của bản ghi đơn chính.
+  const cFulfiller = sp.get("fulfillerId") ? sql`EXISTS (SELECT 1 FROM fulfillment_orders fo WHERE (fo.order_id = o.id OR (fo.merged_order_ids IS NOT NULL AND fo.merged_order_ids @> jsonb_build_array(o.id::text))) AND fo.fulfiller_id = ${sp.get("fulfillerId")}::uuid)` : null;
   // Lọc theo tình trạng gán design: "assigned" = mọi sản phẩm đã có design; "unassigned" = còn ít nhất 1 sản phẩm thiếu
   const dz = sp.get("design");
   const cDesign = dz === "assigned" ? sql`NOT EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.design_id IS NULL)`
@@ -42,13 +44,13 @@ export async function GET(req: NextRequest) {
   // phủ luôn nhóm fulfill CSV/tay mới chỉ đổi status (điểm mù cũ).
   const cFfData = fd === "no_tracking"
     ? sql`(o.status NOT IN ('cancel','trash') AND (
-        NOT EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id)
-        OR EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id AND fo2.tracking_number IS NULL)
+        NOT EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE (fo2.order_id = o.id OR (fo2.merged_order_ids IS NOT NULL AND fo2.merged_order_ids @> jsonb_build_array(o.id::text))))
+        OR EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE (fo2.order_id = o.id OR (fo2.merged_order_ids IS NOT NULL AND fo2.merged_order_ids @> jsonb_build_array(o.id::text))) AND fo2.tracking_number IS NULL)
       ))`
     : fd === "no_cost"
       ? sql`(o.status NOT IN ('cancel','trash') AND (
-          NOT EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id)
-          OR EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE fo2.order_id = o.id AND coalesce(fo2.cost, 0) = 0)
+          NOT EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE (fo2.order_id = o.id OR (fo2.merged_order_ids IS NOT NULL AND fo2.merged_order_ids @> jsonb_build_array(o.id::text))))
+          OR EXISTS (SELECT 1 FROM fulfillment_orders fo2 WHERE (fo2.order_id = o.id OR (fo2.merged_order_ids IS NOT NULL AND fo2.merged_order_ids @> jsonb_build_array(o.id::text))) AND coalesce(fo2.cost, 0) = 0)
         ))`
       : null;
   const q = sp.get("q")?.trim();
@@ -90,7 +92,7 @@ export async function GET(req: NextRequest) {
     db.execute(sql`SELECT id, name, marketplace FROM stores${storeFilter} ORDER BY name`),
     db.execute(sql`SELECT id, name FROM fulfillers ORDER BY name`),
     db.execute(sql`SELECT DISTINCT s.id, s.name, s.marketplace FROM orders o JOIN stores s ON s.id = o.store_id WHERE ${whereOf([cScope, cPlatform, cFulfiller, cDesign, cQ, cFrom, cTo])} ORDER BY s.name`),
-    db.execute(sql`SELECT DISTINCT f.id, f.name FROM orders o JOIN fulfillment_orders fo ON fo.order_id = o.id JOIN fulfillers f ON f.id = fo.fulfiller_id WHERE ${whereOf([cScope, cStore, cPlatform, cDesign, cQ, cFrom, cTo])} ORDER BY f.name`),
+    db.execute(sql`SELECT DISTINCT f.id, f.name FROM orders o JOIN fulfillment_orders fo ON (fo.order_id = o.id OR (fo.merged_order_ids IS NOT NULL AND fo.merged_order_ids @> jsonb_build_array(o.id::text))) JOIN fulfillers f ON f.id = fo.fulfiller_id WHERE ${whereOf([cScope, cStore, cPlatform, cDesign, cQ, cFrom, cTo])} ORDER BY f.name`),
     db.execute(sql`SELECT DISTINCT o.platform::text AS platform FROM orders o WHERE ${whereOf([cScope, cStore, cFulfiller, cDesign, cQ, cFrom, cTo])} AND o.platform IS NOT NULL ORDER BY o.platform::text`),
     db.execute(sql`SELECT id, full_name AS name, team FROM users WHERE role='designer' AND status='active' AND telegram_chat_id IS NOT NULL AND team IS NOT NULL ORDER BY full_name`),
   ]);

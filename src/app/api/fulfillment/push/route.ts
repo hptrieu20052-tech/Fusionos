@@ -226,6 +226,9 @@ async function handlePush(req: NextRequest) {
 
   // Đảm bảo số đơn gửi nhà in = TênStore-IDĐơn (nếu chưa set orderLabel thì tự dựng)
   let orderLabel = (order.orderLabel ?? "").trim();
+  // v662 · GỘP ĐẨY mà đơn chính là bản -CLONE-n (fulfiller mở card đơn clone rồi gộp đơn gốc vào):
+  // nhãn v652 của clone có đuôi -CLONE-n → bỏ đuôi khi gộp, supplier chỉ thấy 1 đơn của 1 khách.
+  if (orderLabel && mergeIds.length) orderLabel = orderLabel.replace(/-CLONE-\d+$/, "");
   if (!orderLabel) {
     const [st] = order.storeId ? await db.select({ name: schema.stores.name }).from(schema.stores).where(eq(schema.stores.id, order.storeId)).limit(1) : [];
     const shop = (st?.name ?? "SHOP").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
