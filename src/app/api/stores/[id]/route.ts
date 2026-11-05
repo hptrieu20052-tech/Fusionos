@@ -82,7 +82,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (b.feeRate != null && !isNaN(Number(b.feeRate)) && Number(b.feeRate) >= 0 && Number(b.feeRate) < 100) patch.feeRate = String(Number(b.feeRate));
   // ĐỔI CHỦ SHOP → BẮT BUỘC xoay ingest token. Token cũ nằm trong Extension trên máy/AdsPower của
   // seller cũ; không xoay thì họ nghỉ rồi vẫn bơm đơn vào shop được.
-  const [before] = await db.select({ sellerId: schema.stores.sellerId }).from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
+  const [before] = await db.select({ sellerId: schema.stores.sellerId, fxRate: schema.stores.fxRate }).from(schema.stores).where(eq(schema.stores.id, params.id)).limit(1);
   const oldSellerId = before?.sellerId ?? null;
   const handover = "sellerId" in b && (b.sellerId || null) !== oldSellerId;
   if (b.regenIngestToken === true || handover) patch.ingestToken = randomUUID().replace(/-/g, "") + randomUUID().replace(/-/g, "");
@@ -140,7 +140,40 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     await db.update(schema.stores).set(patch).where(eq(schema.stores.id, params.id));
   }
 
-  return NextResponse.json({ ok: true, ingestToken: patch.ingestToken as string | undefined, handover, moved });
+  // ---- v660 · ĐỔI TỈ GIÁ → TỰ QUY ĐỔI LẠI SỐ LIỆU CŨ ----
+  // Số tiền trong DB luôn là "tiền gốc ÷ fx tại lúc ingest". Đổi fx cũ→mới thì nhân toàn bộ
+  // total/phí/đơn giá của store với (fx cũ / fx mới) = như thể mọi đơn được quy đổi ở fx mới
+  // ngay từ đầu → dashboard/finance/store card đổi theo NGAY, đơn mới ingest ÷ fx mới là khớp.
+  // An toàn chạy nhiều lần (mỗi lần đổi fx chỉ nhân đúng 1 tỉ lệ) — khác nút fx-convert cũ
+  // (chia thẳng cho rate hiện tại, bấm 2 lần là nát số).
+  let fxRescale: { ratio: number; orders: number; items: number } | undefined;
+  const oldFx = Number(before?.fxRate ?? 1) || 1;
+  const newFx = Number(patch.fxRate ?? 0);
+  if (patch.fxRate != null && newFx > 0 && Math.abs(newFx - oldFx) / oldFx > 1e-9) {
+    const ratio = oldFx / newFx;
+    await db.transaction(async (tx) => {
+      const o = await tx.execute(sql`
+        UPDATE orders SET total = round(total * ${ratio}, 2),
+                          platform_fee = round(platform_fee * ${ratio}, 2),
+                          updated_at = now()
+        WHERE store_id = ${params.id}`);
+      const it = await tx.execute(sql`
+        UPDATE order_items SET unit_price = round(unit_price * ${ratio}, 2)
+        WHERE order_id IN (SELECT id FROM orders WHERE store_id = ${params.id})`);
+      // Dấu vết audit trong stores.health (jsonb merge — không đè các mốc khác như fxConvertedAt)
+      await tx.execute(sql`
+        UPDATE stores SET health = coalesce(health, '{}'::jsonb)
+          || jsonb_build_object('fxRescaledAt', now(), 'fxRescaledFrom', ${oldFx}::numeric, 'fxRescaledTo', ${newFx}::numeric)
+        WHERE id = ${params.id}`);
+      fxRescale = {
+        ratio: Math.round(ratio * 1e6) / 1e6,
+        orders: Number((o as { rowCount?: number }).rowCount ?? 0),
+        items: Number((it as { rowCount?: number }).rowCount ?? 0),
+      };
+    });
+  }
+
+  return NextResponse.json({ ok: true, ingestToken: patch.ingestToken as string | undefined, handover, moved, fxRescale });
 }
 
 // DELETE — v598 · XOÁ MỀM: store chỉ ẨN đi (status='deleted'), KHÔNG xoá dòng.

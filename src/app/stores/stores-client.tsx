@@ -468,7 +468,12 @@ function EditStoreModal({ store, sellers, isSeller, close, reload, flash }: { st
     try {
       const r = await fetch(`/api/stores/${store.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const j = await r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
-      if (j.ok) { flash(t("st.savedStore")); reload(); close(); return; }
+      if (j.ok) {
+        // v660 · Đổi fx → server đã quy đổi lại toàn bộ đơn cũ theo tỉ lệ fx cũ/mới — báo rõ số lượng.
+        const fr = j.fxRescale as { orders: number; ratio: number } | undefined;
+        flash(fr ? `✓ Saved · recalculated ${fr.orders} orders at the new FX rate (×${fr.ratio})` : t("st.savedStore"));
+        reload(); close(); return;
+      }
       flash("✗ " + (j.error ?? "Error"));
     } catch (e) { flash("✗ " + (e as Error).message); }
     setBusy(false);

@@ -20,6 +20,12 @@ export async function POST(_req: NextRequest, { params }: { params: { id: string
   if (!store) return NextResponse.json({ ok: false, error: "store doesn't exist" }, { status: 404 });
   const rate = Number(store.fxRate ?? 1);
   if (!(rate > 1)) return NextResponse.json({ ok: false, error: "Rate must be > 1 (e.g. VND ≈ 25400) — set it in the store form first." }, { status: 400 });
+  // v660 · Store đã được TỰ quy đổi khi đổi fx trong form (PATCH) → dữ liệu đã nhất quán ở fx
+  // hiện tại; nút convert 1 lần này mà chạy thêm sẽ chia đôi lần nữa → chặn hẳn.
+  const h = (store.health as Record<string, unknown> | null) ?? {};
+  if (h.fxRescaledAt) {
+    return NextResponse.json({ ok: false, error: "Orders were already recalculated automatically when the FX rate was changed — this one-time convert would divide them a second time. Just edit the FX rate in the form; everything rescales by itself." }, { status: 400 });
+  }
 
   // Chia total + platform_fee của đơn, và unit_price của item, cho tỉ giá → USD
   const res = await db.execute(sql`
