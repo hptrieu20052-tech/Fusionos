@@ -346,7 +346,7 @@ export async function backfillShopifyOrderLabels(limit = 250): Promise<{ scanned
   const byStore = new Map<string, typeof rows>();
   for (const r of rows) { const g = byStore.get(r.store_id) ?? []; g.push(r); byStore.set(r.store_id, g); }
 
-  for (const group of byStore.values()) {
+  for (const group of Array.from(byStore.values())) {
     const cred = (group[0].cred ?? {}) as ShopifyCred;
     const tag = String(group[0].store_name ?? "").replace(/\s+/g, "").toUpperCase();
     const baseIds = Array.from(new Set(group.map((r) => platformExtId(r.external_id))));
