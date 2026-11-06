@@ -215,7 +215,9 @@ export async function POST(req: NextRequest) {
           // v658 · AUTO-POST khi đặt lịch: đăng bài CÔNG KHAI ngay lúc push (ảnh + primary, link ở
           // comment đầu — khuôn v617) rồi chạy ad TRÊN bài đó. Ads hẹn giờ chạy sau → bài có thời
           // gian gom tương tác tự nhiên trước khi đổ tiền.
-          const pr = await publishPagePost({ pageId: c.pageId, message: it.primary, link, imageUrl: src, toFb: true, toIg: false }, c.token);
+          // v668 · toIg: true — đăng kèm bài organic lên Instagram (best-effort: IG lỗi/chưa link
+          // account chỉ warn, không chặn ad). Ad vẫn chạy trên BÀI FB (object_story_id).
+          const pr = await publishPagePost({ pageId: c.pageId, message: it.primary, link, imageUrl: src, toFb: true, toIg: true }, c.token);
           existingPost = String(pr.fbPostId ?? "");
           if (!existingPost) throw new Error("auto-post: Facebook returned no post id");
         } else {

@@ -75,7 +75,8 @@ export async function POST(req: NextRequest) {
   const imageUrl = String(b?.imageUrl ?? "").trim();
   if (!imageUrl) return NextResponse.json({ ok: false, error: "imageUrl required (photo post)" }, { status: 400 });
   try {
-    const r = await publishPagePost({ pageId, message, link, imageUrl, toFb: true, toIg: false }, token);
+    // v668 · toIg: true — "Post now & use" cũng đăng kèm Instagram (IG lỗi chỉ warn, FB vẫn là bài chạy ad).
+    const r = await publishPagePost({ pageId, message, link, imageUrl, toFb: true, toIg: true }, token);
     const postId = String(r.fbPostId ?? "");
     if (!postId) throw new Error("Facebook returned no post id");
     return NextResponse.json({ ok: true, postId, warns: r.warns });
