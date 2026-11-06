@@ -200,9 +200,12 @@ export async function POST(req: NextRequest) {
         if (!existingPost) throw new Error(`can't parse post id from "${rawPost.slice(0, 60)}" — paste pageid_postid, bare post id, or a facebook.com/.../posts/<id> link`);
       }
 
+      // v665 · link sản phẩm cần cho CẢ nhánh post có sẵn: campaign Sales/Traffic bắt buộc creative
+      // có website URL + CTA — thiếu là Meta trả "Invalid parameter … requires an external website URL".
+      const ctaLink = (p?.onlineStoreUrl ?? "").trim();
       let story: Record<string, unknown> | null = null;
       if (!existingPost) {
-        const link = (p?.onlineStoreUrl ?? "").trim();
+        const link = ctaLink;
         if (!link) throw new Error("no storefront link");
         const imgs = (Array.isArray(p?.images) ? p!.images as { src: string; position?: number }[] : []).slice().sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
         const src = (it.imageUrl ?? "").trim() || (imgs[0]?.src ?? "");
@@ -251,9 +254,17 @@ export async function POST(req: NextRequest) {
 
       // 3) creative — tắt enhancements + multi-advertiser (best-effort: API version cũ/mới khác field).
       // v656 · post có sẵn → object_story_id (cùng khuôn copyAdKeepPost v582); không → object_story_spec như cũ.
-      const creativeBase: Record<string, unknown> = existingPost
-        ? { name: it.adName, object_story_id: existingPost }
-        : { name: it.adName, object_story_spec: story };
+      // v665 · post ảnh không có link → campaign Sales/Traffic chê. Gắn call_to_action SHOP_NOW + link
+      // sản phẩm vào creative (đúng cách Ads Manager làm khi boost post ảnh cho campaign Sales).
+      // Tổ hợp CTA bị API chê (post dạng khác / objective không cần) → tự thử lại khuôn trần.
+      const creativeBases: Record<string, unknown>[] = existingPost
+        ? (ctaLink
+          ? [
+              { name: it.adName, object_story_id: existingPost, call_to_action: { type: "SHOP_NOW", value: { link: ctaLink } } },
+              { name: it.adName, object_story_id: existingPost },
+            ]
+          : [{ name: it.adName, object_story_id: existingPost }])
+        : [{ name: it.adName, object_story_spec: story }];
       // v591 · url_tags = UTM động ({{campaign.name}}/{{ad.name}} do Meta tự điền) — đơn Shopify về
       // FUSION mang đúng utm_campaign/utm_content, thống kê seller/mẫu khớp ads. Field chuẩn lâu đời.
       const URL_TAGS = "utm_source=facebook&utm_medium=cpc&utm_campaign={{campaign.name}}&utm_content={{ad.name}}";
@@ -267,9 +278,15 @@ export async function POST(req: NextRequest) {
       let creative: Record<string, unknown> | null = null;
       let applied = "default";
       let lastErr: unknown = null;
-      for (const v of variants) {
-        try { creative = await fb(`${c.account}/adcreatives`, c.token, { ...creativeBase, ...v.extra }); applied = v.label + (existingPost ? "+post" : ""); break; }
-        catch (e) { lastErr = e; }
+      for (const base of creativeBases) {
+        for (const v of variants) {
+          try {
+            creative = await fb(`${c.account}/adcreatives`, c.token, { ...base, ...v.extra });
+            applied = v.label + (existingPost ? "+post" + (base.call_to_action ? "+cta" : "") : "");
+            break;
+          } catch (e) { lastErr = e; }
+        }
+        if (creative) break;
       }
       if (!creative) throw lastErr;
 
