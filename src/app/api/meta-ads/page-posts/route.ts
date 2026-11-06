@@ -18,9 +18,19 @@ export async function GET() {
   const pageId = process.env.META_PAGE_ID ?? "";
   if (!token || !pageId) return NextResponse.json({ ok: false, error: "META_SYSTEM_TOKEN / META_PAGE_ID missing" }, { status: 400 });
   try {
-    const fields = "id,message,created_time,permalink_url,likes.summary(total_count).limit(0),comments.summary(total_count).limit(0),shares";
+    // v666 · /published_posts bắt buộc PAGE access token — system token trần bị Meta chối thẳng
+    // (đây là lý do dropdown "Use existing page post" trống). Đổi token y hệt publishPagePost rồi mới gọi.
+    const pgRes = await fetch(`${G}/${pageId}?fields=access_token&access_token=${encodeURIComponent(token)}`, {
+      signal: AbortSignal.timeout(15000), cache: "no-store",
+    });
+    const pg = await pgRes.json().catch(() => ({}));
+    if (!pgRes.ok || pg.error) throw new Error(String(pg.error?.message ?? pgRes.status).slice(0, 250));
+    const pageToken = String(pg.access_token ?? "");
+    if (!pageToken) throw new Error("No Page access token — grant the system user the Page (pages_read_engagement) in Business Settings → System users.");
+    // v667 · full_picture = ảnh post → client hiện thumbnail cho dễ nhận bài.
+    const fields = "id,message,created_time,permalink_url,full_picture,likes.summary(total_count).limit(0),comments.summary(total_count).limit(0),shares";
     const res = await fetch(`${G}/${pageId}/published_posts?fields=${encodeURIComponent(fields)}&limit=25`, {
-      headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30000), cache: "no-store",
+      headers: { Authorization: `Bearer ${pageToken}` }, signal: AbortSignal.timeout(30000), cache: "no-store",
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok || j.error) throw new Error(String(j.error?.message ?? res.status).slice(0, 250));
@@ -33,6 +43,7 @@ export async function GET() {
       return {
         id: String(p.id ?? ""),
         permalink: String(p.permalink_url ?? ""),
+        picture: String(p.full_picture ?? ""),
         likes, comments, shares,
         label: `${d.slice(8, 10)}/${d.slice(5, 7)} · 👍${likes} 💬${comments}${shares ? ` ↗${shares}` : ""} · ${msg || "(no text)"}`,
       };

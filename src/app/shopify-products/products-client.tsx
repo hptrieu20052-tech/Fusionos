@@ -288,15 +288,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   };
   // v656 · chạy ads trên POST CÓ SẴN của page: map sản phẩm → post id (trống = dark post mới như cũ).
   const [kitPost, setKitPost] = useState<Record<string, string>>({});
-  const [pagePosts, setPagePosts] = useState<{ id: string; label: string }[] | null>([]);
+  const [pagePosts, setPagePosts] = useState<{ id: string; label: string; picture?: string }[] | null>([]);
   const pagePostsLoaded = useRef(false);
+  // v667 · dropdown chọn post CÓ THUMBNAIL (select thường không nhét ảnh được) — mở theo từng dòng.
+  const [kitPostPick, setKitPostPick] = useState("");
   const loadPagePosts = async () => {
     if (pagePostsLoaded.current) return;
     pagePostsLoaded.current = true;
     setPagePosts(null); // null = đang tải
     const j = await fetch("/api/meta-ads/page-posts").then((r) => r.json()).catch(() => ({ ok: false }));
     setPagePosts(j.ok ? (j.posts as { id: string; label: string }[]) : []);
-    if (!j.ok) flash("✗ Can't load page posts: " + (j.error ?? "error"), false);
+    // v666 · lỗi thì mở khoá để focus lần sau TỰ THỬ LẠI — trước đây fail 1 lần là dropdown kẹt rỗng luôn.
+    if (!j.ok) { pagePostsLoaded.current = false; flash("✗ Can't load page posts: " + (j.error ?? "error"), false); }
   };
   // v657 · MẪU MỚI chưa có post: đăng ngay 1 bài CÔNG KHAI lên page từ ảnh + primary text của dòng này
   // rồi tự điền post id vào ô "post có sẵn" — ad chạy trên bài công khai, tương tác hiện trên tường page.
@@ -2890,13 +2893,28 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       {/* v656 · Chạy ad TRÊN POST CÓ SẴN của page (giữ like/comment — social proof).
                           Chọn từ danh sách post gần đây (xếp theo tương tác) hoặc dán link/ID. Bỏ trống = dark post mới. */}
                       <div style={{ display: "flex", gap: 6, marginTop: 6, alignItems: "center" }}>
-                        <select value="" onFocus={loadPagePosts}
-                          onChange={(e) => { const v = e.target.value; if (v) setKitPost((m) => ({ ...m, [r.id]: v })); }}
-                          style={{ width: 220, border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", fontSize: 12, background: "#fff", color: "var(--muted)" }}>
-                          <option value="">♻ Use existing page post…</option>
-                          {pagePosts === null && <option value="" disabled>Loading page posts…</option>}
-                          {(pagePosts ?? []).map((pp) => <option key={pp.id} value={pp.id}>{pp.label}</option>)}
-                        </select>
+                        <div style={{ position: "relative" }}>
+                          <button onClick={() => { loadPagePosts(); setKitPostPick(kitPostPick === r.id ? "" : r.id); }}
+                            style={{ width: 220, textAlign: "left", border: "1px solid var(--line)", borderRadius: 8, padding: "6px 8px", fontSize: 12, background: "#fff", color: "var(--muted)", cursor: "pointer" }}>
+                            ♻ Use existing page post… ▾
+                          </button>
+                          {/* v667 · panel có THUMBNAIL post — dễ nhận bài hơn dòng chữ trần */}
+                          {kitPostPick === r.id && (
+                            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 60, width: 380, maxHeight: 300, overflowY: "auto", background: "#fff", border: "1px solid var(--line)", borderRadius: 10, boxShadow: "0 10px 28px rgba(16,24,40,.16)", padding: 4 }}>
+                              {pagePosts === null && <div style={{ padding: 10, fontSize: 12, color: "var(--muted)" }}>Loading page posts…</div>}
+                              {pagePosts !== null && !pagePosts.length && <div style={{ padding: 10, fontSize: 12, color: "var(--muted)" }}>No posts found — check META_PAGE_ID / permissions</div>}
+                              {(pagePosts ?? []).map((pp) => (
+                                <div key={pp.id} onClick={() => { setKitPost((m) => ({ ...m, [r.id]: pp.id })); setKitPostPick(""); }}
+                                  style={{ display: "flex", gap: 8, alignItems: "center", padding: "5px 6px", borderRadius: 8, cursor: "pointer", background: kitPost[r.id] === pp.id ? "#EAF3EA" : "transparent" }}>
+                                  {pp.picture
+                                    ? <img src={pp.picture} alt="" style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "1px solid var(--line)" }} />
+                                    : <div style={{ width: 44, height: 44, borderRadius: 6, background: "#EEF0F3", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>📝</div>}
+                                  <span style={{ fontSize: 12, lineHeight: 1.35 }}>{pp.label}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         <input value={kitPost[r.id] ?? ""} onChange={(e) => setKitPost((m) => ({ ...m, [r.id]: e.target.value }))}
                           placeholder="…or paste post ID / facebook link (blank = new dark post)"
                           style={{ flex: 1, border: kitPost[r.id] ? "1px solid #16A34A" : "1px solid var(--line)", borderRadius: 8, padding: "6px 10px", fontSize: 12, boxSizing: "border-box" }} />
