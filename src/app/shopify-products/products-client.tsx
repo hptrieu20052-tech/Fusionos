@@ -2747,13 +2747,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           style={{ border: "none", background: "transparent", font: "inherit", fontSize: 13, padding: "9px 0", outline: "none", width: 110 }} />
                       </span>
                     </div>
-                    {/* v658 · AUTO-POST: lúc Push đăng luôn mỗi ad thành BÀI CÔNG KHAI trên page (ảnh + primary,
-                        link ở comment đầu) rồi ad chạy TRÊN bài đó — đặt lịch chạy sau thì bài có thời gian gom
-                        tương tác trước. Dòng nào đã chọn/dán post riêng thì vẫn dùng post đó. */}
-                    <label style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 8, fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: kitAutoPost ? "#2E7D46" : "var(--ink)" }}>
-                      <input type="checkbox" checked={kitAutoPost} onChange={(e) => setKitAutoPost(e.target.checked)} style={{ accentColor: "#2E7D46" }} />
-                      📣 Auto-post each ad as a PUBLIC page post &amp; run the ad on it
-                    </label>
                     {/* v455 · chip chọn nhanh — không phải mò date picker; ✕ ASAP = chạy ngay khi Meta duyệt xong. */}
                     <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
                       <button onClick={() => { setKitStartDate(""); setKitStartTime(""); }} style={kitChip(!kitStartDate)}>⚡ ASAP</button>
@@ -2775,6 +2768,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       } catch { return null; }
                     })()}</div>
                 )}
+                {/* v658/v664 · AUTO-POST — hiện ở MỌI chế độ (kể cả đẩy vào ad set CÓ SẴN; trước đây nằm trong
+                    khối Start date nên mode "existing" bị giấu mất): lúc Push đăng mỗi ad thành BÀI CÔNG KHAI
+                    trên page (ảnh + primary, link ở comment đầu) rồi ad chạy TRÊN bài đó. Dòng nào đã chọn/dán
+                    post riêng thì vẫn dùng post đó. */}
+                <label style={{ display: "flex", alignItems: "center", gap: 7, alignSelf: "center", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: kitAutoPost ? "#2E7D46" : "var(--ink)" }}>
+                  <input type="checkbox" checked={kitAutoPost} onChange={(e) => setKitAutoPost(e.target.checked)} style={{ accentColor: "#2E7D46" }} />
+                  📣 Auto-post each ad as a PUBLIC page post &amp; run the ad on it
+                </label>
                 <span style={{ flex: 1 }} />
                 <div style={{ display: "flex", gap: 8 }}>
                   {/* v455 · AI viết text quảng cáo cho cả lô — model chọn ngay đây (dùng chung model của trang). */}
