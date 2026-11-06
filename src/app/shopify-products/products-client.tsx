@@ -425,8 +425,15 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       const img = await new Promise<HTMLImageElement>((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url0; });
       const max = 1600, ratio = Math.min(1, max / Math.max(img.width, img.height));
       const cv = document.createElement("canvas"); cv.width = Math.round(img.width * ratio); cv.height = Math.round(img.height * ratio);
-      cv.getContext("2d")!.drawImage(img, 0, 0, cv.width, cv.height);
-      const dataUrl = cv.toDataURL(file.type === "image/png" ? "image/png" : "image/jpeg", 0.9);
+      const ctx = cv.getContext("2d")!;
+      // v663 · ảnh ads LUÔN xuất JPEG: PNG photo 1600px nặng 3–8MB → vượt giới hạn body ~4.5MB
+      // của Vercel → upload lỗi (PNG fail, JPG ok — đúng hiện tượng đã gặp). Ads không cần kênh
+      // trong suốt; nền trong suốt tô TRẮNG trước (JPEG mặc định đổ ĐEN, hỏng mockup nền trong).
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      let dataUrl = cv.toDataURL("image/jpeg", 0.9);
+      // Vẫn quá nặng (ảnh chi tiết dày) → hạ quality dần cho lọt giới hạn upload.
+      for (const q of [0.8, 0.7, 0.6]) { if (dataUrl.length <= 3_500_000) break; dataUrl = cv.toDataURL("image/jpeg", q); }
       URL.revokeObjectURL(url0);
       const j = await postJSON("/api/woo-products/upload", { dataUrl });
       if (j.ok && j.url) {
