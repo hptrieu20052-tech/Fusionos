@@ -134,6 +134,27 @@ export async function POST(req: NextRequest) {
     .from(schema.shopifyProducts).where(inArray(schema.shopifyProducts.id, items.map((i) => i.id)));
   const byId = new Map(prods.map((p) => [p.id, p]));
 
+  // v672 · CHỦ SELLER của từng sản phẩm — để ghi meta_ad_sellers NGAY LÚC TẠO AD. Trước đây chỉ dựa
+  // auto-resolve của /entities (lần theo LINK trong creative về listing); ad chạy trên POST
+  // (object_story_id, từ v656) không có link trong creative → chuỗi đứt, ad mới toàn hiện "👤 assign".
+  // Push là nơi BIẾT CHẮC ad thuộc sản phẩm nào → ghi thẳng chủ, khỏi suy luận ngược.
+  const ownerOf = new Map<string, { id: string; name: string }>();
+  try {
+    const rows = (await db.execute(sql`
+      SELECT DISTINCT ON (sp.id) sp.id,
+        coalesce(sp.created_by, s2.seller_id) AS owner,
+        coalesce(u.full_name, '') AS owner_name
+      FROM shopify_products sp
+      LEFT JOIN etsy_products ep ON ep.id = sp.etsy_product_id
+        OR (sp.shopify_product_id <> '' AND ep.shopify_product_id = sp.shopify_product_id)
+      LEFT JOIN stores s2 ON s2.id = ep.store_id
+      LEFT JOIN users u ON u.id = coalesce(sp.created_by, s2.seller_id)
+      WHERE sp.id IN (${sql.join(items.map((i) => sql`${i.id}::uuid`), sql`, `)})
+      ORDER BY sp.id, ep.id
+    `)).rows as { id: string; owner: string | null; owner_name: string }[];
+    for (const r of rows) if (r.owner) ownerOf.set(r.id, { id: r.owner, name: r.owner_name });
+  } catch { /* resolve chủ là phụ — lỗi thì chip assign gán tay như cũ */ }
+
   const results: { adName: string; ok: boolean; error?: string; opts?: string }[] = [];
   let lifecycleAll = true;   // v447 · existing_customer_budget_percentage được nhận cho mọi ad set?
 
@@ -293,9 +314,24 @@ export async function POST(req: NextRequest) {
       if (!creative) throw lastErr;
 
       // 4) ad — PAUSED, bật tay sau khi liếc preview
-      await fb(`${c.account}/ads`, c.token, {
+      const adRes = await fb(`${c.account}/ads`, c.token, {
         name: it.adName, adset_id: adsetId, creative: { creative_id: String(creative.id) }, status: "PAUSED",
       });
+      // v672 · ghi chủ seller cho ad ngay lúc tạo (ON CONFLICT không đè bản gán TAY; bảng chưa
+      // migrate v632 thì bỏ qua êm) → Finance/Ads Center hết cảnh ad mới nằm "👤 assign".
+      const own = ownerOf.get(String(it.id));
+      const newAdId = String((adRes as { id?: string }).id ?? "");
+      if (own && newAdId) {
+        try {
+          await db.execute(sql`
+            INSERT INTO meta_ad_sellers (ad_id, seller_name, seller_id, manual, updated_at)
+            VALUES (${newAdId}, ${own.name}, ${own.id}::uuid, false, now())
+            ON CONFLICT (ad_id) DO UPDATE
+              SET seller_name = EXCLUDED.seller_name, seller_id = EXCLUDED.seller_id, updated_at = now()
+              WHERE meta_ad_sellers.manual = false
+          `);
+        } catch { /* best-effort */ }
+      }
       okIds.push(it.id);
       results.push({ adName: it.adName, ok: true, opts: applied });
     } catch (e) {
