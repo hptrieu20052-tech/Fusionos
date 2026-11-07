@@ -1703,10 +1703,35 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     }
     let combos: SelOpt[][] = [[]];
     for (const o of opts) { const next: SelOpt[][] = []; for (const c of combos) for (const val of o.values) next.push([...c, { name: o.name, value: val }]); combos = next; }
+    // v670 · TỰ SINH SKU cho tổ hợp MỚI theo khuôn SKU có sẵn của listing:
+    // tiền tố chung theo đoạn "-" (vd TLW-0651) + mã viết tắt từng giá trị option
+    // (Hardcover 11''x8.5'' → HAR11X85, Glossy → GLO) → TLW-0651-HAR11X85-GLO. Trùng thì thêm -2.
+    // Seller sửa tay được; SKU mới nhớ vào SKU mapping thì đơn mới tự khớp nhà in.
+    const oldSkus = edit.variants.map((v) => (v.sku || "").trim()).filter(Boolean);
+    const skuBase = (() => {
+      if (!oldSkus.length) return "";
+      const segs = oldSkus.map((s) => s.split("-"));
+      let n = 0;
+      while (n < segs[0].length && segs.every((sg) => sg[n] !== undefined && sg[n] === segs[0][n])) n++;
+      return segs[0].slice(0, n).join("-");
+    })();
+    const abbr = (val: string) => val.toUpperCase().replace(/['"‘’“”]/g, "")
+      .split(/[^A-Z0-9.]+/).filter(Boolean)
+      .map((w) => (/^[0-9.X]+$/.test(w) ? w.replace(/\./g, "") : w.slice(0, 3))).join("").slice(0, 10);
+    const taken = new Set(oldSkus);
+    const genSku = (so: SelOpt[]) => {
+      if (!skuBase) return "";
+      let s = [skuBase, ...so.map((x) => abbr(x.value)).filter(Boolean)].join("-");
+      if (taken.has(s)) { let i = 2; while (taken.has(`${s}-${i}`)) i++; s = `${s}-${i}`; }
+      taken.add(s);
+      return s;
+    };
+    // v670 · giá tổ hợp mới = giá variant đầu (không để 0 — Save là push thẳng, giá $0 lên live rất nguy).
+    const basePrice = edit.variants[0]?.price ?? "0";
     const variants: Variant[] = combos.slice(0, 100).map((so) => {
       const ex = prev.get(sigOf(so));
       return ex ? { ...ex, selectedOptions: so, title: so.map((x) => x.value).join(" / ") }
-        : { id: "", title: so.map((x) => x.value).join(" / "), selectedOptions: so, price: "0", compareAtPrice: null, sku: "", inventoryQty: null, barcode: "" };
+        : { id: "", title: so.map((x) => x.value).join(" / "), selectedOptions: so, price: basePrice, compareAtPrice: null, sku: genSku(so), inventoryQty: null, barcode: "" };
     });
     setEdit({ ...edit, options, variants });
   };
