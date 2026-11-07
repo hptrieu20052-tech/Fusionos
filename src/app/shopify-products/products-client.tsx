@@ -2421,7 +2421,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                               <td style={{ padding: "6px 8px" }}>{(v.selectedOptions ?? []).map((o) => o.value).join(" / ") || v.title || "Default"}</td>
                               <td style={{ padding: "4px 8px", textAlign: "right" }}><input type="number" step="0.01" min="0" value={v.price} onChange={(e) => setV(i, "price", e.target.value)} style={{ ...ctl, width: 82, padding: "6px 8px", textAlign: "right" }} /></td>
                               <td style={{ padding: "4px 8px", textAlign: "right" }}><input type="number" step="0.01" min="0" value={v.compareAtPrice ?? ""} onChange={(e) => setV(i, "compareAtPrice", e.target.value)} placeholder="—" style={{ ...ctl, width: 82, padding: "6px 8px", textAlign: "right" }} /></td>
-                              <td style={{ padding: "4px 8px" }}><input value={v.sku} onChange={(e) => setV(i, "sku", e.target.value)} style={{ ...ctl, width: 120, padding: "6px 8px" }} /></td>
+                              {/* v671 · seller thấy SKU nhưng KHÔNG sửa được (SKU là chìa khoá map nhà in) — server cũng chặn */}
+                              <td style={{ padding: "4px 8px" }}><input value={v.sku} readOnly={!isAdmin} title={isAdmin ? undefined : "SKU is managed by admin (used for supplier mapping)"} onChange={(e) => { if (isAdmin) setV(i, "sku", e.target.value); }} style={{ ...ctl, width: 120, padding: "6px 8px", ...(isAdmin ? {} : { background: "#F2F4F7", color: "var(--muted)", cursor: "not-allowed" }) }} /></td>
                               <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--muted)" }}>{v.inventoryQty ?? "—"}</td>
                             </tr>
                           ))}

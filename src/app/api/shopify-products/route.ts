@@ -258,7 +258,7 @@ export async function PATCH(req: NextRequest) {
   const id = String(b?.id ?? "").trim();
   if (!id) return NextResponse.json({ ok: false, error: "id required" }, { status: 400 });
 
-  const [r] = await db.select({ storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id, createdBy: schema.shopifyProducts.createdBy, etsyPid: schema.shopifyProducts.etsyProductId, gid: schema.shopifyProducts.shopifyProductId })
+  const [r] = await db.select({ storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id, createdBy: schema.shopifyProducts.createdBy, etsyPid: schema.shopifyProducts.etsyProductId, gid: schema.shopifyProducts.shopifyProductId, variants: schema.shopifyProducts.variants })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
   if (!r) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
@@ -293,6 +293,20 @@ export async function PATCH(req: NextRequest) {
   if (Array.isArray(b.options)) patch.options = b.options;
   if (Array.isArray(b.variants)) patch.variants = b.variants;
   if (Array.isArray(b.images)) patch.images = b.images;
+  // v671 · SELLER: SKU CHỈ-ĐỌC — variant cũ giữ nguyên SKU trong DB (khớp theo GID, chưa có GID thì
+  // theo chữ ký option); variant MỚI giữ SKU client gửi (bản tự sinh). Chặn ở API, không chỉ ẩn ở UI —
+  // SKU là chìa khoá SKU mapping/fulfill, seller đổi là đơn hết tự khớp nhà in.
+  if (session.role === "seller" && Array.isArray(patch.variants)) {
+    type Vv = { id?: string; sku?: string; selectedOptions?: { name?: string; value?: string }[] };
+    const cur = (Array.isArray(r.variants) ? r.variants : []) as Vv[];
+    const vsig = (v: Vv) => (v.selectedOptions ?? []).map((o) => `${o.name}=${o.value}`).join("|");
+    const byId = new Map(cur.filter((v) => v.id).map((v) => [String(v.id), v.sku ?? ""] as const));
+    const bySig = new Map(cur.map((v) => [vsig(v), v.sku ?? ""] as const));
+    patch.variants = (patch.variants as Vv[]).map((v) => {
+      const old = (v.id && byId.has(String(v.id))) ? byId.get(String(v.id)) : bySig.get(vsig(v));
+      return old !== undefined ? { ...v, sku: old } : v;
+    });
+  }
 
   await db.update(schema.shopifyProducts).set(patch).where(eq(schema.shopifyProducts.id, id));
   return NextResponse.json({ ok: true });
