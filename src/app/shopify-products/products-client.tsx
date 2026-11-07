@@ -1759,7 +1759,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
             <button disabled={busy} onClick={doSync} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: busy ? .6 : 1 }}>⟳ Sync from Shopify</button>
           </span>
         )}
-        {!isAdmin && <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1F6F45", background: "#E9F7EF", borderRadius: 999, padding: "4px 12px" }}>Your listings · you can edit images & custom options</span>}
+        {!isAdmin && <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1F6F45", background: "#E9F7EF", borderRadius: 999, padding: "4px 12px" }}>Your listings · edit images, custom options, price & variants</span>}
       </div>
 
       {/* ── FILTERS ── hàng 1: tìm & lọc · hàng 2: kết quả + chọn. Tách 2 tầng cho khỏi rối. */}
@@ -2361,8 +2361,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         {edPersOwn && <button disabled={busy} onClick={clearEdPers} style={{ ...ghost, padding: "7px 14px", fontSize: 12.5 }}>Use the template instead</button>}
                       </div>
                     </div>
-                    {isAdmin && (<>
-                    {/* v264 · OPTIONS builder — gõ option/giá trị là TỰ xổ lại variants. */}
+                    {/* v264 · OPTIONS builder — gõ option/giá trị là TỰ xổ lại variants.
+                        v669 · mở cho cả SELLER: chỉnh giá bán, thêm variants — Save tự push lên Shopify. */}
                     <label style={lab}>Options</label>
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: 10, marginBottom: 10 }}>
                       {(edit.options ?? []).map((o, i) => (
@@ -2403,7 +2403,6 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         </tbody>
                       </table>
                     </div>
-                    </>)}
                     <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 16 }}>
                       <button onClick={() => setEditId(null)} style={ghost}>Cancel</button>
                       <button disabled={busy} onClick={saveEdit} style={{ ...pill(SHOP_GREEN, "#fff"), opacity: busy ? .6 : 1 }}>{busy ? "Saving…" : "Save (auto-updates Shopify)"}</button>

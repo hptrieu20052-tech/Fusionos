@@ -276,8 +276,8 @@ export async function PATCH(req: NextRequest) {
   }
 
   const patch: Record<string, unknown> = { dirty: true, updatedAt: new Date() };
-  // v631 · SELLER chỉ được sửa ẢNH (custom options đi route /personalization riêng) — mọi field khác
-  // (title/mô tả/giá/variants/status/SEO…) bỏ qua lặng lẽ: UI của seller cũng không hiện các ô đó.
+  // v631 · SELLER không sửa title/mô tả/status/SEO (bỏ qua lặng lẽ: UI seller không hiện các ô đó).
+  // v669 · seller ĐƯỢC sửa giá/variants + options (thêm variant) — Save tự push lên Shopify.
   const sellerImagesOnly = session.role === "seller";
   if (!sellerImagesOnly) {
     if (typeof b.title === "string" && b.title.trim()) patch.title = b.title.trim();
@@ -288,9 +288,10 @@ export async function PATCH(req: NextRequest) {
     if ("vendor" in b) patch.vendor = String(b.vendor ?? "");
     if ("productType" in b) patch.productType = String(b.productType ?? "");
     if (typeof b.status === "string" && ["ACTIVE", "DRAFT", "ARCHIVED"].includes(b.status.toUpperCase())) patch.status = b.status.toUpperCase();
-    if (Array.isArray(b.options)) patch.options = b.options;   // v264 · thêm option/variant tay ở nháp
-    if (Array.isArray(b.variants)) patch.variants = b.variants;
   }
+  // v264 · thêm option/variant tay · v669 · mở cho cả seller (chỉnh giá, thêm variant trên listing của mình)
+  if (Array.isArray(b.options)) patch.options = b.options;
+  if (Array.isArray(b.variants)) patch.variants = b.variants;
   if (Array.isArray(b.images)) patch.images = b.images;
 
   await db.update(schema.shopifyProducts).set(patch).where(eq(schema.shopifyProducts.id, id));

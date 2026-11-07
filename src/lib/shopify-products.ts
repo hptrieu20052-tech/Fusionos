@@ -127,6 +127,15 @@ const PRODUCT_UPDATE = `mutation U($product: ProductUpdateInput!) {
 const VARIANTS_UPDATE = `mutation VU($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
   productVariantsBulkUpdate(productId: $productId, variants: $variants) { userErrors { field message } }
 }`;
+// v669 · THÊM variant mới vào sản phẩm ĐÃ có trên Shopify (trước đây update path lặng lẽ bỏ qua
+// variant chưa có GID — thêm variant chỉ ăn với bản nháp). Giá trị option mới của option CÓ SẴN thì
+// bulkCreate tự tạo; option HOÀN TOÀN mới phải productOptionsCreate trước.
+const VARIANTS_CREATE = `mutation VC($productId: ID!, $variants: [ProductVariantsBulkInput!]!, $strategy: ProductVariantsBulkCreateStrategy) {
+  productVariantsBulkCreate(productId: $productId, variants: $variants, strategy: $strategy) { userErrors { field message } }
+}`;
+const OPTIONS_CREATE = `mutation OC($productId: ID!, $options: [OptionCreateInput!]!) {
+  productOptionsCreate(productId: $productId, options: $options) { userErrors { field message } }
+}`;
 const MEDIA_DELETE = `mutation MD($productId: ID!, $mediaIds: [ID!]!) {
   productDeleteMedia(productId: $productId, mediaIds: $mediaIds) { deletedMediaIds userErrors { field message } }
 }`;
@@ -188,6 +197,45 @@ export async function pushProductToShopify(
   if (vin.length) {
     const r2 = await shopifyGraphQL<{ productVariantsBulkUpdate?: { userErrors?: unknown } }>(cred, VARIANTS_UPDATE, { productId: pid, variants: vin });
     const e2 = ue(r2.productVariantsBulkUpdate?.userErrors); if (e2) return { ok: false, error: "variants: " + e2 };
+  }
+
+  // 2b) v669 · VARIANT MỚI (id chưa phải GID — thêm từ Options builder trong Edit) → TẠO trên Shopify.
+  // GID mới được nạp lại ngay sau push (route update re-fetch fresh) nên DB tự khớp.
+  const newVs = local.variants.filter((v) => !String(v.id ?? "").startsWith("gid://") && (v.selectedOptions ?? []).length);
+  if (newVs.length) {
+    // Option hoàn toàn mới (chưa có trên Shopify) → tạo option kèm toàn bộ giá trị trước.
+    const remote = await fetchOneShopifyProduct(cred, pid);
+    const have = new Set((remote?.options ?? []).map((o) => String(o.name ?? "").trim().toLowerCase()));
+    const wantOpts = new Map<string, string[]>();
+    for (const v of local.variants) {
+      for (const so of (v.selectedOptions ?? [])) {
+        const k = String(so.name ?? "").trim();
+        if (!k || have.has(k.toLowerCase())) continue;
+        const arr = wantOpts.get(k) ?? [];
+        if (!arr.includes(so.value)) arr.push(so.value);
+        wantOpts.set(k, arr);
+      }
+    }
+    if (wantOpts.size) {
+      const r0 = await shopifyGraphQL<{ productOptionsCreate?: { userErrors?: unknown } }>(cred, OPTIONS_CREATE, {
+        productId: pid,
+        options: Array.from(wantOpts.entries()).map(([name, values]) => ({ name, values: values.map((nm) => ({ name: nm })) })),
+      });
+      const e0 = ue(r0.productOptionsCreate?.userErrors); if (e0) return { ok: false, error: "options: " + e0 };
+    }
+    const cin = newVs.map((v) => ({
+      price: v.price || "0",
+      ...(v.compareAtPrice != null && String(v.compareAtPrice).trim() !== "" ? { compareAtPrice: v.compareAtPrice } : {}),
+      ...(v.sku ? { inventoryItem: { sku: v.sku } } : {}),
+      ...(v.barcode ? { barcode: v.barcode } : {}),
+      optionValues: (v.selectedOptions ?? []).map((so) => ({ optionName: so.name, name: so.value })),
+    }));
+    // REMOVE_STANDALONE_VARIANT: sản phẩm đang chỉ có "Default Title" mà thêm variant option thật
+    // → bỏ variant trần đi (không có gì để bỏ thì Shopify chạy như default).
+    const r3 = await shopifyGraphQL<{ productVariantsBulkCreate?: { userErrors?: unknown } }>(
+      cred, VARIANTS_CREATE, { productId: pid, variants: cin, strategy: "REMOVE_STANDALONE_VARIANT" },
+    );
+    const e3 = ue(r3.productVariantsBulkCreate?.userErrors); if (e3) return { ok: false, error: "new variants: " + e3 };
   }
 
   // 3) Ảnh — truy vấn media HIỆN CÓ trên Shopify để tính ảnh cần xóa (local đã bỏ ảnh nào thì xóa ảnh đó).
