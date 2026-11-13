@@ -25,7 +25,8 @@ export const maxDuration = 300;
 const V = "v23.0";
 const G = `https://graph.facebook.com/${V}`;
 
-type Item = { id: string; adName: string; primary: string; headline: string; imageUrl?: string; adset?: string; postId?: string };
+// v673 · videoUrl/videoThumb: chạy VIDEO creative (video thư viện gắn vào sản phẩm) thay ảnh.
+type Item = { id: string; adName: string; primary: string; headline: string; imageUrl?: string; adset?: string; postId?: string; videoUrl?: string; videoThumb?: string };
 
 // v656 · Chuẩn hoá post id từ ô "post có sẵn": nhận pageid_postid, id trần, hoặc link Facebook.
 // Trả "" nếu không bóc được (caller báo lỗi rõ thay vì để Meta trả lỗi khó hiểu).
@@ -230,9 +231,44 @@ export async function POST(req: NextRequest) {
         if (!link) throw new Error("no storefront link");
         const imgs = (Array.isArray(p?.images) ? p!.images as { src: string; position?: number }[] : []).slice().sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
         const src = (it.imageUrl ?? "").trim() || (imgs[0]?.src ?? "");
-        if (!src) throw new Error("no image");
+        const videoUrl = String(it.videoUrl ?? "").trim();
 
-        if (autoPost) {
+        if (videoUrl) {
+          // v673 · VIDEO CREATIVE: video thư viện (public_url trên R2) → upload vào ad account
+          // (advideos nhận file_url, Meta tự tải) → chờ xử lý → video_data + thumbnail + CTA.
+          // Ưu tiên: postId (đã xử lý ở trên) > video > autoPost ảnh > dark post ảnh.
+          const thumb = String(it.videoThumb ?? "").trim() || src;
+          if (!thumb) throw new Error("video ad needs a thumbnail (video has no poster & product has no image)");
+          if (autoPost) {
+            // v674 · AUTO-POST VIDEO — giống luồng ảnh: đăng VIDEO POST công khai lên page ngay lúc
+            // Push (caption = primary, link ở comment đầu) rồi ad chạy TRÊN bài đó (CTA gắn ở creative
+            // theo v665). Đặt lịch chạy sau → bài có thời gian gom tương tác trước khi đổ tiền.
+            const pr = await publishPagePost({ pageId: c.pageId, message: it.primary, link, imageUrl: thumb, videoUrl, toFb: true, toIg: true }, c.token);
+            existingPost = String(pr.fbPostId ?? "");
+            if (!existingPost) throw new Error("auto-post video: Facebook returned no post id");
+          } else {
+          const vup = await fb(`${c.account}/advideos`, c.token, { file_url: videoUrl });
+          const videoId = String(vup.id ?? "");
+          if (!videoId) throw new Error("video upload returned no id");
+          // Meta xử lý video BẤT ĐỒNG BỘ (thường <30s) — poll tối đa ~90s rồi cứ thử tạo creative.
+          for (let w = 0; w < 18; w++) {
+            const st = await fb(`${videoId}?fields=status`, c.token).catch(() => null);
+            const vs = String(((st?.status ?? {}) as Record<string, unknown>).video_status ?? "");
+            if (vs === "ready") break;
+            if (vs === "error") throw new Error("Meta failed to process the video — check format (mp4/h264) & size");
+            await new Promise((r) => setTimeout(r, 5000));
+          }
+          story = {
+            page_id: c.pageId,
+            video_data: {
+              video_id: videoId, image_url: thumb,
+              title: it.headline, message: it.primary,
+              call_to_action: { type: "SHOP_NOW", value: { link } },
+            },
+          };
+          }
+        } else if (autoPost) {
+          if (!src) throw new Error("no image");
           // v658 · AUTO-POST khi đặt lịch: đăng bài CÔNG KHAI ngay lúc push (ảnh + primary, link ở
           // comment đầu — khuôn v617) rồi chạy ad TRÊN bài đó. Ads hẹn giờ chạy sau → bài có thời
           // gian gom tương tác tự nhiên trước khi đổ tiền.
@@ -243,6 +279,7 @@ export async function POST(req: NextRequest) {
           if (!existingPost) throw new Error("auto-post: Facebook returned no post id");
         } else {
           // 1) upload ảnh → image_hash (dark post như cũ)
+          if (!src) throw new Error("no image");
           const imgRes = await fetch(src, { signal: AbortSignal.timeout(30000) });
           if (!imgRes.ok) throw new Error("image download failed");
           const b64 = Buffer.from(await imgRes.arrayBuffer()).toString("base64");
@@ -305,7 +342,7 @@ export async function POST(req: NextRequest) {
         for (const v of variants) {
           try {
             creative = await fb(`${c.account}/adcreatives`, c.token, { ...base, ...v.extra });
-            applied = v.label + (existingPost ? "+post" + (base.call_to_action ? "+cta" : "") : "");
+            applied = v.label + (existingPost ? "+post" + (base.call_to_action ? "+cta" : "") : (story && (story as Record<string, unknown>).video_data ? "+video" : ""));
             break;
           } catch (e) { lastErr = e; }
         }

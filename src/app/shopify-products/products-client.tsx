@@ -17,7 +17,7 @@ type Row = {
   // v644 · GMC item_group_id (shopify_ZZ_<pid>) — null khi listing chưa lên Shopify
   gmcGroupId: string | null;
   mainImage: string | null; imageCount: number; imageUrls?: string[]; onlineStoreUrl: string | null;
-  videoCode: number | null; videoThumbUrl: string | null; videoPushed: boolean;
+  videoCode: number | null; videoThumbUrl: string | null; videoPublicUrl: string | null; videoPushed: boolean;
   totalInventory: number | null; optionsSummary: string;
   productType: string; categoryName: string; collectionTitles: string[];
   templateId: string | null; templateName: string; templatePinned: boolean; templateHasFacts: boolean;
@@ -292,6 +292,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const pagePostsLoaded = useRef(false);
   // v667 · dropdown chọn post CÓ THUMBNAIL (select thường không nhét ảnh được) — mở theo từng dòng.
   const [kitPostPick, setKitPostPick] = useState("");
+  // v673/v674 · VIDEO creative: chọn video ngay TRONG LƯỚI THUMBNAIL của kit (ô tím ▶ — tiện như chọn ảnh).
+  // kitVids = video thư viện theo sản phẩm (nạp khi mở kit); kitVideo = video đã chọn cho từng dòng.
+  const [kitVids, setKitVids] = useState<Record<string, { code: number; title: string; thumbUrl: string | null; publicUrl: string }[]>>({});
+  const [kitVideo, setKitVideo] = useState<Record<string, { url: string; thumb: string } | undefined>>({});
   const loadPagePosts = async () => {
     if (pagePostsLoaded.current) return;
     pagePostsLoaded.current = true;
@@ -306,11 +310,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitPosting, setKitPosting] = useState<Set<string>>(new Set());
   const kitPostNow = async (id: string, title: string, imageUrl: string, link: string | null) => {
     const t = kitTexts[id];
-    if (!imageUrl) { flash("✗ No image for this product — pick/upload one first", false); return; }
+    // v674 · dòng đã chọn ô VIDEO → Post now đăng VIDEO POST (không cần ảnh).
+    const vSel = kitVideo[id];
+    if (!imageUrl && !vSel) { flash("✗ No image for this product — pick/upload one first", false); return; }
     if (kitPosting.has(id)) return;
     setKitPosting((s) => new Set(s).add(id));
     try {
-      const j = await postJSON("/api/meta-ads/page-posts", { message: t?.primary ?? title, link: link ?? "", imageUrl });
+      const j = await postJSON("/api/meta-ads/page-posts", { message: t?.primary ?? title, link: link ?? "", imageUrl, ...(vSel ? { videoUrl: vSel.url } : {}) });
       if (j.ok && j.postId) {
         setKitPost((m) => ({ ...m, [id]: String(j.postId) }));
         pagePostsLoaded.current = false; // lần mở select sau tải lại danh sách (có bài mới)
@@ -462,7 +468,13 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     setKitBusy(true);
     try {
       try { localStorage.setItem("adskit.cfg", JSON.stringify({ c: kitCampaign, a: kitAdset, p: kitPrefix, m: kitMode, b: kitBudget, x: kitPixel, ci: kitCampId, ai: kitAdsetId, as: kitAdsets.map((x) => ({ n: x.name, b: x.budget })), g1: kitAgeMin, g2: kitAgeMax, co: kitCountries, st: kitStartTime })); } catch { /* ignore */ }
-      const items = list.map((r, idx) => ({ id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline, imageUrl: kitImg[r.id] || "", adset: kitItemAdset[r.id] || (kitAdsets.find((x) => x.name.trim())?.name ?? ""), postId: (kitPost[r.id] ?? "").trim() }));
+      const items = list.map((r, idx) => ({
+        id: r.id, adName: kitAdName(r.title, idx), primary: kitTexts[r.id].primary, headline: kitTexts[r.id].headline,
+        imageUrl: kitImg[r.id] || "", adset: kitItemAdset[r.id] || (kitAdsets.find((x) => x.name.trim())?.name ?? ""),
+        postId: (kitPost[r.id] ?? "").trim(),
+        // v674 · ô video đã chọn trong lưới → creative là video (ưu tiên: post > video > auto-post > ảnh)
+        ...(kitVideo[r.id] ? { videoUrl: kitVideo[r.id]!.url, videoThumb: kitVideo[r.id]!.thumb || kitImg[r.id] || r.mainImage || "" } : {}),
+      }));
       const j = await postJSON("/api/meta-ads/push", {
         campaign: kitCampaign, campaignId: kitCampId, adsetPrefix: kitAdset, budget: Number(kitBudget) || 5,
         mode: kitMode === "existing" ? "existing_adset" : kitMode, adsetId: kitAdsetId,
@@ -1497,6 +1509,11 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       const imgInit: Record<string, string> = {};
       for (const r of rows.filter((x) => sel.has(x.id))) imgInit[r.id] = r.imageUrls?.[0] ?? r.mainImage ?? "";
       setKitImg(imgInit);
+      // v674 · nạp video thư viện của các sản phẩm đã chọn → hiện ô VIDEO trong lưới thumbnail để chọn.
+      setKitVideo({});
+      postJSON("/api/meta-ads/product-videos", { ids: rows.filter((x) => sel.has(x.id)).map((x) => x.id) })
+        .then((j) => { if (j.ok) setKitVids((j.videos ?? {}) as Record<string, { code: number; title: string; thumbUrl: string | null; publicUrl: string }[]>); })
+        .catch(() => { /* nạp video lỗi — kit vẫn chạy ảnh như cũ */ });
       // v441 · nhớ campaign/ad set/prefix của lần export trước.
       try {
         const cfg = JSON.parse(localStorage.getItem("adskit.cfg") ?? "{}");
@@ -2850,6 +2867,30 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           </span>
                         );
                       })}
+                      {/* v674 · VIDEO thư viện của sản phẩm — bấm chọn làm creative như chọn ảnh.
+                          Dòng có chọn post thì post thắng; bật Auto-post thì video được đăng thành
+                          VIDEO POST công khai lúc Push rồi ad chạy trên bài đó (giống luồng ảnh). */}
+                      {(() => {
+                        const vids = (kitVids[r.id] ?? []).slice();
+                        if (!vids.length && r.videoPublicUrl) vids.push({ code: r.videoCode ?? 0, title: "", thumbUrl: r.videoThumbUrl, publicUrl: r.videoPublicUrl });
+                        return vids.map((v, i) => {
+                          const picked = kitVideo[r.id]?.url === v.publicUrl;
+                          return (
+                            <span key={"v" + i} onClick={() => setKitVideo((m) => ({ ...m, [r.id]: picked ? undefined : { url: v.publicUrl, thumb: v.thumbUrl ?? "" } }))}
+                              title={picked ? "VIDEO creative selected — click again to go back to image" : `Use video #${v.code} as the ad creative`}
+                              style={{ position: "relative", display: "inline-block", cursor: "pointer" }}>
+                              {v.thumbUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={v.thumbUrl} alt="" style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 8, display: "block", border: picked ? "3px solid #7C3AED" : "1px solid var(--line)", opacity: picked ? 1 : 0.8, background: "#0B1220" }} />
+                              ) : (
+                                <span style={{ width: 92, height: 92, borderRadius: 8, background: "#0B1220", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 22, border: picked ? "3px solid #7C3AED" : "1px solid var(--line)" }}>🎬</span>
+                              )}
+                              <span style={{ position: "absolute", top: 4, left: 4, background: picked ? "#7C3AED" : "rgba(10,14,20,.6)", color: "#fff", borderRadius: 999, fontSize: 10, fontWeight: 800, padding: "1px 6px" }}>{picked ? "✓ VIDEO" : "▶"}</span>
+                              <span style={{ position: "absolute", bottom: 4, left: 4, background: "#7C3AED", color: "#fff", borderRadius: 6, fontSize: 9, fontWeight: 800, padding: "1px 5px" }}>#{v.code}</span>
+                            </span>
+                          );
+                        });
+                      })()}
                       {/* v525 · ảnh ANGLE tự upload — chọn được như thumbnail thường */}
                       {(kitExtra[r.id] ?? []).map((u, i) => {
                         const picked = (kitImg[r.id] || "") === u;

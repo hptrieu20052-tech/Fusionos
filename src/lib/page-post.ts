@@ -27,6 +27,8 @@ export type PagePostJob = {
   message: string;
   link: string;
   imageUrl: string;
+  // v674 · có videoUrl → đăng VIDEO POST lên page (thay photo post); imageUrl khi đó chỉ là thumb dự phòng.
+  videoUrl?: string;
   toFb: boolean;
   toIg: boolean;
   /** FB only — unix seconds cho scheduled_publish_time (≥10 phút, ≤75 ngày). v617: route không dùng
@@ -46,7 +48,21 @@ export async function publishPagePost(job: PagePostJob, sysToken: string): Promi
   let fbPostId = "";
   if (job.toFb) {
     const sched = Number(job.fbScheduleUnix ?? 0);
-    if (job.imageUrl) {
+    if (job.videoUrl) {
+      // v674 · VIDEO POST: /{page}/videos nhận file_url (Meta tự tải từ R2), description = caption.
+      // Post id của video page = {pageId}_{videoId} — dùng được làm object_story_id cho ads.
+      const post = await fb(`${job.pageId}/videos`, pageToken, {
+        file_url: job.videoUrl,
+        ...(job.message ? { description: job.message } : {}),
+        ...(sched > 0 ? { published: false, scheduled_publish_time: sched } : {}),
+      });
+      const vid = String(post.id ?? "");
+      if (vid) fbPostId = `${job.pageId}_${vid}`;
+      if (job.link && fbPostId && !sched) {
+        try { await fb(`${fbPostId}/comments`, pageToken, { message: job.link }); }
+        catch { warns.push("Video published but the link comment failed — paste the link in a comment manually."); }
+      }
+    } else if (job.imageUrl) {
       // v617 · PHOTO POST: đăng ảnh creative ĐẦY ĐỦ (link post cũ để FB cào ảnh OG rồi crop mất
       // headline). Link KHÔNG nằm caption — dán vào COMMENT đầu tiên ngay sau khi đăng.
       const post = await fb(`${job.pageId}/photos`, pageToken, {
@@ -76,6 +92,8 @@ export async function publishPagePost(job: PagePostJob, sysToken: string): Promi
     const ig = (pg.instagram_business_account ?? {}) as { id?: string };
     const igId = String(ig.id ?? "");
     if (!igId) warns.push("No Instagram Business account is linked to the Page — IG skipped (link it in Page settings → Linked accounts).");
+    // v674 · IG video cần container + poll processing (vài phút) — chưa tự động, bỏ qua để không treo push.
+    else if (job.videoUrl) warns.push("IG video post isn't automated yet — FB video post published; post to IG manually if needed.");
     else if (!job.imageUrl) warns.push("This ad's creative has no usable image — Instagram needs one, IG skipped.");
     else {
       // v618 · IG lỗi KHÔNG được ném ra ngoài: FB ở trên có thể ĐÃ đăng — throw ở đây làm caller

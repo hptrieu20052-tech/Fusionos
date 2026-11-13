@@ -63,6 +63,8 @@ export async function GET(req: NextRequest) {
   const rows = await db.select({
     p: schema.shopifyProducts, storeName: schema.stores.name, sellerName: schema.users.fullName, storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id,
     videoCode: schema.productVideos.videoCode, videoThumbUrl: schema.productVideos.thumbUrl,
+    // v673 · public_url video → Meta Ads kit chạy VIDEO creative (advideos file_url cần URL tải được)
+    videoPublicUrl: schema.productVideos.publicUrl,
   })
     .from(schema.shopifyProducts)
     .leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
@@ -204,7 +206,7 @@ export async function GET(req: NextRequest) {
       // v234 · tất cả URL ảnh (theo position) để lightbox trượt qua lại cả listing.
       imageUrls: [...imgs].sort((a, b) => (a.position ?? 99) - (b.position ?? 99)).map((i) => i.src).filter(Boolean),
       // v224 · video đã gắn: thumbnail để nhận biết listing nào có video (cột Video cạnh Image).
-      videoCode: r.videoCode ?? null, videoThumbUrl: r.videoThumbUrl ?? null, videoPushed: !!r.p.videoPushedAt,
+      videoCode: r.videoCode ?? null, videoThumbUrl: r.videoThumbUrl ?? null, videoPublicUrl: r.videoPublicUrl ?? null, videoPushed: !!r.p.videoPushedAt,
       onlineStoreUrl: r.p.onlineStoreUrl, totalInventory: r.p.totalInventory,
       templateId: tpl?.id ?? null, templateName: tpl?.name ?? "", templatePinned: !!pinned, templateHasFacts: tplHasFacts,
       syncedAt: r.p.syncedAt, pushedAt: r.p.pushedAt, aiAt: r.p.aiAt,

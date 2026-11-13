@@ -69,14 +69,16 @@ export async function POST(req: NextRequest) {
   const token = process.env.META_SYSTEM_TOKEN ?? "";
   const pageId = process.env.META_PAGE_ID ?? "";
   if (!token || !pageId) return NextResponse.json({ ok: false, error: "META_SYSTEM_TOKEN / META_PAGE_ID missing" }, { status: 400 });
-  const b = await req.json().catch(() => null) as { message?: string; link?: string; imageUrl?: string } | null;
+  const b = await req.json().catch(() => null) as { message?: string; link?: string; imageUrl?: string; videoUrl?: string } | null;
   const message = String(b?.message ?? "").trim();
   const link = String(b?.link ?? "").trim();
   const imageUrl = String(b?.imageUrl ?? "").trim();
-  if (!imageUrl) return NextResponse.json({ ok: false, error: "imageUrl required (photo post)" }, { status: 400 });
+  // v674 · có videoUrl → đăng VIDEO POST (dùng cho dòng đã chọn 🎬 video trong kit).
+  const videoUrl = String(b?.videoUrl ?? "").trim();
+  if (!imageUrl && !videoUrl) return NextResponse.json({ ok: false, error: "imageUrl or videoUrl required" }, { status: 400 });
   try {
     // v668 · toIg: true — "Post now & use" cũng đăng kèm Instagram (IG lỗi chỉ warn, FB vẫn là bài chạy ad).
-    const r = await publishPagePost({ pageId, message, link, imageUrl, toFb: true, toIg: true }, token);
+    const r = await publishPagePost({ pageId, message, link, imageUrl, videoUrl: videoUrl || undefined, toFb: true, toIg: true }, token);
     const postId = String(r.fbPostId ?? "");
     if (!postId) throw new Error("Facebook returned no post id");
     return NextResponse.json({ ok: true, postId, warns: r.warns });
