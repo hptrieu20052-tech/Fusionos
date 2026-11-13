@@ -57,7 +57,24 @@ export async function publishPagePost(job: PagePostJob, sysToken: string): Promi
         ...(sched > 0 ? { published: false, scheduled_publish_time: sched } : {}),
       });
       const vid = String(post.id ?? "");
-      if (vid) fbPostId = `${job.pageId}_${vid}`;
+      // v675 · ID BÀI THẬT của video post KHÔNG chắc = pageId_videoId (API mới dùng id riêng), và
+      // video cần vài chục giây xử lý — boost ngay là Meta chê "There is an issue with this post".
+      // Poll published_posts tới khi bài xuất hiện (= video đã xử lý) và lấy đúng id bài.
+      let realPost = "";
+      if (vid && !sched) {
+        for (let w = 0; w < 9 && !realPost; w++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          try {
+            const pp = await fb(`${job.pageId}/published_posts?fields=id,attachments{target{id}}&limit=10`, pageToken);
+            for (const po of (Array.isArray(pp.data) ? pp.data : []) as Record<string, unknown>[]) {
+              const atts = (((po.attachments as Record<string, unknown>)?.data ?? []) as Record<string, unknown>[]);
+              if (atts.some((a) => String((a.target as Record<string, unknown>)?.id ?? "") === vid)) { realPost = String(po.id ?? ""); break; }
+            }
+          } catch { /* thử lại vòng sau */ }
+        }
+        if (!realPost) warns.push("Video post is still processing — if the ad fails, wait a minute and pick the post via 'Use existing page post'.");
+      }
+      if (vid) fbPostId = realPost || `${job.pageId}_${vid}`;
       if (job.link && fbPostId && !sched) {
         try { await fb(`${fbPostId}/comments`, pageToken, { message: job.link }); }
         catch { warns.push("Video published but the link comment failed — paste the link in a comment manually."); }

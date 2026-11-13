@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { publishPagePost } from "@/lib/page-post";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120; // v675 · video post phải chờ Meta xử lý (~45s poll) mới có id bài thật
 
 const G = "https://graph.facebook.com/v23.0";
 
