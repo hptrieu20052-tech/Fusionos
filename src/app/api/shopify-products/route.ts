@@ -39,6 +39,9 @@ export async function GET(req: NextRequest) {
     const [r] = await db.select({
       p: schema.shopifyProducts, storeName: schema.stores.name, storeSeller: schema.stores.sellerId, sStoreId: schema.stores.id,
       videoCode: schema.productVideos.videoCode, videoTitle: schema.productVideos.title, videoThumbUrl: schema.productVideos.thumbUrl,
+      // v678 · publicUrl phải trả cả khi MỞ LẠI listing cũ — trước đây chỉ có sau khi Attach,
+      // mở lại modal là mất → nút "+ Vào mô tả" bị disable vĩnh viễn.
+      videoPublicUrl: schema.productVideos.publicUrl,
     })
       .from(schema.shopifyProducts)
       .leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
@@ -57,7 +60,7 @@ export async function GET(req: NextRequest) {
       const admins = await adminUserIds();
       if (!admins.includes(r.p.createdBy)) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
     }
-    return NextResponse.json({ ok: true, product: { ...r.p, storeName: r.storeName, videoCode: r.videoCode, videoTitle: r.videoTitle, videoThumbUrl: r.videoThumbUrl } });
+    return NextResponse.json({ ok: true, product: { ...r.p, storeName: r.storeName, videoCode: r.videoCode, videoTitle: r.videoTitle, videoThumbUrl: r.videoThumbUrl, videoPublicUrl: r.videoPublicUrl } });
   }
 
   const rows = await db.select({
