@@ -787,7 +787,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   };
   // v677 · UPLOAD video thẳng trên listing: PUT trực tiếp browser → R2 (URL ký sẵn, không dính giới hạn
   // body 4.5MB của Vercel) → bắt thumbnail frame đầu bằng canvas → tạo bản ghi Video Library + gắn luôn.
-  const uploadVideoFile = async (file: File | null) => {
+  // v680 · adsOnly=true: listing đã có video chính — video upload thêm CHỈ vào Video Library để
+  // chạy ads (hiện trong Meta Ads kit), không gắn vào listing, không đụng mô tả.
+  const uploadVideoFile = async (file: File | null, adsOnly = false) => {
     if (!file || !edit || busy) return;
     if (!/^video\//.test(file.type)) { flash("✗ Pick a video file (mp4/mov)", false); return; }
     setBusy(true);
@@ -817,14 +819,18 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         }
       } catch { /* thumb là phụ */ }
       const j = await postJSON("/api/shopify-products/set-video", {
-        id: edit.id, action: "uploadAttach",
+        id: edit.id, action: "uploadAttach", adsOnly,
         storageKey: t.key, publicUrl: t.publicUrl, contentType: file.type || "video/mp4",
         thumbKey, thumbUrl, width: w || undefined, height: h || undefined,
         durationSec: dur || undefined, sizeBytes: file.size,
       });
       if (j.ok) {
-        setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl, videoPublicUrl: j.video.publicUrl ?? null, videoMediaId: null });
-        flash(`✓ Uploaded & attached video #${j.video.code} — hit “+ Vào mô tả” to place it in the Description.`);
+        if (adsOnly) {
+          flash(`✓ Uploaded video #${j.video.code} for ADS only — pick it in the Meta Ads kit (▶ tile). Listing unchanged.`);
+        } else {
+          setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl, videoPublicUrl: j.video.publicUrl ?? null, videoMediaId: null });
+          flash(`✓ Uploaded & attached video #${j.video.code} — hit “+ Vào mô tả” to place it in the Description.`);
+        }
         load();
       } else flash("✗ " + (j.error ?? "failed"), false);
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? e), false); }
@@ -840,8 +846,19 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     if (body.includes(url)) { flash("Video is already in the description."); return; }
     const poster = edit.videoThumbUrl ? ` poster="${edit.videoThumbUrl}"` : "";
     const emb = `\n<div style="margin:16px 0;text-align:center"><video controls playsinline preload="metadata"${poster} style="width:100%;max-width:520px;border-radius:12px;display:inline-block"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video></div>\n`;
-    setEdit({ ...edit, bodyHtml: body + emb });
-    flash("✓ Video inserted into Description — remember to Save, then Push to Shopify.");
+    // v680 · Theme Talewix tách TAB theo heading <h5> (Description / Product Details / Shipping) —
+    // chèn cuối body là video rơi vào tab CUỐI (Shipping). Phải chèn CUỐI PHẦN Description,
+    // ngay trước <h5> kế tiếp; body không có cấu trúc đó thì mới nối cuối như cũ.
+    let newBody = body + emb;
+    const mDesc = body.match(/<h5[^>]*>\s*Description\s*<\/h5>/i);
+    if (mDesc && mDesc.index !== undefined) {
+      const after = mDesc.index + mDesc[0].length;
+      const nextH5 = body.slice(after).search(/<h5[\s>]/i);
+      const at = nextH5 >= 0 ? after + nextH5 : body.length;
+      newBody = body.slice(0, at) + emb + body.slice(at);
+    }
+    setEdit({ ...edit, bodyHtml: newBody });
+    flash("✓ Video inserted into the Description section — remember to Save.");
   };
   // v206 · HIGH risk KHÔNG còn chặn cứng — chỉ cảnh báo. Admin xác nhận thì vẫn Push qua (gửi override).
   //   trả null  = có HIGH nhưng người dùng huỷ / không phải admin ⇒ ĐỪNG push
@@ -2391,6 +2408,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                               }}
                               style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B45309", borderColor: "#F3D08A" }}>Remove from gallery</button>
                           )}
+                          {/* v680 · listing ĐÃ có video chính → upload thêm là video CHẠY ADS
+                              (vào Video Library + hiện trong Meta Ads kit), KHÔNG đụng listing */}
+                          <label title="Upload an extra video for ADS only — it goes to the Video Library and shows as a ▶ tile in the Meta Ads kit. The listing & description stay unchanged."
+                            style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1.5px dashed #7C3AED", borderRadius: 10, padding: "5px 12px", fontSize: 12.5, fontWeight: 700, color: "#7C3AED", background: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? .6 : 1 }}>
+                            <input type="file" accept="video/*" hidden disabled={busy}
+                              onChange={(e) => { uploadVideoFile(e.target.files?.[0] ?? null, true); e.currentTarget.value = ""; }} />
+                            {busy ? "Uploading…" : "⬆ Upload ads video"}
+                          </label>
                           <button disabled={busy} onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Remove</button>
                         </div>
                       ) : (

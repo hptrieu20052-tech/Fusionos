@@ -100,10 +100,14 @@ export async function POST(req: NextRequest) {
       width: w, height: h, aspect,
       status: "approved", // video listing của chính chủ — không treo pending như hàng creator nộp duyệt
     }).returning({ id: schema.productVideos.id, code: schema.productVideos.videoCode });
-    await db.update(schema.shopifyProducts)
-      .set({ videoId: vid.id, videoMediaId: null, videoPushedAt: null, updatedAt: new Date() })
-      .where(eq(schema.shopifyProducts.id, id));
-    return NextResponse.json({ ok: true, video: { code: vid.code, title, thumbUrl: String(b?.thumbUrl ?? "").trim() || null, publicUrl } });
+    // v680 · adsOnly: listing ĐÃ có video chính → video mới chỉ nằm trong Video Library (trỏ về
+    // sản phẩm) để chạy ads qua Meta Ads kit — KHÔNG gắn đè videoId, không đụng listing/mô tả.
+    if (b?.adsOnly !== true) {
+      await db.update(schema.shopifyProducts)
+        .set({ videoId: vid.id, videoMediaId: null, videoPushedAt: null, updatedAt: new Date() })
+        .where(eq(schema.shopifyProducts.id, id));
+    }
+    return NextResponse.json({ ok: true, adsOnly: b?.adsOnly === true, video: { code: vid.code, title, thumbUrl: String(b?.thumbUrl ?? "").trim() || null, publicUrl } });
   }
 
   const raw = String(b?.videoCode ?? "").trim();
