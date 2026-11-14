@@ -2128,24 +2128,26 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
               <th style={{ padding: "10px 6px", textAlign: "left", width: 54 }}>Image</th>
               <th style={{ padding: "10px 6px", textAlign: "left", width: 50 }} title="Has a video attached?">Video</th>
               <th style={{ padding: "10px 8px", textAlign: "left" }}>Title</th>
-              {isAdmin && (<>
+              {/* v682 · Store/Seller (kèm chip nguồn Etsy) + 2 cột Orders/Etsy mở cho CẢ SELLER —
+                  seller cần biết mẫu nào bán chạy để chọn design chạy ads. */}
               <th style={{ padding: "10px 8px", textAlign: "left", width: "11%" }}>Store / Seller</th>
+              {isAdmin && (<>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Type / Category</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "8%" }}>Collections</th>
               <th style={{ padding: "10px 8px", textAlign: "left", width: "9%" }}>Template</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 175 }} title="What has already been run on this listing — line 1 AI Optimize, line 2 Merchant Center feed copy, line 3 variant SKUs and image alt text">Pipeline</th>
+              </>)}
               <th onClick={() => { setSortOrders((v) => !v); setSortEtsy(false); }} title="Orders sold · click to sort high → low" style={{ padding: "10px 8px", textAlign: "right", width: 66, cursor: "pointer", userSelect: "none", color: sortOrders ? "#2952B3" : undefined }}>Orders{sortOrders ? " ↓" : " ⇅"}</th>
               {/* v596 · đơn của listing ETSY gốc — tham khảo để chọn design đưa vào ads (khớp theo title) */}
               <th onClick={() => { setSortEtsy((v) => !v); setSortOrders(false); }} title="Orders of the ORIGINAL Etsy listing (reference, matched by title) · click to sort high → low" style={{ padding: "10px 8px", textAlign: "right", width: 56, cursor: "pointer", userSelect: "none", color: sortEtsy ? "#B45309" : "#C77B3B" }}>Etsy{sortEtsy ? " ↓" : " ⇅"}</th>
-              </>)}
               <th style={{ padding: "10px 8px", textAlign: "right", width: 84 }}>Price</th>
               <th style={{ padding: "10px 8px", textAlign: "center", width: 70 }}>Status</th>
               <th style={{ padding: "10px 12px", textAlign: "right", width: 84 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {loading && <tr><td colSpan={isAdmin ? 14 : 6} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
-            {!loading && paged.length === 0 && <tr><td colSpan={isAdmin ? 14 : 6} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>{isAdmin ? <>No products. Pick a store, then hit <b>Sync from Shopify</b>.</> : <>No listings assigned to you yet — ask an admin to assign your listings (Assign owner).</>}</td></tr>}
+            {loading && <tr><td colSpan={isAdmin ? 14 : 9} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>Loading…</td></tr>}
+            {!loading && paged.length === 0 && <tr><td colSpan={isAdmin ? 14 : 9} style={{ padding: 30, textAlign: "center", color: "var(--muted)" }}>{isAdmin ? <>No products. Pick a store, then hit <b>Sync from Shopify</b>.</> : <>No listings assigned to you yet — ask an admin to assign your listings (Assign owner).</>}</td></tr>}
             {paged.map((r) => (
               <tr key={r.id} style={{ borderTop: "1px solid var(--line)" }}>
                 {isAdmin && <td style={{ padding: "10px 12px" }}><input type="checkbox" checked={sel.has(r.id)} onChange={() => toggle(r.id)} /></td>}
@@ -2186,9 +2188,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     )}
                   </div>
                 </td>
-                {isAdmin && (<>
                 {/* v597 · fallback thêm seller của listing Etsy gốc (đồng bộ với filter Seller) — chỉ khi
-                    cả created_by lẫn link Etsy đều mất mới rơi về chủ store */}
+                    cả created_by lẫn link Etsy đều mất mới rơi về chủ store · v682 mở cho cả seller */}
                 <td style={{ padding: "8px", fontSize: 12 }}>{r.storeName ?? "—"}<div style={{ color: "var(--muted)" }}>{r.creatorName ?? r.etsyListing?.seller ?? r.sellerName ?? "—"}</div>
                   {/* v203 · chip Etsy giờ là LINK — click mở listing gốc bên Manage Products · Etsy (thay nút Etsy ở Actions) */}
                   {r.etsyListing && (r.etsyListing.store || r.etsyListing.seller) && (
@@ -2199,6 +2200,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     </a>
                   )}
                 </td>
+                {isAdmin && (<>
                 <td style={{ padding: "8px", fontSize: 12, maxWidth: 150 }}>
                   <div title={r.productType || ""} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.productType || "—"}</div>
                   <div title={r.categoryName || ""} style={{ color: "var(--muted)", fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.categoryName || "—"}</div>
@@ -2273,10 +2275,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                       style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 999, ...(r.persOwn ? { background: "#E9F7EF", color: "#1F6F45" } : { background: "#F1F1F4", color: "#8794A5" }) }}>opt {r.persCount}</span>
                   </div>
                 </td>
+                </>)}
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 13, fontWeight: r.orders > 0 ? 800 : 400, color: r.orders > 0 ? "#14213D" : "var(--faint)" }} title="Orders sold">{r.orders > 0 ? r.orders : "–"}</td>
                 {/* v596 · đơn Etsy gốc — tone cam, số NHẠT (chỉ tham khảo, không phải doanh số Shopify) */}
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12.5, fontWeight: r.etsyOrders > 0 ? 600 : 400, color: r.etsyOrders > 0 ? "#C77B3B" : "var(--faint)", opacity: r.etsyOrders > 0 ? 0.85 : 1 }} title="Orders of the original Etsy listing (reference)">{r.etsyOrders > 0 ? r.etsyOrders : "–"}</td>
-                </>)}
                 <td style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap", fontSize: 12 }}>{r.minPrice != null && r.maxPrice != null && r.minPrice !== r.maxPrice ? `${money(r.minPrice)}–${money(r.maxPrice)}` : money(r.minPrice)}</td>
                 <td style={{ padding: "8px", textAlign: "center" }}>{statusBadge(r.status)}</td>
                 {/* v203 · Actions gọn như Shopify admin: 👁 = xem trên storefront · Push (khi có sửa).
