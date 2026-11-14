@@ -40,14 +40,31 @@ export async function POST(req: NextRequest) {
     id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, seller: schema.stores.sellerId, sStoreId: schema.stores.id,
     gid: schema.shopifyProducts.shopifyProductId, title: schema.shopifyProducts.title, cred: schema.stores.apiCredentials,
     videoMediaId: schema.shopifyProducts.videoMediaId,
+    createdBy: schema.shopifyProducts.createdBy, etsyPid: schema.shopifyProducts.etsyProductId,
   })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
   if (!prod) return NextResponse.json({ ok: false, error: "listing not found" }, { status: 404 });
   const scopeIds = await storeOwnerScopeIds(session);
   const shared = await sharedStoreIds(scopeIds);
-  if (session.role !== "admin" && scopeIds && prod.seller !== session.sub) {
-    return NextResponse.json({ ok: false, error: "forbidden: store được share chỉ xem" }, { status: 403 });
+  // v683 · STORE SHARE (Talewix nhiều seller): rule cũ chỉ cho CHỦ STORE nên seller bị chặn
+  // "store được share chỉ xem" khi upload/gắn video. Áp đúng rule sở hữu của PATCH listing (v567/v631):
+  // seller thao tác được listing MÌNH TẠO (created_by), hoặc listing chưa gán chủ nhưng listing Etsy
+  // gốc thuộc store của mình.
+  if (session.role !== "admin" && scopeIds && prod.seller !== session.sub && prod.createdBy !== session.sub) {
+    let chainOwner: string | null = null;
+    if (!prod.createdBy && (prod.etsyPid || prod.gid)) {
+      try {
+        const [e] = await db.select({ sellerId: schema.stores.sellerId }).from(schema.etsyProducts)
+          .leftJoin(schema.stores, eq(schema.stores.id, schema.etsyProducts.storeId))
+          .where(prod.etsyPid ? eq(schema.etsyProducts.id, prod.etsyPid) : eq(schema.etsyProducts.shopifyProductId, String(prod.gid)))
+          .limit(1);
+        chainOwner = e?.sellerId ?? null;
+      } catch { /* best-effort */ }
+    }
+    if (chainOwner !== session.sub) {
+      return NextResponse.json({ ok: false, error: "forbidden: this listing was created by someone else — only its creator or an admin can change its video" }, { status: 403 });
+    }
   }
   if (scopeIds && !((prod.seller && scopeIds.includes(prod.seller)) || (prod.sStoreId && shared.includes(prod.sStoreId)))) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
