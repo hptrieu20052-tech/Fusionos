@@ -845,7 +845,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     const body = edit.bodyHtml ?? "";
     if (body.includes(url)) { flash("Video is already in the description."); return; }
     const poster = edit.videoThumbUrl ? ` poster="${edit.videoThumbUrl}"` : "";
-    const emb = `\n<div style="margin:16px 0;text-align:center"><video controls playsinline preload="metadata"${poster} style="width:100%;max-width:520px;border-radius:12px;display:inline-block"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video></div>\n`;
+    // v684 · autoplay + muted + loop: khách lướt tới là video ĐANG chạy, không phải bấm Play.
+    // Trình duyệt chỉ cho tự chạy khi TẮT TIẾNG (muted bắt buộc) — vẫn có controls để khách bật loa.
+    const emb = `\n<div style="margin:16px 0;text-align:center"><video controls autoplay muted loop playsinline preload="metadata"${poster} style="width:100%;max-width:520px;border-radius:12px;display:inline-block"><source src="${url}" type="video/mp4">Your browser does not support the video tag.</video></div>\n`;
     // v680 · Theme Talewix tách TAB theo heading <h5> (Description / Product Details / Shipping) —
     // chèn cuối body là video rơi vào tab CUỐI (Shipping). Phải chèn CUỐI PHẦN Description,
     // ngay trước <h5> kế tiếp; body không có cấu trúc đó thì mới nối cuối như cũ.
