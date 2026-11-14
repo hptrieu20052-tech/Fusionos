@@ -54,6 +54,7 @@ type Detail = {
   personalization: PQ[] | null;
   // v223: video từ Video Library đang gắn vào listing (dán #videoCode). null = chưa gắn.
   videoCode: number | null; videoTitle: string | null; videoThumbUrl: string | null; videoPublicUrl?: string | null;
+  videoMediaId?: string | null; // v676 · video đang nằm trong media gallery Shopify (để hiện nút gỡ)
 };
 
 const card: React.CSSProperties = { background: "#fff", border: "1px solid var(--line)", borderRadius: 16, boxShadow: "0 1px 2px rgba(16,24,40,.04)" };
@@ -2319,7 +2320,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     <button onClick={addImg} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Store: {edit.storeName} · handle: {edit.handle}</div>
                     {isAdmin && (<>
-                    {/* v224 · Video from Video Library — paste #Video ID to attach (auto-pushes to media). */}
+                    {/* v224 · Video from Video Library — paste #Video ID to attach.
+                        v676 · attach KHÔNG đẩy vào media gallery nữa (video dọc làm lệch layout) —
+                        video vào listing qua "+ Vào mô tả"; có nút gỡ bản đang nằm trong gallery. */}
                     <div style={{ border: "1px solid #C9D8F0", borderRadius: 10, padding: "12px 14px", marginTop: 14, background: "#F7FAFF" }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2952B3", marginBottom: 8 }}>Video</div>
                       {edit.videoCode ? (
@@ -2328,7 +2331,21 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           {edit.videoThumbUrl && <img src={edit.videoThumbUrl} alt="" width={40} height={40} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
                           <span style={{ fontWeight: 800 }}>#{edit.videoCode}</span>
                           <span style={{ flex: 1, minWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: "var(--muted)" }}>{edit.videoTitle}</span>
-                          <button disabled={busy || !edit.videoPublicUrl} title={edit.videoPublicUrl ? "Insert the video into the Description" : "Re-attach the video to get its URL, then insert"} onClick={addVideoToDesc} style={{ ...pill("#2952B3", "#fff"), padding: "6px 12px", fontSize: 12.5, opacity: (busy || !edit.videoPublicUrl) ? .6 : 1 }}>+ Vào mô tả</button>
+                          <button disabled={busy || !edit.videoPublicUrl} title={edit.videoPublicUrl ? "Insert the video into the Description (then Save)" : "Re-attach the video to get its URL, then insert"} onClick={addVideoToDesc} style={{ ...pill("#2952B3", "#fff"), padding: "6px 12px", fontSize: 12.5, opacity: (busy || !edit.videoPublicUrl) ? .6 : 1 }}>+ Vào mô tả</button>
+                          {/* v676 · video đang nằm trong MEDIA GALLERY Shopify (đẩy từ trước) → gỡ ra cho hết lệch layout */}
+                          {edit.videoMediaId && (
+                            <button disabled={busy} title="Delete the video from the Shopify media gallery (keeps it attached here & in the Description)"
+                              onClick={async () => {
+                                setBusy(true);
+                                try {
+                                  const j = await postJSON("/api/shopify-products/set-video", { id: edit.id, action: "removeShopifyMedia" });
+                                  if (j.ok) { setEdit({ ...edit, videoMediaId: null }); flash("✓ Removed the video from the Shopify media gallery"); }
+                                  else flash("✗ " + (j.error ?? "failed"), false);
+                                } catch (e) { flash("✗ " + String((e as Error)?.message ?? e), false); }
+                                setBusy(false);
+                              }}
+                              style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B45309", borderColor: "#F3D08A" }}>Remove from gallery</button>
+                          )}
                           <button disabled={busy} onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Remove</button>
                         </div>
                       ) : (

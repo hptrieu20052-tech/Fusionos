@@ -4,8 +4,14 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
 import { storeOwnerScopeIds, sharedStoreIds } from "@/lib/scope";
-import { shopHost, type ShopifyCred } from "@/lib/shopify";
+import { shopHost, shopifyGraphQL, type ShopifyCred } from "@/lib/shopify";
 import { pushVideoToShopify } from "@/lib/shopify-video";
+
+// v676 · gỡ video khỏi MEDIA GALLERY Shopify (video dọc 9:16 nằm trong gallery vuông làm lệch layout
+// listing — hướng mới: video nằm trong DESCRIPTION qua nút "+ Vào mô tả", gallery chỉ còn ảnh).
+const MEDIA_DELETE = `mutation MD($productId: ID!, $mediaIds: [ID!]!) {
+  productDeleteMedia(productId: $productId, mediaIds: $mediaIds) { deletedMediaIds userErrors { field message } }
+}`;
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,6 +39,7 @@ export async function POST(req: NextRequest) {
   const [prod] = await db.select({
     id: schema.shopifyProducts.id, storeId: schema.shopifyProducts.storeId, seller: schema.stores.sellerId, sStoreId: schema.stores.id,
     gid: schema.shopifyProducts.shopifyProductId, title: schema.shopifyProducts.title, cred: schema.stores.apiCredentials,
+    videoMediaId: schema.shopifyProducts.videoMediaId,
   })
     .from(schema.shopifyProducts).leftJoin(schema.stores, eq(schema.stores.id, schema.shopifyProducts.storeId))
     .where(eq(schema.shopifyProducts.id, id)).limit(1);
@@ -44,6 +51,27 @@ export async function POST(req: NextRequest) {
   }
   if (scopeIds && !((prod.seller && scopeIds.includes(prod.seller)) || (prod.sStoreId && shared.includes(prod.sStoreId)))) {
     return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
+
+  // v676 · GỠ VIDEO KHỎI GALLERY SHOPIFY (giữ nguyên video gắn trong FUSION + bản trong mô tả).
+  if (String(b?.action ?? "") === "removeShopifyMedia") {
+    const mediaId = String(prod.videoMediaId ?? "");
+    if (!mediaId) return NextResponse.json({ ok: false, error: "no video in the Shopify gallery for this listing" }, { status: 400 });
+    const cred = (prod.cred ?? {}) as ShopifyCred;
+    if (!prod.gid || !shopHost(cred)) return NextResponse.json({ ok: false, error: "store is not connected to Shopify API" }, { status: 400 });
+    try {
+      const r = await shopifyGraphQL<{ productDeleteMedia?: { userErrors?: { message?: string }[] } }>(
+        cred, MEDIA_DELETE, { productId: String(prod.gid), mediaIds: [mediaId] },
+      );
+      const errs = (r.productDeleteMedia?.userErrors ?? []).map((e) => e.message).filter(Boolean).join("; ");
+      if (errs) return NextResponse.json({ ok: false, error: errs.slice(0, 200) }, { status: 400 });
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: String((e as Error)?.message ?? e).slice(0, 200) }, { status: 400 });
+    }
+    await db.update(schema.shopifyProducts)
+      .set({ videoMediaId: null, videoPushedAt: null, updatedAt: new Date() })
+      .where(eq(schema.shopifyProducts.id, id));
+    return NextResponse.json({ ok: true, removed: true });
   }
 
   const raw = String(b?.videoCode ?? "").trim();
@@ -104,12 +132,12 @@ export async function POST(req: NextRequest) {
     .set({ productId: prod.id, storeId: prod.storeId, title: newTitle, updatedAt: new Date() })
     .where(eq(schema.productVideos.id, vid.id));
 
-  // ── ĐẨY LUÔN video lên Shopify media ── video có SAU khi listing đã live, nên đây là chỗ đẩy (không
-  // gộp vào Push nội dung listing). Listing đã có GID + store cấu hình API thì đẩy ngay; lỗi/chưa cấu
-  // hình thì vẫn gắn xong, báo để đẩy lại sau (nút trong modal).
+  // ── v676 · KHÔNG tự đẩy video vào MEDIA GALLERY nữa ── video dọc trong gallery vuông làm lệch
+  // layout listing. Hướng mới: video vào DESCRIPTION qua nút "+ Vào mô tả" (Save là lên Shopify).
+  // Vẫn giữ đường đẩy gallery cho ai cần: client gửi pushMedia:true mới đẩy.
   let push: { ok: boolean; note?: string; error?: string } | undefined;
   const cred = (prod.cred ?? {}) as ShopifyCred;
-  if (prod.gid && shopHost(cred) && (cred.adminToken || (cred.clientId && cred.clientSecret)) && vid.publicUrl) {
+  if (b?.pushMedia === true && prod.gid && shopHost(cred) && (cred.adminToken || (cred.clientId && cred.clientSecret)) && vid.publicUrl) {
     try {
       const r = await pushVideoToShopify(cred, {
         productGid: String(prod.gid), videoUrl: String(vid.publicUrl),
@@ -122,7 +150,7 @@ export async function POST(req: NextRequest) {
         push = { ok: true, note: "Shopify is processing — the video appears on the product page in a few minutes." };
       } else push = { ok: false, error: r.error ?? "push failed" };
     } catch (e) { push = { ok: false, error: String((e as Error)?.message ?? e).slice(0, 160) }; }
-  } else if (!prod.gid) {
+  } else if (b?.pushMedia === true && !prod.gid) {
     push = { ok: false, error: "Listing is not on Shopify yet — push the listing first, then attach the video." };
   }
 
