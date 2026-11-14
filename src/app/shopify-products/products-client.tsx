@@ -829,7 +829,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
           flash(`✓ Uploaded video #${j.video.code} for ADS only — pick it in the Meta Ads kit (▶ tile). Listing unchanged.`);
         } else {
           setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl, videoPublicUrl: j.video.publicUrl ?? null, videoMediaId: null });
-          flash(`✓ Uploaded & attached video #${j.video.code} — hit “+ Vào mô tả” to place it in the Description.`);
+          flash(`✓ Uploaded & attached video #${j.video.code} — hit “+ Add to description” to place it in the Description.`);
         }
         load();
       } else flash("✗ " + (j.error ?? "failed"), false);
@@ -859,6 +859,24 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     }
     setEdit({ ...edit, bodyHtml: newBody });
     flash("✓ Video inserted into the Description section — remember to Save.");
+  };
+  // v681 · GỠ video khỏi Description: nút Remove cạnh video là GỠ GẮN video khỏi listing, còn đây là
+  // xoá đúng block <video> đã chèn trong mô tả (tìm theo URL, cắt từ <div margin:16px…> tới </video></div>).
+  const removeVideoFromDesc = () => {
+    if (!edit) return;
+    const url = edit.videoPublicUrl ?? "";
+    const body = edit.bodyHtml ?? "";
+    if (!url || !body.includes(url)) { flash("The video isn't in the description."); return; }
+    const i = body.indexOf(url);
+    const start = body.lastIndexOf('<div style="margin:16px 0', i);
+    const endTag = "</video></div>";
+    const end = body.indexOf(endTag, i);
+    if (start >= 0 && end > start) {
+      setEdit({ ...edit, bodyHtml: (body.slice(0, start) + body.slice(end + endTag.length)).replace(/\n{3,}/g, "\n\n") });
+      flash("✓ Video removed from the Description — remember to Save.");
+    } else {
+      flash("✗ Couldn't locate the embed block — delete the <video> tag in the Description HTML manually.", false);
+    }
   };
   // v206 · HIGH risk KHÔNG còn chặn cứng — chỉ cảnh báo. Admin xác nhận thì vẫn Push qua (gửi override).
   //   trả null  = có HIGH nhưng người dùng huỷ / không phải admin ⇒ ĐỪNG push
@@ -2393,7 +2411,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                           {edit.videoThumbUrl && <img src={edit.videoThumbUrl} alt="" width={40} height={40} style={{ width: 40, height: 40, objectFit: "cover", borderRadius: 8, border: "1px solid var(--line)" }} />}
                           <span style={{ fontWeight: 800 }}>#{edit.videoCode}</span>
                           <span style={{ flex: 1, minWidth: 100, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12.5, color: "var(--muted)" }}>{edit.videoTitle}</span>
-                          <button disabled={busy || !edit.videoPublicUrl} title={edit.videoPublicUrl ? "Insert the video into the Description (then Save)" : "Re-attach the video to get its URL, then insert"} onClick={addVideoToDesc} style={{ ...pill("#2952B3", "#fff"), padding: "6px 12px", fontSize: 12.5, opacity: (busy || !edit.videoPublicUrl) ? .6 : 1 }}>+ Vào mô tả</button>
+                          {/* v681 · UI tiếng Anh + nút gỡ: video ĐANG nằm trong mô tả → hiện "– Remove from description" */}
+                          {edit.videoPublicUrl && (edit.bodyHtml ?? "").includes(edit.videoPublicUrl) ? (
+                            <button disabled={busy} title="Remove the embedded video from the Description (then Save)" onClick={removeVideoFromDesc} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B45309", borderColor: "#F3D08A" }}>– Remove from description</button>
+                          ) : (
+                            <button disabled={busy || !edit.videoPublicUrl} title={edit.videoPublicUrl ? "Insert the video into the Description section (then Save)" : "Re-attach the video to get its URL, then insert"} onClick={addVideoToDesc} style={{ ...pill("#2952B3", "#fff"), padding: "6px 12px", fontSize: 12.5, opacity: (busy || !edit.videoPublicUrl) ? .6 : 1 }}>+ Add to description</button>
+                          )}
                           {/* v676 · video đang nằm trong MEDIA GALLERY Shopify (đẩy từ trước) → gỡ ra cho hết lệch layout */}
                           {edit.videoMediaId && (
                             <button disabled={busy} title="Delete the video from the Shopify media gallery (keeps it attached here & in the Description)"
@@ -2416,7 +2439,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                               onChange={(e) => { uploadVideoFile(e.target.files?.[0] ?? null, true); e.currentTarget.value = ""; }} />
                             {busy ? "Uploading…" : "⬆ Upload ads video"}
                           </label>
-                          <button disabled={busy} onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Remove</button>
+                          <button disabled={busy} title="Detach the video from this listing (it stays in the Video Library)" onClick={() => setVideo(true)} style={{ ...ghost, padding: "6px 12px", fontSize: 12.5, color: "#B42318" }}>Detach video</button>
                         </div>
                       ) : (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
