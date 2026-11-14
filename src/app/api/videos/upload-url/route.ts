@@ -19,7 +19,10 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
-  if ((await levelOf(session, "videos")) < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v677 · seller upload video THẲNG trên listing (Manage Products · Edit) — quyền videos HOẶC products
+  // đều ký được URL (trước đây chỉ videos ≥2 nên seller không upload nổi từ modal Edit).
+  const lv = Math.max(await levelOf(session, "videos"), await levelOf(session, "products"));
+  if (lv < 2) return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
 
   const b = await req.json().catch(() => ({}));
   const rawName = String((b as { filename?: string })?.filename ?? "").trim();

@@ -74,6 +74,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, removed: true });
   }
 
+  // v677 · UPLOAD THẲNG TRÊN LISTING: client đã PUT file lên R2 (qua /api/videos/upload-url),
+  // đây là bước tạo bản ghi Video Library + gắn ngay vào listing. Seller dùng được (ownership đã check).
+  if (String(b?.action ?? "") === "uploadAttach") {
+    const storageKey = String(b?.storageKey ?? "").trim();
+    const publicUrl = String(b?.publicUrl ?? "").trim();
+    if (!storageKey || !publicUrl.startsWith("http")) return NextResponse.json({ ok: false, error: "storageKey + publicUrl required" }, { status: 400 });
+    const numOr = (x: unknown, max: number) => { const n = Number(x); return isFinite(n) && n > 0 && n <= max ? Math.round(n) : null; };
+    const w = numOr(b?.width, 20000), h = numOr(b?.height, 20000);
+    const aspect = (!w || !h) ? null
+      : Math.abs(w / h - 9 / 16) < 0.06 ? "9:16"
+      : Math.abs(w / h - 1) < 0.06 ? "1:1"
+      : Math.abs(w / h - 16 / 9) < 0.08 ? "16:9" : "other";
+    const dRaw = Number(b?.durationSec);
+    const title = (prod.title ?? "").trim() || "Listing video";
+    const [vid] = await db.insert(schema.productVideos).values({
+      sellerId: prod.seller ?? (session.role === "seller" ? session.sub : null),
+      creatorId: session.sub, uploadedBy: session.sub,
+      productId: prod.id, storeId: prod.storeId,
+      title, storageKey, publicUrl,
+      thumbKey: String(b?.thumbKey ?? "").trim() || null, thumbUrl: String(b?.thumbUrl ?? "").trim() || null,
+      contentType: String(b?.contentType ?? "").trim() || "video/mp4",
+      sizeBytes: numOr(b?.sizeBytes, 10_000_000_000),
+      durationSec: isFinite(dRaw) && dRaw > 0 ? dRaw.toFixed(2) : null,
+      width: w, height: h, aspect,
+      status: "approved", // video listing của chính chủ — không treo pending như hàng creator nộp duyệt
+    }).returning({ id: schema.productVideos.id, code: schema.productVideos.videoCode });
+    await db.update(schema.shopifyProducts)
+      .set({ videoId: vid.id, videoMediaId: null, videoPushedAt: null, updatedAt: new Date() })
+      .where(eq(schema.shopifyProducts.id, id));
+    return NextResponse.json({ ok: true, video: { code: vid.code, title, thumbUrl: String(b?.thumbUrl ?? "").trim() || null, publicUrl } });
+  }
+
   const raw = String(b?.videoCode ?? "").trim();
 
   // GỠ video khi để trống.

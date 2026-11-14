@@ -785,6 +785,51 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     } catch (e) { flash("✗ " + String((e as Error)?.message ?? "Network error"), false); }
     setBusy(false);
   };
+  // v677 · UPLOAD video thẳng trên listing: PUT trực tiếp browser → R2 (URL ký sẵn, không dính giới hạn
+  // body 4.5MB của Vercel) → bắt thumbnail frame đầu bằng canvas → tạo bản ghi Video Library + gắn luôn.
+  const uploadVideoFile = async (file: File | null) => {
+    if (!file || !edit || busy) return;
+    if (!/^video\//.test(file.type)) { flash("✗ Pick a video file (mp4/mov)", false); return; }
+    setBusy(true);
+    try {
+      const t = await postJSON("/api/videos/upload-url", { filename: file.name, contentType: file.type || "video/mp4" });
+      if (!t.ok) throw new Error(t.error ?? "upload-url failed");
+      const put = await fetch(String(t.url), { method: String(t.method || "PUT"), headers: { "Content-Type": file.type || "video/mp4" }, body: file });
+      if (!put.ok) throw new Error(`upload to storage failed (HTTP ${put.status})`);
+      // Thumbnail (poster) — best-effort, hỏng vẫn gắn video bình thường.
+      let thumbKey = "", thumbUrl = "", w = 0, h = 0, dur = 0;
+      try {
+        const v = document.createElement("video");
+        v.preload = "auto"; v.muted = true; v.src = URL.createObjectURL(file);
+        await new Promise<void>((res, rej) => { v.onloadeddata = () => res(); v.onerror = () => rej(new Error("meta")); setTimeout(() => rej(new Error("timeout")), 8000); });
+        w = v.videoWidth; h = v.videoHeight; dur = v.duration || 0;
+        const cv = document.createElement("canvas");
+        cv.width = Math.min(720, w || 720); cv.height = Math.max(1, Math.round(cv.width * ((h || 1280) / (w || 720))));
+        cv.getContext("2d")!.drawImage(v, 0, 0, cv.width, cv.height);
+        URL.revokeObjectURL(v.src);
+        const blob: Blob | null = await new Promise((r) => cv.toBlob((bl) => r(bl), "image/jpeg", 0.85));
+        if (blob) {
+          const tt = await postJSON("/api/videos/upload-url", { filename: "poster.jpg", contentType: "image/jpeg", kind: "thumb" });
+          if (tt.ok) {
+            const p2 = await fetch(String(tt.url), { method: String(tt.method || "PUT"), headers: { "Content-Type": "image/jpeg" }, body: blob });
+            if (p2.ok) { thumbKey = String(tt.key); thumbUrl = String(tt.publicUrl); }
+          }
+        }
+      } catch { /* thumb là phụ */ }
+      const j = await postJSON("/api/shopify-products/set-video", {
+        id: edit.id, action: "uploadAttach",
+        storageKey: t.key, publicUrl: t.publicUrl, contentType: file.type || "video/mp4",
+        thumbKey, thumbUrl, width: w || undefined, height: h || undefined,
+        durationSec: dur || undefined, sizeBytes: file.size,
+      });
+      if (j.ok) {
+        setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl, videoPublicUrl: j.video.publicUrl ?? null, videoMediaId: null });
+        flash(`✓ Uploaded & attached video #${j.video.code} — hit “+ Vào mô tả” to place it in the Description.`);
+        load();
+      } else flash("✗ " + (j.error ?? "failed"), false);
+    } catch (e) { flash("✗ " + String((e as Error)?.message ?? e), false); }
+    setBusy(false);
+  };
   // v380 · Chèn video creative vào Description (body_html). Dùng publicUrl trả về khi Attach.
   // Sau đó user Save + Push để mô tả mới lên Shopify. Chống chèn trùng bằng cách check URL đã có chưa.
   const addVideoToDesc = () => {
@@ -2319,10 +2364,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     </div>
                     <button onClick={addImg} disabled={busy} style={{ ...linkBtn("var(--blue)"), fontSize: 12, marginTop: 10 }}>+ Add by URL</button>
                     <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 6 }}>Store: {edit.storeName} · handle: {edit.handle}</div>
-                    {isAdmin && (<>
                     {/* v224 · Video from Video Library — paste #Video ID to attach.
                         v676 · attach KHÔNG đẩy vào media gallery nữa (video dọc làm lệch layout) —
-                        video vào listing qua "+ Vào mô tả"; có nút gỡ bản đang nằm trong gallery. */}
+                        video vào listing qua "+ Vào mô tả"; có nút gỡ bản đang nằm trong gallery.
+                        v677 · mở cho SELLER + nút Upload video thẳng tại đây (browser → R2). */}
                     <div style={{ border: "1px solid #C9D8F0", borderRadius: 10, padding: "12px 14px", marginTop: 14, background: "#F7FAFF" }}>
                       <div style={{ fontSize: 12.5, fontWeight: 800, color: "#2952B3", marginBottom: 8 }}>Video</div>
                       {edit.videoCode ? (
@@ -2352,9 +2397,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                           <input value={vidCode} onChange={(e) => setVidCode(e.target.value.toUpperCase().replace(/[^A-Z0-9.\-]/g, ""))} placeholder="#123 or QT-XX-01.1" style={{ ...ctl, width: 160, padding: "8px 11px" }} />
                           <button disabled={busy || !vidCode} onClick={() => setVideo(false)} style={{ ...pill("#2952B3", "#fff"), padding: "7px 14px", fontSize: 12.5, opacity: (busy || !vidCode) ? .6 : 1 }}>Attach</button>
+                          {/* v677 · upload file video thẳng tại listing — tự tạo bản ghi Video Library + gắn luôn */}
+                          <label title="Upload a video file (mp4/mov) — goes straight to storage, auto-creates a Video Library entry and attaches it here"
+                            style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1.5px dashed #2952B3", borderRadius: 10, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, color: "#2952B3", background: "#fff", cursor: busy ? "default" : "pointer", opacity: busy ? .6 : 1 }}>
+                            <input type="file" accept="video/*" hidden disabled={busy}
+                              onChange={(e) => { uploadVideoFile(e.target.files?.[0] ?? null); e.currentTarget.value = ""; }} />
+                            {busy ? "Uploading…" : "⬆ Upload video"}
+                          </label>
                         </div>
                       )}
                     </div>
+                    {isAdmin && (<>
                     {/* SEO — đây chính là dòng Google hiển thị. Bỏ trống thì Shopify tự lấy title + đoạn đầu mô tả,
                         thường bị cụt và không có từ khoá. Có preview thật để thấy trước khi Save. */}
                     <div style={{ border: "1px solid var(--line)", borderRadius: 10, padding: "12px 14px", marginBottom: 14, background: "#FAFBFD" }}>
