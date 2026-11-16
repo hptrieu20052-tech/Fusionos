@@ -2,7 +2,7 @@
 import { useLang } from "@/components/lang-provider";
 import { useEffect, useRef, useState } from "react";
 
-type Seller = { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number }[]; revenue?: number; fee?: number; cost?: number; profit?: number | null; platforms?: string[] };
+type Seller = { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number; r?: number }[]; revenue?: number; fee?: number; cost?: number; profit?: number | null; platforms?: string[] };
 type Data = { buckets: string[]; sellers: Seller[]; totals: { orders: number; items: number }; showMoney?: boolean; hideProfit?: boolean; money?: { revenue: number; fee: number; feeEst?: number; cost: number; profit: number | null } | null };
 
 // Tiền hiển thị ĐÚNG TỚI CENT (không làm tròn). round(*100)/100 chỉ để khử nhiễu float khi cộng dồn.
@@ -24,7 +24,8 @@ const PALETTE = [
 type RangeProps = { range: string; from?: string; to?: string; title?: string };
 export default function SellerReport({ range, from, to, title }: RangeProps) {
   const { t: tr } = useLang();
-  const [metric, setMetric] = useState<"o" | "i">("o");
+  // v688 · thêm tab Revenue — stack DOANH THU/ngày theo seller (chỉ hiện khi được xem tiền).
+  const [metric, setMetric] = useState<"o" | "i" | "r">("o");
   const [data, setData] = useState<Data | null>(null);
   const [tip, setTip] = useState<{ x: number; y: number; bi: number } | null>(null);
   const [loading, setLoading] = useState(false);
@@ -48,16 +49,21 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
   if (!data) return <div className="card" style={{ padding: 24, color: "var(--muted)" }}>{tr("rep.loadingSeller")}</div>;
 
   const { buckets, sellers, totals } = data;
-  const colTotal = buckets.map((_, bi) => sellers.reduce((a, s) => a + s.daily[bi][metric], 0));
+  const dv = (s: Seller, bi: number) => (metric === "r" ? (s.daily[bi].r ?? 0) : s.daily[bi][metric]);
+  const colTotal = buckets.map((_, bi) => sellers.reduce((a, s) => a + dv(s, bi), 0));
   const max = Math.max(...colTotal, 1);
   const H = 240;
+  // Nhãn đỉnh cột cho tab Revenue: gọn kiểu $1.2K để không tràn cột hẹp.
+  const fmtTop = (t: number) => metric === "r"
+    ? (t >= 1000 ? `$${(t / 1000).toFixed(1)}K` : t > 0 ? `$${Math.round(t)}` : "")
+    : (t ? String(t) : "");
 
   return (
     <div className="card" style={{ padding: "20px 22px", position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
         <a href="/stats/orders" style={{ fontWeight: 700, fontSize: 15, color: "var(--ink)", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>{title ?? "Seller Report"} <span style={{ color: "var(--sky)", fontSize: 12.5 }}>{tr("rep.viewDetails")}</span></a>
         <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 10, overflow: "hidden" }}>
-          {([["o", tr("rep.ordersTab")], ["i", "Items"]] as const).map(([k, label]) => (
+          {([["o", tr("rep.ordersTab")], ["i", "Items"], ...(data.showMoney ? [["r", "Revenue"]] : [])] as [("o" | "i" | "r"), string][]).map(([k, label]) => (
             <button key={k} onClick={() => setMetric(k)} style={{
               padding: "6px 12px", fontSize: 12.5, border: "none", cursor: "pointer",
               background: metric === k ? "var(--blue-soft)" : "#fff", color: metric === k ? "var(--blue)" : "var(--muted)", fontWeight: 600,
@@ -99,10 +105,10 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
           return (
             <div key={bi} style={{ flex: "1 0 auto", minWidth: buckets.length > 20 ? 22 : 34, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: "100%" }}
               onMouseEnter={(e) => setTip({ x: e.clientX, y: e.clientY, bi })} onMouseLeave={() => setTip(null)}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 3 }}>{t || ""}</div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, marginBottom: 3, whiteSpace: "nowrap" }}>{fmtTop(t)}</div>
               <div style={{ width: "100%", maxWidth: 40, height: Math.max((t / max) * H, t ? 3 : 0), display: "flex", flexDirection: "column-reverse", borderRadius: 6, overflow: "hidden" }}>
                 {sellers.map((s, si) => {
-                  const v = s.daily[bi][metric];
+                  const v = dv(s, bi);
                   return v ? <div key={si} style={{ height: `${(v / t) * 100}%`, background: PALETTE[si % PALETTE.length] }} /> : null;
                 })}
               </div>
@@ -177,13 +183,15 @@ export default function SellerReport({ range, from, to, title }: RangeProps) {
           position: "fixed", left: Math.min(tip.x + 14, typeof window !== "undefined" ? window.innerWidth - 240 : tip.x), top: tip.y + 10, zIndex: 50,
           background: "#fff", border: "1px solid var(--line)", borderRadius: 12, boxShadow: "0 8px 24px rgba(17,24,39,.12)", padding: "10px 14px", minWidth: 200, pointerEvents: "none",
         }}>
-          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>{buckets[tip.bi]} — {colTotal[tip.bi]} {metric === "o" ? tr("rep.ordersWord") : "items"}</div>
+          <div style={{ fontWeight: 700, fontSize: 12.5, marginBottom: 6 }}>
+            {buckets[tip.bi]} — {metric === "r" ? `${usd(colTotal[tip.bi])} revenue` : `${colTotal[tip.bi]} ${metric === "o" ? tr("rep.ordersWord") : "items"}`}
+          </div>
           {sellers.map((s, si) => {
-            const v = s.daily[tip.bi][metric];
+            const v = dv(s, tip.bi);
             return v ? (
               <div key={si} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "1.5px 0" }}>
                 <span style={{ width: 9, height: 9, borderRadius: 3, background: PALETTE[si % PALETTE.length] }} />
-                <span style={{ flex: 1 }}>{s.name}</span><b>{v}</b>
+                <span style={{ flex: 1 }}>{s.name}</span><b>{metric === "r" ? usd(v) : v}</b>
               </div>
             ) : null;
           })}

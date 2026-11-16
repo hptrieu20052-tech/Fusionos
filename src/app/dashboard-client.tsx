@@ -10,6 +10,10 @@ import DesignerReport from "@/components/designer-report";
 const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type Pipe = { c: number; q: number };
+// v687 · "By channel" — mỗi sàn: Orders · Revenue · New listings · Fulfilled · Shops trong range.
+type Chan = { platform: string; orders: number; revenue: number; fulfilled: number; newListings: number | null; shops: number };
+const CH_NAME: Record<string, string> = { tiktok: "TikTok Shop", etsy: "Etsy", shopify: "Shopify", woocommerce: "WooCommerce", shopbase: "ShopBase", amazon: "Amazon" };
+const CH_COLOR: Record<string, string> = { tiktok: "#14213D", etsy: "#C77B3B", shopify: "#2FA36B", woocommerce: "#7C3AED", shopbase: "#3E7BD6", amazon: "#E0913C" };
 type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitFeeEst?: number; profitCost: number;
   pipeline: { order: { c: number; q: number; prev: number | null }; in_production: Pipe; in_transit: Pipe; delivered: Pipe } };
 
@@ -31,6 +35,16 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
     if (!isAdmin) p.set("scope", "self");
     if (f) p.set("from", f); if (t) p.set("to", t);
     fetch(`/api/dashboard?${p}`).then((r) => r.json()).then((j) => { if (j.ok) setKpi(j); });
+  }, [range, f, t, ready, isAdmin, showSelf]);
+
+  // v687 · By channel — cùng range/scope với KPI đầu trang.
+  const [chans, setChans] = useState<Chan[] | null>(null);
+  useEffect(() => {
+    if (!ready || (!isAdmin && !showSelf)) return;
+    const p = new URLSearchParams({ range });
+    if (!isAdmin) p.set("scope", "self");
+    if (f) p.set("from", f); if (t) p.set("to", t);
+    fetch(`/api/dashboard/channels?${p}`).then((r) => r.json()).then((j) => { if (j.ok) setChans(j.channels); }).catch(() => { /* khối phụ — lỗi thì ẩn */ });
   }, [range, f, t, ready, isAdmin, showSelf]);
 
   const delta = (cur: number, prev: number | null, label = tr("db.prevPeriod")) => {
@@ -117,6 +131,34 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
             {/* Phí đang ước tính → dòng breakdown ghi rõ "fee (est.)" */}
             <div className="pipe-sub">{tr(Number(kpi.profitFeeEst ?? 0) > 0 ? "db.profitBreakdownEst" : "db.profitBreakdown").replace("{r}", money(kpi.profitRevenue)).replace("{f}", money(kpi.profitFee)).replace("{c}", money(kpi.profitCost))}</div>
           </Link>
+        </div>
+      )}
+
+      {/* v687 · By channel — bảng tổng theo SÀN (TikTok/Etsy/Shopify/Woo/ShopBase/Amazon) */}
+      {chans && chans.length > 0 && (
+        <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
+          <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 10 }}>By channel</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 10 }}>
+            {chans.map((c) => (
+              <div key={c.platform} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px", background: "#fff" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontWeight: 800, fontSize: 13, marginBottom: 8 }}>
+                  <span style={{ width: 9, height: 9, borderRadius: 999, background: CH_COLOR[c.platform] ?? "#5A6272", display: "inline-block" }} />
+                  {CH_NAME[c.platform] ?? c.platform}
+                </div>
+                {([
+                  ["Orders", c.orders.toLocaleString()],
+                  ["Revenue", money(c.revenue)],
+                  ["New listings", c.newListings == null ? "—" : c.newListings.toLocaleString()],
+                  ["Fulfilled", c.fulfilled.toLocaleString()],
+                ] as [string, string][]).map(([l, v]) => (
+                  <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "2.5px 0" }}>
+                    <span style={{ color: "var(--muted)" }}>{l}</span><span style={{ fontWeight: 700 }}>{v}</span>
+                  </div>
+                ))}
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Shops: {c.shops}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       </>}

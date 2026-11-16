@@ -129,6 +129,8 @@ export async function POST(req: NextRequest) {
       startIso = new Date(utcMs).toISOString().replace(/\.\d{3}Z$/, "+0000");
     }
   }
+  // v686 · user chốt GIỮ NHƯ CŨ: auto-post luôn đăng CÔNG KHAI ngay lúc Push (bài gom tương tác
+  // trước giờ ads chạy). Đường scheduled-post (v685) đã gỡ — muốn bật lại xem lịch sử v685.
 
   // Link + ảnh lấy từ DB (ảnh do user chọn trong kit — kể cả ảnh angle tự upload — được ưu tiên).
   const prods = await db.select({ id: schema.shopifyProducts.id, images: schema.shopifyProducts.images, onlineStoreUrl: schema.shopifyProducts.onlineStoreUrl })
@@ -241,8 +243,7 @@ export async function POST(req: NextRequest) {
           if (!thumb) throw new Error("video ad needs a thumbnail (video has no poster & product has no image)");
           if (autoPost) {
             // v674 · AUTO-POST VIDEO — giống luồng ảnh: đăng VIDEO POST công khai lên page ngay lúc
-            // Push (caption = primary, link ở comment đầu) rồi ad chạy TRÊN bài đó (CTA gắn ở creative
-            // theo v665). Đặt lịch chạy sau → bài có thời gian gom tương tác trước khi đổ tiền.
+            // Push (caption = primary, link ở comment đầu) rồi ad chạy TRÊN bài đó (CTA theo v665).
             const pr = await publishPagePost({ pageId: c.pageId, message: it.primary, link, imageUrl: thumb, videoUrl, toFb: true, toIg: true }, c.token);
             existingPost = String(pr.fbPostId ?? "");
             if (!existingPost) throw new Error("auto-post video: Facebook returned no post id");
@@ -269,11 +270,9 @@ export async function POST(req: NextRequest) {
           }
         } else if (autoPost) {
           if (!src) throw new Error("no image");
-          // v658 · AUTO-POST khi đặt lịch: đăng bài CÔNG KHAI ngay lúc push (ảnh + primary, link ở
-          // comment đầu — khuôn v617) rồi chạy ad TRÊN bài đó. Ads hẹn giờ chạy sau → bài có thời
-          // gian gom tương tác tự nhiên trước khi đổ tiền.
-          // v668 · toIg: true — đăng kèm bài organic lên Instagram (best-effort: IG lỗi/chưa link
-          // account chỉ warn, không chặn ad). Ad vẫn chạy trên BÀI FB (object_story_id).
+          // v658 · AUTO-POST: đăng bài CÔNG KHAI ngay lúc push (ảnh + primary, link ở comment đầu)
+          // rồi chạy ad TRÊN bài đó — đặt lịch chạy sau thì bài có thời gian gom tương tác trước.
+          // v668 · kèm IG (best-effort, lỗi chỉ warn).
           const pr = await publishPagePost({ pageId: c.pageId, message: it.primary, link, imageUrl: src, toFb: true, toIg: true }, c.token);
           existingPost = String(pr.fbPostId ?? "");
           if (!existingPost) throw new Error("auto-post: Facebook returned no post id");

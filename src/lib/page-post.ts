@@ -45,6 +45,19 @@ export async function publishPagePost(job: PagePostJob, sysToken: string): Promi
   const pageToken = String(pg.access_token ?? "");
   if (!pageToken) throw new Error("No Page access token — grant the system user the Page (pages_manage_posts) in Business Settings → System users.");
 
+  // v685 · Tìm ID BÀI THẬT theo media id (photo/video) trên 1 edge của page — dùng cho cả bài đã đăng
+  // (published_posts) lẫn bài HẸN GIỜ (scheduled_posts: ads vẫn trỏ được vào bài chưa công khai).
+  const findPostByMedia = async (edge: "published_posts" | "scheduled_posts", mediaId: string): Promise<string> => {
+    try {
+      const pp = await fb(`${job.pageId}/${edge}?fields=id,attachments{target{id}}&limit=25`, pageToken);
+      for (const po of (Array.isArray(pp.data) ? pp.data : []) as Record<string, unknown>[]) {
+        const atts = (((po.attachments as Record<string, unknown>)?.data ?? []) as Record<string, unknown>[]);
+        if (atts.some((a) => String((a.target as Record<string, unknown>)?.id ?? "") === mediaId)) return String(po.id ?? "");
+      }
+    } catch { /* best-effort */ }
+    return "";
+  };
+
   let fbPostId = "";
   if (job.toFb) {
     const sched = Number(job.fbScheduleUnix ?? 0);
@@ -64,15 +77,17 @@ export async function publishPagePost(job: PagePostJob, sysToken: string): Promi
       if (vid && !sched) {
         for (let w = 0; w < 9 && !realPost; w++) {
           await new Promise((r) => setTimeout(r, 5000));
-          try {
-            const pp = await fb(`${job.pageId}/published_posts?fields=id,attachments{target{id}}&limit=10`, pageToken);
-            for (const po of (Array.isArray(pp.data) ? pp.data : []) as Record<string, unknown>[]) {
-              const atts = (((po.attachments as Record<string, unknown>)?.data ?? []) as Record<string, unknown>[]);
-              if (atts.some((a) => String((a.target as Record<string, unknown>)?.id ?? "") === vid)) { realPost = String(po.id ?? ""); break; }
-            }
-          } catch { /* thử lại vòng sau */ }
+          realPost = await findPostByMedia("published_posts", vid);
         }
         if (!realPost) warns.push("Video post is still processing — if the ad fails, wait a minute and pick the post via 'Use existing page post'.");
+      }
+      // v685 · bài video HẸN GIỜ: id bài nằm bên scheduled_posts (bài đăng ký ngay, video xử lý sau).
+      if (vid && sched > 0) {
+        for (let w = 0; w < 6 && !realPost; w++) {
+          await new Promise((r) => setTimeout(r, 5000));
+          realPost = await findPostByMedia("scheduled_posts", vid);
+        }
+        if (!realPost) warns.push("Couldn't resolve the scheduled post id yet — the ad may need re-linking to the post after it publishes.");
       }
       if (vid) fbPostId = realPost || `${job.pageId}_${vid}`;
       if (job.link && fbPostId && !sched) {
@@ -88,7 +103,13 @@ export async function publishPagePost(job: PagePostJob, sysToken: string): Promi
         ...(sched > 0 ? { published: false, scheduled_publish_time: sched } : {}),
       });
       // /photos trả {id: photoId, post_id: pageId_postId} — comment/URL dùng post_id.
-      fbPostId = String((post as { post_id?: string }).post_id ?? post.id ?? "");
+      fbPostId = String((post as { post_id?: string }).post_id ?? "");
+      // v685 · bài ảnh HẸN GIỜ nhiều khi không trả post_id → tra scheduled_posts theo photo id.
+      if (!fbPostId && sched > 0) {
+        const pid = String(post.id ?? "");
+        if (pid) fbPostId = await findPostByMedia("scheduled_posts", pid);
+      }
+      if (!fbPostId) fbPostId = String(post.id ?? "");
       if (job.link && fbPostId && !sched) {
         try { await fb(`${fbPostId}/comments`, pageToken, { message: job.link }); }
         catch { warns.push("Photo published but the link comment failed — paste the link in a comment manually."); }

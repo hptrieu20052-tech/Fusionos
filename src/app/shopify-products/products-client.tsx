@@ -293,6 +293,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const pagePostsLoaded = useRef(false);
   // v667 · dropdown chọn post CÓ THUMBNAIL (select thường không nhét ảnh được) — mở theo từng dòng.
   const [kitPostPick, setKitPostPick] = useState("");
+  // v689 · modal xem nhanh video (click thumbnail cột Video).
+  const [vidView, setVidView] = useState<{ url: string; title: string } | null>(null);
   // v673/v674 · VIDEO creative: chọn video ngay TRONG LƯỚI THUMBNAIL của kit (ô tím ▶ — tiện như chọn ảnh).
   // kitVids = video thư viện theo sản phẩm (nạp khi mở kit); kitVideo = video đã chọn cho từng dòng.
   const [kitVids, setKitVids] = useState<Record<string, { code: number; title: string; thumbUrl: string | null; publicUrl: string }[]>>({});
@@ -2066,6 +2068,17 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
       {/* v445b · flash = toast nổi (zIndex trên mọi modal) — trước đây inline đầu trang, mở modal là bị che. */}
       {msg && <div style={{ position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 6000, maxWidth: "min(720px, 92vw)", fontSize: 13, fontWeight: 600, padding: "12px 18px", borderRadius: 12, boxShadow: "0 6px 24px rgba(16,24,40,.18)", background: msg.ok ? "#EAF7F0" : "#FDECEC", color: msg.ok ? "#158A57" : "#C0392B", border: `1px solid ${msg.ok ? "#C7EAD8" : "#F5CFCF"}` }}>{msg.text}</div>}
 
+      {/* v689 · modal xem nhanh video (click thumbnail cột Video) — click nền tối hoặc ✕ để đóng */}
+      {vidView && (
+        <div onClick={() => setVidView(null)} style={{ position: "fixed", inset: 0, background: "rgba(10,14,20,.78)", zIndex: 5500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(480px, 92vw)", width: "100%" }}>
+            <div style={{ color: "#fff", fontSize: 13, fontWeight: 700, marginBottom: 8, paddingRight: 36, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{vidView.title}</div>
+            <video src={vidView.url} controls autoPlay playsInline style={{ width: "100%", maxHeight: "78vh", borderRadius: 14, background: "#000", display: "block" }} />
+            <button onClick={() => setVidView(null)} title="Close" style={{ position: "absolute", top: -6, right: -6, width: 30, height: 30, borderRadius: 999, border: "none", background: "#fff", fontSize: 15, cursor: "pointer", boxShadow: "0 4px 14px rgba(0,0,0,.3)" }}>✕</button>
+          </div>
+        </div>
+      )}
+
       {/* Sản phẩm AI viết hỏng + LÝ DO THẬT — không đoán mò nữa. Retry chỉ chạy lại đúng mấy con này. */}
       {/* v187: khung này dùng chung cho 2 loại nội dung — LỖI thật (đỏ) và KẾT QUẢ policy audit (vàng).
           Nhận diện: doPolicyAi ghi mọi finding với tiền tố "HIGH — " / "MEDIUM — ". Nếu TẤT CẢ các dòng
@@ -2156,7 +2169,10 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                 <td style={{ padding: "8px 6px" }}><ThumbZoom src={r.mainImage} images={r.imageUrls} alt={r.title} size={42} radius={8} border /></td>
                 <td style={{ padding: "8px 6px" }}>
                   {r.videoThumbUrl ? (
-                    <div title={`Video #${r.videoCode}${r.videoPushed ? " · pushed to Shopify" : " · not pushed to media yet"}`} style={{ position: "relative", width: 42, height: 42 }}>
+                    // v689 · click thumbnail → mở modal XEM video ngay (không phải mò vào Video Library)
+                    <div title={`Video #${r.videoCode}${r.videoPushed ? " · pushed to Shopify" : ""} — click to watch`}
+                      onClick={() => { if (r.videoPublicUrl) setVidView({ url: r.videoPublicUrl, title: `#${r.videoCode} · ${r.title}` }); else flash("✗ This video has no public URL yet — open it in the Video Library", false); }}
+                      style={{ position: "relative", width: 42, height: 42, cursor: "pointer" }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={r.videoThumbUrl} alt="" style={{ width: 42, height: 42, objectFit: "cover", borderRadius: 8, border: r.videoPushed ? "1px solid var(--line)" : "2px solid #E0A93B", display: "block", background: "#0B1220" }} />
                       <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
@@ -2939,7 +2955,8 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                     khối Start date nên mode "existing" bị giấu mất): lúc Push đăng mỗi ad thành BÀI CÔNG KHAI
                     trên page (ảnh + primary, link ở comment đầu) rồi ad chạy TRÊN bài đó. Dòng nào đã chọn/dán
                     post riêng thì vẫn dùng post đó. */}
-                <label style={{ display: "flex", alignItems: "center", gap: 7, alignSelf: "center", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: kitAutoPost ? "#2E7D46" : "var(--ink)" }}>
+                <label title="The post goes PUBLIC right at Push — scheduling the ad later gives the post time to gather engagement first."
+                  style={{ display: "flex", alignItems: "center", gap: 7, alignSelf: "center", fontSize: 12.5, fontWeight: 700, cursor: "pointer", color: kitAutoPost ? "#2E7D46" : "var(--ink)" }}>
                   <input type="checkbox" checked={kitAutoPost} onChange={(e) => setKitAutoPost(e.target.checked)} style={{ accentColor: "#2E7D46" }} />
                   📣 Auto-post each ad as a PUBLIC page post &amp; run the ad on it
                 </label>

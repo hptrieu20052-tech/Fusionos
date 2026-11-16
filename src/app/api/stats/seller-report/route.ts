@@ -30,7 +30,8 @@ export async function GET(req: NextRequest) {
   const r = await db.execute(sql`
     SELECT ${sql.raw(bucketExpr)} AS bucket, min(${sql.raw(bucketOrd)}) AS ord,
            o.seller_at_order AS seller_id, coalesce(u.full_name,'(Unassigned)') AS name,
-           count(*)::int AS o, coalesce(sum(oi.qty),0)::int AS i
+           count(*)::int AS o, coalesce(sum(oi.qty),0)::int AS i,
+           coalesce(sum(o.total),0)::numeric AS rev
     FROM orders o
     LEFT JOIN users u ON u.id = o.seller_at_order
     LEFT JOIN (SELECT order_id, sum(qty) qty FROM order_items GROUP BY 1) oi ON oi.order_id = o.id
@@ -38,23 +39,26 @@ export async function GET(req: NextRequest) {
     GROUP BY 1, o.seller_at_order, u.full_name
     ORDER BY ord
   `);
-  const rows = r.rows as { bucket: string; seller_id: string | null; name: string; o: number; i: number }[];
+  const rows = r.rows as { bucket: string; seller_id: string | null; name: string; o: number; i: number; rev: string }[];
 
   const buckets = Array.from(new Map(rows.map((x) => [x.bucket, true])).keys());
   const bIdx = new Map(buckets.map((b, ix) => [b, ix]));
-  const sellersMap = new Map<string, { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number }[] }>();
+  // v688 · daily có thêm r (doanh thu/bucket) — tab Revenue trên chart; zero hoá khi không được xem tiền.
+  const sellersMap = new Map<string, { id: string | null; name: string; orders: number; items: number; daily: { o: number; i: number; r: number }[] }>();
   for (const x of rows) {
     const key = x.seller_id ?? "none";
-    if (!sellersMap.has(key)) sellersMap.set(key, { id: x.seller_id, name: x.name, orders: 0, items: 0, daily: buckets.map(() => ({ o: 0, i: 0 })) });
+    if (!sellersMap.has(key)) sellersMap.set(key, { id: x.seller_id, name: x.name, orders: 0, items: 0, daily: buckets.map(() => ({ o: 0, i: 0, r: 0 })) });
     const s = sellersMap.get(key)!;
     s.orders += x.o; s.items += x.i;
-    s.daily[bIdx.get(x.bucket)!] = { o: x.o, i: x.i };
+    s.daily[bIdx.get(x.bucket)!] = { o: x.o, i: x.i, r: Math.round(Number(x.rev ?? 0) * 100) / 100 };
   }
   const sellers = Array.from(sellersMap.values()).sort((a, b) => b.orders - a.orders);
   const totals = { orders: sellers.reduce((a, s) => a + s.orders, 0), items: sellers.reduce((a, s) => a + s.items, 0) };
 
   // Tiền (Doanh thu / Fee / Lợi nhuận) + Sàn — chỉ cho người có quyền orders; ẩn lợi nhuận nếu bị hạn chế hide_profit.
   const showMoney = oLvl >= 1;
+  // v688 · không được xem tiền → xoá doanh thu theo bucket khỏi response (tab Revenue cũng không hiện).
+  if (!showMoney) for (const s of sellers) s.daily = s.daily.map((d) => ({ ...d, r: 0 }));
   const hideProfit = showMoney ? await hasRestriction(session, "hide_profit") : true;
   const money = { revenue: 0, fee: 0, feeEst: 0, cost: 0, profit: 0 };
   if (showMoney) {
