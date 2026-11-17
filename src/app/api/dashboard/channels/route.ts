@@ -21,8 +21,9 @@ export async function GET(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ ok: false }, { status: 401 });
   const sp = req.nextUrl.searchParams;
-  const self = sp.get("scope") === "self";
-  if (!self && session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  // v690 · khối By channel CHỈ ADMIN (user chốt) — scope=self đã gỡ khỏi client, chặn luôn ở API.
+  const self = false;
+  if (session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
   const range = sp.get("range") ?? "30d";
   const from = sp.get("from"), to = sp.get("to");
   const cond = rangeCond("o.ordered_at", range, from, to);
@@ -62,12 +63,17 @@ export async function GET(req: NextRequest) {
     for (const r of (await db.execute(listingSql)).rows as { platform: string; n: number }[]) listings[r.platform] = r.n;
   } catch { listings = {}; /* bảng thiếu → ô New listings để trống, không chặn cả khối */ }
 
-  const shopsRows = (await db.execute(self
-    ? sql`SELECT marketplace::text AS mk, count(*)::int AS n FROM stores WHERE status <> 'deleted' AND seller_id = ${session.sub}::uuid GROUP BY 1`
-    : sql`SELECT marketplace::text AS mk, count(*)::int AS n FROM stores WHERE status <> 'deleted' GROUP BY 1`
-  )).rows as { mk: string; n: number }[];
+  // v690 · Shops LIVE theo THỜI GIAN THỰC — đúng định nghĩa badge LIVE trang Stores: có đơn 7 ngày gần nhất.
+  const shopsRows = (await db.execute(sql`
+    SELECT s.marketplace::text AS mk, count(*)::int AS n,
+      count(*) FILTER (WHERE EXISTS (
+        SELECT 1 FROM orders o WHERE o.store_id = s.id AND o.ordered_at > NOW() - interval '7 days'
+      ))::int AS live
+    FROM stores s WHERE s.status <> 'deleted' GROUP BY 1
+  `)).rows as { mk: string; n: number; live: number }[];
   const shops: Record<string, number> = {};
-  for (const r of shopsRows) shops[r.mk] = r.n;
+  const shopsLive: Record<string, number> = {};
+  for (const r of shopsRows) { shops[r.mk] = r.n; shopsLive[r.mk] = r.live; }
 
   const ALL = ["tiktok", "etsy", "shopify", "woocommerce", "shopbase", "amazon"];
   const byP = new Map(ordersRows.map((r) => [r.platform, r] as const));
@@ -80,6 +86,7 @@ export async function GET(req: NextRequest) {
       fulfilled: byP.get(p)?.fulfilled ?? 0,
       newListings: noListing ? null : (listings[p] ?? 0),
       shops: shops[p] ?? 0,
+      shopsLive: shopsLive[p] ?? 0,
     };
   }).filter((c) => c.orders > 0 || c.shops > 0 || (c.newListings ?? 0) > 0);
   return NextResponse.json({ ok: true, channels });

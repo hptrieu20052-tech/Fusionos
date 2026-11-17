@@ -11,7 +11,7 @@ const money = (n: number) => "$" + (Math.round(n * 100) / 100).toLocaleString(un
 
 type Pipe = { c: number; q: number };
 // v687 · "By channel" — mỗi sàn: Orders · Revenue · New listings · Fulfilled · Shops trong range.
-type Chan = { platform: string; orders: number; revenue: number; fulfilled: number; newListings: number | null; shops: number };
+type Chan = { platform: string; orders: number; revenue: number; fulfilled: number; newListings: number | null; shops: number; shopsLive?: number };
 const CH_NAME: Record<string, string> = { tiktok: "TikTok Shop", etsy: "Etsy", shopify: "Shopify", woocommerce: "WooCommerce", shopbase: "ShopBase", amazon: "Amazon" };
 const CH_COLOR: Record<string, string> = { tiktok: "#14213D", etsy: "#C77B3B", shopify: "#2FA36B", woocommerce: "#7C3AED", shopbase: "#3E7BD6", amazon: "#E0913C" };
 type Kpi = { orders: number; revenue: number; prevOrders: number | null; prevRevenue: number | null; items: number; prevLabel: string; pendingNew: number; issues: number; designs: number; profit: number; profitRevenue: number; profitFee: number; profitFeeEst?: number; profitCost: number;
@@ -37,15 +37,14 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
     fetch(`/api/dashboard?${p}`).then((r) => r.json()).then((j) => { if (j.ok) setKpi(j); });
   }, [range, f, t, ready, isAdmin, showSelf]);
 
-  // v687 · By channel — cùng range/scope với KPI đầu trang.
+  // v687 · By channel — cùng range với KPI đầu trang. v690 · CHỈ ADMIN (user chốt), role khác ẩn hẳn.
   const [chans, setChans] = useState<Chan[] | null>(null);
   useEffect(() => {
-    if (!ready || (!isAdmin && !showSelf)) return;
+    if (!ready || !isAdmin) return;
     const p = new URLSearchParams({ range });
-    if (!isAdmin) p.set("scope", "self");
     if (f) p.set("from", f); if (t) p.set("to", t);
     fetch(`/api/dashboard/channels?${p}`).then((r) => r.json()).then((j) => { if (j.ok) setChans(j.channels); }).catch(() => { /* khối phụ — lỗi thì ẩn */ });
-  }, [range, f, t, ready, isAdmin, showSelf]);
+  }, [range, f, t, ready, isAdmin]);
 
   const delta = (cur: number, prev: number | null, label = tr("db.prevPeriod")) => {
     if (prev === null) return <div className="d" style={{ color: "var(--faint)" }}>{tr("db.noPrevData").replace("{label}", String(label))}</div>;
@@ -134,8 +133,8 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
         </div>
       )}
 
-      {/* v687 · By channel — bảng tổng theo SÀN (TikTok/Etsy/Shopify/Woo/ShopBase/Amazon) */}
-      {chans && chans.length > 0 && (
+      {/* v687 · By channel — bảng tổng theo SÀN · v690 chỉ admin thấy */}
+      {isAdmin && chans && chans.length > 0 && (
         <div className="panel" style={{ padding: 16, marginBottom: 14 }}>
           <div style={{ fontWeight: 800, fontSize: 14.5, marginBottom: 10 }}>By channel</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(215px, 1fr))", gap: 10 }}>
@@ -155,7 +154,10 @@ export default function DashboardClient({ canDesigns, canOrders, canVideos, isAd
                     <span style={{ color: "var(--muted)" }}>{l}</span><span style={{ fontWeight: 700 }}>{v}</span>
                   </div>
                 ))}
-                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>Shops: {c.shops}</div>
+                {/* v690 · live = có đơn 7 ngày gần nhất (đúng badge LIVE trang Stores) — tính thời gian thực */}
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>
+                  Shops: <b style={{ color: (c.shopsLive ?? 0) > 0 ? "var(--green)" : "var(--muted)" }}>{c.shopsLive ?? 0} live</b> / {c.shops}
+                </div>
               </div>
             ))}
           </div>

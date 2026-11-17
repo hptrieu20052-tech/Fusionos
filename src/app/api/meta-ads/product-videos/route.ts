@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db";
 import { and, inArray, isNotNull, desc } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
+import { levelOf } from "@/lib/rbac";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,11 @@ export const dynamic = "force-dynamic";
  */
 export async function POST(req: NextRequest) {
   const session = await getSession();
-  if (!session || session.role !== "admin") return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  if (!session) return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 });
+  // v690 · mở cho SELLER (block Video trong Edit listing liệt kê video của listing) — trước admin-only.
+  if (session.role !== "admin" && (await levelOf(session, "products")) < 1) {
+    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
+  }
   const b = await req.json().catch(() => null) as { ids?: unknown[] } | null;
   const ids = Array.from(new Set((Array.isArray(b?.ids) ? b!.ids! : []).map(String).filter((x) => /^[0-9a-f-]{36}$/i.test(x)))).slice(0, 40);
   if (!ids.length) return NextResponse.json({ ok: true, videos: {} });

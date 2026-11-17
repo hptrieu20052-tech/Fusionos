@@ -295,6 +295,14 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const [kitPostPick, setKitPostPick] = useState("");
   // v689 · modal xem nhanh video (click thumbnail cột Video).
   const [vidView, setVidView] = useState<{ url: string; title: string } | null>(null);
+  // v690 · MỌI video trỏ về listing đang Edit (gồm video ads upload từ modal) — hiện trong block Video.
+  const [edVids, setEdVids] = useState<{ code: number; title: string; thumbUrl: string | null; publicUrl: string }[]>([]);
+  const loadEdVids = async (id: string) => {
+    try {
+      const j = await postJSON("/api/meta-ads/product-videos", { ids: [id] });
+      setEdVids(j.ok ? ((j.videos?.[id] ?? []) as { code: number; title: string; thumbUrl: string | null; publicUrl: string }[]) : []);
+    } catch { setEdVids([]); }
+  };
   // v673/v674 · VIDEO creative: chọn video ngay TRONG LƯỚI THUMBNAIL của kit (ô tím ▶ — tiện như chọn ảnh).
   // kitVids = video thư viện theo sản phẩm (nạp khi mở kit); kitVideo = video đã chọn cho từng dòng.
   const [kitVids, setKitVids] = useState<Record<string, { code: number; title: string; thumbUrl: string | null; publicUrl: string }[]>>({});
@@ -679,6 +687,7 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
   const openEdit = async (id: string) => {
     setEditId(id); setEdit(null); setEditLoading(true);
     setEdPers([]); setEdPersOwn(false); setEdPersEditing(false); setEdPersTpl("");
+    setEdVids([]); loadEdVids(id); // v690 · chạy nền — block Video hiện danh sách khi về
     try {
       const j = await fetch(`/api/shopify-products?id=${id}`).then((r) => r.json());
       if (j.ok) setEdit(j.product);
@@ -769,11 +778,12 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
     setBusy(false);
   };
   // v223 · Gắn/gỡ video vào listing bằng #Video ID (dán từ Video Library). Không đụng nội dung Shopify.
-  const setVideo = async (clear = false) => {
+  // v690 · codeOverride: gắn thẳng 1 video trong danh sách "Other videos" làm video listing (nút ★ Use).
+  const setVideo = async (clear = false, codeOverride?: string) => {
     if (!edit) return;
     setBusy(true);
     try {
-      const j = await postJSON("/api/shopify-products/set-video", { id: edit.id, videoCode: clear ? "" : vidCode });
+      const j = await postJSON("/api/shopify-products/set-video", { id: edit.id, videoCode: clear ? "" : (codeOverride ?? vidCode) });
       if (j.ok) {
         if (j.cleared) { setEdit({ ...edit, videoCode: null, videoTitle: null, videoThumbUrl: null, videoPublicUrl: null }); flash("✓ Video removed"); }
         else {
@@ -827,8 +837,9 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
         durationSec: dur || undefined, sizeBytes: file.size,
       });
       if (j.ok) {
+        loadEdVids(edit.id); // v690 · video mới hiện ngay trong danh sách của block Video
         if (adsOnly) {
-          flash(`✓ Uploaded video #${j.video.code} for ADS only — pick it in the Meta Ads kit (▶ tile). Listing unchanged.`);
+          flash(`✓ Uploaded video #${j.video.code} for ADS only — it now shows below & in the Meta Ads kit. Listing unchanged.`);
         } else {
           setEdit({ ...edit, videoCode: j.video.code, videoTitle: j.video.title, videoThumbUrl: j.video.thumbUrl, videoPublicUrl: j.video.publicUrl ?? null, videoMediaId: null });
           flash(`✓ Uploaded & attached video #${j.video.code} — hit “+ Add to description” to place it in the Description.`);
@@ -2472,6 +2483,30 @@ export default function ShopifyProductsClient({ stores, sellers, canEdit, isAdmi
                               onChange={(e) => { uploadVideoFile(e.target.files?.[0] ?? null); e.currentTarget.value = ""; }} />
                             {busy ? "Uploading…" : "⬆ Upload video"}
                           </label>
+                        </div>
+                      )}
+                      {/* v690 · TẤT CẢ video thuộc listing này (video ads upload từ modal / Video Library trỏ về).
+                          Click thumb để XEM; ★ Use = đặt làm video LISTING (dùng cho + Add to description). */}
+                      {edVids.filter((v) => v.code !== edit.videoCode).length > 0 && (
+                        <div style={{ marginTop: 10, borderTop: "1px dashed #C9D8F0", paddingTop: 8 }}>
+                          <div style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)", marginBottom: 6 }}>Other videos on this listing (ads)</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            {edVids.filter((v) => v.code !== edit.videoCode).map((v) => (
+                              <div key={v.code} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: "1px solid var(--line)", borderRadius: 10, padding: "4px 8px", background: "#fff" }}>
+                                {v.thumbUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={v.thumbUrl} alt="" onClick={() => setVidView({ url: v.publicUrl, title: `#${v.code} · ${v.title}` })} title="Click to watch"
+                                    style={{ width: 30, height: 30, objectFit: "cover", borderRadius: 6, cursor: "pointer", background: "#0B1220" }} />
+                                ) : (
+                                  <span onClick={() => setVidView({ url: v.publicUrl, title: `#${v.code} · ${v.title}` })} title="Click to watch"
+                                    style={{ width: 30, height: 30, borderRadius: 6, background: "#0B1220", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, cursor: "pointer" }}>▶</span>
+                                )}
+                                <b style={{ fontSize: 12 }}>#{v.code}</b>
+                                <button disabled={busy} title="Make this the LISTING video (used by + Add to description)" onClick={() => setVideo(false, String(v.code))}
+                                  style={{ border: "1px solid var(--line)", background: "#fff", borderRadius: 7, fontSize: 11, fontWeight: 700, color: "#2952B3", padding: "2px 7px", cursor: "pointer" }}>★ Use</button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
