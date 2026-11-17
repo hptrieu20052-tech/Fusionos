@@ -4,7 +4,52 @@
 //   POST /api/seller/login            { user_name, password } → { access_token, expires }
 //   POST /api/order/:store_id/create?isCheckOrderNumber=false  (Bearer) → { data: { id, status, message } }
 
-export type LenfulCred = { endpoint?: string | null; userName: string; password: string };
+export type LenfulCred = { endpoint?: string | null; userName: string; password: string; apiKey?: string };
+
+// ============================================================================
+//  v691 · LENFUL SELLER API V8 (seller-v8.lenful.com) — Lenful đổi hẳn API:
+//  · Auth: Bearer API key dạng `lf_live_…` (Settings → API keys bên Lenful) — KHÔNG còn login.
+//  · Base: https://seller-v8.lenful.com/api/public/v1 · envelope { success, message, data }.
+//  · Tạo đơn: POST /orders (external_order_id là idempotency key; 409 = đơn đã tồn tại → coi như OK).
+//  · Trạng thái: GET /orders/{id} (workflow_status) · tracking TÁCH RIÊNG: GET /orders/{id}/trackings.
+//  · KHÔNG webhook — poll như cũ. Rate limit: 60 read / 20 write mỗi phút.
+//  NHẬN DIỆN TỰ ĐỘNG: ô API Key/password chứa key `lf_…` → chạy v8; không thì V6 login như cũ.
+//  Đơn CŨ đẩy bằng V6 mang id V6 → GET v8 404 → poll bỏ qua êm (để nguyên cred cũ tới khi đơn cũ xong).
+// ============================================================================
+const V8_KEY_RE = /^lf_[a-z0-9]+_/i;
+export const isLenfulV8 = (cred: LenfulCred): boolean => V8_KEY_RE.test((cred.apiKey || cred.password || "").trim());
+const v8Key = (cred: LenfulCred) => (cred.apiKey || cred.password || "").trim();
+const v8Base = (endpoint?: string | null) => {
+  const m = (endpoint || "").trim().match(/^https?:\/\/[^/]+/i);
+  const origin = m && /seller-v8\./i.test(m[0]) ? m[0] : "https://seller-v8.lenful.com";
+  return `${origin}/api/public/v1`;
+};
+async function v8Fetch(cred: LenfulCred, path: string, init?: { method?: string; body?: unknown }, okStatuses: number[] = []): Promise<{ status: number; j: Record<string, unknown> }> {
+  const res = await fetch(`${v8Base(cred.endpoint)}${path}`, {
+    method: init?.method ?? "GET",
+    headers: {
+      Accept: "application/json", Authorization: `Bearer ${v8Key(cred)}`,
+      ...(init?.body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(init?.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
+    signal: AbortSignal.timeout(30000),
+  });
+  const text = await res.text();
+  let j: Record<string, unknown> = {};
+  try { j = JSON.parse(text) as Record<string, unknown>; } catch { /* giữ {} */ }
+  if ((!res.ok && !okStatuses.includes(res.status)) || j?.success === false && !okStatuses.includes(res.status)) {
+    const errs = Array.isArray((j?.data as Record<string, unknown> | undefined)?.errors)
+      ? " — " + JSON.stringify(((j.data as Record<string, unknown>).errors as unknown[])).slice(0, 220)
+      : "";
+    throw new Error(`Lenful v8 ${path} HTTP ${res.status}: ${String(j?.message ?? text).slice(0, 250)}${errs}`);
+  }
+  return { status: res.status, j };
+}
+// Vị trí in số (V6) → code chuỗi v8 (position phải khớp print_positions[].code của sản phẩm).
+const V8_POS_CODE: Record<number, string> = {
+  0: "full", 1: "front", 2: "back", 3: "left_chest", 4: "right_chest",
+  5: "left_sleeve", 6: "right_sleeve", 7: "neck", 8: "full_3d",
+};
 
 // Cache token theo (endpoint + user) trong vòng đời instance — đỡ login mỗi đơn.
 const tokenCache = new Map<string, { token: string; exp: number }>();
@@ -83,6 +128,14 @@ export type LenfulProduct = {
   variant_default?: { sku?: string; name?: string; full_name?: string; price?: number; base_cost?: number };
 };
 export async function listLenfulProducts(cred: LenfulCred, page = 1, limit = 250): Promise<{ totalPage: number; count: number; data: LenfulProduct[] }> {
+  // v691 · V8: POST /products/list (được tính là READ) — limit tối đa 100, phân trang page/limit.
+  if (isLenfulV8(cred)) {
+    const { j } = await v8Fetch(cred, "/products/list", { method: "POST", body: { page, limit: Math.min(limit, 100) } });
+    const d = (j?.data ?? {}) as Record<string, unknown>;
+    const arr = (Array.isArray(d?.items) ? d.items : Array.isArray(d) ? d : []) as Record<string, unknown>[];
+    const data: LenfulProduct[] = arr.map((p) => ({ id: String(p?.id ?? ""), name: String(p?.name ?? "") }));
+    return { totalPage: Number(d?.totalPages) || 1, count: Number(d?.total) || data.length, data };
+  }
   const base = baseOf(cred.endpoint);
   const token = await lenfulToken(cred);
   const res = await fetch(`${base}/api/product?page=${page}&limit=${limit}&published=true`, {
@@ -98,6 +151,13 @@ export async function listLenfulProducts(cred: LenfulCred, page = 1, limit = 250
 // Danh sách STORE của seller → id dùng làm :store_id khi tạo đơn.
 // Doc không ghi rõ path → TỰ DÒ các path khả dĩ, path nào trả mảng hợp lệ thì dùng.
 export async function listLenfulStores(cred: LenfulCred): Promise<{ id: string; title: string }[]> {
+  // v691 · V8: GET /stores (scope stores:read, không phân trang)
+  if (isLenfulV8(cred)) {
+    const { j } = await v8Fetch(cred, "/stores");
+    const d = j?.data as unknown;
+    const arr = (Array.isArray(d) ? d : Array.isArray((d as Record<string, unknown>)?.items) ? (d as Record<string, unknown>).items : []) as Record<string, unknown>[];
+    return arr.map((s) => ({ id: String(s?.id ?? ""), title: String(s?.name ?? s?.title ?? "store") })).filter((s) => s.id);
+  }
   const base = baseOf(cred.endpoint);
   const token = await lenfulToken(cred);
   const paths = ["/api/store", "/api/stores", "/api/store/list", "/api/seller/store", "/api/seller/stores", "/api/store?page=1&limit=50"];
@@ -123,6 +183,18 @@ export async function listLenfulStores(cred: LenfulCred): Promise<{ id: string; 
 // Chi tiết 1 sản phẩm: GET /api/product/:product_id → có MẢNG variants đầy đủ (mỗi variant 1 SKU riêng).
 export type LenfulVariant = { id?: string; name?: string; full_name?: string; sku?: string; price?: number; base_cost?: number; status?: boolean };
 export async function getLenfulProduct(cred: LenfulCred, productId: string): Promise<{ id: string; name: string; variants: LenfulVariant[] }> {
+  // v691 · V8: variants tách endpoint riêng GET /products/{id}/variants (field `sku` = SKU đặt đơn).
+  if (isLenfulV8(cred)) {
+    const { j } = await v8Fetch(cred, `/products/${encodeURIComponent(productId)}/variants`);
+    const d = j?.data as unknown;
+    const arr = (Array.isArray(d) ? d : Array.isArray((d as Record<string, unknown>)?.items) ? (d as Record<string, unknown>).items : []) as Record<string, unknown>[];
+    const variants: LenfulVariant[] = arr.map((v) => ({
+      id: String(v?.id ?? ""), sku: String(v?.sku ?? ""),
+      name: String(v?.name ?? ""), full_name: String(v?.full_name ?? v?.name ?? ""),
+      price: Number(v?.price) || undefined, base_cost: Number(v?.base_cost) || undefined,
+    }));
+    return { id: productId, name: "", variants };
+  }
   const base = baseOf(cred.endpoint);
   const token = await lenfulToken(cred);
   const res = await fetch(`${base}/api/product/${encodeURIComponent(productId)}`, {
@@ -137,6 +209,56 @@ export async function getLenfulProduct(cred: LenfulCred, productId: string): Pro
 }
 
 export async function createLenfulOrder(cred: LenfulCred & { storeId: string }, order: LenfulOrder): Promise<{ id: string; raw: unknown }> {
+  // ---- v691 · V8: POST /orders — map từ khuôn LenfulOrder cũ sang body mới ----
+  if (isLenfulV8(cred)) {
+    const extra = cred as LenfulCred & { storeId: string; shippingMethodCode?: unknown; labelShippingMethodCode?: unknown };
+    // Nhãn sàn (Ship by Platform): v8 BẮT BUỘC đúng shipping_method_code có requires_customer_label —
+    // code lấy trong portal Lenful (Orders → Import), điền vào Settings fulfiller: labelShippingMethodCode.
+    const labelCode = Number(extra.labelShippingMethodCode);
+    if (order.platform_label && !Number.isFinite(labelCode)) {
+      throw new Error("Lenful v8: label order needs `labelShippingMethodCode` in fulfiller Settings (shipping method code with customer label — see Lenful portal → Orders → Import)");
+    }
+    const methodCode = order.platform_label ? labelCode : Number(extra.shippingMethodCode);
+    const line_items = order.items.map((it) => {
+      const designs = (it.designs ?? [])
+        .filter((d) => d.link)
+        .map((d) => ({ position: V8_POS_CODE[d.position] ?? String(d.position), design_url: d.link }));
+      const mocks = (it.mockups ?? []).filter(Boolean);
+      return {
+        sku: it.product_sku,
+        quantity: it.quantity,
+        // v8: designs đi kèm mockup_urls BẮT BUỘC (1-10) — không có mockup thì dùng chính ảnh design.
+        ...(designs.length ? { designs, mockup_urls: (mocks.length ? mocks : [designs[0].design_url]).slice(0, 10) } : {}),
+        ...(it.request_clone ? { clone_design: true } : {}),
+      };
+    });
+    const name = [order.first_name, order.last_name].filter(Boolean).join(" ").trim() || "Customer";
+    const body = {
+      external_order_id: order.order_number,
+      // store_id v8 là UUID (GET /stores) — id V6 cũ (24 hex) không hợp lệ thì bỏ, Lenful dùng store mặc định.
+      ...(cred.storeId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cred.storeId) ? { store_id: cred.storeId } : {}),
+      ...(Number.isFinite(methodCode) ? { shipping_method_code: methodCode } : {}),
+      ...(order.platform_label ? { label_url: order.platform_label } : {}),
+      shipping_address: {
+        name,
+        line1: order.address_1 || "",
+        ...(order.address_2 ? { line2: order.address_2 } : {}),
+        city: order.city || "",
+        ...(order.province ? { state_code: order.province } : {}),
+        ...(order.zip ? { postal: order.zip } : {}),
+        country_code: (order.country_code || "US").toUpperCase().slice(0, 2),
+        ...(order.phone ? { phone: order.phone } : {}),
+      },
+      line_items,
+    };
+    // 409 = external_order_id đã tồn tại trong store → body chứa đơn CŨ → coi là thành công (idempotent).
+    const { status, j } = await v8Fetch(cred, "/orders", { method: "POST", body }, [409]);
+    const d = ((j?.data ?? {}) as Record<string, unknown>);
+    const id = String(d?.id ?? "");
+    if (!id) throw new Error(`Lenful v8 order: no order id in response (HTTP ${status}, ${String(j?.message ?? "").slice(0, 150)})`);
+    return { id, raw: j };
+  }
+
   const base = baseOf(cred.endpoint);
   const token = await lenfulToken(cred);
   const res = await fetch(`${base}/api/order/${encodeURIComponent(cred.storeId)}/create?isCheckOrderNumber=false`, {
@@ -164,6 +286,20 @@ export async function createLenfulOrder(cred: LenfulCred & { storeId: string }, 
 // ============================================================================
 
 export async function getLenfulOrder(cred: LenfulCred & { storeId?: string }, id: string): Promise<Record<string, unknown> | null> {
+  // ---- v691 · V8: GET /orders/{id} + tracking tách riêng GET /orders/{id}/trackings ----
+  // Đơn id V6 cũ tra trên v8 → 404 → null (poll bỏ qua êm, không phá đơn cũ).
+  if (isLenfulV8(cred)) {
+    try {
+      const { j } = await v8Fetch(cred, `/orders/${encodeURIComponent(id)}`);
+      const d = (j?.data ?? null) as Record<string, unknown> | null;
+      if (!d || typeof d !== "object") return null;
+      try {
+        const { j: tj } = await v8Fetch(cred, `/orders/${encodeURIComponent(id)}/trackings`);
+        d.__v8_trackings = ((tj?.data as Record<string, unknown> | undefined)?.items ?? []) as unknown;
+      } catch { /* thiếu scope tracking:read / 404 → thôi, vẫn trả detail */ }
+      return d;
+    } catch { return null; }
+  }
   const token = await lenfulToken(cred);
   const base = baseOf(cred.endpoint);
   const sid = (cred.storeId ?? "").trim();
@@ -198,6 +334,36 @@ export function extractLenfulOrder(root: Record<string, unknown>): {
   status?: string; trackingNumber?: string; carrier?: string;
   base?: number; ship?: number; tax?: number; total?: number;
 } {
+  // ---- v691 · V8 shape: workflow_status + revenue CENTS + tracking ở __v8_trackings (đã ghép) ----
+  if (typeof root.workflow_status === "string") {
+    const items = Array.isArray(root.items) ? (root.items as Record<string, unknown>[]) : [];
+    const baseCents = items.reduce((s, it) => s + (Number(it?.item_revenue) || 0) + (Number(it?.alloc_surcharge) || 0), 0);
+    const totalCents = Number(root.revenue_total) || 0;
+    // Tracking: ưu tiên bản ghi is_current, không có thì bản mới nhất theo updated_at.
+    let tNum: string | undefined, tCarrier: string | undefined, tStatus: string | undefined;
+    let tCur = false, tAt = "";
+    for (const t of (Array.isArray(root.__v8_trackings) ? (root.__v8_trackings as Record<string, unknown>[]) : [])) {
+      const num = String(t?.tracking_number ?? "").trim();
+      if (!num) continue;
+      const cur = t?.is_current === true;
+      const at = String(t?.updated_at ?? "");
+      if (tNum && tCur && !cur) continue;          // đã có bản is_current → bản thường không đè
+      if (tNum && tCur === cur && at <= tAt) continue; // cùng hạng → giữ bản mới hơn
+      tNum = num; tCur = cur; tAt = at;
+      tCarrier = String(t?.carrier ?? "").trim() || undefined;
+      tStatus = String(t?.status ?? "").trim() || undefined;
+    }
+    const status = (tStatus && /deliver/i.test(tStatus) && !/out.?for.?deliver/i.test(tStatus))
+      ? "Delivered"
+      : String(root.workflow_status);
+    return {
+      status,
+      trackingNumber: tNum,
+      carrier: tCarrier,
+      base: baseCents > 0 ? Math.round(baseCents) / 100 : undefined,
+      total: totalCents > 0 ? Math.round(totalCents) / 100 : undefined,
+    };
+  }
   const o: Record<string, unknown> = {
     ...root,
     ...((root.pricing as Record<string, unknown>) ?? {}),

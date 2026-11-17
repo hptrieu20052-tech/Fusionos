@@ -405,7 +405,8 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
               endpoint: ff.apiEndpoint, userName: cred.userName || cred.user_name || cred.identifier || "",
               password: cred.password || cred.apiKey || "", storeId: cred.storeId || cred.store_id || cred.shopId || "",
             };
-            if (!lCred.userName || !lCred.password) { skipped++; return; }
+            // v691 · key V8 (lf_…) không cần userName — chỉ bộ V6 cũ mới đòi đủ user+password.
+            if (!lCred.password || (!lCred.userName && !/^lf_[a-z0-9]+_/i.test(lCred.password))) { skipped++; return; }
             const d = await getLenfulOrder(lCred, ffo.externalFfId!);
             if (!d) { skipped++; return; }
             const L = extractLenfulOrder(d);

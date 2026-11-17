@@ -471,8 +471,11 @@ function lenfulAdapter(): FulfillerAdapter {
       const userName = cred.userName || cred.user_name || cred.identifier || "";
       const password = cred.password || cred.apiKey || "";
       const storeId = cred.storeId || cred.store_id || cred.shopId || "";
-      if (!userName || !password || !storeId) {
-        return { ...simulate("lenful"), reason: "Lenful cần Identifier (user_name) + API Key (password) + Shop ID (store_id) trong Settings → order NOT sent to the printer" };
+      // v691 · API Key dạng lf_… = Lenful V8 mới: CHỈ CẦN key (store/shipping method tuỳ chọn —
+      // storeId phải là UUID từ API v8, id 24-hex cũ sẽ bị bỏ qua và Lenful dùng store mặc định).
+      const isV8Key = /^lf_[a-z0-9]+_/i.test(password);
+      if (isV8Key ? !password : (!userName || !password || !storeId)) {
+        return { ...simulate("lenful"), reason: "Lenful cần API Key lf_… (V8 mới) — hoặc bộ cũ Identifier + API Key (password) + Shop ID — trong Settings → order NOT sent to the printer" };
       }
       const o = ctx.order;
       // shippings BẮT BUỘC (mảng MÃ SỐ theo thứ tự ưu tiên): 0 Standard · 1 Ground · 2 Express · 3 3-Days
@@ -521,7 +524,11 @@ function lenfulAdapter(): FulfillerAdapter {
       });
       const note = ctx.lines.map((l) => (l.personalization || "").trim()).filter(Boolean).join(" | ");
       const res = await createLenfulOrder(
-        { endpoint: ctx.fulfiller.apiEndpoint, userName, password, storeId },
+        // v691 · truyền kèm shippingMethodCode/labelShippingMethodCode từ Settings cho nhánh V8
+        { endpoint: ctx.fulfiller.apiEndpoint, userName, password, storeId,
+          ...(cred.shippingMethodCode ? { shippingMethodCode: cred.shippingMethodCode } : {}),
+          ...(cred.labelShippingMethodCode ? { labelShippingMethodCode: cred.labelShippingMethodCode } : {}),
+        } as never,
         {
           order_number: orderExtNumber(o),
           first_name: (o.buyerFirst || "").trim() || "Customer",
