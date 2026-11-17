@@ -232,7 +232,8 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                     : typeof shops[f.id] === "string" ? <span style={{ color: "var(--red)", fontWeight: 700 }}>⚠ {String(shops[f.id]).replace(/^err:/, "")}</span>
                     : (shops[f.id] as { id: number; title: string }[]).length === 0 ? <span style={{ color: "var(--muted)" }}>{t("set.tokenNoShop")}</span>
                     : <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                        <span style={{ color: "var(--muted)", fontWeight: 700 }}>{t("s.shopList")}</span>
+                        {/* v693 · nhãn chung — khối này giờ dùng cho cả Lenful (Get Store v8), không riêng Printify */}
+                        <span style={{ color: "var(--muted)", fontWeight: 700 }}>Stores:</span>
                         {(shops[f.id] as { id: number; title: string }[]).map((s) => (
                           <button key={s.id} type="button" onClick={() => setE(f.id, "shopId", String(s.id))}
                             style={{ background: "var(--blue-soft)", color: "var(--blue)", border: "1px solid #CFE0F5", borderRadius: 9, padding: "4px 10px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>
