@@ -17,7 +17,19 @@ export type LenfulCred = { endpoint?: string | null; userName: string; password:
 //  Đơn CŨ đẩy bằng V6 mang id V6 → GET v8 404 → poll bỏ qua êm (để nguyên cred cũ tới khi đơn cũ xong).
 // ============================================================================
 const V8_KEY_RE = /^lf_[a-z0-9]+_/i;
-export const isLenfulV8 = (cred: LenfulCred): boolean => V8_KEY_RE.test((cred.apiKey || cred.password || "").trim());
+// v692 · nhận diện v8 theo 2 đường: key đúng prefix lf_… HOẶC ô API endpoint điền seller-v8.lenful.com
+// (thoát hiểm khi Lenful beta phát key prefix khác docs — chỉ cần set endpoint là ép chạy v8).
+export const isLenfulV8 = (cred: LenfulCred): boolean =>
+  V8_KEY_RE.test((cred.apiKey || cred.password || "").trim()) || /seller-v8\./i.test((cred.endpoint || "").trim());
+// v692 · Key lf_… có thể nằm ở BẤT KỲ field nào trong credentials (UI Settings lưu "Token"/password
+// tuỳ đời; token V6 cũ còn sót ở field khác dễ được ưu tiên nhầm) → quét hết, field nào khớp lf_ thì dùng.
+export const pickLenfulV8Key = (c: Record<string, string | undefined>): string => {
+  for (const k of [c.password, c.apiKey, c.apiToken, c.accessToken, c.token, c.bearerToken]) {
+    const s = (k || "").trim();
+    if (V8_KEY_RE.test(s)) return s;
+  }
+  return "";
+};
 const v8Key = (cred: LenfulCred) => (cred.apiKey || cred.password || "").trim();
 const v8Base = (endpoint?: string | null) => {
   const m = (endpoint || "").trim().match(/^https?:\/\/[^/]+/i);

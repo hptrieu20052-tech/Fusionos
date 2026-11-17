@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { listLenfulProducts, getLenfulProduct, type LenfulCred } from "@/lib/lenful";
+import { listLenfulProducts, getLenfulProduct, pickLenfulV8Key, type LenfulCred } from "@/lib/lenful";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -25,8 +25,10 @@ export async function POST(req: NextRequest) {
   if (!ff) return NextResponse.json({ ok: false, error: "fulfiller doesn't exist" }, { status: 404 });
   const c = (ff.credentials ?? {}) as Record<string, string>;
   const userName = c.userName || c.user_name || c.identifier || "";
-  const password = c.password || c.apiKey || "";
-  if (!userName || !password) return NextResponse.json({ ok: false, error: "Lenful cần Identifier (user_name) + API Key (password) trong Settings" }, { status: 400 });
+  // v692 · key lf_… (v8) nằm field nào cũng bắt được; V6 cũ mới cần đủ user+password.
+  const password = pickLenfulV8Key(c) || c.password || c.apiKey || "";
+  const isV8 = /^lf_[a-z0-9]+_/i.test(password);
+  if (!password || (!isV8 && !userName)) return NextResponse.json({ ok: false, error: "Lenful cần API key lf_… (v8) hoặc Identifier + API Key (V6) trong Settings" }, { status: 400 });
   const cred: LenfulCred = { endpoint: ff.apiEndpoint, userName, password };
 
   const start = Date.now();

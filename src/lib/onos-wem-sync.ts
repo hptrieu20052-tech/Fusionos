@@ -9,7 +9,7 @@ import { getCompassupTracking, getCompassupFees, type CompassupCred } from "@/li
 import { getWembroideryOrder, mapWemStatus } from "@/lib/wembroidery";
 import { getMerchizeTrackingSmart, extractMerchizeTracking } from "@/lib/merchize";
 import { getVinawayOrder, extractVinawayOrder } from "@/lib/vinaway";
-import { getLenfulOrder, extractLenfulOrder } from "@/lib/lenful";
+import { getLenfulOrder, extractLenfulOrder, pickLenfulV8Key } from "@/lib/lenful";
 import { getFlashshipOrdersByCodes, mapFsStatus } from "@/lib/flashship";
 import { toISO2 } from "@/lib/printify";
 import { FF_POLL_THROTTLE_MS } from "@/lib/fulfillers";
@@ -403,7 +403,8 @@ export async function syncOnosWem(opts: { force?: boolean } = {}) {
             // Lenful: API không public endpoint detail → getLenfulOrder tự dò path; không thấy thì bỏ qua êm
             const lCred = {
               endpoint: ff.apiEndpoint, userName: cred.userName || cred.user_name || cred.identifier || "",
-              password: cred.password || cred.apiKey || "", storeId: cred.storeId || cred.store_id || cred.shopId || "",
+              // v692 · key lf_… nằm field nào cũng bắt được — không để token V6 sót lại được ưu tiên nhầm
+              password: pickLenfulV8Key(cred) || cred.password || cred.apiKey || "", storeId: cred.storeId || cred.store_id || cred.shopId || "",
             };
             // v691 · key V8 (lf_…) không cần userName — chỉ bộ V6 cũ mới đòi đủ user+password.
             if (!lCred.password || (!lCred.userName && !/^lf_[a-z0-9]+_/i.test(lCred.password))) { skipped++; return; }

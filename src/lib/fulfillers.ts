@@ -5,7 +5,7 @@ import { createPrintwayOrder, listPrintwayOrders, normalizePwOrder, calcPrintway
 import { createFlashshipOrder, flashshipKind, type FsProduct } from "@/lib/flashship";
 import { createOnosOrder, type OnosItem } from "@/lib/onos";
 import { createWembroideryOrder, type WemItem, type WemDesign } from "@/lib/wembroidery";
-import { createLenfulOrder, type LenfulDesign, type LenfulItem } from "@/lib/lenful";
+import { createLenfulOrder, pickLenfulV8Key, type LenfulDesign, type LenfulItem } from "@/lib/lenful";
 import { createVinawayOrder, type VinawayItem, type VinawaySurface } from "@/lib/vinaway";
 import { createHogotoOrder } from "@/lib/hogoto";
 import { getSheetHeaders, appendSheetRow, normHeader } from "@/lib/gsheet";
@@ -469,7 +469,8 @@ function lenfulAdapter(): FulfillerAdapter {
     async push(ctx) {
       const cred = (ctx.fulfiller.credentials ?? {}) as Record<string, string>;
       const userName = cred.userName || cred.user_name || cred.identifier || "";
-      const password = cred.password || cred.apiKey || "";
+      // v692 · key lf_… nằm ở field nào cũng bắt được (token V6 cũ còn sót không được ưu tiên nhầm)
+      const password = pickLenfulV8Key(cred) || cred.password || cred.apiKey || "";
       const storeId = cred.storeId || cred.store_id || cred.shopId || "";
       // v691 · API Key dạng lf_… = Lenful V8 mới: CHỈ CẦN key (store/shipping method tuỳ chọn —
       // storeId phải là UUID từ API v8, id 24-hex cũ sẽ bị bỏ qua và Lenful dùng store mặc định).

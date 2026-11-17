@@ -3,7 +3,7 @@ import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { getSession } from "@/lib/auth";
 import { levelOf } from "@/lib/rbac";
-import { listLenfulStores } from "@/lib/lenful";
+import { listLenfulStores, pickLenfulV8Key } from "@/lib/lenful";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 30;
@@ -20,8 +20,11 @@ export async function POST(req: NextRequest) {
   if (!ff) return NextResponse.json({ ok: false, error: "fulfiller doesn't exist" }, { status: 404 });
   const c = (ff.credentials ?? {}) as Record<string, string>;
   const userName = (b.userName || "").trim() || c.userName || c.user_name || c.identifier || "";
-  const password = (b.password || "").trim() || c.password || c.apiKey || "";
-  if (!userName || !password) return NextResponse.json({ ok: false, error: "Điền user_name + Password (hoặc Save trước) rồi bấm Get Store" }, { status: 400 });
+  // v692 · ưu tiên key v8 (lf_…) ở BẤT KỲ field nào — form gõ tay vẫn thắng nếu chính nó là key lf_.
+  const typed = (b.password || "").trim();
+  const password = (/^lf_[a-z0-9]+_/i.test(typed) ? typed : "") || pickLenfulV8Key(c) || typed || c.password || c.apiKey || "";
+  const isV8 = /^lf_[a-z0-9]+_/i.test(password);
+  if (!password || (!isV8 && !userName)) return NextResponse.json({ ok: false, error: "Điền API key lf_… (v8) hoặc user_name + Password (V6) rồi bấm Get Store" }, { status: 400 });
 
   try {
     const shops = await listLenfulStores({ endpoint: ff.apiEndpoint, userName, password });
