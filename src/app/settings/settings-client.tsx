@@ -32,7 +32,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
   const [tab, setTab] = useState<"api" | "sku">("api");
   const [ffs, setFfs] = useState<Ff[]>([]);
   const [maps, setMaps] = useState<Map[]>([]);
-  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string; identifier: string; warehouse: string; carrier: string; logoKey: string }>>({});
+  const [edit, setEdit] = useState<Record<string, { apiEndpoint: string; apiKey: string; webhookSecret: string; shopId: string; identifier: string; warehouse: string; carrier: string; shipCode: string; logoKey: string }>>({});
   const [nf, setNf] = useState({ name: "", method: "api", apiEndpoint: "", sheetId: "", tab: "", logoKey: "" });
   const [revealed, setRevealed] = useState<Record<string, Revealed | undefined>>({});
   const [nm, setNm] = useState({ internalSku: "", fulfillerId: "", fulfillerSku: "", baseCost: "", shipCost: "" });
@@ -42,7 +42,7 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
 
   const setE = (id: string, field: string, value: string) =>
     setEdit((prev) => {
-      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", warehouse: "", carrier: "", logoKey: "" };
+      const base = prev[id] ?? { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", warehouse: "", carrier: "", shipCode: "", logoKey: "" };
       return { ...prev, [id]: { ...base, [field]: value } };
     });
 
@@ -72,13 +72,16 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
     const j = await fetch("/api/fulfillers/reveal", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) }).then((r) => r.json()).catch(() => ({ ok: false }));
     if (j.ok) setEdit((prev) => ({ ...prev, [id]: {
       apiEndpoint: j.apiEndpoint ?? "", apiKey: j.apiKey ?? "", webhookSecret: j.webhookSecret ?? "",
-      shopId: j.shopId ?? "", identifier: j.identifier ?? "", warehouse: j.warehouse ?? "", carrier: j.carrier ?? "", logoKey: "",
+      shopId: j.shopId ?? "", identifier: j.identifier ?? "", warehouse: j.warehouse ?? "", carrier: j.carrier ?? "", shipCode: "", logoKey: "",
     } }));
   }
   async function saveFf(id: string) {
     const e = edit[id]; if (!e) return;
-    const j = await fetch("/api/fulfillers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...e }) }).then((r) => r.json());
-    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", warehouse: "", carrier: "", logoKey: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
+    // v694 · shipCode rỗng thì KHÔNG gửi — tránh mỗi lần Save field khác lại xoá nhầm mã ship đã lưu.
+    const payload: Record<string, unknown> = { id, ...e };
+    if (!e.shipCode) delete payload.shipCode;
+    const j = await fetch("/api/fulfillers", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
+    setMsg(j.ok ? t("s.saved") : "⚠ " + j.error); if (j.ok) { setEdit({ ...edit, [id]: { apiEndpoint: "", apiKey: "", webhookSecret: "", shopId: "", identifier: "", warehouse: "", carrier: "", shipCode: "", logoKey: "" } }); setEditOpen((p) => ({ ...p, [id]: false })); load(); }
   }
   async function listShops(id: string) {
     const token = edit[id]?.apiKey;
@@ -192,6 +195,8 @@ export function SettingsClient({ canEdit, isAdmin }: { canEdit: boolean; isAdmin
                   {isLenful && <>
                     <input placeholder="user_name (email login Lenful)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 210 }} />
                     <input placeholder="Store ID (path /api/order/:store_id)" value={edit[f.id]?.shopId ?? ""} onChange={(e) => setE(f.id, "shopId", e.target.value)} style={{ ...inp, width: 200 }} />
+                    {/* v694 · Lenful v8: shipping_method_code (portal Orders → Import). Trống = tự thử Standard. */}
+                    <input placeholder="Ship code (v8)" title="Lenful v8 shipping_method_code — see Lenful portal: Orders → Import. Leave empty to auto-try Standard." value={edit[f.id]?.shipCode ?? ""} onChange={(e) => setE(f.id, "shipCode", e.target.value.replace(/[^0-9]/g, ""))} style={{ ...inp, width: 110 }} />
                     <button type="button" onClick={() => listLenfulStores(f.id)} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: 10, padding: "9px 12px", fontWeight: 700, cursor: "pointer", fontSize: 12 }}>Get Store</button>
                   </>}
                   {isVinaway && <input placeholder="Email (login Vinaway)" value={edit[f.id]?.identifier ?? ""} onChange={(e) => setE(f.id, "identifier", e.target.value)} style={{ ...inp, width: 200 }} />}

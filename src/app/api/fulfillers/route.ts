@@ -70,7 +70,7 @@ export async function PATCH(req: NextRequest) {
   if (typeof b.webhookSecret === "string" && b.webhookSecret) patch.webhookSecret = b.webhookSecret;
   // Credentials: gộp apiKey (token) + shopId (Printify) + identifier + warehouse/carrier (Merchize TikTok Shipping). Giữ giá trị cũ nếu chỉ đổi 1 phần.
   // apiKey/shopId/identifier: ô rỗng = KHÔNG đổi (tránh xoá nhầm token). warehouse/carrier: gửi ô (kể cả rỗng) = ĐẶT đúng giá trị đó, rỗng = XOÁ.
-  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "") || (b.identifier !== undefined && b.identifier !== "") || typeof b.warehouse === "string" || typeof b.carrier === "string") {
+  if ((typeof b.apiKey === "string" && b.apiKey) || (b.shopId !== undefined && b.shopId !== "") || (b.identifier !== undefined && b.identifier !== "") || typeof b.warehouse === "string" || typeof b.carrier === "string" || typeof b.shipCode === "string") {
     const [cur] = await db.select().from(schema.fulfillers).where(eq(schema.fulfillers.id, b.id)).limit(1);
     const prev = (cur?.credentials ?? {}) as Record<string, unknown>;
     const next: Record<string, unknown> = {
@@ -82,6 +82,8 @@ export async function PATCH(req: NextRequest) {
     // warehouse/carrier: cho phép XOÁ khi để trống
     if (typeof b.warehouse === "string") { const w = b.warehouse.trim(); if (w) next.warehouse = w; else delete next.warehouse; }
     if (typeof b.carrier === "string") { const c = b.carrier.trim(); if (c) next.carrier = c; else delete next.carrier; }
+    // v694 · Lenful v8: shipping_method_code (portal Orders → Import) — rỗng = xoá (dùng ladder mặc định)
+    if (typeof b.shipCode === "string") { const sc = b.shipCode.trim(); if (sc) next.shippingMethodCode = sc; else delete next.shippingMethodCode; }
     patch.credentials = next;
   }
   if (typeof b.autoPush === "boolean") patch.autoPush = b.autoPush;

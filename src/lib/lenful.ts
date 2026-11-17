@@ -264,11 +264,29 @@ export async function createLenfulOrder(cred: LenfulCred & { storeId: string }, 
       line_items,
     };
     // 409 = external_order_id đã tồn tại trong store → body chứa đơn CŨ → coi là thành công (idempotent).
-    const { status, j } = await v8Fetch(cred, "/orders", { method: "POST", body }, [409]);
-    const d = ((j?.data ?? {}) as Record<string, unknown>);
-    const id = String(d?.id ?? "");
-    if (!id) throw new Error(`Lenful v8 order: no order id in response (HTTP ${status}, ${String(j?.message ?? "").slice(0, 150)})`);
-    return { id, raw: j };
+    // v694 · CHƯA cấu hình shipping method mà method MẶC ĐỊNH của account không có giá ship cho SKU
+    // (422 "No shipping rate …") → tự thử lại với code 0 (Standard theo thang Lenful). Vẫn fail thì
+    // báo lỗi kèm hướng dẫn điền ô "Ship code (v8)" trong Settings (code xem portal Orders → Import).
+    const attempts: (number | null)[] = Number.isFinite(methodCode)
+      ? [methodCode as number]
+      : [null, 0];
+    let lastErr: unknown = null;
+    for (const mc of attempts) {
+      try {
+        const attemptBody = { ...body, ...(mc !== null ? { shipping_method_code: mc } : {}) };
+        if (mc === null) delete (attemptBody as Record<string, unknown>).shipping_method_code;
+        const { status, j } = await v8Fetch(cred, "/orders", { method: "POST", body: attemptBody }, [409]);
+        const d = ((j?.data ?? {}) as Record<string, unknown>);
+        const id = String(d?.id ?? "");
+        if (!id) throw new Error(`Lenful v8 order: no order id in response (HTTP ${status}, ${String(j?.message ?? "").slice(0, 150)})`);
+        return { id, raw: j };
+      } catch (e) {
+        lastErr = e;
+        // chỉ ladder tiếp khi đúng lỗi thiếu giá ship; lỗi khác (sai SKU/địa chỉ/…) ném luôn
+        if (!/no shipping rate/i.test(String((e as Error)?.message ?? ""))) throw e;
+      }
+    }
+    throw new Error(`${String((lastErr as Error)?.message ?? lastErr)} — set the "Ship code (v8)" box in Settings → Fulfillers → Lenful (codes: Lenful portal → Orders → Import)`);
   }
 
   const base = baseOf(cred.endpoint);
